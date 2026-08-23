@@ -15,7 +15,7 @@ type EduAIState = {
   status: Status;
   message?: string;
   /** Which provider path is live when status==='ok': cloud provider id or campus (`vllm` / legacy `ollama`). */
-  provider?: "google" | "openai" | "deepseek" | "anthropic" | "vllm" | "ollama";
+  provider?: "google" | "openai" | "deepseek" | "anthropic" | "opencode" | "vllm" | "ollama";
   questionGenerationPhase: QuestionGenerationPhase;
 };
 

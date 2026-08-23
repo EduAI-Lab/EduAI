@@ -80,10 +80,10 @@ const SCENARIOS = {
 };
 
 /**
- * Contextual shape expectations for Form A qual scoring.
+ * Contextual response-profile expectations for Form A qual scoring.
  * Dean (Phase 3 v2) would classify turn type; eval uses these until then.
  */
-const TURN_SHAPE = {
+const TURN_PROFILE = {
   "S1.t1": { expectFullStructure: true, label: "tutoring answer" },
   "S2.t1": { expectFullStructure: true, label: "step ladder" },
   "S2.t2": { expectFullStructure: false, label: "redirect / one-topic boundary" },
@@ -288,16 +288,16 @@ function oversightMetaFromEnv() {
   };
 }
 
-/** Qual pass: profile-conditional when assist is on; legacy TURN_SHAPE fallback otherwise. */
+/** Qual pass: profile-conditional when assist is on; legacy TURN_PROFILE fallback otherwise. */
 function evaluateContextualPass(
   turnRef,
   metrics,
   assistantText,
   { adhdAssist, priorAssistantText, userText },
 ) {
-  const shape = TURN_SHAPE[turnRef];
-  if (!shape) {
-    return { expectedShape: "unknown", contextualPass: null, responseProfile: null };
+  const profile = TURN_PROFILE[turnRef];
+  if (!profile) {
+    return { expectedResponseProfile: "unknown", contextualPass: null, responseProfile: null };
   }
 
   if (adhdAssist) {
@@ -308,15 +308,15 @@ function evaluateContextualPass(
     const wordCap = getProfileRequirements(responseProfile).wordCap;
     const profileMetrics = computeAdhdResponseMetrics(assistantText, { wordCap });
     return {
-      expectedShape: shape.label,
+      expectedResponseProfile: profile.label,
       contextualPass: isProfileStructuralPass(profileMetrics, responseProfile, assistantText),
       responseProfile,
     };
   }
 
-  if (shape.expectFullStructure) {
+  if (profile.expectFullStructure) {
     return {
-      expectedShape: shape.label,
+      expectedResponseProfile: profile.label,
       contextualPass: isStructuralCompliancePass(metrics),
       responseProfile: null,
     };
@@ -324,7 +324,7 @@ function evaluateContextualPass(
   const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(assistantText);
   const overStructured = metrics.topSummary && metrics.wordCount > 60;
   return {
-    expectedShape: shape.label,
+    expectedResponseProfile: profile.label,
     contextualPass: !overStructured && (hasRedirectCue || !metrics.topSummary),
     responseProfile: null,
   };
@@ -421,7 +421,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
       };
       const metrics = computeMetrics(lastAssistantText);
       const structuralPass = isStructuralCompliancePass(metrics);
-      const { expectedShape, contextualPass, responseProfile } = evaluateContextualPass(
+      const { expectedResponseProfile, contextualPass, responseProfile } = evaluateContextualPass(
         turnRef,
         metrics,
         lastAssistantText,
@@ -438,7 +438,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         metrics,
         structuralPass,
         profileStructuralPass: adhdAssist ? contextualPass : null,
-        expectedShape,
+        expectedResponseProfile,
         contextualPass,
         responseProfile,
         responseMeta: lastResponseMeta,
@@ -450,7 +450,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         metrics,
         structuralPass,
         profileStructuralPass: adhdAssist ? contextualPass : null,
-        expectedShape,
+        expectedResponseProfile,
         contextualPass,
         responseProfile,
       });
@@ -470,7 +470,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         turnRef,
         metrics: null,
         structuralPass: false,
-        expectedShape: null,
+        expectedResponseProfile: null,
         contextualPass: false,
       });
       turnResults.push({
@@ -481,7 +481,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         elapsedMs: elapsed,
         metrics: null,
         structuralPass: false,
-        expectedShape: TURN_SHAPE[turnRef]?.label ?? null,
+        expectedResponseProfile: TURN_PROFILE[turnRef]?.label ?? null,
         contextualPass: false,
         error: errorForTurn,
       });
@@ -534,12 +534,12 @@ function passRateLines(results) {
   if (onTurns.length === 0) {
     return [
       "ADHD Assist ON strict structural pass: 0/0 turns.",
-      "ADHD Assist ON contextual shape pass: 0/0 turns.",
+      "ADHD Assist ON contextual profile pass: 0/0 turns.",
     ];
   }
   return [
     `ADHD Assist ON strict structural pass: ${strictPass}/${onTurns.length} turns (TopSummary && Next? && UnderCap).`,
-    `ADHD Assist ON contextual shape pass: ${ctxPass}/${ctxScored} scored turns (see TURN_SHAPE in eval script).`,
+    `ADHD Assist ON contextual profile pass: ${ctxPass}/${ctxScored} scored turns (see TURN_PROFILE in eval script).`,
   ];
 }
 
@@ -569,7 +569,7 @@ function buildTranscriptMd(result) {
       lines.push("");
       lines.push(`- turnRef: ${t.turnRef}`);
       lines.push(`- strict structural pass: ${t.structuralPass ? "Y" : "N"}`);
-      lines.push(`- expected shape: ${t.expectedShape ?? "—"}`);
+      lines.push(`- expected response profile: ${t.expectedResponseProfile ?? "—"}`);
       lines.push(
         `- contextual pass: ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"}`,
       );
@@ -595,7 +595,7 @@ function buildCsv(results, outDir) {
     "Quant: Next? Y/N",
     "Quant: strict pass Y/N",
     "Quant: contextual pass Y/N",
-    "Qual: expected shape",
+    "Qual: expected response profile",
     "Qual: notes",
   ];
   const lines = [headers.map(escapeCsv).join(",")];
@@ -618,7 +618,7 @@ function buildCsv(results, outDir) {
           m.nextLine ? "Y" : "N",
           t.structuralPass ? "Y" : "N",
           t.contextualPass === null ? "" : t.contextualPass ? "Y" : "N",
-          t.expectedShape ?? "",
+          t.expectedResponseProfile ?? "",
           "",
         ]
           .map(escapeCsv)
@@ -645,13 +645,13 @@ function buildFormASnapshot({ config, results }) {
   lines.push("## Assist ON turn scores");
   lines.push("");
   lines.push(`- strict structural: ${strictPass}/${onTurns.length}`);
-  lines.push(`- contextual shape: ${ctxPass}/${ctxScored}`);
+  lines.push(`- contextual profile: ${ctxPass}/${ctxScored}`);
   lines.push("");
-  lines.push("| Turn | Strict | Contextual | Expected shape |");
+  lines.push("| Turn | Strict | Contextual | Expected response profile |");
   lines.push("| --- | :---: | :---: | --- |");
   for (const t of onTurns) {
     lines.push(
-      `| ${t.turnRef} | ${t.structuralPass ? "Y" : "N"} | ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"} | ${t.expectedShape ?? "—"} |`,
+      `| ${t.turnRef} | ${t.structuralPass ? "Y" : "N"} | ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"} | ${t.expectedResponseProfile ?? "—"} |`,
     );
   }
   lines.push("");

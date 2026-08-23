@@ -7,6 +7,7 @@
   "singleQuote": false,
   "trailingComma": "all",
   "ignorePatterns": [
+    "**/anti-slop/**",
     "**/*.md",
     "**/*.json",
     "**/*.jsonc",

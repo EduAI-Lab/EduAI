@@ -1,7 +1,7 @@
 // @vitest-environment node
 // #1213 — POST /api/sessions/validate (extension auth Phase 1): method gate,
 // rate limiting, auth gate, and the UNIT_ADMIN authorizedUnits DB hydration.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
@@ -9,7 +9,16 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/rate-limit.server", () => ({
   isRateLimited: vi.fn().mockReturnValue(false),
+  parseEnvInt: vi.fn((_value: string | undefined, fallback: number) => fallback),
 }));
+
+vi.mock("~/lib/auth/guards.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/guards.server")>();
+  return {
+    ...actual,
+    requireServiceKey: vi.fn((request: Request) => actual.requireServiceKey(request)),
+  };
+});
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -25,20 +34,31 @@ vi.mock("~/lib/logging.server", () => ({
 import { action } from "~/routes/api/sessions.validate";
 import { auth } from "~/lib/auth/server";
 import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 
-function makeArgs(method = "POST") {
+function makeArgs(method = "POST", headers: HeadersInit = {}) {
+  const requestHeaders = new Headers({ Authorization: "Bearer test-service-key" });
+  new Headers(headers).forEach((value, key) => requestHeaders.set(key, value));
   return {
-    request: new Request("http://localhost/api/sessions/validate", { method }),
+    request: new Request("http://localhost/api/sessions/validate", {
+      method,
+      headers: requestHeaders,
+    }),
     params: {},
     context: {} as never,
   } as never;
 }
 
 beforeEach(() => {
+  vi.stubEnv("EDUAI_API_KEY", "test-service-key");
   vi.clearAllMocks();
   vi.mocked(isRateLimited).mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/sessions/validate", () => {
@@ -51,9 +71,198 @@ describe("POST /api/sessions/validate", () => {
     vi.mocked(isRateLimited).mockReturnValue(true);
     const res = await action(makeArgs());
     expect(res.status).toBe(429);
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:preauth:unknown", 1_200);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RATE_LIMIT_EXCEEDED", outcome: "DENIED" }),
     );
+  });
+
+  it("does not let junk cookies consume a legitimate user's rate-limit bucket", async () => {
+    vi.mocked(auth.api.getSession)
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({
+        user: { id: "u1", email: "u1@ubc.ca", name: "U1", image: null, role: "STUDENT" },
+      } as never);
+    vi.mocked(isRateLimited)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+
+    const junk = await action(
+      makeArgs("POST", {
+        Cookie: "better-auth.session_token=junk",
+        "X-Forwarded-For": "198.51.100.10",
+      }),
+    );
+    const legitimate = await action(
+      makeArgs("POST", {
+        Cookie: "better-auth.session_token=valid",
+        "X-Forwarded-For": "198.51.100.10",
+      }),
+    );
+
+    expect(junk.status).toBe(429);
+    expect(legitimate.status).toBe(200);
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.10",
+      "session-validate:anonymous:198.51.100.10",
+      "session-validate:preauth:198.51.100.10",
+      "session-validate:user:u1",
+    ]);
+  });
+
+  it("uses the trusted proxy-appended XFF entry, not a spoofed first entry", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    await action(makeArgs("POST", { "X-Forwarded-For": "203.0.113.99, 198.51.100.20" }));
+    expect(isRateLimited).toHaveBeenNthCalledWith(
+      1,
+      "session-validate:preauth:198.51.100.20",
+      1_200,
+    );
+    expect(isRateLimited).toHaveBeenNthCalledWith(2, "session-validate:anonymous:198.51.100.20");
+  });
+
+  it("uses a verified extension's forwarded client identity for isolated pre-auth buckets", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "127.0.0.1",
+        "X-EduAI-Client-IP": "198.51.100.30",
+      }),
+    );
+    await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "127.0.0.1",
+        "X-EduAI-Client-IP": "198.51.100.31",
+      }),
+    );
+
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.30",
+      "session-validate:anonymous:198.51.100.30",
+      "session-validate:preauth:198.51.100.31",
+      "session-validate:anonymous:198.51.100.31",
+    ]);
+  });
+
+  it("rejects missing or fake service auth before trusting identity or looking up a session", async () => {
+    for (const authorization of ["", "Bearer fake-key"]) {
+      const res = await action(
+        makeArgs("POST", {
+          Authorization: authorization,
+          "X-EduAI-Client-IP": "203.0.113.250",
+        }),
+      );
+      expect([401, 403]).toContain(res.status);
+    }
+
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:invalid-service-auth:unknown",
+      "session-validate:invalid-service-auth:unknown",
+    ]);
+    expect(requireServiceKey).toHaveBeenCalledTimes(2);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("bounds invalid-service audit writes per trusted direct client before the persistent guard", async () => {
+    const exhausted = new Set(["198.51.100.60"]);
+    vi.mocked(isRateLimited).mockImplementation((key) => {
+      if (!key.startsWith("session-validate:invalid-service-auth:")) return false;
+      const ip = key.slice(key.lastIndexOf(":") + 1);
+      if (exhausted.has(ip)) return true;
+      exhausted.add(ip);
+      return false;
+    });
+
+    const first = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+        "X-EduAI-Client-IP": "192.0.2.250",
+      }),
+    );
+    const exhaustedSameIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+        "X-EduAI-Client-IP": "192.0.2.251",
+      }),
+    );
+    const alreadyExhaustedOtherIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "198.51.100.60",
+      }),
+    );
+    const freshOtherIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "198.51.100.62",
+      }),
+    );
+
+    expect(first.status).toBe(403);
+    expect(exhaustedSameIp.status).toBe(429);
+    expect(alreadyExhaustedOtherIp.status).toBe(429);
+    expect(freshOtherIp.status).toBe(403);
+    expect(requireServiceKey).toHaveBeenCalledTimes(2);
+    expect(logSecurityEvent).toHaveBeenCalledTimes(2);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:invalid-service-auth:198.51.100.61",
+      "session-validate:invalid-service-auth:198.51.100.61",
+      "session-validate:invalid-service-auth:198.51.100.60",
+      "session-validate:invalid-service-auth:198.51.100.62",
+    ]);
+  });
+
+  it("does not charge a valid extension to an exhausted invalid-auth bucket", async () => {
+    vi.mocked(isRateLimited).mockImplementation((key) =>
+      key.startsWith("session-validate:invalid-service-auth:"),
+    );
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u3", email: "u3@ubc.ca", name: "U3", image: null, role: "STUDENT" },
+    } as never);
+
+    const res = await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "198.51.100.70",
+        "X-EduAI-Client-IP": "192.0.2.70",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(auth.api.getSession).toHaveBeenCalledOnce();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:192.0.2.70",
+      "session-validate:user:u3",
+    ]);
+  });
+
+  it("an exhausted attacker client does not consume another extension client's bucket", async () => {
+    vi.mocked(isRateLimited)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", email: "u2@ubc.ca", name: "U2", image: null, role: "STUDENT" },
+    } as never);
+
+    const attacker = await action(makeArgs("POST", { "X-EduAI-Client-IP": "198.51.100.40" }));
+    const legitimate = await action(makeArgs("POST", { "X-EduAI-Client-IP": "198.51.100.41" }));
+
+    expect(attacker.status).toBe(429);
+    expect(legitimate.status).toBe(200);
+    expect(auth.api.getSession).toHaveBeenCalledOnce();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.40",
+      "session-validate:preauth:198.51.100.41",
+      "session-validate:user:u2",
+    ]);
   });
 
   it("returns 401 for anonymous callers", async () => {

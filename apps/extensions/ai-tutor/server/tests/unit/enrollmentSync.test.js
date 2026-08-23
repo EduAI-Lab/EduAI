@@ -8,6 +8,12 @@ vi.mock("../../src/config/database.js", () => ({
       createMany: vi.fn(),
       deleteMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    courseInstructor: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -22,6 +28,7 @@ import {
   clearEnrollmentSyncThrottle,
   resetEnrollmentSyncThrottleForTests,
   syncCourseEnrollments,
+  withCourseEnrollmentLock,
 } from "../../src/services/enrollmentSync.js";
 
 const COURSE = {
@@ -49,12 +56,17 @@ const TA_ENROLLMENT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prisma.$transaction = undefined;
   resetEnrollmentSyncThrottleForTests();
   prisma.courseOffering.findUnique.mockResolvedValue(COURSE);
   prisma.courseEnrollment.findMany.mockResolvedValue([]);
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.deleteMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.update.mockResolvedValue({});
+  prisma.courseEnrollment.updateMany.mockResolvedValue({ count: 0 });
+  prisma.courseInstructor.findMany.mockResolvedValue([]);
+  prisma.courseInstructor.createMany.mockResolvedValue({ count: 0 });
+  prisma.courseInstructor.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 afterEach(() => {
@@ -62,6 +74,20 @@ afterEach(() => {
 });
 
 describe("syncCourseEnrollments", () => {
+  it("uses a transaction-scoped advisory lock when Prisma transactions are available", async () => {
+    const executeRaw = vi.fn().mockResolvedValue(1);
+    const tx = { $executeRaw: executeRaw };
+    prisma.$transaction = vi.fn(async (operation) => operation(tx));
+    const operation = vi.fn().mockResolvedValue("locked-result");
+
+    await expect(withCourseEnrollmentLock(1, operation)).resolves.toBe("locked-result");
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    expect(operation).toHaveBeenCalledWith(tx);
+    prisma.$transaction = undefined;
+  });
+
   describe("early return guards", () => {
     it("returns zeros when courseOfferingId is not a finite number", async () => {
       const result = await syncCourseEnrollments(NaN);
@@ -180,14 +206,67 @@ describe("syncCourseEnrollments", () => {
       prisma.courseEnrollment.findMany.mockResolvedValue([
         { userId: "user-cuid-1", role: "STUDENT" },
       ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: "user-cuid-1", role: "STUDENT" },
+      ]);
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
-        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: "user-cuid-1" } },
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["user-cuid-1"] } },
         data: { role: "TA" },
       });
       expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
+    });
+
+    // #1451: role updates are grouped, so the query count follows the number of
+    // distinct target roles (at most STUDENT + TA), never the roster size.
+    it("issues one updateMany per distinct target role", async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        { ...ACTIVE_ENROLLMENT, studentId: "u-1", role: "TA" },
+        { ...ACTIVE_ENROLLMENT, studentId: "u-2", role: "TA" },
+        { ...ACTIVE_ENROLLMENT, studentId: "u-3", role: "STUDENT" },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: "u-1", role: "STUDENT" },
+        { userId: "u-2", role: "STUDENT" },
+        { userId: "u-3", role: "TA" },
+      ]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["u-1", "u-2"] } },
+        data: { role: "TA" },
+      });
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["u-3"] } },
+        data: { role: "STUDENT" },
+      });
+      expect(result.updated).toBe(3);
+    });
+
+    it("stays at two queries when a whole roster changes role", async () => {
+      const ROSTER_SIZE = 200;
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue(
+        Array.from({ length: ROSTER_SIZE }, (_, i) => ({
+          ...ACTIVE_ENROLLMENT,
+          studentId: `bulk-${i}`,
+          role: "TA",
+        })),
+      );
+      prisma.courseEnrollment.findMany.mockResolvedValue(
+        Array.from({ length: ROSTER_SIZE }, (_, i) => ({ userId: `bulk-${i}`, role: "STUDENT" })),
+      );
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(result.updated).toBe(ROSTER_SIZE);
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.courseEnrollment.updateMany.mock.calls[0][0].where.userId.in).toHaveLength(
+        ROSTER_SIZE,
+      );
     });
 
     it("does not update when role is unchanged", async () => {
@@ -198,7 +277,7 @@ describe("syncCourseEnrollments", () => {
 
       await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.updateMany).not.toHaveBeenCalled();
     });
 
     it("updates local TA to STUDENT when Core demotes back to STUDENT (#569)", async () => {
@@ -209,8 +288,8 @@ describe("syncCourseEnrollments", () => {
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
-        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: "user-cuid-ta" } },
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["user-cuid-ta"] } },
         data: { role: "STUDENT" },
       });
       expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
@@ -218,6 +297,24 @@ describe("syncCourseEnrollments", () => {
   });
 
   describe("delete path", () => {
+    it("does not mutate CourseInstructor rows as a side effect of roster synchronization", async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseInstructor.findMany.mockResolvedValue([{ userId: "revoked-instructor" }]);
+
+      await syncCourseEnrollments(1);
+
+      expect(prisma.courseInstructor.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("does not prune CourseInstructor rows when the authoritative roster is unavailable", async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(new Error("Core unavailable"));
+      prisma.courseInstructor.findMany.mockResolvedValue([{ userId: "existing-instructor" }]);
+
+      await expect(syncCourseEnrollments(1)).rejects.toThrow("Core unavailable");
+
+      expect(prisma.courseInstructor.deleteMany).not.toHaveBeenCalled();
+    });
+
     it("deletes local STUDENT enrollment rows absent from Core active list", async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
@@ -372,7 +469,7 @@ describe("syncCourseEnrollments", () => {
       await expect(syncCourseEnrollments(1)).rejects.toThrow("Core unavailable");
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
-      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.updateMany).not.toHaveBeenCalled();
     });
 
     it('tags a Core fetch failure with phase "fetch"', async () => {
@@ -398,6 +495,55 @@ describe("syncCourseEnrollments", () => {
       expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith("core-course-cuid-1", {
         signal,
       });
+    });
+  });
+
+  describe("concurrent reconciliation", () => {
+    it("does not let a stale active snapshot reintroduce access after a newer revoked snapshot", async () => {
+      let rows = [{ userId: ACTIVE_ENROLLMENT.studentId, role: "STUDENT" }];
+      let resolveFirstFetchStarted;
+      const firstFetchStarted = new Promise((resolve) => {
+        resolveFirstFetchStarted = resolve;
+      });
+      let releaseFirstFetch;
+      const firstFetch = new Promise((resolve) => {
+        releaseFirstFetch = () => resolve([ACTIVE_ENROLLMENT]);
+      });
+      let first = true;
+
+      prisma.courseEnrollment.findMany.mockImplementation(async () =>
+        rows.map((row) => ({ ...row })),
+      );
+      prisma.courseEnrollment.createMany.mockImplementation(async ({ data }) => {
+        rows.push(...data.map((row) => ({ userId: row.userId, role: row.role })));
+        return { count: data.length };
+      });
+      prisma.courseEnrollment.deleteMany.mockImplementation(async ({ where }) => {
+        const ids = new Set(where.userId.in);
+        const before = rows.length;
+        rows = rows.filter((row) => !ids.has(row.userId));
+        return { count: before - rows.length };
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockImplementation(async () => {
+        if (first) {
+          first = false;
+          resolveFirstFetchStarted();
+          return firstFetch;
+        }
+        return [];
+      });
+
+      const staleActiveSync = syncCourseEnrollments(1);
+      await firstFetchStarted;
+      const newerRevokedSync = syncCourseEnrollments(1);
+
+      // Give an unsynchronized implementation a turn to fetch and reconcile
+      // the newer revoked snapshot before releasing the stale active fetch.
+      await new Promise((resolve) => setImmediate(resolve));
+      releaseFirstFetch();
+      await Promise.all([staleActiveSync, newerRevokedSync]);
+
+      expect(rows).toEqual([]);
     });
   });
 

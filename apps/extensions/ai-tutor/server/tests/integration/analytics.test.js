@@ -1,6 +1,27 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
+
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+          const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+          const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+          const role =
+            instructor && allowedRoles.includes("INSTRUCTOR")
+              ? "INSTRUCTOR"
+              : (enrollment?.role ?? (allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null));
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? "allowed" : "denied", role };
+        },
+      ),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,
@@ -16,10 +37,17 @@ import {
 // path fetches it live via `fetchCoreCourseSafe`.
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+  return {
+    ...actual,
+    fetchCoreCourseSafe: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
+  };
 });
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import {
+  fetchCoreCourseSafe,
+  listEduAiCourseEnrollmentsServiceKey,
+} from "../../src/services/eduaiClient.js";
 
 describe("Course analytics routes (#310)", () => {
   let prof;
@@ -212,6 +240,74 @@ describe("Course analytics routes (#310)", () => {
       const studentApp = await createApp({ mockUser: students[0] });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/student-metrics`);
       expect(res.status).toBe(403);
+    });
+
+    it("resolves Core display names, so the table isn't a wall of raw ids", async () => {
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        { id: "e1", studentId: students[0].id, studentName: "Ada Lovelace" },
+      ]);
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.find((m) => m.userId === students[0].id).studentName).toBe("Ada Lovelace");
+      // Unknown ids degrade to null rather than failing the read.
+      expect(res.body.find((m) => m.userId === students[1].id).studentName).toBeNull();
+    });
+
+    it("still answers when Core cannot be reached", async () => {
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockRejectedValue(new Error("core down"));
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(3);
+      expect(res.body[0].studentName).toBeNull();
+    });
+
+    it("follows a manual grade override instead of freezing at submit time", async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const submission = await prisma.submission.findFirst({
+        where: { userId: students[1].id, activityId: activity1.id },
+      });
+
+      // students[1] submitted incorrectly; an admin overrides it to correct.
+      const patch = await request(adminApp)
+        .patch(`/api/activities/${activity1.id}/submissions/${submission.id}`)
+        .send({ isCorrect: true });
+      expect(patch.status).toBe(200);
+
+      const metrics = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+      expect(metrics.body.find((m) => m.userId === students[1].id)).toMatchObject({
+        submissionCount: 1,
+        correctSubmissionCount: 1,
+        incorrectSubmissionCount: 0,
+      });
+
+      const analytics = await request(profApp).get(`/api/courses/${seed.course.id}/analytics`);
+      expect(analytics.body.find((a) => a.activityId === activity1.id)).toMatchObject({
+        correctSubmissionCount: 2,
+        incorrectSubmissionCount: 1,
+      });
+    });
+
+    it("follows an override back to ungraded", async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const submission = await prisma.submission.findFirst({
+        where: { userId: students[0].id, activityId: activity1.id },
+      });
+
+      const patch = await request(adminApp)
+        .patch(`/api/activities/${activity1.id}/submissions/${submission.id}`)
+        .send({ isCorrect: null, score: null });
+      expect(patch.status).toBe(200);
+
+      const metrics = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+      expect(metrics.body.find((m) => m.userId === students[0].id)).toMatchObject({
+        submissionCount: 1,
+        correctSubmissionCount: 0,
+        incorrectSubmissionCount: 0,
+      });
     });
   });
 

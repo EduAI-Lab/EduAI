@@ -55,7 +55,9 @@ afterEach(() => {
 describe("POST /api/bug-reports", () => {
   it("returns 401 when unauthenticated", async () => {
     const app = buildApp();
-    const res = await request(app).post("/api/bug-reports").send({ description: "x" });
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .send({ description: "A valid description that reaches the service." });
     expect(res.status).toBe(401);
     expect(mockCreateBugReport).not.toHaveBeenCalled();
   });
@@ -78,22 +80,37 @@ describe("POST /api/bug-reports", () => {
     mockCreateBugReport.mockRejectedValue(new MockBugReportError(400, "description too short"));
     const app = buildApp({ role: "STUDENT" });
 
-    const res = await request(app).post("/api/bug-reports").send({ description: "x" });
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .send({ description: "A valid description that reaches the service." });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "description too short" });
+  });
+
+  it("rejects a malformed payload before calling the service", async () => {
+    const app = buildApp({ role: "STUDENT" });
+
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .send({ description: "A valid description.", isAnonymous: "yes" });
+
+    expect(res.status).toBe(400);
+    expect(mockCreateBugReport).not.toHaveBeenCalled();
   });
 
   it("returns 500 for a generic error", async () => {
     mockCreateBugReport.mockRejectedValue(new Error("boom"));
     const app = buildApp({ role: "STUDENT" });
 
-    const res = await request(app).post("/api/bug-reports").send({ description: "x" });
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .send({ description: "A valid description that reaches the service." });
 
     expect(res.status).toBe(500);
   });
 
-  it("defaults to an empty payload when the body is absent", async () => {
+  it("rejects an absent request body before calling the service", async () => {
     mockCreateBugReport.mockResolvedValue(undefined);
     const app = buildApp({ role: "STUDENT" });
 
@@ -102,8 +119,8 @@ describe("POST /api/bug-reports", () => {
       .set("Content-Type", "application/json")
       .send();
 
-    expect(res.status).toBe(201);
-    expect(mockCreateBugReport).toHaveBeenCalledWith(expect.anything(), {});
+    expect(res.status).toBe(400);
+    expect(mockCreateBugReport).not.toHaveBeenCalled();
   });
 });
 
@@ -233,5 +250,23 @@ describe("PATCH /api/admin/bug-reports/:bugReportId", () => {
       .send({ status: "resolved" });
 
     expect(res.status).toBe(500);
+  });
+
+  // The two GET handlers already forward the upstream status; this one collapsed
+  // everything to 500, which is what turned Core's 403 CROSS_ORIGIN_MUTATION into
+  // an unreadable "Unable to update bug report".
+  it("forwards the upstream status instead of flattening it to 500", async () => {
+    const upstream = new Error("CROSS_ORIGIN_MUTATION");
+    upstream.status = 403;
+    mockUpdateBugReportStatus.mockRejectedValue(upstream);
+    const app = buildApp({ role: "ADMIN" });
+
+    const res = await request(app)
+      .patch("/api/admin/bug-reports/br-1")
+      .send({ status: "resolved" });
+
+    expect(res.status).toBe(403);
+    // The public message stays generic — only the status crosses the boundary.
+    expect(res.body).toEqual({ error: "Unable to update bug report" });
   });
 });

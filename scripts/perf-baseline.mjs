@@ -32,7 +32,7 @@
  *
  * CLI flags (win over env): --out=<dir> (output dir), --target=<label>.
  *   Note the npm `--` that forwards args to the script.
- * Env: CORE_URL, AITUTOR_URL, QM_URL (set "" to skip an app), SEED_PASSWORD,
+ * Env: CORE_URL, AITUTOR_URL, QM_URL (set "" to skip an app), EDUAI_LOCAL_SEED_PASSWORD,
  *   PERF_WARMUP(3), PERF_SAMPLES(30), PERF_MUT_SAMPLES(15), PERF_POOL_DIR,
  *   PERF_VALIDATE_LIMIT(300), PERF_VALIDATE_WINDOW_MS(60000), TARGET_LABEL,
  *   PERF_SKIP_MUTATIONS(0).  (Output dir is --out only, no env.)
@@ -69,7 +69,13 @@ const QM_URL = (process.env.QM_URL ?? "http://localhost:8000").replace(/\/$/, ""
 // read the contract allows, which is the closest equivalent to the old unpaged call.
 const CORE_PAGE_SIZE = 200;
 const CORE_PAGE_QUERY = `page=1&pageSize=${CORE_PAGE_SIZE}`;
-const SEED_PASSWORD = process.env.SEED_PASSWORD ?? "EduAI2026!";
+const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
+if (!LOCAL_SEED_PASSWORD) {
+  console.error(
+    "FATAL: set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the performance baseline",
+  );
+  process.exit(2);
+}
 const WARMUP = Number(process.env.PERF_WARMUP ?? 3);
 const SAMPLES = Number(process.env.PERF_SAMPLES ?? 30);
 const RUN_MUTATIONS = (process.env.PERF_SKIP_MUTATIONS ?? "0") !== "1";
@@ -257,12 +263,12 @@ async function signIn(email, password) {
 async function mintCookies(actor) {
   const cookies = {};
   for (const [role, email] of Object.entries(ROLE_USERS)) {
-    cookies[role] = await signIn(email, SEED_PASSWORD);
+    cookies[role] = await signIn(email, LOCAL_SEED_PASSWORD);
     console.error(`  ${cookies[role] ? "✓" : "✗"} auth ${role} (${email})`);
     await sleep(400);
   }
   if (actor?.email) {
-    cookies.actor = await signIn(actor.email, actor.password ?? SEED_PASSWORD);
+    cookies.actor = await signIn(actor.email, actor.password ?? LOCAL_SEED_PASSWORD);
     console.error(`  ${cookies.actor ? "✓" : "✗"} auth actor (${actor.email})`);
   }
   return cookies;
@@ -483,7 +489,7 @@ function buildReads(cookies, m) {
       `${AITUTOR_URL}/api/admin/settings/ai-model-policy`,
     );
     if (A) {
-      const c = A.nativeCourseId;
+      const c = A.courseId;
       add("ai-tutor", "GET", "/api/courses/:id", "instructor", `${AITUTOR_URL}/api/courses/${c}`);
       add(
         "ai-tutor",
@@ -1304,26 +1310,13 @@ function buildMutations(m, disc) {
   // ===================== AI-Tutor =====================
   if (AITUTOR_URL && A) {
     const base = AITUTOR_URL;
-    const nc = A.nativeCourseId;
-    ops.push(
-      opUpdate({
-        app: "ai-tutor",
-        method: "PATCH",
-        path: "PATCH /api/courses/:id",
-        role: "instructor",
-        url: `${base}/api/courses/${nc}`,
-        body: (i) => ({ title: `PERF upd ${i}` }),
-      }),
-    );
-    // NOTE: course publish/unpublish are pushed AFTER the module/lesson publish ops
-    // below — module/lesson publish reject when the parent course is unpublished, and
-    // ops run in array order, so unpublishing the native course here would 400 them.
+    const courseId = A.courseId;
     ops.push(
       opCreate({
         app: "ai-tutor",
         path: "POST /api/courses/:id/modules",
         role: "instructor",
-        url: `${base}/api/courses/${nc}/modules`,
+        url: `${base}/api/courses/${courseId}/modules`,
         idPath: "id",
         cleanupUrl: (id) => `${base}/api/modules/${id}`,
         body: (i) => ({ title: `PERF mod ${i}`, position: 0 }),
@@ -1392,28 +1385,10 @@ function buildMutations(m, disc) {
         body: () => ({}),
       }),
     );
-    // Course publish/unpublish run LAST: unpublishing the native course would 400 the
-    // module/lesson publish ops that target it.
-    ops.push(
-      opUpdate({
-        app: "ai-tutor",
-        method: "PATCH",
-        path: "PATCH /api/courses/:id/publish",
-        role: "instructor",
-        url: `${base}/api/courses/${nc}/publish`,
-        body: () => ({}),
-      }),
-    );
-    ops.push(
-      opUpdate({
-        app: "ai-tutor",
-        method: "PATCH",
-        path: "PATCH /api/courses/:id/unpublish",
-        role: "instructor",
-        url: `${base}/api/courses/${nc}/unpublish`,
-        body: () => ({}),
-      }),
-    );
+    // Course publish/unpublish are NOT measured: the #1072 pure-anchor offering is
+    // Core-linked, so both routes write through to Core (see the measurement spec's
+    // SKIP list). Measuring them here would time Core fanout, not local AI Tutor
+    // DB latency. Module/lesson publish/unpublish below stay local and in scope.
     ops.push(
       opUpdate({
         app: "ai-tutor",
@@ -1443,7 +1418,7 @@ function buildMutations(m, disc) {
         cleanupUrl: (id) => `${base}/api/activities/${id}`,
         body: () => ({
           question: "2+2?",
-          mainTopicId: A.nativeTopicId,
+          mainTopicId: A.topicId,
           type: "MCQ",
           options: ["3", "4"],
           answer: 1,
@@ -1472,16 +1447,9 @@ function buildMutations(m, disc) {
         urlFn: (id) => `${base}/api/activities/${id}`,
       }),
     );
-    ops.push(
-      opCreate({
-        app: "ai-tutor",
-        path: "POST /api/courses/:id/topics",
-        role: "instructor",
-        url: `${base}/api/courses/${nc}/topics`,
-        idPath: "id",
-        body: (i) => ({ name: `PERF topic ${uniq("t", i)}` }),
-      }),
-    );
+    // POST /api/courses/:id/topics is NOT measured: the route returns 403 for any
+    // Core-linked offering (#1072) because topics are Core-owned/synchronized, and
+    // the perf pool has no Core-less course. See the measurement spec SKIP list.
     ops.push(
       opCreate({
         app: "ai-tutor",
@@ -1497,36 +1465,25 @@ function buildMutations(m, disc) {
         }),
       }),
     );
-    ops.push(
-      opDelete({
-        app: "ai-tutor",
-        method: "POST",
-        path: "POST /api/admin/courses/:id/enrollments",
-        role: "admin",
-        pool: A.enrollDropUserIds.map((_, i) => `perf_user_new_${process.pid}_${i}`),
-        urlFn: () => `${base}/api/admin/courses/${nc}/enrollments`,
-        body: (uid) => ({ userId: uid, role: "STUDENT" }),
-      }),
-    );
-    ops.push(
-      opDelete({
-        app: "ai-tutor",
-        path: "DELETE /api/admin/courses/:id/enrollments/:uid",
-        role: "admin",
-        pool: A.enrollDropUserIds,
-        urlFn: (uid) => `${base}/api/admin/courses/${nc}/enrollments/${uid}`,
-      }),
-    );
-    ops.push(
-      opUpdate({
-        app: "ai-tutor",
-        method: "PATCH",
-        path: "PATCH /api/admin/courses/:id/enrollments/:uid/role",
-        role: "admin",
-        url: `${base}/api/admin/courses/${nc}/enrollments/${A.enrollRoleUserIds[0]}/role`,
-        body: (i) => ({ role: i % 2 ? "TA" : "STUDENT" }),
-      }),
-    );
+    // POST enrollment is a local idempotent upsert (no Core call) and stays in
+    // scope. It needs a real Core CUID — CourseEnrollment.userId holds a Core
+    // identity, so invented ids are invalid — so reuse the Core perf actor's id.
+    if (typeof C.actor?.id === "string" && C.actor.id.length > 0) {
+      ops.push(
+        opUpdate({
+          app: "ai-tutor",
+          method: "POST",
+          path: "POST /api/admin/courses/:id/enrollments",
+          role: "admin",
+          url: `${base}/api/admin/courses/${courseId}/enrollments`,
+          body: () => ({ userId: C.actor.id, role: "STUDENT" }),
+        }),
+      );
+    }
+    // Enrollment DELETE and role-PATCH are NOT measured: for a Core-linked
+    // offering they require a matching Core enrollment and write through to Core
+    // (see the measurement spec SKIP list), so the local-DB baseline would 404 on
+    // the old synthetic fixtures and would otherwise time Core fanout.
     ops.push(
       opUpdate({
         app: "ai-tutor",
@@ -1884,11 +1841,7 @@ function preflight(m) {
     ],
     "core",
   );
-  chk(
-    m.aitutor,
-    ["poolModulesDrop", "poolLessonsDrop", "poolActivitiesDrop", "enrollDropUserIds"],
-    "aitutor",
-  );
+  chk(m.aitutor, ["poolModulesDrop", "poolLessonsDrop", "poolActivitiesDrop"], "aitutor");
   chk(
     m.qm,
     [

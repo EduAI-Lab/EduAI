@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLocalUser } from "~/hooks/useLocalUser";
 import api from "~/lib/api";
-import { loadApiKeysFromStorage, saveApiKeysToStorage } from "~/lib/provider-keys";
+import {
+  API_KEYS_CLEARED_EVENT,
+  loadApiKeysFromStorage,
+  saveApiKeysToStorage,
+} from "~/lib/provider-keys";
 
 export type UseApiKeysResult = {
   /** provider id → key. */
@@ -20,30 +25,56 @@ export type UseApiKeysResult = {
  * is the same everywhere — mirroring Core's `use-api-keys` + `ApiKeySettings`.
  */
 export function useApiKeys(): UseApiKeysResult {
-  const [keys, setKeys] = useState<Record<string, string>>({});
-  const [loaded, setLoaded] = useState(false);
+  const { user } = useLocalUser();
+  const userId = user?.id ?? null;
+  const [accountKeys, setAccountKeys] = useState<{
+    userId: string | null;
+    keys: Record<string, string>;
+    loaded: boolean;
+  }>({ userId: null, keys: {}, loaded: false });
+  const isCurrentAccount = accountKeys.userId === userId;
+  const keys = isCurrentAccount ? accountKeys.keys : {};
+  const loaded = isCurrentAccount && accountKeys.loaded;
 
   useEffect(() => {
-    setKeys(loadApiKeysFromStorage());
-    setLoaded(true);
-  }, []);
+    setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
+  }, [userId]);
 
-  const setKey = useCallback((provider: string, key: string) => {
-    setKeys((prev) => {
-      const next = { ...prev, [provider]: key };
-      saveApiKeysToStorage(next);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    const handleKeysCleared = (event: Event) => {
+      const clearedUserId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+      if (clearedUserId !== userId) return;
+      setAccountKeys({ userId, keys: {}, loaded: true });
+    };
+    window.addEventListener(API_KEYS_CLEARED_EVENT, handleKeysCleared);
+    return () => window.removeEventListener(API_KEYS_CLEARED_EVENT, handleKeysCleared);
+  }, [userId]);
 
-  const removeKey = useCallback((provider: string) => {
-    setKeys((prev) => {
-      const next = { ...prev };
-      delete next[provider];
-      saveApiKeysToStorage(next);
-      return next;
-    });
-  }, []);
+  const setKey = useCallback(
+    (provider: string, key: string) => {
+      if (!userId) return;
+      setAccountKeys((previous) => {
+        const previousKeys = previous.userId === userId ? previous.keys : {};
+        const next = { ...previousKeys, [provider]: key };
+        saveApiKeysToStorage(userId, next);
+        return { userId, keys: next, loaded: true };
+      });
+    },
+    [userId],
+  );
+
+  const removeKey = useCallback(
+    (provider: string) => {
+      if (!userId) return;
+      setAccountKeys((previous) => {
+        const next = { ...(previous.userId === userId ? previous.keys : {}) };
+        delete next[provider];
+        saveApiKeysToStorage(userId, next);
+        return { userId, keys: next, loaded: true };
+      });
+    },
+    [userId],
+  );
 
   const hasKey = useCallback((provider: string) => Boolean(keys[provider]), [keys]);
   const getKey = useCallback((provider: string) => keys[provider] ?? "", [keys]);

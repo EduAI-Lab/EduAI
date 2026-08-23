@@ -7,6 +7,7 @@ import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/componen
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
+import { CurrentUserIdProvider } from "~/contexts/current-user";
 import type { User } from "~/lib/auth/types";
 
 /**
@@ -118,22 +119,24 @@ export function CoreAppShell({
   const resolvedTitle = resolveCoreHeaderTitle(pathname, title);
 
   return (
-    <AppShell
-      sidebar={sidebar}
-      title={resolvedTitle}
-      breadcrumbs={breadcrumbs}
-      headerActions={<CoreHeaderActions extraActions={actions} />}
-      commandPalette={
-        <>
-          <CommandPalette user={user} />
-          {tour}
-        </>
-      }
-      insetClassName={insetClassName}
-      mainClassName={mainClassName}
-      providerClassName={providerClassName}
-    >
-      {children}
-    </AppShell>
+    <CurrentUserIdProvider userId={user.id}>
+      <AppShell
+        sidebar={sidebar}
+        title={resolvedTitle}
+        breadcrumbs={breadcrumbs}
+        headerActions={<CoreHeaderActions extraActions={actions} />}
+        commandPalette={
+          <>
+            <CommandPalette user={user} />
+            {tour}
+          </>
+        }
+        insetClassName={insetClassName}
+        mainClassName={mainClassName}
+        providerClassName={providerClassName}
+      >
+        {children}
+      </AppShell>
+    </CurrentUserIdProvider>
   );
 }

@@ -44,7 +44,7 @@ export function createPinnedLookup(): LookupFunction {
     );
   };
 
-  return lookup as unknown as LookupFunction;
+  return lookup as LookupFunction;
 }
 
 let pinnedAgent: Agent | undefined;

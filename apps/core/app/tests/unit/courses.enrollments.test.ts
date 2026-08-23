@@ -20,6 +20,7 @@ vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/courses/enrollments.server")>();
   return {
     ...actual,
+    getCourseEnrollmentForUser: vi.fn(),
     getCourseEnrollments: vi.fn(),
     getCourseEnrollmentsPage: vi.fn(),
     addEnrollment: vi.fn(),
@@ -52,12 +53,14 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import {
+  getCourseEnrollmentForUser,
   getCourseEnrollments,
   getCourseEnrollmentsPage,
   addEnrollment,
 } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const VALID_KEY = "test-service-key";
 
@@ -98,18 +101,18 @@ const MOCK_COURSE = {
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = MOCK_COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = MOCK_COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(id?: string, authorization?: string) {
+function makeArgs(id?: string, authorization?: string, query = "") {
   const headers = new Headers();
   if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(`http://localhost/api/courses/${id ?? ""}/enrollments`, {
+    request: new Request(`http://localhost/api/courses/${id ?? ""}/enrollments${query}`, {
       headers,
     }),
     params: id !== undefined ? { id } : {},
@@ -136,6 +139,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue(null);
   vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
   vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
+  vi.mocked(getCourseEnrollmentForUser).mockResolvedValue(MOCK_ENROLLMENTS[0] as never);
   vi.mocked(getCourseEnrollmentsPage).mockResolvedValue({
     page: MOCK_ENROLLMENTS,
     nextCursor: null,
@@ -223,6 +227,26 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     expect(body.enrollments).toHaveLength(3);
     expect(auth.api.getSession).not.toHaveBeenCalled();
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();
+  });
+
+  it("returns only the requested enrollment for service-key authorization", async () => {
+    const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`, "?userId=user-1"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      enrollment: expect.objectContaining({ studentId: "user-1", role: "STUDENT" }),
+    });
+    expect(getCourseEnrollmentForUser).toHaveBeenCalledWith("course-1", "user-1");
+    expect(getCourseEnrollments).not.toHaveBeenCalled();
+  });
+
+  it("returns a null enrollment when the requested user is not enrolled", async () => {
+    vi.mocked(getCourseEnrollmentForUser).mockResolvedValue(null);
+
+    const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`, "?userId=missing"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enrollment: null });
   });
 
   // --- 200 user auth (TA and up) ---

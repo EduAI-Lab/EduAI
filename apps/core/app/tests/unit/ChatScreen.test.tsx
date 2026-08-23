@@ -11,6 +11,7 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
+const captureApiKeysOwner = vi.hoisted(() => vi.fn());
 const {
   handleSubmitMock,
   handleInputChangeMock,
@@ -79,9 +80,12 @@ vi.mock("~/hooks/api/use-chat-history", () => ({
 }));
 
 vi.mock("~/hooks/use-api-keys", () => ({
-  useApiKeys: () => ({
-    getValidApiKeys: vi.fn(() => ({})),
-  }),
+  useApiKeys: (ownerId?: string | null) => {
+    captureApiKeysOwner(ownerId);
+    return {
+      getValidApiKeys: vi.fn(() => ({})),
+    };
+  },
 }));
 
 vi.mock("~/hooks/use-assistive-reorientation", () => ({
@@ -296,6 +300,11 @@ function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
 }
 
 describe("ChatScreen — header", () => {
+  it("binds its provider-key store to the authenticated loader user", () => {
+    renderChatScreen();
+    expect(captureApiKeysOwner).toHaveBeenCalledWith(baseData.user.id);
+  });
+
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
@@ -360,7 +369,6 @@ describe("ChatScreen — header", () => {
           content: "Stored partial answer",
           metadata: {
             resolvedModelId: "openai:gpt-4",
-            finishReason: "length",
             hitLongOutputCap: true,
           },
         },
@@ -578,13 +586,13 @@ describe("ChatScreen — header", () => {
   });
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
-    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
-      resolveFetch = resolve;
-    });
-    const fetchSpy = vi
-      .spyOn(global, "fetch")
-      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+    let resolveFetch: (value: { json: () => Promise<Record<string, unknown>> }) => void;
+    const fetchPromise = new Promise<{ json: () => Promise<Record<string, unknown>> }>(
+      (resolve) => {
+        resolveFetch = resolve;
+      },
+    );
+    const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(fetchPromise as Promise<Response>);
 
     const { router } = renderChatScreen(null, autoRoutingData);
 

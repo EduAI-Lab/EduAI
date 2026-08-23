@@ -10,6 +10,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
+
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi.fn(),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,
@@ -25,6 +33,7 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
 });
 
 import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Move-to-position reordering (#1207)", () => {
   let prof;
@@ -40,6 +49,14 @@ describe("Move-to-position reordering (#1207)", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const assigned = course?.instructors?.some((entry) => entry.userId === userId);
+        const role = assigned && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? "allowed" : "denied", role };
+      },
+    );
   });
 
   /** Create `count` extra modules after the seeded one, at positions 1..count. */

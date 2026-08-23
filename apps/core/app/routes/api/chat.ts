@@ -12,10 +12,13 @@ import {
 import {
   classifyProviderError,
   createProviderFailure,
+  isProviderAbortError,
   providerFailureBody,
   providerFailureHeaders,
+  providerErrorDiagnostic,
   type ProviderFailure,
 } from "~/lib/ai/provider-errors.server";
+import { providerConfigurationHint } from "~/lib/ai/provider-types";
 import {
   activeRouterVersion,
   parseRouterMode,
@@ -30,6 +33,7 @@ import {
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
@@ -41,6 +45,12 @@ import { createStreamStartupProbe } from "~/lib/ai/routing/fleet/probe-stream";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { buildFleetRouterFeatures, parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
 import { parseJobType, type FleetPick } from "~/lib/ai/routing/fleet/types";
+import {
+  enableBedrockOnSettings,
+  isClientRequestedBedrockModel,
+  tryActivateBedrockOverflow,
+  type BedrockOverflowActivation,
+} from "~/lib/ai/routing/bedrock/overflow.server";
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
@@ -145,6 +155,11 @@ import {
   withCourseScopeRedirectMetadata,
 } from "~/lib/chat/chat-message-metadata";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  readBoundedChatJson,
+  resolveChatInputLimits,
+  validateChatBody,
+} from "~/lib/chat-input.server";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -198,6 +213,7 @@ function resolveAutoRouting(model: string | undefined): {
 
 const TOOL_MAX_STEPS = Math.min(32, Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12));
 type GenericMessage = Record<string, any>;
+type RegistryModelId = `${string}:${string}`;
 
 type StoredMessageRecord = {
   messageId: string;
@@ -471,28 +487,14 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 }
 
 function formatStreamError(error: unknown): string {
-  if (error instanceof Error) {
-    const message = error.message || error.name;
-    if (message.includes("Invalid arguments for tool")) {
-      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
-    }
-    return message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown stream error";
-  }
+  return classifyProviderError(error, "stream").message;
 }
 
 function logStreamError(error: unknown, trace: Record<string, unknown>): void {
   console.error("[chat-api] stream error", {
     error: formatStreamError(error),
     trace,
-    raw: error,
+    diagnostic: providerErrorDiagnostic(error),
   });
 }
 
@@ -516,7 +518,7 @@ function providerStreamErrorMessage(
 
 function isClientAbort(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
-  return error instanceof Error && error.name === "AbortError";
+  return isProviderAbortError(error);
 }
 
 /** Empty response when the client cancelled (e.g. stop button / fetch abort). */
@@ -550,7 +552,7 @@ export async function action({ request }: ActionFunctionArgs) {
       isServiceKeyCaller = true;
       session = {
         user: { id: "service", name: "Service", role: "ADMIN" },
-      } as unknown as typeof session;
+      } as typeof session;
     }
 
     if (!session?.user) {
@@ -560,11 +562,42 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const body = await request.json();
-    const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
+    const chatInputLimits = resolveChatInputLimits();
+    const bodyResult = await readBoundedChatJson(request, chatInputLimits.maxBodyBytes);
+    if (!bodyResult.ok) {
+      return new Response(JSON.stringify({ error: bodyResult.error }), {
+        status: bodyResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const validationResult = validateChatBody(bodyResult.body, chatInputLimits);
+    if (!validationResult.ok) {
+      return new Response(JSON.stringify({ error: validationResult.error }), {
+        status: validationResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const body = validationResult.body;
+    const rawMessages: unknown[] = validationResult.messages;
     let model = typeof body.model === "string" ? body.model.trim() : undefined;
     if (model === "") {
       model = undefined;
+    }
+
+    // Bedrock is overflow-only (#1441). A client-supplied bedrock:* model
+    // would bypass both the local-capacity gate and the global cost cap.
+    if (isClientRequestedBedrockModel(model)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+          code: "BEDROCK_NOT_SELECTABLE",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (model === "auto-hybrid") {
@@ -712,7 +745,14 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chatMode === "admin" && (isServiceKeyCaller || actingUser.role !== UserRole.ADMIN)) {
+    if (
+      chatMode === "admin" &&
+      (isServiceKeyCaller ||
+        actingUser.role !== UserRole.ADMIN ||
+        // Re-check isActive against the DB (#1571): a deactivated admin's live
+        // session must not retain admin chat-tools access until it expires.
+        !(await isActiveAdminUser(actingUser.id)))
+    ) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
@@ -1062,7 +1102,7 @@ export async function action({ request }: ActionFunctionArgs) {
         courseId: effectiveCourseId,
         systemPrompt: trimmedSystemPrompt,
         adhdAssist,
-      } as unknown as NonNullable<typeof chat>;
+      } as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {
@@ -1245,6 +1285,7 @@ export async function action({ request }: ActionFunctionArgs) {
           HYBRID_RAG_MAX_CHUNKS,
           undefined,
           restrictRagToStudentVisible,
+          { signal: request.signal },
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
@@ -1316,9 +1357,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const resolvedModelId = model!;
-    const parsedModel = parseModelIdentifier(resolvedModelId);
-    if (!parsedModel) {
+    let resolvedModelId = model!;
+    const initialParsedModel = parseModelIdentifier(resolvedModelId);
+    if (!initialParsedModel) {
       return new Response(
         JSON.stringify({
           error:
@@ -1330,6 +1371,8 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+    let parsedModel = initialParsedModel;
+    let telemetryServerId: string | null = null;
 
     // Auto routing already enforces `requireImages` centrally (finalizePick
     // in router.ts). An explicitly-chosen model (`routeWithAuto === false`,
@@ -1511,13 +1554,21 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Persist only client-authored turns (user messages). The assistant reply is
-    // owned by `onFinish`/the awaited path below, which stores it once under a
-    // server id. Clients resend their whole `useChat` transcript every turn, and
-    // their assistant copies carry client-generated ids that never match the
-    // server id — persisting those here is what duplicated history on restore.
+    // Persist only client-authored turns (user messages) that remain in the
+    // bounded model context. The assistant reply is owned by `onFinish`/the
+    // awaited path below, which stores it once under a server id. Clients resend
+    // their whole `useChat` transcript every turn, and their assistant copies
+    // carry client-generated ids that never match the server id — persisting
+    // those here is what duplicated history on restore. Discarding incoming
+    // turns that were already trimmed from this request also prevents a caller
+    // from turning a single bounded POST into an unbounded storage write.
+    const persistableMessageIds = new Set(
+      trimmedMessages.map((message) => message.id).filter(isNonEmptyString),
+    );
     await appendMessages(
-      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+      normalizedIncomingMessages.filter(
+        (message) => message.role !== "assistant" && persistableMessageIds.has(message.id),
+      ),
     );
 
     // Course-scope guardrail: resolve the classifier promise kicked off
@@ -1584,7 +1635,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let aiModel;
     try {
-      aiModel = registry.languageModel(resolvedModelId);
+      aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
     } catch (err: unknown) {
       return rejectProviderFailure(classifyProviderError(parsedModel.providerId, err), {
         chatMode,
@@ -1760,6 +1811,7 @@ export async function action({ request }: ActionFunctionArgs) {
             HYBRID_RAG_MAX_CHUNKS,
             undefined,
             restrictRagToStudentVisible,
+            { signal: request.signal },
           );
           return { hits };
         } catch (error) {
@@ -2154,6 +2206,26 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
+    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+      resolvedModelId = overflow.resolvedModelId;
+      const nextParsed = parseModelIdentifier(resolvedModelId);
+      if (!nextParsed) {
+        throw new Error(`Invalid Bedrock overflow model id: ${resolvedModelId}`);
+      }
+      parsedModel = nextParsed;
+      model = resolvedModelId;
+      telemetryServerId = overflow.serverId;
+      fleetPick = null;
+      validatedApiKeys = enableBedrockOnSettings(validatedApiKeys);
+      registry = createAIProviderRegistry(validatedApiKeys);
+      aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
+      streamConfig.model = aiModel;
+      routerContext = {
+        ...routerContext,
+        bedrockOverflow: true,
+      };
+    };
+
     const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
     let admissionWaitedMs = 0;
@@ -2167,18 +2239,30 @@ ${buildEmptyCourseRagBlock()}`;
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
-          return new Response(
-            JSON.stringify({
-              error: "Server busy — too many concurrent AI requests. Try again shortly.",
-              code: "AI_ADMISSION_TIMEOUT",
-            }),
-            {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
+          const overflow = await tryActivateBedrockOverflow({
+            userId: actingUser.id,
+          });
+          if (overflow) {
+            applyBedrockOverflow(overflow);
+            chatApiTrace("bedrock overflow after admission timeout", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+            });
+          } else {
+            return new Response(
+              JSON.stringify({
+                error: "Server busy — too many concurrent AI requests. Try again shortly.",
+                code: "AI_ADMISSION_TIMEOUT",
+              }),
+              {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
     const releaseAdmission = () => {
@@ -2217,7 +2301,7 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
-        serverId: fleetPick?.serverId ?? null,
+        serverId: telemetryServerId ?? fleetPick?.serverId ?? null,
         chatId: chat?.id ?? null,
       });
     };
@@ -2226,7 +2310,7 @@ ${buildEmptyCourseRagBlock()}`;
     // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
     // connection/startup failures throw from runStreamText and Slice 2 can retry.
     // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
-    const shouldProbeFleetStream = Boolean(fleetPick) && parsedModel.providerId === "vllm";
+    let shouldProbeFleetStream = Boolean(fleetPick) && parsedModel.providerId === "vllm";
 
     const runStreamText = async () => {
       const probe = shouldProbeFleetStream
@@ -2372,7 +2456,7 @@ ${buildEmptyCourseRagBlock()}`;
               nextPick.baseUrl,
             );
             registry = createAIProviderRegistry(validatedApiKeys);
-            aiModel = registry.languageModel(resolvedModelId);
+            aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
             streamConfig.model = aiModel;
             console.log("[fleet] retry attempt", {
               from: failedPick.serverId,
@@ -2399,7 +2483,21 @@ ${buildEmptyCourseRagBlock()}`;
               model: resolvedModelId,
             });
           } else {
-            throw error;
+            const overflow = await tryActivateBedrockOverflow({
+              userId: actingUser.id,
+            });
+            if (!overflow) {
+              throw error;
+            }
+            applyBedrockOverflow(overflow);
+            shouldProbeFleetStream = false;
+            releaseAdmission();
+            chatApiTrace("bedrock overflow after fleet exhausted", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+              previousServerId: failedPick.serverId,
+            });
+            ({ result, streamData: liveStreamData } = await runStreamText());
           }
         } catch (retryError) {
           releaseAdmission();
@@ -2529,7 +2627,7 @@ ${buildEmptyCourseRagBlock()}`;
               routingTier,
               wasAuto,
               resolvedRouterVersion,
-              fleetPick?.serverId ?? null,
+              telemetryServerId ?? fleetPick?.serverId ?? null,
             ),
           );
 
@@ -2580,7 +2678,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...((telemetryServerId ?? fleetPick?.serverId)
+                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
+                : {}),
             },
           },
         );
@@ -2596,11 +2696,11 @@ ${buildEmptyCourseRagBlock()}`;
             stage: "oversight-provider",
           });
         }
-        console.error("Error in ADHD oversight response:", error);
+        console.error("Error in ADHD oversight response:", providerErrorDiagnostic(error));
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            code: "ADHD_OVERSIGHT_FAILED",
           }),
           {
             status: 500,
@@ -2628,7 +2728,7 @@ ${buildEmptyCourseRagBlock()}`;
           routingTier,
           wasAuto,
           resolvedRouterVersion,
-          fleetPick?.serverId ?? null,
+          telemetryServerId ?? fleetPick?.serverId ?? null,
         ),
       );
       const release = admissionRelease;
@@ -2734,7 +2834,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...((telemetryServerId ?? fleetPick?.serverId)
+                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
+                : {}),
             },
           },
         );
@@ -2750,11 +2852,13 @@ ${buildEmptyCourseRagBlock()}`;
             stage: "non-streaming-provider",
           });
         }
-        console.error("Error in non-streaming response:", error);
+        console.error("[chat-api] non-streaming response finalization failed", {
+          trace: streamTrace,
+          diagnostic: providerErrorDiagnostic(error),
+        });
         return new Response(
           JSON.stringify({
-            error: "Failed to generate non-streaming response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            error: "Failed to finalize non-streaming response",
           }),
           {
             status: 500,
@@ -2767,7 +2871,7 @@ ${buildEmptyCourseRagBlock()}`;
     if (isClientAbort(error, request.signal)) {
       return clientAbortResponse();
     }
-    console.error("Chat API error:", error);
+    console.error("Chat API error:", providerErrorDiagnostic(error));
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

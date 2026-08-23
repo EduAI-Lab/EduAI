@@ -6,6 +6,7 @@ import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
+import { assertAiJobQueueEnabled } from "./availability.server";
 import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
@@ -295,7 +296,7 @@ export async function processAiJob(
       where: { id: row.id, status: "RUNNING" },
       data: {
         status: "COMPLETED",
-        result: result as unknown as Prisma.InputJsonValue,
+        result: result as Prisma.InputJsonValue,
         errorMessage: null,
         completedAt: new Date(),
       },
@@ -345,11 +346,13 @@ export function createAiJobWorker(
   options: Partial<WorkerOptions> = {},
   execute: ExecuteAiJob = executeAiJobPayload,
 ): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
+  assertAiJobQueueEnabled();
+
   const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
     (job) => processAiJob(job, queueName, execute),
     {
-      connection: redis as unknown as ConnectionOptions,
+      connection: redis as ConnectionOptions,
       concurrency: workerConcurrency(queueName),
       ...options,
     },
@@ -365,6 +368,7 @@ export function createAiJobWorker(
 }
 
 export function startAiJobWorkers(): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[] {
+  assertAiJobQueueEnabled();
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }
 

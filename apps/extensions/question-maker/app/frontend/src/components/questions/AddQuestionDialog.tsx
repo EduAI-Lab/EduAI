@@ -960,12 +960,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       return;
     }
     const courseCode = resolveCourseCodeForEduAI();
-    if (!courseCode) {
-      setError(
-        "AI service requires a course code. Update the course with a code or ensure the course exists in the AI service.",
-      );
-      return;
-    }
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
@@ -1055,7 +1049,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
       const response = await eduaiService.generateQuestions({
         prompt: promptWithTopics,
-        courseCode,
+        courseId,
+        ...(courseCode ? { courseCode } : {}),
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
@@ -2076,7 +2071,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           setProviderApiKey("");
           setApiKeySaveState("saved");
           toast("API key saved", {
-            description: "Stored locally in your browser for this provider.",
+            description:
+              "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
           });
           // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
           void eduaiStatus.refresh();

@@ -3,8 +3,9 @@
  *
  * Route: /student/lesson/:lessonId
  * Auth: STUDENT (enforced by clientLoader via requireClientUser)
- * Loads: lesson + activities for the lesson, then walks up to module + course
- *        for breadcrumbs (sequential because module/course depend on lesson).
+ * Loads: lesson + activities in one parallel wave alongside the role gate;
+ *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
+ *        (#1334) so the lesson body is not blocked on Core/ordinal work.
  * Owns: activity progression (idx), MCQ/SHORT_TEXT submission, per-activity
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
@@ -48,7 +49,7 @@ import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
 import api from "../lib/api";
-import type { Activity, Course, Lesson, Module, ModuleDetail } from "../lib/types";
+import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -59,6 +60,7 @@ import { splitTitle } from "~/lib/course-title";
 import { accentForCourse } from "~/lib/course-display";
 import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Activities the player holds at once (#1207). Comfortably larger than any
@@ -104,19 +106,22 @@ function createFeedbackState(): StudentFeedbackState {
 }
 
 /**
- * Resolves the lesson, its activities, and the parent module/course needed
- * for breadcrumbs. Lesson + activities run in parallel; module/course are
- * sequential because their IDs come out of the lesson row.
+ * Resolves the lesson and its activities in one wave with the role gate
+ * (#1334). Auth and data start concurrently — when AuthProvider already seeded
+ * the session, `requireClientUser` is sync; otherwise the role check races the
+ * lesson/activity fetches and rejects after if the role is wrong. Breadcrumb
+ * ancestry is intentionally NOT awaited here — the component fetches it after
+ * paint so header crumbs leave the LCP / lesson-body path.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(["STUDENT", "TA"]);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response("Invalid lesson id", { status: 400 });
   }
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lesson, activitiesPage] = await Promise.all([
+    requireClientUser(["STUDENT", "TA"]),
+    api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
     // next as the student approaches the end (see `ensureActivitiesLoaded`),
@@ -124,34 +129,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.activitiesForLesson(lessonId, { page: 1, pageSize: PLAYER_ACTIVITY_PAGE_SIZE }),
   ]);
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so lessons whose titles
-  // carry no number still follow the decimal system.
-  //
-  // #1207: served by the server now. This used to be two `findIndex` walks over
-  // the full sibling module and lesson lists — which quietly produced no order
-  // text at all once either list exceeded one page.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module?.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
   };
 }
 
@@ -165,7 +146,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
-  const { course, module, lesson, activities, activitiesTotal, orderText } = loaderData;
+  const { lesson, activities, activitiesTotal } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
   // Highest activity page appended so far (#1207); the loader supplies page 1.
@@ -547,7 +531,47 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       : { label: "Lesson" },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          // Non-fatal: keep skeleton placeholders rather than blocking the player.
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
+
+  const skeletonBreadcrumbItems = [
+    { label: "Courses", href: "/student" },
+    { label: "…" },
+    { label: "…" },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: "Lesson" },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   const goPrev = useCallback(() => {
     setIdx((i) => Math.max(0, i - 1));
@@ -728,3 +752,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

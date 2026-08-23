@@ -66,78 +66,82 @@ describe("useApiKeys — server loading", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.apiKeys.openai?.apiKey).toBeUndefined();
   });
+
+  it("reloads and clears cached provider metadata when the account changes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { providerName: "google", isEnabled: true, hasKey: true, baseUrl: null },
+        ],
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ ownerId }) => useApiKeys(ownerId), {
+      initialProps: { ownerId: "user-a" },
+    });
+    await waitFor(() => expect(result.current.apiKeys.openai).toBeDefined());
+
+    rerender({ ownerId: "user-b" });
+    expect(result.current.apiKeys.openai).toBeUndefined();
+    await waitFor(() => expect(result.current.apiKeys.google).toBeDefined());
+
+    expect(result.current.apiKeys.openai).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// localStorage migration
+// Unsafe legacy localStorage cleanup
 // ---------------------------------------------------------------------------
 
-describe("useApiKeys — localStorage migration", () => {
-  it("promotes localStorage keys to server when server returns empty", async () => {
+describe("useApiKeys — legacy localStorage cleanup", () => {
+  it("deletes an unowned legacy keyset without uploading it", async () => {
     localStorage.setItem(
       LEGACY_STORAGE_KEY,
       JSON.stringify({ openai: { apiKey: "sk-local", isEnabled: true } }),
     );
 
-    const fetchMock = vi
-      .fn()
-      // First call: GET /api/user-provider-settings returns empty
-      .mockResolvedValueOnce({ ok: true, json: async () => [] })
-      // Subsequent calls: POST (migration) and DELETE (localStorage clear)
-      .mockResolvedValue({ ok: true, json: async () => ({}) });
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { result } = renderHook(() => useApiKeys());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // State is hydrated from localStorage while migration runs.
-    expect(result.current.apiKeys.openai?.apiKey).toBe("sk-local");
-
-    // Migration POST was fired.
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/user-provider-settings",
-        expect.objectContaining({ method: "POST" }),
-      ),
-    );
-
-    // localStorage is cleared after migration.
-    await waitFor(() => expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull());
-  });
-
-  it("skips migration when server already has settings", async () => {
-    localStorage.setItem(
-      LEGACY_STORAGE_KEY,
-      JSON.stringify({ openai: { apiKey: "sk-old", isEnabled: true } }),
-    );
-
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => [{ providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null }],
+      status: 200,
+      json: async () => [],
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() => useApiKeys());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Only the initial GET was made — no migration POST.
+    expect(result.current.apiKeys).toEqual({});
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // localStorage untouched.
-    expect(localStorage.getItem(LEGACY_STORAGE_KEY)).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith("/api/user-provider-settings", {
+      credentials: "include",
+    });
   });
 
-  it("falls back to localStorage when fetch fails", async () => {
+  it("never restores an unowned legacy key when the server is unavailable", async () => {
     localStorage.setItem(
       LEGACY_STORAGE_KEY,
       JSON.stringify({ google: { apiKey: "g-key", isEnabled: true } }),
     );
+
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")));
 
     const { result } = renderHook(() => useApiKeys());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(result.current.apiKeys.google?.apiKey).toBe("g-key");
+    expect(result.current.apiKeys).toEqual({});
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
   });
 });
 
@@ -180,6 +184,29 @@ describe("useApiKeys — updateProviderSettings", () => {
     expect(result.current.apiKeys.openai?.apiKey).toBe(DB_STORED_KEY);
     expect(result.current.apiKeys.openai?.isEnabled).toBe(false);
   });
+
+  it("rolls back the optimistic state when the server rejects the save", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useApiKeys("user-a"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.updateProviderSettings("openai", {
+        apiKey: "sk-not-saved",
+        isEnabled: true,
+      });
+    });
+    expect(result.current.apiKeys.openai?.isEnabled).toBe(true);
+
+    await waitFor(() => expect(result.current.apiKeys.openai).toBeUndefined());
+    expect(consoleSpy).toHaveBeenCalled();
+  });
 });
 
 describe("useApiKeys — removeProviderSettings", () => {
@@ -212,6 +239,29 @@ describe("useApiKeys — removeProviderSettings", () => {
         expect.objectContaining({ method: "DELETE" }),
       ),
     );
+  });
+
+  it("restores the provider when the server rejects the delete", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null },
+        ],
+      })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useApiKeys("user-a"));
+    await waitFor(() => expect(result.current.apiKeys.openai).toBeDefined());
+
+    act(() => result.current.removeProviderSettings("openai"));
+    expect(result.current.apiKeys.openai).toBeUndefined();
+
+    await waitFor(() => expect(result.current.apiKeys.openai).toBeDefined());
   });
 });
 

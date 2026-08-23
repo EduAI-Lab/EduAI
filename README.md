@@ -43,7 +43,7 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
-Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
 Core conversations are pinned to a single course so their history and RAG context cannot mix across courses. Selecting another course from an existing conversation starts a fresh chat with that course selected.
@@ -136,7 +136,7 @@ Requires Core, AI Tutor, and Question Maker dev servers already running locally 
 
 The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
 
-Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
+Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `EDUAI_LOCAL_SEED_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
 
 ## Route-scoped chat stylesheet (EduAI Core, `#1222`)
 
@@ -163,7 +163,16 @@ npm run dev
 
 On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
 
-**Seeded dev accounts** — all share password `EduAI2026!`
+**Local fixture password** — before starting Core or running a seed, generate a unique password for this disposable local database and export it as `EDUAI_LOCAL_SEED_PASSWORD`:
+
+```bash
+export EDUAI_LOCAL_SEED_PASSWORD="$(openssl rand -base64 24)"
+npm run dev
+```
+
+Keep this value local and use the same shell/environment for local tools that sign in as a seeded account. The seed refuses to run without this explicit local-only secret and the required loopback/development settings; never copy it to a shared or production system.
+
+**Seeded dev accounts** — all use the local-only value in `EDUAI_LOCAL_SEED_PASSWORD`
 
 | Role | Email | Name |
 | --- | --- | --- |
@@ -442,8 +451,22 @@ From the monorepo root:
 npm run test:docker              # all unit + integration suites, in Docker
 npm run test:docker:unit         # all unit suites only, in Docker
 npm run test:docker:integration  # all integration suites only, in Docker
-npm run test:e2e                 # all e2e suites; WARNING: no e2e tests currently
+npm run test:e2e                 # all e2e suites (Playwright, full stack in Docker)
 ```
+
+`test:e2e` boots the whole stack, which is slow when you only care about one
+app. `E2E_SUITES` narrows both the containers it starts and the specs it runs —
+`all` (default), `core`, `ai-tutor`, `question-maker`, `cross-service`, or a
+comma-separated list:
+
+```bash
+E2E_SUITES=ai-tutor npm run test:e2e
+```
+
+The e2e stack publishes ports 3000/3001/4000 (and 5173/8000 for Question
+Maker), so stop any local `npm run dev` servers first — Docker will otherwise
+start the containers with those ports unpublished and the run will silently hit
+your dev servers instead.
 
 #### Two runners, one naming scheme
 

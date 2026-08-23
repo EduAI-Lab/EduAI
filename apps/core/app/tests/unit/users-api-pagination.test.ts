@@ -306,7 +306,7 @@ describe("GET /api/users course student candidates", () => {
     // other admin-only field or relation count may appear here, since those
     // leak the moment they're selected regardless of what the mapped response
     // later omits.
-    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as unknown as {
       select?: Record<string, unknown>;
     };
     expect(findManyArgs.select).toEqual({ id: true, name: true, email: true });

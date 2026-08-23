@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve, dirname, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveIntegrationTestDatabaseUrl } from "./test-database-url";
+import type { ExecBinOptions } from "./helpers/route-fixtures";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(__dirname, "..", ".."); // apps/core
@@ -21,7 +22,7 @@ function findBin(name: string): string {
   throw new Error(`Could not find ${name} binary. Make sure it is installed.`);
 }
 
-function execBin(bin: string, args: string[], opts: object): void {
+function execBin(bin: string, args: string[], opts: ExecBinOptions): void {
   if (isWindows) {
     execFileSync("cmd.exe", ["/c", bin, ...args], opts);
   } else {

@@ -39,8 +39,31 @@ export interface OCRJob {
   };
 }
 
-// Constants for history management
+// Constants for account-bound history management
+/** Legacy unscoped key. Its contents are discarded because no owner can be established safely. */
 export const OCR_HISTORY_KEY = "ocr-upload-history";
+export const OCR_HISTORY_KEY_PREFIX = `${OCR_HISTORY_KEY}:v2:`;
+export const OCR_HISTORY_CLEARED_EVENT = "eduai:ocr-history-cleared";
+
+export function getOCRHistoryStorageKey(userId: string | null | undefined): string | null {
+  const normalizedUserId = userId?.trim();
+  return normalizedUserId
+    ? `${OCR_HISTORY_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}`
+    : null;
+}
+
+export function clearOCRHistoryForUser(userId: string | null | undefined): void {
+  if (typeof window === "undefined") return;
+  const storageKey = getOCRHistoryStorageKey(userId);
+  try {
+    if (storageKey) localStorage.removeItem(storageKey);
+    localStorage.removeItem(OCR_HISTORY_KEY);
+  } catch {
+    // Continue logout even when browser storage is unavailable.
+  }
+  window.dispatchEvent(new CustomEvent(OCR_HISTORY_CLEARED_EVENT, { detail: { userId } }));
+}
+
 export const MAX_HISTORY_ITEMS = 20;
 export const HISTORY_RETENTION_DAYS = 7;
 export const MAX_STORED_QUESTIONS_PER_JOB = 50;

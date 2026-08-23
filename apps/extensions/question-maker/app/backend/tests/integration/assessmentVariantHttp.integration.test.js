@@ -1,11 +1,12 @@
 /**
  * HTTP validation tests for /api/assessment-variant routes.
  *
- * These routes are instructor-gated (§17), so authorization runs before payload
- * validation: an enrolled INSTRUCTOR with an accessible course still hits the
- * 400 payload guards, while a request that omits courseId 404s at the gate
- * (no course to authorize). Schema + Core reads are mocked so the gate resolves
- * without a DB.
+ * These write routes are instructor-gated (§17), so authorization runs before
+ * payload validation: an enrolled INSTRUCTOR with an accessible course still
+ * hits the 400 payload guards, while a request that omits courseId 404s at the
+ * gate (no course to authorize). Read-only blueprint routes are TA-viewable and
+ * covered in assessmentVariantRouteCoverage.integration.test.js. Schema + Core
+ * reads are mocked so the gate resolves without a DB.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";

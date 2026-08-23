@@ -19,7 +19,7 @@ function okJson(body: unknown) {
     status: 200,
     text: () => Promise.resolve(""),
     json: () => Promise.resolve(body),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -111,7 +111,7 @@ describe("useStudentCandidates", () => {
       status: 500,
       text: () => Promise.resolve("server exploded"),
       json: () => Promise.resolve({}),
-    } as unknown as Response);
+    } as Response);
 
     const { result } = renderHook(() => useStudentCandidates("course-1", "enrolled"));
 

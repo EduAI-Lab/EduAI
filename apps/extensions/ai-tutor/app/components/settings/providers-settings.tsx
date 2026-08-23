@@ -18,8 +18,8 @@ import { PROVIDERS, maskApiKey, type ProviderId } from "~/lib/provider-keys";
 /**
  * Settings → Providers. BYOK key management, moved out of the chat's old
  * blocking setup wall into Settings where the rest of the platform keeps it
- * (Core's Providers tab). Keys live only in this browser; the chat reads them
- * via the same `useApiKeys` hook.
+ * (Core's Providers tab). The chat reads the current account's browser-stored
+ * keys via the same `useApiKeys` hook.
  */
 export function ProvidersSettings() {
   const { loaded, getKey, hasKey, setKey, removeKey, validateKey } = useApiKeys();
@@ -52,8 +52,9 @@ export function ProvidersSettings() {
       <CardHeader>
         <CardTitle>Model providers</CardTitle>
         <CardDescription>
-          Add your own AI provider key to power the AI Study Buddy. Keys are stored only in this
-          browser and sent directly to the model — never saved on our servers.
+          Add your own AI provider key to power the AI Study Buddy. Keys are stored for this account
+          in this browser and sent through EduAI services to the selected provider when you validate
+          a key or use AI. Signing out removes them from this browser.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -81,6 +82,8 @@ export function ProvidersSettings() {
                   Get a key <IconExternalLink className="h-3 w-3" />
                 </a>
               </div>
+
+              {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
 
               {configured ? (
                 <div className="flex items-center gap-2">

@@ -13,7 +13,7 @@
 import { test, expect } from "@playwright/test";
 import { QM_BACKEND_URL } from "../../playwright.config";
 import { signUp, uniqueEmail, createInstructor } from "../helpers/auth";
-import { createQmCourseForInstructor } from "../helpers/qm-courses";
+import { createQmCourseForInstructor, createQmCourseForStudent } from "../helpers/qm-courses";
 
 // ---------------------------------------------------------------------------
 // Question routes — blocked for STUDENT (requires AUTHORS role)
@@ -26,12 +26,16 @@ test.describe("QM question route gates (STUDENT → 403)", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("POST /api/questions returns 403", async ({ request }) => {
+  test("POST /api/questions returns 403", async ({ request, playwright }) => {
     await signUp(request, { email: uniqueEmail("qm-rbac-q-create") });
+    const { qmCourseId } = await createQmCourseForStudent(playwright, request, {
+      name: "Student question denial course",
+      code: "RBAC Q",
+    });
     const res = await request.post(`${QM_BACKEND_URL}/api/questions`, {
       data: {
         description: "Sneaky question",
-        courseId: 1,
+        courseId: qmCourseId,
         primaryTopicId: 1,
         type: "MCQ",
       },
@@ -80,7 +84,8 @@ test.describe("QM assessment route gates (STUDENT → 403)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Course routes — list/create open to any authenticated user; per-course
+// Course routes — list is open to authenticated users; anchor creation is an
+// authoring operation and rejects platform STUDENT users. Per-course
 // read/edit is gated by access resolved against the caller's REAL Core
 // enrollment role for the linked course (#1072) — NOT QM ownership. Every QM
 // course is Core-linked at creation time now (local-only "sandbox" creation
@@ -116,7 +121,9 @@ test.describe("QM course routes accessible to all authenticated users", () => {
   test("POST /api/course with an unscoped coreCourseId still 403s for STUDENT", async ({
     request,
   }) => {
-    await signUp(request, { email: uniqueEmail("qm-rbac-course-create-unscoped") });
+    await signUp(request, {
+      email: uniqueEmail("qm-rbac-course-create-unscoped"),
+    });
 
     const res = await request.post(`${QM_BACKEND_URL}/api/course`, {
       data: { coreCourseId: "nonexistent-or-unauthorized-course-id" },
@@ -152,13 +159,17 @@ test.describe("QM course routes accessible to all authenticated users", () => {
     // reach it (no teaching enrollment — #1114 fail-closed).
     const instructorCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instructorCtx, { prefix: "qm-rbac-course-own-inst" });
+      await createInstructor(instructorCtx, {
+        prefix: "qm-rbac-course-own-inst",
+      });
       const { qmCourseId } = await createQmCourseForInstructor(playwright, instructorCtx, {
         name: "Instructor Course",
         code: "OWN 102",
       });
 
-      await signUp(request, { email: uniqueEmail("qm-rbac-course-own-student") });
+      await signUp(request, {
+        email: uniqueEmail("qm-rbac-course-own-student"),
+      });
       const res = await request.get(`${QM_BACKEND_URL}/api/course/${qmCourseId}`);
       expect(res.status()).toBe(403);
     } finally {
@@ -225,7 +236,9 @@ test.describe("QM per-course access endpoint", () => {
   });
 
   test("returns 401 without a session", async ({ request }) => {
-    const res = await request.fetch(`${QM_BACKEND_URL}/api/course/1/access`, { method: "GET" });
+    const res = await request.fetch(`${QM_BACKEND_URL}/api/course/1/access`, {
+      method: "GET",
+    });
     expect(res.status()).toBe(401);
   });
 });

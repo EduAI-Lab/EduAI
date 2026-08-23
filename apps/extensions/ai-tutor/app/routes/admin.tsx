@@ -38,6 +38,7 @@ import {
   loadAdminSettingsData,
   type AdminSettingsLoaderData,
 } from "~/lib/admin-settings";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 const ADMIN_ROLES: Role[] = ["ADMIN", "UNIT_ADMIN"];
 
@@ -78,7 +79,13 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const { role, adminSettings, bugReports, aiTraces } = loaderData;
   const isAdmin = role === "ADMIN";
   const [activeTab, setActiveTab] = useState(isAdmin ? "bug-reports" : "ai-oversight");
-  const sourceTag = adminSettings ? getApiKeySourceTag(adminSettings.status) : null;
+  // Seeded from the loader, then kept in step with saves/clears inside the
+  // panel — the loader is not revalidated, so reading it directly left the
+  // badge claiming ".env" after an override had been saved.
+  const [keyStatus, setKeyStatus] = useState<EduAiApiKeyStatus | null>(
+    adminSettings?.status ?? null,
+  );
+  const sourceTag = keyStatus ? getApiKeySourceTag(keyStatus) : null;
 
   useShellBreadcrumbs([{ label: "Admin" }]);
 
@@ -125,9 +132,11 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
                   Configure the AI loop policy and EduAI API integration.
                 </p>
               </div>
-              <Badge variant={sourceTagBadgeVariant(adminSettings.status)}>{sourceTag.label}</Badge>
+              <Badge variant={sourceTagBadgeVariant(keyStatus ?? adminSettings.status)}>
+                {sourceTag.label}
+              </Badge>
             </div>
-            <AdminSettingsPanel loaderData={adminSettings} />
+            <AdminSettingsPanel loaderData={adminSettings} onStatusChange={setKeyStatus} />
           </PageTabsContent>
         ) : null}
 
@@ -138,3 +147,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

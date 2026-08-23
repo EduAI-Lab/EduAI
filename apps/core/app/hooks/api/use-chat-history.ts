@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { StoredChatMessage } from "~/lib/chat/revive-message.server";
 import { apiFetch } from "~/hooks/api/config";
 
 /** One row in any chat-history list (sidebar, course tab, admin per-user). */
@@ -30,8 +31,8 @@ export interface ChatTranscript {
     ownerName: string | null;
     updatedAt: string;
   };
-  /** AI-SDK `Message`-shaped objects, ordered. Seed `useChat` or render read-only. */
-  messages: Array<Record<string, unknown>>;
+  /** AI-SDK messages, ordered. Seed `useChat` or render read-only. */
+  messages: StoredChatMessage[];
   canEdit: boolean;
 }
 

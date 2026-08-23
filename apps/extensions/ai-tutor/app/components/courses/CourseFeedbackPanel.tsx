@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Input } from "@eduai/ui";
 import api from "~/lib/api";
 import type { ActivityFeedbackRow } from "~/lib/types";
 
@@ -93,14 +94,14 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           >
             Activity ID
           </label>
-          <input
+          <Input
             id="feedback-activity-id"
             type="text"
             inputMode="numeric"
             value={activityIdFilter}
             onChange={(e) => setActivityIdFilter(e.target.value)}
             placeholder="Any"
-            className="input-field w-32"
+            className="w-32"
           />
         </div>
         <div>
@@ -110,21 +111,21 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           >
             Student ID
           </label>
-          <input
+          <Input
             id="feedback-student-id"
             type="text"
             value={studentIdFilter}
             onChange={(e) => setStudentIdFilter(e.target.value)}
             placeholder="Any"
-            className="input-field w-48"
+            className="w-48"
           />
         </div>
-        <button type="button" onClick={applyFilters} className="btn-primary">
+        <Button type="button" variant="primary" onClick={applyFilters}>
           Apply filters
-        </button>
-        <button type="button" onClick={clearFilters} className="btn-secondary">
+        </Button>
+        <Button type="button" variant="secondary" onClick={clearFilters}>
           Clear
-        </button>
+        </Button>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -170,22 +171,24 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           {rows.length === PAGE_SIZE ? "+" : ""}
         </span>
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
-            className="btn-secondary"
+            variant="secondary"
+            size="sm"
             disabled={!canGoBack || loading}
             onClick={() => setSkip((current) => Math.max(current - PAGE_SIZE, 0))}
           >
             Previous
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn-secondary"
+            variant="secondary"
+            size="sm"
             disabled={!canGoForward || loading}
             onClick={() => setSkip((current) => current + PAGE_SIZE)}
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
     </div>

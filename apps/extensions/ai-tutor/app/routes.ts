@@ -16,5 +16,8 @@ export default [
     route("/instructor/courses/:courseId", "routes/instructor.course.tsx"),
     route("/instructor/module/:moduleId", "routes/instructor.module.tsx"),
     route("/instructor/lesson/:lessonId", "routes/instructor.lesson.tsx"),
+    // Catch-all: a URL that matches nothing is a 404, rendered inside the shell
+    // so the reader keeps their navigation instead of landing on a bare page.
+    route("*", "routes/not-found.tsx"),
   ]),
 ] satisfies RouteConfig;

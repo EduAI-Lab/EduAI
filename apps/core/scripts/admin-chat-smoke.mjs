@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 
 const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:3000";
 const ADMIN_EMAIL = process.env.SMOKE_ADMIN_EMAIL ?? "admin@eduai.local";
-const ADMIN_PASSWORD = process.env.SMOKE_ADMIN_PASSWORD ?? "EduAI2026!";
+const ADMIN_PASSWORD = process.env.SMOKE_ADMIN_PASSWORD ?? process.env.EDUAI_LOCAL_SEED_PASSWORD;
 const STUDENT_EMAIL = process.env.SMOKE_STUDENT_EMAIL ?? "student1@eduai.local";
 
 const results = [];
@@ -185,6 +185,11 @@ function runToolSmoke() {
 }
 
 async function main() {
+  if (!ADMIN_PASSWORD) {
+    throw new Error(
+      "Set SMOKE_ADMIN_PASSWORD or EDUAI_LOCAL_SEED_PASSWORD to the explicit local seed password",
+    );
+  }
   console.log("Admin chatbot smoke test");
   await runHttpSmoke();
   runToolSmoke();

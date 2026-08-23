@@ -70,6 +70,7 @@ import {
   parseListUrlParams,
   redirectPastEnd,
 } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -1040,3 +1041,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

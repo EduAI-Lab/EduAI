@@ -113,8 +113,9 @@ Single reference for keys and `.env` entries (avoids duplicating the same three 
 | ---- | -------- | ---- | ---------------------- |
 | `EMBEDDING_PROVIDER` | `apps/core/.env` | `local` / `ollama` → Ollama; `cloud` or unset → cloud chain | **Yes** — selects path |
 | `EMBEDDING_DIMENSION` | `apps/core/.env` | Expected vector length (default **1024**); must match pgvector column | **Yes** — validation |
-| `VLLM_EMBEDDING_BASE_URL` | `apps/core/.env` | OpenAI-compatible local embedding endpoint (CMPS01 `/v1`) | **Yes** (local path) |
-| `VLLM_EMBEDDING_MODEL` | `apps/core/.env` | Local embed model (default **`mxbai-embed-large`**) | **Yes** (local path) |
+| `EMBEDDING_REQUEST_TIMEOUT_MS` | `apps/core/.env` | Per-attempt Ollama/cloud request deadline in milliseconds (default **30000**, range **100–120000**); timeout retries stop after three total attempts | **Yes** — availability bound |
+| `OLLAMA_BASE_URL` | `apps/core/.env` | Ollama host (same as chat; cmps01 on dev server) | **Yes** (local path) |
+| `OLLAMA_EMBEDDING_MODEL` | `apps/core/.env` | Local embed model (default **`mxbai-embed-large`**) | **Yes** (local path) |
 | `OPENROUTER_API_KEY` | `apps/core/.env` | Cloud embed via OpenRouter (`openai/text-embedding-3-small` @ 1024 dims) | **Yes** (cloud / fallback) |
 | `OPENROUTER_EMBEDDING_MODEL` | `apps/core/.env` | Override OpenRouter model id | Optional |
 | `OPENROUTER_HTTP_REFERER` | `apps/core/.env` | OpenRouter ranking header; defaults to `BETTER_AUTH_URL` | Optional |

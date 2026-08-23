@@ -6,17 +6,28 @@ import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
 const findFirst = vi.hoisted(() => vi.fn());
 const findUnique = vi.hoisted(() => vi.fn());
+const findUniqueOrThrow = vi.hoisted(() => vi.fn());
 const create = vi.hoisted(() => vi.fn());
 const update = vi.hoisted(() => vi.fn());
+const updateMany = vi.hoisted(() => vi.fn());
 const del = vi.hoisted(() => vi.fn());
+const transaction = vi.hoisted(() => vi.fn());
+const queryRaw = vi.hoisted(() => vi.fn());
+const courseFindUniqueOrThrow = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
+    $transaction: transaction,
+    course: {
+      findUniqueOrThrow: courseFindUniqueOrThrow,
+    },
     courseReEmbedJob: {
       findFirst,
       findUnique,
+      findUniqueOrThrow,
       create,
       update,
+      updateMany,
       delete: del,
     },
   },
@@ -28,11 +39,11 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
-  logSystemError: vi.fn(),
 }));
 
 import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
-import { logSystemError } from "~/lib/logging.server";
+
+const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
 const baseJob = {
   id: "job_1",
@@ -44,6 +55,12 @@ const baseJob = {
   failedMaterialIds: [] as string[],
   currentMaterialTitle: null,
   errorMessage: null,
+  embeddingProviderSnapshot: "cloud",
+  embeddingModelSnapshot: "openai/text-embedding-3-small",
+  leaseOwner: null,
+  leaseHeartbeatAt: null,
+  leaseExpiresAt: null,
+  attemptCount: 0,
   startedAt: null,
   completedAt: null,
   createdAt: new Date(),
@@ -54,14 +71,59 @@ const claimedJob = {
   ...baseJob,
   status: "RUNNING" as const,
   startedAt: new Date(),
+  leaseOwner: "lease_1",
+  leaseHeartbeatAt: new Date(),
+  leaseExpiresAt: new Date(Date.now() + 120_000),
 };
+
+function activeLease() {
+  return {
+    leaseOwner: "lease_1",
+    leaseHeartbeatAt: new Date(),
+    leaseExpiresAt: new Date(Date.now() + 120_000),
+  };
+}
+
+let lastUpdatedJob = claimedJob;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  lastUpdatedJob = claimedJob;
+  transaction.mockImplementation(async <T>(callback: (tx: unknown) => T) =>
+    callback({
+      $queryRaw: queryRaw,
+      course: { findUniqueOrThrow: courseFindUniqueOrThrow },
+      courseReEmbedJob: { findFirst, findUnique, create, update },
+    }),
+  );
+  queryRaw.mockResolvedValue([{ id: "course_1" }]);
+  courseFindUniqueOrThrow.mockResolvedValue({
+    embeddingProvider: "cloud",
+    embeddingModel: "openai/text-embedding-3-small",
+    embeddedWithProvider: null,
+    embeddedWithModel: null,
+    lastEmbeddedAt: null,
+  });
   findFirst.mockResolvedValue(null);
-  findUnique.mockResolvedValue(null);
+  findUnique.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+    "id" in where ? { ...claimedJob, id: where.id } : null,
+  );
+  findUniqueOrThrow.mockImplementation(async () => lastUpdatedJob);
   create.mockResolvedValue(baseJob);
   update.mockResolvedValue(claimedJob);
+  updateMany.mockImplementation(async (args: unknown) => {
+    const result = await update(args);
+    const jobId =
+      typeof args === "object" && args !== null && "where" in args
+        ? ((args as { where?: { id?: unknown } }).where?.id as string | undefined)
+        : undefined;
+    lastUpdatedJob = {
+      ...claimedJob,
+      ...(result && typeof result === "object" ? result : {}),
+      ...(jobId ? { id: jobId } : {}),
+    };
+    return { count: 1 };
+  });
   del.mockResolvedValue({});
 });
 
@@ -78,14 +140,19 @@ describe("startReEmbedJob consistency (#1112)", () => {
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "job_1" },
+        where: expect.objectContaining({ id: "job_1" }),
         data: expect.objectContaining({ status: "RUNNING" }),
       }),
     );
   });
 
   it("reuses an active job without creating another", async () => {
-    findFirst.mockResolvedValueOnce({ ...baseJob, id: "active_1", status: "RUNNING" });
+    findFirst.mockResolvedValueOnce({
+      ...baseJob,
+      id: "active_1",
+      status: "RUNNING",
+      ...activeLease(),
+    });
     const result = await startReEmbedJob("course_1");
     expect(result).toEqual({
       job: expect.objectContaining({ id: "active_1" }),
@@ -123,28 +190,14 @@ describe("startReEmbedJob consistency (#1112)", () => {
     );
   });
 
-  it("returns the winning row on idempotencyKey race (P2002)", async () => {
+  it("surfaces an idempotencyKey race from the serialized transaction (P2002)", async () => {
     const conflict = new Prisma.PrismaClientKnownRequestError("dup", {
       code: "P2002",
       clientVersion: "6",
       meta: { target: ["courseId", "idempotencyKey"] },
     });
     create.mockRejectedValueOnce(conflict);
-    findUnique
-      .mockResolvedValueOnce(null) // initial key lookup
-      .mockResolvedValueOnce({
-        ...baseJob,
-        id: "winner",
-        courseId: "course_1",
-        idempotencyKey: "k1",
-      });
-
-    const result = await startReEmbedJob("course_1", { idempotencyKey: "k1" });
-    expect(result).toEqual({
-      job: expect.objectContaining({ id: "winner" }),
-      created: false,
-      keyHonored: true,
-    });
+    await expect(startReEmbedJob("course_1", { idempotencyKey: "k1" })).rejects.toBe(conflict);
   });
 
   it("compensates the PENDING row when the durable claim boundary fails", async () => {
@@ -185,8 +238,8 @@ describe("startReEmbedJob consistency (#1112)", () => {
         data: expect.objectContaining({ status: "FAILED" }),
       }),
     );
-    // ...and a fresh job starts instead of returning the stuck one.
-    expect(create).toHaveBeenCalled();
+    // ...and the same row is recycled instead of creating a duplicate.
+    expect(create).not.toHaveBeenCalled();
     expect(result.created).toBe(true);
     expect(result.job.id).not.toBe("stuck_1");
   });
@@ -233,7 +286,7 @@ describe("startReEmbedJob consistency (#1112)", () => {
         data: expect.objectContaining({ status: "FAILED" }),
       }),
     );
-    expect(create).toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
     expect(result.created).toBe(true);
     expect(result.job.id).not.toBe("stuck_pending_1");
   });
@@ -249,8 +302,8 @@ describe("startReEmbedJob consistency (#1112)", () => {
 
     const result = await startReEmbedJob("course_1");
 
-    expect(result).toEqual({
-      job: expect.objectContaining({ id: "fresh_pending_1" }),
+    expect(result).toMatchObject({
+      job: expect.objectContaining({ id: "fresh_pending_1", status: "RUNNING" }),
       created: false,
       keyHonored: true,
     });
@@ -269,10 +322,11 @@ describe("startReEmbedJob consistency (#1112)", () => {
     // The original claim failure still surfaces — the delete failure must
     // not replace or mask it (#1269 review).
     await expect(startReEmbedJob("course_1")).rejects.toBeInstanceOf(QueueUnavailableError);
-    expect(logSystemError).toHaveBeenCalledWith(
+    expect(consoleError).toHaveBeenCalledWith(
+      "[re-embed-job] failed to compensate pending start",
       expect.objectContaining({
-        code: "re_embed_job_compensate_delete_failed",
-        error: deleteError,
+        jobId: "job_1",
+        error: expect.objectContaining({ message: "delete also failed" }),
       }),
     );
   });
@@ -319,6 +373,7 @@ describe("startReEmbedJob consistency (#1112)", () => {
       status: "RUNNING",
       startedAt: new Date(),
       updatedAt: new Date(),
+      ...activeLease(),
     });
 
     const result = await startReEmbedJob("course_1");
@@ -413,6 +468,7 @@ describe("startReEmbedJob consistency (#1112)", () => {
       startedAt: new Date(),
       updatedAt: new Date(),
       idempotencyKey: null,
+      ...activeLease(),
     });
 
     await startReEmbedJob("course_1", { idempotencyKey: "k1" });
@@ -451,6 +507,7 @@ describe("startReEmbedJob consistency (#1112)", () => {
       startedAt: new Date(),
       updatedAt: new Date(),
       idempotencyKey: "other-key",
+      ...activeLease(),
     });
 
     const result = await startReEmbedJob("course_1", { idempotencyKey: "k1" });
@@ -476,6 +533,7 @@ describe("startReEmbedJob consistency (#1112)", () => {
       startedAt: new Date(),
       updatedAt: new Date(),
       idempotencyKey: null,
+      ...activeLease(),
     });
     const conflict = new Prisma.PrismaClientKnownRequestError("dup", {
       code: "P2002",

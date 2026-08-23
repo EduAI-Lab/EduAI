@@ -20,6 +20,7 @@ import {
   IconShieldLock,
 } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import api from "~/lib/api";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -77,9 +78,8 @@ function AppLayoutInner() {
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
-  const aiStatus = useAiServiceStatus({ fetcher: () => api.aiStatus() });
+  const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const [capturingScreenshot, setCapturingScreenshot] = useState(false);
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -90,15 +90,7 @@ function AppLayoutInner() {
     return <Outlet />;
   }
 
-  const handleOpenBugReport = async () => {
-    setCapturingScreenshot(true);
-    try {
-      await captureScreenshot();
-      setBugReportOpen(true);
-    } finally {
-      setCapturingScreenshot(false);
-    }
-  };
+  const handleOpenBugReport = () => setBugReportOpen(true);
 
   const handleSubmitBugReport = async (data: BugReportSubmitData) => {
     await api.submitBugReport({
@@ -115,8 +107,14 @@ function AppLayoutInner() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/");
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    }
   };
 
   const navMain = getNavForUser(user).map((item) => ({
@@ -160,15 +158,9 @@ function AppLayoutInner() {
             onRefresh={aiStatus.refresh}
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void handleOpenBugReport()}
-            disabled={capturingScreenshot}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
             <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
-            {capturingScreenshot ? "Preparing…" : "Report a bug"}
+            Report a bug
           </Button>
         </>
       }

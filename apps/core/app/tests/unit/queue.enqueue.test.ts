@@ -39,7 +39,7 @@ const prismaMock = vi.hoisted(() => {
     aiJob,
     // The post-enqueue snapshot reads position + depth inside one REPEATABLE
     // READ transaction; the mock runs that callback against the same client.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: unknown) => T) => fn({ aiJob })),
   };
 });
 
@@ -60,6 +60,11 @@ vi.mock("~/lib/queue/queues.server", () => ({ getQueue: getQueueMock }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn(),
+}));
+// Exercise the dormant enqueue implementation in isolation. Production entry
+// points are covered separately and always fail closed pre-MVP.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
 }));
 
 import { enqueue } from "~/lib/queue/enqueue.server";

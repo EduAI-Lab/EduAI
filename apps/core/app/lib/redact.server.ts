@@ -10,6 +10,28 @@
 export const REDACTED_VALUE = "[REDACTED]";
 const CIRCULAR_VALUE = "[CIRCULAR]";
 
+/**
+ * A value that has been through `sanitizeSensitiveData`.
+ *
+ * Every string leaf is scrubbed, objects/Maps/Sets are rebuilt as plain records
+ * and arrays, and a cycle becomes `"[CIRCULAR]"`. Non-string leaves are passed
+ * through untouched, so the union admits them — including the `symbol` and
+ * function leaves that a caller should never be logging but that this function
+ * has always returned as-is rather than silently dropping.
+ */
+export type RedactedValue =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Date
+  | Function
+  | RedactedValue[]
+  | { [key: string]: RedactedValue };
+
 const AUDIT_SAFE_ID_KEYS = new Set(["studentid", "ubcemployeeid"]);
 
 // Longer, reasonably unique needles matched as substrings against the alphanumerics-only
@@ -87,6 +109,8 @@ function splitKeySegments(key: string): string[] {
 const AUTH_HEADER_CREDENTIAL_RE =
   /\b(Authorization["']?\s*[:=]\s*["']?(?:Bearer|Basic))\s+[A-Za-z0-9\-._~+/]+=*/gi;
 const STANDALONE_AUTH_TOKEN_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9\-._~+/]{16,}=*/gi;
+/** Provider keys can surface in SDK error prose without a credential field label. */
+const OPENAI_STYLE_API_KEY_RE = /\bsk-[A-Za-z0-9][A-Za-z0-9._-]{5,}/g;
 /** Raw Cookie / Set-Cookie header lines in console or network text captures. */
 const COOKIE_HEADER_RE = /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
 /** Common API-key header lines (HAR / fetch dumps). */
@@ -374,6 +398,7 @@ export function redactSecretValuesInString(text: string): string {
   const headerScrubbed = text
     .replace(AUTH_HEADER_CREDENTIAL_RE, `$1 ${REDACTED_VALUE}`)
     .replace(STANDALONE_AUTH_TOKEN_RE, `$1 ${REDACTED_VALUE}`)
+    .replace(OPENAI_STYLE_API_KEY_RE, REDACTED_VALUE)
     .replace(COOKIE_HEADER_RE, (match) => {
       const prefix = match.split(":")[0] ?? "Cookie";
       return `${prefix}: ${REDACTED_VALUE}`;
@@ -398,26 +423,35 @@ export function redactSecretValuesInString(text: string): string {
 export function sanitizeSensitiveData(
   value: unknown,
   seen: WeakSet<object> = new WeakSet(),
-): unknown {
+): RedactedValue {
   if (typeof value === "string") {
     return redactSecretValuesInString(value);
   }
 
-  if (!value || typeof value !== "object" || value instanceof Date) {
+  // Leaves are returned as they came in: only strings can carry a secret
+  // substring, and rebuilding the others would change what a caller logs.
+  // Each `typeof` below narrows `value` into one arm of `RedactedValue`, so the
+  // passthroughs need no assertion.
+  if (value === null || value === undefined) return value;
+  if (value instanceof Date) return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value;
+  }
+  if (typeof value === "symbol" || typeof value === "function") {
     return value;
   }
 
-  const obj = value as object;
+  const obj: object = value;
   if (seen.has(obj)) {
     return CIRCULAR_VALUE;
   }
   seen.add(obj);
 
-  let result: unknown;
+  let result: RedactedValue;
   if (Array.isArray(value)) {
     result = value.map((entry) => sanitizeSensitiveData(entry, seen));
   } else if (value instanceof Map) {
-    const sanitized: Record<string, unknown> = {};
+    const sanitized: Record<string, RedactedValue> = {};
     for (const [key, entry] of value.entries()) {
       const keyStr = typeof key === "string" ? key : String(key);
       sanitized[keyStr] = shouldRedactKey(keyStr)
@@ -431,15 +465,16 @@ export function sanitizeSensitiveData(
     const record = value as Record<string, unknown>;
     // HAR-style header rows: `{ name: "Cookie", value: "session=…" }`
     if (isHarHeaderEntry(record) && shouldRedactKey(record.name)) {
-      result = Object.fromEntries(
-        Object.entries(record).map(([key, entry]) =>
-          key === "value"
-            ? [key, REDACTED_VALUE]
-            : [key, typeof entry === "string" ? redactSecretValuesInString(entry) : entry],
-        ),
-      );
+      const sanitized: Record<string, RedactedValue> = {};
+      for (const [key, entry] of Object.entries(record)) {
+        // Recursing rather than scrubbing only the string leaves: for a string
+        // it is the same call, and a HAR row carrying a nested object should be
+        // redacted like any other, not passed through whole.
+        sanitized[key] = key === "value" ? REDACTED_VALUE : sanitizeSensitiveData(entry, seen);
+      }
+      result = sanitized;
     } else {
-      const sanitized: Record<string, unknown> = {};
+      const sanitized: Record<string, RedactedValue> = {};
       for (const [key, entry] of Object.entries(record)) {
         sanitized[key] = shouldRedactKey(key) ? REDACTED_VALUE : sanitizeSensitiveData(entry, seen);
       }
@@ -462,7 +497,7 @@ export function sanitizeSensitiveData(
  * Returns a plain shape rather than an `Error` because `console.error` prints an Error's own
  * (unredacted) fields rather than the properties we set on it.
  */
-export function redactErrorForConsole(error: unknown): unknown {
+export function redactErrorForConsole(error: unknown): RedactedValue {
   if (error instanceof Error) {
     return {
       name: error.name,
@@ -476,6 +511,34 @@ export function redactErrorForConsole(error: unknown): unknown {
   }
 
   return sanitizeSensitiveData(error);
+}
+
+/**
+ * One-line redacted rendering of a caught error, for messages stored as text.
+ *
+ * `redactErrorForConsole` returns an object for the common `Error` case, so
+ * interpolating it into a template literal yields `[object Object]` and loses
+ * the error entirely. Callers that need a string field (a persisted cron run
+ * message, say) want this instead. The stack is deliberately dropped: these
+ * strings land in database columns, and the console path already carries it.
+ */
+export function redactErrorForMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = redactSecretValuesInString(error.message);
+    return message ? `${error.name}: ${message}` : error.name;
+  }
+  if (typeof error === "string") return redactSecretValuesInString(error);
+  // `String(value)` on a plain object is "[object Object]" — the same loss this
+  // function exists to prevent — so serialize the sanitized value instead.
+  if (typeof error === "object" && error !== null) {
+    try {
+      const serialized = JSON.stringify(sanitizeSensitiveData(error));
+      if (serialized) return redactSecretValuesInString(serialized);
+    } catch {
+      // Circular or non-serializable: fall through to the string coercion.
+    }
+  }
+  return redactSecretValuesInString(String(error));
 }
 
 /**

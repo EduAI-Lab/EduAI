@@ -54,7 +54,7 @@ Internet → Apache (Reverse Proxy) → Docker Containers
 
 ### 4. Database Container
 **Base Image**: postgres:15-alpine
-**Port**: 55432 (external) → 5432 (internal)
+**Port**: 5432 (internal only; no host binding in production Compose)
 **Database**: eduquery
 **User**: postgres
 
@@ -75,7 +75,7 @@ Internet → Apache (Reverse Proxy) → Docker Containers
 Host Port → Container Port → Service
 3005     → 80            → Frontend (Nginx)
 8000     → 8000          → Backend (Node.js)
-55432    → 5432          → Database (PostgreSQL)
+—        → 5432          → Database (PostgreSQL; internal-only)
 ```
 
 ### Internal Communication
@@ -329,7 +329,7 @@ graph TB
         Backend[⚙️ Backend Container<br/>Node.js + Express<br/>Port 8000]
         
         %% Database Container
-        Database[(🗄️ PostgreSQL Database<br/>Port 55432→5432<br/>Database: eduquery)]
+        Database[(🗄️ PostgreSQL Database<br/>Internal port 5432; no host binding<br/>Database: eduquery)]
     end
     
     %% Request Flow
@@ -400,4 +400,3 @@ sequenceDiagram
 **Architecture Version**: 1.0  
 **Last Updated**: October 2024  
 **Deployment**: Production
-
