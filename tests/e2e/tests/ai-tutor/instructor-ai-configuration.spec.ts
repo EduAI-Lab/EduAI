@@ -162,10 +162,10 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
     const title = page.getByLabel("Button title (shown to students, max 20 chars)");
     await expect(title).toBeVisible({ timeout: 15_000 });
 
+    const promptText =
+      "Explain [INSERT TOPIC HERE] to a [ENTER KNOWLEDGE LEVEL] learner in three sentences.";
     await title.fill("Explain simply");
-    await page
-      .getByLabel("Custom AI prompt")
-      .fill("Explain [INSERT TOPIC HERE] to a [ENTER KNOWLEDGE LEVEL] learner in three sentences.");
+    await page.getByLabel("Custom AI prompt").fill(promptText);
     await page.getByRole("button", { name: /^Save prompt/ }).click();
 
     // The write really lands — this is configuration the student's tutor will
@@ -176,12 +176,15 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
           const activity = await modes(page, seeded.lessonId, seeded.activityId);
           return {
             title: activity.customPromptTitle,
-            enabled: activity.enableCustomMode ?? activity.enableCustomPrompt,
+            // The prompt body is the half the tutor actually runs — a saved
+            // title with an unsaved prompt would name an empty button.
+            prompt: activity.customPrompt,
+            enabled: activity.enableCustomMode,
           };
         },
         { timeout: 30_000, message: "the custom prompt was never persisted" },
       )
-      .toMatchObject({ title: "Explain simply" });
+      .toEqual({ title: "Explain simply", prompt: promptText, enabled: true });
 
     // And it survives a reload rather than living only in the open form.
     await page.reload();

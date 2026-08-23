@@ -12,7 +12,7 @@
  * that move between runs.
  */
 import { test, expect } from "@playwright/test";
-import { AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
+import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createTeachingInstructor, type InstructorFixture } from "../helpers/at-instructor";
 import {
@@ -169,7 +169,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await expect(toggle).not.toHaveAttribute("aria-label", before ?? "");
   });
 
-  test("the header opens a bug report and requires both fields", async ({ page }) => {
+  test("the header files a bug report, and refuses an incomplete one first", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
     await page.getByRole("button", { name: "Report a bug" }).click();
@@ -179,6 +179,29 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     // default — the copy says so rather than attaching silently.
     await expect(dialog).toContainText("Submit anonymously");
     await expect(dialog).toContainText("Diagnostic attachments are optional and off by default");
+
+    // An empty submit names *both* outstanding fields at once rather than
+    // surfacing them one refusal at a time.
+    await dialog.getByRole("button", { name: "Submit report" }).click();
+    await expect(dialog.getByText("Please provide at least 10 characters")).toBeVisible();
+    await expect(dialog.getByText("Please select a bug type")).toBeVisible();
+
+    // A description alone is still not enough: the type is independently
+    // required, so a report cannot arrive untriageable.
+    await dialog
+      .getByLabel("Description")
+      .fill("Filed by the instructor E2E suite; safe to close.");
+    await dialog.getByRole("button", { name: "Submit report" }).click();
+    await expect(dialog.getByText("Please provide at least 10 characters")).toHaveCount(0);
+    await expect(dialog.getByText("Please select a bug type")).toBeVisible();
+
+    // Complete now — and the report really is filed: the dialog closing is the
+    // component's own success path, so it only closes once `onSubmit` resolved
+    // without throwing.
+    await dialog.getByLabel("Bug type").click();
+    await page.getByRole("option", { name: "Other" }).click();
+    await dialog.getByRole("button", { name: "Submit report" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
   });
 
   test("the Help guide is labelled for this role", async ({ page }) => {
@@ -234,5 +257,14 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     // no session left to route on.
     await page.waitForURL((url) => url.origin === CORE_URL, { timeout: 30_000 });
     expect(page.url()).toContain(CORE_URL);
+
+    // The session is really gone, not just navigated away from: the API that
+    // every screen reads from no longer recognises this context…
+    const me = await page.request.get(`${AI_TUTOR_API_URL}/api/me`);
+    expect(me.status(), "the session cookie must no longer authenticate").toBe(401);
+
+    // …and a protected route bounces back to Core rather than rendering.
+    await page.goto(`${AI_TUTOR_URL}/instructor`);
+    await page.waitForURL((url) => url.origin === CORE_URL, { timeout: 30_000 });
   });
 });

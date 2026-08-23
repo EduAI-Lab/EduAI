@@ -109,6 +109,10 @@ test.describe("INSTRUCTOR activity authoring", () => {
     const saved = rows.find((a: { question: string }) => a.question === question);
     expect(saved, "the authored activity must come back from the API").toBeTruthy();
     expect(saved.options?.choices ?? []).toEqual(["The base case", "The recursive case"]);
+    expect(saved.answer?.correctIndex, "the marked letter is the saved key").toBe(0);
+    // The topic picked above is really attached, not just displayed —
+    // `mapActivity` emits it as `mainTopic: {id,name}`.
+    expect(saved.mainTopic?.name, "the chosen main topic is persisted").toBe(fx.seededTopic);
   });
 
   test("an unused choice slot is saved blank unless it is removed", async ({ page }) => {
@@ -141,24 +145,57 @@ test.describe("INSTRUCTOR activity authoring", () => {
     expect(saved.options?.choices).toEqual(["First", "Second", "", ""]);
   });
 
-  test("the form refuses to save until a correct answer is marked", async ({ page }) => {
+  test("an MCQ saves with no correct answer marked, keyed to option A (known defect)", async ({
+    page,
+  }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     const lessonId = await freshLesson(page, "Answer Gate");
     await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    const question = unique("Ungraded question");
 
     await page.getByRole("button", { name: "Add activity" }).click();
     const dialog = page.getByRole("dialog");
 
-    await dialog.getByLabel(/Question prompt/).fill(unique("Ungraded question"));
+    await dialog.getByLabel(/Question prompt/).fill(question);
     await dialog.getByRole("textbox", { name: "Option A" }).fill("First");
     await dialog.getByRole("textbox", { name: "Option B" }).fill("Second");
+    await dialog.getByRole("button", { name: "Remove option D" }).click();
+    await dialog.getByRole("button", { name: "Remove option C" }).click();
+    await dialog.getByRole("combobox").first().click();
+    await page.getByRole("option", { name: fx.seededTopic! }).click();
 
-    // An MCQ with no key is not a question, it is a guess — the form says which
-    // step is outstanding instead of accepting it and defaulting to option A.
+    // The hint is on screen and no letter has been marked…
     await expect(dialog.getByText("No correct answer selected yet.")).toBeVisible();
 
-    await dialog.getByRole("button", { name: "Mark option A correct" }).click();
-    await expect(dialog.getByText("No correct answer selected yet.")).toHaveCount(0);
+    // …and the form saves anyway. `hasSelectedCorrect` is display-only: it
+    // styles the marked letter and renders the line above, and nothing else
+    // reads it. `handleAddActivity` guards the question, the main topic and the
+    // AI-mode pair but never the answer key, and the submit button is
+    // `disabled={busy || !question.trim()}`.
+    await expect(dialog.getByRole("button", { name: "Add activity" })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+
+    // Pinning current behaviour, not endorsing it: `correct` is still at its
+    // `useState(0)` default, so option A silently becomes the key and students
+    // are graded against it. Recorded as Finding #4 in
+    // docs/end-to-end-user-workflows/ai-tutor-workflows.md. When the form gains
+    // a real gate, this test should assert the dialog *stays open* with an
+    // error instead.
+    const activities = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const rows = Array.isArray(activities) ? activities : activities.data;
+    const saved = rows.find((a: { question: string }) => a.question === question);
+    expect(saved, "the un-keyed activity was saved rather than refused").toBeTruthy();
+    expect(saved.answer?.correctIndex).toBe(0);
+
+    // Marking a letter does clear the hint — the hint itself works, it just
+    // gates nothing.
+    await page.getByRole("button", { name: "Add activity" }).first().click();
+    const second = page.getByRole("dialog");
+    await second.getByRole("button", { name: "Mark option A correct" }).click();
+    await expect(second.getByText("No correct answer selected yet.")).toHaveCount(0);
   });
 
   test("switches the activity type to short answer", async ({ page }) => {
