@@ -31,6 +31,54 @@ The committed implementation is:
 
     f5a8c5c30 feat(core): add queue-aware fleet routing
 
+## Secure SSH migration to another machine
+
+Never paste, upload, commit, or print private-key contents. Do not ask an agent to read a private key into its context. The agent may inspect filenames, SSH config aliases, permissions, and connection results, but must keep key material opaque.
+
+### Preferred method: create new keys on the new machine
+
+This avoids moving private credentials at all.
+
+1. On the new machine, create a dedicated Ed25519 key for each required trust boundary. Do not overwrite an existing key:
+
+       ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_cmps03_new -C "new-machine cmps03 access"
+
+2. Protect the key with a strong passphrase and load it into the new machine's OS SSH agent. On Windows PowerShell, use the OpenSSH Authentication Agent service if available.
+3. Copy only the resulting .pub file to the administrator through an approved secure channel, or add its public-key line to the relevant account's authorized_keys using an already authenticated session.
+4. Test the new alias with BatchMode enabled:
+
+       ssh -o BatchMode=yes cmps03.ok.ubc.ca "hostname; whoami"
+
+5. Only after successful testing, remove the old machine's public key from the server account if the old machine will be retired. Keep a separate recovery path until all required hosts have been verified.
+
+### Fallback: preserve an existing key identity
+
+Use this only if access control, automation, or an account policy requires the existing private key. Transfer it outside GitHub, chat, email, issue trackers, or ordinary cloud storage.
+
+1. On the old machine, identify the exact files referenced by the SSH config. Copy only the required private key and config entries; do not blindly copy the entire .ssh directory. known_hosts can be regenerated on the new machine.
+2. Put the required private key, its public key, and the relevant SSH config into an encrypted archive using an approved tool with AES-256 encryption and a long, unique passphrase.
+3. Move the encrypted archive using an encrypted USB or an approved end-to-end encrypted file-transfer/password-manager vault. Send the archive passphrase through a different channel. Never put both archive and passphrase in the same message or location.
+4. Verify the archive checksum out of band before opening it. Do not place the archive in the repository or a synchronized project folder.
+5. On the new machine, extract into the user's SSH directory, remove the archive from both machines and any transfer service, and apply restrictive permissions.
+6. On Windows PowerShell, after replacing the path and username as needed:
+
+       $sshDir = Join-Path $env:USERPROFILE ".ssh"
+       New-Item -ItemType Directory -Force $sshDir | Out-Null
+       icacls $sshDir /inheritance:r
+       icacls $sshDir /grant:r "$env:USERNAME:(OI)(CI)F"
+       icacls (Join-Path $sshDir "id_ed25519_cmps03") /inheritance:r
+       icacls (Join-Path $sshDir "id_ed25519_cmps03") /grant:r "$env:USERNAME:F"
+
+7. Test the alias without exposing the key:
+
+       ssh -o BatchMode=yes cmps03.ok.ubc.ca "hostname; whoami"
+
+8. If the key was ever exposed outside the approved transfer path, assume compromise: revoke its public key from every server, generate a replacement, and update the SSH config.
+
+### Current known SSH context
+
+The prior cmps03 diagnostics used an SSH alias resolving to user ssaada08, port 22, and a key named id_ed25519_cmps03. Treat this as a hint only; inspect the old machine's SSH config and verify the exact identity path before transferring or regenerating anything. Do not copy these values into public documentation if the deployment's access policy changes.
+
 ## Important working-tree state
 
 There are user-owned unrelated changes. Do not use git add -A, git add ., reset, checkout, or clean commands.
