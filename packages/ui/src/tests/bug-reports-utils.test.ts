@@ -30,7 +30,7 @@ function row(over: Partial<AdminBugReportRow> = {}): AdminBugReportRow {
 
 describe("bug-report status casing", () => {
   it("round-trips Core's enum through the UI form", () => {
-    for (const [core, ui] of Object.entries(CORE_STATUS_TO_UI)) {
+    for (const [core, ui] of CORE_STATUS_TO_UI) {
       expect(toUiStatus(core)).toBe(ui);
       expect(UI_STATUS_TO_CORE[ui]).toBe(core);
     }
@@ -38,7 +38,7 @@ describe("bug-report status casing", () => {
 
   it("keeps the space in the in-progress UI form", () => {
     // The extensions' forked maps both used 'in progress', not 'in_progress'.
-    expect(CORE_STATUS_TO_UI.IN_PROGRESS).toBe("in progress");
+    expect(CORE_STATUS_TO_UI.get("IN_PROGRESS")).toBe("in progress");
     expect(UI_STATUS_TO_CORE["in progress"]).toBe("IN_PROGRESS");
   });
 

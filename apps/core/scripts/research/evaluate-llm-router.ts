@@ -9,6 +9,7 @@
  *   RESEARCH_LLM_EVAL_SPLIT     dev (default) | test | all
  *   RESEARCH_LLM_EVAL_LIMIT     optional cap
  */
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { readFileSync } from "node:fs";
 import { classifyPromptForTier, tierFromLlmClassification } from "~/lib/ai/routing/llm-classifier";
 import { DEFAULT_LABELS_OUT } from "./paths.mjs";
@@ -18,19 +19,19 @@ function readEnv(name: string): string | undefined {
   return v !== undefined && v !== "" ? v : undefined;
 }
 
-function loadJsonl(path: string): Record<string, unknown>[] {
+function loadJsonl(path: string): JsonObject[] {
   const raw = readFileSync(path, "utf8").trim();
   if (!raw) return [];
   return raw.split("\n").map((line, i) => {
     try {
-      return JSON.parse(line) as Record<string, unknown>;
+      return JSON.parse(line) as JsonObject;
     } catch (e) {
       throw new Error(`${path} line ${i + 1}: ${(e as Error).message}`);
     }
   });
 }
 
-function normalizeOracleTier(tier: unknown): 1 | 3 | null {
+function normalizeOracleTier(tier: JsonValue | undefined): 1 | 3 | null {
   if (tier === 1) return 1;
   if (tier === 2 || tier === 3) return 3;
   return null;

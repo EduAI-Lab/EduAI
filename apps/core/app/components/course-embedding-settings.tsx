@@ -41,6 +41,13 @@ const PROVIDER_OPTIONS = [
   { value: "cloud", label: "Cloud" },
 ] as const;
 
+/** The body of `PATCH /api/courses/:id/embedding-settings`. */
+type EmbeddingSettingsPatch = {
+  embeddingProvider: string | null;
+  embeddingModel: string | null;
+  reEmbed: boolean;
+};
+
 export function CourseEmbeddingSettings({
   courseId,
   onSettingsSaved,
@@ -107,7 +114,9 @@ export function CourseEmbeddingSettings({
     setSuccess(null);
 
     try {
-      const payload: Record<string, unknown> = {
+      // `null` on either field means "fall back to the deployment default",
+      // which is why neither is simply omitted.
+      const payload: EmbeddingSettingsPatch = {
         embeddingProvider: providerChoice === "env" ? null : providerChoice,
         embeddingModel: modelChoice === "default" ? null : modelChoice,
         reEmbed: reEmbedOnSave,

@@ -34,6 +34,7 @@ import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { useGuidedTour } from "../contexts/GuidedTourContext";
 import { useQmLayout } from "../components/layout/QmLayoutContext";
 import { questionService } from "../services/questionService";
+import type { ProviderApiKeys } from "../services/apiKeyStorage";
 import { courseService } from "../services/courseService";
 import assessmentService from "../services/assessmentService";
 import {
@@ -57,6 +58,7 @@ import {
   AssessmentGenerationParams,
   MCQChoice,
   questionTypeLabels,
+  type QuestionType,
 } from "../types/question";
 import { Topic } from "../types/topic";
 import {
@@ -80,11 +82,11 @@ type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
 const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
-const TYPE_COLORS: Record<string, string> = {
+const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
   SA: "var(--color-series-7)",
   LA: "var(--color-series-8)",
-};
+} satisfies Record<QuestionType, string>;
 // Shared difficulty tokens (index.css) — keeps meters consistent + dark-mode aware.
 const DIFF_COLORS = {
   easy: "var(--diff-easy-solid)",
@@ -134,7 +136,7 @@ export const CourseDetailPage = () => {
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
     totalVariants: number;
-    typeStats: Array<{ type: string; count: number }>;
+    typeStats: Array<{ type: QuestionType; count: number }>;
     difficultyStats: Array<{ difficulty: string; count: number }>;
     aiCount: number;
     humanCount: number;
@@ -286,7 +288,7 @@ export const CourseDetailPage = () => {
           totalQuestions: Number(stats.totalQuestions) || 0,
           totalVariants: Number(stats.totalVariants) || 0,
           typeStats: (stats.typeStats ?? []).map((row) => ({
-            type: String(row.type),
+            type: row.type,
             count: Number(row.count) || 0,
           })),
           difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
@@ -472,7 +474,7 @@ export const CourseDetailPage = () => {
 
     if (!courseQuestionStats) return empty;
 
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
     for (const row of courseQuestionStats.typeStats) {
       typeCounts[row.type] = row.count;
     }
@@ -745,7 +747,7 @@ export const CourseDetailPage = () => {
       text: string;
       courseId: number;
       model: string;
-      apiKeys: Record<string, unknown>;
+      apiKeys: ProviderApiKeys;
       jobId?: string;
       onExtractionComplete?: (
         status: "success" | "error",

@@ -50,7 +50,7 @@ function neverSettlingEvenAfterAbort(signal: AbortSignal | undefined): Promise<n
 async function settleWithFakeTimers<T>(promise: Promise<T>) {
   const settled = promise.then(
     (value) => ({ status: "fulfilled" as const, value }),
-    (reason: unknown) => ({ status: "rejected" as const, reason }),
+    (cause: unknown) => ({ status: "rejected" as const, reason: cause }),
   );
   await vi.runAllTimersAsync();
   return settled;
@@ -206,7 +206,7 @@ describe("embedding provider request deadlines", () => {
       })
       .then(
         (value) => ({ status: "fulfilled" as const, value }),
-        (reason: unknown) => ({ status: "rejected" as const, reason }),
+        (cause: unknown) => ({ status: "rejected" as const, reason: cause }),
       );
     await vi.advanceTimersByTimeAsync(0);
     caller.abort(cancellation);

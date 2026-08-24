@@ -48,12 +48,12 @@ export function membershipVerdict(row: LessonModulesViewRow): MembershipVerdict 
   return "member";
 }
 
-const MEMBERSHIP_STATUS: Record<MembershipVerdict, number> = {
+const MEMBERSHIP_STATUS = {
   "no-session": 401,
   "not-found": 404,
   "not-a-member": 403,
   member: 200, // placeholder; overridden by each adapter below when member
-};
+} satisfies Record<MembershipVerdict, number>;
 
 /** `GET /lessons/:lessonId/activities` adapter. */
 export function expectedActivitiesListStatus(row: LessonModulesViewRow): number {

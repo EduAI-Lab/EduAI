@@ -18,8 +18,8 @@ export const DEFAULT_BANK_NAME = "Course bank";
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+function isUniqueViolation(cause: unknown): boolean {
+  return cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002";
 }
 
 export async function ensureDefaultBank(courseId: string, db: DbClient = prisma) {

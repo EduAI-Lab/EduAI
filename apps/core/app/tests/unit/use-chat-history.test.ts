@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchChatTranscript, useChatHistory } from "~/hooks/api/use-chat-history";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const historyItem = {
   id: "chat-1",
@@ -35,7 +36,7 @@ const transcript = {
   canEdit: true,
 };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,

@@ -1,5 +1,6 @@
 // @vitest-environment node
 // /api/completion abortSignal + provider-setup error coverage (#858 review).
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -82,7 +83,7 @@ function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<t
   } as Parameters<typeof action>[0];
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     model: "vllm:test-model",
     apiKeys: { vllm: { isEnabled: true, baseUrl: "http://localhost:8001" } },

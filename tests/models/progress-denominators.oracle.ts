@@ -42,13 +42,13 @@ export type Verdict = {
   completed: boolean;
 };
 
-const EVER_CORRECT: Record<ProgressDenominatorsRow["AttemptPattern"], boolean> = {
+const EVER_CORRECT = {
   not_attempted: false,
   correct_only: true,
   incorrect_only: false,
   correct_then_incorrect: true,
   incorrect_then_correct: true,
-};
+} satisfies Record<ProgressDenominatorsRow["AttemptPattern"], boolean>;
 
 export function progressDenominatorsOracle(row: ProgressDenominatorsRow): Verdict {
   const counted = row.LessonPublished === "yes" && row.ModulePublished === "yes";
@@ -61,11 +61,13 @@ export function progressDenominatorsOracle(row: ProgressDenominatorsRow): Verdic
  * the three progressCalculation.js functions returns, for a world with
  * exactly one candidate activity.
  */
-export function expectedResult(row: ProgressDenominatorsRow): {
+export type ExpectedProgressResult = {
   completed: number;
   total: number;
   percentage: number;
-} {
+};
+
+export function expectedResult(row: ProgressDenominatorsRow): ExpectedProgressResult {
   const verdict = progressDenominatorsOracle(row);
   const total = verdict.counted ? 1 : 0;
   const completed = verdict.completed ? 1 : 0;

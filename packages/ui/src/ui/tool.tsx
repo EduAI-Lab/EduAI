@@ -11,12 +11,17 @@ import {
   IconCircleX,
 } from "@tabler/icons-react";
 import { useState } from "react";
+import type { JsonObject, JsonValue } from "@eduai/types";
 
 export type ToolPart = {
   type: string;
   state: "input-streaming" | "input-available" | "output-available" | "output-error";
-  input?: Record<string, unknown>;
-  output?: Record<string, unknown>;
+  /**
+   * A tool call's arguments and result, as the model and the tool exchanged
+   * them: JSON objects this component only renders, never interprets.
+   */
+  input?: JsonObject;
+  output?: JsonObject;
   toolCallId?: string;
   errorText?: string;
 };
@@ -118,7 +123,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
     }
   };
 
-  const formatValue = (value: unknown): string => {
+  const formatValue = (value: JsonValue | undefined): string => {
     if (value === null) return "null";
     if (value === undefined) return "undefined";
     if (typeof value === "string") return value;

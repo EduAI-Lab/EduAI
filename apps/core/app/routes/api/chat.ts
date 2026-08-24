@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
@@ -212,6 +213,8 @@ const chatRequestSchema = z
     courseId: z.string().optional().catch(undefined),
     courseCode: z.string().optional().catch(undefined),
     chatId: z.string().optional().catch(undefined),
+    // Any non-string, like any string other than "admin", is a learning chat.
+    chatMode: z.string().optional().catch(undefined),
     systemPrompt: z.string().optional().catch(undefined),
     proxyUser: z
       .object({
@@ -571,18 +574,10 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 
 /**
  * Free-form request context attached to a rejection or stream-error log line.
- * Values stay JSON-shaped because every trace is serialized straight to stdout.
+ * It is a `JsonObject` because every trace is serialized straight to stdout —
+ * the same contract the router bags this file forwards already carry.
  */
-type ChatTraceValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | ChatTraceValue[]
-  | { [key: string]: ChatTraceValue };
-
-type ChatTrace = { [key: string]: ChatTraceValue };
+type ChatTrace = JsonObject;
 
 /**
  * Router and telemetry bags are logged verbatim and never interpreted, so one
@@ -685,7 +680,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     const body = validationResult.body;
     const request_ = chatRequestSchema.parse(body);
-    const rawMessages: unknown[] = validationResult.messages;
+    const rawMessages: JsonValue[] = validationResult.messages;
     let model = request_.model?.trim();
     if (model === "") {
       model = undefined;
@@ -780,7 +775,7 @@ export async function action({ request }: ActionFunctionArgs) {
         : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = request_.chatId;
-    const chatMode = parseChatMode(body.chatMode);
+    const chatMode = parseChatMode(request_.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
 
@@ -1061,7 +1056,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // return a durable job id instead of streaming. Placed after the same course
     // access gate as sync chat so an enqueue can never bypass authz. Normal chat
     // skips this entirely; the dispatch worker (#168) drains it later.
-    if (isEnqueueRequested(body)) {
+    if (isEnqueueRequested()) {
       try {
         const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
           body,
@@ -1406,7 +1401,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
         ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
-        chatApiDebug("Router RAG prefetch failed", { err });
+        chatApiDebug("Router RAG prefetch failed", { err: formatStreamError(err) });
       }
     }
 
@@ -1445,7 +1440,7 @@ export async function action({ request }: ActionFunctionArgs) {
       } catch (error) {
         const fallbackReason = formatStreamError(error);
         chatApiDebug("Auto routing failed; falling back to rules", {
-          err: error,
+          err: fallbackReason,
           requestedAuto: autoRouting.requestedAuto,
         });
         decision = await resolveRoutedModelRules(lastUserMessageTextForRouting, routingContext);

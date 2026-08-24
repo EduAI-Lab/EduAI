@@ -2,17 +2,29 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+/**
+ * What the provider registry hands an SDK factory: the credentials and endpoint
+ * for one provider. Only these fields are ever asserted on.
+ */
+type ProviderFactoryOptions = { apiKey?: string; baseURL?: string };
+
+/**
+ * The registry map `createProviderRegistry` is built from: a provider id to the
+ * factory result the SDK mock above returned for it.
+ */
+type ProviderRegistryInput = Record<string, ReturnType<typeof vi.fn>>;
+
 const { createOllamaMock, createOpenAIMock } = vi.hoisted(() => ({
-  createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createOllamaMock: vi.fn((_opts: ProviderFactoryOptions) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: ProviderFactoryOptions) => vi.fn()),
 }));
 
 vi.mock("ollama-ai-provider", () => ({
-  createOllama: (opts: Record<string, unknown>) => createOllamaMock(opts),
+  createOllama: (opts: ProviderFactoryOptions) => createOllamaMock(opts),
 }));
 
 vi.mock("@ai-sdk/openai", () => ({
-  createOpenAI: (opts: Record<string, unknown>) => createOpenAIMock(opts),
+  createOpenAI: (opts: ProviderFactoryOptions) => createOpenAIMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
@@ -20,7 +32,7 @@ vi.mock("@ai-sdk/google", () => ({
 }));
 
 vi.mock("ai", () => ({
-  createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
+  createProviderRegistry: (providers: ProviderRegistryInput) => ({ __providers: providers }),
 }));
 
 import { createAIProviderRegistry, listEnabledRegistryProviders } from "~/lib/ai/providers";

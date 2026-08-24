@@ -444,18 +444,18 @@ export function triggerCronJobAsync(
           0,
         ),
       )
-      .catch((err: unknown) =>
+      .catch((cause: unknown) =>
         finishCronRun(
           runId,
           leaseOwner,
           "ERROR",
           utf8Tail(
-            `Core handler failed: ${redactErrorForMessage(err)}`,
+            `Core handler failed: ${redactErrorForMessage(cause)}`,
             CRON_PERSISTED_MESSAGE_MAX_BYTES,
           ),
           1,
-        ).catch((finishErr: unknown) =>
-          console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+        ).catch((cause: unknown) =>
+          console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
         ),
       );
     return;
@@ -476,8 +476,8 @@ export function triggerCronJobAsync(
       `Failed to start script: ${redactErrorForMessage(err)}`,
       CRON_PERSISTED_MESSAGE_MAX_BYTES,
     );
-    void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((finishErr: unknown) =>
-      console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+    void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((cause: unknown) =>
+      console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
     );
     return;
   }
@@ -541,8 +541,8 @@ export function triggerCronJobAsync(
           terminate("Cron run lease ownership was lost; process terminated");
         }
       })
-      .catch((err: unknown) => {
-        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(err));
+      .catch((cause: unknown) => {
+        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
         // Continuing after the database can no longer confirm our lease risks
         // overlapping external side effects with a successor after expiry.
         terminate("Cron run lease could not be renewed; process terminated");
@@ -575,8 +575,8 @@ export function triggerCronJobAsync(
           console.warn(`[cron] ${jobName} completion ignored after lease ownership changed`);
         }
       })
-      .catch((err: unknown) =>
-        console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
+      .catch((cause: unknown) =>
+        console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
       );
   };
 

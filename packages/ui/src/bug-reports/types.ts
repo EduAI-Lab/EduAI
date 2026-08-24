@@ -16,9 +16,15 @@ export type BugReportStatus = "unhandled" | "in progress" | "resolved";
  */
 export type { BugReportType } from "../bug-report-dialog";
 import type { BugReportType } from "../bug-report-dialog";
+import type { JsonObject } from "@eduai/types";
 
-/** Free-form per-app context blob (`context` is a `Json?` column). */
-export type BugReportContext = Record<string, unknown> & {
+/**
+ * Free-form per-app context blob (`context` is a `Json?` column). The open half
+ * is `JsonObject` rather than `Record<string, unknown>` because this is a column
+ * read back verbatim: every extra key came out of `JSON.parse`, so a reader may
+ * render or re-serialise it without asserting anything.
+ */
+export type BugReportContext = JsonObject & {
   courseOfferingId?: number | null;
   moduleId?: number | null;
   lessonId?: number | null;

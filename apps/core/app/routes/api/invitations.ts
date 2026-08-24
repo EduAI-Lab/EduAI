@@ -7,14 +7,8 @@ import { assertValidUnits } from "~/lib/disciplines/guards.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { withErrorResponse } from "~/lib/errors.server";
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 /**
  * GET /api/invitations — list invitations. ADMIN sees all; a UNIT_ADMIN (when

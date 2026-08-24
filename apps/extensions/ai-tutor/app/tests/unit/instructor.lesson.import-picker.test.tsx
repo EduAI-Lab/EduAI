@@ -267,7 +267,7 @@ describe("instructor.lesson — paged activity list (#1207)", () => {
     customPromptTitle: null,
   });
 
-  const wrapList = (overrides: Record<string, unknown> = {}) => {
+  const wrapList = (overrides: Partial<Route.ComponentProps["loaderData"]> = {}) => {
     const props = {
       loaderData: {
         course,
@@ -341,7 +341,7 @@ describe("instructor.lesson — activity drag persists an absolute ordinal (#120
     customPromptTitle: null,
   });
 
-  const wrapList = (overrides: Record<string, unknown> = {}) => {
+  const wrapList = (overrides: Partial<Route.ComponentProps["loaderData"]> = {}) => {
     const props = {
       loaderData: {
         course,

@@ -12,6 +12,7 @@
  * exactly like the real hook lets those requests fall through to their own
  * downstream handling.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 
@@ -121,7 +122,8 @@ async function runRow(row: PasswordSetReuseGateRow) {
           ? "definitely-the-wrong-password"
           : undefined;
 
-    const body: Record<string, unknown> = { newPassword };
+    const body: JsonObject = {};
+    body.newPassword = newPassword;
     if (currentPassword !== undefined) body.currentPassword = currentPassword;
 
     const base = new Request("http://localhost/settings");

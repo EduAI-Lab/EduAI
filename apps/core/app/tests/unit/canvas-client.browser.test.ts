@@ -17,10 +17,11 @@ import {
   syncCanvasMaterials,
   unexcludeCanvasMaterial,
 } from "~/lib/canvas/client";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const originalFetch = global.fetch;
 
-function mockFetch(body: unknown, status = 200) {
+function mockFetch(body: ParsedJsonBody, status = 200) {
   global.fetch = vi.fn(async () => new Response(JSON.stringify(body), { status })) as never;
 }
 

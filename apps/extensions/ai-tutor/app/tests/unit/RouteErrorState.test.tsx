@@ -21,13 +21,13 @@ const NOT_FOUND_TITLE = "404 — Page not found";
 const FAILURE_TITLE = "This page could not be loaded";
 
 /** Mount the boundary as the app does: a route whose loader throws. */
-function renderThrowing(thrown: unknown) {
+function renderThrowing(cause: unknown) {
   const router = createMemoryRouter(
     [
       {
         path: "/instructor/courses/1",
         loader: () => {
-          throw thrown;
+          throw cause;
         },
         element: <p>loaded</p>,
         errorElement: <RouteErrorState />,

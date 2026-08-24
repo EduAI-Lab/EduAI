@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Fleet Slice 2: fleetRetry: true success marker only after alternate host succeeds.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -18,8 +19,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -161,9 +162,15 @@ function makeRequest(body: RouteRequestBody) {
 // `.getReader()` / `.cancel()` behave like production), not a bare async
 // generator. onChunk fires as a side effect of the stream being read, same
 // as the real SDK.
+/** One part of the SDK's `fullStream`, as this test feeds them through. */
+type StreamPart = { type?: string; text?: string; textDelta?: string; error?: unknown };
+
+/** What `onChunk` receives: the part, wrapped the way the SDK wraps it. */
+type StreamChunk = { chunk: StreamPart };
+
 function makeFullStream(
-  parts: unknown[],
-  onChunk?: (chunk: unknown) => void,
+  parts: StreamPart[],
+  onChunk?: (chunk: StreamChunk) => void,
 ): ReadableStream<unknown> {
   let cancelled = false;
   return new ReadableStream({
@@ -186,7 +193,7 @@ function makeFullStream(
   });
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",

@@ -1027,13 +1027,16 @@ export function agentReadyEmailEndpoints(): ApiEndpointEntry[] {
   return CORE_API_ENDPOINTS.filter((e) => e.sendsEmail);
 }
 
-export function readinessSummary(): {
+/** The agent-readiness tally the docs page renders. */
+export type ReadinessSummary = {
   total: number;
   ready: number;
   partial: number;
   excluded: number;
   readyPct: number;
-} {
+};
+
+export function readinessSummary(): ReadinessSummary {
   const ready = agentReadyEndpoints().length;
   const partial = partialEndpoints().length;
   const excluded = excludedEndpoints().length;

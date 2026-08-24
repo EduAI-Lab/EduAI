@@ -304,12 +304,13 @@ async function main() {
   });
 
   const strategies = ["baseline", "hybrid", "rewrite", "hyde"] as const;
-  const results: Record<string, StrategyResult> = {
-    baseline: { hits: [], rrs: [] },
-    hybrid: { hits: [], rrs: [] },
-    rewrite: { hits: [], rrs: [] },
-    hyde: { hits: [], rrs: [] },
-  };
+  const emptyResult = (): StrategyResult => ({ hits: [], rrs: [] });
+  const results = {
+    baseline: emptyResult(),
+    hybrid: emptyResult(),
+    rewrite: emptyResult(),
+    hyde: emptyResult(),
+  } satisfies Record<(typeof strategies)[number], StrategyResult>;
   const llmSkipped = { rewrite: 0, hyde: 0 };
 
   // Per-query detail
@@ -436,7 +437,8 @@ async function main() {
   for (const cat of categories) {
     const idx = detailRows.map((r, i) => (r.category === cat ? i : -1)).filter((i) => i >= 0);
     if (idx.length === 0) continue;
-    const catRecall = (s: string) => fmt(idx.filter((i) => results[s].hits[i]).length / idx.length);
+    const catRecall = (s: (typeof strategies)[number]) =>
+      fmt(idx.filter((i) => results[s].hits[i]).length / idx.length);
     console.log(
       `${cat.padEnd(9)}  ${idx.length}   ${catRecall("baseline")}      ${catRecall("hybrid")}   ${catRecall("rewrite")}   ${catRecall("hyde")}`,
     );

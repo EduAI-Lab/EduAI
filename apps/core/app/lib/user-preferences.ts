@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import {
   DEFAULT_UI_PREFERENCES,
   isUiDensity,
@@ -34,8 +35,8 @@ export const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
  * normalized to null (cleared). The stored code is a hint only — it is
  * validated against the live course list on read (see resolveSelectedCourse).
  */
-export function parsePreferenceUpdates(payload: unknown): PreferenceUpdates {
-  const obj = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+export function parsePreferenceUpdates(payload: JsonValue | undefined): PreferenceUpdates {
+  const obj = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const updates: PreferenceUpdates = {};
 
   if (typeof obj.assistDefault === "boolean") {

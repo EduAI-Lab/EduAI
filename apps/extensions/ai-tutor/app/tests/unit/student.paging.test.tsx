@@ -59,7 +59,9 @@ import StudentLessonPlayer from "~/routes/student.lesson";
 const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
 
 describe("student.course — paged module grid (#1207)", () => {
-  const wrap = (overrides: Record<string, unknown> = {}) =>
+  const wrap = (
+    overrides: Partial<React.ComponentProps<typeof StudentCourseModules>["loaderData"]> = {},
+  ) =>
     render(
       <MemoryRouter>
         <StudentCourseModules
@@ -125,15 +127,30 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     customPromptTitle: null,
   });
 
-  const wrap = (overrides: Record<string, unknown> = {}) =>
+  const wrap = (
+    overrides: Partial<React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]> = {},
+  ) =>
     render(
       <MemoryRouter>
         <StudentLessonPlayer
           {...({
             loaderData: {
               course,
-              module: { id: 2, title: "Module", courseOfferingId: 1 },
-              lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
+              module: {
+                id: 2,
+                title: "Module",
+                courseOfferingId: 1,
+                position: 0,
+                isPublished: true,
+              },
+              lesson: {
+                id: 3,
+                title: "Lesson",
+                moduleId: 2,
+                isPublished: true,
+                contentMd: "",
+                position: 0,
+              },
               activities: [activity(1), activity(2)],
               activitiesTotal: 2,
               orderText: "3.2",
@@ -199,12 +216,19 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     // Appending that response mixes the old lesson's activities into the new
     // one — and the id-dedupe can't see it, the ids don't collide.
     const named = (id: number, question: string) => ({ ...activity(id), question });
-    let releaseStale: ((value: unknown) => void) | undefined;
+    /** One page of `activitiesForLesson`, as the player consumes it. */
+    type ActivitiesPage = {
+      data: ReturnType<typeof named>[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    let releaseStale: ((value: ActivitiesPage) => void) | undefined;
 
     mockActivitiesForLesson.mockReset();
     mockActivitiesForLesson.mockImplementation((lessonId: number) => {
       if (lessonId === 3) {
-        return new Promise((resolve) => {
+        return new Promise<ActivitiesPage>((resolve) => {
           releaseStale = resolve;
         });
       }
@@ -216,20 +240,35 @@ describe("student.lesson — paged activity walk (#1207)", () => {
       });
     });
 
-    const props = (loaderData: Record<string, unknown>) =>
-      ({ loaderData }) as React.ComponentProps<typeof StudentLessonPlayer>;
+    const props = (
+      loaderData: Partial<React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]>,
+    ) => ({ loaderData }) as React.ComponentProps<typeof StudentLessonPlayer>;
 
     const oldLesson = {
       course,
-      module: { id: 2, title: "Module", courseOfferingId: 1 },
-      lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      module: { id: 2, title: "Module", courseOfferingId: 1, position: 0, isPublished: true },
+      lesson: {
+        id: 3,
+        title: "Lesson",
+        moduleId: 2,
+        isPublished: true,
+        contentMd: "",
+        position: 0,
+      },
       activities: [named(1, "OLD ONE"), named(2, "OLD TWO")],
       activitiesTotal: 3,
       orderText: "3.2",
     };
     const newLesson = {
       ...oldLesson,
-      lesson: { id: 4, title: "Next lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      lesson: {
+        id: 4,
+        title: "Next lesson",
+        moduleId: 2,
+        isPublished: true,
+        contentMd: "",
+        position: 1,
+      },
       activities: [named(10, "NEW ONE")],
       activitiesTotal: 2,
       orderText: "3.3",

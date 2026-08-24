@@ -26,6 +26,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import StudentAiChat, { type StudentAiChatHandle } from "~/components/StudentAiChat";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import type { Activity } from "~/lib/types";
+import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
 const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
@@ -125,13 +126,16 @@ const MULTI_MODE_ACTIVITY: Activity = {
 /** A pending guide-message call the test controls, honoring AbortSignal like the real api.ts. */
 function deferredGuideCall() {
   let resolve!: (value: { message: string; chatId?: string | null }) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<{ message: string; chatId?: string | null }>((res, rej) => {
     resolve = res;
     reject = rej;
   });
+  // Typed off the real call so a signature change breaks the mock instead of
+  // silently accepting the wrong arguments. Only `signal` is exercised here.
+  type GuideCallArgs = Parameters<typeof api.sendGuideMessage>;
   sendGuideMessage.mockImplementationOnce(
-    (_activityId: unknown, _params: unknown, signal?: AbortSignal) => {
+    (_activityId: GuideCallArgs[0], _params: GuideCallArgs[1], signal?: AbortSignal) => {
       signal?.addEventListener("abort", () => {
         const err = new Error("Aborted");
         err.name = "AbortError";
@@ -498,7 +502,7 @@ describe("StudentAiChat — history restoration (#1003)", () => {
 function deferredRestoreCall() {
   type RestoredMessages = { id: string; role: "user" | "assistant"; content: string }[];
   let resolve!: (value: RestoredMessages) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<RestoredMessages>((res, rej) => {
     resolve = res;
     reject = rej;

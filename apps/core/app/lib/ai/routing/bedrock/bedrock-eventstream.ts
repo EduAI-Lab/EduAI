@@ -54,6 +54,12 @@ function writeUint16BE(bytes: Uint8Array, offset: number, value: number): void {
   bytes[offset + 1] = value & 0xff;
 }
 
+/** One decode pass: the whole messages it found, and the bytes left over. */
+export type EventStreamDecodeResult = {
+  messages: EventStreamMessage[];
+  rest: Uint8Array;
+};
+
 export type EventStreamMessage = {
   headers: Record<string, string>;
   payload: Uint8Array;
@@ -66,7 +72,7 @@ export class EventStreamParseError extends Error {
   }
 }
 
-function parseHeaders(section: Uint8Array): Record<string, string> {
+function parseHeaders(section: Uint8Array): EventStreamMessage["headers"] {
   const headers: Record<string, string> = {};
   let offset = 0;
   const decoder = new TextDecoder();
@@ -104,10 +110,7 @@ function parseHeaders(section: Uint8Array): Record<string, string> {
  * Parse as many complete Event Stream messages as `buffer` contains.
  * Returns leftover bytes that belong to an incomplete trailing message.
  */
-export function parseEventStreamMessages(buffer: Uint8Array): {
-  messages: EventStreamMessage[];
-  rest: Uint8Array;
-} {
+export function parseEventStreamMessages(buffer: Uint8Array): EventStreamDecodeResult {
   const messages: EventStreamMessage[] = [];
   let offset = 0;
 
