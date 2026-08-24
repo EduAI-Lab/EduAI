@@ -1,8 +1,8 @@
 # EduAI Fleet Router — Data Report
 
-**Test period:** August 18–19, 2026 UTC  
-**Environment:** `https://dev.eduai.ok.ubc.ca` plus direct Core on s378  
-**Models:** `qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`  
+**Test period:** August 18–19, 2026 UTC
+**Environment:** `https://dev.eduai.ok.ubc.ca` plus direct Core on s378
+**Models:** `qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`
 **Raw artifacts:** [`artifacts/`](./artifacts/)
 
 ## Test configuration

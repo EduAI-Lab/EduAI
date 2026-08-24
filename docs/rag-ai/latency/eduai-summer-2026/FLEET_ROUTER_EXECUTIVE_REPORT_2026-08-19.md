@@ -1,8 +1,8 @@
 # EduAI Fleet Router — Executive Report
 
-**Test period:** August 18–19, 2026 UTC  
-**Environment:** `https://dev.eduai.ok.ubc.ca`  
-**Configuration:** Qwen 3.5 2B/9B split across cmps01, cmps02, and cmps03  
+**Test period:** August 18–19, 2026 UTC
+**Environment:** `https://dev.eduai.ok.ubc.ca`
+**Configuration:** Qwen 3.5 2B/9B split across cmps01, cmps02, and cmps03
 **Related issue:** [#893](https://github.com/EduAI-Lab/EduAI/issues/893)
 
 ## Executive summary
