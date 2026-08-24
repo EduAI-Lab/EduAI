@@ -34,6 +34,12 @@ export function hasNavigator(): boolean {
   return typeof navigator !== "undefined";
 }
 
+/** True where `FileReader` exists: the browser path for reading a picked file. */
+export function hasFileReader(): boolean {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  return typeof FileReader !== "undefined";
+}
+
 /**
  * A unique id, from the platform UUID generator where there is one.
  *

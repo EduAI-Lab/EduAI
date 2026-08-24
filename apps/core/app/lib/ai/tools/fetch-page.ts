@@ -91,16 +91,14 @@ function parseAndValidateTarget(raw: string): URL {
 type FetchedDoc = { url: string; title: string; markdown: string };
 
 function coerceDoc(record: GenericDoc | undefined, fallbackUrl: string): FetchedDoc | null {
-  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
-  const r = record;
-  const url =
-    (typeof r.url === "string" && r.url) ||
-    (r.metadata && typeof r.metadata.sourceURL === "string" ? r.metadata.sourceURL : undefined) ||
-    fallbackUrl;
-  const md =
-    typeof r.markdown === "string" ? r.markdown : typeof r.content === "string" ? r.content : "";
-  const title = (typeof r.title === "string" && r.title) || (r.metadata && r.metadata.title) || url;
-  return { url, title, markdown: md };
+  if (!record) return null;
+  // An empty string is a real answer for `markdown`, so `content` is only a
+  // fallback for an absent field; a blank `url` or `title` is not useful to a
+  // reader, so those do fall through.
+  const url = record.url || record.metadata?.sourceURL || fallbackUrl;
+  const markdown = record.markdown ?? record.content ?? "";
+  const title = record.title || record.metadata?.title || url;
+  return { url, title, markdown };
 }
 
 function failureResult(url: string, cause: unknown): FetchPageResult {
@@ -224,10 +222,7 @@ export async function runFetchPage({
       signal,
     );
 
-    if (
-      !resp ||
-      (typeof resp === "object" && "success" in resp && !(resp as { success?: boolean }).success)
-    ) {
+    if (!resp || ("success" in resp && !resp.success)) {
       return {
         url,
         title: url,
