@@ -67,11 +67,7 @@ describe("DemoLoginButtons", () => {
     });
 
     render(
-      <DemoLoginButtons
-        redirectTo="/dashboard"
-        password="test-password"
-        onSubmit={onSubmit}
-      />,
+      <DemoLoginButtons redirectTo="/dashboard" password="test-password" onSubmit={onSubmit} />,
     );
     fireEvent.click(screen.getByTitle("student1@eduai.local"));
 
