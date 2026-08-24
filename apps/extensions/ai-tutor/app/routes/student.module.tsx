@@ -12,6 +12,7 @@ import { requireClientUser } from "~/lib/client-auth";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { splitTitle } from "~/lib/course-title";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   await requireClientUser(["STUDENT", "TA"]);
@@ -138,3 +139,9 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

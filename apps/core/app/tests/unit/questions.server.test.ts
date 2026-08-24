@@ -185,7 +185,7 @@ describe("createQuestion", () => {
     db.courseTopic.findMany.mockResolvedValue([
       { id: SEC_TOPIC_ID, courseId: COURSE_ID, deletedAt: null },
     ]);
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       db.questionSecondaryTopic.createMany.mockResolvedValue({ count: 1 });
       return fn(db);
@@ -219,7 +219,7 @@ describe("createQuestion", () => {
       courseId: COURSE_ID,
       deletedAt: null,
     });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -351,7 +351,7 @@ describe("createQuestion", () => {
       courseId: COURSE_ID,
       deletedAt: null,
     });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });

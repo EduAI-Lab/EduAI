@@ -2,6 +2,7 @@
 // Per-user rate limiting for /api/chat (#987): caps LLM completion requests
 // so an authenticated user can't submit unbounded requests to the model.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
 
@@ -123,7 +124,7 @@ const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
 const originalChatRateLimitWindow = process.env.CHAT_RATE_LIMIT_WINDOW_MS;
 const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

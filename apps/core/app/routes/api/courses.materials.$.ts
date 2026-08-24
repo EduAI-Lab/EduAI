@@ -42,6 +42,21 @@ function json(status: number, body: unknown) {
 }
 
 /**
+ * Audit `details` for a material edit. Every field past `courseId` is optional
+ * because a rename and a visibility change are recorded independently — the
+ * absent keys are what tell a reader which half of the edit did not happen.
+ */
+type MaterialEditAuditDetails = {
+  courseId: string;
+  previousTitle?: string;
+  newTitle?: string;
+  previousVisibleToStudents?: boolean;
+  newVisibleToStudents?: boolean;
+  previousAvailableAt?: Date | null;
+  newAvailableAt?: Date | null;
+};
+
+/**
  * Staff (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) see every material so they can stage
  * and schedule content; only students are subject to the per-material
  * visibility gate. `access.level === 'student'` is the single student marker.
@@ -262,6 +277,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
           ? "MATERIAL_UPDATED"
           : "MATERIAL_VISIBILITY_CHANGED";
 
+      // The audit entry records only the fields this edit actually changed, so a
+      // rename does not leave visibility columns in the trail and vice versa.
+      const details: MaterialEditAuditDetails = { courseId };
+      if (hasTitle) {
+        details.previousTitle = material.title;
+        details.newTitle = updated.title;
+      }
+      if (visibilityChanged) {
+        details.previousVisibleToStudents = material.visibleToStudents;
+        details.newVisibleToStudents = updated.visibleToStudents;
+        details.previousAvailableAt = material.availableAt;
+        details.newAvailableAt = updated.availableAt;
+      }
+
       const { fireAndForget, logAuditAction } = await import("~/lib/logging.server");
       fireAndForget(
         logAuditAction({
@@ -272,18 +301,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           entityType: "CourseMaterial",
           entityId: materialId,
           entityLabel: updated.title,
-          details: {
-            courseId,
-            ...(hasTitle ? { previousTitle: material.title, newTitle: updated.title } : {}),
-            ...(visibilityChanged
-              ? {
-                  previousVisibleToStudents: material.visibleToStudents,
-                  newVisibleToStudents: updated.visibleToStudents,
-                  previousAvailableAt: material.availableAt,
-                  newAvailableAt: updated.availableAt,
-                }
-              : {}),
-          },
+          details,
         }),
       );
 
@@ -669,13 +687,17 @@ async function materialsListResponse(
   cursorParams: { cursor: string | null; limit: number },
 ) {
   const { cursor, limit } = cursorParams;
-  const rows = await prisma.courseMaterial.findMany({
-    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+  const pageArgs = {
+    where: includeDeleted ? { courseId } : { courseId, deletedAt: null },
     select: MATERIAL_LIST_SELECT,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  });
+  };
+  // A cursor page resumes past the cursor row itself; the first page sends
+  // neither key, so Prisma never sees a half-specified pair.
+  const rows = cursor
+    ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+    : await prisma.courseMaterial.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
 
   return json(200, {
@@ -799,24 +821,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const { cursor, limit } = cursorParams;
-  const rows = await prisma.courseMaterial.findMany({
+  const pageArgs = {
     where: { courseId, deletedAt: null, ...studentGate },
     select: MATERIAL_LIST_SELECT,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  });
+  };
+  // A cursor page resumes past the cursor row itself; the first page sends
+  // neither key, so Prisma never sees a half-specified pair.
+  const rows = cursor
+    ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+    : await prisma.courseMaterial.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
 
   // Staff receive the scheduling fields so the management UI can render and edit
   // them; students never do (they only ever see already-visible materials).
   const staff = isStaffAccess(access);
   return json(200, {
-    materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
-      ...material,
-      chunkCount: _count?.chunks ?? 0,
-      ...(staff ? { visibleToStudents, availableAt } : {}),
-    })),
+    materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
+      const row = { ...material, chunkCount: _count?.chunks ?? 0 };
+      if (!staff) return row;
+      return { ...row, visibleToStudents, availableAt };
+    }),
     nextCursor,
   });
 }

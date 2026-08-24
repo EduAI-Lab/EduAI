@@ -146,12 +146,12 @@ export async function listQuestions(params: ListQuestionsParams) {
   const safeLimit = boundedInteger(limit, 100, 1, MAX_QUESTIONS_LIMIT);
   const safeOffset = boundedInteger(offset, 0, 0, MAX_QUESTIONS_OFFSET);
 
-  const where: Prisma.QuestionWhereInput = {
-    courseId,
-    ...(includeDeleted ? {} : { deletedAt: null }),
-    ...(topicId !== undefined && { topicId }),
-    ...(testable !== undefined && { testable }),
-  };
+  // Each optional narrowing is added only when the caller asked for it, so the
+  // WHERE carries exactly the constraints this query means to apply.
+  const where: Prisma.QuestionWhereInput = { courseId };
+  if (!includeDeleted) where.deletedAt = null;
+  if (topicId !== undefined) where.topicId = topicId;
+  if (testable !== undefined) where.testable = testable;
 
   const [questions, total] = await Promise.all([
     prisma.question.findMany({
@@ -169,7 +169,7 @@ export async function listQuestions(params: ListQuestionsParams) {
 
 export async function getQuestionById(id: string, includeDeleted = false) {
   return prisma.question.findFirst({
-    where: { id, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { id, deletedAt: includeDeleted ? undefined : null },
     include: { secondaryTopics: true },
   });
 }

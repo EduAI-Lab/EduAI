@@ -23,6 +23,7 @@ import { ThemeProvider } from "@eduai/ui/theme-provider";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { Toaster } from "@eduai/ui/sonner";
 import { PageLoader } from "@eduai/ui/page-loader";
+import { NotFoundState } from "~/components/common/NotFoundState";
 
 // No `links()` export: Outfit is self-hosted via @fontsource-variable/outfit,
 // imported from @eduai/ui's base.css and bundled with the app stylesheet (#1221).
@@ -72,15 +73,26 @@ export default function App() {
   );
 }
 
+/**
+ * Last-resort boundary, for errors thrown above the `_app.tsx` shell (`/` and
+ * `/unsupported-role`). Routes inside the shell export their own
+ * `RouteErrorState`, which keeps the sidebar and header mounted.
+ *
+ * A 404/403 here renders the same generic not-found page the rest of the app
+ * uses, standalone — never the bare "Oops!" text this used to show.
+ */
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  if (isRouteErrorResponse(error) && (error.status === 404 || error.status === 403)) {
+    return <NotFoundState standalone />;
+  }
+
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
+    message = "Error";
+    details = error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

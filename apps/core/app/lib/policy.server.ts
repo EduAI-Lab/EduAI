@@ -129,10 +129,12 @@ export type PolicyDenialInput = {
  * log-write latency. This is the single source of truth for denial logging.
  */
 export function logPolicyDenial(input: PolicyDenialInput): void {
+  // Denials raised outside a request (jobs, scripts) carry no route/IP context.
+  const requestContext = input.request ? getRequestContext(input.request) : undefined;
   fireAndForget(
     logSecurityEvent({
       ...getActorContext(input.user),
-      ...(input.request ? getRequestContext(input.request) : {}),
+      ...requestContext,
       actionCode: "POLICY_DENIED",
       outcome: "DENIED",
       entityType: input.courseId ? "Course" : "Policy",

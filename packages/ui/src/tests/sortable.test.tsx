@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { SortableProvider, SortableItem, DragHandle } from "../sortable";
 
@@ -20,6 +20,57 @@ function renderList(disabled: boolean) {
     </SortableProvider>,
   );
 }
+
+const ROW_WIDTH = 320;
+const ROW_HEIGHT = 60;
+
+/**
+ * happy-dom has no layout engine, so every getBoundingClientRect is 0×0 and
+ * dnd-kit's collision detection has nothing to aim at. Give each sortable row
+ * the geometry of a stacked vertical list so the keyboard sensor can resolve a
+ * neighbour in the arrow direction.
+ */
+function stubRowRects() {
+  const rect = (top: number, height: number) =>
+    ({
+      x: 0,
+      y: top,
+      top,
+      left: 0,
+      right: ROW_WIDTH,
+      bottom: top + height,
+      width: ROW_WIDTH,
+      height,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  const rows = document.querySelectorAll<HTMLElement>(".row");
+  rows.forEach((node, index) => {
+    node.getBoundingClientRect = () => rect(index * ROW_HEIGHT, ROW_HEIGHT);
+  });
+
+  // SortableProvider applies restrictToParentElement, which clamps the drag
+  // transform to the parent's box — without geometry on the list container
+  // every keyboard move clamps back to zero and no drop target is resolved.
+  const parent = rows[0]?.parentElement;
+  if (parent) parent.getBoundingClientRect = () => rect(0, rows.length * ROW_HEIGHT);
+}
+
+/** The sensor registers its document keydown listener in a `setTimeout`. */
+function flushSensorAttach() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+beforeAll(() => {
+  // dnd-kit measures droppables through a ResizeObserver; happy-dom omits it.
+  if (!("ResizeObserver" in globalThis)) {
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+  }
+});
 
 describe("Sortable", () => {
   it("renders every item through the render prop", () => {
@@ -104,6 +155,57 @@ describe("Sortable", () => {
 
     expect(parentKeyDown).not.toHaveBeenCalled();
     expect(parentKeyUp).not.toHaveBeenCalled();
+  });
+
+  it("completes a keyboard reorder: Space, ArrowDown, Space yields the new order", async () => {
+    // The grip is the accessible drag path, so the keyboard sensor is the
+    // gesture a real user has. This drives dnd-kit's own KeyboardSensor
+    // end-to-end and asserts the resulting order, so a sensor regression (or a
+    // DragHandle change that eats the activation key) fails here rather than
+    // silently reducing "reorder" to "the grip is visible".
+    const onReorder = vi.fn();
+    const ids = [1, 2, 3];
+    render(
+      <SortableProvider ids={ids} onReorder={onReorder} strategy="list">
+        {ids.map((id) => (
+          <SortableItem key={id} id={id} className={`row row-${id}`}>
+            {({ handleProps }) => (
+              <div>
+                <span>Item {id}</span>
+                <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />
+              </div>
+            )}
+          </SortableItem>
+        ))}
+      </SortableProvider>,
+    );
+
+    stubRowRects();
+
+    // Activation goes through the handle, so DragHandle's isolate() wrapper is
+    // on the path being tested.
+    const handle = screen.getByRole("button", { name: "Drag item 1" });
+    handle.focus();
+    await act(async () => {
+      fireEvent.keyDown(handle, { code: "Space", key: " " });
+      await flushSensorAttach();
+    });
+
+    // Move and drop are dispatched on document because that is where the
+    // sensor listens. In the app React hydrates `document` itself, so its
+    // delegated listener is a sibling of the sensor's and isolate()'s
+    // stopPropagation cannot reach it; under Testing Library the React root is
+    // a container div *below* document, which would swallow these keys as a
+    // pure test artifact.
+    await act(async () => {
+      fireEvent.keyDown(document, { code: "ArrowDown", key: "ArrowDown" });
+    });
+    await act(async () => {
+      fireEvent.keyDown(document, { code: "Space", key: " " });
+    });
+
+    expect(onReorder).toHaveBeenCalledTimes(1);
+    expect(onReorder).toHaveBeenCalledWith([2, 1, 3]);
   });
 
   it("DragHandle still runs dnd-kit's own key/click listeners", () => {

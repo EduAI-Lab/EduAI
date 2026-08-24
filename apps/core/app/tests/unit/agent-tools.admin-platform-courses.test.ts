@@ -109,7 +109,7 @@ describe("createAdminCourse", () => {
 
   it("creates a course for admin with valid input", async () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1" }]);
-    prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+    prismaMock.$transaction.mockImplementation(async <T>(fn: (tx: unknown) => T) => {
       const tx = {
         course: { create: vi.fn().mockResolvedValue({ id: "c1", name: "Intro to CS" }) },
         enrollment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },

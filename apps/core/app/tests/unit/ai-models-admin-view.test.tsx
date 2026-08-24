@@ -27,7 +27,7 @@ const provider = {
   isActive: true,
   requiresApiKey: true,
   _count: { models: 2 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 const model = {
   id: "model-1",
@@ -46,7 +46,7 @@ const ollamaProvider = {
   isActive: true,
   requiresApiKey: false,
   _count: { models: 0 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 const vllmProvider = {
   id: "prov-vllm",
@@ -55,7 +55,7 @@ const vllmProvider = {
   isActive: true,
   requiresApiKey: false,
   _count: { models: 0 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdminView>> = {}) {
   const onModelSearchChange = vi.fn();
@@ -514,7 +514,7 @@ describe("AiModelsAdminView", () => {
             },
           ],
         }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
       const onCreateModel = vi.fn().mockResolvedValue(undefined);
 
       renderView({ providers: [provider, ollamaProvider], onCreateModel });
@@ -535,7 +535,7 @@ describe("AiModelsAdminView", () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         json: async () => ({ error: "Ollama unreachable" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, ollamaProvider] });
 
@@ -550,7 +550,7 @@ describe("AiModelsAdminView", () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ models: [{ id: "qwen-7b", owned_by: "vllm" }] }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
       const onCreateModel = vi.fn().mockResolvedValue(undefined);
 
       renderView({ providers: [provider, vllmProvider], onCreateModel });
@@ -572,7 +572,7 @@ describe("AiModelsAdminView", () => {
         ok: false,
         status: 404,
         json: async () => ({ error: "Not Found" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 
@@ -588,7 +588,7 @@ describe("AiModelsAdminView", () => {
         ok: false,
         status: 500,
         json: async () => ({ error: "Internal error" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 
@@ -606,7 +606,7 @@ describe("AiModelsAdminView", () => {
         json: async () => {
           throw new Error("bad json");
         },
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 

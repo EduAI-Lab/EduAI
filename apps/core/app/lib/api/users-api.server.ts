@@ -71,7 +71,7 @@ export async function handleUsersApiRequest(request: Request) {
         entityType: "User",
         entityId: actor?.id ?? null,
         entityLabel: actor?.email ?? null,
-        ...(actor?.email ? { details: { email: actor.email } } : {}),
+        details: actor?.email ? { email: actor.email } : undefined,
       }),
     );
 
@@ -536,11 +536,16 @@ export async function handleUsersApiRequest(request: Request) {
             entityType: "User",
             entityId: updated.id,
             entityLabel: userEntityLabel(updated.name, updated.email),
+            // The role pair and the TA-course pair are each recorded only when
+            // that half of the edit ran; `undefined` keeps them out of the
+            // stored JSON so the trail shows exactly what changed.
             details: {
               email: updated.email,
               changedFields,
-              ...(platformRoleChanged ? { previousRole, newRole: effectiveRole } : {}),
-              ...(shouldReconcileTACourses ? { taCourseIdsAdded, taCourseIdsRemoved } : {}),
+              previousRole: platformRoleChanged ? previousRole : undefined,
+              newRole: platformRoleChanged ? effectiveRole : undefined,
+              taCourseIdsAdded: shouldReconcileTACourses ? taCourseIdsAdded : undefined,
+              taCourseIdsRemoved: shouldReconcileTACourses ? taCourseIdsRemoved : undefined,
             },
           }),
         );

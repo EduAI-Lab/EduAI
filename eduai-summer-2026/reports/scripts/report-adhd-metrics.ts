@@ -15,6 +15,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -101,11 +102,10 @@ function parseBehavioral(metricsJson: unknown): BehavioralRow {
 }
 
 async function fetchEvents(eventType: string, since?: Date): Promise<EventRow[]> {
+  const where: Prisma.AssistiveEventWhereInput = { eventType };
+  if (since) where.createdAt = { gte: since };
   return prisma.assistiveEvent.findMany({
-    where: {
-      eventType,
-      ...(since ? { createdAt: { gte: since } } : {}),
-    },
+    where,
     select: { adhdAssist: true, metricsJson: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });

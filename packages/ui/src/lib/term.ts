@@ -251,7 +251,7 @@ export type CourseTermGroup<T> = {
  */
 export function groupCoursesByTerm<T>(
   items: T[],
-  accessor: (item: T) => TermInfo = (item) => item as unknown as TermInfo,
+  accessor: (item: T) => TermInfo = (item) => item as TermInfo,
 ): CourseTermGroup<T>[] {
   const groups = new Map<string, { sort: number; group: CourseTermGroup<T> }>();
   for (const item of items) {

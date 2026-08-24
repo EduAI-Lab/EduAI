@@ -36,12 +36,12 @@ function makeLoaderArgs() {
 }
 
 function makeActionArgs(body: unknown, method = "POST") {
+  // A bodyless method carries no body at all, so the key is added only when the
+  // caller passed one.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/invitations", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/invitations", init),
     params: {},
     context: {} as never,
   } as never;

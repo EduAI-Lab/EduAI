@@ -165,7 +165,7 @@ class EduAIService {
    */
   async testApiKey(
     overrideApiKeys?: Record<string, any>,
-    opts?: { forceProvider?: CampusProvider },
+    opts?: { forceProvider?: CampusProvider; signal?: AbortSignal },
   ): Promise<EduAITestResponse> {
     // Build the apiKeys payload the backend expects from any locally-stored keys,
     // unless the caller supplied an explicit override.
@@ -190,7 +190,9 @@ class EduAIService {
     if (opts?.forceProvider) body.provider = opts.forceProvider;
 
     try {
-      const response = await api.post("/api/eduai/test-api-key", body);
+      // Forward the caller's AbortSignal so a status-chip poll can cancel a
+      // wedged probe on refresh / unmount / timeout (issue #1551).
+      const response = await api.post("/api/eduai/test-api-key", body, { signal: opts?.signal });
       return { ...response.data, configured: response.data.configured ?? true };
     } catch (err: any) {
       if (err.response?.status === 400 && err.response?.data) {

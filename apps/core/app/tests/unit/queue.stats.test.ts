@@ -8,7 +8,7 @@ const prismaMock = vi.hoisted(() => {
     aiJob,
     // getQueueSnapshot runs both reads on a transaction client; the mock hands
     // the callback this same client so the count assertions still apply.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: unknown) => T) => fn({ aiJob })),
   };
 });
 

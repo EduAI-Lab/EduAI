@@ -37,7 +37,14 @@ afterEach(() => {
 });
 
 describe("GET /api/prompts", () => {
-  it("requires INSTRUCTOR role", async () => {
+  it.each(["ADMIN", "UNIT_ADMIN"])("lets %s read the store (admin ⊇ instructor)", async (role) => {
+    mockFindMany.mockResolvedValue([]);
+    const app = buildApp(role);
+    const res = await request(app).get("/api/prompts");
+    expect(res.status).toBe(200);
+  });
+
+  it("requires a teaching role", async () => {
     const app = buildApp("STUDENT");
     const res = await request(app).get("/api/prompts");
     expect(res.status).toBe(403);
@@ -73,7 +80,15 @@ describe("GET /api/prompts", () => {
 });
 
 describe("POST /api/prompts", () => {
-  it("requires INSTRUCTOR role", async () => {
+  it.each(["ADMIN", "UNIT_ADMIN"])("lets %s create a prompt", async (role) => {
+    mockFindMany.mockResolvedValue([]);
+    mockCreate.mockImplementation(({ data }) => Promise.resolve({ id: "p1", ...data }));
+    const app = buildApp(role);
+    const res = await request(app).post("/api/prompts").send({ name: "x", systemPrompt: "y" });
+    expect(res.status).toBe(201);
+  });
+
+  it("requires a teaching role", async () => {
     const app = buildApp("STUDENT");
     const res = await request(app).post("/api/prompts").send({ name: "x", systemPrompt: "y" });
     expect(res.status).toBe(403);

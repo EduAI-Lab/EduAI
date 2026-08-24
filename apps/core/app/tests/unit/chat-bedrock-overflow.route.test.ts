@@ -2,6 +2,7 @@
 // #1441 review: admission timeout must skip the rethrow after Bedrock overflow
 // activates, so the request reaches streamText on the overflow model.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -118,17 +119,24 @@ vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode overflow paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -181,6 +189,9 @@ beforeEach(() => {
   delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 
   vi.mocked(acquireAiAdmission).mockRejectedValue(new AdmissionTimeoutError());
+  // #1571: vi.clearAllMocks() above wipes the factory default, so re-arm the
+  // admin isActive re-check for each admin-mode overflow case.
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "ADMIN" },
   } as never);

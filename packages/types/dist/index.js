@@ -1,3 +1,8 @@
+// Shared typed-error hierarchy (#1279). The `.js` specifier is required: the
+// emitted `dist/index.js` is loaded directly by Node ESM consumers
+// (ai-tutor/server, question-maker backend), which do not resolve extensionless
+// relative imports even though `moduleResolution: bundler` accepts them here.
+export * from "./errors.js";
 // Runtime constants for JavaScript consumers (e.g. QM backend)
 export const USER_ROLE_VALUES = [
     "ADMIN",

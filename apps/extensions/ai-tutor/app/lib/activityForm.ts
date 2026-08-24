@@ -17,6 +17,18 @@
 
 import type { Activity } from "./types";
 
+/**
+ * Refusal shown when the last enabled AI mode would be turned off. Every
+ * activity must offer students at least one way to ask for help, and the
+ * server enforces the same rule.
+ *
+ * Shared so the add-activity dialog and the per-activity editor say the same
+ * thing; both render it under their "AI study buddy" box rather than in a
+ * native `alert()`, which was modal, unstyled, and detached from the control
+ * that triggered it.
+ */
+export const AI_MODE_REQUIRED = "At least one AI mode must be enabled.";
+
 export type ActivityFormValues = {
   title: string;
   instructionsMd: string;

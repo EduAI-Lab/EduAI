@@ -49,10 +49,12 @@ export function withResolvedModelMetadata<T extends Record<string, unknown>>(
   resolvedModelId: string,
   wasAutoRouted: boolean,
 ): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
+  // A message that never carried metadata contributes nothing to merge.
+  const existing = isRecord(message.metadata) ? message.metadata : undefined;
   return {
     ...message,
     metadata: {
-      ...(isRecord(message.metadata) ? message.metadata : {}),
+      ...existing,
       resolvedModelId,
       wasAutoRouted,
     },
@@ -63,10 +65,12 @@ export function withResolvedModelMetadata<T extends Record<string, unknown>>(
 export function withCourseScopeRedirectMetadata<T extends Record<string, unknown>>(
   message: T,
 ): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
+  // A message that never carried metadata contributes nothing to merge.
+  const existing = isRecord(message.metadata) ? message.metadata : undefined;
   return {
     ...message,
     metadata: {
-      ...(isRecord(message.metadata) ? message.metadata : {}),
+      ...existing,
       courseScopeRedirect: true,
     },
   };

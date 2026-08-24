@@ -38,7 +38,7 @@
  */
 
 export type ParseValidateCanvasUrlRow = {
-  UrlShape: "https-host" | "http-host" | "with-userinfo" | "relative" | "opaque";
+  UrlForm: "https-host" | "http-host" | "with-userinfo" | "relative" | "opaque";
   HostClass: "public-dns" | "localhost" | "ipv4-private" | "ipv4-public" | "ipv6-literal";
   ExtraPath: "none" | "traversal" | "query-ssrf";
 };
@@ -50,8 +50,8 @@ export type ParseValidateCanvasUrlVerdict = {
 
 /** Rows where Core currently diverges from the union oracle (parse-time only). */
 export function coreKnownDivergence(row: ParseValidateCanvasUrlRow): boolean {
-  if (row.UrlShape === "http-host" && row.HostClass === "localhost") return true;
-  if (row.UrlShape === "https-host" && row.HostClass === "localhost") return true;
+  if (row.UrlForm === "http-host" && row.HostClass === "localhost") return true;
+  if (row.UrlForm === "https-host" && row.HostClass === "localhost") return true;
   return false;
 }
 
@@ -85,7 +85,7 @@ function hostFor(row: ParseValidateCanvasUrlRow): string {
 export function canvasUrlStringForRow(row: ParseValidateCanvasUrlRow): string {
   const suffix = pathSuffix(row.ExtraPath);
 
-  switch (row.UrlShape) {
+  switch (row.UrlForm) {
     case "https-host":
       return `https://${hostFor(row)}${suffix}`;
     case "http-host":
@@ -102,15 +102,15 @@ export function canvasUrlStringForRow(row: ParseValidateCanvasUrlRow): string {
 export function parseValidateCanvasUrlOracle(
   row: ParseValidateCanvasUrlRow,
 ): ParseValidateCanvasUrlVerdict {
-  if (row.UrlShape === "relative") {
+  if (row.UrlForm === "relative") {
     return { accept: false, rejectReason: "invalid-format" };
   }
 
-  if (row.UrlShape === "opaque") {
+  if (row.UrlForm === "opaque") {
     return { accept: false, rejectReason: "invalid-scheme" };
   }
 
-  if (row.UrlShape === "http-host") {
+  if (row.UrlForm === "http-host") {
     return { accept: false, rejectReason: "http-not-allowed" };
   }
 

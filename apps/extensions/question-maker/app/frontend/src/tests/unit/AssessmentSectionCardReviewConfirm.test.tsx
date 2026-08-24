@@ -7,8 +7,8 @@ import { render, screen, cleanup, fireEvent, within } from "@testing-library/rea
 import { AssessmentSectionCard } from "@/components/assessments/AssessmentSectionCard";
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from "@/types/question";
 
-const section = { id: 1, name: "Section A" } as unknown as AssessmentSection;
-const questionLinks = [{ variantId: 10 }] as unknown as SectionVariantLink[];
+const section = { id: 1, name: "Section A" } as AssessmentSection;
+const questionLinks = [{ variantId: 10 }] as SectionVariantLink[];
 
 function makeEntry(isDraft: boolean): QuestionVariantEntry {
   return {
@@ -19,7 +19,7 @@ function makeEntry(isDraft: boolean): QuestionVariantEntry {
       difficulty: "easy",
       isDraft,
     },
-  } as unknown as QuestionVariantEntry;
+  } as QuestionVariantEntry;
 }
 
 function renderCard(isDraft: boolean, onToggleDraft: ReturnType<typeof vi.fn>) {
