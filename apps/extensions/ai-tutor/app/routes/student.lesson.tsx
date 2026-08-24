@@ -49,7 +49,7 @@ import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
 import api from "../lib/api";
-import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
+import type { Activity, Course, EnrollmentRole, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -148,6 +148,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const isMobile = useIsMobile();
   const { lesson, activities, activitiesTotal } = loaderData;
   const [course, setCourse] = useState<Course | null>(null);
+  // The caller's enrollment role for THIS course, resolved by the breadcrumb
+  // fetch. Distinct from the global `/api/me` effective role on `user` — a user
+  // who is a TA elsewhere is promoted to "TA" globally but may still be a
+  // STUDENT here, and answer submission is scoped to this course (#1626).
+  const [viewerEnrollmentRole, setViewerEnrollmentRole] = useState<EnrollmentRole | null>(null);
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
@@ -289,11 +294,19 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setText("");
   }
 
+  // Answer submission is a STUDENT-only capability scoped to THIS course, not a
+  // global role check. A course TA keeps the learner surface but is not a
+  // submitter — the answer route is 403 for them. Fast path: a globally-STUDENT
+  // effective role is never promoted, so the user is a STUDENT in every enrolled
+  // course. Otherwise (promoted to "TA" globally because they TA elsewhere),
+  // fall back to the per-course enrollment role the breadcrumb resolves, so a
+  // TA-here-but-STUDENT-there account submits there and is withheld here (#1626).
+  const canSubmitAnswers = user?.role === "STUDENT" || viewerEnrollmentRole === "STUDENT";
+
   const submit = async () => {
-    // A course TA keeps the learner surface but is not a submitter — the
-    // answer route is 403 for them, so the UI withholds Submit (U-TA-1) and
-    // this guards the path even if the button is ever reached programmatically.
-    if (!activity || !user || user.role !== "STUDENT") return;
+    // Withhold Submit (U-TA-1); also guards the path even if the button is ever
+    // reached programmatically for a non-submitter in this course.
+    if (!activity || !user || !canSubmitAnswers) return;
     setSubmitting(true);
     try {
       const payload: any = { userId: user.id };
@@ -541,6 +554,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setCrumbsReady(false);
     setCourse(null);
     setModule(null);
+    setViewerEnrollmentRole(null);
     setOrderText(undefined);
 
     const frameId = requestAnimationFrame(() => {
@@ -550,6 +564,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           if (cancelled) return;
           setModule(breadcrumb.module);
           setCourse(breadcrumb.course);
+          setViewerEnrollmentRole(breadcrumb.viewerEnrollmentRole ?? null);
           setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
           setCrumbsReady(true);
         })
@@ -603,7 +618,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSubmit={submit}
       result={result}
       wasCorrect={wasCorrect}
-      canSubmitAnswers={user?.role === "STUDENT"}
+      canSubmitAnswers={canSubmitAnswers}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
       canPrev={canPrev}

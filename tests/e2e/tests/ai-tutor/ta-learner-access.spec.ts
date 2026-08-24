@@ -118,6 +118,52 @@ test.describe("AI Tutor TA — learner surface", () => {
     }
   });
 
+  test("a mixed-role account submits where it is a STUDENT and is withheld where it TAs (#1626)", async ({
+    page,
+    playwright,
+  }) => {
+    // One account enrolled as TA in course A and STUDENT in course B. `/api/me`
+    // promotes the *global* effective role to "TA" (TA anywhere), so a submit
+    // gate keyed on that global role would wrongly disable submission in course
+    // B as well. The capability must instead come from the per-course
+    // enrollment the breadcrumb resolves, so the two courses diverge.
+    const { studentId } = await registerStudent(page);
+    const taCourse = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Mixed TA Course",
+      codePrefix: "MXA",
+      role: "TA",
+    });
+    const studentCourse = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Mixed Student Course",
+      codePrefix: "MXB",
+      role: "STUDENT",
+    });
+    try {
+      // Course B — enrolled as STUDENT: submission is offered and records an
+      // attempt, even though the account's global effective role is "TA".
+      await gotoAiTutor(page, `/student/lesson/${studentCourse.lessonId}`);
+      await expect(page.getByText(studentCourse.question)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("note")).toHaveCount(0);
+      await page.getByRole("radio", { name: "Option A" }).click();
+      const submit = page.getByRole("button", { name: /submit answer/i });
+      await expect(submit).toBeEnabled();
+      await submit.click();
+      // The seed's correct answer is Option A (0), so the attempt is accepted —
+      // proving the STUDENT-in-B path reaches `POST /questions/:id/answer`.
+      await expect(page.getByText(/correct/i)).toBeVisible({ timeout: 20_000 });
+
+      // Course A — enrolled as TA: submission is withheld on the same account,
+      // exactly as the single-course TA cases above.
+      await gotoAiTutor(page, `/student/lesson/${taCourse.lessonId}`);
+      await expect(page.getByText(taCourse.question)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
+      await expect(page.getByRole("note")).toContainText(/don.t submit answers/i);
+      await expect(page.getByRole("radio", { name: "Option A" })).toBeDisabled();
+    } finally {
+      await Promise.all([taCourse.dispose(), studentCourse.dispose()]);
+    }
+  });
+
   test("the study buddy shows the connect-a-provider state with no BYOK key", async ({
     page,
     playwright,

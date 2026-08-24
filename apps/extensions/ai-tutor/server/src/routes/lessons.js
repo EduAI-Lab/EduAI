@@ -321,6 +321,7 @@ router.get("/lessons/:lessonId/breadcrumb", async (req, res) => {
 
     const { breadcrumb, coreUnavailable } = await buildLessonBreadcrumb(lesson, {
       publishedOnly: access.publishedOnly,
+      viewerEnrollmentRole: access.viewerEnrollmentRole,
     });
     if (coreUnavailable) {
       res.set("X-Core-Status", "unavailable");
