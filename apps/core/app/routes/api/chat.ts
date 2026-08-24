@@ -603,7 +603,7 @@ function logStreamError(cause: unknown, trace: ChatTrace): void {
 function rejectProviderFailure(
   failure: ProviderFailure,
   chatId: string | null,
-  trace: Record<string, unknown>,
+  trace: ChatTrace,
 ): Response {
   const headers = providerFailureHeaders(failure);
   // Surface the chat id back to the client (X-Chat-Id, read in onResponse)
@@ -1590,12 +1590,13 @@ export async function action({ request }: ActionFunctionArgs) {
     // Shared trace fields for the provider/model-availability gates below —
     // each only varies by `stage`, and building it here means chatId can't
     // be forgotten at a future gate the way a hand-copied literal could.
-    const providerGateTrace = (stage: string): Record<string, unknown> => ({
-      chatMode,
-      userId: actingUser.id,
-      model: resolvedModelId,
-      stage,
-    });
+    const providerGateTrace = (stage: string) =>
+      asTrace({
+        chatMode,
+        userId: actingUser.id,
+        model: resolvedModelId,
+        stage,
+      });
 
     let fleetPick: FleetPick | null = null;
     if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
@@ -2997,16 +2998,18 @@ ${buildEmptyCourseRagBlock()}`;
       return clientAbortResponse();
     }
     console.error("Chat API error:", providerErrorDiagnostic(error));
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
     // The user's message may already be persisted onto `chat` by the time an
     // unhandled exception reaches here (#1621 review) — echo its id so a
     // client retry continues that thread instead of spawning another one.
     if (chat?.id) {
-      headers["X-Chat-Id"] = chat.id;
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", "X-Chat-Id": chat.id },
+      });
     }
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
-      headers,
+      headers: { "Content-Type": "application/json" },
     });
   }
 }

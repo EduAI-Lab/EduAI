@@ -9,6 +9,8 @@
 // short-circuit the request, and echoes X-Chat-Id back on failure responses
 // too so a client retry continues the same thread instead of spawning
 // another orphaned chat.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -26,8 +28,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -136,7 +138,7 @@ import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 const NEW_CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: Record<string, unknown>) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -148,7 +150,7 @@ function makeRequest(body: Record<string, unknown>) {
   } as never;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
