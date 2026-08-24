@@ -3023,6 +3023,13 @@ ${buildEmptyCourseRagBlock()}`;
         }
 
         releaseAdmission();
+        const responseHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+          ...admissionHeaders(),
+        };
+        if (fleetPick?.serverId) {
+          responseHeaders["X-Fleet-Server"] = fleetPick.serverId;
+        }
         return new Response(
           JSON.stringify({
             content: normalizedText,
@@ -3041,11 +3048,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
-            },
+            headers: responseHeaders,
           },
         );
       } catch (error) {
