@@ -7,15 +7,15 @@
 
 ## Executive summary
 
-The fleet successfully handled the complete controlled Chat API stress ladder from 16 to 1,000 concurrent users. The Qwen 3.5 2B/9B split remained exactly balanced at 50% per model, and requests were distributed evenly across cmps01, cmps02, and cmps03. At 1,000 concurrent users, all 1,000 direct-Core requests completed successfully, with 332 routed through cmps01, 339 through cmps02, and 329 through cmps03.
+The fleet successfully handled the complete controlled Chat API stress ladder from 16 to 1,000 concurrent requests. The Qwen 3.5 2B/9B split remained exactly balanced at 50% per model, and requests were distributed evenly across cmps01, cmps02, and cmps03. At 1,000 concurrent requests, all 1,000 direct-Core requests completed successfully, with 332 routed through cmps01, 339 through cmps02, and 329 through cmps03. The harness used one authenticated session; these levels measure concurrent requests, not distinct users.
 
-The public webapp path was healthy through 256 concurrent users. At higher levels, the public reverse proxy produced 502/fetch failures and the original per-user rate limit interfered with later ladder points. These public-path failures should be treated as ingress and configuration limits, not as evidence that the 2B/9B fleet stopped functioning.
+The public webapp path was healthy through 256 concurrent requests. At higher levels, the public reverse proxy produced 502/fetch failures and the original per-user rate limit interfered with later ladder points. These public-path failures should be treated as ingress and configuration limits, not as evidence that the 2B/9B fleet stopped functioning.
 
 ## 1. Chat API scaling with the 2B/9B split
 
-The controlled Chat API run used the direct Core path and exercised the Qwen 3.5 2B/9B split across cmps01, cmps02, and cmps03. The split stayed exactly 50/50 at every load step. The fleet completed all 2,776 requests from 16 through 1,000 concurrent users with HTTP 200 responses.
+The controlled Chat API run used the direct Core path and exercised the Qwen 3.5 2B/9B split across cmps01, cmps02, and cmps03. The split stayed exactly 50/50 at every load step. The fleet completed all 2,776 requests from 16 through 1,000 concurrent requests with HTTP 200 responses.
 
-| Concurrent users | Successes | 2B / 9B requests | cmps01 / cmps02 / cmps03 | p95 ms | RPS |
+| Concurrent requests | Successes | 2B / 9B requests | cmps01 / cmps02 / cmps03 | p95 ms | Successful RPS |
 |---:|---:|---:|---:|---:|---:|
 | 16 | 16/16 | 8 / 8 | 5 / 3 / 8 | 2,106 | 7.57 |
 | 32 | 32/32 | 16 / 16 | 9 / 15 / 8 | 2,586 | 12.31 |
@@ -31,7 +31,7 @@ The controlled Chat API run used the direct Core path and exercised the Qwen 3.5
 ```mermaid
 xychart-beta
     title "2B/9B Chat API p95 latency by concurrency"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "p95 milliseconds" 0 --> 45000
     line [2106, 2586, 3543, 6861, 13373, 19699, 30089, 43394]
 ```
@@ -39,7 +39,7 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "2B/9B Chat API throughput"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "Requests per second" 0 --> 30
     bar [7.57, 12.31, 17.70, 18.44, 18.94, 25.51, 25.29, 22.81]
 ```
@@ -47,7 +47,7 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "Chat API requests distributed across cmps01–03"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "Requests" 0 --> 400
     line [5, 9, 22, 39, 79, 165, 257, 332]
     line [3, 15, 23, 42, 96, 164, 268, 339]
@@ -128,7 +128,7 @@ xychart-beta
     line [520, 587, 814, 1108, 1451, 1675, 2690, 4943]
 ```
 
-At concurrency 128, the measured p95/RPS pairs were:
+At concurrency 128, the measured p95/throughput-RPS pairs were:
 
 | Server | Qwen 3.5 2B | Qwen 3.5 9B |
 |---|---:|---:|
@@ -138,7 +138,7 @@ At concurrency 128, the measured p95/RPS pairs were:
 
 The extended native-vLLM 1,000-request runs were later completed on cmps01 and cmps03. They also completed with zero errors, but showed severe queueing at this load:
 
-| Server | Model | Successes | p95 E2E ms | RPS |
+| Server | Model | Successes | p95 E2E ms | Throughput RPS |
 |---|---|---:|---:|---:|
 | cmps01 | Qwen 3.5 2B | 1,000/1,000 | 13,482 | 73.34 |
 | cmps01 | Qwen 3.5 9B | 1,000/1,000 | 56,938 | 17.48 |

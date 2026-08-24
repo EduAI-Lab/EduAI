@@ -5,9 +5,10 @@
  *
  * The harness deliberately exercises POST /api/chat rather than a vLLM URL.
  * It runs one sequential RAG/context smoke, then closed-loop concurrent
- * first-turn users at the requested ladder. The same user session may be
- * reused across virtual users; raise CHAT_RATE_LIMIT only for a controlled
- * test window when doing that.
+ * first-turn requests at the requested ladder. The current harness uses one
+ * authenticated session for those requests, so the results measure
+ * single-principal concurrent-request capacity rather than distinct users.
+ * Raise CHAT_RATE_LIMIT only for a controlled test window when doing that.
  *
  * Required:
  *   FLEET_STRESS_EMAIL, FLEET_STRESS_PASSWORD, FLEET_STRESS_COURSE_ID
@@ -248,7 +249,8 @@ async function runLevel(cookie, concurrency) {
     elapsedMs,
     successCount: successes.length,
     failureCount: rows.length - successes.length,
-    rps: Number((successes.length / (elapsedMs / 1000 || 1)).toFixed(2)),
+    requestRps: Number((rows.length / (elapsedMs / 1000 || 1)).toFixed(2)),
+    successfulRps: Number((successes.length / (elapsedMs / 1000 || 1)).toFixed(2)),
     latencyMs: {
       p50: percentile(
         rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs),
@@ -322,6 +324,7 @@ const result = {
   courseId,
   models,
   streaming,
+  sessionMode: "single-session",
   ladder,
   smoke: smokeResult,
   levels,

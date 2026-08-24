@@ -54,7 +54,6 @@
       "elapsedMs": 2113,
       "successCount": 16,
       "failureCount": 0,
-      "rps": 7.57,
       "latencyMs": {
         "p50": 1326,
         "p95": 2106,
@@ -80,7 +79,9 @@
         "sourceTitles": [],
         "citationResponses": 16
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 7.57,
+      "successfulRps": 7.57
     },
     {
       "concurrency": 32,
@@ -88,7 +89,6 @@
       "elapsedMs": 2600,
       "successCount": 32,
       "failureCount": 0,
-      "rps": 12.31,
       "latencyMs": {
         "p50": 1802,
         "p95": 2586,
@@ -114,7 +114,9 @@
         "sourceTitles": [],
         "citationResponses": 32
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 12.31,
+      "successfulRps": 12.31
     },
     {
       "concurrency": 64,
@@ -122,7 +124,6 @@
       "elapsedMs": 3616,
       "successCount": 64,
       "failureCount": 0,
-      "rps": 17.7,
       "latencyMs": {
         "p50": 3132,
         "p95": 3543,
@@ -148,7 +149,9 @@
         "sourceTitles": [],
         "citationResponses": 62
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 17.7,
+      "successfulRps": 17.7
     },
     {
       "concurrency": 128,
@@ -156,7 +159,6 @@
       "elapsedMs": 6943,
       "successCount": 128,
       "failureCount": 0,
-      "rps": 18.44,
       "latencyMs": {
         "p50": 4990,
         "p95": 6861,
@@ -182,7 +184,9 @@
         "sourceTitles": [],
         "citationResponses": 127
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 18.44,
+      "successfulRps": 18.44
     },
     {
       "concurrency": 256,
@@ -190,7 +194,6 @@
       "elapsedMs": 13519,
       "successCount": 256,
       "failureCount": 0,
-      "rps": 18.94,
       "latencyMs": {
         "p50": 9772,
         "p95": 13373,
@@ -216,7 +219,9 @@
         "sourceTitles": [],
         "citationResponses": 254
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 18.94,
+      "successfulRps": 18.94
     },
     {
       "concurrency": 512,
@@ -224,7 +229,6 @@
       "elapsedMs": 20072,
       "successCount": 512,
       "failureCount": 0,
-      "rps": 25.51,
       "latencyMs": {
         "p50": 17451,
         "p95": 19699,
@@ -250,7 +254,9 @@
         "sourceTitles": [],
         "citationResponses": 505
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 25.51,
+      "successfulRps": 25.51
     },
     {
       "concurrency": 768,
@@ -258,7 +264,6 @@
       "elapsedMs": 30362,
       "successCount": 768,
       "failureCount": 0,
-      "rps": 25.29,
       "latencyMs": {
         "p50": 26513,
         "p95": 30089,
@@ -284,7 +289,9 @@
         "sourceTitles": [],
         "citationResponses": 762
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 25.29,
+      "successfulRps": 25.29
     },
     {
       "concurrency": 1000,
@@ -292,7 +299,6 @@
       "elapsedMs": 43849,
       "successCount": 1000,
       "failureCount": 0,
-      "rps": 22.81,
       "latencyMs": {
         "p50": 35036,
         "p95": 43394,
@@ -318,7 +324,9 @@
         "sourceTitles": [],
         "citationResponses": 980
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 22.81,
+      "successfulRps": 22.81
     }
   ]
 }

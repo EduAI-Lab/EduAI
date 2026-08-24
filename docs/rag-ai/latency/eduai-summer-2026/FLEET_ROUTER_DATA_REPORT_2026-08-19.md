@@ -13,11 +13,13 @@
 | Post-hardening | Core at `127.0.0.1:3000` on s378 | Isolate Chat API/router capacity from the public proxy |
 | Post-hardening smoke | Public `https://dev.eduai.ok.ubc.ca` | Confirm the webapp path still returns expected metadata |
 
-Ladder: **16, 32, 64, 128, 256, 512, 768, 1,000** concurrent requests. Requests alternated evenly between the 2B and 9B models.
+Ladder: **16, 32, 64, 128, 256, 512, 768, 1,000** concurrent requests. The harness issued these requests from one authenticated session, alternating evenly between the 2B and 9B models; the levels represent concurrent requests, not distinct users.
+
+The raw harness artifacts record both `requestRps` (all requests completed by the harness) and `successfulRps` (HTTP-successful responses). The report tables use `Successful RPS`.
 
 ## Baseline public-path data
 
-| Users | Successes | p50 ms | p95 ms | RPS | HTTP 429 | HTTP 502 | Fetch failures |
+| Concurrent requests | Successes | p50 ms | p95 ms | Successful RPS | HTTP 429 | HTTP 502 | Fetch failures |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 16 | 16/16 | 1,569 | 2,240 | 7.12 | 0 | 0 | 0 |
 | 32 | 32/32 | 1,721 | 2,477 | 12.79 | 0 | 0 | 0 |
@@ -32,7 +34,7 @@ At 768 and 1,000 users, the same authenticated user had accumulated requests acr
 
 ## Post-hardening direct-Core data
 
-| Users | Successes | 2B | 9B | cmps01 | cmps02 | cmps03 | p50 ms | p95 ms | RPS |
+| Concurrent requests | Successes | 2B | 9B | cmps01 | cmps02 | cmps03 | p50 ms | p95 ms | Successful RPS |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 16 | 16/16 | 8 | 8 | 5 | 3 | 8 | 1,326 | 2,106 | 7.57 |
 | 32 | 32/32 | 16 | 16 | 9 | 15 | 8 | 1,802 | 2,586 | 12.31 |
@@ -50,7 +52,7 @@ At 768 and 1,000 users, the same authenticated user had accumulated requests acr
 ```mermaid
 xychart-beta
     title "Direct-Core p95 latency"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "Milliseconds" 0 --> 45000
     line [2106, 2586, 3543, 6861, 13373, 19699, 30089, 43394]
 ```
@@ -60,7 +62,7 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "Direct-Core throughput"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "Requests per second" 0 --> 30
     bar [7.57, 12.31, 17.70, 18.44, 18.94, 25.51, 25.29, 22.81]
 ```
@@ -70,7 +72,7 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "Requests routed to each fleet server"
-    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    x-axis "Concurrent requests" [16, 32, 64, 128, 256, 512, 768, 1000]
     y-axis "Requests" 0 --> 400
     line [5, 9, 22, 39, 79, 165, 257, 332]
     line [3, 15, 23, 42, 96, 164, 268, 339]
@@ -83,7 +85,7 @@ xychart-beta
 
 All three servers completed the independent 2B/9B direct-vLLM ladder through concurrency 128 with zero request errors. Values below are the endpoint results at the highest common per-server step.
 
-| Server | Model | Requests at concurrency 128 | RPS | p50 ms | p95 ms | p99 ms | Errors |
+| Server | Model | Requests at concurrency 128 | Throughput RPS | p50 ms | p95 ms | p99 ms | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|
 | cmps01 | Qwen 3.5 2B | 256 | 368.88 | 250 | 438 | 445 | 0 |
 | cmps01 | Qwen 3.5 9B | 256 | 250.98 | 440 | 562 | 569 | 0 |
@@ -94,7 +96,7 @@ All three servers completed the independent 2B/9B direct-vLLM ladder through con
 
 The extended native-vLLM 1,000-request runs were completed on cmps01 and cmps03 before cmps02 was restored:
 
-| Server | Model | Successes | RPS | TTFT p95 ms | E2E p95 ms |
+| Server | Model | Successes | Throughput RPS | TTFT p95 ms | E2E p95 ms |
 |---|---|---:|---:|---:|---:|
 | cmps01 | Qwen 3.5 2B | 1,000/1,000 | 73.34 | 12,054 | 13,482 |
 | cmps01 | Qwen 3.5 9B | 1,000/1,000 | 17.48 | 51,644 | 56,938 |

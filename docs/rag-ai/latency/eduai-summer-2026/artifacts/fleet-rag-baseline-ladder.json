@@ -54,7 +54,6 @@
       "elapsedMs": 2247,
       "successCount": 16,
       "failureCount": 0,
-      "rps": 7.12,
       "latencyMs": {
         "p50": 1569,
         "p95": 2240,
@@ -80,7 +79,9 @@
         "sourceTitles": [],
         "citationResponses": 16
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 7.12,
+      "successfulRps": 7.12
     },
     {
       "concurrency": 32,
@@ -88,7 +89,6 @@
       "elapsedMs": 2502,
       "successCount": 32,
       "failureCount": 0,
-      "rps": 12.79,
       "latencyMs": {
         "p50": 1721,
         "p95": 2477,
@@ -114,7 +114,9 @@
         "sourceTitles": [],
         "citationResponses": 32
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 12.79,
+      "successfulRps": 12.79
     },
     {
       "concurrency": 64,
@@ -122,7 +124,6 @@
       "elapsedMs": 4125,
       "successCount": 64,
       "failureCount": 0,
-      "rps": 15.52,
       "latencyMs": {
         "p50": 2711,
         "p95": 3888,
@@ -148,7 +149,9 @@
         "sourceTitles": [],
         "citationResponses": 63
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 15.52,
+      "successfulRps": 15.52
     },
     {
       "concurrency": 128,
@@ -156,7 +159,6 @@
       "elapsedMs": 6728,
       "successCount": 128,
       "failureCount": 0,
-      "rps": 19.02,
       "latencyMs": {
         "p50": 5254,
         "p95": 6616,
@@ -182,7 +184,9 @@
         "sourceTitles": [],
         "citationResponses": 125
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 19.02,
+      "successfulRps": 19.02
     },
     {
       "concurrency": 256,
@@ -190,7 +194,6 @@
       "elapsedMs": 11535,
       "successCount": 256,
       "failureCount": 0,
-      "rps": 22.19,
       "latencyMs": {
         "p50": 8796,
         "p95": 11475,
@@ -216,7 +219,9 @@
         "sourceTitles": [],
         "citationResponses": 252
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 22.19,
+      "successfulRps": 22.19
     },
     {
       "concurrency": 512,
@@ -224,7 +229,6 @@
       "elapsedMs": 19727,
       "successCount": 400,
       "failureCount": 112,
-      "rps": 20.28,
       "latencyMs": {
         "p50": 15624,
         "p95": 19469,
@@ -256,7 +260,9 @@
       "errorCounts": {
         "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 4,
         "TypeError: fetch failed": 108
-      }
+      },
+      "requestRps": 25.95,
+      "successfulRps": 20.28
     },
     {
       "concurrency": 768,
@@ -264,7 +270,6 @@
       "elapsedMs": 16303,
       "successCount": 152,
       "failureCount": 616,
-      "rps": 9.32,
       "latencyMs": {
         "p50": 8345,
         "p95": 15950,
@@ -296,7 +301,9 @@
       "errorCounts": {
         "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 136,
         "RATE_LIMITED": 480
-      }
+      },
+      "requestRps": 47.11,
+      "successfulRps": 9.32
     },
     {
       "concurrency": 1000,
@@ -304,7 +311,6 @@
       "elapsedMs": 18984,
       "successCount": 318,
       "failureCount": 682,
-      "rps": 16.75,
       "latencyMs": {
         "p50": 12944,
         "p95": 18610,
@@ -338,7 +344,9 @@
         "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 2,
         "RATE_LIMITED": 288,
         "TypeError: fetch failed": 392
-      }
+      },
+      "requestRps": 52.68,
+      "successfulRps": 16.75
     }
   ]
 }

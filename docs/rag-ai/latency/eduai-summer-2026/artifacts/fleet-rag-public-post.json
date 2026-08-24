@@ -47,7 +47,6 @@
       "elapsedMs": 465,
       "successCount": 1,
       "failureCount": 0,
-      "rps": 2.15,
       "latencyMs": {
         "p50": 464,
         "p95": 464,
@@ -70,7 +69,9 @@
         "sourceTitles": [],
         "citationResponses": 1
       },
-      "errorCounts": {}
+      "errorCounts": {},
+      "requestRps": 2.15,
+      "successfulRps": 2.15
     }
   ]
 }

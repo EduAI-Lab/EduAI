@@ -8,7 +8,9 @@ Artifacts: [`artifacts/`](./artifacts/)
 
 ## Summary
 
-We completed an authenticated RAG fleet stress test from 16 to 1000 concurrent users using an even Qwen 3.5 2B/9B split. The direct Core path handled all 1000 requests successfully, while the public webapp path exposed reverse-proxy and rate-limit bottlenecks above 256 users. Router hardening added deterministic chat affinity, failed-host ejection, configurable health checks, and RAG timing metadata. The test fixture and temporary settings were removed afterward, cmps02 GPU1 was restored to Qwen 2.5 32B, and the implementation was documented in GitHub issue #1581 and draft PR #1582.
+We completed an authenticated RAG fleet stress test from 16 to 1000 concurrent requests using an even Qwen 3.5 2B/9B split from one authenticated session. The direct Core path handled all 1000 requests successfully, while the public webapp path exposed reverse-proxy and rate-limit bottlenecks above 256 requests. Router hardening added deterministic chat affinity, failed-host ejection, configurable health checks, and RAG timing metadata. The test fixture and temporary settings were removed afterward, cmps02 GPU1 was restored to Qwen 2.5 32B, and the implementation was documented in GitHub issue #893 and [PR #1582](https://github.com/EduAI-Lab/EduAI/pull/1582).
+
+The raw harness artifacts distinguish `requestRps` (all requests completed by the harness) from `successfulRps` (HTTP-successful responses). The tables below report successful throughput unless stated otherwise. “Concurrent requests” is the number of in-flight requests, not the number of distinct users.
 
 ## Smoke validation
 
@@ -20,7 +22,7 @@ After the affinity change, the follow-up remained on the same server, demonstrat
 
 The baseline ladder used the public webapp path and the original process-local round-robin router.
 
-| Concurrent users | Successes | p50 ms | p95 ms | RPS | Notes |
+| Concurrent requests | Successes | p50 ms | p95 ms | Successful RPS | Notes |
 |---:|---:|---:|---:|---:|---|
 | 16 | 16/16 | 1,569 | 2,240 | 7.12 | Balanced across cmps01–03 |
 | 32 | 32/32 | 1,721 | 2,477 | 12.79 | Balanced across cmps01–03 |
@@ -37,7 +39,7 @@ The baseline ladder used the public webapp path and the original process-local r
 
 For an unconfounded router/application measurement, the same authenticated RAG harness ran against Core on s378 at `127.0.0.1:3000`, bypassing the public reverse proxy. The temporary test settings allowed the 1000-request run. Every request returned HTTP 200.
 
-| Concurrent users | Successes | p50 ms | p95 ms | RPS | Server distribution |
+| Concurrent requests | Successes | p50 ms | p95 ms | Successful RPS | Server distribution |
 |---:|---:|---:|---:|---:|---|
 | 16 | 16/16 | 1,326 | 2,106 | 7.57 | 5 / 3 / 8 |
 | 32 | 32/32 | 1,802 | 2,586 | 12.31 | 9 / 15 / 8 |
