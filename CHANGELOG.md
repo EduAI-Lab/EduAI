@@ -23,6 +23,7 @@
 ### Tests
 
 - [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure for the course detail route. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
+- [core] test: Cover that a local daily-cap reservation is refunded when `/api/chat` overflows to Bedrock after admission timeout, so a 1/day student still has quota for a following local turn. (@Ayyhab, 2026-08-24) — [#1557](https://github.com/EduAI-Lab/EduAI/pull/1557)
 
 - [ai-tutor] refactor: Rebuild the course feedback search filters and buttons on the shared `@eduai/ui` `Input`/`Button` primitives instead of raw elements with local utility classes. Closes #1573. (@yta3216, 2026-08-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 - [ai-tutor] refactor: Rebuild the course feedback search filters and buttons on the shared `@eduai/ui` `Input`/`Button` primitives instead of raw elements with local utility classes. Closes #1573. (@yta3216, 2026-08-18) — [#1576](https://github.com/EduAI-Lab/EduAI/pull/1576)

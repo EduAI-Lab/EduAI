@@ -87,6 +87,24 @@ vi.mock("~/lib/logging.server", () => ({
   logAuditAction: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/admission.server")>();
+  return {
+    ...actual,
+    acquireAiAdmission: vi.fn().mockResolvedValue({ release: () => {}, waitedMs: 0 }),
+  };
+});
+
+vi.mock("~/lib/ai/routing/bedrock/bedrock-settings.server", () => ({
+  getBedrockOverflowSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    dailyUserLimit: 0,
+    monthlyUserLimit: 0,
+    globalLimit: 0,
+    resourceLimit: 0,
+  }),
+}));
+
 vi.mock("~/lib/request-context.server", () => ({
   getActorContext: vi.fn(() => ({ actorId: "admin-1" })),
   getRequestContext: vi.fn(() => ({ routePath: "/api/admin/chat-daily-limits" })),
@@ -141,6 +159,9 @@ import { requireAdmin } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { invalidateChatDailyLimitSettingsCache } from "~/lib/chat-daily-limits.server";
+import { fireAndForget } from "~/lib/logging.server";
+import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
+import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -201,6 +222,17 @@ beforeEach(() => {
     response: null,
     session: { user: { id: "admin-1", role: "ADMIN" } },
   } as never);
+  vi.mocked(acquireAiAdmission).mockResolvedValue({
+    release: () => {},
+    waitedMs: 0,
+  } as never);
+  vi.mocked(getBedrockOverflowSettings).mockResolvedValue({
+    enabled: false,
+    dailyUserLimit: 0,
+    monthlyUserLimit: 0,
+    globalLimit: 0,
+    resourceLimit: 0,
+  });
 
   vi.mocked(streamText).mockResolvedValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
@@ -226,6 +258,7 @@ afterEach(() => {
   resetRateLimitsForTests();
   invalidateChatDailyLimitSettingsCache();
   delete process.env.CHAT_RATE_LIMIT;
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 });
 
 describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
@@ -298,5 +331,41 @@ describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
     );
     expect(denied.status).toBe(403);
     expect(systemConfigStore.size).toBe(0);
+  });
+
+  it("refunds the local cap when admission timeout overflows to Bedrock", async () => {
+    // The cap is reserved after Auto routing picks a local model, before
+    // admission. Overflow then runs on cloud, so the reservation must not
+    // count — otherwise a 1/day student would 429 after a Bedrock turn.
+    asUser(`cap-chain-overflow-${randomUUID()}`, "STUDENT");
+    await adminAction(adminRequest("PATCH", { studentLimit: 1, instructorLimit: 200 }));
+
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    vi.mocked(getBedrockOverflowSettings).mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
+    vi.mocked(acquireAiAdmission)
+      .mockRejectedValueOnce(new AdmissionTimeoutError())
+      .mockResolvedValue({ release: () => {}, waitedMs: 0 } as never);
+
+    const overflowed = await chatAction(chatRequest());
+    expect(overflowed.status).toBe(200);
+    await Promise.all(
+      vi
+        .mocked(fireAndForget)
+        .mock.results.map((result) => result.value)
+        .filter((value) => value != null),
+    );
+
+    const localAfterRefund = await chatAction(chatRequest());
+    expect(localAfterRefund.status).toBe(200);
+
+    const exhausted = await chatAction(chatRequest());
+    expect(exhausted.status).toBe(429);
+    await expect(exhausted.json()).resolves.toMatchObject({ error: "RATE_LIMITED" });
   });
 });
