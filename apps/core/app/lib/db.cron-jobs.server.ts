@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
+import {
+  redactErrorForConsole,
+  redactErrorForMessage,
+  redactSecretValuesInString,
+} from "~/lib/redact.server";
 
 const DEFAULT_CRON_RUN_LEASE_MS = 60_000;
 const MIN_CRON_RUN_LEASE_MS = 15_000;
@@ -445,7 +449,10 @@ export function triggerCronJobAsync(
           runId,
           leaseOwner,
           "ERROR",
-          `Core handler failed: ${redactErrorForConsole(err)}`,
+          utf8Tail(
+            `Core handler failed: ${redactErrorForMessage(err)}`,
+            CRON_PERSISTED_MESSAGE_MAX_BYTES,
+          ),
           1,
         ).catch((finishErr: unknown) =>
           console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
@@ -465,7 +472,10 @@ export function triggerCronJobAsync(
       timeout: 10 * 60 * 1000,
     });
   } catch (err) {
-    const message = `Failed to start script: ${err instanceof Error ? err.message : String(err)}`;
+    const message = utf8Tail(
+      `Failed to start script: ${redactErrorForMessage(err)}`,
+      CRON_PERSISTED_MESSAGE_MAX_BYTES,
+    );
     void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((finishErr: unknown) =>
       console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
     );

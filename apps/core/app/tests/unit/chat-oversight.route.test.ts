@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -104,7 +105,7 @@ const OVERSEEN = `**Top summary**
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

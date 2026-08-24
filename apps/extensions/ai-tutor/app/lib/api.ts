@@ -496,10 +496,16 @@ export const api = {
     });
     return meInFlight;
   },
-  aiStatus: () =>
-    http("/api/ai-status") as Promise<{
-      cloud: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
-      ubc: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
+  aiStatus: (signal?: AbortSignal) =>
+    http("/api/ai-status", { signal }) as Promise<{
+      cloud: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
+      ubc: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
     }>,
   listCourses: (params?: CourseListParams) =>
     http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,

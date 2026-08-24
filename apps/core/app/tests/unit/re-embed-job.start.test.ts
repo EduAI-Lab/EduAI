@@ -89,7 +89,7 @@ let lastUpdatedJob = claimedJob;
 beforeEach(() => {
   vi.clearAllMocks();
   lastUpdatedJob = claimedJob;
-  transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+  transaction.mockImplementation(async <T>(callback: (tx: unknown) => T) =>
     callback({
       $queryRaw: queryRaw,
       course: { findUniqueOrThrow: courseFindUniqueOrThrow },

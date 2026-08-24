@@ -529,7 +529,7 @@ describe("createCourse", () => {
     // Default the instructor-create policy OFF; tests that exercise it opt in.
     vi.mocked(getPolicy).mockResolvedValue(false);
     prismaMock.$transaction.mockImplementation(
-      async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
+      async <T>(fn: (tx: typeof prismaMock) => Promise<T>) => fn(prismaMock),
     );
   });
 

@@ -56,19 +56,20 @@ import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

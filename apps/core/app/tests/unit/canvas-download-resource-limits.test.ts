@@ -28,7 +28,7 @@ function validPdfBytes(suffix = "bounded content"): Uint8Array {
 }
 
 function responseFetch(response: Response) {
-  return vi.fn(async () => response) as unknown as typeof fetch;
+  return vi.fn(async () => response) as typeof fetch;
 }
 
 function sizedPdfStream(

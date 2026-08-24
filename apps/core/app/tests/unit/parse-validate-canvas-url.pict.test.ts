@@ -29,7 +29,7 @@ function runCoreValidator(rawUrl: string): { accept: boolean } {
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  "parse-validate-canvas-url PICT Core row #$index $row.UrlShape/$row.HostClass/$row.ExtraPath",
+  "parse-validate-canvas-url PICT Core row #$index $row.UrlForm/$row.HostClass/$row.ExtraPath",
   ({ row }) => {
     const expected = parseValidateCanvasUrlOracle(row);
     const rawUrl = canvasUrlStringForRow(row);

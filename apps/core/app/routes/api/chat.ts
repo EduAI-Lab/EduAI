@@ -552,7 +552,7 @@ export async function action({ request }: ActionFunctionArgs) {
       isServiceKeyCaller = true;
       session = {
         user: { id: "service", name: "Service", role: "ADMIN" },
-      } as unknown as typeof session;
+      } as typeof session;
     }
 
     if (!session?.user) {
@@ -1102,7 +1102,7 @@ export async function action({ request }: ActionFunctionArgs) {
         courseId: effectiveCourseId,
         systemPrompt: trimmedSystemPrompt,
         adhdAssist,
-      } as unknown as NonNullable<typeof chat>;
+      } as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {

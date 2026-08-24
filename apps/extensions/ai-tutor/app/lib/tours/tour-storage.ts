@@ -22,14 +22,20 @@ export function canAccessStudentTour(role: Role | undefined, pathname: string) {
 /**
  * UNIT_ADMIN on the two screens the `unit-admin-orientation` tour covers.
  *
- * Scoped to the routes the tour actually visits: offering "Take tour" on
- * /settings or /help would start a tour that immediately navigates the reader
- * somewhere else. The tour is staff-voiced and unit-specific — extending it to
- * INSTRUCTOR would need its own copy, not just another role in this list.
+ * Scoped to the routes the tour actually visits, and to those *exactly*: the
+ * tour opens on whichever step belongs to the current route
+ * (`resolveTourStartStep`), so offering it anywhere without a step of its own —
+ * /settings, /help, or a course page under /instructor — would start a tour
+ * that immediately navigates the reader somewhere else. Both routes stay
+ * admitted while the tour runs, so the sidebar control can still stop it after
+ * the hop from /dashboard to /instructor.
+ *
+ * The tour is staff-voiced and unit-specific — extending it to INSTRUCTOR would
+ * need its own copy, not just another role in this list.
  */
 export function canAccessUnitAdminTour(role: Role | undefined, pathname: string) {
   if (role !== "UNIT_ADMIN") return false;
-  return pathname === "/dashboard" || pathname.startsWith("/instructor");
+  return pathname === "/dashboard" || pathname === "/instructor";
 }
 
 /** Whether any tour is on offer here — the sidebar footer control's gate. */

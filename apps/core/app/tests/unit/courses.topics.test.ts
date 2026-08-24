@@ -53,6 +53,7 @@ import {
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const VALID_KEY = "test-service-key";
@@ -77,7 +78,7 @@ const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,

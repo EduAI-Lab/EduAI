@@ -74,7 +74,16 @@ function isoDate(value: DateLike): string | null {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-function hasOwn(row: object, key: string): boolean {
+/**
+ * A course row as projected by Prisma, or a narrow in-process test double.
+ *
+ * Deliberately open: `serializeCourseForApi` treats a missing key and a null
+ * value as different things, so the own-property checks below are what decide
+ * the DTO, not the static type.
+ */
+type CourseRowCandidate = Record<string, any>;
+
+function hasOwn(row: CourseRowCandidate, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(row, key);
 }
 
@@ -87,7 +96,7 @@ function hasOwn(row: object, key: string): boolean {
  * real Prisma projections always include the selected fields.
  */
 export function serializeCourseForApi(
-  row: Record<string, any>,
+  row: CourseRowCandidate,
   options: CourseDtoOptions,
 ): Record<string, any> {
   const dto: Record<string, any> = {

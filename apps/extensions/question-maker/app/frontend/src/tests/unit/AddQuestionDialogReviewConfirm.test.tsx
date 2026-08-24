@@ -87,7 +87,7 @@ function makeEntry(isDraft: boolean): QuestionVariantEntry {
       isDraft,
       createdAt: "2026-05-01T10:00:00.000Z",
     },
-  } as unknown as QuestionVariantEntry;
+  } as QuestionVariantEntry;
 }
 
 function renderDialog(isDraft: boolean) {
