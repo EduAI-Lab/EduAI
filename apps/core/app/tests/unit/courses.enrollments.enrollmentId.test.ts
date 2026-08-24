@@ -14,6 +14,23 @@ vi.mock("~/lib/courses/enrollments.server", () => ({
   deactivateEnrollment: vi.fn(),
 }));
 
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
+    denyByPolicy: vi.fn(
+      ({ policyKey }: { policyKey: string }) =>
+        new Response(JSON.stringify({ error: "Forbidden", policyKey }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ),
+  };
+});
+
 import { action } from "~/routes/api/courses.enrollments.$enrollmentId";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
@@ -22,6 +39,7 @@ import {
   updateEnrollmentRole,
   deactivateEnrollment,
 } from "~/lib/courses/enrollments.server";
+import { getPolicy, denyByPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE = { id: "c1", isPublished: true };
 
@@ -51,6 +69,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "actor", role: "INSTRUCTOR" },
   } as never);
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
   mockAccess({ level: "instructor", rank: 2 });
   vi.mocked(getEnrollment).mockResolvedValue({
     id: "e1",
@@ -221,5 +240,31 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
       context: {} as never,
     } as any);
     expect(res.status).toBe(405);
+  });
+});
+
+describe("instructors.canManageEnrollments gate", () => {
+  it("returns 403 for INSTRUCTOR PATCH when policy is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("PATCH", { role: "TA" }));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canManageEnrollments");
+    expect(updateEnrollmentRole).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for INSTRUCTOR DELETE when policy is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("DELETE"));
+    expect(res.status).toBe(403);
+    expect(deactivateEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN PATCH succeeds even when policy is off", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("PATCH", { role: "TA" }));
+    expect(res.status).toBe(200);
   });
 });

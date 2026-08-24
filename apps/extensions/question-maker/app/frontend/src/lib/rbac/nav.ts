@@ -2,6 +2,7 @@ import type { QmNavItem, QmNavItemKey, QmUser } from "./types";
 import { getCoreDashboardUrl } from "@/lib/coreUrl";
 import { canManageAssessment, canTriageBugReports } from "./permissions";
 import { resolvePlatformCourseAccess } from "./resolve-course-access";
+import { canAccessQm } from "./roles";
 
 /**
  * Main sidebar links, per rbac-matrix §16–18.
@@ -38,7 +39,7 @@ function withKeys(items: Omit<QmNavItem, "key">[], keys: QmNavItemKey[]): QmNavI
 }
 
 export function getNavForUser(user: QmUser | null | undefined): QmNavItem[] {
-  if (!user) return [];
+  if (!user || !canAccessQm(user.role)) return [];
   const nav = withKeys(CORE_NAV, NAV_KEYS);
 
   if (canTriageBugReports(user)) {
@@ -55,7 +56,7 @@ export function getNavForUser(user: QmUser | null | undefined): QmNavItem[] {
 
 /** Secondary sidebar links. Settings lives in the navUser dropdown, like Core. */
 export function getNavSecondaryForUser(user: QmUser | null | undefined): QmNavItem[] {
-  if (!user) return [];
+  if (!user || !canAccessQm(user.role)) return [];
   return [
     {
       key: "help",

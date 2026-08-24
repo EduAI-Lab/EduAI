@@ -42,6 +42,7 @@ const FILE_ID = "9001";
 const INITIAL_PATH = `/files/${FILE_ID}/download?download_frd=1`;
 const LOCAL_ORIGIN = "http://localhost:8080";
 const PUBLIC_CDN_REDIRECT = "https://files.example.com/bucket/object";
+const VALID_PDF_BODY = "%PDF-1.7\nfile-bytes";
 
 function sfVerifierQuery(): string {
   return "sf_verifier=signed-token";
@@ -119,7 +120,10 @@ function installFetchMock(row: CanvasFileDownloadRow): FetchCall[] {
       return new Response(null, { status: 500 });
     }
 
-    return new Response("file-bytes", { status: 200 });
+    return new Response(VALID_PDF_BODY, {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    });
   });
 
   vi.stubGlobal("fetch", fetchMock);
@@ -168,7 +172,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
       }
 
       const bytes = await downloadCanvasFile(credentials, file);
-      expect(Buffer.from(bytes).toString()).toBe("file-bytes");
+      expect(Buffer.from(bytes).toString()).toBe(VALID_PDF_BODY);
 
       if (row.Redirect === "none") {
         expect(calls.length).toBeGreaterThanOrEqual(1);
@@ -209,7 +213,10 @@ describe("canvas-file-download PICT adapter — public cross-host CDN (hand-writ
             headers: { Location: PUBLIC_CDN_REDIRECT },
           });
         }
-        return new Response("cdn-bytes", { status: 200 });
+        return new Response(VALID_PDF_BODY, {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        });
       }),
     );
 
@@ -223,7 +230,7 @@ describe("canvas-file-download PICT adapter — public cross-host CDN (hand-writ
       },
     );
 
-    expect(Buffer.from(bytes).toString()).toBe("cdn-bytes");
+    expect(Buffer.from(bytes).toString()).toBe(VALID_PDF_BODY);
     expect(calls[1]?.init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
   });
 });

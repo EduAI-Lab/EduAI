@@ -24,6 +24,13 @@
 
 import { prisma } from "../config/database.js";
 
+async function runInCloneTransaction(db, operation) {
+  if (typeof db.$transaction === "function") {
+    return db.$transaction(operation);
+  }
+  return operation(db);
+}
+
 async function ensureTopicMapping(tx, options) {
   const { sourceTopicId, sourceTopicById, topicIdMap, targetTopicsByName, targetCourseId } =
     options;
@@ -62,10 +69,15 @@ async function ensureTopicMapping(tx, options) {
  * keys. This helper recreates the tree so later edits in either course remain
  * isolated while preserving topic semantics through name-based remapping.
  */
-export async function cloneCourseContent(sourceCourseId, targetCourseId, options = {}) {
+export async function cloneCourseContent(
+  sourceCourseId,
+  targetCourseId,
+  options = {},
+  db = prisma,
+) {
   const { moduleIds = null } = options;
 
-  const sourceModules = await prisma.module.findMany({
+  const sourceModules = await db.module.findMany({
     where: {
       courseOfferingId: sourceCourseId,
       ...(Array.isArray(moduleIds) && moduleIds.length > 0 ? { id: { in: moduleIds } } : {}),
@@ -86,18 +98,18 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
 
   if (sourceModules.length === 0) return;
 
-  const sourceTopics = await prisma.topic.findMany({
+  const sourceTopics = await db.topic.findMany({
     where: { courseOfferingId: sourceCourseId },
   });
   const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
 
-  const maxPosition = await prisma.module.aggregate({
+  const maxPosition = await db.module.aggregate({
     where: { courseOfferingId: targetCourseId },
     _max: { position: true },
   });
   let nextModulePosition = maxPosition._max.position ?? 0;
 
-  await prisma.$transaction(async (tx) => {
+  await runInCloneTransaction(db, async (tx) => {
     const existingTargetTopics = await tx.topic.findMany({
       where: { courseOfferingId: targetCourseId },
     });
@@ -161,8 +173,13 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
               position: activity.position,
               lessonId: createdLesson.id,
               promptTemplateId: activity.promptTemplateId,
+              customPrompt: activity.customPrompt,
+              customPromptTitle: activity.customPromptTitle,
               config: activity.config,
               mainTopicId: targetMainTopicId,
+              enableTeachMode: activity.enableTeachMode,
+              enableGuideMode: activity.enableGuideMode,
+              enableCustomMode: activity.enableCustomMode,
               secondaryTopics:
                 mappedSecondaryIds.length > 0
                   ? {
@@ -186,14 +203,14 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
  * course-level cloning so imported activities can safely reference the target
  * module's course topics without leaking source-course ids.
  */
-export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) {
-  const targetModule = await prisma.module.findUnique({
+export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId, db = prisma) {
+  const targetModule = await db.module.findUnique({
     where: { id: targetModuleId },
     select: { courseOfferingId: true },
   });
   if (!targetModule) return;
 
-  const lessons = await prisma.lesson.findMany({
+  const lessons = await db.lesson.findMany({
     where: { id: { in: sourceLessonIds } },
     orderBy: { position: "asc" },
     include: {
@@ -215,19 +232,19 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
 
   const sourceTopicById = new Map();
   for (const courseId of sourceCourseIds) {
-    const topics = await prisma.topic.findMany({ where: { courseOfferingId: courseId } });
+    const topics = await db.topic.findMany({ where: { courseOfferingId: courseId } });
     for (const topic of topics) {
       sourceTopicById.set(topic.id, topic);
     }
   }
 
-  const maxPosition = await prisma.lesson.aggregate({
+  const maxPosition = await db.lesson.aggregate({
     where: { moduleId: targetModuleId },
     _max: { position: true },
   });
   let nextLessonPosition = maxPosition._max.position ?? 0;
 
-  await prisma.$transaction(async (tx) => {
+  await runInCloneTransaction(db, async (tx) => {
     const existingTargetTopics = await tx.topic.findMany({
       where: { courseOfferingId: targetModule.courseOfferingId },
     });
@@ -281,8 +298,13 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
             position: activity.position,
             lessonId: createdLesson.id,
             promptTemplateId: activity.promptTemplateId,
+            customPrompt: activity.customPrompt,
+            customPromptTitle: activity.customPromptTitle,
             config: activity.config,
             mainTopicId: targetMainTopicId,
+            enableTeachMode: activity.enableTeachMode,
+            enableGuideMode: activity.enableGuideMode,
+            enableCustomMode: activity.enableCustomMode,
             secondaryTopics:
               mappedSecondaryIds.length > 0
                 ? {

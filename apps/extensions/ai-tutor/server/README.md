@@ -91,8 +91,7 @@ The middleware chain in `app.js` processes requests in this order:
   (`middleware/auth.js`). There is no local login flow, OAuth client, or session store; this
   server has no `auth.js` and no Better Auth tables in its Prisma schema.
 - **Session check**: Every `/api/*` request (except `/api/health` and `POST /api/logout`)
-  forwards its `Cookie` header to Core's `POST /api/sessions/validate`; a non-OK response is a
-  401.
+  forwards its `Cookie` header to Core's `POST /api/sessions/validate`; a non-OK response is a 401.
 - **Role source**: Whatever `role` Core's validate response reports, normalized to one of
   `STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN` (unrecognized values fall back to
   `STUDENT`).
@@ -108,11 +107,11 @@ The middleware chain in `app.js` processes requests in this order:
 
 ### Middleware
 
-| Function | Purpose |
-|----------|---------|
-| `requireAuth(req, res, next)` | Validates the session cookie against Core and hydrates `req.user`; returns 401 if absent/invalid |
-| `requireRole(role)` | Returns 403 if `req.user.role !== role` |
-| `requireRoles([...])` | Returns 403 if `req.user.role` not in array |
+| Function                        | Purpose                                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `requireAuth(req, res, next)`   | Validates the session cookie against Core and hydrates `req.user`; returns 401 if absent/invalid          |
+| `requireRole(role)`             | Returns 403 if `req.user.role !== role`                                                                   |
+| `requireRoles([...])`           | Returns 403 if `req.user.role` not in array                                                               |
 | `requireInstructorPolicy(flag)` | Returns 403 for an `INSTRUCTOR` when the named Core policy flag is disabled (ADMIN/UNIT_ADMIN unaffected) |
 
 Configurable permissions are owned by Core. `services/policyService.js` fetches `GET {EDUAI_BASE_URL}/policies` with the service key and caches the result on a short TTL (falling back to the last known-good value on a Core outage). `requireInstructorPolicy('instructors.canCreateCourses')` gates `POST /courses` so an admin can enable/disable instructor course creation centrally.
@@ -120,6 +119,7 @@ Configurable permissions are owned by Core. `services/policyService.js` fetches 
 ### Admin Isolation
 
 After authentication, an explicit isolation rule blocks admins from non-admin endpoints. If `req.user.role === 'ADMIN'`, the only allowed paths are:
+
 - `/api/me`
 - `/api/admin/*`
 - `/api/ai-models/*`
@@ -132,36 +132,37 @@ All routes are mounted under `/api`. See [docs/api-reference.md](../docs/api-ref
 
 ### Quick Reference
 
-| Module | Endpoints | Auth |
-|--------|-----------|------|
-| System | `GET /health` | None |
-| Auth | `GET /me` | Any authenticated |
-| Courses | 9 endpoints | INSTRUCTOR (write), course member (read) |
-| Modules | 5 endpoints | INSTRUCTOR (write), course member (read) |
-| Lessons | 5 endpoints | INSTRUCTOR (write), course member (read) |
-| Activities | 9 endpoints | INSTRUCTOR (write), course member (read/submit) |
-| Topics | 4 endpoints | INSTRUCTOR (write), course member (read) |
-| Prompts | 2 endpoints | INSTRUCTOR |
-| Suggested Prompts | 1 endpoint | Any authenticated |
-| AI Models | 2 endpoints | Any authenticated |
-| Admin | 12 endpoints | ADMIN |
-| Bug Reports | 3 endpoints | STUDENT/INSTRUCTOR (create), ADMIN (manage) |
+| Module            | Endpoints     | Auth                                            |
+| ----------------- | ------------- | ----------------------------------------------- |
+| System            | `GET /health` | None                                            |
+| Auth              | `GET /me`     | Any authenticated                               |
+| Courses           | 9 endpoints   | INSTRUCTOR (write), course member (read)        |
+| Modules           | 5 endpoints   | INSTRUCTOR (write), course member (read)        |
+| Lessons           | 5 endpoints   | INSTRUCTOR (write), course member (read)        |
+| Activities        | 9 endpoints   | INSTRUCTOR (write), course member (read/submit) |
+| Topics            | 4 endpoints   | INSTRUCTOR (write), course member (read)        |
+| Prompts           | 2 endpoints   | INSTRUCTOR                                      |
+| Suggested Prompts | 1 endpoint    | Any authenticated                               |
+| AI Models         | 2 endpoints   | Any authenticated                               |
+| Admin             | 12 endpoints  | ADMIN                                           |
+| Bug Reports       | 3 endpoints   | STUDENT/INSTRUCTOR (create), ADMIN (manage)     |
 
 ## AI Tutoring System
 
 ### Three Chat Modes
 
-| Mode | Prompt Template | Purpose |
-|------|----------------|---------|
-| Teach | `learning-prompt` | Concept explanation, calibrated to knowledge level |
-| Guide | `exercise-prompt` | Problem-solving help without revealing answers |
-| Custom | Activity's `customPrompt` | Instructor-authored, activity-specific prompt |
+| Mode   | Prompt Template           | Purpose                                            |
+| ------ | ------------------------- | -------------------------------------------------- |
+| Teach  | `learning-prompt`         | Concept explanation, calibrated to knowledge level |
+| Guide  | `exercise-prompt`         | Problem-solving help without revealing answers     |
+| Custom | Activity's `customPrompt` | Instructor-authored, activity-specific prompt      |
 
 ### Dual-Loop Supervisor
 
 Configurable via admin AI model policy. See [SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md) for the conceptual explanation.
 
 Implementation specifics:
+
 - Supervisor feedback is prepended to tutor retries as `[SUPERVISOR FEEDBACK: ...]`.
 - Loops up to `maxSupervisorIterations` (configurable 1–5, default 3).
 - If all iterations fail, a safe fallback message is returned.
@@ -169,6 +170,7 @@ Implementation specifics:
 ### Interaction Logging
 
 Every AI interaction is recorded in `AiInteractionTrace` with:
+
 - Mode, knowledge level, user message, final response
 - Final outcome: `approved`, `single_pass`, `safe_fallback`, or `error`
 - Iteration count and full trace (all tutor drafts + supervisor verdicts)
@@ -179,18 +181,19 @@ See [docs/two-agent-supervisor-system.md](../docs/two-agent-supervisor-system.md
 
 Source of truth: `server/.env.example`.
 
-| Variable | Required | Default | Purpose |
-|----------|----------|---------|---------|
-| `DATABASE_URL` | Yes | - | PostgreSQL connection string |
-| `NODE_ENV` | Yes | `development` in the generated local `.env` | Selects runtime defaults; production deployments must set `production` explicitly |
-| `PORT` | No | `4000` | Express listen port |
-| `CORE_URL` | Yes | `http://localhost:3000` | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
-| `EDUAI_BASE_URL` | No | `http://localhost:3000/api` | Core API base URL (course import/sync, policies, chat completion) |
-| `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
-| `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
-| `CORS_ORIGINS` | No | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin |
-| `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
-| `EDUAI_ENFORCE_URL_CONSISTENCY` | No | - | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
+| Variable                        | Required    | Default                                                                                                         | Purpose                                                                                                                                                                  |
+| ------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                  | Yes         | -                                                                                                               | PostgreSQL connection string                                                                                                                                             |
+| `NODE_ENV`                      | Yes         | `development` in the generated local `.env`                                                                     | Selects runtime defaults; production deployments must set `production` explicitly                                                                                        |
+| `PORT`                          | No          | `4000`                                                                                                          | Express listen port                                                                                                                                                      |
+| `CORE_URL`                      | Yes         | `http://localhost:3000`                                                                                         | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally                                                                           |
+| `CORE_AUTH_TIMEOUT_MS`          | No          | `5000`                                                                                                          | Deadline in milliseconds for Core session-validation and logout requests; invalid or non-positive values use the default                                                 |
+| `EDUAI_BASE_URL`                | No          | `http://localhost:3000/api`                                                                                     | Core API base URL (course import/sync, policies, chat completion)                                                                                                        |
+| `EDUAI_API_KEY`                 | Recommended | -                                                                                                               | Default EduAI API key                                                                                                                                                    |
+| `EDUAI_MODEL`                   | No          | `google:gemini-2.5-flash`                                                                                       | Default tutor model                                                                                                                                                      |
+| `CORS_ORIGINS`                  | No          | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin         |
+| `POLICY_CACHE_TTL_MS`           | No          | `30000`                                                                                                         | TTL for the cached Core RBAC policy flags (`policyService`)                                                                                                              |
+| `EDUAI_ENFORCE_URL_CONSISTENCY` | No          | -                                                                                                               | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
 
 When `EDUAI_BASE_URL` is unset, `services/eduaiClient.js` still falls back to `http://localhost:5174/api` (legacy); use `.env.example` or set it explicitly for local dev.
 
@@ -218,6 +221,10 @@ CourseOffering ─┬─ Module ─── Lesson ─── Activity ─┬─ Su
 
 See `server/prisma/schema.prisma` for the full schema.
 
+Submission attempt numbers are unique per `(userId, activityId)`. The answer-submission path
+allocates the next number inside an interactive transaction, while the database constraint is the
+final concurrency guard and only collisions on that exact constraint are retried.
+
 ### Migrations
 
 ```bash
@@ -237,6 +244,7 @@ cd apps/extensions/ai-tutor/server && npm run seed
 > **Warning:** The seed script is destructive. It calls `clearDatabase()` and deletes all existing rows before inserting demo data.
 
 Seed creates:
+
 - 4 users (2 students, lead instructor, assistant instructor)
 - 3 courses with full module/lesson/activity trees
 - 5 prompt templates (knowledge-check, debugging, learning, exercise, supervisor)

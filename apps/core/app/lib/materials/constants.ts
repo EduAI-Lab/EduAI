@@ -1,0 +1,1 @@
+export const MATERIAL_UPLOAD_BODY_MAX_BYTES = 52 * 1024 * 1024;

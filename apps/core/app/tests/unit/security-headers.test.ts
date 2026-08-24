@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment node
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { applySecurityHeaders, generateNonce } from "~/lib/security-headers.server";
 import { middleware } from "~/root";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("generateNonce", () => {
   it("returns a fresh value on each call", () => {
@@ -135,7 +140,6 @@ describe("root middleware", () => {
       headers: { Accept: "text/html", "Sec-Fetch-Dest": "document" },
     });
     let called = false;
-
     const res = await (middleware[0] as any)({ request }, async () => {
       called = true;
       return new Response("{}");
@@ -173,5 +177,181 @@ describe("root middleware", () => {
 
     expect(res.status).toBe(404);
     expect(called).toBe(false);
+  });
+
+  it("rejects sibling-origin cookie-authenticated API mutations before the route runs", async () => {
+    const request = new Request("https://eduai.example/api/questions", {
+      method: "POST",
+      headers: { Cookie: "better-auth.session_token=secret", Origin: "https://evil.example" },
+    });
+    let called = false;
+    const res = await (middleware[0] as any)({ request }, async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "CROSS_ORIGIN_MUTATION" });
+    expect(called).toBe(false);
+  });
+
+  it("rejects sibling-origin cookie-authenticated HTML form actions", async () => {
+    const request = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://sibling.eduai.example",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "intent=clear",
+    });
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const res = await (middleware[0] as any)({ request }, next);
+    expect(res.status).toBe(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("does not trust an unverified bearer-looking header to bypass the cookie gate", async () => {
+    const request = new Request("https://eduai.example/api/questions", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://evil.example",
+        Authorization: "Bearer attacker-controlled",
+      },
+    });
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for cookie mutations with no Origin, Referer, or fetch metadata", async () => {
+    const request = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: { Cookie: "better-auth.session_token=secret" },
+    });
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "CROSS_ORIGIN_MUTATION" });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("allows origin-less cookie mutations only with same-origin fallback evidence", async () => {
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const refererRequest = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Referer: "https://eduai.example/admin/logs",
+      },
+    });
+    const fetchMetadataRequest = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        "Sec-Fetch-Site": "same-origin",
+      },
+    });
+
+    expect((await (middleware[0] as any)({ request: refererRequest }, next)).status).toBe(204);
+    expect((await (middleware[0] as any)({ request: fetchMetadataRequest }, next)).status).toBe(
+      204,
+    );
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows a cookie-bearing non-browser call only after service-key verification", async () => {
+    vi.stubEnv("EDUAI_API_KEY", "verified-service-key");
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = new Request("https://eduai.example/api/questions/q1", {
+      method: "PATCH",
+      headers: {
+        Cookie: "incidental=1",
+        Authorization: "Bearer verified-service-key",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(204);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("lets authenticated extension session validation reach the action without browser Origin", async () => {
+    vi.stubEnv("EDUAI_API_KEY", "verified-service-key");
+    const next = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ user: { id: "u1" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const request = new Request("https://eduai.example/api/sessions/validate", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Authorization: "Bearer verified-service-key",
+        "X-EduAI-Client-IP": "198.51.100.50",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(200);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("preserves same-origin cookie mutations and non-cookie service calls", async () => {
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const sameOrigin = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: { Cookie: "session=secret", Origin: "https://eduai.example" },
+    });
+    const service = new Request("https://eduai.example/api/questions/q1", {
+      method: "PATCH",
+      headers: { Authorization: "Bearer service-key", Origin: "https://worker.internal" },
+    });
+    expect((await (middleware[0] as any)({ request: sameOrigin }, next)).status).toBe(204);
+    expect((await (middleware[0] as any)({ request: service }, next)).status).toBe(204);
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows https Origin when request.url is http behind a TLS-terminating proxy", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://dev.eduai.ok.ubc.ca");
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = new Request("http://dev.eduai.ok.ubc.ca/api/questions", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://dev.eduai.ok.ubc.ca",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(204);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows https Referer when request.url is http and BETTER_AUTH_URL is https", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://dev.eduai.ok.ubc.ca");
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = new Request("http://dev.eduai.ok.ubc.ca/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Referer: "https://dev.eduai.ok.ubc.ca/admin/logs",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(204);
+    expect(next).toHaveBeenCalledOnce();
   });
 });

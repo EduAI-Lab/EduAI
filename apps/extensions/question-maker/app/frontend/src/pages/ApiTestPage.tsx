@@ -21,6 +21,7 @@ import React, { useState } from "react";
 import { Navigate } from "react-router";
 import api from "../services/api";
 import eduaiService from "../services/eduaiService";
+import { apiKeyStorage } from "../services/apiKeyStorage";
 import { useAuth } from "../contexts/AuthContext";
 import { AIServiceIndicators } from "../components/eduai/AIServiceIndicators";
 import { useEduAIStatus } from "../hooks/useEduAIStatus";
@@ -768,6 +769,9 @@ export const ApiTestPage = () => {
                     </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
+                    <SelectItem value="opencode:deepseek-v4-flash">
+                      DeepSeek V4 Flash (OpenCode Go)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -792,16 +796,12 @@ export const ApiTestPage = () => {
                   }
 
                   handleApiCall(
-                    () =>
+                    async () =>
                       eduaiService.chat({
                         messages: [{ role: "user", content: eduaiChatForm.message }],
                         courseCode: eduaiChatForm.courseCode,
                         model: eduaiChatForm.model,
-                        apiKeys: eduaiChatForm.model.startsWith("ollama")
-                          ? { ollama: { isEnabled: true } }
-                          : eduaiChatForm.model.startsWith("vllm")
-                            ? { vllm: { isEnabled: true } }
-                            : {},
+                        apiKeys: await apiKeyStorage.buildApiKeysForModel(eduaiChatForm.model),
                       }),
                     (data) => {
                       setEduaiChatResult({ status: "success", payload: data });
@@ -854,6 +854,9 @@ export const ApiTestPage = () => {
                     </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
+                    <SelectItem value="opencode:deepseek-v4-flash">
+                      DeepSeek V4 Flash (OpenCode Go)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -953,16 +956,12 @@ export const ApiTestPage = () => {
                   }
 
                   handleApiCall(
-                    () =>
+                    async () =>
                       eduaiService.generateQuestions({
                         prompt: eduaiQuestionForm.prompt,
                         courseCode: eduaiQuestionForm.courseCode,
                         model: eduaiQuestionForm.model,
-                        apiKeys: eduaiQuestionForm.model.startsWith("ollama")
-                          ? { ollama: { isEnabled: true } }
-                          : eduaiQuestionForm.model.startsWith("vllm")
-                            ? { vllm: { isEnabled: true } }
-                            : {},
+                        apiKeys: await apiKeyStorage.buildApiKeysForModel(eduaiQuestionForm.model),
                         numQuestions,
                         difficultyDistribution: { easy, medium, hard },
                       }),

@@ -1,7 +1,7 @@
 /**
  * Route-level RBAC tests for question_metadata authoring (#311/#312, §16/§19):
- *   - STUDENT flat-gated off create/edit/delete,
- *   - TA own-only edit/delete (createdBy === caller).
+ *   - ordinary STUDENT callers denied by the enrollment-aware course gate,
+ *   - platform STUDENT + TA enrollment can edit/delete only their own rows.
  *
  * No DB / live Core: questionService, schema, and the RBAC Core reads are mocked.
  */
@@ -80,11 +80,14 @@ vi.mock("../../src/config/database.js", () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const TA = { id: "ta-1", role: "TA", email: "t@t.co", name: "TA" };
+// Core's platform role for a course TA is STUDENT; the course-level TA role
+// comes from the active enrollment mocked by authAs(..., 'TA').
+const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
 
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
+const OTHER_COURSE = { id: 2, userId: "owner-1", coreCourseId: "cuid-other-course" };
 
 function authAs(user, enrollRole) {
   vi.stubGlobal(
@@ -107,31 +110,50 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe("STUDENT flat-gated off question authoring (§16)", () => {
+describe("ordinary STUDENT remains denied from question authoring (§16)", () => {
   it.each([
     ["post", "/api/questions", { courseId: 1, primaryTopicId: "t1", type: "MCQ" }],
     ["put", "/api/questions/7", { description: "x" }],
     ["delete", "/api/questions/7", {}],
   ])("%s %s → 403", async (method, path, body) => {
     authAs(STUDENT, null);
+    if (path.includes("/7")) loadQuestion("someone-else");
     const res = await request(app)[method](path).set("Cookie", "session=v").send(body);
     expect(res.status).toBe(403);
   });
 });
 
-describe("TA blocked at platform role gate", () => {
+describe("course-level TA access is enrollment-scoped (§16)", () => {
   it.each([
     ["put", "/api/questions/7", { description: "edit" }],
     ["delete", "/api/questions/7", {}],
     ["get", "/api/questions?courseId=1", {}],
-    ["get", "/api/questions", {}],
-  ])("%s %s → 403", async (method, path, body) => {
+  ])("%s %s → allowed for own/course view", async (method, path, body) => {
     authAs(TA, "TA");
+    if (path.includes("/7")) loadQuestion(TA.id);
+    if (method === "put") mockUpdate.mockResolvedValue({ id: 7 });
     const res = await request(app)[method](path).set("Cookie", "session=v").send(body);
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps the unscoped list restricted to platform authoring roles", async () => {
+    authAs(TA, "TA");
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+    expect(res.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it("rejects a TA editing another author's question", async () => {
+    authAs(TA, "TA");
+    loadQuestion("someone-else");
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ description: "edit" });
+
     expect(res.status).toBe(403);
     expect(mockUpdate).not.toHaveBeenCalled();
-    expect(mockDelete).not.toHaveBeenCalled();
-    expect(mockList).not.toHaveBeenCalled();
   });
 });
 
@@ -160,5 +182,31 @@ describe("INSTRUCTOR may edit/delete any question in the course (C)", () => {
       "owner-1",
       expect.objectContaining({ createdBy: INSTRUCTOR.id, courseId: 1 }),
     );
+  });
+
+  it("does not allow a source-authorized caller to move a question into an inaccessible course", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion("ta-1");
+    mockCourseFindOne.mockImplementation(({ where }) =>
+      Promise.resolve(where.id === OTHER_COURSE.id ? OTHER_COURSE : COURSE),
+    );
+    mockEnrollments.mockImplementation((coreCourseId) =>
+      Promise.resolve({
+        enrollments:
+          coreCourseId === COURSE.coreCourseId
+            ? [{ studentId: INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }]
+            : [],
+      }),
+    );
+    mockUpdate.mockResolvedValue({ id: 7, courseId: OTHER_COURSE.id });
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ courseId: OTHER_COURSE.id, description: "move" });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: "COURSE_RELOCATION_NOT_ALLOWED" });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -41,8 +41,8 @@ describe("AI Tutor chat markdown CSS scoping", () => {
   it("holds the streamdown sheet in the chunk-scoped stylesheet", () => {
     const chatCss = read("styles/chat-markdown.css");
 
-    expect(chatCss).toContain('@import "streamdown/styles.css";');
-    expect(chatCss).toContain('[data-streamdown="code-block-actions"]');
+    expect(chatCss).toContain("@import 'streamdown/styles.css';");
+    expect(chatCss).toContain("[data-streamdown='code-block-actions']");
   });
 
   it("imports the scoped stylesheet from the only markdown surface", () => {

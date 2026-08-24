@@ -155,7 +155,7 @@ describe("useBugReportCapture", () => {
     const { result } = renderHook(() => useBugReportCapture(true));
 
     await act(async () => {
-      await expect(result.current.captureScreenshot()).resolves.toBeUndefined();
+      await expect(result.current.captureScreenshot()).resolves.toBeNull();
     });
 
     expect(result.current.getCapturedData().screenshot).toBeNull();

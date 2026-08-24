@@ -12,6 +12,8 @@ import request from "supertest";
 
 const {
   mockUpdateVariant,
+  mockLinkVariantToCore,
+  mockRollbackVariantApproval,
   mockVariantsUpdate,
   mockTopicsUpdateMany,
   mockPushVariantToCore,
@@ -19,6 +21,8 @@ const {
   mockEnrollments,
 } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
+  mockLinkVariantToCore: vi.fn(),
+  mockRollbackVariantApproval: vi.fn(),
   mockVariantsUpdate: vi.fn().mockResolvedValue(undefined),
   mockTopicsUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
   mockPushVariantToCore: vi.fn(),
@@ -57,6 +61,8 @@ vi.mock("../../src/config/settings.js", () => {
 vi.mock("../../src/services/questionService.js", () => ({
   createVariant: vi.fn(),
   updateVariant: mockUpdateVariant,
+  linkVariantToCore: mockLinkVariantToCore,
+  rollbackVariantApproval: mockRollbackVariantApproval,
   deleteVariant: vi.fn(),
   getVariantsByQuestion: vi.fn(),
 }));
@@ -133,6 +139,16 @@ function setup({ updated } = {}) {
   // Fresh object per call so a prior rollback mutation cannot poison later asserts.
   if (updated) {
     mockUpdateVariant.mockImplementation(async () => ({ ...updated }));
+    mockLinkVariantToCore.mockImplementation(
+      async (variantId, userId, snapshot, coreQuestionId) => ({
+        applied: true,
+        variant: { ...snapshot, coreQuestionId },
+      }),
+    );
+    mockRollbackVariantApproval.mockResolvedValue({
+      applied: true,
+      variant: { ...updated, isDraft: true, coreQuestionId: null },
+    });
   }
 }
 
@@ -154,10 +170,12 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(mockPushVariantToCore).toHaveBeenCalledOnce();
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({
-      where: { id: 42 },
-      data: { coreQuestionId: "cuid-core-q" },
-    });
+    expect(mockLinkVariantToCore).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+      "cuid-core-q",
+    );
   });
 
   it("does NOT push when isDraft is not explicitly false in the request body", async () => {
@@ -205,7 +223,11 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       where: { coreTopicId: { in: deletedTopicIds } },
       data: { coreTopicId: null },
     });
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { isDraft: true } });
+    expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+    );
   });
 
   it("re-approval after INVALID_TOPIC_IDS fires push again (state-based gating)", async () => {
@@ -223,7 +245,11 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .set("Cookie", "session=valid")
       .send({ isDraft: false });
     expect(firstRes.status).toBe(422);
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { isDraft: true } });
+    expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+    );
 
     // Second approval after user fixes topics → push fires again and succeeds
     mockVariantsFindOne.mockResolvedValue(loadedDraft());
@@ -235,10 +261,12 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(secondRes.status).toBe(200);
     expect(mockPushVariantToCore).toHaveBeenCalledTimes(2);
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({
-      where: { id: 42 },
-      data: { coreQuestionId: "cuid-core-q-recovered" },
-    });
+    expect(mockLinkVariantToCore).toHaveBeenLastCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+      "cuid-core-q-recovered",
+    );
   });
 
   it("returns 422 DUPLICATE_TOPIC without storing coreQuestionId", async () => {
@@ -256,7 +284,11 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("DUPLICATE_TOPIC");
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { isDraft: true } });
+    expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+    );
   });
 
   // #225 SEAM-03 / #1197 fix: a Core push failure must surface as an error and
@@ -273,12 +305,48 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBe("CORE_PUSH_FAILED");
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { isDraft: true } });
+    expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+    );
     expect(mockVariantsUpdate).not.toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ coreQuestionId: expect.anything() }),
       }),
     );
+  });
+
+  it("returns an explicit rollback failure when Core and local rollback both fail", async () => {
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
+    mockPushVariantToCore.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    mockRollbackVariantApproval.mockRejectedValueOnce(new Error("DB unavailable"));
+
+    const res = await request(app)
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=valid")
+      .send({ isDraft: false });
+
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
+  });
+
+  it("does not claim draft state when rollback reports a non-draft concurrent state", async () => {
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
+    mockPushVariantToCore.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    mockRollbackVariantApproval.mockResolvedValueOnce({
+      applied: false,
+      variant: makeVariant({ isDraft: false, coreQuestionId: "core-from-retry" }),
+    });
+
+    const res = await request(app)
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=valid")
+      .send({ isDraft: false });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
   });
 
   it("re-approval after a transient Core push failure retries the push (state-based gating)", async () => {
@@ -290,7 +358,11 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .set("Cookie", "session=valid")
       .send({ isDraft: false });
     expect(firstRes.status).toBe(502);
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { isDraft: true } });
+    expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+    );
 
     // Simulate persisted rollback: middleware loads a draft again.
     mockVariantsFindOne.mockResolvedValue(loadedDraft());
@@ -302,9 +374,11 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(secondRes.status).toBe(200);
     expect(mockPushVariantToCore).toHaveBeenCalledTimes(2);
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({
-      where: { id: 42 },
-      data: { coreQuestionId: "cuid-core-q-retry" },
-    });
+    expect(mockLinkVariantToCore).toHaveBeenLastCalledWith(
+      42,
+      COURSE.userId,
+      expect.objectContaining({ id: 42, isDraft: false }),
+      "cuid-core-q-retry",
+    );
   });
 });

@@ -44,6 +44,58 @@ const SUPERVISOR_ERROR_MESSAGE =
   "AI study buddy encountered an issue reviewing the response. Please try again.";
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
+const GENERATION_ERROR_MESSAGE = "AI study buddy not available right now. Please try again later.";
+
+function getModelProvider(modelId) {
+  if (typeof modelId !== "string") return null;
+  const provider = modelId.split(":", 1)[0]?.trim();
+  return provider || null;
+}
+
+/**
+ * Associate BYOK secrets with their real provider. The legacy `apiKey` field
+ * is intentionally scoped to the tutor model only; it must never be copied to
+ * a supervisor request when policy selects another provider. Callers that
+ * have both credentials may pass an `apiKeys` map (provider -> secret), while
+ * `supervisorApiKey` is retained as a small compatibility escape hatch for
+ * server-side callers.
+ */
+function resolveProviderApiKeys({
+  apiKey,
+  apiKeys,
+  supervisorApiKey,
+  tutorModelId,
+  supervisorModelId,
+}) {
+  const keys = {};
+  if (apiKeys && typeof apiKeys === "object" && !Array.isArray(apiKeys)) {
+    for (const [provider, value] of Object.entries(apiKeys)) {
+      if (typeof value === "string" && value.trim()) keys[provider] = value;
+      else if (value && typeof value.apiKey === "string" && value.apiKey.trim()) {
+        keys[provider] = value.apiKey;
+      }
+    }
+  }
+
+  const tutorProvider = getModelProvider(tutorModelId);
+  const supervisorProvider = getModelProvider(supervisorModelId);
+  if (tutorProvider && typeof apiKey === "string" && apiKey.trim()) {
+    // The provider-labelled map is authoritative when present. The legacy
+    // unlabelled key is only a fallback for callers that have one credential;
+    // it is never inserted under any other provider name.
+    if (!keys[tutorProvider]) keys[tutorProvider] = apiKey;
+  }
+  if (supervisorProvider && typeof supervisorApiKey === "string" && supervisorApiKey.trim()) {
+    if (!keys[supervisorProvider]) keys[supervisorProvider] = supervisorApiKey;
+  }
+
+  return {
+    tutorApiKey: tutorProvider ? keys[tutorProvider] || null : null,
+    supervisorApiKey: supervisorProvider ? keys[supervisorProvider] || null : null,
+    tutorProvider,
+    supervisorProvider,
+  };
+}
 
 // #999/#1001: bound the complete EduAI call, including the one permitted
 // retry, so a transient failure cannot turn into an unbounded wait.
@@ -51,6 +103,149 @@ const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_00
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
 const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try again.";
+const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
+const SAFE_AI_LOG_EVENTS = new Set([
+  "missing_session_cookie",
+  "missing_user_api_key",
+  "invalid_model_id",
+  "upstream_retry",
+  "upstream_http_error",
+  "unexpected_response_format",
+  "call_timed_out",
+  "call_failed",
+  "supervisor_verdict_parse_failed",
+  "supervisor_review_failed",
+  "teach_response_failed",
+  "guide_response_failed",
+  "custom_response_failed",
+  "guidance_route_failed",
+  "custom_route_failed",
+]);
+const SAFE_AI_LOG_NUMBER_KEYS = ["status", "attempt", "maxAttempts", "durationMs", "timeoutMs"];
+const SAFE_AI_LOG_IDENTIFIER_KEYS = ["requestId", "correlationId", "traceId"];
+const SAFE_AI_LOG_TYPES = new Set([
+  "array",
+  "bigint",
+  "boolean",
+  "function",
+  "null",
+  "number",
+  "object",
+  "string",
+  "symbol",
+  "undefined",
+]);
+const SAFE_AI_LOG_MODES = new Set(["teach", "guide", "custom"]);
+
+function normalizeDiagnosticIdentifier(value) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 128) return undefined;
+  return /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(normalized) ? normalized : undefined;
+}
+
+function readHeader(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === "function") return headers.get(name) || undefined;
+  if (typeof headers !== "object") return undefined;
+
+  const matchingKey = Object.keys(headers).find((key) => key.toLowerCase() === name.toLowerCase());
+  return matchingKey ? headers[matchingKey] : undefined;
+}
+
+function getCorrelationMetadata(headers) {
+  return {
+    requestId: readHeader(headers, "x-request-id"),
+    correlationId: readHeader(headers, "x-correlation-id"),
+    traceId: readHeader(headers, "x-trace-id"),
+  };
+}
+
+function getValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function sanitizeAiLogMetadata(metadata = {}) {
+  const sanitized = {};
+
+  for (const key of SAFE_AI_LOG_NUMBER_KEYS) {
+    const value = metadata[key];
+    if (Number.isInteger(value) && value >= 0) sanitized[key] = value;
+  }
+
+  for (const key of SAFE_AI_LOG_IDENTIFIER_KEYS) {
+    const value = normalizeDiagnosticIdentifier(metadata[key]);
+    if (value) sanitized[key] = value;
+  }
+
+  if (SAFE_AI_LOG_TYPES.has(metadata.responseType)) {
+    sanitized.responseType = metadata.responseType;
+  }
+  if (SAFE_AI_LOG_TYPES.has(metadata.contentType)) {
+    sanitized.contentType = metadata.contentType;
+  }
+  if (SAFE_AI_LOG_MODES.has(metadata.mode)) sanitized.mode = metadata.mode;
+  if (SAFE_AI_ERROR_CODES.has(metadata.code)) sanitized.code = metadata.code;
+
+  return sanitized;
+}
+
+function getResponseLogMetadata(response, metadata = {}) {
+  return sanitizeAiLogMetadata({
+    ...metadata,
+    status: response?.status,
+    ...getCorrelationMetadata(response?.headers),
+  });
+}
+
+/**
+ * Extract only diagnostics that are safe to log or return as correlation
+ * metadata. Error messages, stacks, causes, response bodies, URLs, and
+ * arbitrary properties are intentionally never copied.
+ */
+export function getSafeAiErrorMetadata(error, depth = 0) {
+  const responseMetadata = sanitizeAiLogMetadata({
+    status: error?.response?.status,
+    ...getCorrelationMetadata(error?.response?.headers),
+  });
+  const directMetadata = sanitizeAiLogMetadata({
+    status: error?.status,
+    code: error?.code,
+    requestId: error?.requestId,
+    correlationId: error?.correlationId,
+    traceId: error?.traceId,
+  });
+  const causeMetadata =
+    depth < 1 && error?.cause && error.cause !== error
+      ? getSafeAiErrorMetadata(error.cause, depth + 1)
+      : {};
+
+  return sanitizeAiLogMetadata({
+    ...causeMetadata,
+    ...responseMetadata,
+    ...directMetadata,
+  });
+}
+
+/**
+ * Emit one structured, allowlisted AI diagnostic event. The final allowlist
+ * drops every field that could carry an error message, body, URL, or stack.
+ */
+export function logAiGuidanceEvent(level, event, metadata = {}) {
+  const safeMetadata = sanitizeAiLogMetadata(metadata);
+  const safeEvent = SAFE_AI_LOG_EVENTS.has(event) ? event : "unknown_event";
+  const message = `[aiGuidance] ${safeEvent}`;
+
+  if (level === "warn") {
+    console.warn(message, safeMetadata);
+  } else {
+    console.error(message, safeMetadata);
+  }
+
+  return safeMetadata;
+}
 
 function resolveRetryDelayMs(retryAfter, remainingMs, nowMs = Date.now()) {
   const safeRemainingMs = Math.max(remainingMs, 0);
@@ -137,14 +332,14 @@ async function callEduAI({
   const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
-    console.error("[aiGuidance] Missing session cookie for EduAI call");
+    logAiGuidanceEvent("error", "missing_session_cookie");
     const error = new Error("Session cookie is required for EduAI calls");
     error.status = 401;
     throw error;
   }
 
   if (!userApiKey) {
-    console.error("[aiGuidance] Missing user API key");
+    logAiGuidanceEvent("error", "missing_user_api_key");
     const error = new Error("API key is required");
     error.status = 400;
     throw error;
@@ -154,7 +349,7 @@ async function callEduAI({
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(":");
   if (!provider) {
-    console.error("[aiGuidance] Invalid model ID format:", model);
+    logAiGuidanceEvent("error", "invalid_model_id");
     throw new Error("Invalid model ID format");
   }
 
@@ -182,8 +377,10 @@ async function callEduAI({
     ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
   };
 
+  const callStartedAt = Date.now();
+
   try {
-    const deadline = Date.now() + EDUAI_CALL_TIMEOUT_MS;
+    const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
     const requestSignal = signal
@@ -191,6 +388,7 @@ async function callEduAI({
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
+      const attemptStartedAt = Date.now();
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -203,15 +401,16 @@ async function callEduAI({
 
       if (!response.ok) {
         const errorText = await response.text();
+        const responseMetadata = getResponseLogMetadata(response, {
+          attempt,
+          maxAttempts: EDUAI_MAX_ATTEMPTS,
+          durationMs: Date.now() - attemptStartedAt,
+        });
         const shouldRetry =
           isRetryableEduAiResponse(response.status, errorText) && attempt < EDUAI_MAX_ATTEMPTS;
 
         if (shouldRetry) {
-          console.warn(
-            "[aiGuidance] Transient API error; retrying once:",
-            response.status,
-            errorText,
-          );
+          logAiGuidanceEvent("warn", "upstream_retry", responseMetadata);
           const nowMs = Date.now();
           const remainingMs = Math.max(deadline - nowMs, 0);
           const retryDelayMs = resolveRetryDelayMs(
@@ -227,22 +426,36 @@ async function callEduAI({
           continue;
         }
 
-        console.error("[aiGuidance] API error:", response.status, errorText);
+        logAiGuidanceEvent("error", "upstream_http_error", responseMetadata);
         const error = new Error(eduAiErrorMessage(response.status, errorText));
         error.status = response.status;
+        error.requestId = responseMetadata.requestId;
+        error.correlationId = responseMetadata.correlationId;
+        error.traceId = responseMetadata.traceId;
         throw error;
       }
 
       const data = await response.json();
-      if (data.content && typeof data.content === "string") {
+      if (data?.content && typeof data.content === "string") {
         return {
           message: data.content,
           chatId: data.chatId || chatId || null,
         };
       }
 
-      console.error("[aiGuidance] Unexpected response format:", data);
-      throw new Error("Invalid response format from AI API");
+      const responseMetadata = getResponseLogMetadata(response, {
+        attempt,
+        maxAttempts: EDUAI_MAX_ATTEMPTS,
+        durationMs: Date.now() - attemptStartedAt,
+        responseType: getValueType(data),
+        contentType: getValueType(data?.content),
+      });
+      logAiGuidanceEvent("error", "unexpected_response_format", responseMetadata);
+      const error = new Error("Invalid response format from AI API");
+      error.requestId = responseMetadata.requestId;
+      error.correlationId = responseMetadata.correlationId;
+      error.traceId = responseMetadata.traceId;
+      throw error;
     }
   } catch (error) {
     if (signal?.aborted) {
@@ -253,13 +466,20 @@ async function callEduAI({
       throw error;
     }
     if (error.name === "TimeoutError" || error.name === "AbortError") {
-      console.error("[aiGuidance] EduAI call timed out after", EDUAI_CALL_TIMEOUT_MS, "ms");
+      logAiGuidanceEvent("error", "call_timed_out", {
+        timeoutMs: EDUAI_CALL_TIMEOUT_MS,
+        durationMs: Date.now() - callStartedAt,
+        ...getSafeAiErrorMetadata(error),
+      });
       const timeoutError = new Error(TIMEOUT_MESSAGE);
       timeoutError.status = 504;
       timeoutError.code = "TIMEOUT";
       throw timeoutError;
     }
-    console.error("[aiGuidance] Error calling eduAI:", error);
+    logAiGuidanceEvent("error", "call_failed", {
+      durationMs: Date.now() - callStartedAt,
+      ...getSafeAiErrorMetadata(error),
+    });
     throw error;
   }
 }
@@ -380,7 +600,11 @@ RESPOND WITH ONLY VALID JSON.`;
     return { ...second.verdict, parseFailed: false, raw: second.raw };
   }
 
-  console.error("[supervisor] Failed to parse verdict after retry:", second.raw, second.parseError);
+  logAiGuidanceEvent("error", "supervisor_verdict_parse_failed", {
+    attempt: 2,
+    maxAttempts: 2,
+    ...getSafeAiErrorMetadata(second.parseError),
+  });
   return {
     approved: false,
     reason: "Supervisor response invalid after retry",
@@ -616,7 +840,7 @@ async function supervisedGenerate(generateFn, context) {
         tutorResponse: tutorResult.message,
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
-        userApiKey: context.userApiKey,
+        userApiKey: context.supervisorApiKey,
         courseCode: context.courseCode,
         courseId: context.courseId,
         signal: context.signal,
@@ -643,7 +867,11 @@ async function supervisedGenerate(generateFn, context) {
       // `[SUPERVISOR FEEDBACK: ...]` to the user message.
       context.lastFeedback = verdict.feedbackToTutor;
     } catch (supervisorError) {
-      console.error("[supervisor] Error during review:", supervisorError);
+      logAiGuidanceEvent(
+        "error",
+        "supervisor_review_failed",
+        getSafeAiErrorMetadata(supervisorError),
+      );
       throw new Error(SUPERVISOR_ERROR_MESSAGE, { cause: supervisorError });
     }
   }
@@ -677,22 +905,45 @@ async function generateWithSupervisor({
   maxSupervisorIterations,
   cookie,
   apiKey,
+  apiKeys,
+  supervisorApiKey,
   chatId,
   messageId,
   courseCode,
   courseId = null,
   signal,
 }) {
+  const effectiveTutorModelId = tutorModelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
+  const effectiveSupervisorModelId =
+    supervisorModelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
+  const resolvedKeys = resolveProviderApiKeys({
+    apiKey,
+    apiKeys,
+    supervisorApiKey,
+    tutorModelId: effectiveTutorModelId,
+    supervisorModelId: effectiveSupervisorModelId,
+  });
+  if (!resolvedKeys.tutorApiKey) {
+    const error = new Error("API key is required for the selected tutor provider");
+    error.status = 400;
+    throw error;
+  }
+
+  // A supervisor request is an independent provider call. If its provider
+  // has no own credential, safely skip that stage rather than relabelling the
+  // tutor secret and sending it to the wrong upstream.
+  const supervisionAvailable = Boolean(resolvedKeys.supervisorApiKey);
   const context = {
     originalStudentMessage,
     visibleContext,
     hiddenContext,
-    tutorModelId,
-    supervisorModelId,
+    tutorModelId: effectiveTutorModelId,
+    supervisorModelId: effectiveSupervisorModelId,
     cookie,
-    userApiKey: apiKey,
+    userApiKey: resolvedKeys.tutorApiKey,
+    supervisorApiKey: resolvedKeys.supervisorApiKey,
     chatId,
-    dualLoopEnabled,
+    dualLoopEnabled: dualLoopEnabled && supervisionAvailable,
     maxSupervisorIterations,
     lastFeedback: null,
     courseCode,
@@ -712,9 +963,9 @@ async function generateWithSupervisor({
     return callEduAI({
       systemPrompt,
       userMessage,
-      modelId: tutorModelId,
+      modelId: effectiveTutorModelId,
       cookie,
-      userApiKey: apiKey,
+      userApiKey: resolvedKeys.tutorApiKey,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
       // the same turn; only the original turn reuses the caller's messageId.
@@ -744,6 +995,8 @@ export async function generateTeachResponse({
   maxSupervisorIterations = 3,
   cookie,
   apiKey,
+  apiKeys,
+  supervisorApiKey,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -784,6 +1037,8 @@ export async function generateTeachResponse({
       maxSupervisorIterations,
       cookie,
       apiKey,
+      apiKeys,
+      supervisorApiKey,
       chatId,
       messageId,
       courseCode,
@@ -791,17 +1046,16 @@ export async function generateTeachResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate teach response:", error);
+    logAiGuidanceEvent("error", "teach_response_failed", getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
         finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };
@@ -824,6 +1078,8 @@ export async function generateGuideResponse({
   maxSupervisorIterations = 3,
   cookie,
   apiKey,
+  apiKeys,
+  supervisorApiKey,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -862,6 +1118,8 @@ export async function generateGuideResponse({
       maxSupervisorIterations,
       cookie,
       apiKey,
+      apiKeys,
+      supervisorApiKey,
       chatId,
       messageId,
       courseCode,
@@ -869,17 +1127,16 @@ export async function generateGuideResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate guide response:", error);
+    logAiGuidanceEvent("error", "guide_response_failed", getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
         finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };
@@ -904,6 +1161,8 @@ export async function generateCustomResponse({
   maxSupervisorIterations = 3,
   cookie,
   apiKey,
+  apiKeys,
+  supervisorApiKey,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -942,6 +1201,8 @@ export async function generateCustomResponse({
       maxSupervisorIterations,
       cookie,
       apiKey,
+      apiKeys,
+      supervisorApiKey,
       chatId,
       messageId,
       courseCode,
@@ -949,17 +1210,16 @@ export async function generateCustomResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate custom response:", error);
+    logAiGuidanceEvent("error", "custom_response_failed", getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
         finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };

@@ -140,6 +140,8 @@ export interface QuestionCreate {
 }
 
 export interface QuestionGenerationParams {
+  /** Required course context for the legacy generation endpoint. */
+  courseId: number;
   prompt: string;
   provider: "groq" | "openai" | "deepseek";
   numQuestions: number;

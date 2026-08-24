@@ -128,8 +128,11 @@ cd ../extensions/ai-tutor/server && npx prisma migrate deploy
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is
 useful before restarting the shared stack because it fails before traffic is sent to an incompatible
-schema. `go-live-build.sh` runs both of these plus Question Maker's, so a normal deploy does not
-need them run by hand.
+schema. `go-live-build.sh` runs the Core migration preflight, all three migrations, the safe Core
+reference seed, and extension-local catalog seeds. Core fixture seeding is intentionally forbidden
+on shared hosts because it provisions fixed demo identities. Bootstrap the first real Core
+administrator with the operator invitation command in
+[`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
 
 ### Deploying a branch
 
@@ -212,31 +215,17 @@ bash infra/s378/go-live-build.sh
 sets their public URLs. The canonical script and operational notes live in
 [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
 
-### Async AI-job worker
+### Async AI-job queue (hard-disabled pre-MVP)
 
-The durable BullMQ queue is drained by a separate Core process. Run one worker
-process per Core deployment:
+Do not deploy the standalone BullMQ worker. The authenticated owner-scoped
+status/cancellation API and server-side model authorization contract are not
+complete, so Core intentionally keeps the queue unavailable before MVP.
 
-```bash
-cd apps/core
-npm run queue:worker
-```
-
-The process consumes `ai-jobs-chat` and `ai-jobs-heavy`, claims the authoritative
-`AiJob` row, routes inference through the matching fleet pool, and writes
-`COMPLETED` or `FAILED`. Graceful `SIGINT`/`SIGTERM` shutdown closes both BullMQ
-workers before disconnecting Redis.
-
-| Variable | Purpose |
-| -------- | ------- |
-| `REDIS_URL` | Shared Redis used by the producer and worker |
-| `QUEUE_ENQUEUE_ENABLED` | Enables the guarded producer path; turn on only when the worker service is healthy |
-| `AI_JOB_DEFAULT_MODEL` | Optional explicit worker model; otherwise Auto routing is used |
-| `AI_JOB_CHAT_CONCURRENCY` | Chat-pool worker concurrency (default `8`) |
-| `AI_JOB_HEAVY_CONCURRENCY` | Heavy-pool worker concurrency (default `1`) |
-| `AI_JOB_EXECUTION_TIMEOUT_MS` | Per-attempt provider timeout in milliseconds (default `120000`) |
-| `AI_JOB_ATTEMPTS` | Total BullMQ attempts per job (default `3`) |
-| `AI_JOB_RETRY_DELAY_MS` | Exponential retry base delay (default `5000`) |
+`QUEUE_ENQUEUE_ENABLED` is deprecated and ignored even when set to `true`.
+`/api/chat` always uses direct chat, and `npm run queue:worker` exits before
+opening Redis or constructing a BullMQ worker. Re-enabling the queue requires a
+reviewed code change after those security contracts and their client flow ship;
+deployment configuration alone cannot enable it.
 
 ### Apache reverse proxy
 
@@ -335,11 +324,12 @@ do not infer callback routes from the subdomain name.
 1. Back up each database and verify the restore procedure.
 2. Fetch the reviewed release commit into a clean checkout.
 3. Install locked dependencies with `npm ci`.
-4. Apply Core, AI Tutor, and Question Maker Prisma migrations.
-5. Build the frontend/server bundles required by the chosen process manager.
-6. Restart one service at a time and verify its local health endpoint.
-7. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
-8. Verify the three public URLs through TLS and the reverse proxy.
+4. Run Core's `npm run db:migrate:preflight`, notify/rotate any listed legacy API-key owners, and resolve any duplicate course/job rows.
+5. Apply Core, AI Tutor, and Question Maker Prisma migrations, then run Core's `npm run db:seed:reference`.
+6. Build the frontend/server bundles required by the chosen process manager.
+7. Restart one service at a time and verify its local health endpoint.
+8. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
+9. Verify the three public URLs through TLS and the reverse proxy.
 
 Store secrets outside Git, run services as an unprivileged account, and keep database and Node ports
 off the public interface. Production backup and lifecycle jobs are documented in
