@@ -16,33 +16,29 @@ export function parseCarbonPolicyMode(raw: string | undefined): CarbonPolicyMode
 }
 
 /** Optional per-course override: `{"COSC 315":"greener"}` */
-export function parseCarbonPolicyByCourse(
-  raw: string | undefined,
-): Record<string, CarbonPolicyMode> {
+export function parseCarbonPolicyByCourse(raw: string | undefined): Map<string, CarbonPolicyMode> {
   if (!raw?.trim()) {
-    return {};
+    return new Map();
   }
   try {
     const parsed = JSON.parse(raw) as Record<string, string>;
-    const out: Record<string, CarbonPolicyMode> = {};
+    const out = new Map<string, CarbonPolicyMode>();
     for (const [code, mode] of Object.entries(parsed)) {
-      out[code.trim()] = parseCarbonPolicyMode(mode);
+      out.set(code.trim(), parseCarbonPolicyMode(mode));
     }
     return out;
   } catch {
-    return {};
+    return new Map();
   }
 }
 
 export function resolveCarbonPolicyMode(params: {
   globalMode: CarbonPolicyMode;
   courseCode?: string | null;
-  byCourse?: Record<string, CarbonPolicyMode>;
+  byCourse?: ReadonlyMap<string, CarbonPolicyMode>;
 }): CarbonPolicyMode {
-  if (params.courseCode && params.byCourse?.[params.courseCode]) {
-    return params.byCourse[params.courseCode];
-  }
-  return params.globalMode;
+  const courseMode = params.courseCode ? params.byCourse?.get(params.courseCode) : undefined;
+  return courseMode ?? params.globalMode;
 }
 
 /**

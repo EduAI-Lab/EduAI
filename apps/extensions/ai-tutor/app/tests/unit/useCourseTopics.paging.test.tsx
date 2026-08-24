@@ -23,6 +23,14 @@ import { useCourseTopics } from "~/hooks/useCourseTopics";
 
 const topic = (id: string, name: string) => ({ id, name });
 
+/** One page of `topicsForCourse`, as the hook consumes it. */
+type TopicsPage = {
+  data: ReturnType<typeof topic>[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 describe("useCourseTopics paging", () => {
   beforeEach(() => {
     topicsForCourse.mockReset();
@@ -145,13 +153,13 @@ describe("useCourseTopics paging", () => {
     // The picker can switch offerings while page 2 is still in flight. Without
     // the request-id guard the old course's topics append into the new one's
     // list and drag its `total` along with them.
-    let releaseSlowPage2: ((value: unknown) => void) | undefined;
+    let releaseSlowPage2: ((value: TopicsPage) => void) | undefined;
     topicsForCourse.mockImplementation((courseId: number, { page }: { page: number }) => {
       if (courseId === 1 && page === 1) {
         return Promise.resolve({ data: [topic("a", "Alpha")], total: 2, page: 1, pageSize: 1 });
       }
       if (courseId === 1 && page === 2) {
-        return new Promise((resolve) => {
+        return new Promise<TopicsPage>((resolve) => {
           releaseSlowPage2 = resolve;
         });
       }

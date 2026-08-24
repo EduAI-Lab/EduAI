@@ -37,11 +37,11 @@ interface QuestionCardProps {
   compact?: boolean;
 }
 
-const TYPE_LABELS: Record<QuestionType, string> = {
+const TYPE_LABELS = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 

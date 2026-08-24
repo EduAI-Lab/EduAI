@@ -1,20 +1,23 @@
 import type { z } from "zod";
 
+import type { ErrorEnvelope } from "@eduai/types";
+
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
+
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /** Standard JSON response for Core API routes. */
-export function jsonResponse(status: number, body: unknown): Response {
+export function jsonResponse(status: number, body: JsonResponseBody): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: JSON_HEADERS,
   });
 }
 
-/**
- * MCP-ready error envelope: `{ error: "CODE", fields?: { field: "message" } }`.
- */
 export function apiError(status: number, error: string, fields?: Record<string, string>): Response {
-  return jsonResponse(status, fields ? { error, fields } : { error });
+  const body: ErrorEnvelope = { error };
+  if (fields) body.fields = fields;
+  return jsonResponse(status, body);
 }
 
 export function validationErrorFromZod(zodError: z.ZodError, status = 422): Response {

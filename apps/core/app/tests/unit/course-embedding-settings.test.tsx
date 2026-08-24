@@ -13,6 +13,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const baseSettingsResponse = {
   settings: {
@@ -32,7 +33,7 @@ const baseSettingsResponse = {
   allowedCloudModels: [{ id: "cloud-1", label: "Cloud model" }],
 };
 
-function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+function jsonResponse(body: ParsedJsonBody, init: { ok?: boolean; status?: number } = {}) {
   return {
     ok: init.ok ?? true,
     status: init.status ?? 200,

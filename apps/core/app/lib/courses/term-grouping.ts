@@ -16,9 +16,12 @@ function toUtcDayStart(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
+/** Courses split by where today falls relative to each one's run. */
+export type TermGroups<T> = { previous: T[]; current: T[]; upcoming: T[] };
+
 export function groupCoursesByDate<
   T extends { startDate: string | Date; endDate?: string | Date | null },
->(courses: T[], now: Date = new Date()): { previous: T[]; current: T[]; upcoming: T[] } {
+>(courses: T[], now: Date = new Date()): TermGroups<T> {
   const previous: T[] = [];
   const current: T[] = [];
   const upcoming: T[] = [];

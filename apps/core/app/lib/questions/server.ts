@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { validateCreateQuestion } from "~/lib/questions/schema";
+import type { JsonValue } from "~/lib/json-value";
 
 export type CreateQuestionBody = {
   courseId: string;
@@ -35,7 +36,7 @@ function boundedInteger(value: number, fallback: number, min: number, max: numbe
 }
 
 export async function createQuestion(
-  body: unknown,
+  body: JsonValue,
   createdBy: string,
 ): Promise<CreateQuestionError | CreateQuestionSuccess> {
   const parsed = validateCreateQuestion(body);

@@ -240,6 +240,13 @@ export interface ListParams {
  * The array dimensions are repeatable query params — OR within a dimension, AND
  * across them, matching `CourseListView`'s toolbar semantics.
  */
+/** Body of `POST /api/courses/:id/modules`. `position` defaults server-side. */
+export interface ModuleCreatePayload {
+  title: string;
+  description?: string;
+  position?: number;
+}
+
 export interface CourseListParams {
   page?: number;
   pageSize?: number;
@@ -531,6 +538,36 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
 type WireValue = string | number | boolean | null | undefined | WireValue[] | WireBody;
 type WireBody = { [key: string]: WireValue };
 
+/**
+ * The body of a `PATCH /api/activities/:id`. Named because the editor and the
+ * lesson page both assemble one field by field before sending it, and an
+ * accumulator needs a contract to accumulate into.
+ */
+export type ActivityUpdateBody = {
+  title?: string | null;
+  instructionsMd?: string;
+  question?: string;
+  type?: "MCQ" | "SHORT_TEXT";
+  options?: { choices?: string[] } | string[] | null;
+  answer?: any;
+  hints?: string[];
+  promptTemplateId?: number | null;
+  customPrompt?: string | null;
+  customPromptTitle?: string | null;
+  mainTopicId?: string | number;
+  secondaryTopicIds?: (string | number)[];
+  enableTeachMode?: boolean;
+  enableGuideMode?: boolean;
+  enableCustomMode?: boolean;
+};
+
+/**
+ * A grade override: a score, a correctness flag, or both. Absent fields leave
+ * the stored value alone, which is why every field is optional; an explicit
+ * `null` clears the stored value.
+ */
+export type SubmissionGradeBody = { score?: number | null; isCorrect?: boolean | null };
+
 function decode<Schema extends z.ZodTypeAny>(
   response: Promise<unknown>,
   schema: Schema,
@@ -609,10 +646,7 @@ export const api = {
       paginatedSchema(moduleSchema),
     ),
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
-  createModule: (
-    courseId: number,
-    payload: { title: string; description?: string; position?: number },
-  ) =>
+  createModule: (courseId: number, payload: ModuleCreatePayload) =>
     http(`/api/courses/${courseId}/modules`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -723,26 +757,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateActivity: (
-    activityId: number,
-    payload: {
-      title?: string | null;
-      instructionsMd?: string;
-      question?: string;
-      type?: "MCQ" | "SHORT_TEXT";
-      options?: { choices?: string[] } | string[] | null;
-      answer?: any;
-      hints?: string[];
-      promptTemplateId?: number | null;
-      customPrompt?: string | null;
-      customPromptTitle?: string | null;
-      mainTopicId?: string | number;
-      secondaryTopicIds?: (string | number)[];
-      enableTeachMode?: boolean;
-      enableGuideMode?: boolean;
-      enableCustomMode?: boolean;
-    },
-  ) => {
+  updateActivity: (activityId: number, payload: ActivityUpdateBody) => {
     const body: WireBody = {};
     Object.assign(body, payload);
     if (Object.prototype.hasOwnProperty.call(payload, "options")) {
@@ -1021,12 +1036,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  gradeSubmission: (
-    activityId: number,
-    submissionId: number,
-    // null clears the field — the route accepts an explicit null for both.
-    body: { score?: number | null; isCorrect?: boolean | null },
-  ) =>
+  gradeSubmission: (activityId: number, submissionId: number, body: SubmissionGradeBody) =>
     decode(
       http(`/api/activities/${activityId}/submissions/${submissionId}`, {
         method: "PATCH",

@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 /** Account-level display preferences (Settings → Accessibility tab). */
 
 export const UI_DENSITY_VALUES = ["comfortable", "compact"] as const;
@@ -18,11 +19,11 @@ export const DEFAULT_UI_PREFERENCES: UiPreferenceFields = {
   theme: "system",
 };
 
-export function isUiDensity(value: unknown): value is UiDensity {
+export function isUiDensity(value: JsonValue | undefined): value is UiDensity {
   return typeof value === "string" && (UI_DENSITY_VALUES as readonly string[]).includes(value);
 }
 
-export function isUiTheme(value: unknown): value is UiTheme {
+export function isUiTheme(value: JsonValue | undefined): value is UiTheme {
   return typeof value === "string" && (UI_THEME_VALUES as readonly string[]).includes(value);
 }
 

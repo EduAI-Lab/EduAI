@@ -1,10 +1,11 @@
+import type { JsonValue } from "~/lib/json-value";
 /** Log failed /api/chat responses to the browser console for debugging. */
 export async function logChatApiResponse(response: Response, label = "chat"): Promise<void> {
   if (response.ok) {
     return;
   }
 
-  let body: unknown = null;
+  let body: JsonValue = null;
   try {
     body = await response.clone().json();
   } catch {

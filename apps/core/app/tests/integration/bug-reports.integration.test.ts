@@ -12,10 +12,11 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 import { action } from "~/routes/api/bug-reports";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const VALID_SERVICE_KEY = "bug-reports-integration-key-xyz";
 
-function makeActionArgs(body: unknown, authorization?: string) {
+function makeActionArgs(body: RouteRequestBody, authorization?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   return {

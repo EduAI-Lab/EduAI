@@ -17,6 +17,13 @@ export type Paginated<T> = {
   pageSize: number;
 };
 
+/**
+ * Query-string values, as axios serialises them. Named so a list call can
+ * assemble its params key by key and still say what may go in one — anything
+ * that is not a scalar has to be joined into one first.
+ */
+export type QueryParams = Record<string, string | number | boolean | undefined>;
+
 export const api = axios.create({
   baseURL: API_URL,
   headers: {

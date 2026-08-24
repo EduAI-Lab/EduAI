@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
+import { jsonValueSchema } from "~/lib/json-value";
 import {
   ALLOWED_CLOUD_EMBEDDING_MODELS,
   ALLOWED_LOCAL_EMBEDDING_MODELS,
@@ -89,20 +90,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return jsonResponse({ error: "Course not found or access denied" }, 404);
     }
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
+    const decoded = jsonValueSchema.safeParse(await request.json().catch(() => undefined));
+    if (!decoded.success) {
       return jsonResponse({ error: "Invalid JSON body" }, 400);
     }
+    const body = decoded.data;
 
     const parsed = parseEmbeddingSettingsUpdate(body);
     if (!parsed.ok) {
       return jsonResponse({ error: parsed.error }, 400);
     }
 
-    const record = body as Record<string, unknown>;
-    const reEmbedAfterSave = record.reEmbed === true;
+    // `reEmbed` rides along on the same body but is not part of the settings
+    // update, so it is read here rather than in the settings parser.
+    const reEmbedAfterSave =
+      body !== null && typeof body === "object" && !Array.isArray(body) && body.reEmbed === true;
 
     const current = {
       embeddingProvider: course.embeddingProvider,

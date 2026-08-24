@@ -34,17 +34,16 @@ describe("isEnqueueRequested", () => {
       }
 
       expect(AI_JOB_QUEUE_PRE_MVP_DISABLED).toBe(true);
-      expect(isEnqueueRequested({ enqueue: true })).toBe(false);
+      expect(isEnqueueRequested()).toBe(false);
     },
   );
 
-  it.each([null, "enqueue", undefined, {}, { enqueue: false }])(
-    "rejects every request body shape while the queue is disabled",
-    (body) => {
-      process.env.QUEUE_ENQUEUE_ENABLED = "true";
-      expect(isEnqueueRequested(body)).toBe(false);
-    },
-  );
+  it("rejects an enqueue while the queue is disabled, whatever the body said", () => {
+    // The producer no longer reads the body at all: the pre-MVP contract is
+    // incomplete, so nothing a caller sends can turn it on.
+    process.env.QUEUE_ENQUEUE_ENABLED = "true";
+    expect(isEnqueueRequested()).toBe(false);
+  });
 });
 
 describe("enqueueQuestionGeneration", () => {

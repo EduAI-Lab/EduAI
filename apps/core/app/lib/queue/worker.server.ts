@@ -1,3 +1,4 @@
+import type { SupportedProvider } from "~/lib/ai/provider-types";
 import { Prisma } from "@prisma/client";
 import { Worker, type ConnectionOptions, type Job, type WorkerOptions } from "bullmq";
 import { runCompletion } from "~/lib/ai/completion.server";
@@ -44,27 +45,30 @@ export function aiJobTimeoutMs(): number {
   return positiveInt(process.env.AI_JOB_EXECUTION_TIMEOUT_MS, DEFAULT_AI_JOB_TIMEOUT_MS);
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message || error.name;
+function formatError(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message || cause.name;
   }
-  if (typeof error === "string") {
-    return error;
+  if (typeof cause === "string") {
+    return cause;
   }
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(cause);
   } catch {
     return "Unknown AI job failure";
   }
 }
 
-function serverApiKeys(model: string): Record<
-  string,
-  {
-    isEnabled: boolean;
-    apiKey?: string;
-  }
-> {
+/**
+ * Server-held provider credentials for a queued job. Keyed by provider id
+ * because the job names its model as `provider:model`, and only that provider's
+ * entry is ever filled in.
+ */
+type ServerProviderKeys = {
+  [K in SupportedProvider]?: { isEnabled: boolean; apiKey?: string };
+};
+
+function serverApiKeys(model: string): ServerProviderKeys {
   if (model.startsWith("openai:") && process.env.OPENAI_API_KEY) {
     return {
       openai: {

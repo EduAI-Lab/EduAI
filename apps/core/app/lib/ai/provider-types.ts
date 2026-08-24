@@ -37,7 +37,7 @@ export interface ProviderConfig {
   envVarName?: string;
 }
 
-export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
+export const PROVIDER_CONFIGS = {
   openai: {
     id: "openai",
     name: "OpenAI",
@@ -74,6 +74,8 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
     requiresApiKey: true,
     defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+    // Its key is account-scoped BYOK, so there is no deployment env var.
+    envVarName: undefined,
   },
   bedrock: {
     id: "bedrock",
@@ -82,7 +84,7 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     requiresApiKey: false,
     envVarName: "AWS_BEARER_TOKEN_BEDROCK",
   },
-};
+} satisfies Record<SupportedProvider, ProviderConfig>;
 
 /**
  * Explains where a missing provider configuration belongs. Cloud providers

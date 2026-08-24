@@ -32,7 +32,13 @@ import { errorBoundary, shellMain, sidebarLink } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 /** Module + lesson the instructor authored inside the out-of-unit course. */
-let foreign: { moduleId: number; lessonId: number };
+/** The out-of-unit module/lesson pair every boundary assertion below targets. */
+interface ForeignContent {
+  moduleId: number;
+  lessonId: number;
+}
+
+let foreign: ForeignContent;
 
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();

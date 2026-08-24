@@ -33,6 +33,7 @@ import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { action } from "~/routes/api/courses.id.response-style";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -50,7 +51,10 @@ beforeEach(() => {
   } as never);
 });
 
-function patchArgs(body: unknown, opts: { role?: string; courseId?: string | undefined } = {}) {
+function patchArgs(
+  body: RouteRequestBody,
+  opts: { role?: string; courseId?: string | undefined } = {},
+) {
   const role = opts.role ?? "INSTRUCTOR";
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role },

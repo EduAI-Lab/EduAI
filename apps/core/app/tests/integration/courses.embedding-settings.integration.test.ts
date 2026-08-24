@@ -13,6 +13,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/courses.embedding-settings.$";
 import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 let instructorId: string;
 let studentId: string;
@@ -48,7 +49,7 @@ function getArgs(id: string, user: { id: string; role: string }) {
   } as any;
 }
 
-function patchArgs(id: string, body: unknown, user: { id: string; role: string }) {
+function patchArgs(id: string, body: RouteRequestBody, user: { id: string; role: string }) {
   mockSession(user);
   return {
     request: new Request(`http://localhost/api/courses/${id}/embedding-settings`, {

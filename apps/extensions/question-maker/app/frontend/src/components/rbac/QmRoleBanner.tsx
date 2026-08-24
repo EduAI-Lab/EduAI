@@ -6,7 +6,7 @@ type QmRoleBannerProps = {
   variant?: QmRoleView;
 };
 
-const COPY: Record<QmRoleView, { title: string; description: string; icon: typeof IconShield }> = {
+const COPY = {
   admin: {
     title: "Administrator view",
     description:
@@ -25,7 +25,7 @@ const COPY: Record<QmRoleView, { title: string; description: string; icon: typeo
       "Manage your linked courses: build the question bank, approve variants, assemble assessments, and export to Canvas.",
     icon: IconSchool,
   },
-};
+} satisfies Record<QmRoleView, { title: string; description: string; icon: typeof IconShield }>;
 
 function roleToView(role: string | undefined): QmRoleView {
   if (role === "ADMIN") return "admin";

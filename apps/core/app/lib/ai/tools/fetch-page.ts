@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { tool, type ToolExecutionOptions } from "ai";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { isIP } from "node:net";
@@ -86,12 +87,12 @@ function parseAndValidateTarget(raw: string): URL {
   return target;
 }
 
-function coerceDoc(
-  record: unknown,
-  fallbackUrl: string,
-): { url: string; title: string; markdown: string } | null {
-  if (!record || typeof record !== "object") return null;
-  const r = record as GenericDoc;
+/** A page the fetch tool managed to read: where it came from, and its text. */
+type FetchedDoc = { url: string; title: string; markdown: string };
+
+function coerceDoc(record: GenericDoc | undefined, fallbackUrl: string): FetchedDoc | null {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+  const r = record;
   const url =
     (typeof r.url === "string" && r.url) ||
     (r.metadata && typeof r.metadata.sourceURL === "string" ? r.metadata.sourceURL : undefined) ||
@@ -102,9 +103,9 @@ function coerceDoc(
   return { url, title, markdown: md };
 }
 
-function failureResult(url: string, error: unknown): FetchPageResult {
-  const isUnsafe = error instanceof UnsafeFetchPageUrlError;
-  const isAbort = error instanceof Error && error.name === "AbortError";
+function failureResult(url: string, cause: unknown): FetchPageResult {
+  const isUnsafe = cause instanceof UnsafeFetchPageUrlError;
+  const isAbort = cause instanceof Error && cause.name === "AbortError";
   return {
     url,
     title: url,
@@ -184,7 +185,7 @@ export async function runFetchPage({
         deadlineAt,
         signal,
       );
-      const doc = coerceDoc(scraped as unknown, url);
+      const doc = coerceDoc(scraped, url);
       if (doc && doc.markdown && doc.markdown.length > 0) {
         const maxChars = resolveToolResultMaxChars();
         return {
@@ -236,10 +237,10 @@ export async function runFetchPage({
       };
     }
 
-    const dataArr = Array.isArray((resp as { data?: unknown[] }).data)
-      ? ((resp as { data: unknown[] }).data as Array<Record<string, unknown>>)
+    const dataArr = Array.isArray((resp as { data?: GenericDoc[] }).data)
+      ? (resp as { data: GenericDoc[] }).data
       : [];
-    const first = dataArr[0] || (resp as unknown);
+    const first = dataArr[0] ?? (resp as GenericDoc);
     const doc = coerceDoc(first, url);
     if (doc) {
       const maxChars = resolveToolResultMaxChars();

@@ -29,11 +29,13 @@ interface QuestionPreviewSheetProps {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const difficultyVariant: Record<string, "success" | "warning" | "destructive"> = {
-  easy: "success",
-  medium: "warning",
-  hard: "destructive",
-};
+// A `Map` because the key is a value off a row, not a union this file owns:
+// `get` can miss, which is what the fallback at the call site is for.
+const difficultyVariant = new Map<string, "success" | "warning" | "destructive">([
+  ["easy", "success"],
+  ["medium", "warning"],
+  ["hard", "destructive"],
+]);
 
 export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionPreviewSheetProps) {
   const navigate = useNavigate();
@@ -67,7 +69,9 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{questionTypeLabels[question.type]}</Badge>
             {difficulty && (
-              <Badge variant={difficultyVariant[difficulty] ?? "warning"}>{cap(difficulty)}</Badge>
+              <Badge variant={difficultyVariant.get(difficulty) ?? "warning"}>
+                {cap(difficulty)}
+              </Badge>
             )}
             {variant?.isAiGenerated && (
               <Badge variant="secondary" className="gap-1">

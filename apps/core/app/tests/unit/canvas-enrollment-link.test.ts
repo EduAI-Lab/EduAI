@@ -28,8 +28,8 @@ vi.mock("~/lib/prisma.server", () => ({
 import prisma from "~/lib/prisma.server";
 
 /** First argument of a mocked batched write, narrowed for assertions. */
-function firstCallArg<T>(mockFn: unknown): T {
-  return (mockFn as { mock: { calls: unknown[][] } }).mock.calls[0][0] as T;
+function firstCallArg<T>(mockFn: (...args: never[]) => void): T {
+  return vi.mocked(mockFn).mock.calls[0][0] as T;
 }
 import {
   deactivateDroppedCanvasEnrollments,

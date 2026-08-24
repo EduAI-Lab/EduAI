@@ -31,10 +31,10 @@ export type ErrorFields = Record<string, string>;
  * than `ErrorCode` because a route may answer with a code of its own that
  * predates this list.
  */
-export interface ErrorEnvelope {
+export type ErrorEnvelope = {
     error: string;
     fields?: ErrorFields;
-}
+};
 export interface AppErrorOptions {
     /** Machine-readable code clients branch on. Defaults to the subclass code. */
     code?: string;
@@ -109,7 +109,7 @@ export declare class ServiceUnavailableError extends AppError {
     constructor(message?: string, options?: AppErrorOptions);
 }
 /** True when `error` is an `AppError` from any copy of this module. */
-export declare function isAppError(error: unknown): error is AppError;
+export declare function isAppError(cause: unknown): cause is AppError;
 /** The shape a route boundary needs in order to build a response. */
 export interface NormalizedError {
     status: number;
@@ -133,5 +133,5 @@ export interface NormalizedError {
  * existing hand-rolled errors. Everything else becomes a generic 500 — this is
  * what stops raw internal text from reaching clients.
  */
-export declare function normalizeError(error: unknown): NormalizedError;
+export declare function normalizeError(cause: unknown): NormalizedError;
 //# sourceMappingURL=errors.d.ts.map

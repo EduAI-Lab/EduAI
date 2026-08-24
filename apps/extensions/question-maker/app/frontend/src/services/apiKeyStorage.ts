@@ -14,6 +14,19 @@ const ENCRYPTION_KEY_PREFIX = "eduai_encryption_key_v2:";
 
 export type AIProvider = "google" | "openai" | "deepseek" | "anthropic" | "opencode";
 
+/**
+ * One provider's credential as the AI service reads it. The key is absent for a
+ * campus-hosted provider, which is enabled without one.
+ */
+export type ProviderApiKey = { apiKey?: string; isEnabled: boolean };
+
+/**
+ * The `apiKeys` payload every generation request carries, keyed by provider id.
+ * Keyed by `string` rather than `AIProvider` because a campus provider id also
+ * appears here, and the backend accepts any provider it knows about.
+ */
+export type ProviderApiKeys = Record<string, ProviderApiKey>;
+
 /** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
 export type CampusProvider = "vllm" | "ollama";
 
@@ -241,9 +254,7 @@ export const apiKeyStorage = {
   },
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
-  async buildApiKeysForModel(
-    modelId: string,
-  ): Promise<Record<string, { apiKey?: string; isEnabled: boolean }>> {
+  async buildApiKeysForModel(modelId: string): Promise<ProviderApiKeys> {
     if (modelId.startsWith("ollama")) {
       return {
         ollama: {

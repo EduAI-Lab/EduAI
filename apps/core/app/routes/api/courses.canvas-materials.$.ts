@@ -18,8 +18,9 @@ import {
 import { SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -116,34 +117,34 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-function mapCanvasMaterialsError(error: unknown): Response {
-  if (error instanceof CanvasMaterialSyncError) {
-    return json(error.statusCode, { success: false, error: error.message });
+function mapCanvasMaterialsError(cause: unknown): Response {
+  if (cause instanceof CanvasMaterialSyncError) {
+    return json(cause.statusCode, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasNotConnectedError) {
-    return json(400, { success: false, error: error.message });
+  if (cause instanceof CanvasNotConnectedError) {
+    return json(400, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasStoredCredentialsError) {
-    return json(400, { success: false, error: error.message });
+  if (cause instanceof CanvasStoredCredentialsError) {
+    return json(400, { success: false, error: cause.message });
   }
-  if (error instanceof InvalidCanvasCourseAccessError) {
+  if (cause instanceof InvalidCanvasCourseAccessError) {
     return json(403, {
       success: false,
-      error: error.message,
-      invalidCourseIds: error.invalidCourseIds,
+      error: cause.message,
+      invalidCourseIds: cause.invalidCourseIds,
     });
   }
-  if (error instanceof CanvasVerificationError) {
-    return json(error.statusCode, { success: false, error: error.message });
+  if (cause instanceof CanvasVerificationError) {
+    return json(cause.statusCode, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasApiError) {
-    const status = error.statusCode === 401 ? 400 : error.statusCode >= 500 ? 502 : 400;
-    return json(status, { success: false, error: error.message });
+  if (cause instanceof CanvasApiError) {
+    const status = cause.statusCode === 401 ? 400 : cause.statusCode >= 500 ? 502 : 400;
+    return json(status, { success: false, error: cause.message });
   }
   if (process.env.NODE_ENV === "production") {
-    console.error("Canvas material sync failed:", error);
+    console.error("Canvas material sync failed:", cause);
     return json(500, { success: false, error: "Canvas material sync failed" });
   }
-  const message = error instanceof Error ? error.message : "Canvas material sync failed";
+  const message = cause instanceof Error ? cause.message : "Canvas material sync failed";
   return json(500, { success: false, error: message });
 }

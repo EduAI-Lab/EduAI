@@ -21,6 +21,7 @@ import { loader, action } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { listOwnBugReports, createBugReport } from "~/lib/bug-reports/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(query = "?mine=true") {
   return {
@@ -30,7 +31,7 @@ function makeLoaderArgs(query = "?mine=true") {
   } as never;
 }
 
-function makeActionArgs(body: unknown, headers: Record<string, string> = {}) {
+function makeActionArgs(body: RouteRequestBody, headers: Record<string, string> = {}) {
   return {
     request: new Request("http://localhost/api/bug-reports", {
       method: "POST",

@@ -64,7 +64,7 @@ import { MCQChoicesField } from "../questions/MCQChoicesField";
 import { Topic } from "../../types/topic";
 import { questionService } from "../../services/questionService";
 import { eduaiService, EduAIModelOption } from "../../services/eduaiService";
-import { apiKeyStorage } from "../../services/apiKeyStorage";
+import { apiKeyStorage, type ProviderApiKeys } from "../../services/apiKeyStorage";
 import { useOCRHistory } from "../../hooks/use-ocr-history";
 import { OCRHistoryPanel } from "../ocr/OCRHistoryPanel";
 import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
@@ -118,11 +118,11 @@ type DraftQuestion = Required<Pick<ExtractedQuestion, "question">> &
 
 const difficultyOptions: QuestionDifficulty[] = ["easy", "medium", "hard"];
 const questionTypes: QuestionType[] = ["SA", "MCQ", "LA"];
-const questionTypeLabels: Record<QuestionType, string> = {
+const questionTypeLabels = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 const assessmentTypes = ["Assignment", "Lab", "Quiz", "Midterm", "Final"] as const;
 
 function QuestionFileUploadZone({
@@ -176,7 +176,7 @@ export interface BackgroundExtractionParams {
   text: string;
   courseId: number;
   model: string;
-  apiKeys: Record<string, unknown>;
+  apiKeys: ProviderApiKeys;
   /** OCR history job id — parent should call onExtractionComplete so the job is marked success/error. */
   jobId: string;
   /** Called with outcome so the dialog can update the job (e.g. mark failed when API errors). */

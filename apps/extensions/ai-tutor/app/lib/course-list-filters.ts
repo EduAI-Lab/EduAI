@@ -40,10 +40,12 @@ export const MAX_COURSE_SEARCH_LENGTH = 200;
  * `term` is free-form (`W1::2026` keys are data, not an enum), so it has no set —
  * an unknown term simply matches nothing, which is the honest answer.
  */
-const COURSE_FILTER_ALLOWED: Partial<Record<CourseFilterKey, readonly string[]>> = {
-  status: ["published", "draft"],
-  progress: ["not-started", "in-progress", "completed"],
-};
+// A `Map` because only some filters constrain their values: a key with no
+// entry accepts anything, which the loop below reads off `undefined`.
+const COURSE_FILTER_ALLOWED = new Map<CourseFilterKey, readonly string[]>([
+  ["status", ["published", "draft"]],
+  ["progress", ["not-started", "in-progress", "completed"]],
+]);
 
 export interface CourseListSelection {
   page: number;
@@ -58,7 +60,7 @@ export function readCourseListSelection(url: URL): CourseListSelection {
 
   const filters = {} as Record<CourseFilterKey, string[]>;
   for (const key of COURSE_FILTER_KEYS) {
-    const allowed = COURSE_FILTER_ALLOWED[key];
+    const allowed = COURSE_FILTER_ALLOWED.get(key);
     filters[key] = url.searchParams
       .getAll(key)
       .filter(Boolean)
