@@ -35,6 +35,7 @@ import {
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { z } from "zod";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -195,7 +196,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const data: Prisma.CourseMaterialUpdateInput = {};
 
       if (hasTitle) {
-        const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+        const rawTitle = z.string().safeParse(body.title).data?.trim() ?? "";
         if (!rawTitle) {
           return json(400, { error: "TITLE_REQUIRED" });
         }
@@ -206,18 +207,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       if (hasVisibility) {
-        if (typeof body.visibleToStudents !== "boolean") {
+        const visibleToStudents = z.boolean().safeParse(body.visibleToStudents);
+        if (!visibleToStudents.success) {
           return json(400, { error: "INVALID_VISIBILITY" });
         }
-        data.visibleToStudents = body.visibleToStudents;
+        data.visibleToStudents = visibleToStudents.data;
       }
 
       if (hasAvailableAt) {
         // null clears the schedule; a valid ISO string sets a future/past reveal.
         if (body.availableAt === null) {
           data.availableAt = null;
-        } else if (typeof body.availableAt === "string") {
-          const parsed = new Date(body.availableAt);
+        } else if (z.string().safeParse(body.availableAt).success) {
+          const parsed = new Date(String(body.availableAt));
           if (Number.isNaN(parsed.getTime())) {
             return json(400, { error: "INVALID_AVAILABLE_AT" });
           }

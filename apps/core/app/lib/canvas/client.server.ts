@@ -1,6 +1,7 @@
 import { request as undiciRequest } from "undici";
 import { getPinnedDispatcher } from "~/lib/net/pinned-dispatcher.server";
 import { assertPublicHostname, assertPublicIpLiteral } from "~/lib/net/ssrf-guard.server";
+import { z } from "zod";
 
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
@@ -669,6 +670,13 @@ async function canvasFetchJson<T>(
 }
 
 /** Fetches all pages from a Canvas list endpoint. */
+/**
+ * Which of the two overloads the caller used: older call sites pass a `fetch`
+ * implementation in the third position, newer ones pass pagination options.
+ */
+const isFetchImpl = (value: typeof fetch | CanvasPaginationOptions): value is typeof fetch =>
+  z.function().safeParse(value).success;
+
 export async function canvasGetPaginated<T>(
   credentials: CanvasIntegrationCredentials,
   path: string,
@@ -679,8 +687,9 @@ export async function canvasGetPaginated<T>(
     return getMockPaginatedResponse<T>(path);
   }
 
-  const fetchImpl = typeof fetchImplOrOptions === "function" ? fetchImplOrOptions : fetch;
-  const options = typeof fetchImplOrOptions === "function" ? suppliedOptions : fetchImplOrOptions;
+  const suppliedFetch = isFetchImpl(fetchImplOrOptions);
+  const fetchImpl = suppliedFetch ? fetchImplOrOptions : fetch;
+  const options = suppliedFetch ? suppliedOptions : fetchImplOrOptions;
   const limits = resolvePaginationOptions(options);
 
   const separator = path.includes("?") ? "&" : "?";
