@@ -162,10 +162,10 @@ function studentPolicyFlag(model: StudentSelectableModel): boolean | undefined {
   return undefined;
 }
 
-/** `availability` counts only when the API actually sent one; a `null` there is
- * "not configured", the same as an absent field. */
+/** `availability` counts only when the API actually sent a string; a `null` or a
+ * non-string there is "not configured", the same as an absent field. */
 function hasAvailability(model: StudentSelectableModel): boolean {
-  return model.availability !== undefined && model.availability !== null;
+  return z.string().safeParse(model.availability).success;
 }
 
 // Detects whether the API has decorated this model with any student-policy field.

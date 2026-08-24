@@ -17,6 +17,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 
 import prisma from "~/lib/prisma.server";
+import { isAPIError } from "better-auth/api";
 import { auth } from "~/lib/auth/server";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { PASSWORD_POLICY_MESSAGE } from "~/lib/auth/password-policy";
@@ -48,7 +49,7 @@ function uniqueEmail(prefix: string): string {
 const verificationIdentifiers: string[] = [];
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies = res.headers.getSetCookie instanceof Function ? res.headers.getSetCookie() : [];
+  const setCookies = res.headers.getSetCookie?.() ?? [];
   return setCookies
     .map((c) => c.split(";")[0])
     .filter(Boolean)
@@ -209,9 +210,11 @@ async function runRow(row: PasswordSetReuseGateRow) {
     });
     res = result as Response;
   } catch (err) {
-    const apiErr = err as { status?: number; body?: { message?: string; code?: string } };
-    res = new Response(JSON.stringify({ message: apiErr.body?.message ?? apiErr.body?.code }), {
-      status: apiErr.status ?? 400,
+    // `APIError.status` is a status *name* ("BAD_REQUEST") as often as a number;
+    // `statusCode` is the numeric one the Response constructor will accept.
+    const apiErr = isAPIError(err) ? err : null;
+    res = new Response(JSON.stringify({ message: apiErr?.body?.message ?? apiErr?.body?.code }), {
+      status: apiErr?.statusCode ?? 400,
     });
   }
 

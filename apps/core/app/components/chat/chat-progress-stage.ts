@@ -359,8 +359,10 @@ export function activeToolNameFromMessage(message: MessageLike | null | undefine
 
   for (const part of message.parts) {
     if (!part) continue;
-    const partType = part.type;
-    if (partType === undefined) continue;
+    // Parts arrive from AI SDK stream frames and revived DB rows, so `type` is
+    // only declared a string; `startsWith` below needs a real one.
+    const partType = asText(part.type);
+    if (partType === null) continue;
 
     if (partType === "tool-invocation" && part.toolInvocation) {
       const name = part.toolInvocation.toolName?.trim();

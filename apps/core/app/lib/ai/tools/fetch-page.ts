@@ -1,4 +1,4 @@
-import type { JsonValue } from "~/lib/json-value";
+import { asText } from "~/lib/json-value";
 import { tool, type ToolExecutionOptions } from "ai";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { isIP } from "node:net";
@@ -93,13 +93,14 @@ type FetchedDoc = { url: string; title: string; markdown: string };
 function coerceDoc(record: GenericDoc | undefined, fallbackUrl: string): FetchedDoc | null {
   // A crawl response that is not a doc-shaped object has nothing to read; the
   // caller's failure path is the right answer, not a doc with empty content.
-  if (!(record instanceof Object)) return null;
-  // An empty string is a real answer for `markdown`, so `content` is only a
-  // fallback for an absent field; a blank `url` or `title` is not useful to a
-  // reader, so those do fall through.
-  const url = record.url || record.metadata?.sourceURL || fallbackUrl;
-  const markdown = record.markdown ?? record.content ?? "";
-  const title = record.title || record.metadata?.title || url;
+  if (!(record instanceof Object) || Array.isArray(record)) return null;
+  // `GenericDoc` is our own shape over an unvalidated vendor response, so every
+  // field is decoded rather than trusted. An empty string is a real answer for
+  // `markdown`, so `content` is only a fallback for an absent field; a blank
+  // `url` or `title` is not useful to a reader, so those do fall through.
+  const url = asText(record.url) || asText(record.metadata?.sourceURL) || fallbackUrl;
+  const markdown = asText(record.markdown) ?? asText(record.content) ?? "";
+  const title = asText(record.title) || asText(record.metadata?.title) || url;
   return { url, title, markdown };
 }
 
