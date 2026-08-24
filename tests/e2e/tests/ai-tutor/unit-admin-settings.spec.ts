@@ -13,6 +13,7 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
+import { openTab } from "../helpers/at-ui";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
 
 let ua: UnitAdminFixture;
@@ -102,10 +103,13 @@ test.describe("UNIT_ADMIN settings", () => {
 
   test("the Accessibility tab exposes the personalization controls", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
+    await openTab(page, "Accessibility");
 
-    await page.getByRole("tab", { name: "Accessibility" }).click();
-
-    await expect(page.getByText("Assistive Mode")).toBeVisible();
+    // Assistive Mode is a Switch, not a heading — match the control the
+    // shared AccessibilitySettings panel actually mounts once the tab is
+    // selected. A bare click before PageTabs hydrates is swallowed and then
+    // this assertion fails against the still-mounted Account panel.
+    await expect(page.getByRole("switch", { name: "Assistive Mode" })).toBeVisible();
     await expect(page.getByText("Minimize animations and transitions.")).toBeVisible();
     await expect(
       page.getByText("Choose a more compact or comfortable layout spacing."),
@@ -115,7 +119,7 @@ test.describe("UNIT_ADMIN settings", () => {
 
   test("the density control switches between comfortable and compact", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
-    await page.getByRole("tab", { name: "Accessibility" }).click();
+    await openTab(page, "Accessibility");
     await expect(
       page.getByText("Choose a more compact or comfortable layout spacing."),
     ).toBeVisible();
@@ -132,7 +136,7 @@ test.describe("UNIT_ADMIN settings", () => {
 
   test("the accessibility radios are properly named for assistive tech", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
-    await page.getByRole("tab", { name: "Accessibility" }).click();
+    await openTab(page, "Accessibility");
     await expect(
       page.getByText("Choose a more compact or comfortable layout spacing."),
     ).toBeVisible();
@@ -149,8 +153,7 @@ test.describe("UNIT_ADMIN settings", () => {
 
   test("the Providers tab offers per-user model keys", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
-
-    await page.getByRole("tab", { name: "Providers" }).click();
+    await openTab(page, "Providers");
 
     // Keys are per-account and browser-local; they leave the browser only to be
     // validated or used, and are never persisted server-side. That is the
@@ -167,11 +170,12 @@ test.describe("UNIT_ADMIN settings", () => {
 
   test("a provider key is validated before it is stored", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
-    await page.getByRole("tab", { name: "Providers" }).click();
+    await openTab(page, "Providers");
 
     const field = providerKeyField(page, "OpenAI");
     const save = providerSaveButton(page, "OpenAI");
 
+    await expect(field).toBeVisible();
     await field.fill("sk-not-a-real-key-e2e");
     await expect(save).toBeEnabled();
     await save.click();
@@ -192,7 +196,7 @@ test.describe("UNIT_ADMIN settings", () => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
 
     for (const tab of ["Account", "Accessibility", "Providers"]) {
-      await page.getByRole("tab", { name: tab }).click();
+      await openTab(page, tab);
       await expect(page.getByText("Sign out of EduAI on this browser.")).toBeVisible();
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
     }
