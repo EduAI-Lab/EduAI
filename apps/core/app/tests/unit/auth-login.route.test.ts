@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() }, handler: vi.fn() },
+  authBaseURL: "http://localhost:3000",
 }));
 
 vi.mock("~/lib/policy.server", () => ({
@@ -196,6 +197,45 @@ describe("auth/login action", () => {
         entityId: "u1",
       }),
     );
+  });
+
+  it("expires the legacy host-only session cookie for cross-subdomain deployments", async () => {
+    const previousCookieDomain = process.env.COOKIE_DOMAIN;
+    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+
+    try {
+      vi.mocked(auth.handler).mockResolvedValue(
+        new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+          status: 200,
+          headers: {
+            "Set-Cookie":
+              "better-auth.session_token=shared; Path=/; Domain=.eduai.ok.ubc.ca",
+          },
+        }),
+      );
+
+      const res = (await action(
+        makeActionArgs({
+          email: "a@ubc.ca",
+          password: "correct-password-123",
+          redirectTo: "/dashboard",
+        }),
+      )) as Response;
+      const setCookies =
+        typeof res.headers.getSetCookie === "function"
+          ? res.headers.getSetCookie()
+          : [res.headers.get("Set-Cookie") ?? ""];
+
+      expect(setCookies).toContain(
+        "better-auth.session_token=shared; Path=/; Domain=.eduai.ok.ubc.ca",
+      );
+      expect(setCookies).toContain(
+        "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      );
+    } finally {
+      if (previousCookieDomain === undefined) delete process.env.COOKIE_DOMAIN;
+      else process.env.COOKIE_DOMAIN = previousCookieDomain;
+    }
   });
 
   it("catches a thrown error from the handler and returns a formError", async () => {
