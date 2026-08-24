@@ -1,27 +1,32 @@
+# Build context: monorepo root
 FROM node:24-alpine
 
-# Set working directory
-WORKDIR /app
+WORKDIR /workspace
 
-# Copy package files
-COPY package*.json ./
+RUN addgroup -g 1001 -S nodejs \
+    && adduser -S nodejs -u 1001 -G nodejs \
+    && chown nodejs:nodejs /workspace
 
-# Install dependencies
-RUN npm install
+COPY --chown=nodejs:nodejs package.json package-lock.json .npmrc ./
+COPY --chown=nodejs:nodejs packages/types/package.json packages/types/package.json
+COPY --chown=nodejs:nodejs apps/extensions/question-maker/app/backend/package.json \
+    apps/extensions/question-maker/app/backend/package.json
 
-# Copy source code
-COPY . .
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
-
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
 USER nodejs
 
-# Expose port
-EXPOSE 8000
+RUN npm ci --ignore-scripts \
+      --workspace=question-maker-backend \
+      --workspace=@eduai/types \
+      --include-workspace-root=false
 
-# Start the development server
+COPY --chown=nodejs:nodejs packages/types packages/types
+COPY --chown=nodejs:nodejs apps/extensions/question-maker/app/backend \
+    apps/extensions/question-maker/app/backend
+
+RUN npm run build -w @eduai/types \
+    && mkdir -p apps/extensions/question-maker/app/backend/node_modules
+
+WORKDIR /workspace/apps/extensions/question-maker/app/backend
+
+EXPOSE 8000
 CMD ["npm", "run", "dev"]

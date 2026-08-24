@@ -31,10 +31,7 @@ export function resolveSystemPromptMaxChars(): number {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_SYSTEM_PROMPT_MAX_CHARS;
   }
-  return Math.min(
-    SYSTEM_PROMPT_MAX_CHARS_CEILING,
-    Math.max(256, Math.floor(parsed)),
-  );
+  return Math.min(SYSTEM_PROMPT_MAX_CHARS_CEILING, Math.max(256, Math.floor(parsed)));
 }
 
 /**
@@ -71,12 +68,8 @@ export function composeSecurityPrompt(base: string): string {
 /** Incoming chat POST bodies may only contribute user-authored turns. */
 export const ALLOWED_CLIENT_MESSAGE_ROLES = new Set(["user"]);
 
-export function filterIncomingClientMessages<T extends { role?: unknown }>(
-  messages: T[],
-): T[] {
+export function filterIncomingClientMessages<T extends { role?: unknown }>(messages: T[]): T[] {
   return messages.filter(
-    (message) =>
-      typeof message.role === "string" &&
-      ALLOWED_CLIENT_MESSAGE_ROLES.has(message.role),
+    (message) => typeof message.role === "string" && ALLOWED_CLIENT_MESSAGE_ROLES.has(message.role),
   );
 }

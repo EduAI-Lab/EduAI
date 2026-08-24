@@ -20,16 +20,16 @@
  *   `server/src/utils/bugReportMappers.js`.
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   listCoreAdminBugReports,
   getCoreAdminBugReport,
   patchCoreAdminBugReportStatus,
   postCoreBugReport,
-} from './eduaiClient.js';
-import { mapCoreAdminBugReportRow, UI_TO_CORE_BUG_STATUS } from '../utils/bugReportMappers.js';
+} from "./eduaiClient.js";
+import { mapCoreAdminBugReportRow, UI_TO_CORE_BUG_STATUS } from "../utils/bugReportMappers.js";
 
-export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
+export const BUG_REPORT_STATUSES = ["unhandled", "in progress", "resolved"];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
 
 /**
@@ -47,11 +47,11 @@ export class BugReportError extends Error {
 }
 
 function toOptionalInt(value, fieldName) {
-  if (value === undefined || value === null || value === '') {
+  if (value === undefined || value === null || value === "") {
     return null;
   }
 
-  const parsed = typeof value === 'number' ? value : Number(value);
+  const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
     throw new BugReportError(400, `${fieldName} must be an integer`);
   }
@@ -59,15 +59,15 @@ function toOptionalInt(value, fieldName) {
 }
 
 function normalizeDescription(value) {
-  if (typeof value !== 'string') {
-    throw new BugReportError(400, 'description must be a string');
+  if (typeof value !== "string") {
+    throw new BugReportError(400, "description must be a string");
   }
   const description = value.trim();
   if (description.length < 10) {
-    throw new BugReportError(400, 'description must be at least 10 characters');
+    throw new BugReportError(400, "description must be at least 10 characters");
   }
   if (description.length > 2000) {
-    throw new BugReportError(400, 'description must be at most 2000 characters');
+    throw new BugReportError(400, "description must be at most 2000 characters");
   }
   return description;
 }
@@ -76,7 +76,7 @@ function normalizeOptionalString(value, fieldName) {
   if (value === undefined || value === null) {
     return null;
   }
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     throw new BugReportError(400, `${fieldName} must be a string`);
   }
   return value;
@@ -86,35 +86,35 @@ function normalizeOptionalBoolean(value, fieldName, defaultValue = false) {
   if (value === undefined || value === null) {
     return defaultValue;
   }
-  if (typeof value !== 'boolean') {
+  if (typeof value !== "boolean") {
     throw new BugReportError(400, `${fieldName} must be a boolean`);
   }
   return value;
 }
 
 function normalizeContext(context) {
-  const data = context && typeof context === 'object' ? context : {};
+  const data = context && typeof context === "object" ? context : {};
 
   const normalized = {
-    courseOfferingId: toOptionalInt(data.courseOfferingId, 'context.courseOfferingId'),
-    moduleId: toOptionalInt(data.moduleId, 'context.moduleId'),
-    lessonId: toOptionalInt(data.lessonId, 'context.lessonId'),
-    activityId: toOptionalInt(data.activityId, 'context.activityId'),
+    courseOfferingId: toOptionalInt(data.courseOfferingId, "context.courseOfferingId"),
+    moduleId: toOptionalInt(data.moduleId, "context.moduleId"),
+    lessonId: toOptionalInt(data.lessonId, "context.lessonId"),
+    activityId: toOptionalInt(data.activityId, "context.activityId"),
   };
 
   if (normalized.activityId !== null && normalized.lessonId === null) {
     throw new BugReportError(
       400,
-      'context.lessonId is required when context.activityId is present',
+      "context.lessonId is required when context.activityId is present",
     );
   }
   if (normalized.lessonId !== null && normalized.moduleId === null) {
-    throw new BugReportError(400, 'context.moduleId is required when context.lessonId is present');
+    throw new BugReportError(400, "context.moduleId is required when context.lessonId is present");
   }
   if (normalized.moduleId !== null && normalized.courseOfferingId === null) {
     throw new BugReportError(
       400,
-      'context.courseOfferingId is required when context.moduleId is present',
+      "context.courseOfferingId is required when context.moduleId is present",
     );
   }
 
@@ -122,23 +122,23 @@ function normalizeContext(context) {
 }
 
 function ensureCourseAuthorization(user, course) {
-  const isStudent = user.role === 'STUDENT';
-  const isProfessor = user.role === 'INSTRUCTOR';
+  const isStudent = user.role === "STUDENT";
+  const isProfessor = user.role === "INSTRUCTOR";
   if (!isStudent && !isProfessor) {
-    throw new BugReportError(403, 'Only STUDENT and INSTRUCTOR users can submit bug reports');
+    throw new BugReportError(403, "Only STUDENT and INSTRUCTOR users can submit bug reports");
   }
 
   if (isStudent) {
     const enrolled = course.enrollments.some((row) => row.userId === user.id);
     if (!enrolled) {
-      throw new BugReportError(403, 'Not authorized for the provided bug report context');
+      throw new BugReportError(403, "Not authorized for the provided bug report context");
     }
     return;
   }
 
   const instructs = course.instructors.some((row) => row.userId === user.id);
   if (!instructs) {
-    throw new BugReportError(403, 'Not authorized for the provided bug report context');
+    throw new BugReportError(403, "Not authorized for the provided bug report context");
   }
 }
 
@@ -175,7 +175,7 @@ async function validateContextAndAccess(user, context) {
     });
 
     if (!activity) {
-      throw new BugReportError(400, 'context.activityId does not exist');
+      throw new BugReportError(400, "context.activityId does not exist");
     }
 
     const dbLessonId = activity.lessonId;
@@ -188,7 +188,7 @@ async function validateContextAndAccess(user, context) {
       dbModuleId !== context.moduleId ||
       dbCourseOfferingId !== context.courseOfferingId
     ) {
-      throw new BugReportError(400, 'Provided context IDs are not internally consistent');
+      throw new BugReportError(400, "Provided context IDs are not internally consistent");
     }
 
     ensureCourseAuthorization(user, activity.lesson.module.courseOffering);
@@ -213,13 +213,13 @@ async function validateContextAndAccess(user, context) {
     });
 
     if (!lesson) {
-      throw new BugReportError(400, 'context.lessonId does not exist');
+      throw new BugReportError(400, "context.lessonId does not exist");
     }
 
     const dbModuleId = lesson.moduleId;
     const dbCourseOfferingId = lesson.module.courseOfferingId;
     if (dbModuleId !== context.moduleId || dbCourseOfferingId !== context.courseOfferingId) {
-      throw new BugReportError(400, 'Provided context IDs are not internally consistent');
+      throw new BugReportError(400, "Provided context IDs are not internally consistent");
     }
 
     ensureCourseAuthorization(user, lesson.module.courseOffering);
@@ -240,11 +240,11 @@ async function validateContextAndAccess(user, context) {
     });
 
     if (!module) {
-      throw new BugReportError(400, 'context.moduleId does not exist');
+      throw new BugReportError(400, "context.moduleId does not exist");
     }
 
     if (module.courseOfferingId !== context.courseOfferingId) {
-      throw new BugReportError(400, 'Provided context IDs are not internally consistent');
+      throw new BugReportError(400, "Provided context IDs are not internally consistent");
     }
 
     ensureCourseAuthorization(user, module.courseOffering);
@@ -260,7 +260,7 @@ async function validateContextAndAccess(user, context) {
   });
 
   if (!course) {
-    throw new BugReportError(400, 'context.courseOfferingId does not exist');
+    throw new BugReportError(400, "context.courseOfferingId does not exist");
   }
 
   ensureCourseAuthorization(user, course);
@@ -278,20 +278,20 @@ async function validateContextAndAccess(user, context) {
  * contextual metadata is correct.
  */
 const VALID_BUG_TYPES = new Set([
-  'UI_DISPLAY',
-  'FEATURE_NOT_WORKING',
-  'PERFORMANCE',
-  'CONTENT_ERROR',
-  'ACCESS_PERMISSION',
-  'OTHER',
+  "UI_DISPLAY",
+  "FEATURE_NOT_WORKING",
+  "PERFORMANCE",
+  "CONTENT_ERROR",
+  "ACCESS_PERMISSION",
+  "OTHER",
 ]);
 
 function normalizeBugType(value) {
   if (value === undefined || value === null) {
     return null;
   }
-  if (typeof value !== 'string' || !VALID_BUG_TYPES.has(value)) {
-    throw new BugReportError(400, `bugType must be one of: ${[...VALID_BUG_TYPES].join(', ')}`);
+  if (typeof value !== "string" || !VALID_BUG_TYPES.has(value)) {
+    throw new BugReportError(400, `bugType must be one of: ${[...VALID_BUG_TYPES].join(", ")}`);
   }
   return value;
 }
@@ -299,12 +299,12 @@ function normalizeBugType(value) {
 export async function createBugReport(user, payload) {
   const description = normalizeDescription(payload?.description);
   const bugType = normalizeBugType(payload?.bugType);
-  const consoleLogs = normalizeOptionalString(payload?.consoleLogs, 'consoleLogs');
-  const networkLogs = normalizeOptionalString(payload?.networkLogs, 'networkLogs');
-  const screenshot = normalizeOptionalString(payload?.screenshot, 'screenshot');
-  const pageUrl = normalizeOptionalString(payload?.pageUrl, 'pageUrl');
-  const userAgent = normalizeOptionalString(payload?.userAgent, 'userAgent');
-  const isAnonymous = normalizeOptionalBoolean(payload?.isAnonymous, 'isAnonymous', false);
+  const consoleLogs = normalizeOptionalString(payload?.consoleLogs, "consoleLogs");
+  const networkLogs = normalizeOptionalString(payload?.networkLogs, "networkLogs");
+  const screenshot = normalizeOptionalString(payload?.screenshot, "screenshot");
+  const pageUrl = normalizeOptionalString(payload?.pageUrl, "pageUrl");
+  const userAgent = normalizeOptionalString(payload?.userAgent, "userAgent");
+  const isAnonymous = normalizeOptionalBoolean(payload?.isAnonymous, "isAnonymous", false);
 
   const context = normalizeContext(payload?.context);
   const validatedContext = await validateContextAndAccess(user, context);
@@ -327,7 +327,7 @@ export async function createBugReport(user, payload) {
  */
 export async function listAdminBugReports(cookie) {
   const payload = await listCoreAdminBugReports(cookie, {
-    source: 'AI_TUTOR',
+    source: "AI_TUTOR",
     limit: 100,
     offset: 0,
   });
@@ -339,14 +339,14 @@ export async function listAdminBugReports(cookie) {
  * Load one AI Tutor bug report from Core including diagnostic blobs (#979).
  */
 export async function getAdminBugReport(cookie, bugReportId) {
-  if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
-    throw new BugReportError(400, 'Invalid bug report id');
+  if (typeof bugReportId !== "string" || bugReportId.trim().length === 0) {
+    throw new BugReportError(400, "Invalid bug report id");
   }
 
   try {
     const report = await getCoreAdminBugReport(cookie, bugReportId.trim());
-    if (report?.source !== 'AI_TUTOR') {
-      throw new BugReportError(404, 'Bug report not found');
+    if (report?.source !== "AI_TUTOR") {
+      throw new BugReportError(404, "Bug report not found");
     }
     return mapCoreAdminBugReportRow(report);
   } catch (error) {
@@ -354,7 +354,7 @@ export async function getAdminBugReport(cookie, bugReportId) {
       throw error;
     }
     if (error?.status === 404) {
-      throw new BugReportError(404, 'Bug report not found');
+      throw new BugReportError(404, "Bug report not found");
     }
     throw error;
   }
@@ -367,8 +367,8 @@ export async function getAdminBugReport(cookie, bugReportId) {
  * admin table patches bug reports.
  */
 export function validateBugReportStatus(status) {
-  if (typeof status !== 'string' || !BUG_REPORT_STATUS_SET.has(status)) {
-    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(', ')}`);
+  if (typeof status !== "string" || !BUG_REPORT_STATUS_SET.has(status)) {
+    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(", ")}`);
   }
   return status;
 }
@@ -379,29 +379,30 @@ export function validateBugReportStatus(status) {
  * @throws BugReportError - When the id is invalid, the status is unsupported,
  * or the target report does not exist.
  *
- * Why: Status changes are the only mutable admin action on bug reports, so this
- * helper preserves the same include shape as listing to let the UI refresh from
- * the PATCH response directly.
+ * Why: Status changes are the only mutable admin action on bug reports, and the
+ * admin view already holds the full row it is changing, so this returns just the
+ * two fields the write touched and lets the caller merge them onto that row
+ * rather than paying for a re-read of the listing shape.
  */
 export async function updateBugReportStatus(bugReportId, nextStatus, cookie) {
-  if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
-    throw new BugReportError(400, 'Invalid bug report id');
+  if (typeof bugReportId !== "string" || bugReportId.trim().length === 0) {
+    throw new BugReportError(400, "Invalid bug report id");
   }
 
   validateBugReportStatus(nextStatus);
 
   const coreStatus = UI_TO_CORE_BUG_STATUS[nextStatus];
   if (!coreStatus) {
-    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(', ')}`);
+    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(", ")}`);
   }
 
   const updated = await patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus);
   if (!updated?.id) {
-    throw new BugReportError(404, 'Bug report not found');
+    throw new BugReportError(404, "Bug report not found");
   }
 
   return {
     id: updated.id,
-    status: mapCoreAdminBugReportRow({ ...updated, description: '' }).status,
+    status: mapCoreAdminBugReportRow({ ...updated, description: "" }).status,
   };
 }

@@ -31,6 +31,7 @@
  * activate fleet routing (and its live health probes) in every checkout,
  * including CI, against servers that checkout usually can't reach.
  */
+import type { JsonValue } from "~/lib/json-value";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FleetServer, JobType } from "./types";
@@ -54,11 +55,11 @@ function normalizeBaseUrl(url: string): string {
 }
 
 /** Validates one raw JSON server entry into a `FleetServer`, or throws with a pointer to the bad field. */
-function parseServerEntry(raw: unknown, index: number): FleetServer {
-  if (!raw || typeof raw !== "object") {
+function parseServerEntry(raw: JsonValue | undefined, index: number): FleetServer {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new FleetConfigError(`fleet config servers[${index}] must be an object`);
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
 
   if (typeof entry.id !== "string" || !entry.id.trim()) {
     throw new FleetConfigError(`fleet config servers[${index}].id must be a non-empty string`);
@@ -139,18 +140,26 @@ export function loadFleetConfigFile(): FleetConfigFile | null {
     throw new FleetConfigError(`fleet config file at ${path} is not valid JSON: ${String(err)}`);
   }
 
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { servers?: unknown }).servers)) {
-    throw new FleetConfigError(`fleet config file at ${path} must have a top-level "servers" array`);
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !Array.isArray((parsed as { servers?: unknown }).servers)
+  ) {
+    throw new FleetConfigError(
+      `fleet config file at ${path} must have a top-level "servers" array`,
+    );
   }
 
-  const servers = (parsed as { servers: unknown[] }).servers.map((entry, index) =>
+  const servers = (parsed as { servers: JsonValue[] }).servers.map((entry, index) =>
     parseServerEntry(entry, index),
   );
 
   const ids = new Set<string>();
   for (const server of servers) {
     if (ids.has(server.id)) {
-      throw new FleetConfigError(`fleet config file at ${path} has a duplicate server id: ${server.id}`);
+      throw new FleetConfigError(
+        `fleet config file at ${path} has a duplicate server id: ${server.id}`,
+      );
     }
     ids.add(server.id);
   }

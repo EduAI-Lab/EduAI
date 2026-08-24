@@ -31,9 +31,12 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/providers.server", () => ({
+  resolveActiveChatModel: vi.fn(),
+}));
+
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return {
     ...actual,
     fleetRoutingEnabled: vi.fn().mockReturnValue(false),
@@ -41,8 +44,7 @@ vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
 });
 
 vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
   return {
     ...actual,
     resolveFleetHost: vi.fn(),
@@ -53,9 +55,11 @@ import { APICallError } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",
@@ -80,7 +84,7 @@ function streamingBody() {
 // A minimal LanguageModelV1 whose doStream succeeds (so streamText returns a
 // streaming result) but then emits text deltas followed by a provider error
 // part once the stream is consumed — the late failure #1113 describes.
-function makeFailingModel(upstreamError: unknown) {
+function makeFailingModel(cause: unknown) {
   return {
     specificationVersion: "v1",
     provider: "openai",
@@ -95,7 +99,7 @@ function makeFailingModel(upstreamError: unknown) {
         start(controller) {
           controller.enqueue({ type: "text-delta", textDelta: "Hello" });
           controller.enqueue({ type: "text-delta", textDelta: " world" });
-          controller.enqueue({ type: "error", error: upstreamError });
+          controller.enqueue({ type: "error", error: cause });
           controller.close();
         },
       }),
@@ -113,6 +117,12 @@ beforeEach(() => {
     user: { id: "u1", role: "STUDENT" },
   } as never);
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(resolveActiveChatModel).mockResolvedValue({
+    name: "GPT-4o",
+    supportsTools: true,
+    supportsImages: true,
+    maxTokens: 16_384,
+  });
 });
 
 afterEach(() => {

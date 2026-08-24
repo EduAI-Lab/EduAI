@@ -34,7 +34,9 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/policy.server")>();
   return {
     ...actual,
-    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
     logPolicyDenial: vi.fn(),
   };
 });
@@ -51,6 +53,7 @@ import {
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const VALID_KEY = "test-service-key";
@@ -75,7 +78,7 @@ const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
@@ -94,14 +97,14 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
     : `/api/courses/${courseId}/topics`;
   return {
     request: new Request(`http://localhost${path}`, { method: "GET", headers }),
-    params: { courseId, ...(topicId ? { topicId } : {}) },
+    params: { courseId, topicId },
     context: {} as never,
   } as any;
 }
 
 function makeAction(
   method: string,
-  body: unknown,
+  body: RouteRequestBody,
   opts: { authorization?: string; topicId?: string } = {},
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
@@ -115,16 +118,16 @@ function makeAction(
       headers,
       body: JSON.stringify(body),
     }),
-    params: { courseId: COURSE_ID, ...(opts.topicId ? { topicId: opts.topicId } : {}) },
+    params: { courseId: COURSE_ID, topicId: opts.topicId },
     context: {} as never,
   } as any;
 }
 
-const makePost = (body: unknown, authorization?: string) =>
+const makePost = (body: RouteRequestBody, authorization?: string) =>
   makeAction("POST", body, { authorization });
-const makeDelete = (body: unknown, authorization?: string) =>
+const makeDelete = (body: RouteRequestBody, authorization?: string) =>
   makeAction("DELETE", body, { authorization });
-const makePatch = (body: unknown, topicId?: string, authorization?: string) =>
+const makePatch = (body: RouteRequestBody, topicId?: string, authorization?: string) =>
   makeAction("PATCH", body, { topicId, authorization });
 
 beforeEach(() => {
@@ -413,7 +416,10 @@ describe("courses.topics action — DELETE", () => {
   });
 
   it("returns 204 on successful soft delete", async () => {
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });
@@ -429,7 +435,10 @@ describe("courses.topics action — DELETE", () => {
   it("returns 204 for an enrolled INSTRUCTOR", async () => {
     mockUser("u1", "INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });
@@ -438,7 +447,10 @@ describe("courses.topics action — DELETE", () => {
     mockUser("ta-1");
     mockAccess({ level: "ta", rank: 1 });
     prismaMock.courseTopic.findFirst.mockResolvedValue({ createdBy: "ta-1" });
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });
@@ -457,7 +469,10 @@ describe("courses.topics action — DELETE", () => {
     mockAccess({ level: "ta", rank: 1 });
     prismaMock.courseTopic.findFirst.mockResolvedValue({ createdBy: "someone-else" });
     vi.mocked(getPolicy).mockResolvedValue(true);
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });
@@ -469,14 +484,20 @@ describe("courses.topics action — DELETE", () => {
     prismaMock.courseTopic.findFirst
       .mockResolvedValueOnce({ id: "topic-1" })
       .mockResolvedValueOnce({ createdBy: "ta-1" });
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ name: "Graphs" }));
     expect(res.status).toBe(204);
   });
 
   it("returns 204 via service key without session", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({
+      status: "204",
+      topic: { id: TOPIC.id, name: TOPIC.name },
+    });
     const res = await action(makeDelete({ topicId: "topic-1" }, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(204);
     expect(auth.api.getSession).not.toHaveBeenCalled();

@@ -118,9 +118,8 @@ describe("Canvas rate limits — invalid env fails closed (AUTH-05/CANVAS-13)", 
   it("falls back to the default link-roster limit (10) when CANVAS_LINK_ROSTER_RATE_LIMIT is an empty string", async () => {
     vi.resetModules();
     vi.stubEnv("CANVAS_LINK_ROSTER_RATE_LIMIT", "");
-    const { isCanvasLinkRosterRateLimited: linkLimited } = await import(
-      "~/lib/canvas/guards.server"
-    );
+    const { isCanvasLinkRosterRateLimited: linkLimited } =
+      await import("~/lib/canvas/guards.server");
 
     const userId = `link-empty-${Date.now()}`;
     for (let i = 0; i < 10; i++) {

@@ -3,8 +3,9 @@
  *
  * Route: /student/lesson/:lessonId
  * Auth: STUDENT (enforced by clientLoader via requireClientUser)
- * Loads: lesson + activities for the lesson, then walks up to module + course
- *        for breadcrumbs (sequential because module/course depend on lesson).
+ * Loads: lesson + activities in one parallel wave alongside the role gate;
+ *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
+ *        (#1334) so the lesson body is not blocked on Core/ordinal work.
  * Owns: activity progression (idx), MCQ/SHORT_TEXT submission, per-activity
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
@@ -27,9 +28,9 @@
  * Related: components/StudentAiChat, components/lessons/LessonActivityView,
  *          components/StudentActivityFeedbackCard, components/bug-report/useBugReport
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconSparkles } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconSparkles } from "@tabler/icons-react";
+import { toast } from "sonner";
 import {
   Button,
   Dialog,
@@ -42,23 +43,24 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
   useIsMobile,
-} from '@eduai/ui';
-import { contentExcerpt } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { LessonActivityView } from '../components/lessons/LessonActivityView';
-import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
-import api from '../lib/api';
-import type { Activity, Course, Lesson, Module, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/student.lesson';
-import { requireClientUser } from '~/lib/client-auth';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import { useBugReport } from '~/components/bug-report/useBugReport';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { splitTitle } from '~/lib/course-title';
-import { accentForCourse } from '~/lib/course-display';
-import { KNOWLEDGE_LEVELS } from '~/lib/knowledge-levels';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import { contentExcerpt } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { LessonActivityView } from "../components/lessons/LessonActivityView";
+import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
+import api from "../lib/api";
+import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
+import type { Route } from "./+types/student.lesson";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { useBugReport } from "~/components/bug-report/useBugReport";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { splitTitle } from "~/lib/course-title";
+import { accentForCourse } from "~/lib/course-display";
+import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
+import { cn } from "~/lib/utils";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Activities the player holds at once (#1207). Comfortably larger than any
@@ -93,7 +95,7 @@ type FeedbackApi = typeof api & {
 function createFeedbackState(): StudentFeedbackState {
   return {
     rating: null,
-    note: '',
+    note: "",
     promptShown: false,
     promptVisible: false,
     submitted: false,
@@ -104,19 +106,22 @@ function createFeedbackState(): StudentFeedbackState {
 }
 
 /**
- * Resolves the lesson, its activities, and the parent module/course needed
- * for breadcrumbs. Lesson + activities run in parallel; module/course are
- * sequential because their IDs come out of the lesson row.
+ * Resolves the lesson and its activities in one wave with the role gate
+ * (#1334). Auth and data start concurrently — when AuthProvider already seeded
+ * the session, `requireClientUser` is sync; otherwise the role check races the
+ * lesson/activity fetches and rejects after if the role is wrong. Breadcrumb
+ * ancestry is intentionally NOT awaited here — the component fetches it after
+ * paint so header crumbs leave the LCP / lesson-body path.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
-    throw new Response('Invalid lesson id', { status: 400 });
+    throw new Response("Invalid lesson id", { status: 400 });
   }
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lesson, activitiesPage] = await Promise.all([
+    requireClientUser(["STUDENT", "TA"]),
+    api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
     // next as the student approaches the end (see `ensureActivitiesLoaded`),
@@ -124,34 +129,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.activitiesForLesson(lessonId, { page: 1, pageSize: PLAYER_ACTIVITY_PAGE_SIZE }),
   ]);
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so lessons whose titles
-  // carry no number still follow the decimal system.
-  //
-  // #1207: served by the server now. This used to be two `findIndex` walks over
-  // the full sibling module and lesson lists — which quietly produced no order
-  // text at all once either list exceeded one page.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module?.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
   };
 }
 
@@ -165,14 +146,17 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
-  const { course, module, lesson, activities, activitiesTotal, orderText } = loaderData;
+  const { lesson, activities, activitiesTotal } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
   // Highest activity page appended so far (#1207); the loader supplies page 1.
   const [loadedPage, setLoadedPage] = useState(1);
   const [idx, setIdx] = useState(0);
   const [mcq, setMcq] = useState<number | null>(null);
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [wasCorrect, setWasCorrect] = useState(false);
@@ -180,9 +164,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   // Pre-chat context for AI guidance
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
-  const [tempKnowledgeLevel, setTempKnowledgeLevel] = useState('');
+  const [tempKnowledgeLevel, setTempKnowledgeLevel] = useState("");
   const [knowledgeLevels, setKnowledgeLevels] = useState<Record<number, string>>({});
-  const [topicSelection, setTopicSelection] = useState<Record<number, number>>({});
+  const [topicSelection, setTopicSelection] = useState<Record<number, string | number>>({});
   const [feedbackByActivity, setFeedbackByActivity] = useState<
     Record<number, StudentFeedbackState>
   >({});
@@ -248,7 +232,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       setActivitiesLoadFailed(false);
     } catch (error) {
       if (lessonIdRef.current !== lessonId) return;
-      console.error('Failed to load more activities', error);
+      console.error("Failed to load more activities", error);
       // Surface it: without this the student just hits an invisible wall at the
       // page boundary. `canNext` stops at the loaded edge while this is set, and
       // the next move (Prev, then Next) re-runs the effect and retries.
@@ -277,7 +261,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const canPrev = idx > 0;
 
   const questionChunks = useMemo(
-    () => (activity?.question || '').split(/\n/),
+    () => (activity?.question || "").split(/\n/),
     [activity?.question],
   );
 
@@ -288,7 +272,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const currentFeedback = activity
     ? (feedbackByActivity[activity.id] ?? createFeedbackState())
     : createFeedbackState();
-  const studentAnswer = activity ? (activity.type === 'MCQ' ? mcq : text) : null;
+  const studentAnswer = activity ? (activity.type === "MCQ" ? mcq : text) : null;
   const isUserReady = Boolean(user);
 
   // Reset per-activity scratch state (answer inputs, last result, modal) the
@@ -299,10 +283,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setPrevActivityId(currentActivityId);
     setWasCorrect(false);
     setResult(null);
-    setTempKnowledgeLevel('');
+    setTempKnowledgeLevel("");
     setShowKnowledgeModal(false);
     setMcq(null);
-    setText('');
+    setText("");
   }
 
   const submit = async () => {
@@ -310,15 +294,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setSubmitting(true);
     try {
       const payload: any = { userId: user.id };
-      if (activity.type === 'MCQ') payload.answerOption = mcq;
+      if (activity.type === "MCQ") payload.answerOption = mcq;
       else payload.answerText = text;
       const res = await api.submitAnswer(activity.id, payload);
-      setResult(res.isCorrect ? 'Correct!' : 'Not quite. Keep going!');
+      setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
 
       setOrderedActivities((prev) =>
         prev.map((a, i) =>
           i === idx
-            ? { ...a, completionStatus: res.isCorrect ? ('correct' as const) : undefined }
+            ? { ...a, completionStatus: res.isCorrect ? ("correct" as const) : undefined }
             : a,
         ),
       );
@@ -351,7 +335,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      setResult('There was a problem submitting.');
+      setResult("There was a problem submitting.");
       setWasCorrect(false);
     } finally {
       setSubmitting(false);
@@ -360,10 +344,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   const resetForNavigation = useCallback(() => {
     setMcq(null);
-    setText('');
+    setText("");
     setResult(null);
     setWasCorrect(false);
-    setTempKnowledgeLevel('');
+    setTempKnowledgeLevel("");
   }, []);
 
   // Direct set from the chat's inline chips — no dialog, no wall.
@@ -376,12 +360,12 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   );
 
   const handleAdjustKnowledgeLevel = useCallback(() => {
-    setTempKnowledgeLevel(currentKnowledgeLevel ?? '');
+    setTempKnowledgeLevel(currentKnowledgeLevel ?? "");
     setShowKnowledgeModal(true);
   }, [currentKnowledgeLevel]);
 
   const handleTopicSelect = useCallback(
-    (topicId: number) => {
+    (topicId: string | number) => {
       if (!activity) return;
       setTopicSelection((prev) => ({ ...prev, [activity.id]: topicId }));
     },
@@ -445,8 +429,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
     try {
       const feedbackApi = api as FeedbackApi;
-      if (typeof feedbackApi.submitActivityFeedback !== 'function') {
-        throw new Error('Feedback service not available');
+      if (typeof feedbackApi.submitActivityFeedback !== "function") {
+        throw new Error("Feedback service not available");
       }
 
       await feedbackApi.submitActivityFeedback(activity.id, {
@@ -466,7 +450,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       updateFeedbackState((current) => ({
         ...current,
         saving: false,
-        error: 'Could not save feedback right now. Please try again.',
+        error: "Could not save feedback right now. Please try again.",
       }));
     }
   }, [activity, currentFeedback.note, currentFeedback.rating, updateFeedbackState]);
@@ -521,15 +505,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     : [];
 
   const breadcrumbItems = [
-    { label: 'Courses', href: '/student' },
+    { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         course?.id != null ? (
           <CourseSwitcher
             courseId={course.id}
             basePath="/student"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },
@@ -541,13 +525,53 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             href: `/student/module/${lesson.moduleId}`,
           },
         ]
-      : [{ label: 'Module' }]),
+      : [{ label: "Module" }]),
     lesson?.title
       ? { label: splitTitle(lesson.title).label, title: lesson.title }
-      : { label: 'Lesson' },
+      : { label: "Lesson" },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          // Non-fatal: keep skeleton placeholders rather than blocking the player.
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
+
+  const skeletonBreadcrumbItems = [
+    { label: "Courses", href: "/student" },
+    { label: "…" },
+    { label: "…" },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: "Lesson" },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   const goPrev = useCallback(() => {
     setIdx((i) => Math.max(0, i - 1));
@@ -592,7 +616,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   const aiTutorPanel = (
     <StudentAiChat
-      key={activity?.id ?? 'none'}
+      key={activity?.id ?? "none"}
       ref={chatRef}
       activity={activity}
       isUserReady={isUserReady}
@@ -613,7 +637,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         <ModuleHero
           orderText={orderText}
           eyebrow="Lesson"
-          title={lesson?.title || 'Lesson'}
+          title={lesson?.title || "Lesson"}
           description={
             (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
             module?.title ||
@@ -627,7 +651,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                     // The lesson total, matching the "Question N of M" counter
                     // on the card below — the loaded slice would disagree with
                     // it, and its denominator would grow as pages append.
-                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? '' : 's'}`,
+                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? "" : "s"}`,
                     value: idx + 1,
                     accent: true,
                   },
@@ -637,9 +661,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           progress={
             activitiesTotal > 0
               ? {
-                  completed: orderedActivities.filter(
-                    (a) => a.completionStatus === 'correct',
-                  ).length,
+                  completed: orderedActivities.filter((a) => a.completionStatus === "correct")
+                    .length,
                   total: activitiesTotal,
                 }
               : null
@@ -699,10 +722,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                   type="button"
                   onClick={() => setTempKnowledgeLevel(level.value)}
                   className={cn(
-                    'rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors',
+                    "rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors",
                     tempKnowledgeLevel === level.value
-                      ? 'border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary'
-                      : 'border-border hover:border-muted-foreground/30',
+                      ? "border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary"
+                      : "border-border hover:border-muted-foreground/30",
                   )}
                 >
                   <div className="text-sm font-semibold text-foreground">{level.label}</div>
@@ -716,7 +739,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             <Button variant="secondary" onClick={handleCancelKnowledge}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleConfirmKnowledge} disabled={!tempKnowledgeLevel}>
+            <Button
+              variant="primary"
+              onClick={handleConfirmKnowledge}
+              disabled={!tempKnowledgeLevel}
+            >
               Start guidance
             </Button>
           </DialogFooter>
@@ -725,3 +752,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

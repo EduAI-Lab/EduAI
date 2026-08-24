@@ -15,7 +15,11 @@
  * exclusive with paging.
  */
 
+import type { JsonObject } from "~/lib/json-value";
 import { apiError } from "~/lib/api-error.server";
+
+/** A page request after clamping, plus the `skip` it implies for Prisma. */
+export type NormalizedPagination = { safePage: number; safePageSize: number; skip: number };
 
 export const DEFAULT_PAGE_SIZE = 25;
 export const MAX_PAGE_SIZE = 200;
@@ -35,10 +39,7 @@ export type Pagination = {
  * Clamping (rather than rejecting) keeps URL-driven paging forgiving: a stale
  * `?page=0` link still renders the first page instead of erroring.
  */
-export function normalizePagination(
-  page = 1,
-  pageSize = DEFAULT_PAGE_SIZE,
-): { safePage: number; safePageSize: number; skip: number } {
+export function normalizePagination(page = 1, pageSize = DEFAULT_PAGE_SIZE): NormalizedPagination {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const safePageSize = Number.isFinite(pageSize)
     ? Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize)))
@@ -103,7 +104,14 @@ export function parseIdsParam(
     };
   }
 
-  const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
+  const ids = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
   if (ids.length === 0) {
     return { response: apiError(400, "IDS_EMPTY", { ids: "Must contain at least one id" }) };
   }
@@ -134,7 +142,7 @@ export function paginatedResponse<T>(
   data: T[],
   total: number,
   pagination: Pick<Pagination, "page" | "pageSize">,
-  extra?: Record<string, unknown>,
+  extra?: JsonObject,
 ): Response {
   return new Response(
     JSON.stringify({

@@ -33,6 +33,7 @@ import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { action } from "~/routes/api/courses.id.response-style";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -51,7 +52,7 @@ beforeEach(() => {
 });
 
 function patchArgs(
-  body: unknown,
+  body: RouteRequestBody,
   opts: { role?: string; courseId?: string | undefined } = {},
 ) {
   const role = opts.role ?? "INSTRUCTOR";
@@ -101,9 +102,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       course: { id: "c1" },
       access: { level: "student", rank: 1 },
     } as never);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }));
     expect(res.status).toBe(403);
     expect(prisma.course.update).not.toHaveBeenCalled();
   });
@@ -114,9 +113,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }));
     expect(res.status).toBe(403);
     expect(getPolicy).toHaveBeenCalledWith("tas.canSetAiInstructions");
     expect(prisma.course.update).not.toHaveBeenCalled();
@@ -128,9 +125,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await action(
-      patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }));
     expect(res.status).toBe(200);
     expect(prisma.course.update).toHaveBeenCalledWith({
       where: { id: "c1" },

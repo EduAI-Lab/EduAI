@@ -6,6 +6,16 @@ const { prismaMock, txDeleteMany, txFindMany, txExecuteRaw, embedMany } = vi.hoi
   const txExecuteRaw = vi.fn();
   const embedMany = vi.fn();
 
+  // The chunk rewrite runs inside one transaction; the mock hands the callback
+  // this client so the per-model assertions below apply to it.
+  const txClient = {
+    materialChunk: {
+      deleteMany: txDeleteMany,
+      findMany: txFindMany,
+    },
+    $executeRaw: txExecuteRaw,
+  };
+
   const prismaMock = {
     courseMaterial: {
       findUnique: vi.fn(),
@@ -13,14 +23,8 @@ const { prismaMock, txDeleteMany, txFindMany, txExecuteRaw, embedMany } = vi.hoi
     course: {
       findUnique: vi.fn(),
     },
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-      await fn({
-        materialChunk: {
-          deleteMany: txDeleteMany,
-          findMany: txFindMany,
-        },
-        $executeRaw: txExecuteRaw,
-      });
+    $transaction: vi.fn(async (fn: (tx: typeof txClient) => Promise<void>) => {
+      await fn(txClient);
     }),
   };
 
@@ -39,7 +43,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 const { processMaterialEmbeddings } = await import("~/lib/ai/embedding");
 
-const sampleEmbedding = new Array(1024).fill(0);
+const sampleEmbedding = Array.from({ length: 1024 }, () => 0);
 
 describe("processMaterialEmbeddings", () => {
   const originalProvider = process.env.EMBEDDING_PROVIDER;

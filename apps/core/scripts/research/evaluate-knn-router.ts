@@ -12,6 +12,7 @@
  *   RESEARCH_KNN_EVAL_SPLIT     dev (default) | test | all
  *   RESEARCH_KNN_LEAVE_ONE_OUT  1 → exclude self prompt from neighbor vote
  */
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -31,19 +32,19 @@ function readEnv(name: string): string | undefined {
   return v !== undefined && v !== "" ? v : undefined;
 }
 
-function loadJsonl(path: string): Record<string, unknown>[] {
+function loadJsonl(path: string): JsonObject[] {
   const raw = readFileSync(path, "utf8").trim();
   if (!raw) return [];
   return raw.split("\n").map((line, i) => {
     try {
-      return JSON.parse(line) as Record<string, unknown>;
+      return JSON.parse(line) as JsonObject;
     } catch (e) {
       throw new Error(`${path} line ${i + 1}: ${(e as Error).message}`);
     }
   });
 }
 
-function normalizeOracleTier(tier: unknown): 1 | 3 | null {
+function normalizeOracleTier(tier: JsonValue | undefined): 1 | 3 | null {
   if (tier === 1) return 1;
   if (tier === 2 || tier === 3) return 3;
   return null;
@@ -135,9 +136,7 @@ async function main() {
   }
 
   const meanConf =
-    confidences.length > 0
-      ? confidences.reduce((a, b) => a + b, 0) / confidences.length
-      : 0;
+    confidences.length > 0 ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
 
   console.log("");
   console.log("matched:", matched);

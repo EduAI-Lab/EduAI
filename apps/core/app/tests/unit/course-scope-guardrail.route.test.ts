@@ -4,7 +4,9 @@
 // canned redirect (skipping streamText/admission entirely), fails open on
 // its own module boundary, and is skipped for admin-preview/service-key
 // callers regardless of the enabled flag.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -22,9 +24,9 @@ vi.mock("ai", async (importOriginal) => {
       return new Response(chunks.join(""), { status: 200, headers });
     }),
     formatDataStreamPart: vi.fn(
-      (type: string, value: unknown) => `${type}:${JSON.stringify(value)}\n`,
+      (type: string, value: JsonValue) => `${type}:${JSON.stringify(value)}\n`,
     ),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -36,11 +38,9 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
-  chatbotTypeFromMode: vi.fn((mode: unknown) =>
-    mode === "admin" ? "ADMIN" : "LEARNING",
-  ),
+  chatbotTypeFromMode: vi.fn((mode: JsonValue) => (mode === "admin" ? "ADMIN" : "LEARNING")),
   createChatTools: vi.fn().mockReturnValue({}),
-  parseChatMode: vi.fn((v: unknown) => (v === "admin" ? "admin" : "learning")),
+  parseChatMode: vi.fn((v: JsonValue) => (v === "admin" ? "admin" : "learning")),
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -48,9 +48,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi
-    .fn()
-    .mockResolvedValue({ response: null, session: null }),
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
   requireServiceKey: vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
       status: 401,
@@ -76,8 +74,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
   return {
     ...actual,
     getChatModelCapabilities: vi.fn().mockResolvedValue({
@@ -124,16 +121,19 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
   buildCourseScopePolicyPrompt: vi.fn(
     (context: { courseName: string }) => `SCOPE:${context.courseName}`,
   ),
-  resolveCourseScopeVerdict: vi
-    .fn()
-    .mockResolvedValue({ blocked: false, classification: null }),
-  buildCourseScopeRedirectMessage: vi.fn(
-    (name: string | null) => `REDIRECT:${name}`,
-  ),
+  resolveCourseScopeVerdict: vi.fn().mockResolvedValue({ blocked: false, classification: null }),
+  buildCourseScopeRedirectMessage: vi.fn((name: string | null) => `REDIRECT:${name}`),
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
@@ -145,7 +145,7 @@ import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -157,11 +157,9 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
-    messages: [
-      { id: "msg-1", role: "user", content: "What's due for assignment 2?" },
-    ],
+    messages: [{ id: "msg-1", role: "user", content: "What's due for assignment 2?" }],
     model: "vllm:test-model",
     apiKeys: {},
     streaming: false,
@@ -221,6 +219,7 @@ function mockPriorCourseConversation(
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   // getCourseTopicNamesCached (lib/courses/server.ts) is a module-level cache
   // shared across tests in this file — clear it so each test's
@@ -321,9 +320,7 @@ describe("POST /api/chat — course-scope guardrail", () => {
   it("passes a long assistant answer for a follow-up about its final resource", async () => {
     const longBiologyAnswer = [
       "Support and resources available for BIOL 116.",
-      "Study materials, office hours, discussion forums, tutoring, and lab sessions. ".repeat(
-        20,
-      ),
+      "Study materials, office hours, discussion forums, tutoring, and lab sessions. ".repeat(20),
       "For calculations related to the course, the Math and Science Help Desk can assist.",
     ].join(" ");
     mockPriorCourseConversation(
@@ -381,33 +378,30 @@ describe("POST /api/chat — course-scope guardrail", () => {
         },
       ],
     },
-  ])(
-    "rejects unsupported $label student turns explicitly",
-    async ({ content }) => {
-      const res = await action(
-        makeRequest(
-          baseBody({
-            messages: [
-              {
-                id: "image-only",
-                role: "user",
-                content,
-              },
-            ],
-          }),
-        ),
-      );
+  ])("rejects unsupported $label student turns explicitly", async ({ content }) => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "image-only",
+              role: "user",
+              content,
+            },
+          ],
+        }),
+      ),
+    );
 
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({
-        error: "IMAGE_MESSAGE_UNSUPPORTED",
-        message: "Course Chat does not support image messages.",
-      });
-      expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
-      expect(streamText).not.toHaveBeenCalled();
-      expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
-    },
-  );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "IMAGE_MESSAGE_UNSUPPORTED",
+      message: "Course Chat does not support image messages.",
+    });
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
 
   it("skips the classifier when disabled for the course but keeps Layer A scope", async () => {
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValueOnce({

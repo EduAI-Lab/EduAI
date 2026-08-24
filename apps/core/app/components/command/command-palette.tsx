@@ -46,11 +46,10 @@ const COURSE_PICKER_QUERY = "page=1&pageSize=200";
 /** Matches the debounce the admin table hooks use, so search feels consistent. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-
 /** Window event that opens the palette — dispatched by the header search button. */
 export const CORE_COMMAND_EVENT = "eduai:open-command";
 
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
@@ -68,7 +67,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-};
+} satisfies Record<NavItemKey, Icon>;
 
 type PaletteCourse = { id: string; code: string; name: string };
 
@@ -84,11 +83,9 @@ export function paletteNavItems(user: User): NavItem[] {
   const settingsItem: NavItem = { key: "settings", title: "Settings", url: "/settings" };
   const flatten = (items: (NavItem | NavGroupItem)[]): NavItem[] =>
     items.flatMap((item) => ("children" in item ? item.children : [item]));
-  return flatten([
-    ...getNavForUser(user),
-    ...getNavSecondaryForUser(user),
-    settingsItem,
-  ]).filter((item) => !item.disabled);
+  return flatten([...getNavForUser(user), ...getNavSecondaryForUser(user), settingsItem]).filter(
+    (item) => !item.disabled,
+  );
 }
 
 /**
@@ -124,7 +121,9 @@ export async function loadPaletteCourses(
  * for unit tests.
  */
 export async function fetchPaletteCourses(search: string): Promise<PaletteCourse[] | null> {
-  const query = search ? `${COURSE_PICKER_QUERY}&search=${encodeURIComponent(search)}` : COURSE_PICKER_QUERY;
+  const query = search
+    ? `${COURSE_PICKER_QUERY}&search=${encodeURIComponent(search)}`
+    : COURSE_PICKER_QUERY;
   try {
     const res = await fetch(`/api/courses?${query}`);
     if (!res.ok) return null;

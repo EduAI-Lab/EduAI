@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchChatSession, useChatSession } from "~/hooks/api/use-chat-sessions";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const session = {
   id: "chat-1",
@@ -12,7 +13,7 @@ const session = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,
@@ -86,10 +87,9 @@ describe("useChatSession", () => {
 
   it("clears session and error when chatId becomes null", async () => {
     mockFetch.mockResolvedValue(okJson(session));
-    const { result, rerender } = renderHook(
-      ({ id }: { id: string | null }) => useChatSession(id),
-      { initialProps: { id: "chat-1" as string | null } },
-    );
+    const { result, rerender } = renderHook(({ id }: { id: string | null }) => useChatSession(id), {
+      initialProps: { id: "chat-1" as string | null },
+    });
 
     await waitFor(() => expect(result.current.session).toEqual(session));
 
@@ -129,9 +129,7 @@ describe("useChatSession", () => {
 
     mockFetch.mockResolvedValueOnce(errResponse(409, "chat has dependents"));
 
-    await expect(result.current.deleteChatSession("chat-1")).rejects.toThrow(
-      "chat has dependents",
-    );
+    await expect(result.current.deleteChatSession("chat-1")).rejects.toThrow("chat has dependents");
   });
 });
 

@@ -5,24 +5,25 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-} from 'react-router';
+} from "react-router";
 
-import type { Route } from './+types/root';
-import './app.css';
-import { AuthProvider } from '~/hooks/useLocalUser';
-import { TourProvider } from '~/components/TourProvider';
-import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
-import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
+import type { Route } from "./+types/root";
+import "./app.css";
+import { AuthProvider } from "~/hooks/useLocalUser";
+import { TourProvider } from "~/components/TourProvider";
+import { BugReportProvider } from "~/components/bug-report/BugReportProvider";
+import { AssistiveModeProvider } from "~/components/settings/assistive-mode";
 // Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
 // (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
 // even one named member from it forces Vite dev to crawl and transform the
 // whole shared UI library (shiki, markdown, every Radix primitive,
 // @tabler icons) on first load — for every user, before login. root renders
 // for everyone, so keep its UI imports minimal.
-import { ThemeProvider } from '@eduai/ui/theme-provider';
-import { ThemeSyncInitializer } from '@eduai/ui/theme-sync-initializer';
-import { Toaster } from '@eduai/ui/sonner';
-import { PageLoader } from '@eduai/ui/page-loader';
+import { ThemeProvider } from "@eduai/ui/theme-provider";
+import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
+import { Toaster } from "@eduai/ui/sonner";
+import { PageLoader } from "@eduai/ui/page-loader";
+import { NotFoundState } from "~/components/common/NotFoundState";
 
 // No `links()` export: Outfit is self-hosted via @fontsource-variable/outfit,
 // imported from @eduai/ui's base.css and bundled with the app stylesheet (#1221).
@@ -72,15 +73,26 @@ export default function App() {
   );
 }
 
+/**
+ * Last-resort boundary, for errors thrown above the `_app.tsx` shell (`/` and
+ * `/unsupported-role`). Routes inside the shell export their own
+ * `RouteErrorState`, which keeps the sidebar and header mounted.
+ *
+ * A 404/403 here renders the same generic not-found page the rest of the app
+ * uses, standalone — never the bare "Oops!" text this used to show.
+ */
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = 'Oops!';
-  let details = 'An unexpected error occurred.';
+  if (isRouteErrorResponse(error) && (error.status === 404 || error.status === 403)) {
+    return <NotFoundState standalone />;
+  }
+
+  let message = "Oops!";
+  let details = "An unexpected error occurred.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? '404' : 'Error';
-    details =
-      error.status === 404 ? 'The requested page could not be found.' : error.statusText || details;
+    message = "Error";
+    details = error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

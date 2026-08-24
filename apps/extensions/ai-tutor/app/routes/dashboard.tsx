@@ -22,22 +22,23 @@
  *   (see per-role view files).
  * Owns: routing/derivation only — presentation lives in `~/components/dashboard/*`.
  */
-import type { ReactNode } from 'react';
-import { PageHeading } from '@eduai/ui';
-import type { Route } from './+types/dashboard';
-import api, { type DashboardStats } from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import type { AdminBugReportRow, AdminUserPage, Course, Role, SubmissionRow } from '~/lib/types';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import { DashboardStudentView } from '~/components/dashboard/DashboardStudentView';
-import { DashboardTaView } from '~/components/dashboard/DashboardTaView';
-import { DashboardInstructorView } from '~/components/dashboard/DashboardInstructorView';
-import { DashboardUnitAdminView } from '~/components/dashboard/DashboardUnitAdminView';
-import { DashboardAdminView } from '~/components/dashboard/DashboardAdminView';
-import { firstNameOf, timeOfDayGreeting } from '~/components/dashboard/dashboard-helpers';
+import type { ReactNode } from "react";
+import { PageHeading } from "@eduai/ui";
+import type { Route } from "./+types/dashboard";
+import api, { type DashboardStats } from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import type { AdminBugReportRow, AdminUserPage, Course, Role, SubmissionRow } from "~/lib/types";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { DashboardStudentView } from "~/components/dashboard/DashboardStudentView";
+import { DashboardTaView } from "~/components/dashboard/DashboardTaView";
+import { DashboardInstructorView } from "~/components/dashboard/DashboardInstructorView";
+import { DashboardUnitAdminView } from "~/components/dashboard/DashboardUnitAdminView";
+import { DashboardAdminView } from "~/components/dashboard/DashboardAdminView";
+import { firstNameOf, timeOfDayGreeting } from "~/components/dashboard/dashboard-helpers";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
-const SUPPORTED_ROLES: Role[] = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA', 'STUDENT'];
+const SUPPORTED_ROLES: Role[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"];
 
 type DashboardLoaderData = {
   role: Role;
@@ -54,8 +55,8 @@ type DashboardLoaderData = {
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   const user = await requireClientUser(SUPPORTED_ROLES);
 
-  const wantsSubmissions = user.role === 'STUDENT' || user.role === 'TA';
-  const isAdmin = user.role === 'ADMIN';
+  const wantsSubmissions = user.role === "STUDENT" || user.role === "TA";
+  const isAdmin = user.role === "ADMIN";
 
   const [coursePage, submissions, adminUsers, adminBugReports, dashboardStats] = await Promise.all([
     // #1043: /courses is paginated. Dashboards render a bounded page for the
@@ -88,33 +89,36 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   } satisfies DashboardLoaderData;
 }
 
-function heroCopy(role: Role, firstName: string | null): { heading: string; subheading: string } {
+/** The two lines of the dashboard hero, chosen per role. */
+type HeroCopy = { heading: string; subheading: string };
+
+function heroCopy(role: Role, firstName: string | null): HeroCopy {
   switch (role) {
-    case 'ADMIN':
+    case "ADMIN":
       return {
-        heading: 'Platform overview',
-        subheading: 'AI Tutor usage, courses, and bug reports at a glance.',
+        heading: "Platform overview",
+        subheading: "AI Tutor usage, courses, and bug reports at a glance.",
       };
-    case 'UNIT_ADMIN':
+    case "UNIT_ADMIN":
       return {
-        heading: firstName ? `Welcome back, ${firstName}.` : 'Welcome back.',
+        heading: firstName ? `Welcome back, ${firstName}.` : "Welcome back.",
         subheading: "Your unit's courses and administration.",
       };
-    case 'INSTRUCTOR':
+    case "INSTRUCTOR":
       return {
-        heading: firstName ? `Welcome back, ${firstName}.` : 'Welcome back.',
-        subheading: 'Your courses and teaching activity.',
+        heading: firstName ? `Welcome back, ${firstName}.` : "Welcome back.",
+        subheading: "Your courses and teaching activity.",
       };
-    case 'TA':
+    case "TA":
       return {
         heading: firstName ? `${timeOfDayGreeting()}, ${firstName}.` : timeOfDayGreeting(),
-        subheading: 'Your assigned courses and student activity.',
+        subheading: "Your assigned courses and student activity.",
       };
-    case 'STUDENT':
+    case "STUDENT":
     default:
       return {
         heading: firstName ? `${timeOfDayGreeting()}, ${firstName}.` : timeOfDayGreeting(),
-        subheading: 'Continue where you left off or explore your courses.',
+        subheading: "Continue where you left off or explore your courses.",
       };
   }
 }
@@ -124,13 +128,13 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
   const { role, courses, courseTotal, submissions, adminUsers, adminBugReports, dashboardStats } =
     loaderData;
 
-  useShellBreadcrumbs([{ label: 'Dashboard' }]);
+  useShellBreadcrumbs([{ label: "Dashboard" }]);
 
   const { heading, subheading } = heroCopy(role, firstNameOf(user?.name));
 
   let content: ReactNode;
   switch (role) {
-    case 'ADMIN':
+    case "ADMIN":
       content = (
         <DashboardAdminView
           courses={courses}
@@ -141,13 +145,25 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
         />
       );
       break;
-    case 'UNIT_ADMIN':
-      content = <DashboardUnitAdminView courses={courses} courseTotal={courseTotal} dashboardStats={dashboardStats} />;
+    case "UNIT_ADMIN":
+      content = (
+        <DashboardUnitAdminView
+          courses={courses}
+          courseTotal={courseTotal}
+          dashboardStats={dashboardStats}
+        />
+      );
       break;
-    case 'INSTRUCTOR':
-      content = <DashboardInstructorView courses={courses} courseTotal={courseTotal} dashboardStats={dashboardStats} />;
+    case "INSTRUCTOR":
+      content = (
+        <DashboardInstructorView
+          courses={courses}
+          courseTotal={courseTotal}
+          dashboardStats={dashboardStats}
+        />
+      );
       break;
-    case 'TA':
+    case "TA":
       content = (
         <DashboardTaView
           courses={courses}
@@ -157,7 +173,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
         />
       );
       break;
-    case 'STUDENT':
+    case "STUDENT":
     default:
       content = (
         <DashboardStudentView
@@ -177,3 +193,9 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

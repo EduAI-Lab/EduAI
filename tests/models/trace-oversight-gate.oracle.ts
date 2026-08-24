@@ -38,7 +38,12 @@ export type TraceOversightGateRow = {
 
 export function expectedStatus(row: TraceOversightGateRow): number {
   if (row.CourseIdParam === "invalid") return 400;
-  if (row.Role === "UNIT_ADMIN" && row.AuthorizedUnits === "nonempty" && row.UnitParam === "foreign") return 403;
+  if (
+    row.Role === "UNIT_ADMIN" &&
+    row.AuthorizedUnits === "nonempty" &&
+    row.UnitParam === "foreign"
+  )
+    return 403;
   return 200;
 }
 

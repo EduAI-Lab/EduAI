@@ -1,8 +1,6 @@
 import { lazy, type ComponentType, type ComponentProps } from "react";
 
-type StreamdownProps = ComponentProps<
-  typeof import("streamdown").Streamdown
->;
+type StreamdownProps = ComponentProps<typeof import("streamdown").Streamdown>;
 
 /**
  * Loads an app-owned stylesheet, e.g. `() => import("katex/dist/katex.min.css")`.
@@ -11,7 +9,13 @@ type StreamdownProps = ComponentProps<
  * itself: `katex` is deliberately not a dependency here (streamdown and friends
  * are peers), and each app owns which of its chunks the sheet lands in.
  */
-export type MarkdownStyleLoader = () => Promise<unknown>;
+/**
+ * The module namespace a bundler produces for `import("….css")`. It is awaited
+ * purely for the side effect of injecting the sheet; none of its exports are read.
+ */
+export type StyleModule = { default: unknown };
+
+export type MarkdownStyleLoader = () => Promise<StyleModule>;
 
 function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
   return Promise.all([
@@ -33,9 +37,7 @@ function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
     };
     const { Streamdown } = streamdown;
     return {
-      default: (props: StreamdownProps) => (
-        <Streamdown {...props} plugins={plugins} />
-      ),
+      default: (props: StreamdownProps) => <Streamdown {...props} plugins={plugins} />,
     };
   });
 }
@@ -47,10 +49,7 @@ function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
  */
 export const LazyStreamdown = lazy(() => loadStreamdown());
 
-const mathVariants = new WeakMap<
-  MarkdownStyleLoader,
-  ComponentType<StreamdownProps>
->();
+const mathVariants = new WeakMap<MarkdownStyleLoader, ComponentType<StreamdownProps>>();
 
 /**
  * Variant of {@link LazyStreamdown} that also resolves the KaTeX stylesheet.

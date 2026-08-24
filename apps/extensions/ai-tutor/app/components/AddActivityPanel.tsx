@@ -27,8 +27,8 @@
  *   `server/src/routes/activities.js`
  */
 
-import type { FormEvent } from 'react';
-import { useMemo, useState } from 'react';
+import type { FormEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   IconPlus,
   IconX,
@@ -38,7 +38,7 @@ import {
   IconListCheck,
   IconTag,
   IconPencil,
-} from '@tabler/icons-react';
+} from "@tabler/icons-react";
 import {
   Button,
   DialogDescription,
@@ -55,14 +55,15 @@ import {
   SelectTrigger,
   SelectValue,
   Textarea,
-} from '@eduai/ui';
-import { cn } from '~/lib/utils';
-import api from '../lib/api';
-import { useCourseTopicsContext } from '../hooks/useCourseTopics';
+} from "@eduai/ui";
+import { cn } from "~/lib/utils";
+import api from "../lib/api";
+import { useCourseTopicsContext } from "../hooks/useCourseTopics";
+import { AI_MODE_REQUIRED } from "~/lib/activityForm";
 
 const TYPE_OPTIONS = [
-  { value: 'MCQ' as const, label: 'MCQ' },
-  { value: 'SHORT_TEXT' as const, label: 'Short answer' },
+  { value: "MCQ" as const, label: "MCQ" },
+  { value: "SHORT_TEXT" as const, label: "Short answer" },
 ];
 
 interface AddActivityPanelProps {
@@ -85,20 +86,23 @@ export default function AddActivityPanel({
     loadMore: loadMoreTopics,
     loadingMore: loadingMoreTopics,
   } = useCourseTopicsContext();
-  const [type, setType] = useState<'MCQ' | 'SHORT_TEXT'>('MCQ');
-  const [question, setQuestion] = useState('');
-  const [choices, setChoices] = useState<string[]>(['', '', '', '']);
+  const [type, setType] = useState<"MCQ" | "SHORT_TEXT">("MCQ");
+  const [question, setQuestion] = useState("");
+  const [choices, setChoices] = useState<string[]>(["", "", "", ""]);
   const [correct, setCorrect] = useState(0);
   const [hasSelectedCorrect, setHasSelectedCorrect] = useState(false);
-  const [textAnswer, setTextAnswer] = useState('');
-  const [hint, setHint] = useState('');
+  const [textAnswer, setTextAnswer] = useState("");
+  const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Topic ids are opaque cuid strings on the wire (server schema is
   // z.array(z.string())), so keep them as strings — never Number() them.
-  const [selectedMainTopicId, setSelectedMainTopicId] = useState<string>('');
+  const [selectedMainTopicId, setSelectedMainTopicId] = useState<string>("");
   const [selectedSecondaryTopicIds, setSelectedSecondaryTopicIds] = useState<string[]>([]);
   const [topicSelectionError, setTopicSelectionError] = useState<string | null>(null);
+  // Shown under the AI study buddy box. Was a native `alert()`, which is modal,
+  // unstyled, and detached from the control that caused it.
+  const [aiModeError, setAiModeError] = useState<string | null>(null);
 
   const [enableTeachMode, setEnableTeachMode] = useState(true);
   const [enableGuideMode, setEnableGuideMode] = useState(true);
@@ -111,12 +115,12 @@ export default function AddActivityPanel({
     setPrevTopics(topics);
 
     if (topics.length === 0) {
-      if (selectedMainTopicId !== '') setSelectedMainTopicId('');
+      if (selectedMainTopicId !== "") setSelectedMainTopicId("");
       if (selectedSecondaryTopicIds.length > 0) setSelectedSecondaryTopicIds([]);
     } else {
       // If current selection is invalid, default to first topic
       if (
-        selectedMainTopicId === '' ||
+        selectedMainTopicId === "" ||
         !topics.some((topic) => String(topic.id) === selectedMainTopicId)
       ) {
         setSelectedMainTopicId(String(topics[0].id));
@@ -130,7 +134,7 @@ export default function AddActivityPanel({
   );
 
   const addChoice = () => {
-    setChoices((prev) => (prev.length < 8 ? [...prev, ''] : prev));
+    setChoices((prev) => (prev.length < 8 ? [...prev, ""] : prev));
   };
 
   const removeChoice = (index: number) => {
@@ -139,7 +143,7 @@ export default function AddActivityPanel({
       return prev.filter((_, i) => i !== index);
     });
     setCorrect((prevCorrect) => {
-      if (index < prevCorrect || index === prevCorrect) {
+      if (index <= prevCorrect) {
         return Math.max(0, prevCorrect - 1);
       }
       return prevCorrect;
@@ -149,24 +153,25 @@ export default function AddActivityPanel({
   const handleAddActivity = async (event: FormEvent) => {
     event.preventDefault();
     if (!question.trim()) return;
-    if (selectedMainTopicId === '') {
-      setTopicSelectionError('Select a main topic to continue.');
+    if (selectedMainTopicId === "") {
+      setTopicSelectionError("Select a main topic to continue.");
       return;
     }
 
     if (!enableTeachMode && !enableGuideMode) {
-      alert('At least one AI mode must be enabled');
+      setAiModeError(AI_MODE_REQUIRED);
       return;
     }
 
     setBusy(true);
     setTopicSelectionError(null);
+    setAiModeError(null);
 
     const mainTopicId = selectedMainTopicId;
     const secondaryIds = selectedSecondaryTopicIds.filter((id) => id !== mainTopicId);
 
     try {
-      if (type === 'MCQ') {
+      if (type === "MCQ") {
         await api.createActivity(lessonId, {
           question: question.trim(),
           type,
@@ -191,18 +196,18 @@ export default function AddActivityPanel({
         });
       }
 
-      setQuestion('');
-      setChoices(['', '', '', '']);
+      setQuestion("");
+      setChoices(["", "", "", ""]);
       setCorrect(0);
       setHasSelectedCorrect(false);
-      setTextAnswer('');
-      setHint('');
+      setTextAnswer("");
+      setHint("");
       setSelectedSecondaryTopicIds([]);
       setEnableTeachMode(true);
       setEnableGuideMode(true);
       onActivityCreated();
     } catch (error) {
-      console.error('Failed to add activity', error);
+      console.error("Failed to add activity", error);
     } finally {
       setBusy(false);
     }
@@ -218,301 +223,309 @@ export default function AddActivityPanel({
         <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
           {/* Left column: what's asked. */}
           <div className="space-y-5">
-          <div className="space-y-2">
-            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
-              Question type
-            </span>
-            <SegmentedControl value={type} onValueChange={setType} options={TYPE_OPTIONS} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="new-activity-question" className="flex items-center gap-1.5">
-              <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
-              Question prompt <span className="text-destructive">*</span>
-            </Label>
-            <Textarea
-              id="new-activity-question"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Write the question learners should answer…"
-              rows={4}
-            />
-          </div>
-
-          {type === 'MCQ' ? (
             <div className="space-y-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
-                  Choices <span className="text-destructive">*</span>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Click a letter to mark the correct answer
-                </span>
-              </div>
-              <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-3">
-                {choices.map((choice, index) => {
-                  const letter = String.fromCharCode(65 + index);
-                  const isCorrect = correct === index && hasSelectedCorrect;
-                  return (
-                    <div
-                      key={index}
-                      className={cn(
-                        'relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors',
-                        isCorrect
-                          ? 'border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10'
-                          : 'border-transparent',
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCorrect(index);
-                          setHasSelectedCorrect(true);
-                        }}
-                        aria-pressed={isCorrect}
-                        aria-label={
-                          isCorrect
-                            ? `Option ${letter} (correct answer)`
-                            : `Mark option ${letter} correct`
-                        }
-                        title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
-                        className={cn(
-                          'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          isCorrect
-                            ? 'bg-[var(--color-success-500)] text-white'
-                            : 'bg-primary/15 text-foreground hover:bg-primary/30',
-                        )}
-                      >
-                        {letter}
-                      </button>
-                      <Input
-                        value={choice}
-                        onChange={(event) =>
-                          setChoices((prev) => {
-                            const next = [...prev];
-                            next[index] = event.target.value;
-                            return next;
-                          })
-                        }
-                        placeholder={`Option ${letter}`}
-                        aria-label={`Option ${letter}`}
-                        className="flex-1"
-                      />
-                      {choices.length > 2 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-destructive hover:text-destructive"
-                          onClick={() => removeChoice(index)}
-                          aria-label={`Remove option ${letter}`}
-                        >
-                          <IconX className="size-4" aria-hidden="true" />
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-                {choices.length < 8 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={addChoice}
-                  >
-                    <IconPlus className="size-4" aria-hidden="true" />
-                    Add choice
-                  </Button>
-                )}
-              </div>
-              {!hasSelectedCorrect && (
-                <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
-              )}
+              <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+                Question type
+              </span>
+              <SegmentedControl value={type} onValueChange={setType} options={TYPE_OPTIONS} />
             </div>
-          ) : (
+
             <div className="space-y-2">
-              <Label htmlFor="new-activity-answer" className="flex items-center gap-1.5">
+              <Label htmlFor="new-activity-question" className="flex items-center gap-1.5">
                 <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
-                Expected answer
+                Question prompt <span className="text-destructive">*</span>
               </Label>
-              <Input
-                id="new-activity-answer"
-                value={textAnswer}
-                onChange={(event) => setTextAnswer(event.target.value)}
-                placeholder="Ideal short response…"
+              <Textarea
+                id="new-activity-question"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Write the question learners should answer…"
+                rows={4}
               />
             </div>
-          )}
+
+            {type === "MCQ" ? (
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+                    Choices <span className="text-destructive">*</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Click a letter to mark the correct answer
+                  </span>
+                </div>
+                <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-3">
+                  {choices.map((choice, index) => {
+                    const letter = String.fromCharCode(65 + index);
+                    const isCorrect = correct === index && hasSelectedCorrect;
+                    return (
+                      <div
+                        key={index}
+                        className={cn(
+                          "relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors",
+                          isCorrect
+                            ? "border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10"
+                            : "border-transparent",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCorrect(index);
+                            setHasSelectedCorrect(true);
+                          }}
+                          aria-pressed={isCorrect}
+                          aria-label={
+                            isCorrect
+                              ? `Option ${letter} (correct answer)`
+                              : `Mark option ${letter} correct`
+                          }
+                          title={isCorrect ? "Correct answer" : "Mark as correct answer"}
+                          className={cn(
+                            "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            isCorrect
+                              ? "bg-[var(--color-success-500)] text-white"
+                              : "bg-primary/15 text-foreground hover:bg-primary/30",
+                          )}
+                        >
+                          {letter}
+                        </button>
+                        <Input
+                          value={choice}
+                          onChange={(event) =>
+                            setChoices((prev) => {
+                              const next = [...prev];
+                              next[index] = event.target.value;
+                              return next;
+                            })
+                          }
+                          placeholder={`Option ${letter}`}
+                          aria-label={`Option ${letter}`}
+                          className="flex-1"
+                        />
+                        {choices.length > 2 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-destructive hover:text-destructive"
+                            onClick={() => removeChoice(index)}
+                            aria-label={`Remove option ${letter}`}
+                          >
+                            <IconX className="size-4" aria-hidden="true" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {choices.length < 8 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={addChoice}
+                    >
+                      <IconPlus className="size-4" aria-hidden="true" />
+                      Add choice
+                    </Button>
+                  )}
+                </div>
+                {!hasSelectedCorrect && (
+                  <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="new-activity-answer" className="flex items-center gap-1.5">
+                  <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+                  Expected answer
+                </Label>
+                <Input
+                  id="new-activity-answer"
+                  value={textAnswer}
+                  onChange={(event) => setTextAnswer(event.target.value)}
+                  placeholder="Ideal short response…"
+                />
+              </div>
+            )}
           </div>
 
           {/* Right column: tagging + AI assistance. */}
           <div className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="new-activity-main-topic" className="flex items-center gap-1.5">
-              <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
-              Main topic
-            </Label>
-            <Select
-              value={selectedMainTopicId !== '' ? selectedMainTopicId : undefined}
-              onValueChange={(value) => {
-                const newMainTopicId = value ?? '';
-                setSelectedMainTopicId(newMainTopicId);
-                // Remove new main topic from secondary topics if it was selected there
-                if (newMainTopicId) {
-                  setSelectedSecondaryTopicIds((prev) => prev.filter((id) => id !== newMainTopicId));
-                }
-              }}
-              disabled={loadingTopics || topics.length === 0}
-            >
-              <SelectTrigger id="new-activity-main-topic" className="w-full">
-                <SelectValue placeholder="Select a topic…" />
-              </SelectTrigger>
-              <SelectContent>
-                {topics.map((topic) => (
-                  <SelectItem key={topic.id} value={String(topic.id)}>
-                    {topic.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
-            {/* #1207: the topic list is paged. Without this the tail of a large
+            <div className="space-y-2">
+              <Label htmlFor="new-activity-main-topic" className="flex items-center gap-1.5">
+                <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+                Main topic
+              </Label>
+              <Select
+                value={selectedMainTopicId !== "" ? selectedMainTopicId : undefined}
+                onValueChange={(value) => {
+                  const newMainTopicId = value ?? "";
+                  setSelectedMainTopicId(newMainTopicId);
+                  // Remove new main topic from secondary topics if it was selected there
+                  if (newMainTopicId) {
+                    setSelectedSecondaryTopicIds((prev) =>
+                      prev.filter((id) => id !== newMainTopicId),
+                    );
+                  }
+                }}
+                disabled={loadingTopics || topics.length === 0}
+              >
+                <SelectTrigger id="new-activity-main-topic" className="w-full">
+                  <SelectValue placeholder="Select a topic…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {topics.map((topic) => (
+                    <SelectItem key={topic.id} value={String(topic.id)}>
+                      {topic.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {topicSelectionError && (
+                <p className="text-xs text-destructive">{topicSelectionError}</p>
+              )}
+              {/* #1207: the topic list is paged. Without this the tail of a large
                 course's topics would be unreachable and unmentioned. */}
-            {topics.length < topicsTotal && (
-              <p className="text-xs text-muted-foreground">
-                Showing {topics.length} of {topicsTotal} topics.{' '}
-                <button
-                  type="button"
-                  className="font-medium text-primary underline underline-offset-2 disabled:opacity-60"
-                  onClick={() => void loadMoreTopics()}
-                  disabled={loadingMoreTopics}
-                >
-                  {loadingMoreTopics ? 'Loading…' : 'Load more'}
-                </button>
-              </p>
-            )}
-            {!loadingTopics && !topicsError && topics.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No topics on this course yet. Open the course page and use{' '}
-                <span className="font-medium text-foreground">Sync topics from EduAI Core</span>, then
-                try again.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
-              Secondary topics <span className="font-normal text-muted-foreground">(optional)</span>
-            </span>
-            <MultiSelect
-              options={availableSecondaryTopics.map((topic) => ({
-                value: String(topic.id),
-                label: topic.name,
-              }))}
-              value={selectedSecondaryTopicIds}
-              onValueChange={setSelectedSecondaryTopicIds}
-              disabled={loadingTopics || availableSecondaryTopics.length === 0}
-              placeholder="Add secondary topics…"
-              searchPlaceholder="Search topics…"
-              emptyText="No other topics available."
-              className="w-full"
-            />
-          </div>
-
-          <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-                <IconSparkles className="size-3.5" aria-hidden="true" />
-              </span>
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                AI study buddy
-              </span>
+              {topics.length < topicsTotal && (
+                <p className="text-xs text-muted-foreground">
+                  Showing {topics.length} of {topicsTotal} topics.{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-primary underline underline-offset-2 disabled:opacity-60"
+                    onClick={() => void loadMoreTopics()}
+                    disabled={loadingMoreTopics}
+                  >
+                    {loadingMoreTopics ? "Loading…" : "Load more"}
+                  </button>
+                </p>
+              )}
+              {!loadingTopics && !topicsError && topics.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No topics on this course yet. Add some on EduAI Core, then try again.
+                </p>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Choose which AI assistance modes students can use for this activity.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
+
+            <div className="space-y-2">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+                Secondary topics{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </span>
+              <MultiSelect
+                options={availableSecondaryTopics.map((topic) => ({
+                  value: String(topic.id),
+                  label: topic.name,
+                }))}
+                value={selectedSecondaryTopicIds}
+                onValueChange={setSelectedSecondaryTopicIds}
+                disabled={loadingTopics || availableSecondaryTopics.length === 0}
+                placeholder="Add secondary topics…"
+                searchPlaceholder="Search topics…"
+                emptyText="No other topics available."
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+              <div className="flex items-center gap-2">
+                <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                  <IconSparkles className="size-3.5" aria-hidden="true" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  AI study buddy
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Choose which AI assistance modes students can use for this activity.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
                   {
-                    key: 'teach' as const,
-                    label: 'Teach me',
+                    key: "teach" as const,
+                    label: "Teach me",
                     icon: IconSchool,
                     enabled: enableTeachMode,
                     other: enableGuideMode,
                     set: setEnableTeachMode,
                   },
                   {
-                    key: 'guide' as const,
-                    label: 'Guide me',
+                    key: "guide" as const,
+                    label: "Guide me",
                     icon: IconRoute,
                     enabled: enableGuideMode,
                     other: enableTeachMode,
                     set: setEnableGuideMode,
                   },
-                ]
-              ).map((mode) => {
-                const ModeIcon = mode.icon;
-                return (
-                  <button
-                    key={mode.key}
-                    type="button"
-                    aria-pressed={mode.enabled}
-                    onClick={() => {
-                      if (mode.enabled && !mode.other) {
-                        alert('At least one AI mode must be enabled');
-                        return;
-                      }
-                      mode.set(!mode.enabled);
-                    }}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
-                      mode.enabled
-                        ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
-                        : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
-                    )}
-                  >
-                    <ModeIcon className="size-3.5" aria-hidden="true" />
-                    {mode.label}
-                  </button>
-                );
-              })}
+                ].map((mode) => {
+                  const ModeIcon = mode.icon;
+                  return (
+                    <button
+                      key={mode.key}
+                      type="button"
+                      aria-pressed={mode.enabled}
+                      onClick={() => {
+                        if (mode.enabled && !mode.other) {
+                          setAiModeError(AI_MODE_REQUIRED);
+                          return;
+                        }
+                        setAiModeError(null);
+                        mode.set(!mode.enabled);
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                        mode.enabled
+                          ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                      )}
+                    >
+                      <ModeIcon className="size-3.5" aria-hidden="true" />
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {aiModeError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {aiModeError}
+                </p>
+              )}
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
-              <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
-              Hint <span className="font-normal normal-case text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="new-activity-hint"
-              value={hint}
-              onChange={(event) => setHint(event.target.value)}
-              placeholder="Optional hint…"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
+                <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
+                Hint{" "}
+                <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="new-activity-hint"
+                value={hint}
+                onChange={(event) => setHint(event.target.value)}
+                placeholder="Optional hint…"
+              />
+            </div>
           </div>
         </div>
 
-          {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
+        {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
 
-          <DialogFooter>
-            {onCancel && (
-              <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
-                Cancel
-              </Button>
-            )}
-            <Button type="submit" disabled={busy || !question.trim()}>
-              <IconPlus className="size-4" aria-hidden="true" />
-              {busy ? 'Adding…' : 'Add activity'}
+        <DialogFooter>
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
+              Cancel
             </Button>
-          </DialogFooter>
-        </form>
+          )}
+          <Button type="submit" disabled={busy || !question.trim()}>
+            <IconPlus className="size-4" aria-hidden="true" />
+            {busy ? "Adding…" : "Add activity"}
+          </Button>
+        </DialogFooter>
+      </form>
     </>
   );
 }

@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
@@ -208,10 +209,7 @@ describe("resolveCourseAccessGate", () => {
     // The `deletedAt: null` WHERE clause makes a soft-deleted row invisible, so
     // the query resolves to null exactly as a missing course does.
     prismaMock.course.findFirst.mockResolvedValue(null);
-    const result = await resolveCourseAccessGate(
-      { id: "u1", role: "ADMIN" },
-      "soft-deleted",
-    );
+    const result = await resolveCourseAccessGate({ id: "u1", role: "ADMIN" }, "soft-deleted");
     expect(result).toEqual({ course: null, access: null });
     expect(prismaMock.course.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "soft-deleted", deletedAt: null } }),
@@ -307,7 +305,7 @@ describe("resolveCourseAccessGate", () => {
 // the paths that used to short-circuit — so neither can drift unnoticed.
 describe("resolveCourseAccessGate query behavior", () => {
   /** Holds `course.findFirst` open so we can observe what was issued alongside it. */
-  function deferCourseFetch(course: unknown) {
+  function deferCourseFetch(course: CourseGateFixture) {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;

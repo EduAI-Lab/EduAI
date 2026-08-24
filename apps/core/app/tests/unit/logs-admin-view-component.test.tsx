@@ -10,17 +10,14 @@
  * loader, mounted via createMemoryRouter + RouterProvider so navigations
  * actually happen (a plain MemoryRouter can't drive useNavigation()).
  */
+import type { JsonObject } from "~/lib/json-value";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import {
-  createMemoryRouter,
-  RouterProvider,
-  useSearchParams,
-} from "react-router";
+import { createMemoryRouter, RouterProvider, useSearchParams } from "react-router";
 
 import { LogsAdminView, type LogsTab } from "~/components/admin/logs-admin-view";
 
-const ROWS_BY_TAB: Record<LogsTab, Array<Record<string, unknown>>> = {
+const ROWS_BY_TAB = {
   audit: [
     {
       id: "a1",
@@ -108,10 +105,9 @@ function LogsPageWrapper() {
 }
 
 function renderLogsPage(initialPath = "/admin/logs?tab=audit") {
-  const router = createMemoryRouter(
-    [{ path: "/admin/logs", element: <LogsPageWrapper /> }],
-    { initialEntries: [initialPath] },
-  );
+  const router = createMemoryRouter([{ path: "/admin/logs", element: <LogsPageWrapper /> }], {
+    initialEntries: [initialPath],
+  });
   const utils = render(<RouterProvider router={router} />);
   return { router, ...utils };
 }
@@ -135,9 +131,7 @@ describe("LogsAdminView", () => {
     // triggers from "link" to "tab".
     fireEvent.click(screen.getByRole("tab", { name: "Security" }));
 
-    await waitFor(() =>
-      expect(router.state.location.search).toContain("tab=security"),
-    );
+    await waitFor(() => expect(router.state.location.search).toContain("tab=security"));
     expect(screen.getByText("FAILED_LOGIN")).toBeInTheDocument();
     expect(screen.getByText("1.2.3.4")).toBeInTheDocument();
   });
@@ -147,9 +141,7 @@ describe("LogsAdminView", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "System" }));
 
-    await waitFor(() =>
-      expect(router.state.location.search).toContain("tab=system"),
-    );
+    await waitFor(() => expect(router.state.location.search).toContain("tab=system"));
     expect(screen.getByText("TIMEOUT")).toBeInTheDocument();
     expect(screen.getByText("Request timed out")).toBeInTheDocument();
   });
@@ -159,11 +151,11 @@ describe("LogsAdminView", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Servers" }));
 
-    await waitFor(() =>
-      expect(router.state.location.search).toContain("tab=servers"),
-    );
+    await waitFor(() => expect(router.state.location.search).toContain("tab=servers"));
     expect(
-      screen.getByText("No fleet servers registered and no fleet-routed interactions found for the selected window."),
+      screen.getByText(
+        "No fleet servers registered and no fleet-routed interactions found for the selected window.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Routing by server")).toBeInTheDocument();
   });
@@ -183,9 +175,7 @@ describe("LogsAdminView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
 
-    await waitFor(() =>
-      expect(router.state.location.search).toContain("dateFrom=2026-07-01"),
-    );
+    await waitFor(() => expect(router.state.location.search).toContain("dateFrom=2026-07-01"));
     expect(router.state.location.search).toContain("dateTo=2026-08-01");
     expect(router.state.location.search).toContain("page=1");
   });
@@ -197,9 +187,7 @@ describe("LogsAdminView", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Clear filters" }));
 
-    await waitFor(() =>
-      expect(router.state.location.search).not.toContain("category"),
-    );
+    await waitFor(() => expect(router.state.location.search).not.toContain("category"));
     expect(router.state.location.search).not.toContain("outcome");
     expect(router.state.location.search).toContain("page=1");
   });
@@ -242,8 +230,6 @@ describe("LogsAdminView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

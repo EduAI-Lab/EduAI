@@ -2,6 +2,7 @@ import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
 
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
@@ -11,8 +12,6 @@ import {
   triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
-import { rescheduleJob } from "~/lib/cron-scheduler.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function requireAdmin(request: Request) {
   const session = await getRequestSession(request);
@@ -63,21 +62,22 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
     if (job.triggerEnabled === false) {
-      return data({ error: `Job "${jobName}" is managed by an extension server and cannot be triggered from Core` }, { status: 400 });
+      return data(
+        {
+          error: `Job "${jobName}" is managed by an extension server and cannot be triggered from Core`,
+        },
+        { status: 400 },
+      );
     }
 
-    const { findRunningCronRun } = await import("~/lib/db.cron-jobs.server");
-    const alreadyRunning = await findRunningCronRun(jobName);
-    if (alreadyRunning) {
-      return data({ runId: alreadyRunning.id, reused: true });
+    // Acquisition is one atomic database operation: it reaps an expired lease,
+    // fences competing owners, and returns the live run to losing callers.
+    const result = await startCronRun(jobName);
+    if (result.created) {
+      triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
     }
 
-    const { runId, created } = await startCronRun(jobName);
-    if (created) {
-      triggerCronJobAsync(jobName, job.script, runId);
-    }
-
-    return data({ runId, reused: !created });
+    return data({ runId: result.runId, reused: !result.created });
   }
 
   if (intent === "update-schedule" && jobName) {
@@ -93,7 +93,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: "Invalid cron expression" }, { status: 400 });
     }
     await updateCronSchedule(jobName, schedule.trim(), scheduleLabel.trim());
-    rescheduleJob(jobName, schedule.trim());
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }
@@ -104,7 +103,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
     await resetCronSchedule(jobName);
-    rescheduleJob(jobName, null);
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }

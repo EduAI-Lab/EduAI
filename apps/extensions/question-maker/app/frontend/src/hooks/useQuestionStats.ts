@@ -1,9 +1,9 @@
 /**
  * Hook for fetching the authenticated user's question statistics with loading/error tracking.
  */
-import { useState, useEffect, useCallback } from 'react';
-import { QuestionStats } from '../types/question';
-import { questionService } from '../services/questionService';
+import { useState, useEffect, useCallback } from "react";
+import { QuestionStats } from "../types/question";
+import { questionService } from "../services/questionService";
 
 export function useQuestionStats() {
   const [stats, setStats] = useState<QuestionStats | null>(null);
@@ -17,7 +17,7 @@ export function useQuestionStats() {
       const data = await questionService.getQuestionStats();
       setStats(data);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch question stats');
+      setError(err.response?.data?.error || "Failed to fetch question stats");
     } finally {
       setIsLoading(false);
     }

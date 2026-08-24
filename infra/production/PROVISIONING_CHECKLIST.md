@@ -94,7 +94,8 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - Redis decision is documented; queue remains disabled if no worker exists.
 - cmps01 inference endpoint is reachable from production.
 - cmps02/03 are not configured until firewall access is confirmed.
-- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` is configured before the Core browser build.
-- `COOKIE_DOMAIN=.eduai.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services.
-- Apache config validates.
+- `VITE_AI_TUTOR_URL=https://aitutor.ok.ubc.ca` and `VITE_QUESTION_MAKER_URL=https://questionmaker.ok.ubc.ca` are configured before browser builds.
+- `COOKIE_DOMAIN=.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services; confirm no unrelated `*.ok.ubc.ca` service should receive the shared cookie.
+- Question Maker receives `question-maker-frontend.env` before its Docker frontend build and uses `questionmaker.ok.ubc.ca` for its Apache alias.
+- Institution-managed certificate paths (or an approved wildcard certificate) replace the placeholders in both extension vhosts, and Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.

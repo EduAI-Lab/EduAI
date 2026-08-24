@@ -23,11 +23,11 @@
  *   services/activityAnalytics.js, shared/schemas/aiGuidance.js, shared/schemas/activity.js
  */
 
-import { randomUUID } from 'crypto';
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
+import { randomUUID } from "crypto";
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
 import {
   parsePaginationParams,
   paginated,
@@ -35,55 +35,96 @@ import {
   searchWhere,
   activitySearchWhere,
   PaginationError,
-} from '../utils/pagination.js';
-import { evaluateQuestion } from '../services/activityEvaluation.js';
-import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
-import { cloneActivityIntoLesson } from '../services/activityCloning.js';
-import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
+} from "../utils/pagination.js";
+import { evaluateQuestion } from "../services/activityEvaluation.js";
+import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
+import {
+  ActivityMutationError,
+  createActivityForLesson,
+  updateActivityForEditor,
+} from "../services/activityManagement.js";
+import { getActivityCompletionStatuses } from "../services/progressCalculation.js";
+import { cloneActivityIntoLesson } from "../services/activityCloning.js";
+import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
 import {
   hasActivityFeedback,
   recordActivityFeedback,
   recordAiHelpRequest,
   recordSubmissionMetrics,
-} from '../services/activityAnalytics.js';
+  resyncSubmissionMetrics,
+} from "../services/activityAnalytics.js";
 import {
   resolveSupervisorSettings,
   resolveTutorModelSelection,
-} from '../services/aiModelPolicy.js';
+} from "../services/aiModelPolicy.js";
 import {
   generateCustomResponse,
   generateGuideResponse,
   generateTeachResponse,
-} from '../services/aiGuidance.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
-import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
+  getSafeAiErrorMetadata,
+  logAiGuidanceEvent,
+} from "../services/aiGuidance.js";
+import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+} from "../services/enrollmentSync.js";
+import { getEduAiBaseUrl, listCourseTestableQuestions } from "../services/eduaiClient.js";
 import {
   isCoursePublishedLive,
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
-} from '../services/courseResolver.js';
+} from "../services/courseResolver.js";
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
   GuideRequestSchema,
   TeachRequestSchema,
-} from '../../../shared/schemas/aiGuidance.js';
-import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
-import { getCoreCourseId } from '../utils/coreCourseId.js';
+} from "../../../shared/schemas/aiGuidance.js";
+import { CreateActivitySchema, UpdateActivitySchema } from "../../../shared/schemas/activity.js";
+import { getCoreCourseId } from "../utils/coreCourseId.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
+import { gateCourseThrough } from "../middleware/liveCoursePrincipal.js";
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from "../services/liveCoursePrincipal.js";
 
 const router = express.Router();
 
-const normalizeCustomPrompt = (value) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
+async function requireLiveStaffAccess(res, course, user, message) {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === "unavailable") {
+    res.status(503).json({
+      error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
+    res.status(403).json({ error: message });
+    return false;
+  }
+  return true;
+}
 
-const normalizeCustomPromptTitle = (value) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim().slice(0, 20);
-  return trimmed.length > 0 ? trimmed : null;
+const activityCourseInclude = {
+  lesson: { include: { module: { include: { courseOffering: true } } } },
 };
+router.use(
+  "/lessons/:lessonId/activities",
+  gateCourseThrough("lesson", "lessonId", {
+    module: { include: { courseOffering: true } },
+  }),
+);
+router.use(
+  "/activities/:activityId",
+  gateCourseThrough("activity", "activityId", activityCourseInclude),
+);
+router.use("/questions/:id/answer", gateCourseThrough("activity", "id", activityCourseInclude));
 
 /**
  * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
@@ -94,13 +135,53 @@ const normalizeCustomPromptTitle = (value) => {
  */
 async function getCourseCode(coreOfferingId) {
   const { course } = await resolveCoreCourseById(coreOfferingId);
-  return typeof course?.code === 'string' ? course.code : '';
+  return typeof course?.code === "string" ? course.code : "";
 }
 
-function getActivityAccess(course, authUser) {
-  const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-  const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
-  return { isInstructorForCourse, isEnrolledStudent };
+/**
+ * Live student-operation gate. Returns `null` after sending a stable 503 when
+ * Core cannot be consulted; callers must return immediately and skip their
+ * provider/local resource side effect. A non-student platform role is a normal
+ * authorization denial and never triggers a roster lookup.
+ */
+async function getLiveStudentEnrollment(res, course, authUser, expectedRole) {
+  const enrollmentRole = expectedRole ?? authUser.role;
+  if (!["STUDENT", "TA"].includes(enrollmentRole)) {
+    return { allowed: false, state: "denied", role: null };
+  }
+
+  let result;
+  try {
+    result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
+      course,
+      allowedRoles: [enrollmentRole],
+    });
+  } catch {
+    result = { allowed: false, state: "unavailable", role: null };
+  }
+
+  if (result?.state === "unavailable") {
+    res.status(503).json({
+      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+    });
+    return null;
+  }
+
+  return result ?? { allowed: false, state: "unavailable", role: null };
+}
+
+async function getExactCourseMembership(course, authUser) {
+  const principal = await authorizeLiveCoursePrincipal(course, authUser);
+  const liveTa = principal.state === "allowed" && principal.role === "TA";
+  return {
+    principal,
+    isInstructor: principal.state === "allowed" && principal.kind === "INSTRUCTOR",
+    isTa: liveTa,
+    isStudent: principal.state === "allowed" && principal.role === "STUDENT",
+    isUnitAdmin: principal.state === "allowed" && principal.kind === "UNIT_ADMIN",
+    isAdmin: principal.state === "allowed" && principal.kind === "ADMIN",
+  };
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -180,7 +261,7 @@ async function persistAiTrace({
       },
     });
   } catch (error) {
-    console.error('Failed to persist AI interaction trace:', error);
+    logSafeError("Failed to persist AI interaction trace", error);
   }
 }
 
@@ -188,7 +269,7 @@ async function trackAiHelpRequest(userId, activityId) {
   try {
     await recordAiHelpRequest({ userId, activityId });
   } catch (error) {
-    console.error('Failed to update AI help metrics:', error);
+    logSafeError("Failed to update AI help metrics", error);
   }
 }
 
@@ -196,7 +277,7 @@ async function trackSubmissionMetrics(userId, activityId, isCorrect) {
   try {
     await recordSubmissionMetrics({ userId, activityId, isCorrect });
   } catch (error) {
-    console.error('Failed to update submission metrics:', error);
+    logSafeError("Failed to update submission metrics", error);
   }
 }
 
@@ -214,7 +295,7 @@ async function loadActivityForChat(activityId) {
                 select: {
                   id: true,
                   coreOfferingId: true,
-                  enrollments: { select: { userId: true } },
+                  enrollments: { select: { userId: true, role: true } },
                 },
               },
             },
@@ -225,25 +306,38 @@ async function loadActivityForChat(activityId) {
   });
 }
 
-async function handleAiInteraction({ req, res, activity, mode, payload, generateResponse }) {
+async function handleAiInteraction({
+  req,
+  res,
+  activity,
+  mode,
+  payload,
+  generateResponse,
+  liveEnrollment,
+}) {
   const authUser = req.user;
   const activityId = activity.id;
   const course = activity.lesson?.module?.courseOffering;
 
   if (!course) {
-    return res.status(500).json({ error: 'Activity course context missing' });
+    return res.status(500).json({ error: "Activity course context missing" });
   }
 
-  if (authUser.role !== 'STUDENT') {
-    return res.status(403).json({ error: 'Only students can use AI tutoring' });
+  if (authUser.role !== "STUDENT") {
+    return res.status(403).json({ error: "Only students can use AI tutoring" });
   }
-  const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-  if (!isEnrolled) {
-    return res.status(403).json({ error: 'Not enrolled in this course' });
+  const liveAccess = liveEnrollment ?? (await getLiveStudentEnrollment(res, course, authUser));
+  if (!liveAccess) return;
+  if (!liveAccess.allowed) {
+    return res.status(403).json({ error: "Not enrolled in this course" });
   }
   const lesson = activity.lesson;
-  if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished) {
-    return res.status(403).json({ error: 'Activity is not available' });
+  if (
+    !(await isCoursePublishedLive(course.coreOfferingId)) ||
+    !lesson?.module?.isPublished ||
+    !lesson?.isPublished
+  ) {
+    return res.status(403).json({ error: "Activity is not available" });
   }
 
   // #999 review: forward a client disconnect (e.g. the Stop button aborting
@@ -261,7 +355,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     // from "closed because the client bailed mid-request".
     if (!res.writableEnded) abortController.abort();
   };
-  res.on('close', onClientClose);
+  res.on("close", onClientClose);
 
   try {
     // Stage 2: verify the client's chatId belongs to this user. Skip when no
@@ -277,7 +371,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     // user/activity/mode either belongs to someone else or is stale — reject
     // rather than silently reusing it (see #1412).
     if (chatId && !existingSession) {
-      return res.status(404).json({ error: 'Session not found' });
+      return res.status(404).json({ error: "Session not found" });
     }
 
     // Stage 3: model + policy resolution. Tutor selection respects student picks
@@ -331,7 +425,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       tutorModelId,
       supervisorModelId,
       finalResponse: aiResult.message,
-      finalOutcome: aiResult.trace?.finalOutcome || 'unknown',
+      finalOutcome: aiResult.trace?.finalOutcome || "unknown",
       iterationCount: aiResult.trace?.iterationCount || 0,
       chatId: nextChatId,
       aiChatSessionId: session?.id ?? null,
@@ -339,7 +433,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     });
 
     // Only count student help requests for analytics; instructor previews don't.
-    if (authUser.role === 'STUDENT') {
+    if (authUser.role === "STUDENT") {
       await trackAiHelpRequest(authUser.id, activityId);
     }
 
@@ -358,11 +452,24 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       // cancelled.
       return;
     }
-    console.error(`Error generating ${mode} guidance:`, error);
-    const status = Number.isInteger(error?.status) ? error.status : 500;
-    return res.status(status).json({ error: String(error.message || error) });
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent("error", "guidance_route_failed", { mode, ...metadata });
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const timedOut = metadata.code === "TIMEOUT";
+    const body = {
+      error: timedOut
+        ? "The AI study buddy took too long to respond. Please try again."
+        : "Unable to generate an AI tutoring response",
+      code: timedOut ? "AI_TUTOR_TIMEOUT" : "AI_TUTOR_GUIDANCE_ERROR",
+    };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
+    return res.status(status).json(body);
   } finally {
-    res.removeListener('close', onClientClose);
+    res.removeListener("close", onClientClose);
   }
 }
 
@@ -377,15 +484,15 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
  * Why: completion status only matters for students, so the join is skipped
  * for instructors to keep the instructor authoring view fast.
  */
-router.get('/lessons/:lessonId/activities', async (req, res) => {
+router.get("/lessons/:lessonId/activities", async (req, res) => {
   const authUser = req.user;
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
-    return res.status(400).json({ error: 'Invalid lesson id' });
+    return res.status(400).json({ error: "Invalid lesson id" });
   }
 
   try {
@@ -406,27 +513,35 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     });
 
     if (!lesson) {
-      return res.status(404).json({ error: 'Lesson not found' });
+      return res.status(404).json({ error: "Lesson not found" });
     }
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === 'TA';
-    const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === 'ADMIN';
+    const membership = await getExactCourseMembership(lesson.module.courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : "Course authorization unavailable",
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : "COURSE_AUTH_UNAVAILABLE",
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
-      return res.status(403).json({ error: 'Not authorized for this lesson' });
+      return res.status(403).json({ error: "Not authorized for this lesson" });
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
-      return res.status(403).json({ error: 'Lesson is not published' });
+      return res.status(403).json({ error: "Lesson is not published" });
     }
 
     // #1207: `search` narrows in SQL over the activity's own text. The same
@@ -441,7 +556,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       prisma.activity.count({ where: whereClause }),
       prisma.activity.findMany({
         where: whereClause,
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        orderBy: [{ position: "asc" }, { id: "asc" }],
         skip: pageParams.skip,
         take: pageParams.take,
         include: {
@@ -460,19 +575,25 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
 
       const activitiesWithStatus = activities.map((activity) => {
-        const status = statusMap.get(activity.id) || 'not_attempted';
+        const status = statusMap.get(activity.id) || "not_attempted";
         return mapActivity({ ...activity, completionStatus: status });
       });
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
     } else {
-      res.json(paginated(activities.map(mapActivity), total, pageParams));
+      res.json(
+        paginated(
+          activities.map((activity) => mapActivity(activity, { includeAnswer: true })),
+          total,
+          pageParams,
+        ),
+      );
     }
   } catch (e) {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -485,134 +606,43 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
  * Why: at-least-one-mode invariant is enforced here (and in PATCH) so the
  * frontend never has to render a tutor screen with no available modes.
  */
-router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const authUser = req.user;
-  const lessonId = Number(req.params.lessonId);
-  if (!Number.isFinite(lessonId)) {
-    return res.status(400).json({ error: 'Invalid lesson id' });
-  }
-
-  // Accept legacy `prompt` field by mapping it to question before validation
-  const raw = { ...req.body };
-  if (!raw.question && raw.prompt) raw.question = raw.prompt;
-  let payload;
-  try {
-    payload = CreateActivitySchema.parse(raw);
-  } catch (e) {
-    return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
-  }
-
-  // Validate at least one AI mode is enabled
-  if (!payload.enableTeachMode && !payload.enableGuideMode && !payload.enableCustomMode) {
-    return res.status(400).json({ error: 'At least one AI mode must be enabled' });
-  }
-
-  try {
-    const lesson = await prisma.lesson.findUnique({
-      where: { id: lessonId },
-      include: {
-        module: {
-          include: {
-            courseOffering: { include: { instructors: { select: { userId: true } } } },
-          },
-        },
-      },
-    });
-
-    if (!lesson) {
-      return res.status(404).json({ error: 'Lesson not found' });
+router.post(
+  "/lessons/:lessonId/activities",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const authUser = req.user;
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isFinite(lessonId)) {
+      return res.status(400).json({ error: "Invalid lesson id" });
     }
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    // Accept legacy `prompt` field by mapping it to question before validation.
+    const raw = { ...req.body };
+    if (!raw.question && raw.prompt) raw.question = raw.prompt;
+    let payload;
+    try {
+      payload = CreateActivitySchema.parse(raw);
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
-    const courseOfferingId = lesson.module.courseOffering.id;
-
-    const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-    if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-      return res.status(400).json({ error: 'mainTopicId must belong to the lesson course' });
-    }
-
-    const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
-      ? Array.from(
-          new Set(
-            payload.secondaryTopicIds.filter(
-              (value) => typeof value === 'string' && value.length > 0 && value !== payload.mainTopicId,
-            ),
-          ),
-        )
-      : [];
-
-    if (normalizedSecondaryIds.length > 0) {
-      const topics = await prisma.topic.findMany({
-        where: { id: { in: normalizedSecondaryIds } },
-      });
-      const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-      if (invalid || topics.length !== normalizedSecondaryIds.length) {
-        return res
-          .status(400)
-          .json({ error: 'secondaryTopicIds must belong to the lesson course' });
-      }
-    }
-
-    // Append to the end of the lesson's activity list. Historically create
-    // never set a position, so every activity landed at 0 and order was
-    // undefined; assign max(position)+1 so new activities append (issue #1047).
-    const lastActivity = await prisma.activity.findFirst({
-      where: { lessonId },
-      orderBy: { position: 'desc' },
-      select: { position: true },
-    });
-    const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
-
-    const activity = await prisma.activity.create({
-      data: {
-        title: payload.title ?? null,
-        instructionsMd: payload.instructionsMd ?? 'Answer the question.',
-        position: resolvedPosition,
+    try {
+      const activity = await createActivityForLesson({
         lessonId,
-        promptTemplateId: payload.promptTemplateId ?? null,
-        customPrompt: normalizeCustomPrompt(payload.customPrompt),
-        customPromptTitle: normalizeCustomPromptTitle(payload.customPromptTitle),
-        mainTopicId: payload.mainTopicId,
-        enableTeachMode: payload.enableTeachMode,
-        enableGuideMode: payload.enableGuideMode,
-        enableCustomMode: payload.enableCustomMode ?? false,
-        config: {
-          question: payload.question,
-          questionType: payload.type ?? 'MCQ',
-          options: payload.options,
-          answer: payload.answer ?? null,
-          hints: Array.isArray(payload.hints) ? payload.hints : [],
-        },
-        secondaryTopics:
-          normalizedSecondaryIds.length > 0
-            ? {
-                create: normalizedSecondaryIds.map((topicId) => ({
-                  topic: { connect: { id: topicId } },
-                })),
-              }
-            : undefined,
-      },
-      include: {
-        promptTemplate: { select: { id: true, name: true } },
-        mainTopic: true,
-        secondaryTopics: {
-          include: { topic: true },
-        },
-      },
-    });
-
-    res.status(201).json(mapActivity(activity));
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+        payload,
+        user: authUser,
+      });
+      res.status(201).json(mapActivity(activity, { includeAnswer: true }));
+    } catch (e) {
+      if (e instanceof ActivityMutationError) {
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
+      }
+      sendSafeError(res, e, "Internal server error");
+    }
+  },
+);
 
 /**
  * PATCH /activities/:activityId — partial update of an activity.
@@ -625,316 +655,95 @@ router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_AD
  * column, so the handler reads-modifies-writes that blob whenever any of those
  * fields appear, leaving other config keys untouched.
  */
-router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const activityId = Number(req.params.activityId);
-  if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
-  }
+router.patch(
+  "/activities/:activityId",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) {
+      return res.status(400).json({ error: "Invalid activity id" });
+    }
 
-  let payload;
-  try {
-    payload = UpdateActivitySchema.parse(req.body || {});
-  } catch (e) {
-    return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
-  }
-  const noUpdatableFields =
-    typeof payload.promptTemplateId === 'undefined' &&
-    typeof payload.customPrompt === 'undefined' &&
-    typeof payload.customPromptTitle === 'undefined' &&
-    typeof payload.enableCustomMode === 'undefined' &&
-    typeof payload.mainTopicId === 'undefined' &&
-    typeof payload.secondaryTopicIds === 'undefined' &&
-    typeof payload.title === 'undefined' &&
-    typeof payload.instructionsMd === 'undefined' &&
-    typeof payload.question === 'undefined' &&
-    typeof payload.type === 'undefined' &&
-    typeof payload.options === 'undefined' &&
-    typeof payload.answer === 'undefined' &&
-    typeof payload.hints === 'undefined' &&
-    typeof payload.enableTeachMode === 'undefined' &&
-    typeof payload.enableGuideMode === 'undefined';
+    let payload;
+    try {
+      payload = UpdateActivitySchema.parse(req.body || {});
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
+    }
 
-  if (noUpdatableFields) {
-    return res.status(400).json({ error: 'Nothing to update' });
-  }
+    try {
+      const updated = await updateActivityForEditor({
+        activityId,
+        payload,
+        user: instructor,
+      });
+      res.json(mapActivity(updated, { includeAnswer: true }));
+    } catch (e) {
+      if (e instanceof ActivityMutationError) {
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
+      }
+      sendSafeError(res, e, "Internal server error");
+    }
+  },
+);
 
-  try {
-    const activity = await prisma.activity.findUnique({
-      where: { id: activityId },
-      include: {
-        lesson: {
-          include: {
-            module: {
-              include: {
-                courseOffering: {
-                  include: { instructors: true },
+router.delete(
+  "/activities/:activityId",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) {
+      return res.status(400).json({ error: "Invalid activity id" });
+    }
+
+    try {
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          lesson: {
+            include: {
+              module: {
+                include: {
+                  courseOffering: {
+                    include: { instructors: true },
+                  },
                 },
               },
             },
           },
         },
-        mainTopic: true,
-      },
-    });
+      });
 
-    if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
-    }
-
-    const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === instructor.id,
-    );
-    const unitAdmin = await isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
-
-    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
-    }
-
-    const courseOfferingId = activity.lesson.module.courseOfferingId;
-
-    const updateData = {};
-
-    if (typeof payload.title !== 'undefined') {
-      if (payload.title === null) {
-        updateData.title = null;
-      } else {
-        const trimmedTitle = payload.title.trim();
-        updateData.title = trimmedTitle.length > 0 ? trimmedTitle : null;
+      if (!activity) {
+        return res.status(404).json({ error: "Activity not found" });
       }
-    }
 
-    if (typeof payload.instructionsMd !== 'undefined') {
-      updateData.instructionsMd = payload.instructionsMd;
-    }
-
-    const currentConfig =
-      activity.config && typeof activity.config === 'object' ? { ...activity.config } : {};
-    let configChanged = false;
-
-    if (typeof payload.question !== 'undefined') {
-      const questionText = payload.question.trim();
-      if (questionText.length === 0) {
-        return res.status(400).json({ error: 'question must not be empty' });
-      }
-      currentConfig.question = questionText;
-      configChanged = true;
-    }
-
-    if (typeof payload.type !== 'undefined') {
-      currentConfig.questionType = payload.type;
-      if (payload.type === 'SHORT_TEXT') {
-        currentConfig.options = null;
-      }
-      configChanged = true;
-    }
-
-    if (typeof payload.options !== 'undefined') {
-      if (payload.options === null) {
-        currentConfig.options = null;
-      } else {
-        currentConfig.options = payload.options.map((choice) => choice);
-      }
-      configChanged = true;
-    }
-
-    if (typeof payload.answer !== 'undefined') {
-      currentConfig.answer = payload.answer;
-      configChanged = true;
-    }
-
-    if (typeof payload.hints !== 'undefined') {
-      const normalizedHints = Array.isArray(payload.hints)
-        ? payload.hints.map((hint) => hint.trim()).filter((hint) => hint.length > 0)
-        : [];
-      currentConfig.hints = normalizedHints;
-      configChanged = true;
-    }
-
-    if (configChanged) {
-      updateData.config = currentConfig;
-    }
-
-    if (typeof payload.promptTemplateId !== 'undefined') {
-      if (payload.promptTemplateId === null) {
-        updateData.promptTemplateId = null;
-      } else if (typeof payload.promptTemplateId === 'number') {
-        const prompt = await prisma.promptTemplate.findUnique({
-          where: { id: payload.promptTemplateId },
-        });
-        if (!prompt) {
-          return res.status(400).json({ error: 'Invalid promptTemplateId' });
-        }
-        updateData.promptTemplateId = payload.promptTemplateId;
-      } else {
-        return res.status(400).json({ error: 'promptTemplateId must be a number or null' });
-      }
-    }
-
-    if (typeof payload.customPrompt !== 'undefined') {
-      if (payload.customPrompt === null) {
-        updateData.customPrompt = null;
-      } else if (typeof payload.customPrompt === 'string') {
-        updateData.customPrompt = normalizeCustomPrompt(payload.customPrompt);
-      } else {
-        return res.status(400).json({ error: 'customPrompt must be a string or null' });
-      }
-    }
-
-    if (typeof payload.customPromptTitle !== 'undefined') {
-      if (payload.customPromptTitle === null) {
-        updateData.customPromptTitle = null;
-      } else if (typeof payload.customPromptTitle === 'string') {
-        updateData.customPromptTitle = normalizeCustomPromptTitle(payload.customPromptTitle);
-      } else {
-        return res.status(400).json({ error: 'customPromptTitle must be a string or null' });
-      }
-    }
-
-    let resolvedMainTopicId = activity.mainTopicId;
-    if (typeof payload.mainTopicId !== 'undefined') {
-      if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
-        return res.status(400).json({ error: 'mainTopicId must be a string' });
-      }
-      const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-      if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-        return res.status(400).json({ error: 'mainTopicId must belong to the activity course' });
-      }
-      updateData.mainTopicId = payload.mainTopicId;
-      resolvedMainTopicId = payload.mainTopicId;
-    }
-
-    if (typeof payload.secondaryTopicIds !== 'undefined') {
-      if (!Array.isArray(payload.secondaryTopicIds)) {
-        return res.status(400).json({ error: 'secondaryTopicIds must be an array of ids' });
-      }
-      const normalizedSecondaryIds = Array.from(
-        new Set(
-          payload.secondaryTopicIds.filter(
-            (value) => typeof value === 'string' && value.length > 0 && value !== resolvedMainTopicId,
-          ),
-        ),
+      const principal = await authorizeLiveCoursePrincipal(
+        activity.lesson.module.courseOffering,
+        instructor,
       );
-
-      if (normalizedSecondaryIds.length > 0) {
-        const topics = await prisma.topic.findMany({
-          where: { id: { in: normalizedSecondaryIds } },
+      if (principal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
-        const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-        if (invalid || topics.length !== normalizedSecondaryIds.length) {
-          return res
-            .status(400)
-            .json({ error: 'secondaryTopicIds must belong to the activity course' });
-        }
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(principal)) {
+        return res.status(403).json({ error: "Not authorized for this activity" });
       }
 
-      updateData.secondaryTopics = {
-        deleteMany: {},
-        create: normalizedSecondaryIds.map((topicId) => ({
-          topic: { connect: { id: topicId } },
-        })),
-      };
+      await prisma.activity.delete({ where: { id: activityId } });
+
+      res.json({ ok: true });
+    } catch (e) {
+      sendSafeError(res, e, "Internal server error");
     }
-
-    const requestedModeUpdate =
-      typeof payload.enableTeachMode !== 'undefined' ||
-      typeof payload.enableGuideMode !== 'undefined' ||
-      typeof payload.enableCustomMode !== 'undefined';
-
-    // Handle AI mode updates with validation
-    if (requestedModeUpdate) {
-      const newTeachMode =
-        typeof payload.enableTeachMode !== 'undefined'
-          ? payload.enableTeachMode
-          : activity.enableTeachMode;
-      const newGuideMode =
-        typeof payload.enableGuideMode !== 'undefined'
-          ? payload.enableGuideMode
-          : activity.enableGuideMode;
-      const newCustomMode =
-        typeof payload.enableCustomMode !== 'undefined'
-          ? payload.enableCustomMode
-          : activity.enableCustomMode;
-
-      // Validate at least one mode is enabled
-      if (!newTeachMode && !newGuideMode && !newCustomMode) {
-        return res.status(400).json({ error: 'At least one AI mode must be enabled' });
-      }
-
-      if (typeof payload.enableTeachMode !== 'undefined') {
-        updateData.enableTeachMode = payload.enableTeachMode;
-      }
-      if (typeof payload.enableGuideMode !== 'undefined') {
-        updateData.enableGuideMode = payload.enableGuideMode;
-      }
-      if (typeof payload.enableCustomMode !== 'undefined') {
-        updateData.enableCustomMode = payload.enableCustomMode;
-      }
-    }
-
-    const updated = await prisma.activity.update({
-      where: { id: activityId },
-      data: updateData,
-      include: {
-        promptTemplate: { select: { id: true, name: true } },
-        mainTopic: true,
-        secondaryTopics: {
-          include: { topic: true },
-        },
-      },
-    });
-
-    res.json(mapActivity(updated));
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
-
-router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const activityId = Number(req.params.activityId);
-  if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
-  }
-
-  try {
-    const activity = await prisma.activity.findUnique({
-      where: { id: activityId },
-      include: {
-        lesson: {
-          include: {
-            module: {
-              include: {
-                courseOffering: {
-                  include: { instructors: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
-    }
-
-    const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === instructor.id,
-    );
-    const unitAdmin = await isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
-
-    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
-    }
-
-    await prisma.activity.delete({ where: { id: activityId } });
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  },
+);
 
 /**
  * POST /activities/:activityId/duplicate — clone an activity into its own lesson.
@@ -949,13 +758,13 @@ router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
  * same topic-remap logic is shared with cross-lesson import below.
  */
 router.post(
-  '/activities/:activityId/duplicate',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/activities/:activityId/duplicate",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) {
-      return res.status(400).json({ error: 'Invalid activity id' });
+      return res.status(400).json({ error: "Invalid activity id" });
     }
 
     try {
@@ -977,12 +786,12 @@ router.post(
       });
 
       if (!activity) {
-        return res.status(404).json({ error: 'Activity not found' });
+        return res.status(404).json({ error: "Activity not found" });
       }
 
       const course = activity.lesson.module.courseOffering;
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this activity' });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this activity" });
       }
 
       const clone = await cloneActivityIntoLesson({
@@ -991,10 +800,10 @@ router.post(
         targetCourseOfferingId: course.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error('Error duplicating activity:', e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error duplicating activity", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1013,18 +822,18 @@ router.post(
  *   target lesson, positioned after the current last activity.
  */
 router.post(
-  '/lessons/:lessonId/activities/import',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/lessons/:lessonId/activities/import",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const lessonId = Number(req.params.lessonId);
     if (!Number.isFinite(lessonId)) {
-      return res.status(400).json({ error: 'Invalid lesson id' });
+      return res.status(400).json({ error: "Invalid lesson id" });
     }
 
     const sourceActivityId = Number(req.body?.sourceActivityId);
     if (!Number.isFinite(sourceActivityId)) {
-      return res.status(400).json({ error: 'sourceActivityId is required' });
+      return res.status(400).json({ error: "sourceActivityId is required" });
     }
 
     try {
@@ -1039,14 +848,56 @@ router.post(
         },
       });
       if (!targetLesson) {
-        return res.status(404).json({ error: 'Lesson not found' });
+        return res.status(404).json({ error: "Lesson not found" });
       }
 
       const targetCourse = targetLesson.module.courseOffering;
-      if (!await isCourseAdmin(authUser, targetCourse)) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      const targetPrincipal = await authorizeLiveCoursePrincipal(targetCourse, authUser);
+      if (targetPrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(targetPrincipal)) {
+        return res.status(403).json({ error: "Not authorized for this lesson" });
       }
 
+      // Resolve only the source activity's parent course before loading any
+      // authored fields (answer/config/custom prompt). This metadata lookup is
+      // the boundary needed to perform exact live Core authorization first.
+      const sourceActivityMeta = await prisma.activity.findUnique({
+        where: { id: sourceActivityId },
+        select: {
+          id: true,
+          lesson: { select: { module: { select: { courseOfferingId: true } } } },
+        },
+      });
+      if (!sourceActivityMeta) {
+        return res.status(404).json({ error: "Source activity not found" });
+      }
+
+      const sourceCourse = await prisma.courseOffering.findUnique({
+        where: { id: sourceActivityMeta.lesson.module.courseOfferingId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!sourceCourse) {
+        return res.status(404).json({ error: "Source activity not found" });
+      }
+
+      const sourcePrincipal = await authorizeLiveCoursePrincipal(sourceCourse, authUser);
+      if (sourcePrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(sourcePrincipal)) {
+        return res.status(403).json({ error: "Not authorized for the source activity" });
+      }
+
+      // Source authorization has completed; only now read the full authored
+      // activity tree that includes answer/config/custom-prompt material.
       const sourceActivity = await prisma.activity.findUnique({
         where: { id: sourceActivityId },
         include: {
@@ -1064,12 +915,7 @@ router.post(
         },
       });
       if (!sourceActivity) {
-        return res.status(404).json({ error: 'Source activity not found' });
-      }
-
-      const sourceCourse = sourceActivity.lesson.module.courseOffering;
-      if (!await isCourseAdmin(authUser, sourceCourse)) {
-        return res.status(403).json({ error: 'Not authorized for the source activity' });
+        return res.status(404).json({ error: "Source activity not found" });
       }
 
       const clone = await cloneActivityIntoLesson({
@@ -1078,10 +924,10 @@ router.post(
         targetCourseOfferingId: targetCourse.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error('Error importing activity:', e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error importing activity", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1098,13 +944,13 @@ router.post(
  * Returns: `{ id, title, type, lessonId, lessonTitle, moduleTitle }[]`.
  */
 router.get(
-  '/activities/importable',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/activities/importable",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.query.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'courseId is required' });
+      return res.status(400).json({ error: "courseId is required" });
     }
     // #1043: the picker previously filtered out the current lesson client-side
     // over the full result set; under pagination that could empty a page, so
@@ -1113,7 +959,7 @@ router.get(
     if (req.query.excludeLessonId !== undefined) {
       excludeLessonId = Number(req.query.excludeLessonId);
       if (!Number.isFinite(excludeLessonId)) {
-        return res.status(400).json({ error: 'excludeLessonId must be a number' });
+        return res.status(400).json({ error: "excludeLessonId must be a number" });
       }
     }
 
@@ -1125,18 +971,25 @@ router.get(
         include: { instructors: { select: { userId: true } } },
       });
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+      const destinationPrincipal = await authorizeLiveCoursePrincipal(course, authUser);
+      if (destinationPrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(destinationPrincipal)) {
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       // Mirrors the manageable-courses logic in routes/courses.js `GET /courses`.
       let manageableCourseIds;
-      if (authUser.role === 'ADMIN') {
+      if (authUser.role === "ADMIN") {
         const all = await prisma.courseOffering.findMany({ select: { id: true } });
         manageableCourseIds = all.map((c) => c.id);
-      } else if (authUser.role === 'UNIT_ADMIN') {
+      } else if (authUser.role === "UNIT_ADMIN") {
         // `department` is Core-owned (#1072 step 4) — a FIELD, so per the
         // unified contract it joins one batched service-key catalog fetch,
         // never the cookie-scoped list. Fail-soft: Core unavailable degrades
@@ -1168,10 +1021,38 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
+      // Local CourseInstructor rows only identify candidate mirrors; they are
+      // never authority. Resolve every candidate source course against the
+      // live Core principal before querying any activity content.
+      const manageableCourses = await prisma.courseOffering.findMany({
+        where: { id: { in: manageableCourseIds } },
+        select: {
+          id: true,
+          coreOfferingId: true,
+          instructors: { select: { userId: true } },
+        },
+      });
+      const authorizedManageableCourses = [];
+      for (const candidate of manageableCourses) {
+        const principal = await authorizeLiveCoursePrincipal(candidate, authUser);
+        if (principal.state === "unavailable") {
+          return res.status(503).json({
+            error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+            code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+          });
+        }
+        if (isAllowedLiveCourseStaffPrincipal(principal)) {
+          authorizedManageableCourses.push(candidate.id);
+        }
+      }
+      manageableCourseIds = authorizedManageableCourses;
+
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
-        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      if (excludeLessonId !== null) {
+        importableScope.lessonId = { not: excludeLessonId };
+      }
       // #1207: this scope spans EVERY course the caller manages, so a bounded
       // page over it is an instructor's whole activity corpus — server-side
       // search is the only way to reach a candidate past the first page. The
@@ -1180,7 +1061,7 @@ router.get(
       // name expects a hit.
       const search = parseSearchParam(req);
       const activityFragment = activitySearchWhere(search);
-      const parentFragment = searchWhere(search, ['lesson.title', 'lesson.module.title']);
+      const parentFragment = searchWhere(search, ["lesson.title", "lesson.module.title"]);
       const searchFragment =
         activityFragment && parentFragment
           ? { OR: [...activityFragment.OR, ...parentFragment.OR] }
@@ -1192,7 +1073,7 @@ router.get(
         prisma.activity.count({ where: importableWhere }),
         prisma.activity.findMany({
           where: importableWhere,
-          orderBy: [{ lessonId: 'asc' }, { position: 'asc' }, { id: 'asc' }],
+          orderBy: [{ lessonId: "asc" }, { position: "asc" }, { id: "asc" }],
           skip: pageParams.skip,
           take: pageParams.take,
           include: {
@@ -1206,8 +1087,8 @@ router.get(
       if (e instanceof PaginationError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      console.error('Error listing importable activities:', e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error listing importable activities", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1220,19 +1101,18 @@ router.get(
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
  *
- * Why: `attemptNumber` is computed server-side from the latest existing
- * submission rather than trusted from the client, so retries can't collide
- * or be spoofed.
+ * Why: `attemptNumber` is allocated transactionally and guarded by a database
+ * uniqueness constraint rather than trusted from the client.
  */
-router.post('/questions/:id/answer', async (req, res) => {
+router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
 
   // Always use the authenticated user; never trust body.userId
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
 
   const { answerText, answerOption } = req.body || {};
 
@@ -1258,22 +1138,27 @@ router.post('/questions/:id/answer', async (req, res) => {
         },
       },
     });
-    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+    if (!activity) return res.status(404).json({ error: "Activity not found" });
 
     // §15: only enrolled STUDENTs may submit; activity ancestor chain must be published
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    if (authUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: 'Only students can submit answers' });
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Only students can submit answers" });
     }
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id && e.role === 'STUDENT');
-    if (!isEnrolled) {
-      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Not enrolled in this course" });
     }
     const answerLesson = activity.lesson;
-    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !answerLesson.module.isPublished || !answerLesson.isPublished) {
-      return res.status(403).json({ error: 'Activity is not available' });
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !answerLesson.module.isPublished ||
+      !answerLesson.isPublished
+    ) {
+      return res.status(403).json({ error: "Activity is not available" });
     }
 
     const { isCorrect } = evaluateQuestion(activity, {
@@ -1281,49 +1166,37 @@ router.post('/questions/:id/answer', async (req, res) => {
       answerOption,
     });
 
-    // Get the latest attempt number for this activity and user
-    const latestSubmission = await prisma.submission.findFirst({
-      where: { userId: authUser.id, activityId },
-      orderBy: { attemptNumber: 'desc' },
-      select: { attemptNumber: true },
-    });
-
-    const nextAttemptNumber = latestSubmission ? latestSubmission.attemptNumber + 1 : 1;
-
-    const submission = await prisma.submission.create({
-      data: {
-        userId: authUser.id,
-        activityId,
-        attemptNumber: nextAttemptNumber,
-        response: {
-          answerText: typeof answerText === 'string' ? answerText : null,
-          answerOption: typeof answerOption === 'number' ? answerOption : null,
-        },
-        aiFeedback: isCorrect
-          ? { message: 'Nice! That looks right.' }
-          : { message: 'Not quite. Try another angle.' },
-        isCorrect,
+    const submission = await createSubmissionWithNextAttempt({
+      userId: authUser.id,
+      activityId,
+      response: {
+        answerText: typeof answerText === "string" ? answerText : null,
+        answerOption: typeof answerOption === "number" ? answerOption : null,
       },
+      aiFeedback: isCorrect
+        ? { message: "Nice! That looks right." }
+        : { message: "Not quite. Try another angle." },
+      isCorrect,
     });
 
-    if (authUser.role === 'STUDENT') {
+    if (authUser.role === "STUDENT") {
       await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
     }
     const feedbackAlreadySubmitted =
-      authUser.role === 'STUDENT'
+      authUser.role === "STUDENT"
         ? await hasActivityFeedback({ userId: authUser.id, activityId })
         : true;
 
     res.json({
       ok: true,
       isCorrect,
-      message: isCorrect ? 'Nice! That looks right.' : 'Not quite. Try another angle.',
+      message: isCorrect ? "Nice! That looks right." : "Not quite. Try another angle.",
       submissionId: submission.id,
       feedbackRequired: !feedbackAlreadySubmitted,
       feedbackAlreadySubmitted,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1336,47 +1209,51 @@ router.post('/questions/:id/answer', async (req, res) => {
  * Why: maps to the `teach` prompt slug in EduAI; expects a `topicName` so the
  * tutor can scope its explanation to the chosen secondary topic when present.
  */
-router.post('/activities/:activityId/teach', async (req, res) => {
+router.post("/activities/:activityId/teach", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
 
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
+      return res.status(404).json({ error: "Activity not found" });
     }
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
-    if (authUser.role !== 'STUDENT')
-      return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: 'Not enrolled in this course' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
+    if (authUser.role !== "STUDENT")
+      return res.status(403).json({ error: "Only students can use AI tutoring" });
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
+      return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
-    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
-      return res.status(403).json({ error: 'Activity is not available' });
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    )
+      return res.status(403).json({ error: "Activity is not available" });
 
     if (!activity.enableTeachMode) {
-      return res.status(400).json({ error: 'Teach mode is not enabled for this activity' });
+      return res.status(400).json({ error: "Teach mode is not enabled for this activity" });
     }
 
     let payload;
     try {
       payload = TeachRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1384,8 +1261,9 @@ router.post('/activities/:activityId/teach', async (req, res) => {
       req,
       res,
       activity,
-      mode: 'teach',
+      mode: "teach",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateTeachResponse({
           activity,
@@ -1393,12 +1271,14 @@ router.post('/activities/:activityId/teach', async (req, res) => {
           knowledgeLevel: payload.knowledgeLevel,
           message: payload.message,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
   } catch (e) {
-    console.error('Error generating guidance:', e);
-    res.status(500).json({ error: String(e) });
+    logSafeError("Error generating guidance", e);
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1411,55 +1291,60 @@ router.post('/activities/:activityId/teach', async (req, res) => {
  * Why: takes the student's current `studentAnswer` so the AI can probe with
  * targeted hints rather than restate the question.
  */
-router.post('/activities/:activityId/guide', async (req, res) => {
+router.post("/activities/:activityId/guide", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
 
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
+      return res.status(404).json({ error: "Activity not found" });
     }
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
-    if (authUser.role !== 'STUDENT')
-      return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: 'Not enrolled in this course' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
+    if (authUser.role !== "STUDENT")
+      return res.status(403).json({ error: "Only students can use AI tutoring" });
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
+      return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
-    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
-      return res.status(403).json({ error: 'Activity is not available' });
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    )
+      return res.status(403).json({ error: "Activity is not available" });
 
     if (!activity.enableGuideMode) {
-      return res.status(400).json({ error: 'Guide mode is not enabled for this activity' });
+      return res.status(400).json({ error: "Guide mode is not enabled for this activity" });
     }
 
     let payload;
     try {
       payload = GuideRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     return handleAiInteraction({
       req,
       res,
       activity,
-      mode: 'guide',
+      mode: "guide",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateGuideResponse({
           activity,
@@ -1467,12 +1352,14 @@ router.post('/activities/:activityId/guide', async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
   } catch (e) {
-    console.error('Error generating guidance:', e);
-    res.status(500).json({ error: String(e) });
+    logSafeError("Error generating guidance", e);
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1485,52 +1372,56 @@ router.post('/activities/:activityId/guide', async (req, res) => {
  * Why: requires both `enableCustomMode` and a non-empty `customPrompt`; the
  * prompt is composed by the AI service using the activity's stored template.
  */
-router.post('/activities/:activityId/custom', async (req, res) => {
+router.post("/activities/:activityId/custom", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
 
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
+      return res.status(404).json({ error: "Activity not found" });
     }
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
-    if (authUser.role !== 'STUDENT')
-      return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: 'Not enrolled in this course' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
+    if (authUser.role !== "STUDENT")
+      return res.status(403).json({ error: "Only students can use AI tutoring" });
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
+      return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
-    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
-      return res.status(403).json({ error: 'Activity is not available' });
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    )
+      return res.status(403).json({ error: "Activity is not available" });
 
     // Check if custom mode is enabled and has a prompt
     if (!activity.enableCustomMode) {
-      return res.status(400).json({ error: 'Custom mode is not enabled for this activity' });
+      return res.status(400).json({ error: "Custom mode is not enabled for this activity" });
     }
 
     if (!activity.customPrompt) {
-      return res.status(400).json({ error: 'No custom prompt configured for this activity' });
+      return res.status(400).json({ error: "No custom prompt configured for this activity" });
     }
 
     let payload;
     try {
       payload = CustomRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1538,8 +1429,9 @@ router.post('/activities/:activityId/custom', async (req, res) => {
       req,
       res,
       activity,
-      mode: 'custom',
+      mode: "custom",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateCustomResponse({
           activity,
@@ -1548,12 +1440,25 @@ router.post('/activities/:activityId/custom', async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
-  } catch (e) {
-    console.error('Error generating custom response:', e);
-    res.status(500).json({ error: String(e) });
+  } catch (error) {
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent("error", "custom_route_failed", metadata);
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const body = {
+      error: "Unable to generate a custom tutoring response",
+      code: "AI_TUTOR_CUSTOM_ERROR",
+    };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
+    return res.status(status).json(body);
   }
 });
 
@@ -1563,15 +1468,15 @@ router.post('/activities/:activityId/custom', async (req, res) => {
  * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
  * Returns: all Submission rows for the activity, ordered by userId then attemptNumber.
  */
-router.get('/activities/:activityId/submissions', async (req, res) => {
+router.get("/activities/:activityId/submissions", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
@@ -1595,29 +1500,42 @@ router.get('/activities/:activityId/submissions', async (req, res) => {
       },
     });
 
-    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+    if (!activity) return res.status(404).json({ error: "Activity not found" });
 
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === 'TA';
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === 'ADMIN';
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
+      return res.status(403).json({ error: "Not authorized for this activity" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this activity" });
+      }
     }
 
     const submissions = await prisma.submission.findMany({
       where: { activityId },
-      orderBy: [{ userId: 'asc' }, { attemptNumber: 'asc' }],
+      orderBy: [{ userId: "asc" }, { attemptNumber: "asc" }],
     });
 
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1636,30 +1554,30 @@ router.get('/activities/:activityId/submissions', async (req, res) => {
  *   require a migration, which is out of scope here.
  * Returns: the updated Submission row (same shape as the GET list above).
  */
-router.patch('/activities/:activityId/submissions/:submissionId', async (req, res) => {
+router.patch("/activities/:activityId/submissions/:submissionId", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
   const submissionId = Number(req.params.submissionId);
 
   if (!Number.isFinite(activityId) || !Number.isFinite(submissionId)) {
-    return res.status(400).json({ error: 'Invalid activity or submission id' });
+    return res.status(400).json({ error: "Invalid activity or submission id" });
   }
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   const { score, isCorrect } = req.body || {};
-  if (typeof score !== 'undefined' && score !== null && typeof score !== 'number') {
-    return res.status(400).json({ error: 'score must be a number or null' });
+  if (typeof score !== "undefined" && score !== null && typeof score !== "number") {
+    return res.status(400).json({ error: "score must be a number or null" });
   }
-  if (typeof isCorrect !== 'undefined' && isCorrect !== null && typeof isCorrect !== 'boolean') {
-    return res.status(400).json({ error: 'isCorrect must be a boolean or null' });
+  if (typeof isCorrect !== "undefined" && isCorrect !== null && typeof isCorrect !== "boolean") {
+    return res.status(400).json({ error: "isCorrect must be a boolean or null" });
   }
   const updateData = {};
-  if (typeof score !== 'undefined') updateData.score = score;
-  if (typeof isCorrect !== 'undefined') updateData.isCorrect = isCorrect;
+  if (typeof score !== "undefined") updateData.score = score;
+  if (typeof isCorrect !== "undefined") updateData.isCorrect = isCorrect;
   if (Object.keys(updateData).length === 0) {
-    return res.status(400).json({ error: 'Nothing to update' });
+    return res.status(400).json({ error: "Nothing to update" });
   }
 
   try {
@@ -1688,16 +1606,32 @@ router.patch('/activities/:activityId/submissions/:submissionId', async (req, re
     });
 
     if (!submission || submission.activityId !== activityId) {
-      return res.status(404).json({ error: 'Submission not found' });
+      return res.status(404).json({ error: "Submission not found" });
     }
 
     const course = submission.activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === 'TA';
-    if (!await isCourseAdmin(authUser, course) && !isTa) {
-      return res.status(403).json({ error: 'Not authorized for this submission' });
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
+    if (!isAdmin && !isInstructor && !unitAdmin && !isTa) {
+      return res.status(403).json({ error: "Not authorized for this submission" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this submission" });
+      }
     }
 
     const updated = await prisma.submission.update({
@@ -1705,9 +1639,16 @@ router.patch('/activities/:activityId/submissions/:submissionId', async (req, re
       data: updateData,
     });
 
+    // The student metrics behind Analytics are written once, at submit time —
+    // without this re-derive an override left the Analytics tab contradicting
+    // the Submissions tab for the same course.
+    if (typeof isCorrect !== "undefined") {
+      await resyncSubmissionMetrics({ userId: updated.userId, activityId });
+    }
+
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1717,15 +1658,15 @@ router.patch('/activities/:activityId/submissions/:submissionId', async (req, re
  * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
  * Returns: all ActivityFeedback rows for the activity, ordered by creation date.
  */
-router.get('/activities/:activityId/feedback', async (req, res) => {
+router.get("/activities/:activityId/feedback", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
@@ -1749,29 +1690,42 @@ router.get('/activities/:activityId/feedback', async (req, res) => {
       },
     });
 
-    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+    if (!activity) return res.status(404).json({ error: "Activity not found" });
 
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === 'TA';
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === 'ADMIN';
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
+      return res.status(403).json({ error: "Not authorized for this activity" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this activity" });
+      }
     }
 
     const feedback = await prisma.activityFeedback.findMany({
       where: { activityId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
     });
 
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1784,25 +1738,23 @@ router.get('/activities/:activityId/feedback', async (req, res) => {
  * Why: feedback is one-per-(user,activity) — relies on a unique index for the
  * race-safe path (P2002 → 409). The pre-check is just for a friendlier error.
  */
-router.post('/activities/:activityId/feedback', async (req, res) => {
+router.post("/activities/:activityId/feedback", async (req, res) => {
   const authUser = req.user;
   const activityId = Number(req.params.activityId);
 
   if (!Number.isFinite(activityId)) {
-    return res.status(400).json({ error: 'Invalid activity id' });
+    return res.status(400).json({ error: "Invalid activity id" });
   }
 
   if (!authUser) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   let payload;
   try {
     payload = ActivityFeedbackRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+  } catch {
+    return res.status(400).json({ error: "Invalid payload" });
   }
 
   try {
@@ -1815,7 +1767,9 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
               include: {
                 courseOffering: {
                   select: {
-                    enrollments: { select: { userId: true } },
+                    id: true,
+                    coreOfferingId: true,
+                    enrollments: { select: { userId: true, role: true } },
                     instructors: { select: { userId: true } },
                   },
                 },
@@ -1827,32 +1781,36 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
     });
 
     if (!activity) {
-      return res.status(404).json({ error: 'Activity not found' });
+      return res.status(404).json({ error: "Activity not found" });
     }
 
     const course = activity.lesson?.module?.courseOffering;
     if (!course) {
-      return res.status(500).json({ error: 'Activity course context missing' });
+      return res.status(500).json({ error: "Activity course context missing" });
     }
 
-    const { isEnrolledStudent } = getActivityAccess(course, authUser);
-    if (!isEnrolledStudent || authUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: 'Only enrolled students can submit activity feedback' });
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Only enrolled students can submit activity feedback" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Only enrolled students can submit activity feedback" });
     }
 
     const alreadySubmitted = await hasActivityFeedback({ userId: authUser.id, activityId });
     if (alreadySubmitted) {
-      return res.status(409).json({ error: 'Feedback already submitted for this activity' });
+      return res.status(409).json({ error: "Feedback already submitted for this activity" });
     }
 
     const latestSubmission = await prisma.submission.findFirst({
       where: { userId: authUser.id, activityId },
-      orderBy: { attemptNumber: 'desc' },
+      orderBy: { attemptNumber: "desc" },
       select: { id: true },
     });
 
     if (!latestSubmission) {
-      return res.status(400).json({ error: 'Submit an answer before leaving feedback' });
+      return res.status(400).json({ error: "Submit an answer before leaving feedback" });
     }
 
     const feedback = await recordActivityFeedback({
@@ -1873,11 +1831,11 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
       },
     });
   } catch (error) {
-    if (error?.code === 'P2002') {
-      return res.status(409).json({ error: 'Feedback already submitted for this activity' });
+    if (error?.code === "P2002") {
+      return res.status(409).json({ error: "Feedback already submitted for this activity" });
     }
-    console.error('Error recording activity feedback:', error);
-    res.status(500).json({ error: String(error) });
+    logSafeError("Error recording activity feedback", error);
+    sendSafeError(res, error, "Internal server error");
   }
 });
 
@@ -1886,18 +1844,18 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
  *
  * Auth: any authenticated user. No enrollment check so inactive students retain access.
  */
-router.get('/me/submissions', async (req, res) => {
+router.get("/me/submissions", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
 
   try {
     const submissions = await prisma.submission.findMany({
       where: { userId: authUser.id },
-      orderBy: [{ activityId: 'asc' }, { attemptNumber: 'asc' }],
+      orderBy: [{ activityId: "asc" }, { attemptNumber: "asc" }],
     });
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1906,18 +1864,18 @@ router.get('/me/submissions', async (req, res) => {
  *
  * Auth: any authenticated user. No enrollment check so inactive students retain access.
  */
-router.get('/me/feedback', async (req, res) => {
+router.get("/me/feedback", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
 
   try {
     const feedback = await prisma.activityFeedback.findMany({
       where: { userId: authUser.id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
     });
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1927,32 +1885,54 @@ router.get('/me/feedback', async (req, res) => {
  *
  * Auth: STUDENT enrolled in the activity's course.
  */
-router.get('/activities/:activityId/chat-sessions', async (req, res) => {
+router.get("/activities/:activityId/chat-sessions", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: "Authentication required" });
+
     const activityId = Number(req.params.activityId);
-    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
 
     const activity = await loadActivityForChat(activityId);
-    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+    if (!activity) return res.status(404).json({ error: "Activity not found" });
 
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-    if (authUser.role !== 'STUDENT' || !isEnrolled) {
-      return res.status(403).json({ error: 'Forbidden' });
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: "Activity is not available" });
     }
 
     const sessions = await prisma.aiChatSession.findMany({
       where: { userId: authUser.id, activityId },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, chatId: true, mode: true, modelId: true, createdAt: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        chatId: true,
+        mode: true,
+        modelId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     return res.json(sessions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1963,30 +1943,53 @@ router.get('/activities/:activityId/chat-sessions', async (req, res) => {
  *
  * Auth: STUDENT who owns the session.
  */
-router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req, res) => {
+router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: "Authentication required" });
+
     const activityId = Number(req.params.activityId);
     const { chatId } = req.params;
-    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
 
     const session = await prisma.aiChatSession.findFirst({
       where: { chatId, userId: authUser.id, activityId },
     });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const activity = await loadActivityForChat(activityId);
+    const course = activity?.lesson?.module?.courseOffering;
+    if (!course) return res.status(404).json({ error: "Activity not found" });
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: "Activity is not available" });
+    }
 
     const cookie = getEduAiCookieForRequest(req);
-    const coreUrl = getEduAiBaseUrl().replace(/\/api$/, '');
-    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
-      headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
-    });
+    const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
+    const headers = { "Content-Type": "application/json" };
+    if (cookie) headers.cookie = cookie;
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: 'Failed to fetch messages from Core' });
+      return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }
     const data = await upstream.json();
     return res.json(data);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1996,13 +1999,13 @@ router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req,
  * #1207 rationale; `position` is a 0-based ordinal across the whole lesson.
  */
 router.patch(
-  '/activities/:activityId/position',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/activities/:activityId/position",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) {
-      return res.status(400).json({ error: 'Invalid activity id' });
+      return res.status(400).json({ error: "Invalid activity id" });
     }
 
     try {
@@ -2022,17 +2025,22 @@ router.patch(
           },
         },
       });
-      if (!activity) return res.status(404).json({ error: 'Activity not found' });
+      if (!activity) return res.status(404).json({ error: "Activity not found" });
 
       const courseOffering = activity.lesson.module.courseOffering;
-      const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          courseOffering,
+          authUser,
+          "Not authorized for this lesson",
+        ))
+      ) {
+        return;
       }
 
       const { position, total } = await moveToPosition({
-        model: 'activity',
+        model: "activity",
         id: activityId,
         scopeWhere: { lessonId: activity.lessonId },
         targetPosition,
@@ -2046,12 +2054,12 @@ router.patch(
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json({ activity: mapActivity(updated), position, total });
+      res.json({ activity: mapActivity(updated, { includeAnswer: true }), position, total });
     } catch (e) {
       if (e instanceof ReorderError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -2059,13 +2067,13 @@ router.patch(
 // Reorder every activity within a lesson in one atomic write. Positions are
 // reassigned 0..n-1 from the client-supplied ordered id list (issue #1047).
 router.put(
-  '/lessons/:lessonId/activities/order',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/lessons/:lessonId/activities/order",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const lessonId = Number(req.params.lessonId);
     if (!Number.isFinite(lessonId)) {
-      return res.status(400).json({ error: 'Invalid lesson id' });
+      return res.status(400).json({ error: "Invalid lesson id" });
     }
 
     const { orderedIds } = req.body || {};
@@ -2074,10 +2082,10 @@ router.put(
       orderedIds.length === 0 ||
       !orderedIds.every((id) => Number.isInteger(id))
     ) {
-      return res.status(400).json({ error: 'orderedIds must be a non-empty array of integers' });
+      return res.status(400).json({ error: "orderedIds must be a non-empty array of integers" });
     }
     if (new Set(orderedIds).size !== orderedIds.length) {
-      return res.status(400).json({ error: 'orderedIds must not contain duplicates' });
+      return res.status(400).json({ error: "orderedIds must not contain duplicates" });
     }
 
     try {
@@ -2091,16 +2099,17 @@ router.put(
           },
         },
       });
-      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+      if (!lesson) return res.status(404).json({ error: "Lesson not found" });
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      // `isUnitAdminForCourse` is async — without the await this resolved to a
-      // (always truthy) Promise, so the guard below never denied anyone.
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          "Not authorized for this lesson",
+        ))
+      ) {
+        return;
       }
 
       const existing = await prisma.activity.findMany({
@@ -2114,7 +2123,7 @@ router.put(
       ) {
         return res
           .status(400)
-          .json({ error: 'orderedIds must match the full set of activity ids for this lesson' });
+          .json({ error: "orderedIds must match the full set of activity ids for this lesson" });
       }
 
       await prisma.$transaction(
@@ -2125,16 +2134,16 @@ router.put(
 
       const activities = await prisma.activity.findMany({
         where: { lessonId },
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
         include: {
           promptTemplate: { select: { id: true, name: true } },
           mainTopic: true,
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json(activities.map(mapActivity));
+      res.json(activities.map((activity) => mapActivity(activity, { includeAnswer: true })));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );

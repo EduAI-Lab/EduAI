@@ -11,7 +11,7 @@
  * `atListResponse` only when the spec asserts on the status or the envelope
  * metadata itself.
  */
-import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
 
 /**
  * Page size used by list calls that just want "everything the fixture made".
@@ -30,14 +30,14 @@ export function atListResponse(
     page: String(params.page ?? 1),
     pageSize: String(params.pageSize ?? AT_LIST_PAGE_SIZE),
   });
-  return ctx.get(`${url}${url.includes('?') ? '&' : '?'}${qs}`);
+  return ctx.get(`${url}${url.includes("?") ? "&" : "?"}${qs}`);
 }
 
 /**
  * GET an AT list endpoint and return the envelope's rows, asserting the request
  * succeeded and the envelope is well-formed.
  */
-export async function atListData<T = Record<string, unknown>>(
+export async function atListData<T>(
   ctx: APIRequestContext,
   url: string,
   params: { page?: number; pageSize?: number } = {},

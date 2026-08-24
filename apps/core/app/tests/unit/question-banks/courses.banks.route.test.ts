@@ -69,9 +69,8 @@ function args(
     url = `http://localhost/api/courses/${COURSE_ID}/banks${splat ? `/${splat}` : ""}`,
   }: { body?: unknown; bearer?: boolean; url?: string } = {},
 ) {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
   if (bearer) headers.Authorization = "Bearer test-key";
   return {
     request: new Request(url, {
@@ -190,17 +189,13 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
       course: { id: COURSE_ID, isPublished: true },
       access: { level: "student" },
     } as never);
-    const res = await action(
-      args("POST", undefined, { body: { name: "Midterm" } }),
-    );
+    const res = await action(args("POST", undefined, { body: { name: "Midterm" } }));
     expect(res.status).toBe(403);
   });
 
   it("creates a bank (201)", async () => {
     vi.mocked(createQuestionBank).mockResolvedValue({ bank: BANK } as never);
-    const res = await action(
-      args("POST", undefined, { body: { name: "Extra" } }),
-    );
+    const res = await action(args("POST", undefined, { body: { name: "Extra" } }));
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual(BANK);
   });
@@ -209,9 +204,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     vi.mocked(createQuestionBank).mockResolvedValue({
       error: "Course not found",
     } as never);
-    const res = await action(
-      args("POST", undefined, { body: { name: "Extra" } }),
-    );
+    const res = await action(args("POST", undefined, { body: { name: "Extra" } }));
     expect(res.status).toBe(404);
   });
 
@@ -219,9 +212,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     vi.mocked(createQuestionBank).mockResolvedValue({
       error: "Invalid input",
     } as never);
-    const res = await action(
-      args("POST", undefined, { body: { name: "  " } }),
-    );
+    const res = await action(args("POST", undefined, { body: { name: "  " } }));
     expect(res.status).toBe(400);
   });
 
@@ -229,9 +220,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     vi.mocked(updateQuestionBank).mockResolvedValue({
       bank: { ...BANK, name: "Renamed" },
     } as never);
-    const res = await action(
-      args("PUT", "bank_1", { body: { name: "Renamed" } }),
-    );
+    const res = await action(args("PUT", "bank_1", { body: { name: "Renamed" } }));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ name: "Renamed" });
   });
@@ -240,9 +229,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     vi.mocked(updateQuestionBank).mockResolvedValue({
       error: "Question bank not found",
     } as never);
-    const res = await action(
-      args("PUT", "missing", { body: { name: "X" } }),
-    );
+    const res = await action(args("PUT", "missing", { body: { name: "X" } }));
     expect(res.status).toBe(404);
   });
 
@@ -251,10 +238,9 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
       success: true,
     } as never);
     const res = await action({
-      request: new Request(
-        `http://localhost/api/courses/${COURSE_ID}/banks/bank_1`,
-        { method: "DELETE" },
-      ),
+      request: new Request(`http://localhost/api/courses/${COURSE_ID}/banks/bank_1`, {
+        method: "DELETE",
+      }),
       params: { courseId: COURSE_ID, "*": "bank_1" },
       context: {} as never,
     } as any);
@@ -266,9 +252,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     vi.mocked(deleteQuestionBank).mockResolvedValue({
       error: "Cannot delete the default question bank",
     } as never);
-    const res = await action(
-      args("DELETE", "bank_1", { body: {} }),
-    );
+    const res = await action(args("DELETE", "bank_1", { body: {} }));
     expect(res.status).toBe(400);
   });
 
@@ -331,9 +315,7 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
   it("mutates with a valid service key", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(createQuestionBank).mockResolvedValue({ bank: BANK } as never);
-    const res = await action(
-      args("POST", undefined, { body: { name: "Extra" }, bearer: true }),
-    );
+    const res = await action(args("POST", undefined, { body: { name: "Extra" }, bearer: true }));
     expect(requireServiceKey).toHaveBeenCalled();
     expect(res.status).toBe(201);
   });

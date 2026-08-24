@@ -24,13 +24,13 @@ export type RbacUser = {
   authorizedUnits?: string[] | null;
 };
 
-const LEVELS: Record<AccessLevel["level"], AccessLevel> = {
+const LEVELS = {
   admin: { level: "admin", rank: 4 },
   unit: { level: "unit", rank: 3 },
   instructor: { level: "instructor", rank: 2 },
   ta: { level: "ta", rank: 1 },
   student: { level: "student", rank: 0 },
-};
+} satisfies Record<AccessLevel["level"], AccessLevel>;
 
 /** Look up the shared AccessLevel for a resolved course access level string. */
 export function accessLevelFor(level: AccessLevel["level"]): AccessLevel {
@@ -268,8 +268,7 @@ export function wantsIncludeDeleted(
   user: { role?: string | null } | null | undefined,
 ): boolean {
   return (
-    user?.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true"
+    user?.role === "ADMIN" && new URL(request.url).searchParams.get("includeDeleted") === "true"
   );
 }
 
@@ -279,9 +278,10 @@ export function wantsIncludeDeleted(
  * serialization layer — call this on every question response path, regardless
  * of route guards. Returns the input untouched for every other access level.
  */
-export function stripAnswerForStudents<
-  T extends { answer?: unknown; correctAnswers?: unknown },
->(question: T, access: AccessLevel | null): T | Omit<T, "answer" | "correctAnswers"> {
+export function stripAnswerForStudents<T extends { answer?: unknown; correctAnswers?: unknown }>(
+  question: T,
+  access: AccessLevel | null,
+): T | Omit<T, "answer" | "correctAnswers"> {
   if (access?.level !== "student") return question;
   const { answer: _answer, correctAnswers: _correctAnswers, ...rest } = question;
   return rest;

@@ -47,10 +47,7 @@ import { action } from "~/routes/api/questions";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { createQuestion } from "~/lib/questions/server";
-import {
-  bodyForIdempotencyHash,
-  hashRequestBody,
-} from "~/lib/idempotency.server";
+import { bodyForIdempotencyHash, hashRequestBody } from "~/lib/idempotency.server";
 
 const rows = (cases as CrossExtPushRow[]).filter(
   (row) => row.Draft === "no" && row.CoreReachable === "yes",
@@ -82,10 +79,9 @@ function accessFor(row: CrossExtPushRow) {
 }
 
 function makeRequest(row: CrossExtPushRow): Request {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Idempotency-Key": "k1",
-  };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
+  headers["Idempotency-Key"] = "k1";
   if (row.Session === "present") {
     headers.cookie = "session=abc";
   }
@@ -165,7 +161,11 @@ async function runCore(row: CrossExtPushRow): Promise<{ outcome: string }> {
   } as never);
 
   let res: Response;
-  if (row.Idempotency === "in-progress" && row.Session === "present" && row.CourseAccess === "allowed") {
+  if (
+    row.Idempotency === "in-progress" &&
+    row.Session === "present" &&
+    row.CourseAccess === "allowed"
+  ) {
     vi.useFakeTimers();
     try {
       const pending = run;

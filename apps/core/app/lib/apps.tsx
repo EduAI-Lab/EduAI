@@ -1,10 +1,11 @@
-import { IconPuzzle } from '@tabler/icons-react'
-import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui'
-import { getEduAiAppUrl, getAiTutorAppUrl } from '~/lib/extension-urls'
-import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
+import { parseJsonText, type JsonObject } from "~/lib/json-value";
+import { IconPuzzle } from "@tabler/icons-react";
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@eduai/ui";
+import { getEduAiAppUrl, getAiTutorAppUrl } from "~/lib/extension-urls";
+import { getQuestionMakerUrl } from "~/lib/extensions/question-maker";
 
 /** Stable id for the app rendering this sidebar — passed to AppLauncher. */
-export const CURRENT_APP_ID = 'core'
+export const CURRENT_APP_ID = "core";
 
 /**
  * Parse additional extensions from the VITE_EXTRA_EXTENSIONS env var.
@@ -18,30 +19,31 @@ export const CURRENT_APP_ID = 'core'
  * Malformed JSON is silently ignored so a bad value never breaks the sidebar.
  */
 export function parseExtraExtensions(): LauncherApp[] {
-  const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim()
-  if (!raw) return []
+  const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim();
+  if (!raw) return [];
   try {
-    const entries: unknown = JSON.parse(raw)
-    if (!Array.isArray(entries)) return []
+    const entries = parseJsonText(raw);
+    if (!Array.isArray(entries)) return [];
     return entries
       .filter(
-        (e): e is Record<string, string> =>
-          typeof e === 'object' &&
+        (e): e is JsonObject & { id: string; name: string; url: string } =>
+          typeof e === "object" &&
           e !== null &&
-          typeof (e as Record<string, unknown>).id === 'string' &&
-          typeof (e as Record<string, unknown>).name === 'string' &&
-          typeof (e as Record<string, unknown>).url === 'string',
+          !Array.isArray(e) &&
+          typeof e.id === "string" &&
+          typeof e.name === "string" &&
+          typeof e.url === "string",
       )
       .map((e) => ({
         id: e.id,
         name: e.name,
         url: e.url,
         icon: <IconPuzzle className="size-4" />,
-        description: e.description,
-        color: e.color || 'oklch(0.580 0.150 300)',
-      }))
+        description: typeof e.description === "string" ? e.description : undefined,
+        color: typeof e.color === "string" && e.color ? e.color : "oklch(0.580 0.150 300)",
+      }));
   } catch {
-    return []
+    return [];
   }
 }
 
@@ -57,20 +59,17 @@ export function parseExtraExtensions(): LauncherApp[] {
  * Additional extensions can also be injected via VITE_EXTRA_EXTENSIONS.
  */
 export function getLauncherApps(): LauncherApp[] {
-  const aiTutorUrl = getAiTutorAppUrl()
-  const questionMakerUrl = getQuestionMakerUrl()
+  const aiTutorUrl = getAiTutorAppUrl();
+  const questionMakerUrl = getQuestionMakerUrl();
 
   const apps = getSharedLauncherApps({
     currentAppId: CURRENT_APP_ID,
     urls: {
       core: getEduAiAppUrl(),
-      aiTutor: aiTutorUrl ?? '',
-      questionMaker: questionMakerUrl ?? '',
+      aiTutor: aiTutorUrl ?? "",
+      questionMaker: questionMakerUrl ?? "",
     },
-  })
+  });
 
-  return [
-    ...apps.filter((app) => app.id === CURRENT_APP_ID || app.url),
-    ...parseExtraExtensions(),
-  ]
+  return [...apps.filter((app) => app.id === CURRENT_APP_ID || app.url), ...parseExtraExtensions()];
 }

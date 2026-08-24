@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Route-level coverage for admin chat 16k context budgeting (#1008 review).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -37,10 +43,12 @@ vi.mock("~/lib/agent-tools", async (importOriginal) => {
   return {
     ...actual,
     createChatTools: vi.fn().mockReturnValue(adminTools),
-    buildAdminSystemPrompt: vi.fn().mockReturnValue(
-      "You are EduAI Admin Assistant.\n".repeat(40) +
-        "Write safety rules require confirmed:true.\n".repeat(20),
-    ),
+    buildAdminSystemPrompt: vi
+      .fn()
+      .mockReturnValue(
+        "You are EduAI Admin Assistant.\n".repeat(40) +
+          "Write safety rules require confirmed:true.\n".repeat(20),
+      ),
   };
 });
 
@@ -105,7 +113,14 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
@@ -117,7 +132,7 @@ import {
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const CONTEXT_WINDOW = 16_384;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -129,7 +144,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "List users named alice@ubc.ca" }],
     model: "vllm:qwen2.5-32b-instruct",
@@ -140,16 +155,18 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): {
+/**
+ * The slice of the `streamText` config this test reads back. `tools` is keyed by
+ * tool name; only which names are present is ever asserted.
+ */
+type StreamConfig = {
   maxTokens?: number;
   maxSteps?: number;
-  tools?: Record<string, unknown>;
-} {
-  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as {
-    maxTokens?: number;
-    maxSteps?: number;
-    tools?: Record<string, unknown>;
-  };
+  tools?: Record<string, { description?: string }>;
+};
+
+function lastStreamConfig(): StreamConfig {
+  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as StreamConfig;
 }
 
 const originalVllm = process.env.VLLM_BASE_URL;
@@ -157,6 +174,7 @@ const originalVllm = process.env.VLLM_BASE_URL;
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "admin-1", role: "ADMIN" },

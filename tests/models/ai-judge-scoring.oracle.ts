@@ -36,14 +36,23 @@ export type AiJudgeScoringRow = {
   ApplyUsabilityPenalty: "true" | "false";
 };
 
-const LEVEL_SCORE: Record<Level, number> = { low: 1, high: 5 };
-const DISTINCTNESS_SCORE: Record<DistinctnessLevel, 1 | 3 | 5> = { low: 1, mid: 3, high: 5 };
-const DISTINCTNESS_FACTOR: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0.1, 2: 0.4, 3: 0.7, 4: 0.9, 5: 1.0 };
-const USABILITY_MULTIPLIER: Record<"usable_as_is" | "usable_with_edits" | "unusable", number> = {
+const LEVEL_SCORE = { low: 1, high: 5 } satisfies Record<Level, number>;
+const DISTINCTNESS_SCORE = { low: 1, mid: 3, high: 5 } satisfies Record<
+  DistinctnessLevel,
+  1 | 3 | 5
+>;
+const DISTINCTNESS_FACTOR = {
+  1: 0.1,
+  2: 0.4,
+  3: 0.7,
+  4: 0.9,
+  5: 1.0,
+} satisfies Record<1 | 2 | 3 | 4 | 5, number>;
+const USABILITY_MULTIPLIER = {
   usable_as_is: 1.0,
   usable_with_edits: 0.9,
   unusable: 0.75,
-};
+} satisfies Record<"usable_as_is" | "usable_with_edits" | "unusable", number>;
 const COMPOSITE_WEIGHTS = {
   conceptual_equivalence: 0.24,
   difficulty_similarity: 0.19,
@@ -53,7 +62,9 @@ const COMPOSITE_WEIGHTS = {
 };
 
 /** `normalizeUsability`: anything but the two literal known strings -> "unusable". */
-export function normalizedUsability(usability: Usability): "usable_as_is" | "usable_with_edits" | "unusable" {
+export function normalizedUsability(
+  usability: Usability,
+): "usable_as_is" | "usable_with_edits" | "unusable" {
   if (usability === "usable_as_is" || usability === "usable_with_edits") return usability;
   return "unusable";
 }
@@ -91,7 +102,10 @@ export function aiJudgeScoringOracle(row: AiJudgeScoringRow): Verdict {
 
   const usability = normalizedUsability(row.Usability);
   const usabilityMultiplier = USABILITY_MULTIPLIER[usability];
-  const perQuestionUsabilityAdjusted1to5 = Math.max(1, Math.min(5, composite1to5 * usabilityMultiplier));
+  const perQuestionUsabilityAdjusted1to5 = Math.max(
+    1,
+    Math.min(5, composite1to5 * usabilityMultiplier),
+  );
 
   const distinctnessScore = DISTINCTNESS_SCORE[row.Distinctness];
   const distinctnessFactor = DISTINCTNESS_FACTOR[distinctnessScore];
@@ -99,7 +113,10 @@ export function aiJudgeScoringOracle(row: AiJudgeScoringRow): Verdict {
   const applyUsabilityPenalty = row.ApplyUsabilityPenalty === "true";
   const examVariantScoreFinal0to100 = Math.max(
     0,
-    Math.min(100, base0to100 * distinctnessFactor * (applyUsabilityPenalty ? usabilityMultiplier : 1.0)),
+    Math.min(
+      100,
+      base0to100 * distinctnessFactor * (applyUsabilityPenalty ? usabilityMultiplier : 1.0),
+    ),
   );
 
   return { composite1to5, perQuestionUsabilityAdjusted1to5, examVariantScoreFinal0to100 };

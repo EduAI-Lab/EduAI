@@ -9,10 +9,10 @@
  * orchestration (detail view, variant CRUD, Canvas + upload dialogs, exports)
  * lives here, keyed off the route course instead of local state.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
-import { useNavigate, useSearchParams } from 'react-router';
-import { IconLoader2 } from '@tabler/icons-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useNavigate, useSearchParams } from "react-router";
+import { IconLoader2 } from "@tabler/icons-react";
 import {
   PageTabs,
   PageTabsList,
@@ -28,28 +28,29 @@ import {
   Alert,
   AlertDescription,
   resolvePaletteAccent,
-} from '@eduai/ui';
-import { useCourseFromRoute } from '../hooks/useCourseFromRoute';
-import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
-import { useGuidedTour } from '../contexts/GuidedTourContext';
-import { useQmLayout } from '../components/layout/QmLayoutContext';
-import { questionService } from '../services/questionService';
-import { courseService } from '../services/courseService';
-import assessmentService from '../services/assessmentService';
-import { questionBankService, QuestionBank as QuestionBankModel } from '../services/questionBankService';
-import { QuestionBank } from '../components/question-bank/QuestionBank';
-import { AssessmentSection } from '../components/assessments/AssessmentSection';
+} from "@eduai/ui";
+import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
+import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
+import { useGuidedTour } from "../contexts/GuidedTourContext";
+import { useQmLayout } from "../components/layout/QmLayoutContext";
+import { questionService } from "../services/questionService";
+import type { ProviderApiKeys } from "../services/apiKeyStorage";
+import { courseService } from "../services/courseService";
+import assessmentService from "../services/assessmentService";
 import {
-  DEFAULT_LIST_PAGE_SIZE,
-  ListPaginationBar,
-} from '../components/shared/ListPaginationBar';
-import { QuestionModal } from '../components/questions/QuestionModal';
-import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
-import { CourseBanksTab } from './course-detail/CourseBanksTab';
-import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
-import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
-import type { QuestionAnalyticsProps } from '@eduai/ui';
-import { ConfirmDialog } from '@eduai/ui';
+  questionBankService,
+  QuestionBank as QuestionBankModel,
+} from "../services/questionBankService";
+import { QuestionBank } from "../components/question-bank/QuestionBank";
+import { AssessmentSection } from "../components/assessments/AssessmentSection";
+import { DEFAULT_LIST_PAGE_SIZE, ListPaginationBar } from "../components/shared/ListPaginationBar";
+import { QuestionModal } from "../components/questions/QuestionModal";
+import { CourseOverviewTab } from "./course-detail/CourseOverviewTab";
+import { CourseBanksTab } from "./course-detail/CourseBanksTab";
+import { CourseTopicsHeroAction } from "./course-detail/CourseTopicsHeroAction";
+import { CourseCanvasTab } from "./course-detail/CourseCanvasTab";
+import type { QuestionAnalyticsProps } from "@eduai/ui";
+import { ConfirmDialog } from "@eduai/ui";
 import {
   Question,
   Assessment,
@@ -57,34 +58,40 @@ import {
   AssessmentGenerationParams,
   MCQChoice,
   questionTypeLabels,
-} from '../types/question';
-import { Topic } from '../types/topic';
-import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
-import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
-import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { CanvasBankSyncDialog } from '../components/canvas/CanvasBankSyncDialog';
-import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
+  type QuestionType,
+} from "../types/question";
+import { Topic } from "../types/topic";
+import {
+  QuestionUploadDialog,
+  mapExtractedToDraftQuestions,
+} from "../components/question-bank/QuestionUploadDialog";
+import { CanvasExportDialog } from "../components/canvas/CanvasExportDialog";
+import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
+import { CanvasBankSyncDialog } from "../components/canvas/CanvasBankSyncDialog";
+import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
 import {
   assessmentBlocksToDocxBlob,
   assessmentBlocksToPlainText,
   collectAssessmentExportBlocks,
   slugifyAssessmentBasename,
-} from '../utils/assessmentExport';
+} from "../utils/assessmentExport";
 
-type ActiveTab = 'overview' | 'questions' | 'banks' | 'assessments' | 'canvas';
+type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
+type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
+type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
-const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'banks', 'assessments', 'canvas'];
+const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
-const TYPE_COLORS: Record<string, string> = {
-  MCQ: 'var(--color-series-3)',
-  SA: 'var(--color-series-7)',
-  LA: 'var(--color-series-8)',
-};
+const TYPE_COLORS = {
+  MCQ: "var(--color-series-3)",
+  SA: "var(--color-series-7)",
+  LA: "var(--color-series-8)",
+} satisfies Record<QuestionType, string>;
 // Shared difficulty tokens (index.css) — keeps meters consistent + dark-mode aware.
 const DIFF_COLORS = {
-  easy: 'var(--diff-easy-solid)',
-  medium: 'var(--diff-medium-solid)',
-  hard: 'var(--diff-hard-solid)',
+  easy: "var(--diff-easy-solid)",
+  medium: "var(--diff-medium-solid)",
+  hard: "var(--diff-hard-solid)",
 };
 
 export const CourseDetailPage = () => {
@@ -101,17 +108,20 @@ export const CourseDetailPage = () => {
     activeTourId,
   } = useGuidedTour();
 
-  const tabParam = searchParams.get('tab');
+  const tabParam = searchParams.get("tab");
   const activeTab: ActiveTab = VALID_TABS.includes(tabParam as ActiveTab)
     ? (tabParam as ActiveTab)
-    : 'overview';
+    : "overview";
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.set('tab', tab);
-        return next;
-      }, { replace: true });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("tab", tab);
+          return next;
+        },
+        { replace: true },
+      );
     },
     [setSearchParams],
   );
@@ -126,7 +136,7 @@ export const CourseDetailPage = () => {
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
     totalVariants: number;
-    typeStats: Array<{ type: string; count: number }>;
+    typeStats: Array<{ type: QuestionType; count: number }>;
     difficultyStats: Array<{ difficulty: string; count: number }>;
     aiCount: number;
     humanCount: number;
@@ -140,7 +150,8 @@ export const CourseDetailPage = () => {
   const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
+  const [pendingExtractionReview, setPendingExtractionReview] =
+    useState<PendingExtractionReview | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
   const [isBanksLoading, setIsBanksLoading] = useState(false);
@@ -156,10 +167,15 @@ export const CourseDetailPage = () => {
   const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
   const assessmentsPageSize = DEFAULT_LIST_PAGE_SIZE;
   const [isCanvasExportOpen, setIsCanvasExportOpen] = useState(false);
-  const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{ id: number; name: string } | null>(null);
+  const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
   const [deleteAssessmentModalOpen, setDeleteAssessmentModalOpen] = useState(false);
-  const [assessmentToDelete, setAssessmentToDelete] = useState<{ id: number; name: string } | null>(null);
+  const [assessmentToDelete, setAssessmentToDelete] = useState<{ id: number; name: string } | null>(
+    null,
+  );
   const [isDeletingAssessment, setIsDeletingAssessment] = useState(false);
   const [deleteVariantModalOpen, setDeleteVariantModalOpen] = useState(false);
   const [variantToDelete, setVariantToDelete] = useState<QuestionVariantEntry | null>(null);
@@ -177,7 +193,7 @@ export const CourseDetailPage = () => {
         setTopicsByCourse((prev) => ({ ...prev, [id]: topics }));
         return topics;
       } catch (error) {
-        console.error('Failed to load topics for course', id, error);
+        console.error("Failed to load topics for course", id, error);
         return [];
       }
     },
@@ -210,14 +226,16 @@ export const CourseDetailPage = () => {
         if (!cancelled) {
           setQuestions([]);
           setQuestionsTotal(0);
-          setQuestionsError(error?.response?.data?.error || 'Failed to load questions');
+          setQuestionsError(error?.response?.data?.error || "Failed to load questions");
         }
       } finally {
         if (!cancelled) setIsQuestionsLoading(false);
       }
     };
     void fetchQuestions();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [courseId, questionsOffset, questionsPageSize]);
 
   // Load question banks when the route course changes.
@@ -237,13 +255,11 @@ export const CourseDetailPage = () => {
           setBanks(bankList);
         }
       } catch (error: any) {
-        console.error('Failed to load question banks', error);
+        console.error("Failed to load question banks", error);
         if (!cancelled) {
           setBanks([]);
           setBanksError(
-            error?.response?.data?.error ||
-              error?.message ||
-              'Failed to load question banks',
+            error?.response?.data?.error || error?.message || "Failed to load question banks",
           );
         }
       } finally {
@@ -251,7 +267,9 @@ export const CourseDetailPage = () => {
       }
     };
     void fetchBanks();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [courseId]);
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
@@ -270,7 +288,7 @@ export const CourseDetailPage = () => {
           totalQuestions: Number(stats.totalQuestions) || 0,
           totalVariants: Number(stats.totalVariants) || 0,
           typeStats: (stats.typeStats ?? []).map((row) => ({
-            type: String(row.type),
+            type: row.type,
             count: Number(row.count) || 0,
           })),
           difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
@@ -284,7 +302,7 @@ export const CourseDetailPage = () => {
         });
         setCourseQuestionStatsUnavailable(false);
       } catch (error) {
-        console.error('Failed to load course question stats', error);
+        console.error("Failed to load course question stats", error);
         if (!cancelled) {
           // Keep last complete stats; only mark unavailable when we have none.
           if (courseQuestionStatsRef.current == null) {
@@ -294,7 +312,9 @@ export const CourseDetailPage = () => {
       }
     };
     void fetchStats();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [courseId, questionsTotal]);
 
   // Reset paging / course-scoped stats when the course changes.
@@ -359,7 +379,7 @@ export const CourseDetailPage = () => {
       if (requestId !== assessmentsRequestIdRef.current) return;
       setAssessments([]);
       setAssessmentsTotal(0);
-      setAssessmentsError(error?.response?.data?.error || 'Failed to load assessments');
+      setAssessmentsError(error?.response?.data?.error || "Failed to load assessments");
     } finally {
       if (requestId === assessmentsRequestIdRef.current) {
         setIsAssessmentsLoading(false);
@@ -380,8 +400,8 @@ export const CourseDetailPage = () => {
   // Starting the tour from this page sends the user back to course selection so
   // step 1 begins there; the tour returns to a course on this page.
   const handleGuidedTourClick = useCallback(() => {
-    startTour('main');
-    registerOnTourEnd(() => navigate('/courses'));
+    startTour("main");
+    registerOnTourEnd(() => navigate("/courses"));
   }, [startTour, registerOnTourEnd, navigate]);
 
   useEffect(() => {
@@ -391,9 +411,9 @@ export const CourseDetailPage = () => {
 
   // Tour: switch to the Assessments tab when that step runs.
   useEffect(() => {
-    if (!isTourActive || activeTourId !== 'main') return;
-    const unregister = registerStepAction('assessment-tab', () => {
-      setActiveTab('assessments');
+    if (!isTourActive || activeTourId !== "main") return;
+    const unregister = registerStepAction("assessment-tab", () => {
+      setActiveTab("assessments");
     });
     return unregister;
   }, [isTourActive, activeTourId, registerStepAction, setActiveTab]);
@@ -440,9 +460,9 @@ export const CourseDetailPage = () => {
     const empty: QuestionAnalyticsProps = {
       typeComposition: [],
       difficulty: [
-        { label: 'Easy', value: 0, color: DIFF_COLORS.easy },
-        { label: 'Medium', value: 0, color: DIFF_COLORS.medium },
-        { label: 'Hard', value: 0, color: DIFF_COLORS.hard },
+        { label: "Easy", value: 0, color: DIFF_COLORS.easy },
+        { label: "Medium", value: 0, color: DIFF_COLORS.medium },
+        { label: "Hard", value: 0, color: DIFF_COLORS.hard },
       ],
       totalQuestions: questionsTotal,
       totalVariants: 0,
@@ -454,7 +474,7 @@ export const CourseDetailPage = () => {
 
     if (!courseQuestionStats) return empty;
 
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
     for (const row of courseQuestionStats.typeStats) {
       typeCounts[row.type] = row.count;
     }
@@ -463,7 +483,7 @@ export const CourseDetailPage = () => {
     );
     const used = new Set(courseQuestionStats.usedTopicIds);
     const topicsCovered = courseTopics.filter((t) => used.has(String(t.id))).length;
-    const typeComposition = (['MCQ', 'SA', 'LA'] as const)
+    const typeComposition = (["MCQ", "SA", "LA"] as const)
       .map((t) => ({
         label: questionTypeLabels[t],
         value: typeCounts[t] ?? 0,
@@ -474,9 +494,9 @@ export const CourseDetailPage = () => {
     return {
       typeComposition,
       difficulty: [
-        { label: 'Easy', value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
-        { label: 'Medium', value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
-        { label: 'Hard', value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
+        { label: "Easy", value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
+        { label: "Medium", value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
+        { label: "Hard", value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
       ],
       totalQuestions: courseQuestionStats.totalQuestions || questionsTotal,
       totalVariants: courseQuestionStats.totalVariants,
@@ -487,14 +507,14 @@ export const CourseDetailPage = () => {
     };
   }, [courseQuestionStats, questionsTotal, topicsByCourse, courseId]);
 
-  const analyticsStatus: 'loading' | 'ready' | 'unavailable' = courseQuestionStats
-    ? 'ready'
+  const analyticsStatus: "loading" | "ready" | "unavailable" = courseQuestionStats
+    ? "ready"
     : courseQuestionStatsUnavailable
-      ? 'unavailable'
-      : 'loading';
+      ? "unavailable"
+      : "loading";
 
   const emptyStateMessage =
-    questionsError || 'No questions found for this course yet. Try adding or uploading questions.';
+    questionsError || "No questions found for this course yet. Try adding or uploading questions.";
 
   // Keep the open detail view in sync with the latest variant data.
   useEffect(() => {
@@ -510,7 +530,8 @@ export const CourseDetailPage = () => {
       updated.primaryTopicId === selectedVariant.primaryTopicId &&
       updated.primaryTopicName === selectedVariant.primaryTopicName &&
       updated.questionType === selectedVariant.questionType &&
-      (updated.secondaryTopicNames?.join('|') ?? '') === (selectedVariant.secondaryTopicNames?.join('|') ?? '');
+      (updated.secondaryTopicNames?.join("|") ?? "") ===
+        (selectedVariant.secondaryTopicNames?.join("|") ?? "");
     if (!same) setSelectedVariant(updated);
   }, [variantEntries, selectedVariant]);
 
@@ -523,10 +544,13 @@ export const CourseDetailPage = () => {
     setSelectedVariant(null);
   }, []);
 
-  const handleCreateVariant = useCallback((entry: QuestionVariantEntry) => {
-    setSelectedVariant(null);
-    if (courseId) navigate(`/courses/${courseId}/questions/new?variantOf=${entry.questionId}`);
-  }, [courseId, navigate]);
+  const handleCreateVariant = useCallback(
+    (entry: QuestionVariantEntry) => {
+      setSelectedVariant(null);
+      if (courseId) navigate(`/courses/${courseId}/questions/new?variantOf=${entry.questionId}`);
+    },
+    [courseId, navigate],
+  );
 
   const handleAddQuestion = useCallback(() => {
     if (courseId) navigate(`/courses/${courseId}/questions/new`);
@@ -534,8 +558,11 @@ export const CourseDetailPage = () => {
 
   const handleUploadQuestions = useCallback(() => {
     if (courseId) void loadTopicsForCourse(courseId);
+    if (pendingExtractionReview && pendingExtractionReview.courseId !== courseId) {
+      setPendingExtractionReview(null);
+    }
     setIsUploadOpen(true);
-  }, [courseId, loadTopicsForCourse]);
+  }, [courseId, loadTopicsForCourse, pendingExtractionReview]);
 
   const handleUpdateVariant = useCallback(
     (
@@ -544,7 +571,7 @@ export const CourseDetailPage = () => {
         isAiGenerated?: boolean;
         isDraft?: boolean;
         testable?: boolean;
-        difficulty?: import('../types/question').QuestionDifficulty;
+        difficulty?: import("../types/question").QuestionDifficulty;
         choices?: MCQChoice[] | null;
         answer?: string | null;
         questionText?: string;
@@ -580,7 +607,7 @@ export const CourseDetailPage = () => {
       updates: {
         description?: string | null;
         primaryTopicId?: string;
-        type?: import('../types/question').QuestionType;
+        type?: import("../types/question").QuestionType;
         primaryTopicName?: string;
       },
     ) => {
@@ -590,7 +617,9 @@ export const CourseDetailPage = () => {
             ? {
                 ...q,
                 ...(updates.description !== undefined && { description: updates.description }),
-                ...(updates.primaryTopicId !== undefined && { primaryTopicId: updates.primaryTopicId }),
+                ...(updates.primaryTopicId !== undefined && {
+                  primaryTopicId: updates.primaryTopicId,
+                }),
                 ...(updates.type !== undefined && { type: updates.type }),
               }
             : q,
@@ -601,9 +630,15 @@ export const CourseDetailPage = () => {
           prev
             ? {
                 ...prev,
-                ...(updates.description !== undefined && { questionDescription: updates.description ?? null }),
-                ...(updates.primaryTopicId !== undefined && { primaryTopicId: updates.primaryTopicId }),
-                ...(updates.primaryTopicName !== undefined && { primaryTopicName: updates.primaryTopicName }),
+                ...(updates.description !== undefined && {
+                  questionDescription: updates.description ?? null,
+                }),
+                ...(updates.primaryTopicId !== undefined && {
+                  primaryTopicId: updates.primaryTopicId,
+                }),
+                ...(updates.primaryTopicName !== undefined && {
+                  primaryTopicName: updates.primaryTopicName,
+                }),
                 ...(updates.type !== undefined && { questionType: updates.type }),
               }
             : prev,
@@ -615,7 +650,9 @@ export const CourseDetailPage = () => {
         if (selectedVariant?.questionId === questionId) {
           const topics = topicsByCourse[fetched.courseId] ?? [];
           const topicNameMap = new Map(topics.map((t) => [t.id, t.name]));
-          const variant = fetched.variants?.find((v) => v.id === selectedVariant.variant.id) ?? selectedVariant.variant;
+          const variant =
+            fetched.variants?.find((v) => v.id === selectedVariant.variant.id) ??
+            selectedVariant.variant;
           const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
             ? variant.secondaryTopicsId.map((id) => topicNameMap.get(id) ?? `Topic ${id}`)
             : undefined;
@@ -635,7 +672,7 @@ export const CourseDetailPage = () => {
           });
         }
       } catch (err) {
-        console.error('Failed to refetch question after metadata update', err);
+        console.error("Failed to refetch question after metadata update", err);
       }
     },
     [selectedVariant?.questionId, selectedVariant?.variant.id, topicsByCourse],
@@ -662,55 +699,74 @@ export const CourseDetailPage = () => {
         setQuestions((prev) =>
           prev.map((item) =>
             item.id === question.id
-              ? { ...item, variants: item.variants?.filter((variant) => variant.id !== entry.variant.id) ?? [] }
+              ? {
+                  ...item,
+                  variants:
+                    item.variants?.filter((variant) => variant.id !== entry.variant.id) ?? [],
+                }
               : item,
           ),
         );
       }
       setSelectedVariant(null);
     } catch (error) {
-      console.error('Failed to delete variant', error);
-      toast.error('Failed to delete question', { description: 'Please try again.' });
+      console.error("Failed to delete variant", error);
+      toast.error("Failed to delete question", { description: "Please try again." });
     } finally {
       setIsDeletingVariant(false);
       setVariantToDelete(null);
     }
   }, [variantToDelete, questions, toast]);
 
-  const handleQuestionsUploaded = useCallback(async (createdQuestions: Question[]) => {
-    if (createdQuestions.length === 0) {
+  const handleQuestionsUploaded = useCallback(
+    async (createdQuestions: Question[]) => {
+      if (createdQuestions.length === 0) {
+        setIsUploadOpen(false);
+        return;
+      }
+      const uniqueCourseIds = Array.from(new Set(createdQuestions.map((q) => q.courseId)));
+      await Promise.all(uniqueCourseIds.map((cid) => loadTopicsForCourse(cid, { force: true })));
+      setQuestions((prev) => {
+        const merged = new Map<number, Question>();
+        createdQuestions.forEach((q) => merged.set(q.id, q));
+        prev.forEach((q) => {
+          if (!merged.has(q.id)) merged.set(q.id, q);
+        });
+        return Array.from(merged.values()).sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+        );
+      });
+      setSelectedVariant(null);
       setIsUploadOpen(false);
-      return;
-    }
-    const uniqueCourseIds = Array.from(new Set(createdQuestions.map((q) => q.courseId)));
-    await Promise.all(uniqueCourseIds.map((cid) => loadTopicsForCourse(cid, { force: true })));
-    setQuestions((prev) => {
-      const merged = new Map<number, Question>();
-      createdQuestions.forEach((q) => merged.set(q.id, q));
-      prev.forEach((q) => { if (!merged.has(q.id)) merged.set(q.id, q); });
-      return Array.from(merged.values()).sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
-      );
-    });
-    setSelectedVariant(null);
-    setIsUploadOpen(false);
-  }, [loadTopicsForCourse]);
+    },
+    [loadTopicsForCourse],
+  );
 
   const handleExtractInBackground = useCallback(
     (params: {
       text: string;
       courseId: number;
       model: string;
-      apiKeys: Record<string, unknown>;
+      apiKeys: ProviderApiKeys;
       jobId?: string;
-      onExtractionComplete?: (status: 'success' | 'error', extras?: { error?: string; questionsCount?: number }) => void;
+      onExtractionComplete?: (
+        status: "success" | "error",
+        extras?: { error?: string; questionsCount?: number },
+      ) => void;
     }) => {
       setIsUploadOpen(false);
-      const processingToast = toast('Extraction in progress', {
-          description: 'Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.',
-          duration: Infinity,
+      const processingToast = toast("Extraction in progress", {
+        description:
+          "Your upload is being processed. Keep this page open until the extraction is ready.",
+        duration: Infinity,
       });
-      const dismissProcessing = () => { try { toast.dismiss(processingToast); } catch { /* noop */ } };
+      const dismissProcessing = () => {
+        try {
+          toast.dismiss(processingToast);
+        } catch {
+          /* noop */
+        }
+      };
       questionService
         .extractQuestionsFromText({
           text: params.text,
@@ -722,42 +778,52 @@ export const CourseDetailPage = () => {
           dismissProcessing();
           const drafts = mapExtractedToDraftQuestions(response || []);
           if (drafts.length === 0) {
-            params.onExtractionComplete?.('error', { error: 'No questions extracted' });
-            toast.error('No questions extracted', {
-                description: 'The content could not be parsed into questions. Try adjusting the file or try again.',
-                duration: Infinity,
+            params.onExtractionComplete?.("error", { error: "No questions extracted" });
+            toast.error("No questions extracted", {
+              description:
+                "The content could not be parsed into questions. Try adjusting the file or try again.",
+              duration: Infinity,
             });
             return;
           }
-          params.onExtractionComplete?.('success', { questionsCount: drafts.length });
-          setPendingExtractionDrafts(drafts);
-          toast('Your extraction is ready', {
-            description: `${drafts.length} question${drafts.length === 1 ? '' : 's'} extracted. Open the upload dialog to review and save.`,
-            action: { label: 'Review questions', onClick: () => setIsUploadOpen(true) },
+          params.onExtractionComplete?.("success", { questionsCount: drafts.length });
+          setPendingExtractionReview({ courseId: params.courseId, drafts });
+          toast("Your extraction is ready", {
+            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Review them in the source course before saving.`,
+            action: {
+              label: "Review questions",
+              onClick: () => {
+                navigate(`/courses/${params.courseId}?tab=questions`);
+                setIsUploadOpen(true);
+              },
+            },
             duration: Infinity,
           });
         })
         .catch((err: any) => {
           dismissProcessing();
-          const message = err?.response?.data?.error || err?.message || 'Extraction failed.';
-          params.onExtractionComplete?.('error', { error: message });
-          toast.error('Extraction failed', { description: message, duration: Infinity });
+          const message = err?.response?.data?.error || err?.message || "Extraction failed.";
+          params.onExtractionComplete?.("error", { error: message });
+          toast.error("Extraction failed", { description: message, duration: Infinity });
         });
     },
-    [toast],
+    [navigate, toast],
   );
 
   // ── Assessment handlers ─────────────────────────────────────────────────────
-  const handleCreateAssessment = useCallback(async (params: AssessmentGenerationParams) => {
-    if (!courseId) return;
-    try {
-      const created = await assessmentService.createAssessment({ ...params, courseId });
-      setAssessments((prev) => [created, ...prev]);
-    } catch (error) {
-      console.error('Failed to create assessment', error);
-      toast.error('Error', { description: 'Failed to create assessment.' });
-    }
-  }, [courseId, toast]);
+  const handleCreateAssessment = useCallback(
+    async (params: AssessmentGenerationParams) => {
+      if (!courseId) return;
+      try {
+        const created = await assessmentService.createAssessment({ ...params, courseId });
+        setAssessments((prev) => [created, ...prev]);
+      } catch (error) {
+        console.error("Failed to create assessment", error);
+        toast.error("Error", { description: "Failed to create assessment." });
+      }
+    },
+    [courseId, toast],
+  );
 
   const handleDeleteAssessment = useCallback((assessmentId: number, assessmentName: string) => {
     setAssessmentToDelete({ id: assessmentId, name: assessmentName });
@@ -770,10 +836,12 @@ export const CourseDetailPage = () => {
       setIsDeletingAssessment(true);
       await assessmentService.deleteAssessment(assessmentToDelete.id);
       setAssessments((prev) => prev.filter((item) => item.id !== assessmentToDelete.id));
-      toast('Assessment deleted', { description: `"${assessmentToDelete.name}" has been removed.` });
+      toast("Assessment deleted", {
+        description: `"${assessmentToDelete.name}" has been removed.`,
+      });
       setAssessmentToDelete(null);
     } catch {
-      toast.error('Failed to delete assessment', { description: 'Please try again.' });
+      toast.error("Failed to delete assessment", { description: "Please try again." });
     } finally {
       setIsDeletingAssessment(false);
     }
@@ -783,21 +851,24 @@ export const CourseDetailPage = () => {
     (assessmentId: number): Assessment | null => {
       const assessment = assessments.find((a) => a.id === assessmentId);
       if (!assessment) {
-        toast.error('Export failed', { description: 'Assessment not found.' });
+        toast.error("Export failed", { description: "Assessment not found." });
         return null;
       }
       const hasDrafts = assessment.sections?.some((section) =>
         section.sectionVariants?.some((link) => link.variant?.isDraft === true),
       );
       if (hasDrafts) {
-        toast.error('Cannot export', {
-            description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
+        toast.error("Cannot export", {
+          description:
+            "Assessment contains draft questions. Please review all draft questions before exporting.",
         });
         return null;
       }
       const blocks = collectAssessmentExportBlocks(assessment);
       if (blocks.length === 0) {
-        toast.error('Cannot export', { description: 'No questions to export for this assessment.' });
+        toast.error("Cannot export", {
+          description: "No questions to export for this assessment.",
+        });
         return null;
       }
       return assessment;
@@ -811,17 +882,17 @@ export const CourseDetailPage = () => {
       if (!assessment) return;
       const blocks = collectAssessmentExportBlocks(assessment);
       const content = assessmentBlocksToPlainText(blocks);
-      const blob = new Blob([content], { type: 'text/plain' });
+      const blob = new Blob([content], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const slug = slugifyAssessmentBasename(assessmentName, 'assessment');
+      const link = document.createElement("a");
+      const slug = slugifyAssessmentBasename(assessmentName, "assessment");
       link.href = url;
       link.download = `${slug}-questions.txt`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      toast('Export started', { description: 'Questions downloaded as a TXT file.' });
+      toast("Export started", { description: "Questions downloaded as a TXT file." });
     },
     [exportGuard, toast],
   );
@@ -834,17 +905,19 @@ export const CourseDetailPage = () => {
       try {
         const blob = await assessmentBlocksToDocxBlob(assessment, blocks);
         const url = URL.createObjectURL(blob);
-        const linkEl = document.createElement('a');
-        const slug = slugifyAssessmentBasename(assessmentName, 'assessment');
+        const linkEl = document.createElement("a");
+        const slug = slugifyAssessmentBasename(assessmentName, "assessment");
         linkEl.href = url;
         linkEl.download = `${slug}-questions.docx`;
         document.body.appendChild(linkEl);
         linkEl.click();
         linkEl.remove();
         URL.revokeObjectURL(url);
-        toast('Export started', { description: 'Questions downloaded as a Word document.' });
+        toast("Export started", { description: "Questions downloaded as a Word document." });
       } catch {
-        toast.error('Export failed', { description: 'Could not build the Word file. Please try again.' });
+        toast.error("Export failed", {
+          description: "Could not build the Word file. Please try again.",
+        });
       }
     },
     [exportGuard, toast],
@@ -879,7 +952,7 @@ export const CourseDetailPage = () => {
             <p className="text-sm text-muted-foreground mb-4">
               This course doesn’t exist or you don’t have access to it.
             </p>
-            <Button onClick={() => navigate('/courses')}>Back to Courses</Button>
+            <Button onClick={() => navigate("/courses")}>Back to Courses</Button>
           </CardContent>
         </Card>
       </div>
@@ -892,21 +965,19 @@ export const CourseDetailPage = () => {
     <DetailPageScaffold
       padding="qm"
       beforeHero={
-        !hasCourseAccess && (
-          <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
-        )
+        !hasCourseAccess && <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       }
       hero={
         <CourseHeroCard
           code={course.code ?? course.name}
-          term={course.term ?? ''}
+          term={course.term ?? ""}
           year={course.year ?? undefined}
           name={course.name}
           description={course.description}
           topics={(topicsByCourse[course.id] ?? []).slice(0, 8).map((t) => t.name)}
           topRightBadges={[
-            course.coreCourseId ? 'EduAI Core' : 'Local',
-            ...(writesDisabled ? ['Read-only'] : []),
+            course.coreCourseId ? "EduAI Core" : "Local",
+            ...(writesDisabled ? ["Read-only"] : []),
           ]}
           /* Cross-platform visual identity: key the accent off the CORE course
              id when linked (same as CoursesGrid), so the hero matches the
@@ -943,7 +1014,7 @@ export const CourseDetailPage = () => {
             analyticsStatus={analyticsStatus}
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
-            onNewAssessment={() => setActiveTab('assessments')}
+            onNewAssessment={() => setActiveTab("assessments")}
             onImportFromCanvas={() => setIsCanvasImportOpen(true)}
           />
         </PageTabsContent>
@@ -965,7 +1036,7 @@ export const CourseDetailPage = () => {
             emptyMessage={emptyStateMessage}
             disableAdd={writesDisabled}
             disableUpload={writesDisabled}
-            onOpenProfile={() => startTour('main')}
+            onOpenProfile={() => startTour("main")}
           />
           <ListPaginationBar
             total={questionsTotal}
@@ -1044,27 +1115,38 @@ export const CourseDetailPage = () => {
       {courseId && (
         <>
           <QuestionUploadDialog
-            open={isUploadOpen}
-            onClose={() => { setIsUploadOpen(false); setPendingExtractionDrafts(null); }}
+            open={
+              isUploadOpen &&
+              (!pendingExtractionReview || pendingExtractionReview.courseId === courseId)
+            }
+            onClose={() => {
+              setIsUploadOpen(false);
+              setPendingExtractionReview(null);
+            }}
             courseId={courseId}
             courseName={course.name}
             topics={topicsByCourse[courseId] ?? []}
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
             onExtractInBackground={handleExtractInBackground}
-            initialDraftQuestions={pendingExtractionDrafts}
+            initialDraftQuestions={
+              pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null
+            }
           />
 
           {selectedAssessmentForExport && (
             <CanvasExportDialog
               open={isCanvasExportOpen}
-              onClose={() => { setIsCanvasExportOpen(false); setSelectedAssessmentForExport(null); }}
+              onClose={() => {
+                setIsCanvasExportOpen(false);
+                setSelectedAssessmentForExport(null);
+              }}
               assessmentId={selectedAssessmentForExport.id}
               assessmentName={selectedAssessmentForExport.name}
               courseId={courseId}
               onExportSuccess={(result) => {
-                toast('Export successful!', {
-                    description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}`,
+                toast("Export successful!", {
+                  description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}`,
                 });
               }}
             />
@@ -1076,7 +1158,7 @@ export const CourseDetailPage = () => {
             courseId={courseId}
             onImportSuccess={async () => {
               await fetchAssessments();
-              toast('Import successful', { description: 'Assessment imported from Canvas.' });
+              toast("Import successful", { description: "Assessment imported from Canvas." });
             }}
           />
 
@@ -1095,18 +1177,18 @@ export const CourseDetailPage = () => {
         onOpenChange={setDeleteVariantModalOpen}
         onConfirm={confirmDeleteVariant}
         title={(() => {
-          if (!variantToDelete) return 'Delete question?';
+          if (!variantToDelete) return "Delete question?";
           const question = questions.find((item) => item.id === variantToDelete.questionId);
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
-          return isLastVariant ? 'Delete question?' : 'Delete question variant?';
+          return isLastVariant ? "Delete question?" : "Delete question variant?";
         })()}
         description={(() => {
-          if (!variantToDelete) return 'This action cannot be undone.';
+          if (!variantToDelete) return "This action cannot be undone.";
           const question = questions.find((item) => item.id === variantToDelete.questionId);
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
           return isLastVariant
-            ? 'This will permanently delete the entire question and all its variants. This action cannot be undone.'
-            : 'This will permanently delete this question variant. This action cannot be undone.';
+            ? "This will permanently delete the entire question and all its variants. This action cannot be undone."
+            : "This will permanently delete this question variant. This action cannot be undone.";
         })()}
         confirmLabel="Delete"
         isLoading={isDeletingVariant}
@@ -1117,7 +1199,11 @@ export const CourseDetailPage = () => {
         open={deleteAssessmentModalOpen}
         onOpenChange={setDeleteAssessmentModalOpen}
         onConfirm={confirmDeleteAssessment}
-        title={assessmentToDelete ? `Delete assessment "${assessmentToDelete.name}"?` : 'Delete assessment?'}
+        title={
+          assessmentToDelete
+            ? `Delete assessment "${assessmentToDelete.name}"?`
+            : "Delete assessment?"
+        }
         description="This action cannot be undone. All sections and questions in this assessment will be removed."
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}

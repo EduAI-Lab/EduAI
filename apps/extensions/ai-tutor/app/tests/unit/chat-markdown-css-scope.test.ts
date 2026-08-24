@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 
 /**
  * #1343 / #1342 — AI Tutor renders the same model markdown Core does, and must
@@ -14,23 +14,23 @@ import { describe, it, expect } from 'vitest';
 
 // Resolved from this file rather than process.cwd() so the suite passes
 // wherever vitest is invoked from (repo root, app dir, or a --root override).
-const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const read = (relative: string) => readFileSync(path.join(appDir, relative), 'utf8');
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const read = (relative: string) => readFileSync(path.join(appDir, relative), "utf8");
 
-describe('AI Tutor chat markdown CSS scoping', () => {
-  it('keeps katex and streamdown out of the global stylesheet', () => {
-    const appCss = read('app.css');
+describe("AI Tutor chat markdown CSS scoping", () => {
+  it("keeps katex and streamdown out of the global stylesheet", () => {
+    const appCss = read("app.css");
     // Leading whitespace is legal CSS, so an indented re-add must fail too.
     const imports = appCss.match(/^[ \t]*@import\s+.*$/gm) ?? [];
 
-    expect(imports.some((line) => line.includes('katex'))).toBe(false);
-    expect(imports.some((line) => line.includes('streamdown'))).toBe(false);
+    expect(imports.some((line) => line.includes("katex"))).toBe(false);
+    expect(imports.some((line) => line.includes("streamdown"))).toBe(false);
   });
 
-  it('keeps the streamdown @source directives in the global stylesheet', () => {
+  it("keeps the streamdown @source directives in the global stylesheet", () => {
     // Streamdown's markup is styled with Tailwind utilities that must be
     // emitted globally; dropping these silently unstyles every chat surface.
-    const appCss = read('app.css');
+    const appCss = read("app.css");
 
     expect(appCss).toContain('@source "../node_modules/streamdown/dist/index.js";');
     expect(appCss).toContain('@source "../../../../node_modules/streamdown/dist/*.js";');
@@ -38,36 +38,38 @@ describe('AI Tutor chat markdown CSS scoping', () => {
     expect(appCss).toContain('@source "../../../../node_modules/@streamdown/math/dist/*.js";');
   });
 
-  it('holds the streamdown sheet in the chunk-scoped stylesheet', () => {
-    const chatCss = read('styles/chat-markdown.css');
+  it("holds the streamdown sheet in the chunk-scoped stylesheet", () => {
+    const chatCss = read("styles/chat-markdown.css");
 
-    expect(chatCss).toContain('@import "streamdown/styles.css";');
-    expect(chatCss).toContain('[data-streamdown="code-block-actions"]');
+    expect(chatCss).toContain("@import 'streamdown/styles.css';");
+    expect(chatCss).toContain("[data-streamdown='code-block-actions']");
   });
 
-  it('imports the scoped stylesheet from the only markdown surface', () => {
+  it("imports the scoped stylesheet from the only markdown surface", () => {
     // StudentAiChat is AI Tutor's single `MessageContent markdown` caller.
-    const chat = read('components/StudentAiChat.tsx');
+    const chat = read("components/StudentAiChat.tsx");
 
-    expect(chat).toContain("import '~/styles/chat-markdown.css';");
+    expect(chat).toMatch(/import\s+['"]~\/styles\/chat-markdown\.css['"];/);
   });
 
-  it('loads katex on demand rather than statically (#1342)', () => {
-    const chatCss = read('styles/chat-markdown.css');
+  it("loads katex on demand rather than statically (#1342)", () => {
+    const chatCss = read("styles/chat-markdown.css");
     const imports = chatCss.match(/^[ \t]*@import\s+.*$/gm) ?? [];
-    expect(imports.some((line) => line.includes('katex'))).toBe(false);
+    expect(imports.some((line) => line.includes("katex"))).toBe(false);
 
-    const chat = read('components/StudentAiChat.tsx');
-    expect(chat).toContain("loadKatexStyles: () => import('katex/dist/katex.min.css')");
+    const chat = read("components/StudentAiChat.tsx");
+    expect(chat).toMatch(/loadKatexStyles: \(\) => import\(['"]katex\/dist\/katex\.min\.css['"]\)/);
   });
 
-  it('normalizes assistant markdown before rendering it (#1401)', () => {
+  it("normalizes assistant markdown before rendering it (#1401)", () => {
     // Without this, model LaTeX reaches KaTeX in delimiters remark-math does
     // not accept and renders as literal text — and the #1342 gate, which reads
     // the normalized body, would never fire.
-    const chat = read('components/StudentAiChat.tsx');
+    const chat = read("components/StudentAiChat.tsx");
 
-    expect(chat).toContain("import { normalizeMathMarkdown } from '@eduai/ui/math-markdown';");
-    expect(chat).toContain('{normalizeMathMarkdown(msg.content)}');
+    expect(chat).toMatch(
+      /import \{ normalizeMathMarkdown \} from ['"]@eduai\/ui\/math-markdown['"];/,
+    );
+    expect(chat).toContain("{normalizeMathMarkdown(msg.content)}");
   });
 });

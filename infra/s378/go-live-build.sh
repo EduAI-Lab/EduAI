@@ -8,7 +8,7 @@
 #
 # Order is the whole point and is not negotiable:
 #
-#   env  ->  generate  ->  migrate  ->  seed  ->  BUILD  ->  restart
+#   env  ->  generate  ->  migrate  ->  extension seed  ->  BUILD  ->  restart
 #
 # `go-live-env.sh` rewrites the VITE_* public URLs. Those used to be read when
 # the dev server started; now they are BAKED INTO THE BUNDLE at build time. Run
@@ -141,6 +141,9 @@ else
   echo "           skipping the client-isolation check (expected before #1243 merges)."
 fi
 
+step "migration preflight"
+( cd apps/core && npm run db:migrate:preflight )
+
 step "migrate"
 # These live here rather than in the systemd units on purpose: the units use
 # Restart=always, which would re-run a migration on every crash-loop iteration.
@@ -152,13 +155,17 @@ step "migrate"
 # baseline script first.
 ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
 
-step "seed if empty"
-# The old units exec'd `npm run dev`, whose script chained `seed:if-empty` for all
-# three apps. The new units exec the server directly, so without this a freshly
-# reset or recreated database comes up with no AI providers and no admin user:
-# every unit reports active, BUILD_OK prints, and nobody can sign in.
-# All three are no-ops when the database already has rows.
-( cd apps/core                                  && npm run db:seed:if-empty )
+step "seed reference and extension data"
+# Core fixture seeding is intentionally disabled on s378. Core's seed contains
+# fixed demo identities, including an ADMIN account, and its local-only guard
+# must never be bypassed by a shared deployment. Bootstrap the first real Core
+# administrator through the documented operator bootstrap flow instead.
+# Reference catalogs contain no identities and use idempotent upserts, so they
+# are safe and required on a freshly migrated shared database.
+( cd apps/core                                  && npm run db:seed:reference )
+#
+# The extension seeds contain only local application/catalog data and remain
+# no-ops when their databases already have rows.
 ( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
 ( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
 
@@ -218,6 +225,19 @@ fi
 
 if [ "$DO_RESTART" = "1" ]; then
   step "restart"
+  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
+    echo "ERROR: eduai-cron-worker.service is not installed on this host."
+    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
+    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
+    exit 1
+  fi
+  if want core; then
+    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
+    # not from the web checkout. Sync them on every Core deploy so a script
+    # change cannot remain stale after the worker restarts.
+    echo "  syncing cron scripts to /opt/eduai/cron"
+    sudo /usr/local/sbin/eduai-cron-sync
+  fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already
@@ -227,6 +247,9 @@ if [ "$DO_RESTART" = "1" ]; then
   # whose bundle did not change is a pointless outage on a shared box.
   RESTART_UNITS=()
   if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  # The cron worker imports Core server code directly, so it must restart with
+  # every Core deployment even when Core itself was restarted after its build.
+  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
   if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
   if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
 
@@ -267,6 +290,10 @@ if [ "$DO_RESTART" = "1" ]; then
   # stopped would be a false alarm.
   UNHEALTHY=()
   if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
+    echo "  eduai-cron-worker        NOT active"
+    UNHEALTHY+=(eduai-cron-worker)
+  fi
   if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
   if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
 

@@ -96,10 +96,7 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
   it("passes image context to the classifier without overriding its tier", async () => {
     const decision = await resolveRoutedModelLlm("describe this image", imageContext);
 
-    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith(
-      "describe this image",
-      imageContext,
-    );
+    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith("describe this image", imageContext);
     expect(decision.tier).toBe(3);
     expect(decision.features).toMatchObject({
       rule: "llm_classifier",
@@ -118,10 +115,10 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
 
     await resolveRoutedModelLlm("compare X and Y from the notes", ragContext);
 
-    expect(mocks.tierFromLlmClassification).toHaveBeenCalledWith(
-      expect.anything(),
-      { ragTopSimilarity: 0.87, ragChunkCount: 3 },
-    );
+    expect(mocks.tierFromLlmClassification).toHaveBeenCalledWith(expect.anything(), {
+      ragTopSimilarity: 0.87,
+      ragChunkCount: 3,
+    });
   });
 
   it("requires supportsImages on every pick attempt (including the fallback) for image inputs, and never silently lands on a non-image-capable model", async () => {

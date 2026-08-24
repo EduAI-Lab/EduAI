@@ -10,16 +10,17 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const candidate = { id: "u1", name: "Ada Lovelace", email: "ada@example.com" };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,
     text: () => Promise.resolve(""),
     json: () => Promise.resolve(body),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -111,7 +112,7 @@ describe("useStudentCandidates", () => {
       status: 500,
       text: () => Promise.resolve("server exploded"),
       json: () => Promise.resolve({}),
-    } as unknown as Response);
+    } as Response);
 
     const { result } = renderHook(() => useStudentCandidates("course-1", "enrolled"));
 
@@ -139,7 +140,9 @@ describe("useStudentCandidates", () => {
           resolveFirst = resolve;
         });
       }
-      return Promise.resolve(okJson({ data: [{ id: "u2", name: "Grace Hopper", email: "grace@example.com" }] }));
+      return Promise.resolve(
+        okJson({ data: [{ id: "u2", name: "Grace Hopper", email: "grace@example.com" }] }),
+      );
     });
 
     const { result } = renderHook(() => useStudentCandidates("course-1", "enrolled"));
@@ -160,8 +163,10 @@ describe("useStudentCandidates", () => {
       resolveFirst(okJson({ data: [candidate] }));
     });
 
-    await vi.waitFor(() => expect(result.current.candidates).toEqual([
-      { id: "u2", name: "Grace Hopper", email: "grace@example.com" },
-    ]));
+    await vi.waitFor(() =>
+      expect(result.current.candidates).toEqual([
+        { id: "u2", name: "Grace Hopper", email: "grace@example.com" },
+      ]),
+    );
   });
 });

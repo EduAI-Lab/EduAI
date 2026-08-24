@@ -18,17 +18,11 @@ export const DEFAULT_BANK_NAME = "Course bank";
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  );
+function isUniqueViolation(cause: unknown): boolean {
+  return cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002";
 }
 
-export async function ensureDefaultBank(
-  courseId: string,
-  db: DbClient = prisma,
-) {
+export async function ensureDefaultBank(courseId: string, db: DbClient = prisma) {
   const existing = await db.questionBank.findFirst({
     where: { courseId, isDefault: true },
   });
@@ -61,10 +55,7 @@ export async function listQuestionBanks(courseId: string) {
   });
 }
 
-export async function createQuestionBank(
-  courseId: string,
-  payload: CreateQuestionBankInput,
-) {
+export async function createQuestionBank(courseId: string, payload: CreateQuestionBankInput) {
   const parsed = CreateQuestionBankSchema.safeParse(payload);
   if (!parsed.success) {
     return { error: "Invalid input", details: parsed.error.flatten() } as const;
@@ -108,13 +99,11 @@ export async function updateQuestionBank(
 
   const updated = await prisma.questionBank.update({
     where: { id: bankId },
+    // Prisma leaves a column untouched when its update value is `undefined`,
+    // so a partial payload only writes the fields the caller actually sent.
     data: {
-      ...(parsed.data.name !== undefined
-        ? { name: parsed.data.name.trim() }
-        : {}),
-      ...(parsed.data.description !== undefined
-        ? { description: parsed.data.description }
-        : {}),
+      name: parsed.data.name !== undefined ? parsed.data.name.trim() : undefined,
+      description: parsed.data.description,
     },
   });
 
@@ -149,8 +138,7 @@ export async function deleteQuestionBank(
     const moveTo = parsed.data.moveMembershipsToBankId;
     if (!moveTo) {
       return {
-        error:
-          "Bank has questions; provide moveMembershipsToBankId to reassign memberships",
+        error: "Bank has questions; provide moveMembershipsToBankId to reassign memberships",
       } as const;
     }
     const target = await prisma.questionBank.findFirst({

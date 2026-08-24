@@ -10,8 +10,9 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -35,9 +36,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const apiKeyGate = await enforceAdminIfApiKey(request);
   if (apiKeyGate.response) return apiKeyGate.response;
 
-  const session =
-    apiKeyGate.session ??
-    (await getRequestSession(request));
+  const session = apiKeyGate.session ?? (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -62,9 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const apiKeyGate = await enforceAdminIfApiKey(request);
   if (apiKeyGate.response) return apiKeyGate.response;
 
-  const session =
-    apiKeyGate.session ??
-    (await getRequestSession(request));
+  const session = apiKeyGate.session ?? (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

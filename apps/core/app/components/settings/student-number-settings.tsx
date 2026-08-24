@@ -3,10 +3,7 @@ import { Spinner } from "@eduai/ui";
 import { IconLock, IconSchool } from "@tabler/icons-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
-import {
-  isValidUbcStudentNumber,
-  UBC_STUDENT_NUMBER_MESSAGE,
-} from "~/lib/canvas/student-number";
+import { isValidUbcStudentNumber, UBC_STUDENT_NUMBER_MESSAGE } from "~/lib/canvas/student-number";
 import {
   Button,
   Card,
@@ -22,9 +19,7 @@ type StudentNumberSettingsProps = {
   initialStudentNumber: string | null;
 };
 
-export function StudentNumberSettings({
-  initialStudentNumber,
-}: StudentNumberSettingsProps) {
+export function StudentNumberSettings({ initialStudentNumber }: StudentNumberSettingsProps) {
   const [studentNumber, setStudentNumber] = useState(initialStudentNumber ?? "");
   const [savedStudentNumber, setSavedStudentNumber] = useState(initialStudentNumber ?? "");
   const [saving, setSaving] = useState(false);
@@ -74,8 +69,8 @@ export function StudentNumberSettings({
           Student number
         </CardTitle>
         <CardDescription>
-          Link your UBC student number so we can match you to courses when your
-          instructor syncs Canvas.
+          Link your UBC student number so we can match you to courses when your instructor syncs
+          Canvas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -104,9 +99,8 @@ export function StudentNumberSettings({
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <IconLock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                Your student number is linked and can only be changed by an
-                administrator. Contact your instructor or an admin if this is
-                incorrect.
+                Your student number is linked and can only be changed by an administrator. Contact
+                your instructor or an admin if this is incorrect.
               </span>
             </p>
           </div>
@@ -132,10 +126,9 @@ export function StudentNumberSettings({
                 disabled={saving}
               />
               <p className="text-xs text-muted-foreground">
-                Must be exactly 8 digits and match your student ID in Canvas. You
-                can link before your instructor syncs; enrollments appear after
-                they sync the course. Once saved, only an administrator can
-                change it.
+                Must be exactly 8 digits and match your student ID in Canvas. You can link before
+                your instructor syncs; enrollments appear after they sync the course. Once saved,
+                only an administrator can change it.
               </p>
             </div>
 
@@ -158,4 +151,3 @@ export function StudentNumberSettings({
     </Card>
   );
 }
-

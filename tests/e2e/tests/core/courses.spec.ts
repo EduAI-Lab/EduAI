@@ -11,10 +11,10 @@
  *
  * Requires E2E_SEED_SECRET to be set on the Core service.
  */
-import { test, expect, type APIRequestContext } from '@playwright/test';
-import { CORE_URL } from '../../playwright.config';
-import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
-import { canSeeCoreCourse, listCoreCoursePage } from '../helpers/core-courses';
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import { CORE_URL } from "../../playwright.config";
+import { createAdmin, createInstructor, registerUser } from "../helpers/auth";
+import { canSeeCoreCourse, listCoreCoursePage } from "../helpers/core-courses";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,13 +31,13 @@ async function getMyId(ctx: APIRequestContext): Promise<string> {
 function coursePayload(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E Test Course',
-    code: `${codeBase ?? 'E2E'}-${RUN_SUFFIX}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
-    startDate: '2026-09-08',
-    department: 'COSC',
+    name: "E2E Test Course",
+    code: `${codeBase ?? "E2E"}-${RUN_SUFFIX}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -47,23 +47,23 @@ function coursePayload(instrId: string, overrides: Record<string, string> = {}) 
 // Course lifecycle — ADMIN creates, INSTRUCTOR is assigned
 // ---------------------------------------------------------------------------
 
-test.describe('Core course lifecycle (ADMIN)', () => {
-  test('ADMIN can create a course', async ({ playwright }) => {
+test.describe("Core course lifecycle (ADMIN)", () => {
+  test("ADMIN can create a course", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'cc-instr' });
+      await createInstructor(instrCtx, { prefix: "cc-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'cc-admin' });
+      await createAdmin(adminCtx, { prefix: "cc-admin" });
 
       const res = await adminCtx.post(`${CORE_URL}/api/courses`, {
-        form: coursePayload(instrId, { name: 'Create Test', code: 'CRT 101' }),
+        form: coursePayload(instrId, { name: "Create Test", code: "CRT 101" }),
       });
       expect(res.status()).toBe(201);
 
       const course = await res.json();
-      expect(typeof course.id).toBe('string');
-      expect(course.name).toBe('Create Test');
+      expect(typeof course.id).toBe("string");
+      expect(course.name).toBe("Create Test");
       expect(course.isPublished).toBe(false);
     } finally {
       await adminCtx.dispose();
@@ -71,16 +71,16 @@ test.describe('Core course lifecycle (ADMIN)', () => {
     }
   });
 
-  test('ADMIN can read their own course list', async ({ playwright }) => {
+  test("ADMIN can read their own course list", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'cl-instr' });
+      await createInstructor(instrCtx, { prefix: "cl-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'cl-admin' });
+      await createAdmin(adminCtx, { prefix: "cl-admin" });
 
       const createRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
-        form: coursePayload(instrId, { name: 'List Test', code: 'LST 101' }),
+        form: coursePayload(instrId, { name: "List Test", code: "LST 101" }),
       });
       expect(createRes.status()).toBe(201);
       const { id } = await createRes.json();
@@ -96,17 +96,17 @@ test.describe('Core course lifecycle (ADMIN)', () => {
     }
   });
 
-  test('ADMIN can read a specific course', async ({ playwright }) => {
+  test("ADMIN can read a specific course", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'cg-instr' });
+      await createInstructor(instrCtx, { prefix: "cg-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'cg-admin' });
+      await createAdmin(adminCtx, { prefix: "cg-admin" });
 
       const { id } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Get Test', code: 'GET 101' }),
+          form: coursePayload(instrId, { name: "Get Test", code: "GET 101" }),
         })
       ).json();
 
@@ -114,49 +114,49 @@ test.describe('Core course lifecycle (ADMIN)', () => {
       expect(getRes.status()).toBe(200);
       const course = await getRes.json();
       expect(course.id).toBe(id);
-      expect(course.name).toBe('Get Test');
+      expect(course.name).toBe("Get Test");
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
     }
   });
 
-  test('ADMIN can update a course name', async ({ playwright }) => {
+  test("ADMIN can update a course name", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'cu-instr' });
+      await createInstructor(instrCtx, { prefix: "cu-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'cu-admin' });
+      await createAdmin(adminCtx, { prefix: "cu-admin" });
 
       const { id } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Original Name', code: 'UPD 101' }),
+          form: coursePayload(instrId, { name: "Original Name", code: "UPD 101" }),
         })
       ).json();
 
       const patchRes = await adminCtx.patch(`${CORE_URL}/api/courses/${id}`, {
-        data: { name: 'Updated Name' },
+        data: { name: "Updated Name" },
       });
       expect(patchRes.status()).toBe(200);
-      expect((await patchRes.json()).name).toBe('Updated Name');
+      expect((await patchRes.json()).name).toBe("Updated Name");
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
     }
   });
 
-  test('ADMIN can publish and unpublish a course', async ({ playwright }) => {
+  test("ADMIN can publish and unpublish a course", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'pub-instr' });
+      await createInstructor(instrCtx, { prefix: "pub-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'pub-admin' });
+      await createAdmin(adminCtx, { prefix: "pub-admin" });
 
       const { id } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Publish Test', code: 'PUB 101' }),
+          form: coursePayload(instrId, { name: "Publish Test", code: "PUB 101" }),
         })
       ).json();
 
@@ -173,17 +173,17 @@ test.describe('Core course lifecycle (ADMIN)', () => {
     }
   });
 
-  test('ADMIN can soft-delete a course and it disappears from GET', async ({ playwright }) => {
+  test("ADMIN can soft-delete a course and it disappears from GET", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     try {
-      await createInstructor(instrCtx, { prefix: 'del-instr' });
+      await createInstructor(instrCtx, { prefix: "del-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'del-admin' });
+      await createAdmin(adminCtx, { prefix: "del-admin" });
 
       const { id } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Delete Test', code: 'DEL 101' }),
+          form: coursePayload(instrId, { name: "Delete Test", code: "DEL 101" }),
         })
       ).json();
 
@@ -198,19 +198,19 @@ test.describe('Core course lifecycle (ADMIN)', () => {
     }
   });
 
-  test('STUDENT blocked from creating a course (403)', async ({ request }) => {
-    await registerUser(request, { prefix: 'create-student-blocked' });
+  test("STUDENT blocked from creating a course (403)", async ({ request }) => {
+    await registerUser(request, { prefix: "create-student-blocked" });
 
     const res = await request.post(`${CORE_URL}/api/courses`, {
       form: {
-        name: 'Blocked',
-        code: 'BLK 101',
-        section: '001',
-        term: 'W1',
-        year: '2026',
-        startDate: '2026-09-08',
-        department: 'COSC',
-        instructorUserIds: 'some-id',
+        name: "Blocked",
+        code: "BLK 101",
+        section: "001",
+        term: "W1",
+        year: "2026",
+        startDate: "2026-09-08",
+        department: "COSC",
+        instructorUserIds: "some-id",
       },
     });
     expect(res.status()).toBe(403);
@@ -221,29 +221,29 @@ test.describe('Core course lifecycle (ADMIN)', () => {
 // Publish-state visibility — enrolled STUDENT
 // ---------------------------------------------------------------------------
 
-test.describe('Course publish-state controls STUDENT visibility', () => {
-  test('enrolled STUDENT sees published course, not unpublished', async ({ playwright }) => {
+test.describe("Course publish-state controls STUDENT visibility", () => {
+  test("enrolled STUDENT sees published course, not unpublished", async ({ playwright }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createInstructor(instrCtx, { prefix: 'vis-instr' });
+      await createInstructor(instrCtx, { prefix: "vis-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'vis-admin' });
-      await registerUser(studentCtx, { prefix: 'vis-student' });
+      await createAdmin(adminCtx, { prefix: "vis-admin" });
+      await registerUser(studentCtx, { prefix: "vis-student" });
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
       const createRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
-        form: coursePayload(instrId, { name: 'Visibility Test', code: 'VIS 101' }),
+        form: coursePayload(instrId, { name: "Visibility Test", code: "VIS 101" }),
       });
       expect(createRes.status()).toBe(201);
       const { id: courseId } = await createRes.json();
 
       // Admin enrolls the student
       const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
-        data: { userId: studentId, role: 'STUDENT' },
+        data: { userId: studentId, role: "STUDENT" },
       });
       expect(enrollRes.status()).toBe(201);
 
@@ -278,7 +278,7 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
     }
   });
 
-  test('unenrolled STUDENT cannot see any course regardless of publish state', async ({
+  test("unenrolled STUDENT cannot see any course regardless of publish state", async ({
     playwright,
   }) => {
     const adminCtx = await playwright.request.newContext();
@@ -286,14 +286,14 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createInstructor(instrCtx, { prefix: 'une-instr' });
+      await createInstructor(instrCtx, { prefix: "une-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'une-admin' });
-      await registerUser(studentCtx, { prefix: 'une-student' });
+      await createAdmin(adminCtx, { prefix: "une-admin" });
+      await registerUser(studentCtx, { prefix: "une-student" });
 
       const { id: courseId } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Unenrolled Test', code: 'UNE 101' }),
+          form: coursePayload(instrId, { name: "Unenrolled Test", code: "UNE 101" }),
         })
       ).json();
 
@@ -315,8 +315,8 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
 // Enrollment management
 // ---------------------------------------------------------------------------
 
-test.describe('Core enrollment management', () => {
-  test('ADMIN can enroll a STUDENT and the enrollment appears in the list', async ({
+test.describe("Core enrollment management", () => {
+  test("ADMIN can enroll a STUDENT and the enrollment appears in the list", async ({
     playwright,
   }) => {
     const adminCtx = await playwright.request.newContext();
@@ -324,21 +324,21 @@ test.describe('Core enrollment management', () => {
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createInstructor(instrCtx, { prefix: 'enr-instr' });
+      await createInstructor(instrCtx, { prefix: "enr-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'enr-admin' });
-      await registerUser(studentCtx, { prefix: 'enr-student' });
+      await createAdmin(adminCtx, { prefix: "enr-admin" });
+      await registerUser(studentCtx, { prefix: "enr-student" });
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
       const { id: courseId } = await (
         await adminCtx.post(`${CORE_URL}/api/courses`, {
-          form: coursePayload(instrId, { name: 'Enrollment Mgmt', code: 'ENR 202' }),
+          form: coursePayload(instrId, { name: "Enrollment Mgmt", code: "ENR 202" }),
         })
       ).json();
 
       const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
-        data: { userId: studentId, role: 'STUDENT' },
+        data: { userId: studentId, role: "STUDENT" },
       });
       expect(enrollRes.status()).toBe(201);
 
@@ -354,11 +354,11 @@ test.describe('Core enrollment management', () => {
     }
   });
 
-  test('STUDENT cannot enroll themselves (403)', async ({ request }) => {
-    await registerUser(request, { prefix: 'self-enroll-student' });
+  test("STUDENT cannot enroll themselves (403)", async ({ request }) => {
+    await registerUser(request, { prefix: "self-enroll-student" });
 
     const res = await request.post(`${CORE_URL}/api/courses/fake-course-id/enrollments`, {
-      data: { userId: 'some-user-id', role: 'STUDENT' },
+      data: { userId: "some-user-id", role: "STUDENT" },
     });
     expect([401, 403, 404]).toContain(res.status());
   });

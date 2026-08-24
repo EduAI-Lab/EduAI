@@ -39,6 +39,7 @@ import prisma from "~/lib/prisma.server";
 import { loader as listLoader, action as postAction } from "~/routes/api/questions";
 import { loader as getLoader, action as patchAction } from "~/routes/api/questions.$id";
 import { bodyForIdempotencyHash, hashRequestBody } from "~/lib/idempotency.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const mockGetSession = auth.api.getSession as any;
 const db = prisma as unknown as {
@@ -67,13 +68,14 @@ const db = prisma as unknown as {
 
 const VALID_KEY = "integration-service-key-test-xyz";
 const COURSE_ID = "course-cuid-abc";
+const OTHER_COURSE_ID = "course-cuid-other";
 const TOPIC_ID = "topic-cuid-primary";
 const QUESTION_ID = "question-cuid-xyz";
 
 function makeListArgs(
   query: Record<string, string> = {},
   authorization?: string,
-  sessionCookie?: string
+  sessionCookie?: string,
 ) {
   const url = new URL("http://localhost/api/questions");
   Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -87,7 +89,7 @@ function makeListArgs(
   } as any;
 }
 
-function makePostArgs(body: object, sessionCookie?: string) {
+function makePostArgs(body: RouteRequestBody, sessionCookie?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (sessionCookie) headers.set("Cookie", sessionCookie);
   return {
@@ -114,9 +116,9 @@ function makeGetByIdArgs(id: string, authorization?: string, sessionCookie?: str
 
 function makePatchArgs(
   id: string,
-  body: object,
+  body: RouteRequestBody,
   authorization?: string,
-  sessionCookie?: string
+  sessionCookie?: string,
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
@@ -251,9 +253,39 @@ describe("GET /api/questions", () => {
     db.question.findMany.mockResolvedValue([]);
     db.question.count.mockResolvedValue(0);
 
-    await listLoader(makeListArgs({ courseId: COURSE_ID, testable: "true" }, `Bearer ${VALID_KEY}`));
+    await listLoader(
+      makeListArgs({ courseId: COURSE_ID, testable: "true" }, `Bearer ${VALID_KEY}`),
+    );
 
     expect(db.question.findMany.mock.calls[0][0].where.testable).toBe(true);
+  });
+
+  it("normalizes negative pagination before querying Prisma", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    const res = await listLoader(
+      makeListArgs({ courseId: COURSE_ID, limit: "-25", offset: "-10" }, `Bearer ${VALID_KEY}`),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ limit: 1, offset: 0 });
+    expect(db.question.findMany.mock.calls[0][0]).toMatchObject({ take: 1, skip: 0 });
+  });
+
+  it("caps an excessive offset before querying Prisma", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    const res = await listLoader(
+      makeListArgs({ courseId: COURSE_ID, offset: "100001" }, `Bearer ${VALID_KEY}`),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ limit: 100, offset: 100_000 });
+    expect(db.question.findMany.mock.calls[0][0].skip).toBe(100_000);
   });
 });
 
@@ -283,8 +315,12 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
     mockCourseAccess("TA");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -315,8 +351,12 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } });
     db.course.findFirst.mockResolvedValue(COURSE_ROW);
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -328,9 +368,13 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     const res = await postAction(
-      makePostArgs({ ...validPostBody, secondaryTopicIds: [TOPIC_ID] }, "session=abc")
+      makePostArgs({ ...validPostBody, secondaryTopicIds: [TOPIC_ID] }, "session=abc"),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("DUPLICATE_TOPIC");
@@ -340,10 +384,16 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.courseTopic.findMany.mockResolvedValue([{ id: "sec-topic", deletedAt: new Date() }]);
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.courseTopic.findMany.mockResolvedValue([
+      { id: "sec-topic", courseId: COURSE_ID, deletedAt: new Date() },
+    ]);
     const res = await postAction(
-      makePostArgs({ ...validPostBody, secondaryTopicIds: ["sec-topic"] }, "session=abc")
+      makePostArgs({ ...validPostBody, secondaryTopicIds: ["sec-topic"] }, "session=abc"),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("INVALID_TOPIC_IDS");
@@ -353,8 +403,12 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -362,6 +416,73 @@ describe("POST /api/questions", () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ id: QUESTION_ID });
     expect(db.question.create.mock.calls[0][0].data.createdBy).toBe("u1");
+  });
+
+  it("returns 404 when the primary topic belongs to another course", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: OTHER_COURSE_ID,
+      deletedAt: null,
+    });
+
+    const res = await postAction(makePostArgs(validPostBody, "session=abc"));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "TOPIC_NOT_FOUND" });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 when a secondary topic belongs to another course", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.courseTopic.findMany.mockResolvedValue([
+      { id: "sec-topic", courseId: OTHER_COURSE_ID, deletedAt: null },
+    ]);
+
+    const res = await postAction(
+      makePostArgs({ ...validPostBody, secondaryTopicIds: ["sec-topic"] }, "session=abc"),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      error: "INVALID_TOPIC_IDS",
+      deletedTopicIds: ["sec-topic"],
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 when secondaryTopicIds repeats the same topic", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+
+    const res = await postAction(
+      makePostArgs(
+        { ...validPostBody, secondaryTopicIds: ["sec-topic", "sec-topic"] },
+        "session=abc",
+      ),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "DUPLICATE_TOPIC",
+      conflictingIds: ["sec-topic"],
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 
   it("returns same id on idempotency key replay", async () => {
@@ -409,10 +530,7 @@ describe("POST /api/questions", () => {
     });
 
     const res = await postAction(
-      makePostArgs(
-        { ...validPostBody, idempotencyKey: "idem-replay-test" },
-        "session=student",
-      ),
+      makePostArgs({ ...validPostBody, idempotencyKey: "idem-replay-test" }, "session=student"),
     );
 
     expect(res.status).toBe(403);
@@ -477,7 +595,7 @@ describe("GET /api/questions/:id", () => {
 describe("PATCH /api/questions/:id", () => {
   it("returns 422 VALIDATION_ERROR when testable is a string", async () => {
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: "yes" }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: "yes" }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -487,16 +605,14 @@ describe("PATCH /api/questions/:id", () => {
 
   it("returns 422 VALIDATION_ERROR when testable is null", async () => {
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: null }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: null }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("VALIDATION_ERROR");
   });
 
   it("returns 422 VALIDATION_ERROR when testable field is absent", async () => {
-    const res = await patchAction(
-      makePatchArgs(QUESTION_ID, {}, `Bearer ${VALID_KEY}`)
-    );
+    const res = await patchAction(makePatchArgs(QUESTION_ID, {}, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("VALIDATION_ERROR");
   });
@@ -509,7 +625,7 @@ describe("PATCH /api/questions/:id", () => {
     });
     db.question.update.mockRejectedValue(err);
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "QUESTION_NOT_FOUND" });
@@ -518,7 +634,7 @@ describe("PATCH /api/questions/:id", () => {
   it("returns 200 with updated testable via service key", async () => {
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: QUESTION_ID, testable: true });
@@ -530,7 +646,7 @@ describe("PATCH /api/questions/:id", () => {
     db.question.findFirst.mockResolvedValue(fakeQuestion);
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(200);
   });
@@ -540,7 +656,7 @@ describe("PATCH /api/questions/:id", () => {
     mockCourseAccess("STUDENT");
     db.question.findFirst.mockResolvedValue(fakeQuestion);
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(403);
   });
@@ -551,7 +667,7 @@ describe("PATCH /api/questions/:id", () => {
     db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "u-ta" });
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(200);
   });
@@ -561,7 +677,7 @@ describe("PATCH /api/questions/:id", () => {
     mockCourseAccess("TA");
     db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "someone-else" });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(403);
   });
@@ -577,18 +693,29 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
     // POST
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.question.findUnique.mockResolvedValue(null);
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
 
     const postRes = await postAction(
       makePostArgs(
-        { courseId: COURSE_ID, topicId: TOPIC_ID, content: "Q?", type: "SA", testable: false, secondaryTopicIds: [] },
-        "session=abc"
-      )
+        {
+          courseId: COURSE_ID,
+          topicId: TOPIC_ID,
+          content: "Q?",
+          type: "SA",
+          testable: false,
+          secondaryTopicIds: [],
+        },
+        "session=abc",
+      ),
     );
     expect(postRes.status).toBe(201);
     const { id } = await postRes.json();
@@ -604,7 +731,9 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
 
     // PATCH
     db.question.update.mockResolvedValue({ id, testable: true });
-    const patchRes = await patchAction(makePatchArgs(id, { testable: true }, `Bearer ${VALID_KEY}`));
+    const patchRes = await patchAction(
+      makePatchArgs(id, { testable: true }, `Bearer ${VALID_KEY}`),
+    );
     expect(patchRes.status).toBe(200);
     expect((await patchRes.json()).testable).toBe(true);
 

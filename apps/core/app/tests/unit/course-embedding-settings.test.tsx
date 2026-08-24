@@ -13,6 +13,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const baseSettingsResponse = {
   settings: {
@@ -32,7 +33,7 @@ const baseSettingsResponse = {
   allowedCloudModels: [{ id: "cloud-1", label: "Cloud model" }],
 };
 
-function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+function jsonResponse(body: ParsedJsonBody, init: { ok?: boolean; status?: number } = {}) {
   return {
     ok: init.ok ?? true,
     status: init.status ?? 200,
@@ -73,9 +74,7 @@ describe("CourseEmbeddingSettings", () => {
   });
 
   it("surfaces a needsReEmbed banner when materials are stale", async () => {
-    mockFetch.mockResolvedValue(
-      jsonResponse({ ...baseSettingsResponse, needsReEmbed: true }),
-    );
+    mockFetch.mockResolvedValue(jsonResponse({ ...baseSettingsResponse, needsReEmbed: true }));
 
     render(<CourseEmbeddingSettings courseId="course-1" />);
 
@@ -147,14 +146,12 @@ describe("CourseEmbeddingSettings", () => {
   });
 
   it("saves settings with the chosen provider/model and re-embed flag", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...baseSettingsResponse,
-          success: true,
-        }),
-      );
+    mockFetch.mockResolvedValueOnce(jsonResponse(baseSettingsResponse)).mockResolvedValueOnce(
+      jsonResponse({
+        ...baseSettingsResponse,
+        success: true,
+      }),
+    );
 
     render(<CourseEmbeddingSettings courseId="course-1" />);
     await waitFor(() => expect(screen.getByText("Search settings")).toBeInTheDocument());
@@ -208,9 +205,7 @@ describe("CourseEmbeddingSettings", () => {
   it("polls a re-embed job to completion and reports the final message", async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-1" } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-1" } }))
       .mockResolvedValueOnce(
         jsonResponse({
           job: {
@@ -255,9 +250,7 @@ describe("CourseEmbeddingSettings", () => {
   it("shows an error when the re-embed job ultimately fails", async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-2" } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-2" } }))
       .mockResolvedValueOnce(
         jsonResponse({
           job: {

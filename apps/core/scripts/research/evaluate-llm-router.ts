@@ -27,18 +27,19 @@
  *   RESEARCH_LLM_EVAL_SPLIT     dev (default) | test | all
  *   RESEARCH_LLM_EVAL_LIMIT     optional cap
  */
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { readFileSync } from "node:fs";
-import {
-  classifyPromptForTier,
-  tierFromLlmClassification,
-} from "~/lib/ai/routing/llm-classifier";
+import { classifyPromptForTier, tierFromLlmClassification } from "~/lib/ai/routing/llm-classifier";
 import { matchPhase1Rules } from "~/lib/ai/routing/rules";
 import { DEFAULT_LABELS_OUT } from "./paths.mjs";
 
 /** Representative rag_top_similarity/rag_chunk_count for a "strong" rag_context
  * label — matches the rule stack's own routingRagStrongSimilarity() default
  * (0.8) with headroom, since the label pool doesn't record the real value. */
-const RAG_CONTEXT_PROXY: Record<string, { ragTopSimilarity: number; ragChunkCount: number } | null> = {
+const RAG_CONTEXT_PROXY: Record<
+  string,
+  { ragTopSimilarity: number; ragChunkCount: number } | null
+> = {
   strong: { ragTopSimilarity: 0.85, ragChunkCount: 3 },
   weak: null,
   none: null,
@@ -49,19 +50,19 @@ function readEnv(name: string): string | undefined {
   return v !== undefined && v !== "" ? v : undefined;
 }
 
-function loadJsonl(path: string): Record<string, unknown>[] {
+function loadJsonl(path: string): JsonObject[] {
   const raw = readFileSync(path, "utf8").trim();
   if (!raw) return [];
   return raw.split("\n").map((line, i) => {
     try {
-      return JSON.parse(line) as Record<string, unknown>;
+      return JSON.parse(line) as JsonObject;
     } catch (e) {
       throw new Error(`${path} line ${i + 1}: ${(e as Error).message}`);
     }
   });
 }
 
-function normalizeOracleTier(tier: unknown): 1 | 3 | null {
+function normalizeOracleTier(tier: JsonValue | undefined): 1 | 3 | null {
   if (tier === 1) return 1;
   if (tier === 2 || tier === 3) return 3;
   return null;
@@ -92,12 +93,8 @@ async function main() {
   console.log("labels:", labelsPath);
   console.log("split:", splitFilter);
   console.log("rows:", labels.length);
-  console.log(
-    "note: replicates production's rules-then-classifier pre-gate; rows the",
-  );
-  console.log(
-    "rule stack already escalates never reach the classifier (see header).",
-  );
+  console.log("note: replicates production's rules-then-classifier pre-gate; rows the");
+  console.log("rule stack already escalates never reach the classifier (see header).");
   console.log("");
 
   for (const row of labels) {
@@ -110,23 +107,23 @@ async function main() {
     const courseRagNeeded = ragContextKey !== "none";
 
     try {
-      // Production pre-gate (resolveRoutedModelLlm, router.ts): rules run
-      // first, and a tier-3 rule wins outright without consulting the
-      // classifier at all.
+      // Production routing (resolveRoutedModelLlm, router.ts): rules run
+      // first, and only a tier-3 rule wins outright without consulting the
+      // classifier. Exact tier-1 picks continue through the classifier.
       //
       // courseId is always null here (the label pool has no real course
       // session attached to each prompt), so rule3b_course_rag_tier_1
       // (which fires on ctx.courseId && ctx.courseRagNeeded alone, no
       // numeric RAG fields required) can never match in this harness even
       // though courseRagNeeded is now true for "weak"/"strong" rows. In
-      // production that combination would short-circuit straight to tier
-      // 1; here it instead falls through to rule4/rule4b (numeric RAG
-      // check) or the classifier. Both paths converge on tier 1 for
-      // strong-RAG rows anyway, so the practical effect on these metrics
-      // is expected to be small, but this is a known, documented gap
-      // between this harness and production for course-scoped requests —
-      // fabricating a courseId would be worse, since the label pool
-      // doesn't record a real one.
+      // In production, this may select an exact-tier-1 rule pick, but that pick still
+      // proceeds to the classifier; here it instead falls through to
+      // rule4/rule4b (numeric RAG check) or the classifier. Both paths
+      // converge on tier 1 for strong-RAG rows anyway, so the practical
+      // effect on these metrics is expected to be small, but this is a known,
+      // documented gap between this harness and production for course-scoped
+      // requests — fabricating a courseId would be worse, since the label
+      // pool doesn't record a real one.
       const ruleMatch = matchPhase1Rules({
         prompt,
         courseId: null,
@@ -179,9 +176,7 @@ async function main() {
       }
     } catch (err) {
       errors++;
-      console.log(
-        `  [ERR] ${row.prompt_id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      console.log(`  [ERR] ${row.prompt_id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

@@ -1,33 +1,15 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { useMemo, useRef, useState } from "react";
 import { Form, Link, useNavigation } from "react-router";
 
 import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
 import { Badge, PageHeading, Spinner } from "@eduai/ui";
 import { Button } from "@eduai/ui";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@eduai/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
 
 export type LogsTab = "audit" | "security" | "system" | "servers";
@@ -71,7 +53,7 @@ export type HourlyUsageStat = {
 
 type LogsAdminViewProps = {
   tab: LogsTab;
-  rows: Array<Record<string, unknown>>;
+  rows: JsonObject[];
   total: number;
   page: number;
   pageSize: number;
@@ -98,16 +80,7 @@ const AUDIT_CATEGORIES = [
 
 const OUTCOMES = ["SUCCESS", "FAILURE", "DENIED"] as const;
 const SYSTEM_LEVELS = ["ERROR", "WARN", "INFO"] as const;
-const SYSTEM_SOURCES = [
-  "ROUTE",
-  "AUTH",
-  "AI",
-  "CANVAS",
-  "MAIL",
-  "DB",
-  "SSR",
-  "API",
-] as const;
+const SYSTEM_SOURCES = ["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"] as const;
 
 // Keys whose empty string is a meaningful value ("All time" for datePreset),
 // not "absent" — buildQueryString must be able to preserve/set "" for these
@@ -179,7 +152,7 @@ export function buildLogsTabLinks(query: LogsQueryState) {
 /**
  * Formats timestamps consistently across all log tabs.
  */
-function formatTimestamp(value: unknown) {
+function formatTimestamp(value: JsonValue | undefined) {
   if (typeof value !== "string") {
     return "-";
   }
@@ -191,7 +164,7 @@ function formatTimestamp(value: unknown) {
 /**
  * Keeps row-key lookup stable while allowing mixed log row shapes.
  */
-function getRowValue(row: Record<string, unknown>, key: string) {
+function getRowValue(row: JsonObject, key: string) {
   const value = row[key];
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -202,24 +175,18 @@ function getRowValue(row: Record<string, unknown>, key: string) {
 /**
  * Combines live user-join data with stored actorRole so actor attribution remains readable over time.
  */
-function formatActorDisplay(row: Record<string, unknown>) {
+function formatActorDisplay(row: JsonObject) {
   const user = row.user;
   const userRecord =
-    typeof user === "object" && user !== null
-      ? (user as Record<string, unknown>)
-      : null;
+    typeof user === "object" && user !== null && !Array.isArray(user) ? user : null;
 
   const actorNameRaw = userRecord?.name;
   const actorRoleRaw = row.actorRole ?? userRecord?.role;
 
   const actorName =
-    typeof actorNameRaw === "string" && actorNameRaw.trim()
-      ? actorNameRaw.trim()
-      : null;
+    typeof actorNameRaw === "string" && actorNameRaw.trim() ? actorNameRaw.trim() : null;
   const actorRole =
-    typeof actorRoleRaw === "string" && actorRoleRaw.trim()
-      ? actorRoleRaw.trim()
-      : null;
+    typeof actorRoleRaw === "string" && actorRoleRaw.trim() ? actorRoleRaw.trim() : null;
 
   if (actorName && actorRole) {
     return `${actorName} (${actorRole})`;
@@ -312,7 +279,10 @@ function FilterSelect({
         </SelectTrigger>
         <SelectContent>
           {options.map((o) => (
-            <SelectItem key={o.value === "" ? ALL_VALUE : o.value} value={o.value === "" ? ALL_VALUE : o.value}>
+            <SelectItem
+              key={o.value === "" ? ALL_VALUE : o.value}
+              value={o.value === "" ? ALL_VALUE : o.value}
+            >
               {o.label}
             </SelectItem>
           ))}
@@ -322,17 +292,13 @@ function FilterSelect({
   );
 }
 
-function outcomeVariant(
-  outcome: string,
-): "default" | "secondary" | "destructive" | "outline" {
+function outcomeVariant(outcome: string): "default" | "secondary" | "destructive" | "outline" {
   if (outcome === "DENIED" || outcome === "FAILURE") return "destructive";
   if (outcome === "SUCCESS") return "secondary";
   return "outline";
 }
 
-function levelVariant(
-  level: string,
-): "default" | "secondary" | "destructive" | "outline" {
+function levelVariant(level: string): "default" | "secondary" | "destructive" | "outline" {
   if (level === "ERROR") return "destructive";
   if (level === "WARN") return "default";
   return "secondary";
@@ -385,16 +351,24 @@ function PeakUsageHoursChart({ hours }: { hours: HourlyUsageStat[] }) {
   }
 
   return (
-    <div className="flex items-end gap-1 overflow-x-auto pb-2" role="img" aria-label="Interaction volume by hour of day, UTC">
+    <div
+      className="flex items-end gap-1 overflow-x-auto pb-2"
+      role="img"
+      aria-label="Interaction volume by hour of day, UTC"
+    >
       {hours.map((h) => (
         <div key={h.hour} className="flex min-w-[1.75rem] flex-1 flex-col items-center gap-1">
-          <span className="text-muted-foreground text-[10px] tabular-nums">{formatCount(h.count)}</span>
+          <span className="text-muted-foreground text-[10px] tabular-nums">
+            {formatCount(h.count)}
+          </span>
           <div
             className="bg-primary/70 w-full rounded-t"
             style={{ height: `${Math.max(2, Math.round((h.count / maxCount) * 96))}px` }}
             title={`${formatHourLabel(h.hour)}:00 UTC — ${formatCount(h.count)} interaction${h.count === 1 ? "" : "s"}`}
           />
-          <span className="text-muted-foreground text-[10px] tabular-nums">{formatHourLabel(h.hour)}</span>
+          <span className="text-muted-foreground text-[10px] tabular-nums">
+            {formatHourLabel(h.hour)}
+          </span>
         </div>
       ))}
     </div>
@@ -554,12 +528,12 @@ function ServerRoutingPanel({
         <CardHeader>
           <CardTitle className="text-base">Routing by server</CardTitle>
           <CardDescription>
-            How much traffic each registered fleet server (CMPS01/02/03, and any server added
-            later) has answered in the selected window, and which models it currently hosts
-            (live, refreshed every 30s). Servers with no traffic yet still show up here once
-            they're registered — no need to wait for their first interaction. "Chats" counts
-            distinct conversations, not turns — interactions with no owning chat (e.g. async
-            Question Maker jobs) aren't counted here since there's no chat to attribute them to.
+            How much traffic each registered fleet server (CMPS01/02/03, and any server added later)
+            has answered in the selected window, and which models it currently hosts (live,
+            refreshed every 30s). Servers with no traffic yet still show up here once they're
+            registered — no need to wait for their first interaction. "Chats" counts distinct
+            conversations, not turns — interactions with no owning chat (e.g. async Question Maker
+            jobs) aren't counted here since there's no chat to attribute them to.
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -568,58 +542,68 @@ function ServerRoutingPanel({
               <Spinner size="md" />
             </div>
           ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Server</TableHead>
-                <TableHead>Models hosted</TableHead>
-                <TableHead className="text-right">Interactions</TableHead>
-                <TableHead className="text-right">Chats</TableHead>
-                <TableHead className="text-right">Share</TableHead>
-                <TableHead className="text-right">Tokens</TableHead>
-                <TableHead className="text-right">Avg duration</TableHead>
-                <TableHead className="text-right">Est. cost</TableHead>
-                <TableHead className="text-right">Energy</TableHead>
-                <TableHead className="text-right">Carbon</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {serverStats.length === 0 && (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={10} className="text-muted-foreground py-8 text-center">
-                    No fleet servers registered and no fleet-routed interactions found for the
-                    selected window.
-                  </TableCell>
+                  <TableHead>Server</TableHead>
+                  <TableHead>Models hosted</TableHead>
+                  <TableHead className="text-right">Interactions</TableHead>
+                  <TableHead className="text-right">Chats</TableHead>
+                  <TableHead className="text-right">Share</TableHead>
+                  <TableHead className="text-right">Tokens</TableHead>
+                  <TableHead className="text-right">Avg duration</TableHead>
+                  <TableHead className="text-right">Est. cost</TableHead>
+                  <TableHead className="text-right">Energy</TableHead>
+                  <TableHead className="text-right">Carbon</TableHead>
                 </TableRow>
-              )}
-              {serverStats.map((row) => (
-                <TableRow key={row.serverId ?? "unknown"}>
-                  <TableCell className="font-medium">
-                    {row.serverId ?? (
-                      <span className="text-muted-foreground">Not fleet-routed / unknown</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {row.models === null
-                      ? "unreachable"
-                      : row.models.length === 0
-                        ? "none reported"
-                        : row.models.join(", ")}
-                  </TableCell>
-                  <TableCell className="text-right">{formatCount(row.count)}</TableCell>
-                  <TableCell className="text-right">{formatCount(row.distinctChatCount)}</TableCell>
-                  <TableCell className="text-right">
-                    {totalInteractions > 0 ? `${Math.round((row.count / totalInteractions) * 100)}%` : "-"}
-                  </TableCell>
-                  <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
-                  <TableCell className="text-right">{formatDurationMs(row.totalDurationMs, row.count)}</TableCell>
-                  <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
-                  <TableCell className="text-right">{formatEnergy(row.totalEnergyJoules)}</TableCell>
-                  <TableCell className="text-right">{formatCarbon(row.totalCarbonGramsCO2)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {serverStats.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-muted-foreground py-8 text-center">
+                      No fleet servers registered and no fleet-routed interactions found for the
+                      selected window.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {serverStats.map((row) => (
+                  <TableRow key={row.serverId ?? "unknown"}>
+                    <TableCell className="font-medium">
+                      {row.serverId ?? (
+                        <span className="text-muted-foreground">Not fleet-routed / unknown</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.models === null
+                        ? "unreachable"
+                        : row.models.length === 0
+                          ? "none reported"
+                          : row.models.join(", ")}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCount(row.count)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCount(row.distinctChatCount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {totalInteractions > 0
+                        ? `${Math.round((row.count / totalInteractions) * 100)}%`
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatDurationMs(row.totalDurationMs, row.count)}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatEnergy(row.totalEnergyJoules)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCarbon(row.totalCarbonGramsCO2)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
@@ -637,39 +621,45 @@ function ServerRoutingPanel({
               <Spinner size="md" />
             </div>
           ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Model</TableHead>
-                <TableHead className="text-right">Interactions</TableHead>
-                <TableHead className="text-right">Tokens</TableHead>
-                <TableHead className="text-right">Avg duration</TableHead>
-                <TableHead className="text-right">Est. cost</TableHead>
-                <TableHead className="text-right">Energy</TableHead>
-                <TableHead className="text-right">Carbon</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {modelStats.length === 0 && (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                    No interactions found for the selected window.
-                  </TableCell>
+                  <TableHead>Model</TableHead>
+                  <TableHead className="text-right">Interactions</TableHead>
+                  <TableHead className="text-right">Tokens</TableHead>
+                  <TableHead className="text-right">Avg duration</TableHead>
+                  <TableHead className="text-right">Est. cost</TableHead>
+                  <TableHead className="text-right">Energy</TableHead>
+                  <TableHead className="text-right">Carbon</TableHead>
                 </TableRow>
-              )}
-              {modelStats.map((row) => (
-                <TableRow key={row.modelUsed}>
-                  <TableCell className="font-medium">{row.modelUsed}</TableCell>
-                  <TableCell className="text-right">{formatCount(row.count)}</TableCell>
-                  <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
-                  <TableCell className="text-right">{formatDurationMs(row.totalDurationMs, row.count)}</TableCell>
-                  <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
-                  <TableCell className="text-right">{formatEnergy(row.totalEnergyJoules)}</TableCell>
-                  <TableCell className="text-right">{formatCarbon(row.totalCarbonGramsCO2)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {modelStats.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
+                      No interactions found for the selected window.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {modelStats.map((row) => (
+                  <TableRow key={row.modelUsed}>
+                    <TableCell className="font-medium">{row.modelUsed}</TableCell>
+                    <TableCell className="text-right">{formatCount(row.count)}</TableCell>
+                    <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatDurationMs(row.totalDurationMs, row.count)}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatEnergy(row.totalEnergyJoules)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCarbon(row.totalCarbonGramsCO2)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
@@ -678,8 +668,8 @@ function ServerRoutingPanel({
         <CardHeader>
           <CardTitle className="text-base">Peak usage hours</CardTitle>
           <CardDescription>
-            Interaction volume by hour of day (UTC), across all servers and models, for the
-            selected window — helps spot when the fleet is busiest for capacity planning.
+            Interaction volume by hour of day (UTC), across all servers and models, for the selected
+            window — helps spot when the fleet is busiest for capacity planning.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -716,10 +706,7 @@ export function LogsAdminView({
   modelStats,
   peakUsageHours,
 }: LogsAdminViewProps) {
-  const [selectedRow, setSelectedRow] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
+  const [selectedRow, setSelectedRow] = useState<JsonObject | null>(null);
 
   // Hoisted above ServerRoutingPanel (rather than read inside it) so the
   // pending state also covers navigating *into* the Servers tab from
@@ -732,8 +719,7 @@ export function LogsAdminView({
     navigation.state !== "idle" &&
     new URLSearchParams(navigation.location?.search ?? "").get("tab") === "servers";
 
-  const prevHref =
-    page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
+  const prevHref = page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
   const nextHref = hasMore ? buildQueryString(query, { page: page + 1 }) : null;
 
   const tabLinks = useMemo(() => buildLogsTabLinks(query), [query]);
@@ -752,476 +738,426 @@ export function LogsAdminView({
             />
           </div>
 
-      {/* Tabs are links so each view remains directly shareable by URL. */}
-      <Tabs value={tab}>
-        <TabsList>
-          <TabsTrigger value="audit" asChild>
-            <Link to={tabLinks.audit}>Audit</Link>
-          </TabsTrigger>
-          <TabsTrigger value="security" asChild>
-            <Link to={tabLinks.security}>Security</Link>
-          </TabsTrigger>
-          <TabsTrigger value="system" asChild>
-            <Link to={tabLinks.system}>System</Link>
-          </TabsTrigger>
-          <TabsTrigger value="servers" asChild>
-            <Link to={tabLinks.servers}>Servers</Link>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+          {/* Tabs are links so each view remains directly shareable by URL. */}
+          <Tabs value={tab}>
+            <TabsList>
+              <TabsTrigger value="audit" asChild>
+                <Link to={tabLinks.audit}>Audit</Link>
+              </TabsTrigger>
+              <TabsTrigger value="security" asChild>
+                <Link to={tabLinks.security}>Security</Link>
+              </TabsTrigger>
+              <TabsTrigger value="system" asChild>
+                <Link to={tabLinks.system}>System</Link>
+              </TabsTrigger>
+              <TabsTrigger value="servers" asChild>
+                <Link to={tabLinks.servers}>Servers</Link>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-      {tab !== "servers" && isNavigatingToServers ? (
-        // Servers tab requested from another tab: the loader hasn't resolved
-        // yet, so `tab` is still the outgoing tab and ServerRoutingPanel
-        // hasn't mounted. Show a lightweight indicator here instead of
-        // rendering the outgoing tab's (about-to-be-replaced) filter form.
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Spinner size="md" />
-        </div>
-      ) : tab === "servers" ? (
-        <ServerRoutingPanel
-          query={query}
-          serverStats={serverStats ?? []}
-          modelStats={modelStats ?? []}
-          peakUsageHours={peakUsageHours ?? []}
-          isLoading={isLoading}
-        />
-      ) : (
-        <>
-      {/* Filters — GET form so the URL stays the source of truth. */}
-      <Card>
-        <CardContent className="pt-6">
-          <Form method="get">
-            <input type="hidden" name="tab" value={tab} />
-            {/* Filter submits always reset to page 1 so newly narrowed results start at a valid index. */}
-            <input type="hidden" name="page" value="1" />
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Page size</Label>
-                <FilterSelect
-                  name="pageSize"
-                  defaultValue={query.pageSize ?? String(pageSize)}
-                  placeholder="Page size"
-                  options={[
-                    { value: "25", label: "25" },
-                    { value: "50", label: "50" },
-                    { value: "100", label: "100" },
-                  ]}
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Direction</Label>
-                <FilterSelect
-                  name="direction"
-                  defaultValue={query.direction ?? "desc"}
-                  placeholder="Direction"
-                  options={[
-                    { value: "desc", label: "Newest first" },
-                    { value: "asc", label: "Oldest first" },
-                  ]}
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Date from</Label>
-                <Input
-                  type="date"
-                  name="dateFrom"
-                  defaultValue={query.dateFrom ?? ""}
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Date to</Label>
-                <Input
-                  type="date"
-                  name="dateTo"
-                  defaultValue={query.dateTo ?? ""}
-                />
-              </div>
-
-              {tab === "audit" && (
-                <>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Category</Label>
-                    <FilterSelect
-                      name="category"
-                      defaultValue={query.category ?? ""}
-                      placeholder="Category"
-                      options={[
-                        { value: "", label: "All" },
-                        ...AUDIT_CATEGORIES.map((category) => ({ value: category, label: category })),
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Action code</Label>
-                    <Input
-                      name="actionCode"
-                      defaultValue={query.actionCode ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Actor role</Label>
-                    <Input
-                      name="actorRole"
-                      defaultValue={query.actorRole ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Entity type</Label>
-                    <Input
-                      name="entityType"
-                      defaultValue={query.entityType ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Outcome</Label>
-                    <FilterSelect
-                      name="outcome"
-                      defaultValue={query.outcome ?? ""}
-                      placeholder="Outcome"
-                      options={[
-                        { value: "", label: "All" },
-                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Route path</Label>
-                    <Input
-                      name="routePath"
-                      defaultValue={query.routePath ?? ""}
-                    />
-                  </div>
-                </>
-              )}
-
-              {tab === "security" && (
-                <>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Action code</Label>
-                    <Input
-                      name="actionCode"
-                      defaultValue={query.actionCode ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Outcome</Label>
-                    <FilterSelect
-                      name="outcome"
-                      defaultValue={query.outcome ?? ""}
-                      placeholder="Outcome"
-                      options={[
-                        { value: "", label: "All" },
-                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Actor role</Label>
-                    <Input
-                      name="actorRole"
-                      defaultValue={query.actorRole ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Route path</Label>
-                    <Input
-                      name="routePath"
-                      defaultValue={query.routePath ?? ""}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">IP address</Label>
-                    <Input
-                      name="ipAddress"
-                      defaultValue={query.ipAddress ?? ""}
-                    />
-                  </div>
-                </>
-              )}
-
-              {tab === "system" && (
-                <>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Level</Label>
-                    <FilterSelect
-                      name="level"
-                      defaultValue={query.level ?? ""}
-                      placeholder="Level"
-                      options={[
-                        { value: "", label: "All" },
-                        ...SYSTEM_LEVELS.map((level) => ({ value: level, label: level })),
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Source</Label>
-                    <FilterSelect
-                      name="source"
-                      defaultValue={query.source ?? ""}
-                      placeholder="Source"
-                      options={[
-                        { value: "", label: "All" },
-                        ...SYSTEM_SOURCES.map((source) => ({ value: source, label: source })),
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Code</Label>
-                    <Input name="code" defaultValue={query.code ?? ""} />
-                  </div>
-                </>
-              )}
+          {tab !== "servers" && isNavigatingToServers ? (
+            // Servers tab requested from another tab: the loader hasn't resolved
+            // yet, so `tab` is still the outgoing tab and ServerRoutingPanel
+            // hasn't mounted. Show a lightweight indicator here instead of
+            // rendering the outgoing tab's (about-to-be-replaced) filter form.
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Spinner size="md" />
             </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm">
-                Apply filters
-              </Button>
-              <Button type="button" size="sm" variant="outline" asChild>
-                <Link to={clearFiltersHref}>Clear filters</Link>
-              </Button>
-            </div>
-          </Form>
-        </CardContent>
-      </Card>
-
-      {/* Retention policy + manual cleanup. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Retention</CardTitle>
-          <CardDescription>
-            Logs older than the configured window are removed on a daily sweep,
-            or on demand below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Form method="post" className="flex flex-wrap items-end gap-3">
-            <input
-              type="hidden"
-              name="intent"
-              value="updateLogRetentionPolicy"
+          ) : tab === "servers" ? (
+            <ServerRoutingPanel
+              query={query}
+              serverStats={serverStats ?? []}
+              modelStats={modelStats ?? []}
+              peakUsageHours={peakUsageHours ?? []}
+              isLoading={isLoading}
             />
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Audit retention (days)</Label>
-              <Input
-                type="number"
-                name="auditRetentionDays"
-                min={1}
-                max={3650}
-                defaultValue={retentionPolicy.auditRetentionDays}
-                className="w-40"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-xs">System retention (days)</Label>
-              <Input
-                type="number"
-                name="systemRetentionDays"
-                min={1}
-                max={3650}
-                defaultValue={retentionPolicy.systemRetentionDays}
-                className="w-40"
-              />
-            </div>
-            <Button type="submit" size="sm">
-              Save retention policy
-            </Button>
-          </Form>
+          ) : (
+            <>
+              {/* Filters — GET form so the URL stays the source of truth. */}
+              <Card>
+                <CardContent className="pt-6">
+                  <Form method="get">
+                    <input type="hidden" name="tab" value={tab} />
+                    {/* Filter submits always reset to page 1 so newly narrowed results start at a valid index. */}
+                    <input type="hidden" name="page" value="1" />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Form method="post">
-              <input type="hidden" name="intent" value="cleanupAuditLogsNow" />
-              <Button type="submit" size="sm" variant="outline">
-                Cleanup audit &gt; {retentionPolicy.auditRetentionDays} days
-              </Button>
-            </Form>
-            <Form method="post">
-              <input type="hidden" name="intent" value="cleanupSystemLogsNow" />
-              <Button type="submit" size="sm" variant="outline">
-                Cleanup system &gt; {retentionPolicy.systemRetentionDays} days
-              </Button>
-            </Form>
-          </div>
-        </CardContent>
-      </Card>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Page size</Label>
+                        <FilterSelect
+                          name="pageSize"
+                          defaultValue={query.pageSize ?? String(pageSize)}
+                          placeholder="Page size"
+                          options={[
+                            { value: "25", label: "25" },
+                            { value: "50", label: "50" },
+                            { value: "100", label: "100" },
+                          ]}
+                        />
+                      </div>
 
-      {/* Results table. */}
-      <Card>
-        <CardContent className="overflow-x-auto pt-6">
-          <Table>
-            <TableHeader>
-              {tab === "audit" && (
-                <TableRow>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Outcome</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead className="text-right">Details</TableHead>
-                </TableRow>
-              )}
-              {tab === "security" && (
-                <TableRow>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Outcome</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead className="text-right">Details</TableHead>
-                </TableRow>
-              )}
-              {tab === "system" && (
-                <TableRow>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Level</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Message</TableHead>
-                  <TableHead className="text-right">Details</TableHead>
-                </TableRow>
-              )}
-            </TableHeader>
-            <TableBody>
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={tab === "audit" ? 8 : tab === "security" ? 7 : 6}
-                    className="text-muted-foreground py-8 text-center"
-                  >
-                    No logs found for the selected filters.
-                  </TableCell>
-                </TableRow>
-              )}
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Direction</Label>
+                        <FilterSelect
+                          name="direction"
+                          defaultValue={query.direction ?? "desc"}
+                          placeholder="Direction"
+                          options={[
+                            { value: "desc", label: "Newest first" },
+                            { value: "asc", label: "Oldest first" },
+                          ]}
+                        />
+                      </div>
 
-              {rows.map((row) => (
-                <TableRow key={getRowValue(row, "id")}>
-                  <TableCell className="whitespace-nowrap">
-                    {formatTimestamp(row.createdAt)}
-                  </TableCell>
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Date from</Label>
+                        <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+                      </div>
 
-                  {tab === "audit" && (
-                    <>
-                      <TableCell className="font-medium">
-                        {getRowValue(row, "actionCode")}
-                      </TableCell>
-                      <TableCell>{getRowValue(row, "category")}</TableCell>
-                      <TableCell>{formatActorDisplay(row)}</TableCell>
-                      <TableCell>{getRowValue(row, "entityLabel")}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={outcomeVariant(getRowValue(row, "outcome"))}
-                        >
-                          {getRowValue(row, "outcome")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {getRowValue(row, "routePath")}
-                      </TableCell>
-                    </>
-                  )}
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Date to</Label>
+                        <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
+                      </div>
 
-                  {tab === "security" && (
-                    <>
-                      <TableCell className="font-medium">
-                        {getRowValue(row, "actionCode")}
-                      </TableCell>
-                      <TableCell>{formatActorDisplay(row)}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={outcomeVariant(getRowValue(row, "outcome"))}
-                        >
-                          {getRowValue(row, "outcome")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {getRowValue(row, "routePath")}
-                      </TableCell>
-                      <TableCell>{getRowValue(row, "ipAddress")}</TableCell>
-                    </>
-                  )}
+                      {tab === "audit" && (
+                        <>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Category</Label>
+                            <FilterSelect
+                              name="category"
+                              defaultValue={query.category ?? ""}
+                              placeholder="Category"
+                              options={[
+                                { value: "", label: "All" },
+                                ...AUDIT_CATEGORIES.map((category) => ({
+                                  value: category,
+                                  label: category,
+                                })),
+                              ]}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Action code</Label>
+                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Actor role</Label>
+                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Entity type</Label>
+                            <Input name="entityType" defaultValue={query.entityType ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Outcome</Label>
+                            <FilterSelect
+                              name="outcome"
+                              defaultValue={query.outcome ?? ""}
+                              placeholder="Outcome"
+                              options={[
+                                { value: "", label: "All" },
+                                ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                              ]}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Route path</Label>
+                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                          </div>
+                        </>
+                      )}
 
-                  {tab === "system" && (
-                    <>
-                      <TableCell>
-                        <Badge
-                          variant={levelVariant(getRowValue(row, "level"))}
-                        >
-                          {getRowValue(row, "level")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{getRowValue(row, "source")}</TableCell>
-                      <TableCell className="font-medium">
-                        {getRowValue(row, "code")}
-                      </TableCell>
-                      <TableCell className="max-w-md truncate">
-                        {getRowValue(row, "message")}
-                      </TableCell>
-                    </>
-                  )}
+                      {tab === "security" && (
+                        <>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Action code</Label>
+                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Outcome</Label>
+                            <FilterSelect
+                              name="outcome"
+                              defaultValue={query.outcome ?? ""}
+                              placeholder="Outcome"
+                              options={[
+                                { value: "", label: "All" },
+                                ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                              ]}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Actor role</Label>
+                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Route path</Label>
+                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">IP address</Label>
+                            <Input name="ipAddress" defaultValue={query.ipAddress ?? ""} />
+                          </div>
+                        </>
+                      )}
 
-                  <TableCell className="text-right">
-                    {/* Explicit details interaction prevents overloading primary columns with verbose JSON. */}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedRow(row)}
-                    >
-                      View details
+                      {tab === "system" && (
+                        <>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Level</Label>
+                            <FilterSelect
+                              name="level"
+                              defaultValue={query.level ?? ""}
+                              placeholder="Level"
+                              options={[
+                                { value: "", label: "All" },
+                                ...SYSTEM_LEVELS.map((level) => ({ value: level, label: level })),
+                              ]}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Source</Label>
+                            <FilterSelect
+                              name="source"
+                              defaultValue={query.source ?? ""}
+                              placeholder="Source"
+                              options={[
+                                { value: "", label: "All" },
+                                ...SYSTEM_SOURCES.map((source) => ({
+                                  value: source,
+                                  label: source,
+                                })),
+                              ]}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Code</Label>
+                            <Input name="code" defaultValue={query.code ?? ""} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <Button type="submit" size="sm">
+                        Apply filters
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" asChild>
+                        <Link to={clearFiltersHref}>Clear filters</Link>
+                      </Button>
+                    </div>
+                  </Form>
+                </CardContent>
+              </Card>
+
+              {/* Retention policy + manual cleanup. */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Retention</CardTitle>
+                  <CardDescription>
+                    Logs older than the configured window are removed on a daily sweep, or on demand
+                    below.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Form method="post" className="flex flex-wrap items-end gap-3">
+                    <input type="hidden" name="intent" value="updateLogRetentionPolicy" />
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">Audit retention (days)</Label>
+                      <Input
+                        type="number"
+                        name="auditRetentionDays"
+                        min={1}
+                        max={3650}
+                        defaultValue={retentionPolicy.auditRetentionDays}
+                        className="w-40"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">System retention (days)</Label>
+                      <Input
+                        type="number"
+                        name="systemRetentionDays"
+                        min={1}
+                        max={3650}
+                        defaultValue={retentionPolicy.systemRetentionDays}
+                        className="w-40"
+                      />
+                    </div>
+                    <Button type="submit" size="sm">
+                      Save retention policy
                     </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </Form>
 
-      {/* Pagination. */}
-      <div className="flex items-center justify-between">
-        <p className="text-muted-foreground text-sm">
-          Page {page} of {totalPages} ({rows.length} row
-          {rows.length === 1 ? "" : "s"} shown, {total} total)
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!prevHref}
-            asChild={!!prevHref}
-          >
-            {prevHref ? (
-              <Link to={prevHref}>Previous</Link>
-            ) : (
-              <span>Previous</span>
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!nextHref}
-            asChild={!!nextHref}
-          >
-            {nextHref ? <Link to={nextHref}>Next</Link> : <span>Next</span>}
-          </Button>
-        </div>
-      </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="cleanupAuditLogsNow" />
+                      <Button type="submit" size="sm" variant="outline">
+                        Cleanup audit &gt; {retentionPolicy.auditRetentionDays} days
+                      </Button>
+                    </Form>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="cleanupSystemLogsNow" />
+                      <Button type="submit" size="sm" variant="outline">
+                        Cleanup system &gt; {retentionPolicy.systemRetentionDays} days
+                      </Button>
+                    </Form>
+                  </div>
+                </CardContent>
+              </Card>
 
-      <LogDetailsDialog
-        title={`${tab.toUpperCase()} log details`}
-        row={selectedRow}
-        onClose={() => setSelectedRow(null)}
-      />
-        </>
-      )}
+              {/* Results table. */}
+              <Card>
+                <CardContent className="overflow-x-auto pt-6">
+                  <Table>
+                    <TableHeader>
+                      {tab === "audit" && (
+                        <TableRow>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Action</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Actor</TableHead>
+                          <TableHead>Entity</TableHead>
+                          <TableHead>Outcome</TableHead>
+                          <TableHead>Route</TableHead>
+                          <TableHead className="text-right">Details</TableHead>
+                        </TableRow>
+                      )}
+                      {tab === "security" && (
+                        <TableRow>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Action</TableHead>
+                          <TableHead>Actor</TableHead>
+                          <TableHead>Outcome</TableHead>
+                          <TableHead>Route</TableHead>
+                          <TableHead>IP</TableHead>
+                          <TableHead className="text-right">Details</TableHead>
+                        </TableRow>
+                      )}
+                      {tab === "system" && (
+                        <TableRow>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Level</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Message</TableHead>
+                          <TableHead className="text-right">Details</TableHead>
+                        </TableRow>
+                      )}
+                    </TableHeader>
+                    <TableBody>
+                      {rows.length === 0 && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={tab === "audit" ? 8 : tab === "security" ? 7 : 6}
+                            className="text-muted-foreground py-8 text-center"
+                          >
+                            No logs found for the selected filters.
+                          </TableCell>
+                        </TableRow>
+                      )}
+
+                      {rows.map((row) => (
+                        <TableRow key={getRowValue(row, "id")}>
+                          <TableCell className="whitespace-nowrap">
+                            {formatTimestamp(row.createdAt)}
+                          </TableCell>
+
+                          {tab === "audit" && (
+                            <>
+                              <TableCell className="font-medium">
+                                {getRowValue(row, "actionCode")}
+                              </TableCell>
+                              <TableCell>{getRowValue(row, "category")}</TableCell>
+                              <TableCell>{formatActorDisplay(row)}</TableCell>
+                              <TableCell>{getRowValue(row, "entityLabel")}</TableCell>
+                              <TableCell>
+                                <Badge variant={outcomeVariant(getRowValue(row, "outcome"))}>
+                                  {getRowValue(row, "outcome")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {getRowValue(row, "routePath")}
+                              </TableCell>
+                            </>
+                          )}
+
+                          {tab === "security" && (
+                            <>
+                              <TableCell className="font-medium">
+                                {getRowValue(row, "actionCode")}
+                              </TableCell>
+                              <TableCell>{formatActorDisplay(row)}</TableCell>
+                              <TableCell>
+                                <Badge variant={outcomeVariant(getRowValue(row, "outcome"))}>
+                                  {getRowValue(row, "outcome")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {getRowValue(row, "routePath")}
+                              </TableCell>
+                              <TableCell>{getRowValue(row, "ipAddress")}</TableCell>
+                            </>
+                          )}
+
+                          {tab === "system" && (
+                            <>
+                              <TableCell>
+                                <Badge variant={levelVariant(getRowValue(row, "level"))}>
+                                  {getRowValue(row, "level")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{getRowValue(row, "source")}</TableCell>
+                              <TableCell className="font-medium">
+                                {getRowValue(row, "code")}
+                              </TableCell>
+                              <TableCell className="max-w-md truncate">
+                                {getRowValue(row, "message")}
+                              </TableCell>
+                            </>
+                          )}
+
+                          <TableCell className="text-right">
+                            {/* Explicit details interaction prevents overloading primary columns with verbose JSON. */}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedRow(row)}
+                            >
+                              View details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              {/* Pagination. */}
+              <div className="flex items-center justify-between">
+                <p className="text-muted-foreground text-sm">
+                  Page {page} of {totalPages} ({rows.length} row
+                  {rows.length === 1 ? "" : "s"} shown, {total} total)
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" disabled={!prevHref} asChild={!!prevHref}>
+                    {prevHref ? <Link to={prevHref}>Previous</Link> : <span>Previous</span>}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!nextHref} asChild={!!nextHref}>
+                    {nextHref ? <Link to={nextHref}>Next</Link> : <span>Next</span>}
+                  </Button>
+                </div>
+              </div>
+
+              <LogDetailsDialog
+                title={`${tab.toUpperCase()} log details`}
+                row={selectedRow}
+                onClose={() => setSelectedRow(null)}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>

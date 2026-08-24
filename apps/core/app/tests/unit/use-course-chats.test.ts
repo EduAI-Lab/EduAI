@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChatDetail, useCourseChats, useUnitChats } from "~/hooks/api/use-course-chats";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const chat = {
   id: "chat-1",
@@ -32,7 +33,7 @@ const chatDetail = {
   nextCursor: null,
 };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,

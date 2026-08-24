@@ -7,6 +7,7 @@
 // AI SDK v4 swallows AbortError from stop() and never fires onError/onFinish,
 // so the Stop path is exercised directly through the onStop callback rather
 // than by simulating an error — mirroring how handleStop actually gets used.
+import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
@@ -17,8 +18,8 @@ type UseChatOptions = {
   onError?: (error: Error) => void;
 };
 
-const capturedAdminChatViewProps = vi.hoisted(() => ({
-  current: null as Record<string, unknown> | null,
+const capturedChatViewSharedProps = vi.hoisted(() => ({
+  current: null as ChatViewSharedProps | null,
 }));
 const capturedUseChatOptions = vi.hoisted(() => ({
   current: null as UseChatOptions | null,
@@ -63,8 +64,8 @@ vi.mock("react-router", async (importActual) => {
 });
 
 vi.mock("~/components/chat/admin-chat-view", () => ({
-  AdminChatView: (props: Record<string, unknown>) => {
-    capturedAdminChatViewProps.current = props;
+  AdminChatView: (props: ChatViewSharedProps) => {
+    capturedChatViewSharedProps.current = props;
     return <div data-testid="admin-chat-view" />;
   },
 }));
@@ -111,7 +112,7 @@ async function simulateRoutedResponse(routedModelId: string) {
 }
 
 beforeEach(() => {
-  capturedAdminChatViewProps.current = null;
+  capturedChatViewSharedProps.current = null;
   capturedUseChatOptions.current = null;
   stopMock.mockClear();
 });
@@ -122,24 +123,20 @@ describe("AdminChatPage — routed-model cleanup on error", () => {
 
     await simulateRoutedResponse("openai:gpt-4");
 
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
   });
 
   it("clears streamingRoutedRegistryId when the turn errors out via onError", async () => {
     renderAdminChatPage();
 
     await simulateRoutedResponse("openai:gpt-4");
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
 
     await act(async () => {
       capturedUseChatOptions.current?.onError?.(new Error("provider blew up"));
     });
 
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBeNull();
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBeNull();
   });
 });
 
@@ -148,11 +145,9 @@ describe("AdminChatPage — routed-model cleanup on Stop", () => {
     renderAdminChatPage();
 
     await simulateRoutedResponse("openai:gpt-4");
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
 
-    const onStop = capturedAdminChatViewProps.current?.onStop as () => void;
+    const onStop = capturedChatViewSharedProps.current?.onStop as () => void;
     expect(onStop).toBeInstanceOf(Function);
 
     // AI SDK v4 swallows AbortError, so stop() never triggers onError/onFinish.
@@ -163,7 +158,7 @@ describe("AdminChatPage — routed-model cleanup on Stop", () => {
     });
 
     expect(stopMock).toHaveBeenCalledTimes(1);
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBeNull();
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBeNull();
   });
 
   it("calls stop() exactly once and does not leave the previous model routed for the next turn", async () => {
@@ -171,7 +166,7 @@ describe("AdminChatPage — routed-model cleanup on Stop", () => {
 
     await simulateRoutedResponse("anthropic:claude-3");
 
-    const onStop = capturedAdminChatViewProps.current?.onStop as () => void;
+    const onStop = capturedChatViewSharedProps.current?.onStop as () => void;
     await act(async () => {
       onStop();
     });
@@ -179,7 +174,7 @@ describe("AdminChatPage — routed-model cleanup on Stop", () => {
     // handleStop clears the ref/state before delegating to the SDK's stop();
     // asserting both the clear and the delegated call guards against a
     // regression that drops either half of that sequence.
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBeNull();
+    expect(capturedChatViewSharedProps.current?.streamingRoutedRegistryId).toBeNull();
     expect(stopMock).toHaveBeenCalledTimes(1);
   });
 });

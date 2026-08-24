@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -20,6 +21,7 @@ vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/courses/enrollments.server")>();
   return {
     ...actual,
+    getCourseEnrollmentForUser: vi.fn(),
     getCourseEnrollments: vi.fn(),
     getCourseEnrollmentsPage: vi.fn(),
     addEnrollment: vi.fn(),
@@ -39,7 +41,9 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/policy.server")>();
   return {
     ...actual,
-    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
     logPolicyDenial: vi.fn(),
   };
 });
@@ -49,9 +53,15 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
-import { getCourseEnrollments, getCourseEnrollmentsPage, addEnrollment } from "~/lib/courses/enrollments.server";
+import {
+  getCourseEnrollmentForUser,
+  getCourseEnrollments,
+  getCourseEnrollmentsPage,
+  addEnrollment,
+} from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const VALID_KEY = "test-service-key";
 
@@ -92,18 +102,18 @@ const MOCK_COURSE = {
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = MOCK_COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = MOCK_COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(id?: string, authorization?: string) {
+function makeArgs(id?: string, authorization?: string, query = "") {
   const headers = new Headers();
   if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(`http://localhost/api/courses/${id ?? ""}/enrollments`, {
+    request: new Request(`http://localhost/api/courses/${id ?? ""}/enrollments${query}`, {
       headers,
     }),
     params: id !== undefined ? { id } : {},
@@ -111,7 +121,7 @@ function makeArgs(id?: string, authorization?: string) {
   } as any;
 }
 
-function makePost(id: string, body: unknown) {
+function makePost(id: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/courses/${id}/enrollments`, {
       method: "POST",
@@ -130,6 +140,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue(null);
   vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
   vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
+  vi.mocked(getCourseEnrollmentForUser).mockResolvedValue(MOCK_ENROLLMENTS[0] as never);
   vi.mocked(getCourseEnrollmentsPage).mockResolvedValue({
     page: MOCK_ENROLLMENTS,
     nextCursor: null,
@@ -160,7 +171,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   // --- 403 service key ---
   it("returns 403 when Bearer token fails requireServiceKey", async () => {
     vi.mocked(requireServiceKey).mockResolvedValue(
-      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 })
+      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 }),
     );
     const res = await loader(makeArgs("course-1", "Bearer wrong"));
     expect(res.status).toBe(403);
@@ -219,6 +230,26 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
+  it("returns only the requested enrollment for service-key authorization", async () => {
+    const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`, "?userId=user-1"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      enrollment: expect.objectContaining({ studentId: "user-1", role: "STUDENT" }),
+    });
+    expect(getCourseEnrollmentForUser).toHaveBeenCalledWith("course-1", "user-1");
+    expect(getCourseEnrollments).not.toHaveBeenCalled();
+  });
+
+  it("returns a null enrollment when the requested user is not enrolled", async () => {
+    vi.mocked(getCourseEnrollmentForUser).mockResolvedValue(null);
+
+    const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`, "?userId=missing"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enrollment: null });
+  });
+
   // --- 200 user auth (TA and up) ---
   it("returns 200 when user-auth caller is enrolled as TA", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -246,9 +277,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps STUDENT enrollment correctly", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const student = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "STUDENT"
-    );
+    const student = body.enrollments.find((e: JsonObject) => e.role === "STUDENT");
     expect(student).toEqual({
       id: "enr-1",
       studentId: "user-1",
@@ -264,9 +293,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps INSTRUCTOR enrollment correctly with null enrolledAt", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const instructor = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "INSTRUCTOR"
-    );
+    const instructor = body.enrollments.find((e: JsonObject) => e.role === "INSTRUCTOR");
     expect(instructor).toEqual({
       id: "enr-3",
       studentId: "user-3",
@@ -283,9 +310,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("returns both active and inactive enrollments", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map(
-      (e: Record<string, unknown>) => e.isActive
-    );
+    const activeStates = body.enrollments.map((e: JsonObject) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });

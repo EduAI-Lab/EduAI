@@ -5,9 +5,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@eduai/ui';
-import { Link } from 'react-router';
-import type { ReactNode } from 'react';
+} from "@eduai/ui";
+import { Link } from "react-router";
+import type { ReactNode } from "react";
 
 type ShellBreadcrumbsProps = {
   /** `node` renders custom content (e.g. a course switcher) in place of the label. */

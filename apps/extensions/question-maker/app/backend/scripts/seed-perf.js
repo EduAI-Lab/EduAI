@@ -21,19 +21,19 @@
  * Run from apps/extensions/question-maker/app/backend:
  *   node scripts/seed-perf.js         (PERF_POOL_SIZE=15 to change victim count)
  */
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { createId } from '@paralleldrive/cuid2';
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "fs";
+import { createId } from "@paralleldrive/cuid2";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const envPath = join(__dirname, '../../../.env');
+const envPath = join(__dirname, "../../../.env");
 if (existsSync(envPath)) dotenv.config({ path: envPath });
 else dotenv.config();
 
-const CORE_INSTRUCTOR = 'seed_user_instructor_cs'; // mirrors apps/core SEED_IDS
+const CORE_INSTRUCTOR = "seed_user_instructor_cs"; // mirrors apps/core SEED_IDS
 const POOL = Number(process.env.PERF_POOL_SIZE ?? 15);
 const range = (n) => Array.from({ length: n }, (_, i) => i);
 
@@ -41,19 +41,21 @@ function poolDir() {
   if (process.env.PERF_POOL_DIR) return process.env.PERF_POOL_DIR;
   let d = process.cwd();
   for (let i = 0; i < 8; i++) {
-    const pkg = join(d, 'package.json');
+    const pkg = join(d, "package.json");
     if (existsSync(pkg)) {
       try {
-        const j = JSON.parse(readFileSync(pkg, 'utf8'));
-        if (j.workspaces) return join(d, '.perf-pool');
-      } catch { /* ignore */ }
+        const j = JSON.parse(readFileSync(pkg, "utf8"));
+        if (j.workspaces) return join(d, ".perf-pool");
+      } catch {
+        /* ignore */
+      }
     }
     d = dirname(d);
   }
-  return join(process.cwd(), '.perf-pool');
+  return join(process.cwd(), ".perf-pool");
 }
 function manifestPath() {
-  return join(poolDir(), 'qm.json');
+  return join(poolDir(), "qm.json");
 }
 function writeManifest(obj) {
   const dir = poolDir();
@@ -63,7 +65,7 @@ function writeManifest(obj) {
   console.log(`  ✓ wrote pool manifest → ${f}`);
 }
 
-const { prisma } = await import('../src/config/database.js');
+const { prisma } = await import("../src/config/database.js");
 
 /** Deletes every course id recorded in the previous run's manifest (cascades children). */
 async function resetPool() {
@@ -71,7 +73,7 @@ async function resetPool() {
   if (!existsSync(f)) return;
   let prev;
   try {
-    prev = JSON.parse(readFileSync(f, 'utf8'));
+    prev = JSON.parse(readFileSync(f, "utf8"));
   } catch {
     return;
   }
@@ -92,46 +94,67 @@ async function main() {
   await prisma.user.upsert({
     where: { id: CORE_INSTRUCTOR },
     update: {},
-    create: { id: CORE_INSTRUCTOR, email: 'instructor.cs@eduai.local', name: 'Dr. Ada Lovelace' },
+    create: { id: CORE_INSTRUCTOR, email: "instructor.cs@eduai.local", name: "Dr. Ada Lovelace" },
   });
 
   // --- unlinked perf course + topics ---
   // `name`/`code` are Core-owned and no longer stored locally (#1072 §4 step
   // 10) — the anchor row is just userId + coreCourseId.
-  const course = await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } });
+  const course = await prisma.course.create({
+    data: { userId: CORE_INSTRUCTOR, coreCourseId: null },
+  });
   const topics = [];
   for (const i of range(3)) {
-    topics.push(await prisma.topics.create({ data: { id: createId(), name: `__PERF__ Topic ${i}`, courseId: course.id } }));
+    topics.push(
+      await prisma.topics.create({
+        data: { id: createId(), name: `__PERF__ Topic ${i}`, courseId: course.id },
+      }),
+    );
   }
   const topicId = topics[0].id;
 
   const newQuestion = (desc) =>
     prisma.questionMetadata.create({
-      data: { description: desc, type: 'MCQ', courseId: course.id, primaryTopicId: topicId, createdBy: CORE_INSTRUCTOR },
+      data: {
+        description: desc,
+        type: "MCQ",
+        courseId: course.id,
+        primaryTopicId: topicId,
+        createdBy: CORE_INSTRUCTOR,
+      },
     });
   const newVariant = (metaId, assessmentId = null) =>
     prisma.variants.create({
       data: {
-        questionText: '__PERF__ variant', questionMetadataId: metaId, assessmentId,
-        isDraft: true, coreQuestionId: null, createdBy: CORE_INSTRUCTOR,
+        questionText: "__PERF__ variant",
+        questionMetadataId: metaId,
+        assessmentId,
+        isDraft: true,
+        coreQuestionId: null,
+        createdBy: CORE_INSTRUCTOR,
       },
     });
   // `semester` no longer exists on Assessments (#1072 §4 step 10/#1077) — derived at read time.
   const newAssessment = (name) =>
-    prisma.assessments.create({ data: { courseId: course.id, type: 'Quiz', name: `__PERF__ ${name}` } });
+    prisma.assessments.create({
+      data: { courseId: course.id, type: "Quiz", name: `__PERF__ ${name}` },
+    });
   const newSection = (assessmentId, name) =>
-    prisma.assessmentSections.create({ data: { assessmentId, name: `__PERF__ ${name}`, position: 0 } });
+    prisma.assessmentSections.create({
+      data: { assessmentId, name: `__PERF__ ${name}`, position: 0 },
+    });
 
   // --- anchors (stable, never deleted) for reads + POST targets ---
-  const anchorQuestion = await newQuestion('__PERF__ anchor question');
+  const anchorQuestion = await newQuestion("__PERF__ anchor question");
   const anchorVariant = await newVariant(anchorQuestion.id);
-  const anchorAssessment = await newAssessment('Anchor Assessment');
-  const anchorSection = await newSection(anchorAssessment.id, 'Anchor Section');
+  const anchorAssessment = await newAssessment("Anchor Assessment");
+  const anchorSection = await newSection(anchorAssessment.id, "Anchor Section");
 
   // --- question pools: delete + update ---
   const questionDeletePool = [];
-  for (const i of range(POOL)) questionDeletePool.push((await newQuestion(`__PERF__ del q ${i}`)).id);
-  const questionUpdateId = (await newQuestion('__PERF__ upd q')).id;
+  for (const i of range(POOL))
+    questionDeletePool.push((await newQuestion(`__PERF__ del q ${i}`)).id);
+  const questionUpdateId = (await newQuestion("__PERF__ upd q")).id;
 
   // --- variant pools (draft, no core link) ---
   const variantDeletePool = [];
@@ -142,22 +165,27 @@ async function main() {
   // --- assessment pools ---
   const assessmentDeletePool = [];
   for (const i of range(POOL)) assessmentDeletePool.push((await newAssessment(`del a ${i}`)).id);
-  const assessmentUpdateId = (await newAssessment('upd a')).id;
+  const assessmentUpdateId = (await newAssessment("upd a")).id;
 
   // --- section pools (under anchor assessment) ---
   const sectionDeletePool = [];
-  for (const i of range(POOL)) sectionDeletePool.push((await newSection(anchorAssessment.id, `del s ${i}`)).id);
-  const sectionUpdateId = (await newSection(anchorAssessment.id, 'upd s')).id;
+  for (const i of range(POOL))
+    sectionDeletePool.push((await newSection(anchorAssessment.id, `del s ${i}`)).id);
+  const sectionUpdateId = (await newSection(anchorAssessment.id, "upd s")).id;
 
   // --- section-variant link pools (delete link + order update) ---
   const sectionVariantDeletePool = []; // {sectionId, variantId}
   for (const i of range(POOL)) {
     const v = await newVariant(anchorQuestion.id);
-    await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: i } });
+    await prisma.sectionVariants.create({
+      data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: i },
+    });
     sectionVariantDeletePool.push({ sectionId: anchorSection.id, variantId: v.id });
   }
   const svUpdVariant = await newVariant(anchorQuestion.id);
-  await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: svUpdVariant.id, displayOrder: 999 } });
+  await prisma.sectionVariants.create({
+    data: { sectionId: anchorSection.id, variantId: svUpdVariant.id, displayOrder: 999 },
+  });
   const sectionVariantUpdate = { sectionId: anchorSection.id, variantId: svUpdVariant.id };
 
   // --- section-variant ADD pool: fresh variants NOT yet linked to anchorSection.
@@ -169,19 +197,27 @@ async function main() {
   // --- unlinked course pools (delete cascades children) + update ---
   const courseDeletePool = [];
   for (const i of range(POOL)) {
-    courseDeletePool.push((await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })).id);
+    courseDeletePool.push(
+      (await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })).id,
+    );
   }
-  const courseUpdateId = (await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })).id;
+  const courseUpdateId = (
+    await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })
+  ).id;
 
   // --- questions linked to an assessment via questionOrder (for DELETE
   //     /:id/order/:assessmentId and DELETE /assessments/:id/questions/:qid) ---
-  const orderAssessment = await newAssessment('order assessment');
+  const orderAssessment = await newAssessment("order assessment");
   const questionOrderPool = []; // {questionId, assessmentId}
   for (const i of range(POOL)) {
     const q = await prisma.questionMetadata.create({
       data: {
-        description: `__PERF__ ordered q ${i}`, type: 'MCQ', courseId: course.id, primaryTopicId: topicId,
-        createdBy: CORE_INSTRUCTOR, questionOrder: { [orderAssessment.id]: i + 1 },
+        description: `__PERF__ ordered q ${i}`,
+        type: "MCQ",
+        courseId: course.id,
+        primaryTopicId: topicId,
+        createdBy: CORE_INSTRUCTOR,
+        questionOrder: { [orderAssessment.id]: i + 1 },
       },
     });
     questionOrderPool.push({ questionId: q.id, assessmentId: orderAssessment.id });
@@ -192,7 +228,9 @@ async function main() {
   for (const i of range(POOL)) {
     const q = await newQuestion(`__PERF__ sectioned q ${i}`);
     const v = await newVariant(q.id);
-    await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: 1000 + i } });
+    await prisma.sectionVariants.create({
+      data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: 1000 + i },
+    });
     questionWithSectionLinkPool.push(q.id);
   }
 
@@ -229,5 +267,14 @@ async function main() {
 }
 
 main()
-  .catch((e) => { console.error('✗ QM perf seed failed:', e); process.exit(1); })
-  .finally(async () => { try { await prisma.$disconnect(); } catch { /* */ } });
+  .catch((e) => {
+    console.error("✗ QM perf seed failed:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    try {
+      await prisma.$disconnect();
+    } catch {
+      /* */
+    }
+  });

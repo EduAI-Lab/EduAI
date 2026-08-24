@@ -63,8 +63,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  // PII BOUNDARY (#1571): `getCourseTA` returns TA name + email. Student-tier
+  // callers get the roster (name + id) so they can see who their TAs are, but
+  // NOT contact emails — matching `courses.enrollments.ts`, which withholds
+  // roster PII from students. Redact at this endpoint rather than in the shared
+  // service so instructor/admin callers still receive the email they rely on.
   const tas = await getCourseTA(courseId);
-  return new Response(JSON.stringify({ tas }), {
+  const visibleTAs =
+    access === "student"
+      ? tas.map(({ user, ...ta }) => ({ ...ta, user: { id: user.id, name: user.name } }))
+      : tas;
+  return new Response(JSON.stringify({ tas: visibleTAs }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });

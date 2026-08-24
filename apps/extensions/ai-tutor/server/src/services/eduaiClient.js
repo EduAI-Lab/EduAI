@@ -1,10 +1,15 @@
-import { EduAiCoursePageSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
-import { getEffectiveEduAiApiKey } from './systemSettings.js';
-const DEFAULT_BASE_URL = 'http://localhost:5174/api';
+import {
+  EduAiCoursePageSchema,
+  EduAiTopicListSchema,
+  EduAiEnrollmentListSchema,
+  EduAiQuestionListSchema,
+} from "../schemas/eduai.js";
+import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+const DEFAULT_BASE_URL = "http://localhost:5174/api";
 
 function normalizeBaseUrl(rawUrl) {
   if (!rawUrl) return DEFAULT_BASE_URL;
-  return rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
+  return rawUrl.endsWith("/") ? rawUrl.slice(0, -1) : rawUrl;
 }
 
 export function getEduAiBaseUrl() {
@@ -51,16 +56,18 @@ export function getEduAiChatUrl() {
  * socket with no timeout of its own.
  */
 async function requestEduAi(path, options = {}) {
-  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  const cookie = typeof options.cookie === "string" ? options.cookie : "";
 
   const url = `${getEduAiBaseUrl()}${path}`;
+  // Caller-supplied headers still win over the forwarded session cookie, which
+  // is why they are applied last.
+  const headers = { "Content-Type": "application/json" };
+  if (cookie) headers.cookie = cookie;
+  Object.assign(headers, options.headers);
+
   const response = await fetch(url, {
-    method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(cookie ? { cookie } : {}),
-      ...options.headers,
-    },
+    method: options.method ?? "GET",
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
   });
@@ -106,10 +113,13 @@ function parseCoursePage(payload, context) {
  */
 async function fetchCoursePages(path, request, options = {}) {
   const pageSize = Math.min(options.pageSize ?? CORE_PAGE_SIZE, CORE_PAGE_SIZE);
-  const search = options.search ? `&search=${encodeURIComponent(options.search)}` : '';
+  const search = options.search ? `&search=${encodeURIComponent(options.search)}` : "";
 
   const readPage = async (page) => {
-    const payload = await requestEduAi(`${path}?page=${page}&pageSize=${pageSize}${search}`, request);
+    const payload = await requestEduAi(
+      `${path}?page=${page}&pageSize=${pageSize}${search}`,
+      request,
+    );
     return parseCoursePage(payload, `page ${page}`);
   };
 
@@ -125,7 +135,7 @@ async function fetchCoursePages(path, request, options = {}) {
     // catches and degrades closed, so failing here is the safe direction.
     const error = new Error(
       `EduAI ${path} returned ${first.total} rows, past the ${CORE_MAX_PAGES}×${pageSize} page-walk cap; ` +
-        'refusing to return a partial set for an all: true read.',
+        "refusing to return a partial set for an all: true read.",
     );
     error.status = 502;
     throw error;
@@ -147,10 +157,10 @@ async function fetchCoursesByIds(path, request, ids) {
   for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
     const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
     const payload = await requestEduAi(
-      `${path}?ids=${encodeURIComponent(chunk.join(','))}`,
+      `${path}?ids=${encodeURIComponent(chunk.join(","))}`,
       request,
     );
-    courses.push(...parseCoursePage(payload, 'ids lookup').data);
+    courses.push(...parseCoursePage(payload, "ids lookup").data);
   }
   return courses;
 }
@@ -163,14 +173,17 @@ async function fetchCoursesByIds(path, request, ids) {
 export async function postCoreBugReport(userId, payload) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
 
-  const url = `${process.env.CORE_URL || 'http://localhost:3000'}/api/bug-reports`;
+  const url = `${process.env.CORE_URL || "http://localhost:3000"}/api/bug-reports`;
   const body = {
-    source: 'AI_TUTOR',
+    source: "AI_TUTOR",
     userId,
     description: payload.description,
+    // Core stores this column; forgetting it here left every AI Tutor report
+    // typeless, so triage's Type filter could never match one.
+    bugType: payload.bugType ?? null,
     isAnonymous: payload.isAnonymous ?? false,
     consoleLogs: payload.consoleLogs ?? null,
     networkLogs: payload.networkLogs ?? null,
@@ -181,9 +194,9 @@ export async function postCoreBugReport(userId, payload) {
   };
 
   const response = await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${serviceKey}`,
     },
     body: JSON.stringify(body),
@@ -191,7 +204,9 @@ export async function postCoreBugReport(userId, payload) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    const error = new Error(errorText || `Core bug report POST failed with status ${response.status}`);
+    const error = new Error(
+      errorText || `Core bug report POST failed with status ${response.status}`,
+    );
     error.status = response.status;
     throw error;
   }
@@ -200,16 +215,19 @@ export async function postCoreBugReport(userId, payload) {
 }
 
 function getCoreBaseUrl() {
-  const raw = process.env.CORE_URL || 'http://localhost:3000';
-  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+  const raw = process.env.CORE_URL || "http://localhost:3000";
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
 }
 
 /**
  * GET Core admin bug reports (ADMIN session cookie). Used for AI Tutor-scoped triage (#648).
  */
-export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', limit = 100, offset = 0 } = {}) {
+export async function listCoreAdminBugReports(
+  cookie,
+  { source = "AI_TUTOR", limit = 100, offset = 0 } = {},
+) {
   if (!cookie) {
-    const error = new Error('Session cookie is required to list Core bug reports');
+    const error = new Error("Session cookie is required to list Core bug reports");
     error.status = 401;
     throw error;
   }
@@ -226,7 +244,9 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
 
   if (!response.ok) {
     const errorText = await response.text();
-    const error = new Error(errorText || `Core bug report list failed with status ${response.status}`);
+    const error = new Error(
+      errorText || `Core bug report list failed with status ${response.status}`,
+    );
     error.status = response.status;
     throw error;
   }
@@ -239,7 +259,7 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
  */
 export async function getCoreAdminBugReport(cookie, bugReportId) {
   if (!cookie) {
-    const error = new Error('Session cookie is required to load a Core bug report');
+    const error = new Error("Session cookie is required to load a Core bug report");
     error.status = 401;
     throw error;
   }
@@ -251,7 +271,9 @@ export async function getCoreAdminBugReport(cookie, bugReportId) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    const error = new Error(errorText || `Core bug report GET failed with status ${response.status}`);
+    const error = new Error(
+      errorText || `Core bug report GET failed with status ${response.status}`,
+    );
     error.status = response.status;
     throw error;
   }
@@ -275,7 +297,7 @@ export async function getCoreAdminBugReport(cookie, bugReportId) {
  */
 export async function listCoreAdminUsers(cookie, options = {}) {
   if (!cookie) {
-    const error = new Error('Session cookie is required to list Core users');
+    const error = new Error("Session cookie is required to list Core users");
     error.status = 401;
     throw error;
   }
@@ -293,7 +315,7 @@ export async function listCoreAdminUsers(cookie, options = {}) {
     for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
       const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
       const params = new URLSearchParams();
-      params.set('ids', chunk.join(','));
+      params.set("ids", chunk.join(","));
       const envelope = await fetchCoreUsers(cookie, params, options.signal);
       data.push(...(envelope?.data ?? []));
     }
@@ -301,10 +323,10 @@ export async function listCoreAdminUsers(cookie, options = {}) {
   }
 
   const params = new URLSearchParams();
-  params.set('page', String(options.page ?? 1));
-  params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
-  if (options.role) params.set('role', options.role);
-  if (options.search) params.set('search', options.search);
+  params.set("page", String(options.page ?? 1));
+  params.set("pageSize", String(options.pageSize ?? CORE_PAGE_SIZE));
+  if (options.role) params.set("role", options.role);
+  if (options.search) params.set("search", options.search);
   return fetchCoreUsers(cookie, params, options.signal);
 }
 
@@ -328,19 +350,36 @@ async function fetchCoreUsers(cookie, params, signal) {
 
 /**
  * PATCH Core admin bug report status (ADMIN session cookie).
+ *
+ * The cookie carries the ADMIN identity — Core's admin bug-report route has no
+ * service-key path, so it cannot be dropped. The service key is what gets the
+ * request past Core's cross-origin mutation guard: that guard fails closed on
+ * any cookie-bearing unsafe method with no Origin/Referer/Sec-Fetch-Site, which
+ * is exactly the shape of a server-to-server call, and accepts a valid service
+ * key as the sole non-browser bypass. Sending only the cookie earns a 403
+ * CROSS_ORIGIN_MUTATION. Every other cookie-forwarding mutation here (publish,
+ * enrollments) pairs the two for the same reason.
  */
 export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
   if (!cookie) {
-    const error = new Error('Session cookie is required to update Core bug reports');
+    const error = new Error("Session cookie is required to update Core bug reports");
     error.status = 401;
+    throw error;
+  }
+
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
     throw error;
   }
 
   const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
   const response = await fetch(url, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
       cookie,
     },
     body: JSON.stringify({ status: coreStatus }),
@@ -348,7 +387,9 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
 
   if (!response.ok) {
     const errorText = await response.text();
-    const error = new Error(errorText || `Core bug report PATCH failed with status ${response.status}`);
+    const error = new Error(
+      errorText || `Core bug report PATCH failed with status ${response.status}`,
+    );
     error.status = response.status;
     throw error;
   }
@@ -356,37 +397,46 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
   return response.json();
 }
 
- 
 /**
  * Propagate a publish/unpublish action to Core for a linked course offering.
  * Called by the AI Tutor publish/unpublish routes when `coreOfferingId` is set.
- * Uses the service key — Core verifies the key and applies the change.
+ * Uses the acting user's session so Core applies course access and the
+ * instructors.canPublishCourses policy to the real caller.
  * Throws an Error with `status` set on HTTP failure.
  */
-export async function setCoreCoursePublishState(coreOfferingId, publish) {
+export async function setCoreCoursePublishState(coreOfferingId, publish, options = {}) {
+  const cookie = typeof options.cookie === "string" ? options.cookie : "";
+  if (!cookie) {
+    const error = new Error("Session cookie is required to update Core course publish state");
+    error.status = 401;
+    throw error;
+  }
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 500;
+    throw error;
   }
-  const action = publish ? 'publish' : 'unpublish';
+  const action = publish ? "publish" : "unpublish";
   return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
-    method: 'PATCH',
+    method: "PATCH",
+    cookie,
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
 }
- 
-/**   
+
+/**
  * Lists Core courses visible to the caller (#578). Requires the user's Core
  * session cookie — do not use the service key (that returns the full catalog).
  */
 export async function listEduAiCourses(options = {}) {
-  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  const cookie = typeof options.cookie === "string" ? options.cookie : "";
   if (!cookie) {
-    const error = new Error('Session cookie is required to list EduAI courses');
+    const error = new Error("Session cookie is required to list EduAI courses");
     error.status = 401;
     throw error;
   }
-  return fetchCoursePages('/courses', { cookie }, options);
+  return fetchCoursePages("/courses", { cookie }, options);
 }
 
 /**
@@ -397,13 +447,13 @@ export async function listEduAiCourses(options = {}) {
  */
 export async function findEduAiCourseById(courseId, options = {}) {
   if (!courseId) return null;
-  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  const cookie = typeof options.cookie === "string" ? options.cookie : "";
   if (!cookie) {
-    const error = new Error('Session cookie is required to fetch an EduAI course');
+    const error = new Error("Session cookie is required to fetch an EduAI course");
     error.status = 401;
     throw error;
   }
-  const courses = await fetchCoursesByIds('/courses', { cookie }, [courseId]);
+  const courses = await fetchCoursesByIds("/courses", { cookie }, [courseId]);
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
@@ -424,20 +474,20 @@ export async function findEduAiCourseById(courseId, options = {}) {
 export async function listEduAiCoursesServiceKey(options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
   const request = { headers: { Authorization: `Bearer ${serviceKey}` } };
   if (Array.isArray(options.ids)) {
-    return fetchCoursesByIds('/courses', request, options.ids);
+    return fetchCoursesByIds("/courses", request, options.ids);
   }
-  return fetchCoursePages('/courses', request, options);
+  return fetchCoursePages("/courses", request, options);
 }
 
 export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
@@ -447,7 +497,7 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
     const parsed = EduAiTopicListSchema.parse(data);
     return parsed.topics;
   } catch (e) {
-    const err = new Error('Invalid response when fetching EduAI course topics');
+    const err = new Error("Invalid response when fetching EduAI course topics");
     err.cause = e;
     err.status = 502;
     throw err;
@@ -458,7 +508,7 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, opt
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
@@ -468,17 +518,80 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, opt
     const parsed = EduAiEnrollmentListSchema.parse(data);
     return parsed.enrollments;
   } catch (e) {
-    const err = new Error('Invalid response when fetching EduAI course enrollments');
+    const err = new Error("Invalid response when fetching EduAI course enrollments");
     err.cause = e;
     err.status = 502;
     throw err;
   }
 }
 
+export async function getEduAiCourseEnrollmentServiceKey(externalCourseId, userId, options = {}) {
+  if (!externalCourseId || !userId) return null;
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) throw new Error("EDUAI_API_KEY not configured");
+  const query = new URLSearchParams({ userId: String(userId) });
+  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments?${query}`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
+  });
+  try {
+    return data?.enrollment == null
+      ? null
+      : EduAiEnrollmentListSchema.parse({ enrollments: [data.enrollment] }).enrollments[0];
+  } catch (e) {
+    const err = new Error("Invalid response when fetching EduAI course enrollment");
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
+}
+
+/**
+ * Add an enrollment in Core using the acting user's session. The service key
+ * proves server-to-server provenance to Core's CSRF boundary; Core still uses
+ * the forwarded user session for course RBAC and policy checks.
+ */
+export async function createCoreEnrollment(externalCourseId, userId, role, cookie) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to create an enrollment in Core");
+    error.status = 401;
+    throw error;
+  }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
+  try {
+    return await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
+      method: "POST",
+      cookie,
+      headers: { Authorization: `Bearer ${serviceKey}` },
+      body: { userId, role },
+    });
+  } catch (error) {
+    // Core reports an already-active row as 409. Re-read the authoritative row
+    // and align its role so this extension's ensure-style endpoint remains
+    // idempotent without allowing the local mirror to diverge from Core.
+    if (error?.status === 409) {
+      const existing = (await listEduAiCourseEnrollmentsServiceKey(externalCourseId)).find(
+        (enrollment) => enrollment.studentId === userId && enrollment.isActive !== false,
+      );
+      if (!existing) throw error;
+      if (existing.role !== role) {
+        return patchCoreEnrollmentRole(externalCourseId, existing.id, role, cookie);
+      }
+      return existing;
+    }
+    throw error;
+  }
+}
+
 export async function listEduAiModels() {
   const serviceKey = await getEffectiveEduAiApiKey();
   if (!serviceKey) {
-    const error = new Error('EDUAI_API_KEY not configured');
+    const error = new Error("EDUAI_API_KEY not configured");
     error.status = 503;
     throw error;
   }
@@ -488,7 +601,7 @@ export async function listEduAiModels() {
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
   if (!Array.isArray(data?.data)) {
-    throw new Error('Invalid response from EduAI models endpoint');
+    throw new Error("Invalid response from EduAI models endpoint");
   }
   return data.data;
 }
@@ -500,13 +613,20 @@ export async function listEduAiModels() {
  */
 export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, role, cookie) {
   if (!cookie) {
-    const error = new Error('Session cookie required to update enrollment role in Core');
+    const error = new Error("Session cookie required to update enrollment role in Core");
     error.status = 401;
     throw error;
   }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
   return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     cookie,
+    headers: { Authorization: `Bearer ${serviceKey}` },
     body: { role },
   });
 }
@@ -514,13 +634,20 @@ export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, ro
 /** Removes an enrollment in Core, forwarding the acting user's session cookie. */
 export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cookie) {
   if (!cookie) {
-    const error = new Error('Session cookie required to remove enrollment in Core');
+    const error = new Error("Session cookie required to remove enrollment in Core");
     error.status = 401;
     throw error;
   }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
   return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     cookie,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
 }
 
@@ -535,7 +662,7 @@ export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cooki
 export async function fetchCoreCourseSafe(coreOfferingId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
   try {
     return await requestEduAi(`/courses/${coreOfferingId}`, {
@@ -560,7 +687,7 @@ export async function fetchCoreCourseSafe(coreOfferingId, options = {}) {
 export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
   try {
     return await requestEduAi(`/courses/${coreOfferingId}/topics/${coreTopicId}`, {
@@ -581,12 +708,12 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = 
 export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
 
   const params = new URLSearchParams({
     courseId: coreOfferingId,
-    testable: 'true',
+    testable: "true",
     limit: String(limit),
     offset: String(offset),
   });
@@ -599,7 +726,7 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
     const parsed = EduAiQuestionListSchema.parse(data);
     return parsed.questions;
   } catch (e) {
-    const err = new Error('Invalid response when fetching Core testable questions');
+    const err = new Error("Invalid response when fetching Core testable questions");
     err.cause = e;
     err.status = 502;
     throw err;

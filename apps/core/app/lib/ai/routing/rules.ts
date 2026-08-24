@@ -85,8 +85,7 @@ const TOOL_CAPABLE_WEB_PICK: PickSpec = {
   tieBreak: "carbon",
 };
 
-const WEB_LOOKUP_PATTERN =
-  /^(look up|find a recent|find the current)\b/i;
+const WEB_LOOKUP_PATTERN = /^(look up|find a recent|find the current)\b/i;
 
 // Explicit "search the web"/"browse the web"/"google" phrasing is an
 // unambiguous request for a live web tool regardless of the topic that
@@ -133,8 +132,7 @@ const CODE_ARTIFACT_VERB_PATTERN =
 const ISA_ASSEMBLY_PATTERN =
   /\b(?:mips|x86|arm)\s+assembly\b|\bassembly\b.{0,20}\b(?:for|that|code)\b|\bregister\s+\$/i;
 
-const COMPLEX_CODE_PATTERN =
-  /\bwrite a\b.{0,40}\bfunction\b.{0,40}\b(iteratively|recursively)\b/i;
+const COMPLEX_CODE_PATTERN = /\bwrite a\b.{0,40}\bfunction\b.{0,40}\b(iteratively|recursively)\b/i;
 
 const REFACTOR_USE_EFFECT_PATTERN =
   /\buseeffect\b[\s\S]{0,120}\boutline a refactor\b|\boutline a refactor\b[\s\S]{0,120}\buseeffect\b/i;
@@ -237,10 +235,7 @@ export function isComplexReasoningPrompt(prompt: string, lower: string): boolean
 
 /** Strong-RAG hits that still need tier 3 for reasoning quality (not retrieval alone). */
 export function needsRagReasoningEscalation(lower: string): boolean {
-  return (
-    RAG_REASONING_PATTERN.test(lower) ||
-    COMPLEX_REASONING_PATTERN.test(lower)
-  );
+  return RAG_REASONING_PATTERN.test(lower) || COMPLEX_REASONING_PATTERN.test(lower);
 }
 
 /** Course RAG prompts asking for multiple distinct items — 7B often under-lists. */

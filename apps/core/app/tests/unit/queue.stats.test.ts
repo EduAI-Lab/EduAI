@@ -4,11 +4,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => {
   const aiJob = { count: vi.fn() };
+  // getQueueSnapshot runs both reads on a transaction client; the mock hands
+  // the callback this same client so the count assertions still apply.
+  const txClient = { aiJob };
   return {
     aiJob,
-    // getQueueSnapshot runs both reads on a transaction client; the mock hands
-    // the callback this same client so the count assertions still apply.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: typeof txClient) => T) => fn(txClient)),
   };
 });
 
@@ -122,9 +123,7 @@ describe("getQueuePosition", () => {
   it("only counts earlier interactive jobs for an interactive job (nothing outranks it)", async () => {
     prismaMock.aiJob.count.mockResolvedValueOnce(0);
 
-    await expect(
-      getQueuePosition({ ...pendingBackground, type: "interactive" }),
-    ).resolves.toBe(1);
+    await expect(getQueuePosition({ ...pendingBackground, type: "interactive" })).resolves.toBe(1);
 
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
       where: {

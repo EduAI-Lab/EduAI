@@ -30,7 +30,7 @@ describe("PageHeading", () => {
       <PageHeading
         heading="Courses"
         subheading={<span data-testid="node-subheading">Custom subheading</span>}
-      />
+      />,
     );
     expect(screen.getByTestId("node-subheading")).toBeInTheDocument();
     expect(screen.getByText("Custom subheading")).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("PageHeading", () => {
 
   it("applies custom className to the container", () => {
     const { container } = render(
-      <PageHeading heading="Courses" className="custom-heading-container" />
+      <PageHeading heading="Courses" className="custom-heading-container" />,
     );
     const div = container.querySelector(".custom-heading-container");
     expect(div).toBeInTheDocument();

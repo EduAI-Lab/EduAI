@@ -1,24 +1,39 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import type { BugReportSubmitData } from "@eduai/ui";
 
 const captureScreenshot = vi.hoisted(() => vi.fn());
 const getCapturedData = vi.hoisted(() => vi.fn());
 const submit = vi.hoisted(() => vi.fn());
 
-vi.mock('../../hooks/useBugReportCapture', () => ({
+vi.mock("../../hooks/useBugReportCapture", () => ({
   useBugReportCapture: () => ({ captureScreenshot, getCapturedData }),
 }));
-vi.mock('../../services/bugReportApi', () => ({ bugReportApi: { submit } }));
-vi.mock('../../contexts/AuthContext', () => ({
+vi.mock("../../services/bugReportApi", () => ({ bugReportApi: { submit } }));
+vi.mock("../../contexts/AuthContext", () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
-vi.mock('@eduai/ui', () => ({
-  BugReportDialog: ({ open, onSubmit }: { open: boolean; onSubmit: (data: unknown) => Promise<void> }) =>
-    open ? <button onClick={() => void onSubmit({ description: 'A valid bug report', bugType: 'OTHER', isAnonymous: false })}>submit report</button> : null,
+vi.mock("@eduai/ui", () => ({
+  BugReportDialog: ({
+    open,
+    onSubmit,
+  }: {
+    open: boolean;
+    onSubmit: (data: BugReportSubmitData) => Promise<void>;
+  }) =>
+    open ? (
+      <button
+        onClick={() =>
+          void onSubmit({ description: "A valid bug report", bugType: "OTHER", isAnonymous: false })
+        }
+      >
+        submit report
+      </button>
+    ) : null,
 }));
 
-import { BugReportProvider, useBugReport } from '../../contexts/BugReportContext';
+import { BugReportProvider, useBugReport } from "../../contexts/BugReportContext";
 
 function Trigger() {
   const bugReport = useBugReport();
@@ -29,41 +44,43 @@ function renderProvider(children: ReactNode = <Trigger />) {
   return render(<BugReportProvider>{children}</BugReportProvider>);
 }
 
-describe('BugReportProvider', () => {
+describe("BugReportProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     captureScreenshot.mockResolvedValue(undefined);
     getCapturedData.mockReturnValue({
-      consoleLogs: '[]',
-      networkLogs: '[]',
-      screenshot: 'data:image/jpeg;base64/CLEAN_PAGE',
+      consoleLogs: "[]",
+      networkLogs: "[]",
+      screenshot: "data:image/jpeg;base64/CLEAN_PAGE",
     });
     submit.mockResolvedValue(undefined);
   });
 
-  it('opens immediately while capturing and submits the cached screenshot', async () => {
+  it("opens immediately while capturing and submits the cached screenshot", async () => {
     let dialogWasMountedWhenCaptureStarted = false;
     captureScreenshot.mockImplementationOnce(() => {
       dialogWasMountedWhenCaptureStarted = Boolean(
-        screen.queryByRole('button', { name: 'submit report' }),
+        screen.queryByRole("button", { name: "submit report" }),
       );
       return Promise.resolve();
     });
     renderProvider();
 
-    fireEvent.click(screen.getByRole('button', { name: 'open report' }));
-    expect(screen.getByRole('button', { name: 'submit report' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "open report" }));
+    expect(screen.getByRole("button", { name: "submit report" })).toBeInTheDocument();
     expect(dialogWasMountedWhenCaptureStarted).toBe(false);
 
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'submit report' }));
+    fireEvent.click(screen.getByRole("button", { name: "submit report" }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
 
-    expect(submit).toHaveBeenCalledWith(expect.objectContaining({
-      screenshot: 'data:image/jpeg;base64/CLEAN_PAGE',
-      consoleLogs: '[]',
-      networkLogs: '[]',
-    }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screenshot: "data:image/jpeg;base64/CLEAN_PAGE",
+        consoleLogs: "[]",
+        networkLogs: "[]",
+      }),
+    );
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
   });
 });

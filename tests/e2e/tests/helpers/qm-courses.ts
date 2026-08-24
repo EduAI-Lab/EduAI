@@ -1,6 +1,6 @@
-import { expect, type APIRequestContext } from '@playwright/test';
-import { CORE_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { createAdmin, createInstructor } from './auth';
+import { expect, type APIRequestContext } from "@playwright/test";
+import { CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
+import { createAdmin, createInstructor } from "./auth";
 
 const QM = QM_BACKEND_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
@@ -37,15 +37,15 @@ export async function importQmCourseForInstructor(
 function coreCourseForm(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E QM Course',
-    code: `${codeBase ?? 'QM-E2E'}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
+    name: "E2E QM Course",
+    code: `${codeBase ?? "QM-E2E"}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
     // September start — must agree with `term` above (August maps to S2 via
     // `termFromMonth`, the exact literal/startDate mismatch #1011 outlaws).
-    startDate: '2026-09-08',
-    department: 'COSC',
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -65,7 +65,7 @@ export async function createQmCourseForInstructor(
   const adminCtx = await playwright.request.newContext();
 
   try {
-    await createAdmin(adminCtx, { prefix: 'qm-course-admin' });
+    await createAdmin(adminCtx, { prefix: "qm-course-admin" });
     const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
 
     const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
@@ -74,7 +74,9 @@ export async function createQmCourseForInstructor(
     expect(coreRes.status()).toBe(201);
     const { id: coreCourseId } = await coreRes.json();
 
-    const qmRes = await instrCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
+    const qmRes = await instrCtx.post(`${QM}/api/course`, {
+      data: { coreCourseId },
+    });
     // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
     expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();
@@ -82,5 +84,51 @@ export async function createQmCourseForInstructor(
     return { coreCourseId, qmCourseId: qmCourse.id };
   } finally {
     await adminCtx.dispose();
+  }
+}
+
+/**
+ * Create a published Core course, enroll `studentCtx`, and materialize its QM
+ * anchor through a separate instructor. This gives learner-denial tests a
+ * real, linked course id without granting the learner QM authoring rights.
+ */
+export async function createQmCourseForStudent(
+  playwright: PlaywrightRequestFixture,
+  studentCtx: APIRequestContext,
+  overrides: Record<string, string> = {},
+): Promise<{ coreCourseId: string; qmCourseId: number }> {
+  const adminCtx = await playwright.request.newContext();
+  const instrCtx = await playwright.request.newContext();
+
+  try {
+    await createAdmin(adminCtx, { prefix: "qm-course-admin" });
+    await createInstructor(instrCtx, { prefix: "qm-course-instr" });
+    const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
+    const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
+
+    const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
+      form: coreCourseForm(instrId, overrides),
+    });
+    expect(coreRes.status()).toBe(201);
+    const { id: coreCourseId } = await coreRes.json();
+
+    const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${coreCourseId}/enrollments`, {
+      data: { userId: studentId, role: "STUDENT" },
+    });
+    expect(enrollRes.status()).toBe(201);
+
+    const publishRes = await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
+    expect(publishRes.status()).toBe(200);
+
+    const qmRes = await instrCtx.post(`${QM}/api/course`, {
+      data: { coreCourseId },
+    });
+    expect([200, 201]).toContain(qmRes.status());
+    const { data: qmCourse } = await qmRes.json();
+
+    return { coreCourseId, qmCourseId: qmCourse.id };
+  } finally {
+    await adminCtx.dispose();
+    await instrCtx.dispose();
   }
 }

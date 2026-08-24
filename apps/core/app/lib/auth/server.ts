@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
@@ -12,10 +13,7 @@ import {
   PASSWORD_POLICY_MESSAGE,
   SKIP_REUSE_PATHS,
 } from "./password-policy";
-import {
-  isPasswordReused,
-  recordPasswordHistory,
-} from "./password-history.server";
+import { isPasswordReused, recordPasswordHistory } from "./password-history.server";
 import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
@@ -81,7 +79,9 @@ export const auth = betterAuth({
       }
 
       if (ctx.path === "/api-key/create") {
-        const expiresIn = (ctx.body as Record<string, unknown> | undefined)?.expiresIn;
+        // SAFETY: better-auth types `ctx.body` as `any`; every read below is a
+        // single field off a parsed JSON body, checked before it is used.
+        const expiresIn = (ctx.body as JsonObject | undefined)?.expiresIn;
         if (expiresIn === undefined || expiresIn === null) {
           throw new APIError("BAD_REQUEST", {
             message: "API keys must have an expiration date",
@@ -102,7 +102,7 @@ export const auth = betterAuth({
         if (!SKIP_REUSE_PATHS.has(ctx.path)) {
           // Resolve the userId: token-based reset reads it from the Verification
           // table; all other paths (change, set) have an active session.
-          const token = (ctx.body as Record<string, unknown>)?.token;
+          const token = (ctx.body as JsonObject | undefined)?.token;
           const userId = await resolvePasswordReuseUserId({
             path: ctx.path,
             token: typeof token === "string" ? token : undefined,
@@ -122,7 +122,7 @@ export const auth = betterAuth({
           // For change-password: verify the current password first so that an
           // incorrect current password takes precedence over the reuse error.
           if (ctx.path === "/change-password") {
-            const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
+            const currentPassword = (ctx.body as JsonObject | undefined)?.currentPassword;
             if (typeof currentPassword === "string") {
               const credAccount = await prisma.account.findFirst({
                 where: { userId, providerId: "credential" },
@@ -165,9 +165,16 @@ export const auth = betterAuth({
       if (ctx.path === "/sign-in/email") {
         const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
         const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
-        if (email) {
+        const normalizedEmail = email.trim().toLowerCase();
+        // Better Auth's email validator rejects surrounding whitespace. Do not
+        // let the inactive-user guard change that validation outcome by
+        // treating a whitespace-padded address as an existing account.
+        if (email && email === email.trim()) {
           const targetUser = await prisma.user.findUnique({
-            where: { email },
+            // Better Auth lowercases email before its credential lookup.
+            // Normalize the same way here so case variants cannot bypass the
+            // inactive-user gate.
+            where: { email: normalizedEmail },
             select: { isActive: true },
           });
           if (targetUser && !targetUser.isActive) {
@@ -300,7 +307,7 @@ export const auth = betterAuth({
   rateLimit: {
     // Disable in E2E/test environments where many sign-ups happen in quick
     // succession. Set BETTER_AUTH_DISABLE_RATE_LIMIT=1 to turn this off.
-    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== '1',
+    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== "1",
     window: 60,
     max: 100,
   },

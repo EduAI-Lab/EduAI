@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react"
-import { initThemeSync, closeThemeSync, broadcastThemeChange } from "./lib/theme-sync"
-import { useTheme } from "./theme-provider"
+import { useEffect, useRef } from "react";
+import { initThemeSync, closeThemeSync, broadcastThemeChange } from "./lib/theme-sync";
+import { useTheme } from "./theme-provider";
 
 /**
  * Initialize cross-app theme synchronization. Must be wrapped in `ThemeProvider`.
@@ -18,7 +18,7 @@ import { useTheme } from "./theme-provider"
  * `@eduai/ui` component. No other divergence existed to reconcile.
  */
 export function ThemeSyncInitializer() {
-  const { setTheme, theme } = useTheme()
+  const { setTheme, theme } = useTheme();
 
   // Refs so the initThemeSync callback always sees the *current* theme/setTheme
   // without listing them as effect deps. This matters because next-themes'
@@ -28,34 +28,34 @@ export function ThemeSyncInitializer() {
   // cookie and calls setTheme → an infinite "Maximum update depth" ping-pong
   // that rapidly flips dark/light. Pinning both in refs lets the effect run
   // exactly once on mount.
-  const themeRef = useRef(theme)
-  const setThemeRef = useRef(setTheme)
+  const themeRef = useRef(theme);
+  const setThemeRef = useRef(setTheme);
 
   useEffect(() => {
-    themeRef.current = theme
-    setThemeRef.current = setTheme
-  })
+    themeRef.current = theme;
+    setThemeRef.current = setTheme;
+  });
 
   // Initialize cross-app sync exactly once. Empty deps are intentional — see above.
   useEffect(() => {
     initThemeSync((newTheme) => {
       if (newTheme !== themeRef.current) {
-        setThemeRef.current(newTheme)
+        setThemeRef.current(newTheme);
       }
-    })
+    });
 
     return () => {
-      closeThemeSync()
-    }
+      closeThemeSync();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []);
 
   // Broadcast theme changes to other apps
   useEffect(() => {
     if (theme && (theme === "dark" || theme === "light" || theme === "system")) {
-      broadcastThemeChange(theme)
+      broadcastThemeChange(theme);
     }
-  }, [theme])
+  }, [theme]);
 
-  return null
+  return null;
 }

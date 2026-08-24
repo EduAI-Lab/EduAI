@@ -3,10 +3,7 @@
  * Shared by chat onFinish logging, eval harness, and report scripts.
  */
 
-import {
-  getProfileRequirements,
-  type AdhdTurnProfile,
-} from "~/lib/ai/adhd-turn-profile";
+import { getProfileRequirements, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 
 export const ADHD_TUTORING_WORD_CAP = 250;
 export const ADHD_CLARIFICATION_WORD_CAP = 120;
@@ -136,8 +133,7 @@ export function computeAdhdResponseMetrics(
 ): AdhdResponseMetrics {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const trimmed = (assistantText ?? "").trim();
-  const words =
-    trimmed.length === 0 ? [] : trimmed.split(/\s+/).filter(Boolean);
+  const words = trimmed.length === 0 ? [] : trimmed.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
 
   const leadingStripped = trimmed.replace(/^\s{0,2}/, "");
@@ -174,9 +170,7 @@ export function isStructuralCompliancePass(metrics: AdhdResponseMetrics): boolea
   return metrics.topSummary && metrics.nextLine && metrics.underCap;
 }
 
-export function withStructuralPass(
-  metrics: AdhdResponseMetrics,
-): AdhdStructuralCompliance {
+export function withStructuralPass(metrics: AdhdResponseMetrics): AdhdStructuralCompliance {
   return {
     ...metrics,
     structuralPass: isStructuralCompliancePass(metrics),
@@ -241,8 +235,7 @@ export function isRedirectTemplatePass(
     trimmed,
   );
   const hasForwardOffer =
-    trimmed.endsWith("?") &&
-    /want to|would you like|or switch|come back|ready to/i.test(trimmed);
+    trimmed.endsWith("?") && /want to|would you like|or switch|come back|ready to/i.test(trimmed);
   if (!(hasRedirectCue || hasForwardOffer)) return false;
   if (countSentences(trimmed) > MAX_REDIRECT_SENTENCES) return false;
   return !hasRedirectBleedContent(trimmed);

@@ -107,9 +107,7 @@ describe("loadFleetConfigFile", () => {
   it("throws FleetConfigError for an invalid jobTypes entry", () => {
     writeConfig(
       JSON.stringify({
-        servers: [
-          { id: "cmps01", baseUrl: "http://cmps01.ok.ubc.ca:8001", jobTypes: ["heavy"] },
-        ],
+        servers: [{ id: "cmps01", baseUrl: "http://cmps01.ok.ubc.ca:8001", jobTypes: ["heavy"] }],
       }),
     );
     expect(() => loadFleetConfigFile()).toThrow(/jobTypes/);

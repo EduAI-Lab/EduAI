@@ -9,13 +9,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
-function res(init: { ok: boolean; status: number; json?: () => Promise<unknown> }) {
+function res(init: { ok: boolean; status: number; json?: () => Promise<ParsedJsonBody> }) {
   return {
     ok: init.ok,
     status: init.status,
     json: init.json ?? (() => Promise.resolve({})),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -75,7 +76,11 @@ describe("useSubmitBugReport", () => {
 
   it("returns false and surfaces the server error message on failure", async () => {
     mockFetch.mockResolvedValue(
-      res({ ok: false, status: 400, json: () => Promise.resolve({ error: "description required" }) }),
+      res({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "description required" }),
+      }),
     );
 
     const { result } = renderHook(() => useSubmitBugReport());

@@ -5,16 +5,16 @@
  * a fenced code block, and Streamdown copy/download controls work after streaming
  * completes (buttons are disabled while isAnimating).
  */
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { CORE_URL } from '../../playwright.config';
-import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { CORE_URL } from "../../playwright.config";
+import { createAdmin, createInstructor, registerUser } from "../helpers/auth";
 
 const RUN_SUFFIX = Date.now().toString().slice(-5);
 const CODE_SAMPLE = 'console.log("hello");';
-const ASSISTANT_MARKDOWN = '```js\n' + CODE_SAMPLE + '\n```';
+const ASSISTANT_MARKDOWN = "```js\n" + CODE_SAMPLE + "\n```";
 
 async function getMyId(ctx: APIRequestContext): Promise<string> {
   const res = await ctx.get(`${CORE_URL}/api/me`);
@@ -24,13 +24,13 @@ async function getMyId(ctx: APIRequestContext): Promise<string> {
 function coursePayload(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E Code Block Course',
-    code: `${codeBase ?? 'CBK'}-${RUN_SUFFIX}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
-    startDate: '2026-09-08',
-    department: 'COSC',
+    name: "E2E Code Block Course",
+    code: `${codeBase ?? "CBK"}-${RUN_SUFFIX}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -38,7 +38,7 @@ function coursePayload(instrId: string, overrides: Record<string, string> = {}) 
 
 /** AI SDK data-stream body (same shape as `formatDataStreamPart` from `ai`). */
 function buildMockStreamBody(text: string): string {
-  return `0:${JSON.stringify(text)}\nd:${JSON.stringify({ finishReason: 'stop' })}\n`;
+  return `0:${JSON.stringify(text)}\nd:${JSON.stringify({ finishReason: "stop" })}\n`;
 }
 
 async function injectSession(page: Page, requestCtx: APIRequestContext): Promise<void> {
@@ -46,17 +46,20 @@ async function injectSession(page: Page, requestCtx: APIRequestContext): Promise
   await page.context().addCookies(cookies);
 }
 
-test.describe('Chat code-block toolbar (#667)', () => {
-  test('copy and download work after a streamed fenced code block', async ({ page, playwright }) => {
+test.describe("Chat code-block toolbar (#667)", () => {
+  test("copy and download work after a streamed fenced code block", async ({
+    page,
+    playwright,
+  }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createInstructor(instrCtx, { prefix: 'cb-instr' });
+      await createInstructor(instrCtx, { prefix: "cb-instr" });
       const instrId = await getMyId(instrCtx);
-      await createAdmin(adminCtx, { prefix: 'cb-admin' });
-      await registerUser(studentCtx, { prefix: 'cb-student' });
+      await createAdmin(adminCtx, { prefix: "cb-admin" });
+      await registerUser(studentCtx, { prefix: "cb-student" });
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
@@ -68,7 +71,7 @@ test.describe('Chat code-block toolbar (#667)', () => {
       const { id: courseId } = await createRes.json();
 
       const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
-        data: { userId: studentId, role: 'STUDENT' },
+        data: { userId: studentId, role: "STUDENT" },
       });
       expect(enrollRes.status()).toBe(201);
 
@@ -76,19 +79,22 @@ test.describe('Chat code-block toolbar (#667)', () => {
       expect(pubRes.status()).toBe(200);
 
       await injectSession(page, studentCtx);
-      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.addInitScript((userId) => {
+        window.localStorage.setItem(`eduai:chat-privacy-notice:${userId}`, "1");
+      }, studentId);
 
       const streamBody = buildMockStreamBody(ASSISTANT_MARKDOWN);
-      await page.route('**/api/chat', async (route) => {
-        if (route.request().method() !== 'POST') {
+      await page.route("**/api/chat", async (route) => {
+        if (route.request().method() !== "POST") {
           await route.continue();
           return;
         }
         await route.fulfill({
           status: 200,
           headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'X-Web-Tools-Enabled': '0',
+            "Content-Type": "text/plain; charset=utf-8",
+            "X-Web-Tools-Enabled": "0",
           },
           body: streamBody,
         });
@@ -96,18 +102,13 @@ test.describe('Chat code-block toolbar (#667)', () => {
 
       await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent(courseCode)}`);
 
-      // #708 adds a "Your chat may be reviewed" privacy notice for course chats.
-      // While open it renders the rest of the page aria-hidden, so the composer's
-      // Send button is absent from the accessibility tree until it's dismissed.
-      await page.getByRole('button', { name: 'I understand' }).click();
-
-      const input = page.locator('#chat-message-input');
+      const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
 
-      await input.fill('Show me hello world in JavaScript');
-      await page.getByRole('button', { name: 'Send message' }).click();
+      await input.fill("Show me hello world in JavaScript");
+      await page.getByRole("button", { name: "Send message" }).click();
 
-      const copyBtn = page.getByTitle('Copy Code');
+      const copyBtn = page.getByTitle("Copy Code");
       // Code-block copy/download stay disabled while isAnimating. Do not assert on Send:
       // useChat clears the input after submit, so Send stays disabled even when idle.
       await expect(copyBtn).toBeEnabled({ timeout: 20_000 });
@@ -117,17 +118,17 @@ test.describe('Chat code-block toolbar (#667)', () => {
         .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
         .toContain(CODE_SAMPLE);
 
-      const downloadBtn = page.getByTitle('Download file');
+      const downloadBtn = page.getByTitle("Download file");
       await expect(downloadBtn).toBeEnabled();
 
-      const downloadPromise = page.waitForEvent('download');
+      const downloadPromise = page.waitForEvent("download");
       await downloadBtn.click();
       const download = await downloadPromise;
 
       const tmpPath = path.join(os.tmpdir(), `e2e-code-block-${Date.now()}.txt`);
       await download.saveAs(tmpPath);
       try {
-        const fileContent = fs.readFileSync(tmpPath, 'utf-8');
+        const fileContent = fs.readFileSync(tmpPath, "utf-8");
         expect(fileContent).toContain(CODE_SAMPLE);
       } finally {
         fs.unlinkSync(tmpPath);

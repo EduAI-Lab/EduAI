@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach } from "vitest";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 import {
   calculateCourseProgress,
   calculateModuleProgress,
   calculateLessonProgress,
   getActivityCompletionStatuses,
-} from '../../src/services/progressCalculation.js';
+} from "../../src/services/progressCalculation.js";
 
-describe('progressCalculation service', () => {
+describe("progressCalculation service", () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
   let studentId;
@@ -33,8 +33,8 @@ describe('progressCalculation service', () => {
       data: {
         lessonId,
         mainTopicId: seed.topic.id,
-        instructionsMd: 'Instructions',
-        config: { question: 'Q?', questionType: 'MCQ' },
+        instructionsMd: "Instructions",
+        config: { question: "Q?", questionType: "MCQ" },
         position: 0,
         ...overrides,
       },
@@ -57,14 +57,14 @@ describe('progressCalculation service', () => {
   // calculateCourseProgress
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('calculateCourseProgress', () => {
-    it('returns zeroes when no activities exist', async () => {
+  describe("calculateCourseProgress", () => {
+    it("returns zeroes when no activities exist", async () => {
       const result = await calculateCourseProgress(seed.course.id, studentId);
 
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
     });
 
-    it('returns correct count when student has correct submissions', async () => {
+    it("returns correct count when student has correct submissions", async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
       const a3 = await createActivity(seed.lesson.id);
@@ -78,14 +78,14 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 1, total: 3, percentage: 33 });
     });
 
-    it('only counts activities in published modules and lessons', async () => {
+    it("only counts activities in published modules and lessons", async () => {
       // seed module and lesson are published
       const publishedActivity = await createActivity(seed.lesson.id);
 
       // Create an unpublished module with a lesson+activity
       const unpubModule = await prisma.module.create({
         data: {
-          title: 'Unpublished Module',
+          title: "Unpublished Module",
           position: 1,
           isPublished: false,
           courseOfferingId: seed.course.id,
@@ -93,7 +93,7 @@ describe('progressCalculation service', () => {
       });
       const unpubLesson = await prisma.lesson.create({
         data: {
-          title: 'Lesson in unpub',
+          title: "Lesson in unpub",
           position: 0,
           isPublished: true,
           moduleId: unpubModule.id,
@@ -104,14 +104,14 @@ describe('progressCalculation service', () => {
       // Create a published module with an unpublished lesson
       const pubModule2 = await prisma.module.create({
         data: {
-          title: 'Published Module 2',
+          title: "Published Module 2",
           position: 2,
           isPublished: true,
           courseOfferingId: seed.course.id,
         },
       });
       const unpubLesson2 = await prisma.lesson.create({
-        data: { title: 'Unpub lesson', position: 0, isPublished: false, moduleId: pubModule2.id },
+        data: { title: "Unpub lesson", position: 0, isPublished: false, moduleId: pubModule2.id },
       });
       await createActivity(unpubLesson2.id);
 
@@ -126,7 +126,7 @@ describe('progressCalculation service', () => {
     // #1187: completion is sticky — a correct submission that is later
     // overwritten by an incorrect re-attempt must still count as completed,
     // so progress percentage is monotonically non-decreasing.
-    it('stays completed after a later incorrect re-attempt (sticky completion)', async () => {
+    it("stays completed after a later incorrect re-attempt (sticky completion)", async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
 
@@ -139,7 +139,7 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 1, total: 2, percentage: 50 });
     });
 
-    it('returns zeroes for null/undefined courseId or userId', async () => {
+    it("returns zeroes for null/undefined courseId or userId", async () => {
       const r1 = await calculateCourseProgress(null, studentId);
       expect(r1).toEqual({ completed: 0, total: 0, percentage: 0 });
 
@@ -155,14 +155,14 @@ describe('progressCalculation service', () => {
   // calculateModuleProgress
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('calculateModuleProgress', () => {
-    it('counts activities in published lessons only', async () => {
+  describe("calculateModuleProgress", () => {
+    it("counts activities in published lessons only", async () => {
       // seed.lesson is published
       const a1 = await createActivity(seed.lesson.id);
 
       // Create an unpublished lesson in the same module
       const unpubLesson = await prisma.lesson.create({
-        data: { title: 'Unpub Lesson', position: 1, isPublished: false, moduleId: seed.module.id },
+        data: { title: "Unpub Lesson", position: 1, isPublished: false, moduleId: seed.module.id },
       });
       await createActivity(unpubLesson.id);
 
@@ -173,7 +173,7 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 1, total: 1, percentage: 100 });
     });
 
-    it('returns zeroes when module has no activities', async () => {
+    it("returns zeroes when module has no activities", async () => {
       const result = await calculateModuleProgress(seed.module.id, studentId);
 
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
@@ -183,12 +183,17 @@ describe('progressCalculation service', () => {
     // module's isPublished flag, so an unpublished module's progress was
     // still computed with a nonzero denominator even though
     // calculateCourseProgress excludes that same module entirely.
-    it('excludes activities when the module itself is unpublished', async () => {
+    it("excludes activities when the module itself is unpublished", async () => {
       const unpubModule = await prisma.module.create({
-        data: { title: 'Draft Module', position: 1, isPublished: false, courseOfferingId: seed.course.id },
+        data: {
+          title: "Draft Module",
+          position: 1,
+          isPublished: false,
+          courseOfferingId: seed.course.id,
+        },
       });
       const lesson = await prisma.lesson.create({
-        data: { title: 'Lesson', position: 0, isPublished: true, moduleId: unpubModule.id },
+        data: { title: "Lesson", position: 0, isPublished: true, moduleId: unpubModule.id },
       });
       const a1 = await createActivity(lesson.id);
       await submitAnswer(a1.id, studentId, 1, true);
@@ -203,8 +208,8 @@ describe('progressCalculation service', () => {
   // calculateLessonProgress
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('calculateLessonProgress', () => {
-    it('counts all activities in a published lesson', async () => {
+  describe("calculateLessonProgress", () => {
+    it("counts all activities in a published lesson", async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
 
@@ -215,7 +220,7 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 1, total: 2, percentage: 50 });
     });
 
-    it('calculates percentage with Math.round', async () => {
+    it("calculates percentage with Math.round", async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
       const a3 = await createActivity(seed.lesson.id);
@@ -234,9 +239,9 @@ describe('progressCalculation service', () => {
     // though the same activity is excluded from calculateCourseProgress
     // and calculateModuleProgress. All three now share one predicate:
     // lesson.isPublished AND lesson.module.isPublished.
-    it('excludes activities when the lesson itself is unpublished', async () => {
+    it("excludes activities when the lesson itself is unpublished", async () => {
       const unpubLesson = await prisma.lesson.create({
-        data: { title: 'Draft Lesson', position: 1, isPublished: false, moduleId: seed.module.id },
+        data: { title: "Draft Lesson", position: 1, isPublished: false, moduleId: seed.module.id },
       });
       const a1 = await createActivity(unpubLesson.id);
       await submitAnswer(a1.id, studentId, 1, true);
@@ -246,12 +251,17 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
     });
 
-    it('excludes activities when the containing module is unpublished', async () => {
+    it("excludes activities when the containing module is unpublished", async () => {
       const unpubModule = await prisma.module.create({
-        data: { title: 'Draft Module', position: 1, isPublished: false, courseOfferingId: seed.course.id },
+        data: {
+          title: "Draft Module",
+          position: 1,
+          isPublished: false,
+          courseOfferingId: seed.course.id,
+        },
       });
       const publishedLessonInUnpubModule = await prisma.lesson.create({
-        data: { title: 'Lesson', position: 0, isPublished: true, moduleId: unpubModule.id },
+        data: { title: "Lesson", position: 0, isPublished: true, moduleId: unpubModule.id },
       });
       const a1 = await createActivity(publishedLessonInUnpubModule.id);
       await submitAnswer(a1.id, studentId, 1, true);
@@ -261,7 +271,7 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
     });
 
-    it('returns zeroes for null lessonId', async () => {
+    it("returns zeroes for null lessonId", async () => {
       const result = await calculateLessonProgress(null, studentId);
 
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
@@ -272,8 +282,8 @@ describe('progressCalculation service', () => {
   // getActivityCompletionStatuses
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('getActivityCompletionStatuses', () => {
-    it('returns correct/incorrect/not_attempted statuses', async () => {
+  describe("getActivityCompletionStatuses", () => {
+    it("returns correct/incorrect/not_attempted statuses", async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
       const a3 = await createActivity(seed.lesson.id);
@@ -285,12 +295,12 @@ describe('progressCalculation service', () => {
       const statuses = await getActivityCompletionStatuses([a1.id, a2.id, a3.id], studentId);
 
       expect(statuses).toBeInstanceOf(Map);
-      expect(statuses.get(a1.id)).toBe('correct');
-      expect(statuses.get(a2.id)).toBe('incorrect');
-      expect(statuses.get(a3.id)).toBe('not_attempted');
+      expect(statuses.get(a1.id)).toBe("correct");
+      expect(statuses.get(a2.id)).toBe("incorrect");
+      expect(statuses.get(a3.id)).toBe("not_attempted");
     });
 
-    it('is correct once any attempt is correct, incorrect-then-correct', async () => {
+    it("is correct once any attempt is correct, incorrect-then-correct", async () => {
       const activity = await createActivity(seed.lesson.id);
 
       // First attempt: incorrect
@@ -300,14 +310,14 @@ describe('progressCalculation service', () => {
 
       const statuses = await getActivityCompletionStatuses([activity.id], studentId);
 
-      expect(statuses.get(activity.id)).toBe('correct');
+      expect(statuses.get(activity.id)).toBe("correct");
     });
 
     // #1187: completion is sticky, not latest-attempt — once an activity has
     // ever been answered correctly, a later wrong re-attempt must not undo
     // it. This is the behavior change from #1187 (previously this returned
     // 'incorrect', since only the latest submission mattered).
-    it('stays correct once any attempt is correct, correct-then-incorrect', async () => {
+    it("stays correct once any attempt is correct, correct-then-incorrect", async () => {
       const activity = await createActivity(seed.lesson.id);
 
       await submitAnswer(activity.id, studentId, 1, true);
@@ -315,10 +325,10 @@ describe('progressCalculation service', () => {
 
       const statuses = await getActivityCompletionStatuses([activity.id], studentId);
 
-      expect(statuses.get(activity.id)).toBe('correct');
+      expect(statuses.get(activity.id)).toBe("correct");
     });
 
-    it('returns empty Map for empty or null activityIds', async () => {
+    it("returns empty Map for empty or null activityIds", async () => {
       const r1 = await getActivityCompletionStatuses([], studentId);
       expect(r1).toBeInstanceOf(Map);
       expect(r1.size).toBe(0);

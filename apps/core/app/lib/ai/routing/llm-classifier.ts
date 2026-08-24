@@ -82,9 +82,7 @@ export function parseClassifierJson(text: string): LlmRouteClassification {
 }
 
 function classifierModelId(): string {
-  return (
-    process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct"
-  );
+  return process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
 }
 
 function classifierMinConfidence(): number {
@@ -97,10 +95,7 @@ function classifierTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 30_000;
 }
 
-function buildClassifierUserPrompt(
-  prompt: string,
-  context: LlmClassifierContext,
-): string {
+function buildClassifierUserPrompt(prompt: string, context: LlmClassifierContext): string {
   const lines = [
     "Student prompt:",
     prompt.trim(),

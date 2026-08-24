@@ -27,9 +27,9 @@
  * from the raw `position` field, which is 1-based from the seed but 0-based via
  * UI create. When it can't be resolved, omit it and the watermark hides.
  */
-import type { ReactNode } from 'react';
-import { HERO_GLASS_STYLE, HeroShell, type CourseAccentColor } from '@eduai/ui';
-import { titleName } from '~/lib/course-title';
+import type { ReactNode } from "react";
+import { HERO_GLASS_STYLE, HeroShell, type CourseAccentColor } from "@eduai/ui";
+import { titleName } from "~/lib/course-title";
 
 export interface ModuleHeroStat {
   label: string;
@@ -77,22 +77,20 @@ export function ModuleHero({
   title,
   description,
   accentColor,
-  eyebrow = 'Module',
+  eyebrow = "Module",
   isPublished,
   stats,
   progress,
   actions,
 }: ModuleHeroProps) {
-  const accent = (accentColor ?? 'var(--primary)') as CourseAccentColor;
+  const accent = (accentColor ?? "var(--primary)") as CourseAccentColor;
   const pct =
-    progress && progress.total > 0
-      ? Math.round((progress.completed / progress.total) * 100)
-      : 0;
+    progress && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
   const hasProgress = Boolean(progress && progress.total > 0);
   const hasBadges = Boolean(stats?.length) || isPublished != null;
   // `orderText` (authored, e.g. "1.1") wins; else pad the numeric index.
   const orderLabel =
-    orderText ?? (order != null && order > 0 ? String(order).padStart(2, '0') : null);
+    orderText ?? (order != null && order > 0 ? String(order).padStart(2, "0") : null);
   const hasOrder = orderLabel != null;
 
   return (
@@ -139,7 +137,7 @@ export function ModuleHero({
                         style={HERO_GLASS_STYLE}
                       >
                         <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
-                        {isPublished ? 'Published' : 'Draft'}
+                        {isPublished ? "Published" : "Draft"}
                       </span>
                     )}
                     {stats?.map((stat) => (
@@ -165,7 +163,7 @@ export function ModuleHero({
                 </div>
                 <div
                   className="h-2 w-full overflow-hidden rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.22)' }}
+                  style={{ background: "rgba(255,255,255,0.22)" }}
                 >
                   <div
                     className="h-full rounded-full bg-white transition-[width] duration-500 ease-out"

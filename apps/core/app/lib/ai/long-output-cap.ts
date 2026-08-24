@@ -5,10 +5,7 @@ export { isLongOutputIntent };
 const DEFAULT_LONG_OUTPUT_MAX_TOKENS = 1200;
 const DEFAULT_ADHD_LONG_OUTPUT_MAX_TOKENS = 600;
 
-function resolvePositiveInteger(
-  value: string | undefined,
-  fallback: number,
-): number {
+function resolvePositiveInteger(value: string | undefined, fallback: number): number {
   if (!value || !/^[1-9]\d*$/.test(value)) {
     return fallback;
   }
@@ -32,6 +29,9 @@ export function resolveLongOutputMaxTokens(adhdAssist: boolean): number {
   );
 }
 
+/** The token cap to use for a turn, and whether the long-output rule set it. */
+export type LongOutputCap = { maxTokens: number; isLongOutputIntent: boolean };
+
 export function capTokensForLongOutputIntent({
   prompt,
   currentMaxTokens,
@@ -40,10 +40,7 @@ export function capTokensForLongOutputIntent({
   prompt: string;
   currentMaxTokens: number;
   adhdAssist: boolean;
-}): {
-  maxTokens: number;
-  isLongOutputIntent: boolean;
-} {
+}): LongOutputCap {
   const longOutputIntent = isLongOutputIntent(prompt);
 
   if (!longOutputIntent) {
@@ -76,9 +73,5 @@ export function didHitAppliedLongOutputCap({
   maxTokens: number;
   completionTokens: number | null | undefined;
 }): boolean {
-  return (
-    capApplied &&
-    typeof completionTokens === "number" &&
-    completionTokens >= maxTokens
-  );
+  return capApplied && typeof completionTokens === "number" && completionTokens >= maxTokens;
 }

@@ -90,7 +90,9 @@ describe("MaterialList", () => {
   });
 
   it("renders a fully custom emptyState override instead of the default", () => {
-    render(<MaterialList items={[]} emptyState={<div data-testid="custom-empty">Custom empty</div>} />);
+    render(
+      <MaterialList items={[]} emptyState={<div data-testid="custom-empty">Custom empty</div>} />,
+    );
     expect(screen.getByTestId("custom-empty")).toBeInTheDocument();
     expect(screen.queryByText("No materials yet")).not.toBeInTheDocument();
   });

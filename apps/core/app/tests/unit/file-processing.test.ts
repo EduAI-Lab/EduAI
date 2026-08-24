@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import JSZip from "jszip";
 import {
@@ -12,6 +13,9 @@ import {
   joinSemanticChunks,
   DEFAULT_SEMANTIC_CHUNK_OVERLAP,
   extractTextFromFile,
+  processUploadedFile,
+  validateUploadedFile,
+  extractUploadedFileContent,
   findEquationSpans,
   enrichExtractedDocumentContent,
   assertZipWithinLimits,
@@ -24,8 +28,8 @@ import {
   extractDocxText,
   extractPptxText,
   extractPdfText,
+  convertHtmlToMarkdown,
   extractPdfTextIsolated,
-  processUploadedFile,
   resetPdfExtractionConcurrencyForTests,
   holdPdfExtractionSlotForTests,
   getPdfExtractionMaxConcurrent,
@@ -35,25 +39,20 @@ import {
   PdfExtractionBusyError,
 } from "~/lib/ai/file-processing";
 
-// mammoth is imported dynamically *inside* extractDocxText (call-time, not
-// module-top-level), so mocking it here reliably intercepts that call and lets DOCX
-// tests below exercise the downstream HTML->markdown conversion in isolation, without
-// depending on mammoth's actual DOCX parsing. A real, unmocked round trip (verifying
-// extractDocxText's call shape — `{ buffer }`, not `{ arrayBuffer }` — actually works
-// against the real mammoth package) is covered separately in
-// docx-extraction-integration.test.ts, which never mocks mammoth.
+// mammoth now runs inside the isolated extraction worker (#1494 review), a separate
+// process, so mocking it here would not intercept anything. DOCX tests below cover the
+// in-process halves only — the ZIP-bomb guard that runs before the worker is spawned,
+// and the HTML->markdown conversion applied to whatever the worker returns. The real,
+// unmocked round trip through the worker (verifying extractDocxText's call shape —
+// `{ buffer }`, not `{ arrayBuffer }` — actually works against the real mammoth
+// package, and that mammoth's messages reach `metadata.extractionWarnings`) is covered
+// separately in docx-extraction-integration.test.ts.
 // (`node:child_process`/`node:fs`/`node:fs/promises`, by contrast, are imported
 // statically at the top of file-processing.ts, which this test file also statically
 // imports — that ordering means those Node-builtin mocks are not reliably applied
 // here, so PDF-worker subprocess tests below use real spawn/fs instead.)
-vi.mock("mammoth", () => ({ convertToHtml: vi.fn() }));
-
-const mammothMock = await import("mammoth");
-
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const PPTX_MIME =
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 async function buildZipArrayBuffer(
   files: Record<string, string> = { "word/document.xml": "<xml/>" },
@@ -68,10 +67,7 @@ async function buildZipArrayBuffer(
 async function buildPptxZipArrayBuffer(slides: string[]): Promise<ArrayBuffer> {
   const zip = new JSZip();
   slides.forEach((text, i) => {
-    zip.file(
-      `ppt/slides/slide${i + 1}.xml`,
-      `<p:sld><p:txBody>${text}</p:txBody></p:sld>`,
-    );
+    zip.file(`ppt/slides/slide${i + 1}.xml`, `<p:sld><p:txBody>${text}</p:txBody></p:sld>`);
   });
   return zip.generateAsync({ type: "arraybuffer" });
 }
@@ -201,10 +197,7 @@ describe("validateFile", () => {
   it("accepts DOCX MIME type", () => {
     expect(
       validateFile(
-        makeFile(
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          100,
-        ),
+        makeFile("application/vnd.openxmlformats-officedocument.wordprocessingml.document", 100),
       ).isValid,
     ).toBe(true);
   });
@@ -212,10 +205,7 @@ describe("validateFile", () => {
   it("accepts PPTX MIME type", () => {
     expect(
       validateFile(
-        makeFile(
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          100,
-        ),
+        makeFile("application/vnd.openxmlformats-officedocument.presentationml.presentation", 100),
       ).isValid,
     ).toBe(true);
   });
@@ -338,18 +328,14 @@ describe("validateFileSignature", () => {
 describe("assertZipWithinLimits", () => {
   // Mimics a JSZip instance loaded via loadAsync: entries carry a `_data`
   // object whose `uncompressedSize` comes from the ZIP central directory.
-  const makeZip = (
-    entries: Array<{ name: string; uncompressedSize?: number; dir?: boolean }>,
-  ) => ({
+  const makeZip = (entries: Array<{ name: string; uncompressedSize?: number; dir?: boolean }>) => ({
     files: Object.fromEntries(
       entries.map((e) => [
         e.name,
         {
           dir: e.dir ?? false,
           _data:
-            e.uncompressedSize === undefined
-              ? undefined
-              : { uncompressedSize: e.uncompressedSize },
+            e.uncompressedSize === undefined ? undefined : { uncompressedSize: e.uncompressedSize },
         },
       ]),
     ),
@@ -391,9 +377,7 @@ describe("assertZipWithinLimits", () => {
       name: `part${i}.bin`,
       uncompressedSize: chunk,
     }));
-    expect(() => assertZipWithinLimits(makeZip(entries), "DOCX")).toThrow(
-      /possible zip bomb/,
-    );
+    expect(() => assertZipWithinLimits(makeZip(entries), "DOCX")).toThrow(/possible zip bomb/);
   });
 
   it("ignores directory entries and entries with unknown size", () => {
@@ -531,7 +515,9 @@ describe("applyStandardChunking section splits", () => {
     const body = "Actual content about the introduction topic. ".repeat(20);
     const content = `Chapter 1\n1.1 Introduction\n${body}`;
     const chunks = applySemanticChunking(content, 500);
-    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(
+      true,
+    );
     expect(chunks.some((c) => c.includes("Actual content"))).toBe(true);
     expect(chunks.some((c) => c.trim() === "Chapter 1")).toBe(false);
   });
@@ -835,8 +821,12 @@ describe("mathML conversion via enrichExtractedDocumentContent", () => {
 // extractDocxText
 // ---------------------------------------------------------------------------
 
-describe("extractDocxText", () => {
-  it("converts mocked mammoth HTML output into markdown-like content", async () => {
+// mammoth moved into the isolated extraction worker (#1494 review), so mocking
+// it in this process no longer reaches the DOCX path. The HTML→markdown step it
+// feeds is unit-tested directly below; the real mammoth round trip is covered by
+// `docx-extraction-integration.test.ts`.
+describe("convertHtmlToMarkdown (the DOCX path's second half)", () => {
+  it("converts mammoth-shaped HTML into markdown-like content", () => {
     const html = `
       <h1>Title</h1>
       <p>Some <strong>bold</strong> and <em>italic</em> text.<br/>Next line.</p>
@@ -844,65 +834,31 @@ describe("extractDocxText", () => {
       <table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>
       <math><m:fraction><m:num>a</m:num><m:den>b</m:den></m:fraction></math>
     `;
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({ value: html, messages: [] });
 
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "notes.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
+    const content = convertHtmlToMarkdown(html);
 
-    const result = await extractDocxText(file as any);
-
-    expect(result.content).toContain("# Title");
-    expect(result.content).toContain("**bold**");
-    expect(result.content).toContain("*italic*");
-    expect(result.content).toContain("- First");
-    expect(result.content).toContain("- Second");
-    expect(result.content).toContain("| A | B |");
-    expect(result.content).toContain("\\frac{a}{b}");
-    expect(result.metadata?.processingMethod).toBe("mammoth.js + HTML conversion");
-    expect(result.metadata?.isClientSide).toBe(true);
+    expect(content).toContain("# Title");
+    expect(content).toContain("**bold**");
+    expect(content).toContain("*italic*");
+    expect(content).toContain("- First");
+    expect(content).toContain("- Second");
+    expect(content).toContain("| A | B |");
+    expect(content).toContain("\\frac{a}{b}");
   });
 
-  it("renders ordered-list items with their actual text", async () => {
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({
-      value: "<ol><li>One</li><li>Two</li></ol>",
-      messages: [],
-    });
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "list.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
-
-    const result = await extractDocxText(file as any);
-    expect(result.content).toContain("1. One");
-    expect(result.content).toContain("2. Two");
-    expect(result.content).not.toContain("$1");
+  // <ol> handling used to emit a literal "$1" per item, because the inner
+  // `content.replace(/<li.../, () => ...)` callback returns a string and function
+  // replacers get no $-pattern substitution. Now fixed to interpolate the captured
+  // item text; asserted directly here since mammoth no longer runs in this process.
+  it("renders ordered-list items with their actual text", () => {
+    const content = convertHtmlToMarkdown("<ol><li>One</li><li>Two</li></ol>");
+    expect(content).toContain("1. One");
+    expect(content).toContain("2. Two");
+    expect(content).not.toContain("$1");
   });
+});
 
-  it("surfaces mammoth extraction warnings in metadata without throwing", async () => {
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({
-      value: "<p>Body</p>",
-      messages: [{ type: "warning", message: "Unsupported style" }],
-    });
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "notes.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
-
-    const result = await extractDocxText(file as any);
-    expect(result.metadata?.extractionWarnings).toHaveLength(1);
-  });
-
+describe("extractDocxText", () => {
   it("wraps errors when the uploaded bytes are not a valid ZIP container", async () => {
     const file = {
       name: "fake.docx",
@@ -917,9 +873,9 @@ describe("extractDocxText", () => {
 // extractDocxText passes `{ buffer: Buffer.from(arrayBuffer) }` to mammoth, which is
 // the only input shape mammoth's Node build accepts (see its own lib/index.d.ts:
 // NodeJsInput = PathInput | BufferInput; BrowserInput = ArrayBufferInput was the
-// previous, broken shape). The real-mammoth regression test for this lives in
-// docx-extraction-integration.test.ts, kept in its own file so it never shares a
-// module registry with the `vi.mock("mammoth", ...)` above.
+// previous, broken shape) — the isolated worker reads the temp file into a
+// Buffer for exactly that reason. The real-mammoth regression test lives in
+// docx-extraction-integration.test.ts.
 
 // ---------------------------------------------------------------------------
 // extractPptxText
@@ -946,7 +902,33 @@ describe("extractPptxText", () => {
     expect(result.content).toContain("--- Slide 2 ---");
     expect(result.content).toContain("Second slide runs");
     expect(result.metadata?.slideCount).toBe(2);
-    expect(result.metadata?.processingMethod).toBe("client-side XML parsing");
+    expect(result.metadata?.processingMethod).toBe("XML parsing (isolated worker)");
+  });
+
+  it("orders slides numerically, not lexically, past slide 9 (#1494 review)", async () => {
+    // `sort()` on the entry names puts "slide10.xml" before "slide2.xml", so any
+    // deck longer than nine slides was emitted out of order and every "Slide N"
+    // label named the wrong slide — corrupting both document order and the
+    // per-slide context the chunker splits on.
+    const buffer = await buildPptxZipArrayBuffer(
+      Array.from({ length: 12 }, (_, i) => `<a:t>content of slide ${i + 1}</a:t>`),
+    );
+    const file = {
+      name: "long-deck.pptx",
+      type: PPTX_MIME,
+      size: buffer.byteLength,
+      arrayBuffer: async () => buffer,
+    };
+
+    const result = await extractPptxText(file as any);
+
+    expect(result.pageCount).toBe(12);
+    for (let n = 1; n <= 12; n += 1) {
+      expect(result.content).toContain(`--- Slide ${n} ---\ncontent of slide ${n}`);
+    }
+    // And the markers themselves are in ascending order in the output.
+    const order = [...result.content.matchAll(/--- Slide (\d+) ---/g)].map((m) => Number(m[1]));
+    expect(order).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
   });
 
   it("falls back to a placeholder message when the presentation has no slides", async () => {
@@ -1163,7 +1145,9 @@ describe("processUploadedFile", () => {
 
   it("rejects a declared-type/actual-bytes mismatch with the raw signature error (not wrapped)", async () => {
     const file = new File(["not a pdf"], "fake.pdf", { type: "application/pdf" });
-    await expect(processUploadedFile(file)).rejects.toThrow(/does not start with the PDF signature/);
+    await expect(processUploadedFile(file)).rejects.toThrow(
+      /does not start with the PDF signature/,
+    );
   });
 
   it("processes a text/plain upload end-to-end with enhanced metadata", async () => {
@@ -1177,7 +1161,7 @@ describe("processUploadedFile", () => {
     expect(result.mimeType).toBe("text/plain");
     expect(result.checksum).toBe(generateChecksum(result.content));
     // These fields are set at runtime but fall outside FileInfo['metadata']'s declared shape.
-    const metadata = result.metadata as Record<string, unknown> | undefined;
+    const metadata = result.metadata as JsonObject | undefined;
     expect(metadata?.isEnhanced).toBe(true);
     expect(metadata?.processingLibrary).toBe("Native text extraction");
     expect(typeof metadata?.chunkCount).toBe("number");
@@ -1193,7 +1177,7 @@ describe("processUploadedFile", () => {
     expect(result.title).toBe("lecture");
     expect(result.mimeType).toBe("application/pdf");
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
-    expect((result.metadata as Record<string, unknown> | undefined)?.processingLibrary).toBe(
+    expect((result.metadata as JsonObject | undefined)?.processingLibrary).toBe(
       "@opendocsg/pdf2md",
     );
   });
@@ -1211,8 +1195,14 @@ describe("processUploadedFile", () => {
 
   it("processes a PPTX upload end-to-end with slide-derived pageCount/metadata", async () => {
     const zip = new JSZip();
-    zip.file("ppt/slides/slide1.xml", "<p:sld><p:txBody><a:t>Intro to the course</a:t></p:txBody></p:sld>");
-    zip.file("ppt/slides/slide2.xml", "<p:sld><p:txBody><a:t>Grading policy details</a:t></p:txBody></p:sld>");
+    zip.file(
+      "ppt/slides/slide1.xml",
+      "<p:sld><p:txBody><a:t>Intro to the course</a:t></p:txBody></p:sld>",
+    );
+    zip.file(
+      "ppt/slides/slide2.xml",
+      "<p:sld><p:txBody><a:t>Grading policy details</a:t></p:txBody></p:sld>",
+    );
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const file = new File([new Uint8Array(zipBuffer)], "slides.pptx", { type: PPTX_MIME });
 
@@ -1220,9 +1210,9 @@ describe("processUploadedFile", () => {
 
     expect(result.title).toBe("slides");
     expect(result.pageCount).toBe(2);
-    const metadata = result.metadata as Record<string, unknown> | undefined;
+    const metadata = result.metadata as JsonObject | undefined;
     expect(metadata?.slideCount).toBe(2);
-    expect(metadata?.processingLibrary).toBe("client-side XML parsing");
+    expect(metadata?.processingLibrary).toBe("XML parsing (isolated worker)");
     expect(result.content).toContain("Intro to the course");
   });
 
@@ -1234,4 +1224,41 @@ describe("processUploadedFile", () => {
       /^Failed to process file huge\.txt: Extracted content of \d+ characters exceeds the maximum/,
     );
   }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
+// processUploadedFile — validate-then-extract composition (#949)
+// ---------------------------------------------------------------------------
+
+describe("processUploadedFile (#949 split)", () => {
+  const textFile = () =>
+    new File(["Lecture one. Introduction to testing."], "notes.txt", {
+      type: "text/plain",
+    });
+
+  it("runs both halves and returns the extracted FileInfo", async () => {
+    const info = await processUploadedFile(textFile());
+    const direct = await extractUploadedFileContent(textFile());
+
+    expect(info.title).toBe("notes");
+    expect(info.mimeType).toBe("text/plain");
+    expect(info.content).toContain("Lecture one");
+    // Composition, not a reimplementation: identical bytes hash identically.
+    expect(info.checksum).toBe(direct.checksum);
+  });
+
+  it("validates before extracting, so a rejected file never reaches extraction", async () => {
+    // Declared application/pdf with PNG magic bytes: passes validateFile on the
+    // declared type, fails the #225 RAG-05 signature sniff inside
+    // validateUploadedFile — so processUploadedFile must reject with the same
+    // error rather than attempting extraction.
+    const spoofed = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "notes.pdf", {
+      type: "application/pdf",
+    });
+    const expected =
+      "File declared as application/pdf does not start with the PDF signature (%PDF)";
+
+    await expect(validateUploadedFile(spoofed)).rejects.toThrow(expected);
+    await expect(processUploadedFile(spoofed)).rejects.toThrow(expected);
+  });
 });

@@ -1,7 +1,9 @@
 // @vitest-environment node
-// The /api/chat producer branch: 202 + position/depth snapshot, and the
-// QueueFullError -> 429 + Retry-After mapping (#914 producer, #915 backpressure).
+// Pre-MVP regression coverage: legacy queue inputs must stay on authenticated
+// direct chat even when old deployment configuration still sets the flag.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,8 +11,8 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(() => new Response("", { status: 200 })),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -73,12 +75,11 @@ vi.mock("~/lib/prisma.server", () => ({
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
+    topics: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
-// Only the enqueue call itself is stubbed. `isEnqueueRequested` stays real so the
-// QUEUE_ENQUEUE_ENABLED + `enqueue: true` double gate is exercised, and
-// QueueFullError stays real because the route branches on `instanceof`.
+// Keep the dormant producer observable: the route must never import/call it.
 vi.mock("~/lib/queue/chat-producer.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/queue/chat-producer.server")>();
   return { ...actual, enqueueQuestionGeneration: vi.fn() };
@@ -90,12 +91,11 @@ import { auth } from "~/lib/auth/server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration } from "~/lib/queue/chat-producer.server";
-import { QueueFullError, QUEUE_FULL_RETRY_AFTER_SECONDS } from "~/lib/queue/queue-stats.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -107,7 +107,7 @@ function makeRequest(body: object) {
   } as never;
 }
 
-function enqueueBody(overrides: Record<string, unknown> = {}) {
+function enqueueBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Write 5 questions on recursion." }],
     model: "vllm:test-model",
@@ -148,109 +148,42 @@ beforeEach(() => {
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
 });
 
-describe("/api/chat enqueue branch (#914/#915)", () => {
-  it("returns 202 with the job id and the live position/depth snapshot", async () => {
+function mockDirectResponse(content = "direct response") {
+  vi.mocked(streamText).mockResolvedValue({
+    consumeStream: vi.fn().mockResolvedValue(undefined),
+    text: Promise.resolve(content),
+    usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
+    finishReason: Promise.resolve("stop"),
+    sources: Promise.resolve([]),
+    reasoning: Promise.resolve(undefined),
+    response: Promise.resolve({ id: "resp-direct", messages: [] }),
+  } as never);
+}
+
+describe("/api/chat pre-MVP queue disable", () => {
+  it("keeps direct chat functional when the legacy queue flag is true", async () => {
     vi.mocked(enqueueQuestionGeneration).mockResolvedValue({
-      jobId: "aijob_1",
-      queuePosition: 3,
-      queueDepth: 7,
+      jobId: "must-not-be-returned",
+      queuePosition: 1,
+      queueDepth: 1,
     });
+    mockDirectResponse();
 
     const res = await action(makeRequest(enqueueBody()));
 
-    expect(res.status).toBe(202);
-    await expect(res.json()).resolves.toEqual({
-      jobId: "aijob_1",
-      queuePosition: 3,
-      queueDepth: 7,
-    });
-    // The producer branch replaces the stream entirely — no model call.
-    expect(streamText).not.toHaveBeenCalled();
-  });
-
-  it("passes the null snapshot through when the stats read degraded", async () => {
-    // enqueue() nulls both halves rather than 5xx-ing a job that is already
-    // durably queued; the 202 must still carry the job id.
-    vi.mocked(enqueueQuestionGeneration).mockResolvedValue({
-      jobId: "aijob_2",
-      queuePosition: null,
-      queueDepth: null,
-    });
-
-    const res = await action(makeRequest(enqueueBody()));
-
-    expect(res.status).toBe(202);
-    await expect(res.json()).resolves.toEqual({
-      jobId: "aijob_2",
-      queuePosition: null,
-      queueDepth: null,
-    });
-  });
-
-  it("maps QueueFullError to 429 with a Retry-After header", async () => {
-    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(
-      new QueueFullError("ai-jobs-chat", 50, 50),
-    );
-
-    const res = await action(makeRequest(enqueueBody()));
-
-    expect(res.status).toBe(429);
-    expect(res.headers.get("Retry-After")).toBe(String(QUEUE_FULL_RETRY_AFTER_SECONDS));
-    const body = await res.json();
-    expect(body).toEqual(
-      expect.objectContaining({
-        error: "AI job queue is full",
-        retryAfterSeconds: QUEUE_FULL_RETRY_AFTER_SECONDS,
-      }),
-    );
-    // A saturated queue is a rate signal, not a failure — nothing was streamed.
-    expect(streamText).not.toHaveBeenCalled();
-  });
-
-  it("maps a queue/Redis outage to 503, never to 429 or a client error (#1112)", async () => {
-    // "Redis" match in the error message is what httpStatusForEnqueueError's
-    // isInfrastructureError() keys off — this must never fall through to a
-    // generic 500/502 that masks a retryable infra outage as an app failure.
-    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("redis down"));
-
-    const res = await action(makeRequest(enqueueBody()));
-
-    expect(res.status).toBe(503);
-    expect(res.headers.get("Retry-After")).toBeNull();
-    await expect(res.json()).resolves.toEqual(
-      expect.objectContaining({ error: "Queue unavailable" }),
-    );
-  });
-
-  it("maps a non-infra enqueue failure to 500, not 503", async () => {
-    // A bug in job construction (not an outage) must not be reported as a
-    // retryable infra failure — that would mislead a client into retrying
-    // something that will fail identically every time.
-    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("unexpected null payload"));
-
-    const res = await action(makeRequest(enqueueBody()));
-
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual(
-      expect.objectContaining({ error: "Failed to enqueue AI job" }),
-    );
-  });
-
-  it("does not enter the producer branch when QUEUE_ENQUEUE_ENABLED is unset", async () => {
-    vi.stubEnv("QUEUE_ENQUEUE_ENABLED", "");
-    vi.mocked(streamText).mockResolvedValue({
-      consumeStream: vi.fn().mockResolvedValue(undefined),
-      text: Promise.resolve("ok"),
-      usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
-      finishReason: Promise.resolve("stop"),
-      sources: Promise.resolve([]),
-      reasoning: Promise.resolve(undefined),
-      response: Promise.resolve({ id: "resp-1", messages: [] }),
-    } as never);
-
-    const res = await action(makeRequest(enqueueBody()));
-
-    expect(res.status).not.toBe(202);
+    expect(res.status).toBe(200);
     expect(enqueueQuestionGeneration).not.toHaveBeenCalled();
+    expect(streamText).toHaveBeenCalled();
+  });
+
+  it("keeps direct chat functional when the legacy flag is absent", async () => {
+    vi.stubEnv("QUEUE_ENQUEUE_ENABLED", "");
+    mockDirectResponse("ok");
+
+    const res = await action(makeRequest(enqueueBody()));
+
+    expect(res.status).toBe(200);
+    expect(enqueueQuestionGeneration).not.toHaveBeenCalled();
+    expect(streamText).toHaveBeenCalled();
   });
 });

@@ -1,12 +1,6 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -18,6 +12,7 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
+const captureApiKeysOwner = vi.hoisted(() => vi.fn());
 const {
   handleSubmitMock,
   handleInputChangeMock,
@@ -86,9 +81,12 @@ vi.mock("~/hooks/api/use-chat-history", () => ({
 }));
 
 vi.mock("~/hooks/use-api-keys", () => ({
-  useApiKeys: () => ({
-    getValidApiKeys: vi.fn(() => ({})),
-  }),
+  useApiKeys: (ownerId?: string | null) => {
+    captureApiKeysOwner(ownerId);
+    return {
+      getValidApiKeys: vi.fn(() => ({})),
+    };
+  },
 }));
 
 vi.mock("~/hooks/use-assistive-reorientation", () => ({
@@ -168,10 +166,7 @@ const autoRoutingData: ChatBaseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
-  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -305,12 +300,18 @@ function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
   };
 }
 
+/** The slice of `Response` the component under test reads off a mocked fetch. */
+type FetchResponseStub = { ok?: boolean; status?: number; json: () => Promise<JsonValue> };
+
 describe("ChatScreen — header", () => {
+  it("binds its provider-key store to the authenticated loader user", () => {
+    renderChatScreen();
+    expect(captureApiKeysOwner).toHaveBeenCalledWith(baseData.user.id);
+  });
+
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Course Chat" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
   it("submits suggested prompts through the shared submit handler", async () => {
     renderChatScreen();
@@ -372,7 +373,6 @@ describe("ChatScreen — header", () => {
           content: "Stored partial answer",
           metadata: {
             resolvedModelId: "openai:gpt-4",
-            finishReason: "length",
             hitLongOutputCap: true,
           },
         },
@@ -391,7 +391,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     act(() => {
@@ -411,10 +411,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (
-        message: Record<string, unknown>,
-        details?: { finishReason?: string },
-      ) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -429,19 +426,16 @@ describe("ChatScreen — header", () => {
       );
     });
 
-    expect(
-      captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds,
-    ).toEqual(new Set(["assistant-provider-stop"]));
+    expect(captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds).toEqual(
+      new Set(["assistant-provider-stop"]),
+    );
   });
 
   it("does not show Continue from finishReason alone without the cap signal", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (
-        message: Record<string, unknown>,
-        details?: { finishReason?: string },
-      ) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -456,9 +450,7 @@ describe("ChatScreen — header", () => {
       );
     });
 
-    expect(
-      captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds,
-    ).toEqual(new Set());
+    expect(captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds).toEqual(new Set());
   });
 
   it("shows Continue again when a continuation also hits the server cap", async () => {
@@ -471,7 +463,7 @@ describe("ChatScreen — header", () => {
 
     let latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     await act(async () => {
@@ -547,9 +539,7 @@ describe("ChatScreen — header", () => {
     };
 
     await act(async () => {
-      await options.onResponse(
-        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
-      );
+      await options.onResponse(new Response(null, { headers: { "X-Chat-Id": "chat-1" } }));
       options.onFinish({ id: "assistant-1", role: "assistant" });
     });
 
@@ -583,9 +573,7 @@ describe("ChatScreen — header", () => {
     };
 
     await act(async () => {
-      await initialOptions.onResponse(
-        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
-      );
+      await initialOptions.onResponse(new Response(null, { headers: { "X-Chat-Id": "chat-1" } }));
     });
 
     // User flips Focus Mode on while the response is still in flight.
@@ -598,31 +586,22 @@ describe("ChatScreen — header", () => {
     });
 
     expect(router.state.location.pathname).toBe("/chat/chat-1");
-    expect(router.state.location.state).toEqual(
-      expect.objectContaining({ focusMode: true }),
-    );
+    expect(router.state.location.state).toEqual(expect.objectContaining({ focusMode: true }));
   });
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
-    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>(
-      (resolve) => {
-        resolveFetch = resolve;
-      },
-    );
-    const fetchSpy = vi
-      .spyOn(global, "fetch")
-      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+    let resolveFetch: (value: FetchResponseStub) => void;
+    const fetchPromise = new Promise<FetchResponseStub>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(fetchPromise as Promise<Response>);
 
     const { router } = renderChatScreen(null, autoRoutingData);
 
     // Save fires before Focus Mode is toggled on — mirrors
     // handleSystemPromptSave reading focusModeRef only after its in-flight
     // fetch resolves.
-    const savePromise =
-      captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
-        "Be concise",
-      );
+    const savePromise = captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave("Be concise");
 
     // User flips Focus Mode on while the save request is still in flight.
     act(() => {
@@ -637,15 +616,11 @@ describe("ChatScreen — header", () => {
     fetchSpy.mockRestore();
 
     expect(router.state.location.pathname).toBe("/chat/chat-1");
-    expect(router.state.location.state).toEqual(
-      expect.objectContaining({ focusMode: true }),
-    );
+    expect(router.state.location.state).toEqual(expect.objectContaining({ focusMode: true }));
   });
 
   it("starts a blank chat with the selected course when switching a persisted chat", async () => {
-    const { router, visited } = renderPersistedChatWithBlankChatRoute(
-      makePersistedTranscript(),
-    );
+    const { router, visited } = renderPersistedChatWithBlankChatRoute(makePersistedTranscript());
     const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
 
     await act(async () => {
@@ -736,7 +711,7 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
   };
 
   it("calls the regenerateOnly endpoint and swaps in the new content when toggled on", async () => {
-    let resolveFetch: (value: unknown) => void;
+    let resolveFetch: (value: FetchResponseStub) => void;
     const fetchPromise = new Promise((resolve) => {
       resolveFetch = resolve;
     });
@@ -982,7 +957,10 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
           role: "assistant",
           content: "A long baseline paragraph.",
           parts: [
-            { type: "tool-invocation", toolInvocation: { toolName: "getInformation", state: "result" } },
+            {
+              type: "tool-invocation",
+              toolInvocation: { toolName: "getInformation", state: "result" },
+            },
             { type: "text", text: "A long baseline paragraph." },
           ],
         } as never,

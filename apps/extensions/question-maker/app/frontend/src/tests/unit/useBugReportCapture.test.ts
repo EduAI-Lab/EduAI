@@ -5,18 +5,18 @@
  * (dialog open) — so these tests pin the on-demand behavior plus the
  * concurrent-call dedup and teardown that made the on-demand switch safe.
  */
-import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useBugReportCapture } from '../../hooks/useBugReportCapture';
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useBugReportCapture } from "../../hooks/useBugReportCapture";
 
-const toDataURL = vi.fn(() => 'data:image/jpeg;base64,MOCK');
+const toDataURL = vi.fn(() => "data:image/jpeg;base64,MOCK");
 const html2canvas = vi.fn(async () => ({ toDataURL }));
 
-vi.mock('html2canvas', () => ({
+vi.mock("html2canvas", () => ({
   default: (...args: unknown[]) => html2canvas(...args),
 }));
 
-describe('useBugReportCapture', () => {
+describe("useBugReportCapture", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     html2canvas.mockClear();
@@ -27,7 +27,7 @@ describe('useBugReportCapture', () => {
     vi.useRealTimers();
   });
 
-  it('never calls html2canvas on its own — no interval, no initial timeout', async () => {
+  it("never calls html2canvas on its own — no interval, no initial timeout", async () => {
     renderHook(() => useBugReportCapture(true));
 
     await act(async () => {
@@ -37,7 +37,7 @@ describe('useBugReportCapture', () => {
     expect(html2canvas).not.toHaveBeenCalled();
   });
 
-  it('captures on demand and exposes the screenshot via getCapturedData', async () => {
+  it("captures on demand and exposes the screenshot via getCapturedData", async () => {
     const { result } = renderHook(() => useBugReportCapture(true));
 
     await act(async () => {
@@ -45,10 +45,10 @@ describe('useBugReportCapture', () => {
     });
 
     expect(html2canvas).toHaveBeenCalledTimes(1);
-    expect(result.current.getCapturedData().screenshot).toBe('data:image/jpeg;base64,MOCK');
+    expect(result.current.getCapturedData().screenshot).toBe("data:image/jpeg;base64,MOCK");
   });
 
-  it('starts html2canvas synchronously before the caller can mount the dialog', async () => {
+  it("starts html2canvas synchronously before the caller can mount the dialog", async () => {
     let started = false;
     html2canvas.mockImplementationOnce(async () => {
       started = true;
@@ -64,7 +64,7 @@ describe('useBugReportCapture', () => {
     });
   });
 
-  it('is a no-op while disabled', async () => {
+  it("is a no-op while disabled", async () => {
     const { result } = renderHook(() => useBugReportCapture(false));
 
     await act(async () => {
@@ -75,13 +75,13 @@ describe('useBugReportCapture', () => {
     expect(result.current.getCapturedData().screenshot).toBeNull();
   });
 
-  it('dedupes overlapping calls into a single in-flight capture', async () => {
+  it("dedupes overlapping calls into a single in-flight capture", async () => {
     let resolveCapture!: () => void;
     html2canvas.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveCapture = () => resolve({ toDataURL });
-        })
+        }),
     );
 
     const { result } = renderHook(() => useBugReportCapture(true));
@@ -106,7 +106,7 @@ describe('useBugReportCapture', () => {
     expect(html2canvas).toHaveBeenCalledTimes(1);
   });
 
-  it('allows a fresh capture once the previous one has settled', async () => {
+  it("allows a fresh capture once the previous one has settled", async () => {
     const { result } = renderHook(() => useBugReportCapture(true));
 
     await act(async () => {
@@ -119,13 +119,13 @@ describe('useBugReportCapture', () => {
     expect(html2canvas).toHaveBeenCalledTimes(2);
   });
 
-  it('does not resurrect a screenshot when disabled during an in-flight capture', async () => {
+  it("does not resurrect a screenshot when disabled during an in-flight capture", async () => {
     let resolveCapture!: (value: { toDataURL: typeof toDataURL }) => void;
     html2canvas.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveCapture = resolve;
-        })
+        }),
     );
 
     const { result, rerender } = renderHook(({ enabled }) => useBugReportCapture(enabled), {
@@ -147,21 +147,21 @@ describe('useBugReportCapture', () => {
     expect(result.current.getCapturedData().screenshot).toBeNull();
   });
 
-  it('swallows capture failures instead of throwing', async () => {
+  it("swallows capture failures instead of throwing", async () => {
     html2canvas.mockImplementationOnce(async () => {
-      throw new Error('canvas boom');
+      throw new Error("canvas boom");
     });
 
     const { result } = renderHook(() => useBugReportCapture(true));
 
     await act(async () => {
-      await expect(result.current.captureScreenshot()).resolves.toBeUndefined();
+      await expect(result.current.captureScreenshot()).resolves.toBeNull();
     });
 
     expect(result.current.getCapturedData().screenshot).toBeNull();
   });
 
-  it('restores console/fetch and clears buffers when disabled after being enabled', async () => {
+  it("restores console/fetch and clears buffers when disabled after being enabled", async () => {
     const origLog = console.log;
     const origFetch = window.fetch;
     const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
@@ -174,9 +174,9 @@ describe('useBugReportCapture', () => {
     expect(console.log).not.toBe(origLog);
     expect(window.fetch).not.toBe(origFetch);
 
-    console.log('buffered log');
+    console.log("buffered log");
     await act(async () => {
-      await window.fetch('/buffered-request');
+      await window.fetch("/buffered-request");
     });
 
     rerender({ enabled: false });
@@ -184,8 +184,8 @@ describe('useBugReportCapture', () => {
     expect(console.log).toBe(origLog);
     expect(window.fetch).toBe(mockFetch);
     expect(result.current.getCapturedData()).toEqual({
-      consoleLogs: '[]',
-      networkLogs: '[]',
+      consoleLogs: "[]",
+      networkLogs: "[]",
       screenshot: null,
     });
 

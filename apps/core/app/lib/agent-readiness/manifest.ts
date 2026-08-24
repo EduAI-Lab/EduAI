@@ -181,7 +181,8 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",
     routeFile: "routes/api/chats.ts",
-  }),  entry({
+  }),
+  entry({
     method: "GET",
     path: "/api/chats/:chatId",
     readiness: "excluded",
@@ -228,6 +229,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "createCourse",
     errorEnvelope: "standard",
     routeFile: "routes/api/courses.$.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/courses/facets",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.facets.ts",
+    note: "Role-scoped status/term/department filter values for the course list (#1263)",
   }),
 
   // ── Course by id ────────────────────────────────────────────────────────────
@@ -576,7 +585,10 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/users",
     readiness: "ready",
-    pagination: { required: true, lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"] },
+    pagination: {
+      required: true,
+      lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"],
+    },
     errorEnvelope: "standard",
     adminChatTool: "listUsers",
     routeFile: "routes/api/users.$.ts",
@@ -794,6 +806,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/ollama-models",
     readiness: "ready",
     adminChatTool: "listOllamaModels",
@@ -939,6 +972,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     reason: "E2E test-only hook (NODE_ENV=test)",
     routeFile: "routes/api/e2e.promote.ts",
   }),
+  entry({
+    method: "POST",
+    path: "/api/e2e/seed",
+    readiness: "excluded",
+    reason: "E2E test-only hook (NODE_ENV=test)",
+    routeFile: "routes/api/e2e.seed.ts",
+  }),
 ];
 
 // ── Derived views & helpers ───────────────────────────────────────────────────
@@ -966,13 +1006,16 @@ export function agentReadyEmailEndpoints(): ApiEndpointEntry[] {
   return CORE_API_ENDPOINTS.filter((e) => e.sendsEmail);
 }
 
-export function readinessSummary(): {
+/** The agent-readiness tally the docs page renders. */
+export type ReadinessSummary = {
   total: number;
   ready: number;
   partial: number;
   excluded: number;
   readyPct: number;
-} {
+};
+
+export function readinessSummary(): ReadinessSummary {
   const ready = agentReadyEndpoints().length;
   const partial = partialEndpoints().length;
   const excluded = excludedEndpoints().length;

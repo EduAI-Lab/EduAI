@@ -30,10 +30,9 @@ vi.mock("~/lib/ai/embedding", () => ({
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  findActiveReEmbedJob: vi.fn(),
   getReEmbedJobForCourse: vi.fn(),
-  serializeReEmbedJob: vi.fn((job: unknown) => ({ serialized: true, ...(job as object) })),
-  startReEmbedJob: vi.fn(),
+  serializeReEmbedJob: vi.fn(<T extends object>(job: T) => ({ serialized: true, ...job })),
+  startOrResumeReEmbedJob: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/materials.server", () => ({
@@ -45,11 +44,7 @@ import { resolveAdminCourseId } from "~/lib/agent-tools/admin-context.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
-import {
-  findActiveReEmbedJob,
-  getReEmbedJobForCourse,
-  startReEmbedJob,
-} from "~/lib/ai/re-embed-job.server";
+import { getReEmbedJobForCourse, startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
@@ -114,18 +109,16 @@ describe("createAdminCourse", () => {
 
   it("creates a course for admin with valid input", async () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1" }]);
-    prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
-      const tx = {
-        course: { create: vi.fn().mockResolvedValue({ id: "c1", name: "Intro to CS" }) },
-        enrollment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        // createAdminCourse → ensureDefaultBank (#845)
-        questionBank: {
-          findFirst: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: "bank-1", name: "Default", courseId: "c1" }),
-        },
-      };
-      return fn(tx);
-    });
+    const tx = {
+      course: { create: vi.fn().mockResolvedValue({ id: "c1", name: "Intro to CS" }) },
+      enrollment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      // createAdminCourse → ensureDefaultBank (#845)
+      questionBank: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "bank-1", name: "Default", courseId: "c1" }),
+      },
+    };
+    prismaMock.$transaction.mockImplementation(async <T>(fn: (client: typeof tx) => T) => fn(tx));
 
     const result = await createAdminCourse(ADMIN, {
       name: "Intro to CS",
@@ -235,7 +228,11 @@ describe("updateAdminCourseRagSettings", () => {
 
   it("updates rag settings and invalidates cache for admin", async () => {
     mockResolvedCourseId();
-    prismaMock.course.update.mockResolvedValue({ id: "c1", ragTopK: 10, ragSimilarityThreshold: 0.5 });
+    prismaMock.course.update.mockResolvedValue({
+      id: "c1",
+      ragTopK: 10,
+      ragSimilarityThreshold: 0.5,
+    });
     const result = await updateAdminCourseRagSettings(ADMIN, OPTS, { ragTopK: 10 });
     expect(result).toEqual({
       ok: true,
@@ -410,21 +407,26 @@ describe("startAdminCourseReEmbed", () => {
 
   it("returns the active job when one is already running", async () => {
     mockResolvedCourseId();
-    vi.mocked(findActiveReEmbedJob).mockResolvedValue({ id: "job1", status: "RUNNING" } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job1", status: "RUNNING" },
+      created: false,
+      keyHonored: true,
+    } as never);
     const result = await startAdminCourseReEmbed(ADMIN, OPTS);
     expect(result).toMatchObject({ alreadyRunning: true, job: { serialized: true, id: "job1" } });
-    expect(startReEmbedJob).not.toHaveBeenCalled();
+    expect(startOrResumeReEmbedJob).toHaveBeenCalledWith("c1");
   });
 
   it("starts a new job when none is active", async () => {
     mockResolvedCourseId();
-    vi.mocked(findActiveReEmbedJob).mockResolvedValue(null);
-    vi.mocked(startReEmbedJob).mockResolvedValue({
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
       job: { id: "job2", status: "PENDING" },
       created: true,
+      keyHonored: true,
     } as never);
     const result = await startAdminCourseReEmbed(ADMIN, OPTS);
     expect(result).toMatchObject({ alreadyRunning: false, job: { serialized: true, id: "job2" } });
+    expect(startOrResumeReEmbedJob).toHaveBeenCalledWith("c1");
   });
 });
 
@@ -445,7 +447,10 @@ describe("getAdminCourseReEmbedJob", () => {
 
   it("returns the serialized job for admin", async () => {
     mockResolvedCourseId();
-    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({ id: "job1", status: "COMPLETED" } as never);
+    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({
+      id: "job1",
+      status: "COMPLETED",
+    } as never);
     const result = await getAdminCourseReEmbedJob(ADMIN, JOB_OPTS);
     expect(result).toMatchObject({ dataSource: "database", job: { serialized: true, id: "job1" } });
   });
@@ -459,9 +464,15 @@ describe("listAdminCanvasMaterials", () => {
 
   it("returns discovered canvas materials for admin", async () => {
     mockResolvedCourseId();
-    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([{ canvasFileId: "f1" }] as never);
+    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([
+      { canvasFileId: "f1" },
+    ] as never);
     const result = await listAdminCanvasMaterials(ADMIN, OPTS);
-    expect(result).toMatchObject({ dataSource: "database", count: 1, materials: [{ canvasFileId: "f1" }] });
+    expect(result).toMatchObject({
+      dataSource: "database",
+      count: 1,
+      materials: [{ canvasFileId: "f1" }],
+    });
     expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith("a1", "c1");
   });
 });

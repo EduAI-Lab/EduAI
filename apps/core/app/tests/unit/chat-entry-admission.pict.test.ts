@@ -7,6 +7,7 @@
 // course-pin conflict (409) — via mocked session/prisma/course-access like
 // chat.rbac.test.ts (no live DB).
 
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const routingSettingsMock = vi.hoisted(() => ({
@@ -23,8 +24,8 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
     embed: vi.fn(),
     embedMany: vi.fn(),
   };
@@ -88,7 +89,14 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
@@ -255,8 +263,8 @@ function actingUserId(row: ChatEntryAdmissionRow): string {
   return "u1";
 }
 
-function buildBody(row: ChatEntryAdmissionRow): Record<string, unknown> {
-  const body: Record<string, unknown> = {
+function buildBody(row: ChatEntryAdmissionRow): JsonObject {
+  const body: JsonObject = {
     messages: [],
     model: "auto-llm",
   };
@@ -288,7 +296,7 @@ function buildBody(row: ChatEntryAdmissionRow): Record<string, unknown> {
   return body;
 }
 
-function makeArgs(body: Record<string, unknown>) {
+function makeArgs(body: JsonObject) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -303,6 +311,7 @@ function makeArgs(body: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
     autoLlmEnabled: true,
     autoRulesEnabled: false,

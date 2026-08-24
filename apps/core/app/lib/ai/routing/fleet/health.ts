@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import type { FleetHealthResult } from "./types";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
@@ -13,14 +14,19 @@ const healthCache = new Map<string, CacheEntry>();
  * - `null`: response shape unusable → health check marks host unhealthy (no configured-model fallback)
  * - `[]`: endpoint is healthy but hosts no models → do not fall back
  */
-function parseModelIds(payload: unknown): string[] | null {
-  if (!payload || typeof payload !== "object") return null;
-  const data = payload as { data?: unknown };
-  if (!Array.isArray(data.data)) return null;
+function parseModelIds(payload: JsonValue | undefined): string[] | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = payload.data;
+  if (!Array.isArray(data)) return null;
   const ids: string[] = [];
-  for (const entry of data.data) {
-    if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
-      ids.push((entry as { id: string }).id);
+  for (const entry of data) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof entry.id === "string"
+    ) {
+      ids.push(entry.id);
     }
   }
   return ids;
@@ -75,7 +81,9 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       healthCache.set(normalized, result);
       return result;
     }
-    const body = (await res.json()) as unknown;
+    // SAFETY: `Response#json` resolves to whatever the host sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees.
+    const body = (await res.json()) as JsonValue;
     const modelIds = parseModelIds(body);
     // HTTP 200 without a valid `data` array is unhealthy — do not fall back to configured models.
     if (modelIds === null) {

@@ -34,16 +34,31 @@ export type DifficultyInputs = {
   averageRating: number | null;
 };
 
-const STUDENT_COUNT: Record<DifficultyBandingRow["StudentCount"], number> = { zero: 0, one: 1, many: 10 };
-const HELP_REQUEST_COUNT: Record<DifficultyBandingRow["HelpRequestCount"], number> = { zero: 0, low: 1, high: 20 };
-const SUBMISSION_COUNT: Record<DifficultyBandingRow["SubmissionCount"], number> = { zero: 0, nonzero: 10 };
-const INCORRECT_RATE: Record<DifficultyBandingRow["IncorrectRate"], number> = { zero: 0, half: 0.5, all: 1 };
-const AVERAGE_RATING: Record<DifficultyBandingRow["AverageRating"], number | null> = {
+const STUDENT_COUNT = {
+  zero: 0,
+  one: 1,
+  many: 10,
+} satisfies Record<DifficultyBandingRow["StudentCount"], number>;
+const HELP_REQUEST_COUNT = {
+  zero: 0,
+  low: 1,
+  high: 20,
+} satisfies Record<DifficultyBandingRow["HelpRequestCount"], number>;
+const SUBMISSION_COUNT = {
+  zero: 0,
+  nonzero: 10,
+} satisfies Record<DifficultyBandingRow["SubmissionCount"], number>;
+const INCORRECT_RATE = {
+  zero: 0,
+  half: 0.5,
+  all: 1,
+} satisfies Record<DifficultyBandingRow["IncorrectRate"], number>;
+const AVERAGE_RATING = {
   null: null,
   worst: 1,
   mid: 3,
   perfect: 5,
-};
+} satisfies Record<DifficultyBandingRow["AverageRating"], number | null>;
 
 /** Concrete inputs to pass to the real `calculateDifficulty`. */
 export function buildInputs(row: DifficultyBandingRow): DifficultyInputs {
@@ -58,12 +73,20 @@ export function buildInputs(row: DifficultyBandingRow): DifficultyInputs {
   };
 }
 
-export type DifficultyVerdict = { difficultyScore: number; difficultyLabel: "LOW" | "MEDIUM" | "HIGH" };
+export type DifficultyVerdict = {
+  difficultyScore: number;
+  difficultyLabel: "LOW" | "MEDIUM" | "HIGH";
+};
 
 /** Direct transcription of the documented formula — see file docstring. */
 export function difficultyBandingOracle(row: DifficultyBandingRow): DifficultyVerdict {
-  const { studentCount, helpRequestCount, submissionCount, incorrectSubmissionCount, averageRating } =
-    buildInputs(row);
+  const {
+    studentCount,
+    helpRequestCount,
+    submissionCount,
+    incorrectSubmissionCount,
+    averageRating,
+  } = buildInputs(row);
 
   const normalizedStudentCount = Math.max(studentCount || 0, 1);
   const helpPerStudent = helpRequestCount / normalizedStudentCount;

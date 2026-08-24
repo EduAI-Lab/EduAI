@@ -84,22 +84,26 @@ import {
 import { linkCanvasRoster, LinkRosterError } from "~/lib/canvas/link-roster.server";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import { getPolicy } from "~/lib/policy.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeArgs(path: string, method: string, body?: unknown) {
+function makeArgs(path: string, method: string, body?: RouteRequestBody) {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request(`http://localhost/api/canvas${path}`, {
-      method,
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    }),
+    request: new Request(`http://localhost/api/canvas${path}`, init),
     params: {},
     context: {} as never,
   } as never;
 }
 
-async function call(path: string, method: string, body?: unknown) {
-  return method === "GET" ? loader(makeArgs(path, method, body)) : action(makeArgs(path, method, body));
+async function call(path: string, method: string, body?: RouteRequestBody) {
+  return method === "GET"
+    ? loader(makeArgs(path, method, body))
+    : action(makeArgs(path, method, body));
 }
 
 beforeEach(() => {
@@ -158,7 +162,10 @@ describe("/api/canvas/link-roster", () => {
   });
 
   it("links the roster and returns 200 on success", async () => {
-    vi.mocked(linkCanvasRoster).mockResolvedValue({ studentId: "s1", enrollmentsLinked: 2 } as never);
+    vi.mocked(linkCanvasRoster).mockResolvedValue({
+      studentId: "s1",
+      enrollmentsLinked: 2,
+    } as never);
     const res = await call("/link-roster", "POST", { studentNumber: "12345678" });
     expect(res.status).toBe(200);
   });
@@ -181,7 +188,11 @@ describe("GET /api/canvas/integration and /courses", () => {
     vi.mocked(getCanvasIntegrationPublic).mockResolvedValue(null);
     const res = await call("/integration", "GET");
     const body = await res.json();
-    expect(body).toEqual({ success: true, data: null, message: "Canvas integration not configured" });
+    expect(body).toEqual({
+      success: true,
+      data: null,
+      message: "Canvas integration not configured",
+    });
   });
 
   it("returns the integration when configured", async () => {
@@ -211,7 +222,10 @@ describe("GET /api/canvas/integration and /courses", () => {
 describe("POST /api/canvas/connect", () => {
   it("returns 400 for invalid JSON", async () => {
     const res = await action({
-      request: new Request("http://localhost/api/canvas/connect", { method: "POST", body: "not json" }),
+      request: new Request("http://localhost/api/canvas/connect", {
+        method: "POST",
+        body: "not json",
+      }),
       params: {},
       context: {} as never,
     } as never);
@@ -281,7 +295,9 @@ describe("DELETE /api/canvas/disconnect", () => {
   });
 
   it("disconnects and returns 200", async () => {
-    vi.mocked(getCanvasIntegrationPublic).mockResolvedValue({ canvasUrl: "https://canvas.ubc.ca" } as never);
+    vi.mocked(getCanvasIntegrationPublic).mockResolvedValue({
+      canvasUrl: "https://canvas.ubc.ca",
+    } as never);
     const res = await call("/disconnect", "DELETE");
     expect(res.status).toBe(200);
     expect(deleteCanvasIntegration).toHaveBeenCalledWith("u1");
@@ -315,13 +331,17 @@ describe("unsupported method + error mapping", () => {
   });
 
   it("maps a CanvasApiError with statusCode 401 to 400", async () => {
-    vi.mocked(getCanvasIntegrationPublic).mockRejectedValue(new CanvasApiError("unauthorized", 401));
+    vi.mocked(getCanvasIntegrationPublic).mockRejectedValue(
+      new CanvasApiError("unauthorized", 401),
+    );
     const res = await call("/integration", "GET");
     expect(res.status).toBe(400);
   });
 
   it("maps a CanvasApiError with a 5xx statusCode to 502", async () => {
-    vi.mocked(getCanvasIntegrationPublic).mockRejectedValue(new CanvasApiError("upstream down", 503));
+    vi.mocked(getCanvasIntegrationPublic).mockRejectedValue(
+      new CanvasApiError("upstream down", 503),
+    );
     const res = await call("/integration", "GET");
     expect(res.status).toBe(502);
   });

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CronJobsAdminView } from "~/components/admin/cron-jobs-admin-view";
 import type { CronJobEntry } from "~/lib/db.cron-jobs.server";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 function job(overrides: Partial<CronJobEntry> = {}): CronJobEntry {
   return {
@@ -16,7 +17,7 @@ function job(overrides: Partial<CronJobEntry> = {}): CronJobEntry {
   };
 }
 
-function mockFetchJson(body: unknown, ok = true) {
+function mockFetchJson(body: ParsedJsonBody, ok = true) {
   return vi.fn().mockResolvedValue({
     ok,
     json: () => Promise.resolve(body),
@@ -61,6 +62,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: "2026-01-01T00:00:05.000Z",
               message: null,
               exitCode: 0,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           }),
         ]}
@@ -85,6 +88,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: "2026-01-01T00:00:01.000Z",
               message: "boom",
               exitCode: 1,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           }),
         ]}
@@ -128,6 +133,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: null,
               message: null,
               exitCode: null,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           }),
         ]}
@@ -156,6 +163,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: "2026-01-01T00:00:01.000Z",
               message: "boom",
               exitCode: 1,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           }),
         ]}
@@ -168,11 +177,22 @@ describe("CronJobsAdminView", () => {
   it("triggers a job via POST and refetches statuses on success", async () => {
     const fetchMock = vi
       .fn()
+      // Initial shared cron-status refresh on mount.
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        // Keep the supplied job visible after the shared initial refresh so
+        // the action button remains available for this interaction test.
+        json: () => Promise.resolve({ jobs: [job()] }),
+      })
       // triggerJob POST
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-1" }) })
       // fetchStatuses GET after trigger
       .mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
         json: () =>
           Promise.resolve({
             jobs: [
@@ -185,6 +205,8 @@ describe("CronJobsAdminView", () => {
                   finishedAt: "2026-01-01T00:00:01.000Z",
                   message: null,
                   exitCode: 0,
+                  triggerSource: "SCHEDULE",
+                  triggeredByUserId: null,
                 },
               }),
             ],
@@ -194,19 +216,23 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job()]} />);
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
     fireEvent.click(screen.getByRole("button", { name: /run now/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
+      2,
       "/api/admin/cron-jobs",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ intent: "trigger", jobName: "backup-nightly" }),
       }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/cron-jobs");
+    // apiFetch adds a Headers object to the refresh request, so assert the
+    // endpoint independently of wrapper implementation details.
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/admin/cron-jobs");
 
     await waitFor(() => expect(screen.getByText("Success")).toBeInTheDocument());
   });
@@ -226,6 +252,8 @@ describe("CronJobsAdminView", () => {
                 finishedAt: "2026-01-01T00:00:01.000Z",
                 message: null,
                 exitCode: 0,
+                triggerSource: "SCHEDULE",
+                triggeredByUserId: null,
               },
             }),
           ],
@@ -246,6 +274,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: null,
               message: null,
               exitCode: null,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           }),
         ]}
@@ -274,6 +304,8 @@ describe("CronJobsAdminView", () => {
               finishedAt: "2026-01-01T00:00:02.000Z",
               message: "full stack trace here",
               exitCode: 1,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
             },
           ],
         }),
@@ -287,7 +319,9 @@ describe("CronJobsAdminView", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/admin/cron-jobs?job=backup-nightly");
 
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(within(dialog).getByText("full stack trace here")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(dialog).getByText("full stack trace here")).toBeInTheDocument(),
+    );
 
     fireEvent.click(within(dialog).getByText("full stack trace here"));
 
@@ -314,6 +348,8 @@ describe("CronJobsAdminView", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<CronJobsAdminView jobs={[job()]} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText("Edit"));
 
@@ -359,7 +395,7 @@ describe("CronJobsAdminView", () => {
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByText(/Invalid cron expression/)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a server error message returned from the update-schedule call", async () => {

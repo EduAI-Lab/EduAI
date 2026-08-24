@@ -1,3 +1,4 @@
+import { jsonValueSchema, type JsonValue } from "~/lib/json-value";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import {
@@ -13,7 +14,7 @@ const bodySchema = z.object({
   eventType: z.string().min(1).max(64),
   adhdAssist: z.boolean().optional(),
   chatId: z.string().cuid().optional(),
-  metrics: z.unknown().optional(),
+  metrics: jsonValueSchema.optional(),
 });
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -36,10 +37,13 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     body = await request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }),
+      {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   const parsed = bodySchema.safeParse(body);

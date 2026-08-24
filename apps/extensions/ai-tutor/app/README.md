@@ -38,7 +38,7 @@ app/
   components/
     Nav.tsx                         # Global navigation bar
     ProgressBar.tsx                 # Progress bar with percentage label
-    PublishStatusButton.tsx         # Publish/unpublish toggle with tooltip
+    PublishMenu.tsx                 # Module/lesson publish kebab (state badge and action kept separate)
     StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs, session restore)
     StudentChatHistoryPanel.tsx     # Chat history sheet (list/restore sessions, retryable load errors)
     StudentActivityFeedbackCard.tsx # Post-submission difficulty rating form
@@ -46,7 +46,7 @@ app/
     AddActivityPanel.tsx            # New activity creation form
     EditActivityPanel.tsx           # Activity editing form
     AddCourseTopicsButton.tsx       # Inline topic creation
-    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA; hidden for instructors/admins)
+    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA on learner routes; UNIT_ADMIN on /dashboard + /instructor; hidden for instructors/admins)
     TourProvider.tsx                # Guided tour state manager (driver.js)
     ai-elements/                    # AI chat UI primitives
       conversation.tsx              #   Chat scroll container (use-stick-to-bottom)
@@ -96,29 +96,30 @@ app/
 
 Public routes render standalone; authenticated routes share the `_app.tsx` layout. Each route module uses a `clientLoader` function for data fetching via `requireClientUser(role)`.
 
-| Path | Module | Notes |
-|------|--------|-------|
-| `/` | `home.tsx` | Public sign-in |
+| Path                | Module                 | Notes                                   |
+| ------------------- | ---------------------- | --------------------------------------- |
+| `/`                 | `home.tsx`             | Public sign-in                          |
 | `/unsupported-role` | `unsupported-role.tsx` | Legacy redirect helper → `routeForRole` |
-| `/dashboard` | `dashboard.tsx` | Role landing (layout) |
-| `/admin` | `admin.tsx` | ADMIN / UNIT_ADMIN as gated |
-| `/settings` | `settings.tsx` | Authenticated |
-| `/help` | `help.tsx` | Authenticated |
-| `/student` … | `student*.tsx` | STUDENT / TA |
-| `/instructor` … | `instructor*.tsx` | INSTRUCTOR / TA (read-only where gated) |
+| `/dashboard`        | `dashboard.tsx`        | Role landing (layout)                   |
+| `/admin`            | `admin.tsx`            | ADMIN only (404 for every other role)   |
+| `/settings`         | `settings.tsx`         | Authenticated                           |
+| `/help`             | `help.tsx`             | Authenticated                           |
+| `/student` …        | `student*.tsx`         | STUDENT / TA                            |
+| `/instructor` …     | `instructor*.tsx`      | INSTRUCTOR / TA (read-only where gated) |
 
 ## State Management
 
 The project uses **React Context + hooks** exclusively. No Redux, Zustand, or external state libraries.
 
-| Context | Provider | Hook | Purpose |
-|---------|----------|------|---------|
-| Auth/User | `AuthProvider` | `useLocalUser()` | Current user session state |
-| Course Topics | `CourseTopicsProvider` | `useCourseTopicsContext()` | Topic list for a course |
-| Bug Report | `BugReportProvider` | `useBugReport()` | Console/network/screenshot capture |
-| Tour | `TourProvider` | `useAppTour()` | Guided tour session state |
+| Context       | Provider               | Hook                       | Purpose                            |
+| ------------- | ---------------------- | -------------------------- | ---------------------------------- |
+| Auth/User     | `AuthProvider`         | `useLocalUser()`           | Current user session state         |
+| Course Topics | `CourseTopicsProvider` | `useCourseTopicsContext()` | Topic list for a course            |
+| Bug Report    | `BugReportProvider`    | `useBugReport()`           | Console/network/screenshot capture |
+| Tour          | `TourProvider`         | `useAppTour()`             | Guided tour session state          |
 
 Additional patterns:
+
 - **`useOptimistic`** (React 19): Used in instructor routes for optimistic publish/unpublish UI updates.
 - **`clientLoader`**: Every route uses React Router v7's client-side loader for data fetching.
 - **localStorage**: Theme preference, AI provider API keys, tour completion flags.
@@ -149,17 +150,17 @@ Uses shared `@eduai/ui` and tokens in `app.css` (Outfit, UBC-aligned palette, cl
 
 ## Key Libraries
 
-| Library | Purpose |
-|---------|---------|
-| `driver.js` | Guided product tours |
-| `streamdown` | Streaming markdown rendering for AI responses |
-| `use-stick-to-bottom` | Auto-scroll for chat containers |
-| `html2canvas` | Screenshot capture for bug reports |
-| `react-hook-form` + `zod` | Form management and validation |
-| `@tanstack/react-table` | Table rendering (admin bug reports) |
-| `ai` (Vercel AI SDK) | AI chat message type definitions |
-| `cmdk` | Command palette (shadcn Command component) |
-| `@tabler/icons-react` | Icon library |
+| Library                   | Purpose                                       |
+| ------------------------- | --------------------------------------------- |
+| `driver.js`               | Guided product tours                          |
+| `streamdown`              | Streaming markdown rendering for AI responses |
+| `use-stick-to-bottom`     | Auto-scroll for chat containers               |
+| `html2canvas`             | Screenshot capture for bug reports            |
+| `react-hook-form` + `zod` | Form management and validation                |
+| `@tanstack/react-table`   | Table rendering (admin bug reports)           |
+| `ai` (Vercel AI SDK)      | AI chat message type definitions              |
+| `cmdk`                    | Command palette (shadcn Command component)    |
+| `@tabler/icons-react`     | Icon library                                  |
 
 ## Guided Tours
 

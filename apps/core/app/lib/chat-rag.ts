@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   resolveToolResultMaxChars,
   truncateToMaxChars,
@@ -94,12 +95,7 @@ const MAX_CONTEXT_MESSAGES_CEILING = 50;
 const SESSION_CHAR_BUDGET_CEILING = 100_000;
 const SESSION_DIGEST_MAX_CEILING = 50_000;
 
-function readBoundedEnvInt(
-  name: string,
-  fallback: number,
-  floor: number,
-  ceiling: number,
-): number {
+function readBoundedEnvInt(name: string, fallback: number, floor: number, ceiling: number): number {
   const parsed = Number(process.env[name]);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -147,7 +143,18 @@ export function resolveSessionDigestMaxChars(): number {
   );
 }
 
-function safeJsonLength(value: unknown): number {
+/**
+ * The fields this module reads on a chat message. Callers keep their own richer
+ * message type — this is only the contract the budgeting and digest helpers
+ * need, so an AI SDK message, a stored row and a test fixture all satisfy it.
+ */
+export type ChatSessionMessage = {
+  role?: string;
+  content?: unknown;
+  parts?: unknown;
+};
+
+function safeJsonLength<T>(value: T): number {
   try {
     return JSON.stringify(value)?.length ?? 0;
   } catch {
@@ -155,7 +162,7 @@ function safeJsonLength(value: unknown): number {
   }
 }
 
-function safeStringify(value: unknown): string {
+function safeStringify<T>(value: T): string {
   try {
     return JSON.stringify(value) ?? "";
   } catch {
@@ -163,27 +170,49 @@ function safeStringify(value: unknown): string {
   }
 }
 
+/** A content part that carries display text, in either of the shapes the AI SDK emits. */
+const textPartSchema = z.union([
+  z.string(),
+  z.object({ text: z.string() }).transform((part) => part.text),
+]);
+
+/**
+ * Message text as the AI SDK writes it: a bare string, a single text part, or an
+ * array mixing text parts with tool-call parts that contribute nothing readable.
+ */
+const messageTextSchema = z.union([
+  textPartSchema,
+  z.array(z.unknown()).transform((parts) =>
+    parts
+      .map((part) => {
+        const text = textPartSchema.safeParse(part);
+        return text.success ? text.data : "";
+      })
+      .filter((text) => text.length > 0)
+      .join(" "),
+  ),
+]);
+
 /**
  * Best-effort size of a message *as the model receives it* — it counts tool-call
  * and tool-result payloads, not just `text` parts. Used for the session char
  * budget and the `messageTextChars` debug metric so tool-heavy turns (#260) are
  * not under-counted and the digest (#259) triggers when it should.
  */
-export function estimateMessageCharsForModel(
-  message?: Record<string, unknown>,
-): number {
+export function estimateMessageCharsForModel(message?: ChatSessionMessage): number {
   if (!message) {
     return 0;
   }
   const content = message.content;
-  if (typeof content === "string") {
-    return content.length;
+  const text = z.string().safeParse(content);
+  if (text.success) {
+    return text.data.length;
   }
   if (content !== undefined && content !== null) {
     return safeJsonLength(content);
   }
   // Some AI SDK messages carry their payload under `parts` instead of `content`.
-  if ("parts" in message && message.parts != null) {
+  if (message.parts !== undefined && message.parts !== null) {
     return safeJsonLength(message.parts);
   }
   return 0;
@@ -194,70 +223,54 @@ export function estimateMessageCharsForModel(
  * by the chat route for lightweight keyword checks (so the two paths share one
  * extractor instead of drifting).
  */
-export function extractMessageText(message?: Record<string, unknown>): string {
+export function extractMessageText(message?: ChatSessionMessage): string {
   const content = message?.content;
-  if (typeof content === "string") {
-    return content;
+  const text = messageTextSchema.safeParse(content);
+  if (text.success) {
+    return text.data;
   }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (
-          part &&
-          typeof part === "object" &&
-          "text" in part &&
-          typeof (part as { text?: unknown }).text === "string"
-        ) {
-          return (part as { text: string }).text;
-        }
-        return "";
-      })
-      .filter((part) => part.length > 0)
-      .join(" ");
-  }
-  if (
-    content &&
-    typeof content === "object" &&
-    "text" in content &&
-    typeof (content as { text?: unknown }).text === "string"
-  ) {
-    return (content as { text: string }).text;
-  }
-  return content == null ? "" : safeStringify(content);
+  return content === undefined || content === null ? "" : safeStringify(content);
 }
 
-function isImagePart(part: unknown): boolean {
-  if (!part || typeof part !== "object") return false;
-  const p = part as Record<string, unknown>;
-  const type = typeof p.type === "string" ? p.type : "";
-  if (type === "image" || type === "image_url") return true;
-  if (type === "file" && typeof p.mimeType === "string" && p.mimeType.startsWith("image/")) {
-    return true;
-  }
-  return p.image != null || p.image_url != null;
-}
+/**
+ * An image arrives either as a typed part (`image`/`image_url`, or a `file` part
+ * with an image mime type) or as a part carrying an image payload directly.
+ */
+const imagePartSchema = z
+  .object({
+    type: z.string().optional().catch(undefined),
+    mimeType: z.string().optional().catch(undefined),
+    image: z.unknown(),
+    image_url: z.unknown(),
+  })
+  .refine(
+    (part) =>
+      part.type === "image" ||
+      part.type === "image_url" ||
+      (part.type === "file" && part.mimeType?.startsWith("image/") === true) ||
+      (part.image !== undefined && part.image !== null) ||
+      (part.image_url !== undefined && part.image_url !== null),
+  );
 
 /** True when the message includes image parts (AI SDK content/parts arrays). */
-export function messageHasImageParts(message?: Record<string, unknown>): boolean {
+export function messageHasImageParts(message?: ChatSessionMessage): boolean {
   if (!message) return false;
-  for (const field of ["content", "parts"] as const) {
-    const value = message[field];
-    if (Array.isArray(value) && value.some(isImagePart)) {
+  for (const value of [message.content, message.parts]) {
+    if (Array.isArray(value) && value.some((part) => imagePartSchema.safeParse(part).success)) {
       return true;
     }
   }
   return false;
 }
 
-function totalMessageChars<T extends Record<string, unknown>>(
+function totalMessageChars<T extends ChatSessionMessage>(
   messages: T[],
   estimate: (message?: T) => number,
 ): number {
   return messages.reduce((sum, message) => sum + estimate(message), 0);
 }
 
-function buildSessionDigest<T extends Record<string, unknown>>(
+function buildSessionDigest<T extends ChatSessionMessage>(
   messages: T[],
   previewText: (message?: T) => string,
   maxDigestChars: number,
@@ -265,13 +278,12 @@ function buildSessionDigest<T extends Record<string, unknown>>(
   const lines: string[] = [];
 
   for (const message of messages) {
-    const role = typeof message.role === "string" ? message.role : "unknown";
+    const role = message.role ?? "unknown";
     const normalized = previewText(message).replace(/\s+/g, " ").trim();
     if (!normalized) {
       continue;
     }
-    const preview =
-      normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
+    const preview = normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
     lines.push(`- **${role}**: ${preview}`);
   }
 
@@ -287,6 +299,20 @@ function buildSessionDigest<T extends Record<string, unknown>>(
 }
 
 const DIGEST_MESSAGE_ID = "session-digest";
+
+/**
+ * The synthetic turn `prepareBoundedSessionContext` splices in when older turns
+ * are summarized away.
+ *
+ * It is deliberately not a `T`: the caller's message type may require fields
+ * this module has no value for, so the return type is a union rather than a
+ * claim that the digest is one of the caller's own messages.
+ */
+export type SessionDigestMessage = {
+  id: typeof DIGEST_MESSAGE_ID;
+  role: "user";
+  content: string;
+};
 
 /**
  * Strict truncation: the result length is `<= maxChars` (unlike
@@ -312,51 +338,56 @@ function hardTruncate(text: string, maxChars: number): string {
  * preview — collapsing a tool turn into free text would make the AI SDK treat it
  * as a plain assistant message and orphan any paired tool messages.
  */
-function enforceMessageBudget<T extends Record<string, unknown>>(
-  message: T,
-  maxChars: number,
-): T {
+/** Replace only a message's `content`, keeping the caller's own message type. */
+function withContent<T extends ChatSessionMessage>(message: T, content: CappedValue): T {
+  // SAFETY: `content` is the single field replaced, and every value passed here
+  // is derived from `message.content` itself, so the result still carries `T`'s
+  // own fields. The assertion only restates what a spread over a generic cannot.
+  return { ...message, content } as T;
+}
+
+function enforceMessageBudget<T extends ChatSessionMessage>(message: T, maxChars: number): T {
   if (estimateMessageCharsForModel(message) <= maxChars) {
     return message;
   }
 
   const content = message.content;
-  if (typeof content === "string") {
-    return { ...message, content: hardTruncate(content, maxChars) };
+  const text = z.string().safeParse(content);
+  if (text.success) {
+    return withContent(message, hardTruncate(text.data, maxChars));
   }
 
   if (Array.isArray(content) && content.length > 0) {
-    let parts = content as unknown[];
+    let parts: CappedValue[] = content;
     while (
       parts.length > 1 &&
-      estimateMessageCharsForModel({
-        ...message,
-        content: capStringsInValue(parts, maxChars, hardTruncate),
-      } as T) > maxChars
+      estimateMessageCharsForModel(
+        withContent(message, capStringsInValue(parts, maxChars, hardTruncate)),
+      ) > maxChars
     ) {
       parts = parts.slice(1);
     }
     return shrinkStructuredContentToBudget(message, parts, maxChars);
   }
 
-  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+  return withContent(message, hardTruncate(safeStringify(content), maxChars));
 }
 
-function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
+function shrinkStructuredContentToBudget<T extends ChatSessionMessage>(
   message: T,
-  content: unknown,
+  content: CappedValue,
   maxChars: number,
 ): T {
   let cap = maxChars;
   for (let attempt = 0; attempt < 8 && cap > 0; attempt++) {
     const capped = capStringsInValue(content, cap, hardTruncate);
-    const size = estimateMessageCharsForModel({ ...message, content: capped } as T);
+    const size = estimateMessageCharsForModel(withContent(message, capped));
     if (size <= maxChars) {
-      return { ...message, content: capped } as T;
+      return withContent(message, capped);
     }
     cap = Math.max(0, cap - (size - maxChars) - 1);
   }
-  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+  return withContent(message, hardTruncate(safeStringify(content), maxChars));
 }
 
 /**
@@ -365,7 +396,7 @@ function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
  * minimum set still exceeds it, truncate the survivors to an even share so the
  * model never receives more than `charBudget` characters.
  */
-function enforceSessionCharBudget<T extends Record<string, unknown>>(
+function enforceSessionCharBudget<T extends ChatSessionMessage>(
   messages: T[],
   estimate: (message?: T) => number,
   charBudget: number,
@@ -376,10 +407,7 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
   const minKeep = hasDigestHead ? 2 : 1;
   const verbatimStart = hasDigestHead ? 1 : 0;
 
-  while (
-    result.length > minKeep &&
-    totalMessageChars(result, estimate) > charBudget
-  ) {
+  while (result.length > minKeep && totalMessageChars(result, estimate) > charBudget) {
     result.splice(verbatimStart, 1);
   }
 
@@ -410,18 +438,23 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
  * labeled "Session digest" so the model reads it as context, not a new question.
  * DB / UI are unchanged.
  */
-export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
+export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
   messages: T[],
   opts?: {
     charBudget?: number;
     recentCount?: number;
     digestMaxChars?: number;
-    /** Override budget accounting (defaults to {@link estimateMessageCharsForModel}). */
-    estimateChars?: (message?: T) => number;
+    /**
+     * Override budget accounting (defaults to {@link estimateMessageCharsForModel}).
+     *
+     * Also called on the synthetic digest turn, which is why it takes the union
+     * rather than only the caller's own message type.
+     */
+    estimateChars?: (message?: T | SessionDigestMessage) => number;
     /** Override digest preview text (defaults to the internal text extractor). */
     previewText?: (message?: T) => string;
   },
-): T[] {
+): (T | SessionDigestMessage)[] {
   if (messages.length === 0) {
     return messages;
   }
@@ -445,21 +478,39 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
   }
 
   const digest = buildSessionDigest(older, previewText, digestMaxChars);
-  const digestMessage = {
+  const digestMessage: SessionDigestMessage = {
     id: DIGEST_MESSAGE_ID,
     role: "user",
     content:
-      digest ||
-      "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
-  } as unknown as T;
+      digest || "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
+  };
 
-  return enforceSessionCharBudget(
+  return enforceSessionCharBudget<T | SessionDigestMessage>(
     [digestMessage, ...recent],
     estimate,
     charBudget,
     true,
   );
 }
+
+/**
+ * A tool-result value with every oversized string leaf capped.
+ *
+ * Tool results arrive as parsed JSON, but `capStringsInValue` walks whatever it
+ * is handed, so the union admits the non-JSON leaves it passes through rather
+ * than claiming a strictness the walk does not enforce.
+ */
+type CappedValue =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Function
+  | CappedValue[]
+  | { [key: string]: CappedValue };
 
 /**
  * Recursively caps every string in a value, intentionally including metadata
@@ -470,37 +521,55 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
  * `truncate` defaults to {@link truncateToMaxChars} (the `maxChars + 1` tool-cap
  * convention); pass {@link hardTruncate} when the result must stay `<= maxChars`
  * for strict budget enforcement.
+ *
+ * The `typeof` branches below are deliberate and are not a missing parse. A tool
+ * result is whatever an arbitrary tool returned, so there is no schema to decode
+ * it against: the walk is polymorphic over the value's own runtime shape, and
+ * each branch narrows `value` into one arm of `CappedValue` so that every
+ * non-string leaf passes through without an assertion. They are the only
+ * `anti-slop/no-runtime-typeof` exemption in the tree and are suppressed
+ * per-line below so the rule can still reach zero elsewhere and be promoted to
+ * `error` (#1599).
  */
-function capStringsInValue(
-  value: unknown,
+function capStringsInValue<T>(
+  value: T,
   maxChars: number,
   truncate: (text: string, max: number) => string = truncateToMaxChars,
-): unknown {
+): CappedValue {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "string") {
     return truncate(value, maxChars);
+  }
+
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    const leaf: number | boolean | bigint = value;
+    return leaf;
+  }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  if (typeof value === "symbol" || typeof value === "function") {
+    const leaf: symbol | Function = value;
+    return leaf;
   }
 
   if (Array.isArray(value)) {
     return value.map((item) => capStringsInValue(item, maxChars, truncate));
   }
 
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const capped: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(record)) {
-      capped[key] = capStringsInValue(nested, maxChars, truncate);
-    }
-    return capped;
+  const capped: Record<string, CappedValue> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    capped[key] = capStringsInValue(nested, maxChars, truncate);
   }
-
-  return value;
+  return capped;
 }
 
 /**
  * Truncates oversized strings inside assistant/tool messages before `streamText`.
  * User turns are left unchanged. Does not mutate DB-stored history.
  */
-export function capToolResultsInMessages<T extends Record<string, unknown>>(
+export function capToolResultsInMessages<T extends ChatSessionMessage>(
   messages: T[],
   maxCharsPerResult?: number,
 ): T[] {
@@ -512,6 +581,8 @@ export function capToolResultsInMessages<T extends Record<string, unknown>>(
       return message;
     }
 
+    // SAFETY: the walk rebuilds the same object graph and only shortens string
+    // leaves, so every key and nesting level of `T` survives unchanged.
     return capStringsInValue(message, maxChars) as T;
   });
 }
@@ -555,8 +626,6 @@ export function capRagHitsForTool(hits: HybridRagHit[]): HybridRagHit[] {
   const maxChars = resolveToolResultMaxChars();
   return hits.slice(0, HYBRID_RAG_MAX_CHUNKS).map((h) => ({
     ...h,
-    content: wrapUntrustedReferenceContent(
-      truncateToMaxChars(h.content, maxChars),
-    ),
+    content: wrapUntrustedReferenceContent(truncateToMaxChars(h.content, maxChars)),
   }));
 }

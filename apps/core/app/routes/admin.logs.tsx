@@ -18,11 +18,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import {
-  listAuditLogs,
-  listSecurityLogs,
-  runAuditLogRetention,
-} from "~/lib/db.auditlog.server";
+import { listAuditLogs, listSecurityLogs, runAuditLogRetention } from "~/lib/db.auditlog.server";
 import { listSystemLogs, runSystemLogRetention } from "~/lib/db.systemlog.server";
 import {
   getLogRetentionPolicy,
@@ -87,7 +83,11 @@ function readOptionalQueryValue(searchParams: URLSearchParams, key: string) {
 }
 
 /** Parses positive integer query params with bounded fallback defaults. */
-function parsePositiveInt(value: string | null, fallback: number, max: number = Number.MAX_SAFE_INTEGER) {
+function parsePositiveInt(
+  value: string | null,
+  fallback: number,
+  max: number = Number.MAX_SAFE_INTEGER,
+) {
   if (value === null || value.trim() === "") {
     return fallback;
   }
@@ -152,10 +152,17 @@ function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Normalizes unknown row payloads into serializable plain objects for the client. */
-function serializeRows(rows: unknown[]) {
+/**
+ * A row from any of the log tables this page can show. The four models share no
+ * columns the client distinguishes, and the only field this pass has to touch
+ * is `createdAt` — so that is the whole contract stated here.
+ */
+type LogRowLike = { createdAt?: Date | string | null } | null;
+
+/** Normalizes log rows into serializable plain objects for the client. */
+function serializeRows(rows: LogRowLike[]) {
   return rows.map((row) => {
-    const safeRow = (row ?? {}) as Record<string, unknown>;
+    const safeRow = row ?? {};
     const createdAt = safeRow.createdAt;
     return {
       ...safeRow,
@@ -271,7 +278,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const sharedReturn = (result: { rows: unknown[]; total: number }) => ({
+  const sharedReturn = (result: { rows: LogRowLike[]; total: number }) => ({
     user,
     tab,
     page,
@@ -377,7 +384,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     page,
     pageSize,
     sortDirection: direction,
-    category: categoryRaw && AUDIT_FILTER_CATEGORIES.has(categoryRaw) ? (categoryRaw as never) : undefined,
+    category:
+      categoryRaw && AUDIT_FILTER_CATEGORIES.has(categoryRaw) ? (categoryRaw as never) : undefined,
     actionCode: readOptionalQueryValue(searchParams, "actionCode"),
     actorRole: readOptionalQueryValue(searchParams, "actorRole"),
     entityType: readOptionalQueryValue(searchParams, "entityType"),

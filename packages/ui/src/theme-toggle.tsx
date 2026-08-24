@@ -1,15 +1,15 @@
-import { IconSun, IconMoon } from "@tabler/icons-react"
-import { useTheme } from "./theme-provider"
-import { cn } from "./utils"
+import { IconSun, IconMoon } from "@tabler/icons-react";
+import { useTheme } from "./theme-provider";
+import { cn } from "./utils";
 
 export interface ThemeToggleProps {
-  className?: string
+  className?: string;
 }
 
 export function ThemeToggle({ className }: ThemeToggleProps) {
-  const { resolvedTheme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme();
   function toggleTheme() {
-    setTheme(resolvedTheme === "dark" ? "light" : "dark")
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
   }
   return (
     <button
@@ -21,7 +21,11 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
         className,
       )}
     >
-      {resolvedTheme === "dark" ? <IconSun size={18} aria-hidden="true" /> : <IconMoon size={18} aria-hidden="true" />}
+      {resolvedTheme === "dark" ? (
+        <IconSun size={18} aria-hidden="true" />
+      ) : (
+        <IconMoon size={18} aria-hidden="true" />
+      )}
     </button>
-  )
+  );
 }

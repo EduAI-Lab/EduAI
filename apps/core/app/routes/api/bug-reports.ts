@@ -1,8 +1,8 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-
 
 /**
  * GET /api/bug-reports?mine=true (#304, §11) — own submitted reports for any
@@ -45,17 +45,22 @@ export async function action({ request }: ActionFunctionArgs) {
   // Extension sources (AI_TUTOR, QUESTION_MAKER) always require a service key.
   const authHeader = request.headers.get("Authorization");
 
-  let body: unknown;
+  let body: JsonValue;
   try {
-    body = await request.json();
+    // SAFETY: `Response#json` resolves to whatever the client sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees.
+    body = (await request.json()) as JsonValue;
   } catch {
-    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }),
+      {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
-  const source = body && typeof body === "object" ? (body as { source?: string }).source : undefined;
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body.source : undefined;
   const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
   let sessionUserId: string | null = null;
 
@@ -75,22 +80,26 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // For session-auth requests, override userId and source from the verified session.
   if (sessionUserId) {
-    body = { ...(body as Record<string, unknown>), userId: sessionUserId, source: "CORE" };
+    const fields: JsonObject =
+      body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+    fields.userId = sessionUserId;
+    fields.source = "CORE";
+    body = fields;
   }
 
   const result = await createBugReport(body);
 
   if (!result.ok) {
     if (result.error === "VALIDATION_ERROR") {
-      return new Response(
-        JSON.stringify({ error: "VALIDATION_ERROR", fields: result.fields }),
-        { status: 422, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: result.fields }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-    return new Response(
-      JSON.stringify({ error: result.error }),
-      { status: 422, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: result.error }), {
+      status: 422,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return new Response(JSON.stringify({ id: result.report.id }), {

@@ -3,6 +3,7 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
+import type { ModelFormData } from "~/components/admin/model-form-dialog";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
@@ -78,7 +79,7 @@ export default function AIModelsPage() {
   const error = providersError ?? modelsError ?? routingModelsError;
 
   const handleCreateModel = useCallback(
-    async (data: Record<string, unknown>) => {
+    async (data: ModelFormData) => {
       await createModel(data);
       await refreshProviders();
     },
@@ -86,7 +87,7 @@ export default function AIModelsPage() {
   );
 
   const handleUpdateModel = useCallback(
-    async (id: string, data: Record<string, unknown>) => {
+    async (id: string, data: Partial<ModelFormData>) => {
       await updateModel(id, data);
       await refreshProviders();
     },
@@ -108,7 +109,9 @@ export default function AIModelsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>

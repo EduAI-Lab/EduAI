@@ -9,13 +9,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiFetch, ApiError, STUB_ONLY } from "~/hooks/api/config";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 function res(init: {
   ok: boolean;
   status: number;
   headers?: Record<string, string>;
   text?: () => Promise<string>;
-  json?: () => Promise<unknown>;
+  json?: () => Promise<ParsedJsonBody>;
 }): Response {
   const headers = new Headers(init.headers ?? {});
   return {
@@ -24,7 +25,7 @@ function res(init: {
     headers,
     text: init.text ?? (() => Promise.resolve("")),
     json: init.json ?? (() => Promise.resolve({})),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -103,9 +104,7 @@ describe("apiFetch", () => {
       }),
     );
 
-    await expect(apiFetch("/api/thing")).rejects.toThrow(
-      JSON.stringify({ somethingElse: true }),
-    );
+    await expect(apiFetch("/api/thing")).rejects.toThrow(JSON.stringify({ somethingElse: true }));
   });
 
   it("falls back to a generic message when the error body is empty non-JSON text", async () => {

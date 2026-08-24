@@ -1,13 +1,9 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { type Message } from "ai";
 import { Button } from "@eduai/ui";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
-import {
-  Message as BasicMessage,
-  MessageContent,
-  MessageActions,
-  MessageAction,
-} from "@eduai/ui";
+import { Message as BasicMessage, MessageContent, MessageActions, MessageAction } from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool, MarkdownStylesProvider, type MarkdownStyles } from "@eduai/ui";
 import {
@@ -16,10 +12,7 @@ import {
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
 import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
-import {
-  getChatToolDisplayName,
-  isWebChatToolName,
-} from "~/lib/ai/web-tool-ui";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import {
   relabelAssistiveHeadings,
   transformAssistiveDisplayCopy,
@@ -60,24 +53,20 @@ export interface ChatMessageProps {
  *   - array of parts with `.type === "text"` → join their `.text` values
  *   - anything else  → JSON.stringify (last resort, always a string)
  */
-export function coerceMessageContent(content: unknown): string {
+export function coerceMessageContent(content: JsonValue | undefined): string {
   if (typeof content === "string") return content;
   if (content === null || content === undefined) return "";
   if (Array.isArray(content)) {
     // Array of message parts — gather text parts
     const texts = content
-      .filter(
-        (p): p is Record<string, unknown> =>
-          p !== null && typeof p === "object",
-      )
+      .filter((p): p is JsonObject => p !== null && typeof p === "object" && !Array.isArray(p))
       .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => p.text as string);
+      .map((p) => String(p.text));
     if (texts.length > 0) return texts.join("\n");
     // Fall through to JSON.stringify below
   }
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj.text === "string") return obj.text;
+  if (typeof content === "object" && !Array.isArray(content) && typeof content.text === "string") {
+    return content.text;
   }
   return JSON.stringify(content);
 }
@@ -138,15 +127,10 @@ function ChatMessageBody({
       if (!part.toolInvocation) return null;
       return {
         type: part.toolInvocation.toolName ?? "unknown",
-        state:
-          part.toolInvocation.state === "result"
-            ? "output-available"
-            : "input-available",
+        state: part.toolInvocation.state === "result" ? "output-available" : "input-available",
         input: part.toolInvocation.args,
         output:
-          part.toolInvocation.state === "result"
-            ? (part.toolInvocation as any).result
-            : undefined,
+          part.toolInvocation.state === "result" ? (part.toolInvocation as any).result : undefined,
         toolCallId: part.toolInvocation.toolCallId,
         errorText: undefined,
       };
@@ -172,10 +156,7 @@ function ChatMessageBody({
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
     const t = (part as any).type as string | undefined;
-    if (!(
-      typeof t === "string" &&
-      (t === "tool-invocation" || t.startsWith("tool-"))
-    )) {
+    if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
       return false;
     }
 
@@ -189,14 +170,9 @@ function ChatMessageBody({
   });
 
   // If no parts, fallback to message content — coerce to string regardless of DB shape
-  const rawTextFromParts = textParts
-    .map((part) => (part as any).text as string)
-    .join("\n");
-  const rawTextContent =
-    rawTextFromParts || coerceMessageContent(message.content);
-  const normalizedContent = isUser
-    ? rawTextContent
-    : normalizeMathMarkdown(rawTextContent);
+  const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
+  const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
+  const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
   // #699: relabel Assistive policy headings at display time only (non-user).
   // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
   // defer full reorder + diagram widgets until structure is safe (idle stream,
@@ -254,8 +230,7 @@ function ChatMessageBody({
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
                 displayName={
-                  getChatToolDisplayName(toolPart.type, webToolsEnabled) ??
-                  toolPart.type
+                  getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type
                 }
                 defaultOpen={
                   toolPart.state === "input-streaming" ||
@@ -321,9 +296,7 @@ function ChatMessageBody({
             )}
 
             {answeredByLabel ? (
-              <p className="text-xs text-muted-foreground px-1">
-                Answered by {answeredByLabel}
-              </p>
+              <p className="text-xs text-muted-foreground px-1">Answered by {answeredByLabel}</p>
             ) : null}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">

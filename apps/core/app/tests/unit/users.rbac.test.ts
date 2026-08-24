@@ -47,7 +47,9 @@ vi.mock("~/lib/prisma.server", () => ({
 vi.mock("~/lib/disciplines/server", () => {
   const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS"];
   return {
-    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) =>
+      codes.every((c) => KNOWN.includes(c)),
+    ),
     isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
   };
 });
@@ -56,10 +58,11 @@ import { action, loader } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
 import { logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const ADMIN = { id: "admin-1", role: "ADMIN" };
 
-function makePatch(userId: string, body: unknown) {
+function makePatch(userId: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/users/${userId}`, {
       method: "PATCH",
@@ -71,7 +74,7 @@ function makePatch(userId: string, body: unknown) {
   } as any;
 }
 
-function makePost(body: unknown) {
+function makePost(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/users", {
       method: "POST",
@@ -563,9 +566,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
   it("assigns selected courses to an effective STUDENT in the user update transaction", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
-    vi.mocked(prisma.enrollment.findMany)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
     const body = await res.json();

@@ -1,9 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { AssessmentSectionCard } from '@/components/assessments/AssessmentSectionCard';
-import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '@/types/question';
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { AssessmentSectionCard } from "@/components/assessments/AssessmentSectionCard";
+import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from "@/types/question";
 
-const section = { id: 1, name: 'Section A', position: 2 } as unknown as AssessmentSection;
+const section = { id: 1, name: "Section A", position: 2 } as AssessmentSection;
 
 function renderCard(props: Partial<React.ComponentProps<typeof AssessmentSectionCard>> = {}) {
   return render(
@@ -25,27 +25,27 @@ function renderCard(props: Partial<React.ComponentProps<typeof AssessmentSection
   );
 }
 
-describe('AssessmentSectionCard reorder controls', () => {
+describe("AssessmentSectionCard reorder controls", () => {
   beforeEach(() => cleanup());
 
-  it('calls onMoveUp / onMoveDown when enabled', () => {
+  it("calls onMoveUp / onMoveDown when enabled", () => {
     const onMoveUp = vi.fn();
     const onMoveDown = vi.fn();
     renderCard({ onMoveUp, onMoveDown, canMoveUp: true, canMoveDown: true });
-    fireEvent.click(screen.getByRole('button', { name: /move section up/i }));
-    fireEvent.click(screen.getByRole('button', { name: /move section down/i }));
+    fireEvent.click(screen.getByRole("button", { name: /move section up/i }));
+    fireEvent.click(screen.getByRole("button", { name: /move section down/i }));
     expect(onMoveUp).toHaveBeenCalledOnce();
     expect(onMoveDown).toHaveBeenCalledOnce();
   });
 
-  it('disables end buttons', () => {
+  it("disables end buttons", () => {
     renderCard({ canMoveUp: false, canMoveDown: false });
-    expect(screen.getByRole('button', { name: /move section up/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /move section down/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /move section up/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /move section down/i })).toBeDisabled();
   });
 
-  it('hides reorder controls when readOnly', () => {
+  it("hides reorder controls when readOnly", () => {
     renderCard({ readOnly: true });
-    expect(screen.queryByRole('button', { name: /move section up/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /move section up/i })).toBeNull();
   });
 });

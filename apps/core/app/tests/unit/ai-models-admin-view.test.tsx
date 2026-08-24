@@ -27,7 +27,7 @@ const provider = {
   isActive: true,
   requiresApiKey: true,
   _count: { models: 2 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 const model = {
   id: "model-1",
@@ -46,7 +46,7 @@ const ollamaProvider = {
   isActive: true,
   requiresApiKey: false,
   _count: { models: 0 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 const vllmProvider = {
   id: "prov-vllm",
@@ -55,7 +55,7 @@ const vllmProvider = {
   isActive: true,
   requiresApiKey: false,
   _count: { models: 0 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdminView>> = {}) {
   const onModelSearchChange = vi.fn();
@@ -234,10 +234,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.submit(screen.getByRole("button", { name: "Create Model" }).closest("form")!);
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to save model:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to save model:", expect.any(Error));
       });
       expect(screen.getByRole("heading", { name: "Create Model" })).toBeInTheDocument();
 
@@ -267,10 +264,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to delete model:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to delete model:", expect.any(Error));
       });
       consoleError.mockRestore();
     });
@@ -297,10 +291,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.click(switches[switches.length - 1]);
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to toggle model:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to toggle model:", expect.any(Error));
       });
       consoleError.mockRestore();
     });
@@ -435,10 +426,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.submit(screen.getByRole("button", { name: "Create Provider" }).closest("form")!);
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to save provider:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to save provider:", expect.any(Error));
       });
       consoleError.mockRestore();
     });
@@ -468,10 +456,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to delete provider:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to delete provider:", expect.any(Error));
       });
       consoleError.mockRestore();
     });
@@ -497,10 +482,7 @@ describe("AiModelsAdminView", () => {
       fireEvent.click(screen.getAllByRole("switch")[0]);
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          "Failed to toggle provider:",
-          expect.any(Error),
-        );
+        expect(consoleError).toHaveBeenCalledWith("Failed to toggle provider:", expect.any(Error));
       });
       consoleError.mockRestore();
     });
@@ -522,10 +504,17 @@ describe("AiModelsAdminView", () => {
         ok: true,
         json: async () => ({
           models: [
-            { name: "llama3", model: "llama3", size: 123, digest: "d", modified_at: "now", details: {} },
+            {
+              name: "llama3",
+              model: "llama3",
+              size: 123,
+              digest: "d",
+              modified_at: "now",
+              details: {},
+            },
           ],
         }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
       const onCreateModel = vi.fn().mockResolvedValue(undefined);
 
       renderView({ providers: [provider, ollamaProvider], onCreateModel });
@@ -546,7 +535,7 @@ describe("AiModelsAdminView", () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         json: async () => ({ error: "Ollama unreachable" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, ollamaProvider] });
 
@@ -561,7 +550,7 @@ describe("AiModelsAdminView", () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ models: [{ id: "qwen-7b", owned_by: "vllm" }] }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
       const onCreateModel = vi.fn().mockResolvedValue(undefined);
 
       renderView({ providers: [provider, vllmProvider], onCreateModel });
@@ -583,16 +572,14 @@ describe("AiModelsAdminView", () => {
         ok: false,
         status: 404,
         json: async () => ({ error: "Not Found" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 
       fireEvent.click(screen.getByRole("button", { name: /sync vllm models/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Cannot reach \/api\/vllm-models/),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Cannot reach \/api\/vllm-models/)).toBeInTheDocument();
       });
     });
 
@@ -601,7 +588,7 @@ describe("AiModelsAdminView", () => {
         ok: false,
         status: 500,
         json: async () => ({ error: "Internal error" }),
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 
@@ -619,16 +606,14 @@ describe("AiModelsAdminView", () => {
         json: async () => {
           throw new Error("bad json");
         },
-      }) as unknown as typeof fetch;
+      }) as typeof fetch;
 
       renderView({ providers: [provider, vllmProvider] });
 
       fireEvent.click(screen.getByRole("button", { name: /sync vllm models/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Cannot reach \/api\/vllm-models/),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Cannot reach \/api\/vllm-models/)).toBeInTheDocument();
       });
     });
   });

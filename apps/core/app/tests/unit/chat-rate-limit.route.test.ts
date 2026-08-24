@@ -1,7 +1,9 @@
 // @vitest-environment node
 // Per-user rate limiting for /api/chat (#987): caps LLM completion requests
 // so an authenticated user can't submit unbounded requests to the model.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
 
@@ -17,12 +19,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -111,7 +117,7 @@ const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
 const originalChatRateLimitWindow = process.env.CHAT_RATE_LIMIT_WINDOW_MS;
 const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -123,7 +129,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -245,9 +251,7 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
     vi.mocked(requireServiceKey).mockResolvedValue(null);
     checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 9 });
 
-    const res = await action(
-      makeRequest({ messages: [], model: "vllm:test-model" }),
-    );
+    const res = await action(makeRequest({ messages: [], model: "vllm:test-model" }));
 
     expect(res.status).toBe(429);
     expect(checkRateLimitMock).toHaveBeenCalledWith("chat:service", 2, 60_000);

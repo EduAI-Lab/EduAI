@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # What:
 #	This script pulls latest git changes then restart pm2 (uses ecosystem.config.cjs).
@@ -12,10 +13,11 @@
 # 	If --force is passed, deployment will continue even with no new commit.
 
 # Variables
-GIT_BRANCH="main"  		# !!(1)!! Change if deploying a different branch
-REPO_DIR="/srv/www/eduai.ok.ubc.ca"	#!!(2)!! change as needed
+GIT_BRANCH="${GIT_BRANCH:-development}"
+REPO_DIR="${REPO_DIR:-/srv/www/EduAI}"
+APP_DIR="$REPO_DIR/apps/core"
 DOCKER_COMPOSE_FILE="docker-compose.yml"
-LAST_COMMIT_FILE="$REPO_DIR/.last_commit"
+LAST_COMMIT_FILE="$REPO_DIR/.git/last_deployed_core"
 LOCKFILE="/tmp/deploy.lock"
 
 # Function to clean up the lock file on exit
@@ -26,7 +28,7 @@ trap cleanup EXIT INT TERM
 
 # Check for the --force flag
 FORCE_DEPLOY=false
-if [ "$1" == "--force" ]; then
+if [ "${1:-}" == "--force" ]; then
     FORCE_DEPLOY=true
     echo "Force deploy enabled: will rebuild and deploy even if no new commit."
 fi
@@ -46,13 +48,17 @@ echo "Starting deployment process..."
 # Navigate to the repository
 cd "$REPO_DIR" || { echo "Failed to change directory to $REPO_DIR"; rm -f "$LOCKFILE"; exit 1; }
 
-# Ensure a clean working state
-git reset --hard
-git clean -fd
-git checkout "$GIT_BRANCH"
+# Refuse to erase or deploy over operator-owned files. Credentials belong in
+# ignored env files or a secret manager; any other local change needs review.
+if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    echo "Deployment aborted: repository has local changes."
+    git status --short
+    exit 1
+fi
 
-# Fetch the latest changes
-git fetch origin
+# Fetch and fast-forward only. Never rewrite or clean the deployment checkout.
+git fetch origin "$GIT_BRANCH"
+git switch "$GIT_BRANCH"
 
 # Get the latest commit hash on the dev branch
 LATEST_COMMIT=$(git rev-parse origin/"$GIT_BRANCH")
@@ -67,31 +73,25 @@ if [ "$FORCE_DEPLOY" = false ] && [ -f "$LAST_COMMIT_FILE" ]; then
     fi
 fi
 
-# Pull the latest changes and reset to the latest commit
-git pull origin "$GIT_BRANCH" || { echo "Git pull failed. Exiting."; exit 1; }
-
-# reset ownership and permissions
-sudo chown -R rbuti:eduai .	#!!(3)change to user:group that should have ownership to files
-chmod -R 755 .
-# Set execute permissions for deploy.sh so it can run after the pull
-#chmod +x deploy.sh
+# Update only when the local branch can fast-forward to the reviewed remote.
+git merge --ff-only "origin/$GIT_BRANCH" || { echo "Fast-forward failed. Exiting."; exit 1; }
 
 # Install dependencies, build, run migrations, and restart the app with PM2
 echo "Installing dependencies..."
-npm install || { echo "npm install failed. Exiting."; exit 1; }
+npm ci --no-audit --no-fund || { echo "npm ci failed. Exiting."; exit 1; }
 echo "Building application..."
-npm run build || { echo "Build failed. Exiting."; exit 1; }
+npm run build -w edu-ai || { echo "Build failed. Exiting."; exit 1; }
 echo "Running database migrations..."
-npx prisma migrate deploy || { echo "Database migration failed. Exiting."; exit 1; }
-npx prisma generate || { echo "Database prisma generate failed. Exiting."; exit 1; }
-npx prisma db seed || { echo "Database seed failed. Exiting."; exit 1; }
-npx prisma db push || { echo "Database push failed. Exiting."; exit 1; }
-# !!! (4) add other prisma migration/generation if more than one DB is used
+npm run db:generate -w edu-ai || { echo "Database client generation failed. Exiting."; exit 1; }
+npm exec -w edu-ai -- prisma migrate deploy || { echo "Database migration failed. Exiting."; exit 1; }
 
 
 
 echo "Restarting application with PM2..."
-pm2 restart ecosystem.config.cjs --update-env || { echo "PM2 restart failed. Exiting."; exit 1; }
+pm2 restart eduai-core --update-env 2>/dev/null \
+    || pm2 start npm --name eduai-core --cwd "$APP_DIR" -- run start \
+    || { echo "PM2 restart failed. Exiting."; exit 1; }
+pm2 save
 
 # Save the latest commit hash
 echo "$LATEST_COMMIT" > "$LAST_COMMIT_FILE"
@@ -101,6 +101,8 @@ rm -f "$LOCKFILE"
 
 echo "Deployment complete: $(date)"
 
-# Restart Apache
-echo "Restarting Apache Server (need sudo access - press escape to skip)"
-sudo systemctl restart apache2
+# Web-server reload is opt-in; the application restart does not require broad
+# sudo access by default.
+if [ "${RELOAD_WEB_SERVER:-false}" = "true" ]; then
+    sudo systemctl reload apache2
+fi

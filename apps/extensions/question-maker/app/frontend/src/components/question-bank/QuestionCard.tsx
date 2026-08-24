@@ -11,14 +11,14 @@ import {
   DropdownMenuItem,
   questionStatus,
   variantLabel,
-} from '@eduai/ui';
-import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
+} from "@eduai/ui";
+import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from "@eduai/ui";
 
-import { IconCopy, IconDots, IconTrash } from '@tabler/icons-react';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
-import { markCorrectChoices } from '@/lib/mcq';
-import type { QuestionVariantEntry, QuestionType } from '../../types/question';
+import { IconCopy, IconDots, IconTrash } from "@tabler/icons-react";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { formatCourseAccessLevel } from "@/lib/rbac/course-labels";
+import { markCorrectChoices } from "@/lib/mcq";
+import type { QuestionVariantEntry, QuestionType } from "../../types/question";
 
 interface QuestionCardProps {
   entry: QuestionVariantEntry;
@@ -37,11 +37,11 @@ interface QuestionCardProps {
   compact?: boolean;
 }
 
-const TYPE_LABELS: Record<QuestionType, string> = {
-  MCQ: 'Multiple Choice',
-  SA: 'Short Answer',
-  LA: 'Long Answer',
-};
+const TYPE_LABELS = {
+  MCQ: "Multiple Choice",
+  SA: "Short Answer",
+  LA: "Long Answer",
+} satisfies Record<QuestionType, string>;
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
@@ -67,7 +67,7 @@ export const QuestionCard = ({
   const canWriteInCourse = hasCourseAccess && !accessLoading;
   const { variant } = entry;
 
-  const difficulty = variant.difficulty ?? 'medium';
+  const difficulty = variant.difficulty ?? "medium";
   const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
   const isVariant = variant.referenceId != null;
   // A variant always belongs to the same question as its base (shared questionId), so
@@ -77,12 +77,12 @@ export const QuestionCard = ({
     ? variantLabel({ referenceId: entry.questionId, variantNumber })
     : `Question #${entry.questionId}`;
   const topics = [primaryTopicLabel, ...(entry.secondaryTopicNames ?? [])];
-  if (access === 'ta') topics.push(`${formatCourseAccessLevel('ta')} · own edits only`);
+  if (access === "ta") topics.push(`${formatCourseAccessLevel("ta")} · own edits only`);
 
   const isAi = Boolean(entry.isAiGenerated || variant.isAiGenerated);
 
   const choices: QuestionCardChoice[] | undefined =
-    entry.questionType === 'MCQ' && variant.choices
+    entry.questionType === "MCQ" && variant.choices
       ? (() => {
           const correctFlags = markCorrectChoices(variant.answer, variant.choices ?? [], {
             selectAllThatApply: variant.selectAllThatApply,
@@ -128,8 +128,8 @@ export const QuestionCard = ({
   return (
     <QuestionPreviewCard
       onClick={() => onView(entry)}
-      size={compact ? 'compact' : 'default'}
-      className={compact ? 'h-full' : undefined}
+      size={compact ? "compact" : "default"}
+      className={compact ? "h-full" : undefined}
       type={TYPE_LABELS[entry.questionType]}
       difficulty={capitalize(difficulty)}
       difficultyLevel={difficulty as UiDifficulty}
@@ -138,7 +138,7 @@ export const QuestionCard = ({
       status={questionStatus(!!entry.isDraft)}
       question={variant.questionText}
       choices={choices}
-      answer={choices ? undefined : variant.answer ?? undefined}
+      answer={choices ? undefined : (variant.answer ?? undefined)}
       topics={topics}
       updatedLabel={formatUpdated(variant.updatedAt ?? variant.createdAt)}
       menu={menu}

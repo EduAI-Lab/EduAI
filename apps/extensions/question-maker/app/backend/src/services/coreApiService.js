@@ -3,10 +3,11 @@
  * Each function maps to one Core endpoint and throws on non-success responses
  * (status stored on the error as .status, parsed body as .body).
  */
-import { config } from '../config/settings.js';
+import { config } from "../config/settings.js";
+import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
 function serviceHeaders({ cookie } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { "Content-Type": "application/json" };
   if (config.eduaiApiKey) {
     headers.Authorization = `Bearer ${config.eduaiApiKey}`;
   } else if (cookie) {
@@ -34,9 +35,9 @@ function authHeaderVariants({ cookie, preferCookie = false } = {}) {
 function isRetryableAuthFailure(status, body) {
   return (
     (status === 401 || status === 403) &&
-    (body?.error === 'INVALID_SERVICE_KEY' ||
-      body?.error === 'Unauthorized' ||
-      body?.error === 'Forbidden')
+    (body?.error === "INVALID_SERVICE_KEY" ||
+      body?.error === "Unauthorized" ||
+      body?.error === "Forbidden")
   );
 }
 
@@ -52,11 +53,22 @@ const CORE_PAGE_SIZE = 200;
 const CORE_MAX_PAGES = 50;
 
 /** GET a Core path with service-key headers, mirroring the pre-#1041 catalog read. */
-async function readServiceKeyPage(path) {
-  const res = await fetch(`${config.coreUrl}${path}`, { headers: serviceHeaders() });
+async function readServiceKeyPage(path, { signal } = {}) {
+  assertQmAiDeadline({ signal });
+  let res;
+  try {
+    res = await fetch(`${config.coreUrl}${path}`, {
+      headers: serviceHeaders(),
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
+    throw error;
+  }
+  assertQmAiDeadline({ signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core courses fetch failed', res.status, body);
+    throw coreError(body.error || "Core courses fetch failed", res.status, body);
   }
   return res.json();
 }
@@ -74,16 +86,16 @@ async function fetchCoursePages(
       page: String(pageNumber),
       pageSize: String(Math.min(pageSize, CORE_PAGE_SIZE)),
     });
-    if (search) params.set('search', search);
+    if (search) params.set("search", search);
     // `serviceKeyOnly` keeps the pre-#1041 behaviour of the service-key catalog
     // read: send `serviceHeaders()` and let Core answer, rather than refusing
     // to call when no key is configured (`fetchFromCore` throws 503 there).
     const data = serviceKeyOnly
-      ? await readServiceKeyPage(`/api/courses?${params}`)
+      ? await readServiceKeyPage(`/api/courses?${params}`, authOptions)
       : await fetchFromCore(`/api/courses?${params}`, authOptions);
     return {
       courses: Array.isArray(data?.data) ? data.data : [],
-      total: typeof data?.total === 'number' ? data.total : 0,
+      total: typeof data?.total === "number" ? data.total : 0,
     };
   };
 
@@ -99,7 +111,7 @@ async function fetchCoursePages(
     // in Core", so this fails instead of silently capping.
     throw coreError(
       `Core returned ${first.total} courses, past the ${CORE_MAX_PAGES}×${size} page-walk cap; ` +
-        'refusing to return a partial catalog.',
+        "refusing to return a partial catalog.",
       502,
     );
   }
@@ -117,8 +129,9 @@ async function fetchCoursePages(
  */
 async function fetchFromCore(
   path,
-  { method = 'GET', body, cookie, preferCookie = false, cookieOnly = false } = {},
+  { method = "GET", body, cookie, preferCookie = false, cookieOnly = false, signal } = {},
 ) {
+  assertQmAiDeadline({ signal });
   const url = `${config.coreUrl}${path}`;
   let variants = authHeaderVariants({ cookie, preferCookie });
   if (cookieOnly) {
@@ -126,22 +139,32 @@ async function fetchFromCore(
   }
 
   if (variants.length === 0) {
-    throw coreError('EDUAI_API_KEY not configured and no session cookie available', 503, {
-      error: 'CORE_SERVICE_UNAVAILABLE',
+    throw coreError("EDUAI_API_KEY not configured and no session cookie available", 503, {
+      error: "CORE_SERVICE_UNAVAILABLE",
     });
   }
 
   let lastError;
   for (const authHeaders of variants) {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', ...authHeaders },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      const init = {
+        method,
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        signal,
+      };
+      // Reads default to GET, which must not carry a body at all.
+      if (body !== undefined) init.body = JSON.stringify(body);
+      res = await fetch(url, init);
+    } catch (error) {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
+      throw error;
+    }
+    assertQmAiDeadline({ signal });
     if (res.ok) return res.json();
 
     const errBody = await res.json().catch(() => ({}));
-    const err = coreError(errBody.error || 'Core request failed', res.status, errBody);
+    const err = coreError(errBody.error || "Core request failed", res.status, errBody);
     if (variants.length > 1 && isRetryableAuthFailure(res.status, errBody)) {
       lastError = err;
       continue;
@@ -153,12 +176,23 @@ async function fetchFromCore(
 }
 
 function coreError(message, status, body) {
-  return Object.assign(new Error(message), { status, body });
+  const code =
+    typeof body?.error === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
+      ? body.error
+      : null;
+  const error = Object.assign(new Error(code || "Core request failed"), { status, body });
+  // Only a machine-readable Core code is safe to relay to the caller; a free
+  // text message stays internal, so `isPublic` rides along with `code` alone.
+  if (code) {
+    error.code = code;
+    error.isPublic = true;
+  }
+  return error;
 }
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
 export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
-  const cookie = opts.cookie ?? '';
+  const cookie = opts.cookie ?? "";
   return fetchFromCore(`/api/courses/${coreCourseId}/topics`, {
     cookie,
     preferCookie: Boolean(cookie),
@@ -172,20 +206,24 @@ export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
  */
 export async function pushTopicToCore(coreCourseId, name) {
   const res = await fetch(`${config.coreUrl}/api/courses/${coreCourseId}/topics`, {
-    method: 'POST',
+    method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify({ name }),
   });
   if (res.status === 409) {
     const body = await res.json().catch(() => ({}));
     if (!body.existingId) {
-      throw coreError('Topic exists in Core but has been deleted; restore it there before syncing', 409, body);
+      throw coreError(
+        "Topic exists in Core but has been deleted; restore it there before syncing",
+        409,
+        body,
+      );
     }
     return { id: body.existingId };
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core topic push failed', res.status, body);
+    throw coreError(body.error || "Core topic push failed", res.status, body);
   }
   const data = await res.json();
   return { id: data.id };
@@ -198,16 +236,16 @@ export async function pushTopicToCore(coreCourseId, name) {
  */
 export async function pushQuestionToCore(payload, cookieHeader) {
   const res = await fetch(`${config.coreUrl}/api/questions`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      cookie: cookieHeader ?? '',
+      "Content-Type": "application/json",
+      cookie: cookieHeader ?? "",
     },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core question push failed', res.status, body);
+    throw coreError(body.error || "Core question push failed", res.status, body);
   }
   return res.json();
 }
@@ -218,14 +256,14 @@ export async function pushQuestionToCore(payload, cookieHeader) {
  */
 export async function patchQuestionTestableOnCore(coreQuestionId, testable) {
   const res = await fetch(`${config.coreUrl}/api/questions/${coreQuestionId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: serviceHeaders(),
     body: JSON.stringify({ testable }),
   });
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core question patch failed', res.status, body);
+    throw coreError(body.error || "Core question patch failed", res.status, body);
   }
   return res.json();
 }
@@ -242,7 +280,9 @@ export async function getCourseEnrollmentsFromCore(coreCourseId, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/enrollments`, {
     cookie: opts.cookie,
     preferCookie: false,
+    signal: opts.signal,
   }).catch((err) => {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
     if (err.status === 404) return { enrollments: [] };
     throw err;
   });
@@ -265,8 +305,10 @@ export async function getCourseFromCore(coreCourseId, opts = {}) {
     return await fetchFromCore(`/api/courses/${coreCourseId}`, {
       cookie: opts.cookie,
       preferCookie: opts.preferCookie ?? Boolean(opts.cookie),
+      signal: opts.signal,
     });
   } catch (err) {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
     if (err.status === 404) return null;
     throw err;
   }
@@ -282,10 +324,7 @@ export async function getCourseFromCore(coreCourseId, opts = {}) {
  * visible set pass `all: true` and pay for the page-walk explicitly.
  */
 export async function listCoursesFromCore(cookieHeader, options = {}) {
-  return fetchCoursePages(
-    { cookie: cookieHeader, preferCookie: true, cookieOnly: true },
-    options,
-  );
+  return fetchCoursePages({ cookie: cookieHeader, preferCookie: true, cookieOnly: true }, options);
 }
 
 /**
@@ -337,13 +376,22 @@ export async function getQuestionByIdFromCore(coreQuestionId) {
  * session-only (no service-key path), so the caller's cookie must be forwarded;
  * it is the only source of `authorizedUnits` for a UNIT_ADMIN caller.
  */
-export async function getMyProfileFromCore(cookieHeader) {
-  const res = await fetch(`${config.coreUrl}/api/me`, {
-    headers: { cookie: cookieHeader ?? '' },
-  });
+export async function getMyProfileFromCore(cookieHeader, opts = {}) {
+  assertQmAiDeadline({ signal: opts.signal });
+  let res;
+  try {
+    res = await fetch(`${config.coreUrl}/api/me`, {
+      headers: { cookie: cookieHeader ?? "" },
+      signal: opts.signal,
+    });
+  } catch (error) {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
+    throw error;
+  }
+  assertQmAiDeadline({ signal: opts.signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core profile fetch failed', res.status, body);
+    throw coreError(body.error || "Core profile fetch failed", res.status, body);
   }
   return res.json();
 }
@@ -364,16 +412,20 @@ export async function getAllCoursesFromCore() {
  * GET /api/courses?ids= — resolve a known set of Core courses in one unpaged
  * lookup (#1125). Chunked, since Core caps the id list.
  */
-export async function getCoursesByIdsFromCore(ids, authOptions = {}, { serviceKeyOnly = false } = {}) {
+export async function getCoursesByIdsFromCore(
+  ids,
+  authOptions = {},
+  { serviceKeyOnly = false } = {},
+) {
   const unique = [...new Set((ids ?? []).filter(Boolean))];
   if (unique.length === 0) return [];
 
   const courses = [];
   for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
     const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
-    const path = `/api/courses?ids=${encodeURIComponent(chunk.join(','))}`;
+    const path = `/api/courses?ids=${encodeURIComponent(chunk.join(","))}`;
     const data = serviceKeyOnly
-      ? await readServiceKeyPage(path)
+      ? await readServiceKeyPage(path, authOptions)
       : await fetchFromCore(path, authOptions);
     if (Array.isArray(data?.data)) courses.push(...data.data);
   }
@@ -381,15 +433,19 @@ export async function getCoursesByIdsFromCore(ids, authOptions = {}, { serviceKe
 }
 
 /** GET /api/courses?search= — Core-side course search (#1125). */
-export async function searchCoursesFromCore(search, authOptions = {}, { serviceKeyOnly = false } = {}) {
+export async function searchCoursesFromCore(
+  search,
+  authOptions = {},
+  { serviceKeyOnly = false } = {},
+) {
   const params = new URLSearchParams({
-    page: '1',
+    page: "1",
     pageSize: String(CORE_PAGE_SIZE),
     search,
   });
   const path = `/api/courses?${params}`;
   const data = serviceKeyOnly
-    ? await readServiceKeyPage(path)
+    ? await readServiceKeyPage(path, authOptions)
     : await fetchFromCore(path, authOptions);
   return Array.isArray(data?.data) ? data.data : [];
 }
@@ -402,7 +458,7 @@ export async function listQuestionBanksFromCore(coreCourseId, opts = {}) {
 /** POST /api/courses/:courseId/banks */
 export async function createQuestionBankOnCore(coreCourseId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
     ...opts,
   });
@@ -411,7 +467,7 @@ export async function createQuestionBankOnCore(coreCourseId, payload, opts = {})
 /** PUT /api/courses/:courseId/banks/:bankId */
 export async function updateQuestionBankOnCore(coreCourseId, bankId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
-    method: 'PUT',
+    method: "PUT",
     body: payload,
     ...opts,
   });
@@ -420,7 +476,7 @@ export async function updateQuestionBankOnCore(coreCourseId, bankId, payload, op
 /** DELETE /api/courses/:courseId/banks/:bankId */
 export async function deleteQuestionBankOnCore(coreCourseId, bankId, payload = {}, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     body: payload,
     ...opts,
   });
@@ -434,16 +490,21 @@ export async function listQuestionBankMembershipsFromCore(coreCourseId, bankId, 
 /** POST /api/courses/:courseId/banks/:bankId/questions */
 export async function addQuestionBankMembershipOnCore(coreCourseId, bankId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
     ...opts,
   });
 }
 
 /** POST bulk memberships — body `{ memberships: [...] }` */
-export async function addQuestionBankMembershipsOnCore(coreCourseId, bankId, memberships, opts = {}) {
+export async function addQuestionBankMembershipsOnCore(
+  coreCourseId,
+  bankId,
+  memberships,
+  opts = {},
+) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
-    method: 'POST',
+    method: "POST",
     body: { memberships },
     ...opts,
   });
@@ -454,12 +515,12 @@ export async function removeQuestionBankMembershipOnCore(
   coreCourseId,
   bankId,
   externalQuestionId,
-  source = 'question-maker',
+  source = "question-maker",
   opts = {},
 ) {
   const qs = `?source=${encodeURIComponent(source)}`;
   return fetchFromCore(
     `/api/courses/${coreCourseId}/banks/${bankId}/questions/${externalQuestionId}${qs}`,
-    { method: 'DELETE', ...opts },
+    { method: "DELETE", ...opts },
   );
 }

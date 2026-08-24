@@ -3,6 +3,7 @@ import { auth } from "./server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import type { LogSecurityEventInput } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import prisma from "~/lib/prisma.server";
 import type { Session } from "./server";
@@ -102,18 +103,19 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   });
 
   if (!user || user.role !== "ADMIN" || !user.isActive) {
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(user ?? cookieSession?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "API_KEY_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: user?.id ?? cookieSession?.user?.id ?? null,
-        entityLabel: user?.email ?? cookieSession?.user?.email ?? null,
-        ...(user?.email ? { details: { email: user.email } } : {}),
-      }),
-    );
+    // An anonymous denial has no email to record, and the entry must not carry
+    // a `details` key at all in that case.
+    const event: LogSecurityEventInput = {
+      ...getActorContext(user ?? cookieSession?.user ?? null),
+      ...getRequestContext(request),
+      actionCode: "API_KEY_DENIED",
+      outcome: "DENIED",
+      entityType: "Auth",
+      entityId: user?.id ?? cookieSession?.user?.id ?? null,
+      entityLabel: user?.email ?? cookieSession?.user?.email ?? null,
+    };
+    if (user?.email) event.details = { email: user.email };
+    fireAndForget(logSecurityEvent(event));
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
@@ -141,9 +143,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   return { response: null, session };
 }
 
-type AdminGate =
-  | { response: Response; session: null }
-  | { response: null; session: Session };
+type AdminGate = { response: Response; session: null } | { response: null; session: Session };
 
 /**
  * Resolve an ADMIN session for an admin-only endpoint.
@@ -152,24 +152,33 @@ type AdminGate =
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
   const resolved = await getRequestSession(request);
-  if (!resolved?.user || resolved.user.role !== "ADMIN") {
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(resolved?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "ADMIN_ACCESS_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: resolved?.user?.id ?? null,
-        entityLabel: resolved?.user?.email ?? null,
-        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-      }),
-    );
+  // Re-check `isActive` against the DB, not just the session's cached role
+  // (#1571): deactivating an admin must revoke access on their next request,
+  // not only after their session expires. Mirrors the x-api-key admin path,
+  // which already gates on `isActiveAdminUser`.
+  if (
+    !resolved?.user ||
+    resolved.user.role !== "ADMIN" ||
+    !(await isActiveAdminUser(resolved.user.id))
+  ) {
+    // An anonymous denial has no email to record, and the entry must not carry
+    // a `details` key at all in that case.
+    const event: LogSecurityEventInput = {
+      ...getActorContext(resolved?.user ?? null),
+      ...getRequestContext(request),
+      actionCode: "ADMIN_ACCESS_DENIED",
+      outcome: "DENIED",
+      entityType: "Auth",
+      entityId: resolved?.user?.id ?? null,
+      entityLabel: resolved?.user?.email ?? null,
+    };
+    if (resolved?.user?.email) event.details = { email: resolved.user.email };
+    fireAndForget(logSecurityEvent(event));
     return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden: Admins only" }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
+      response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
       session: null,
     };
   }
@@ -183,10 +192,7 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
  * accidentally skip it — ADMIN is always allowed. `action` tags the
  * policy-denial audit line (e.g. "invitation.create").
  */
-export async function requireInviter(
-  request: Request,
-  action: string,
-): Promise<AdminGate> {
+export async function requireInviter(request: Request, action: string): Promise<AdminGate> {
   const resolved = await getRequestSession(request);
   const role = resolved?.user?.role;
 
@@ -206,30 +212,31 @@ export async function requireInviter(
         // — not an implicit, policy-bypassing platform ADMIN.
         inviter = {
           user: { id: "service", name: "Service", role: "UNIT_ADMIN" },
-        } as unknown as Session;
+        } as Session;
         inviterRole = "UNIT_ADMIN";
         admittedViaServiceKey = true;
       }
     }
 
     if (!admittedViaServiceKey) {
-      fireAndForget(
-        logSecurityEvent({
-          ...getActorContext(resolved?.user ?? null),
-          ...getRequestContext(request),
-          actionCode: "INVITATION_ACCESS_DENIED",
-          outcome: "DENIED",
-          entityType: "Auth",
-          entityId: resolved?.user?.id ?? null,
-          entityLabel: resolved?.user?.email ?? null,
-          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-        }),
-      );
+      // An anonymous denial has no email to record, and the entry must not
+      // carry a `details` key at all in that case.
+      const event: LogSecurityEventInput = {
+        ...getActorContext(resolved?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "INVITATION_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: resolved?.user?.id ?? null,
+        entityLabel: resolved?.user?.email ?? null,
+      };
+      if (resolved?.user?.email) event.details = { email: resolved.user.email };
+      fireAndForget(logSecurityEvent(event));
       return {
-        response: new Response(
-          JSON.stringify({ error: "Forbidden" }),
-          { status: 403, headers: { "Content-Type": "application/json" } },
-        ),
+        response: new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
         session: null,
       };
     }
@@ -273,13 +280,12 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "MISSING_SERVICE_KEY" }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const token = authHeader.slice(7);
   const envKey = process.env.EDUAI_API_KEY;
 
   if (!envKey) {
@@ -292,16 +298,13 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const tokenHash = createHash("sha256").update(token).digest();
-  const keyHash   = createHash("sha256").update(envKey).digest();
-
-  if (!timingSafeEqual(tokenHash, keyHash)) {
+  if (!hasValidServiceKey(request)) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
@@ -311,11 +314,26 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return null;
+}
+
+/**
+ * Constant-time service-key verification for request chokepoints that need to
+ * distinguish an authenticated server call without emitting guard responses.
+ * Header presence or shape alone is never treated as authentication.
+ */
+export function hasValidServiceKey(request: Request): boolean {
+  const authHeader = request.headers.get("Authorization");
+  const envKey = process.env.EDUAI_API_KEY;
+  if (!authHeader?.startsWith("Bearer ") || !envKey) return false;
+
+  const tokenHash = createHash("sha256").update(authHeader.slice(7)).digest();
+  const keyHash = createHash("sha256").update(envKey).digest();
+  return timingSafeEqual(tokenHash, keyHash);
 }

@@ -226,7 +226,9 @@ describe("db.systemlog.server", () => {
     });
     expect(prisma.systemLog.deleteMany).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ where: expect.objectContaining({ createdAt: expect.any(Object) }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: expect.any(Object) }),
+      }),
     );
     expect(explicit).toBe(4);
     expect(retention).toBe(4);

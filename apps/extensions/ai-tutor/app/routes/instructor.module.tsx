@@ -18,11 +18,11 @@
  *     against out-of-order responses.
  * Related: routes/instructor.course.tsx (parent), routes/instructor.lesson.tsx (child)
  */
-import type { FormEvent } from 'react';
-import { useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useNavigation, useParams, useSearchParams } from 'react-router';
-import { toast } from 'sonner';
-import { IconNotebook, IconPlus, IconUpload } from '@tabler/icons-react';
+import type { FormEvent } from "react";
+import { useOptimistic, useRef, useState } from "react";
+import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
+import { toast } from "sonner";
+import { IconNotebook, IconPlus, IconUpload } from "@tabler/icons-react";
 import {
   Button,
   Card,
@@ -47,29 +47,30 @@ import {
   SortableItem,
   DragHandle,
   Textarea,
-} from '@eduai/ui';
-import { LessonCard } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { PublishMenu } from '../components/PublishMenu';
-import { accentForCourse } from '../lib/course-display';
-import api, { FULL_TREE_READ_PAGE_SIZE } from '../lib/api';
-import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/instructor.module';
-import { PermissionGate } from '@eduai/ui';
-import { useAtPermissions } from '../hooks/useAtPermissions';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { splitTitle } from '~/lib/course-title';
-import { PaginationControls } from '~/components/common/PaginationControls';
-import { ListSearchInput } from '~/components/common/ListSearchInput';
-import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
+} from "@eduai/ui";
+import { LessonCard } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { PublishMenu } from "../components/PublishMenu";
+import { accentForCourse } from "../lib/course-display";
+import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
+import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
+import type { Route } from "./+types/instructor.module";
+import { PermissionGate } from "@eduai/ui";
+import { useAtPermissions } from "../hooks/useAtPermissions";
+import { requireClientUser } from "~/lib/client-auth";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { splitTitle } from "~/lib/course-title";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { ListSearchInput } from "~/components/common/ListSearchInput";
+import { MoveToPositionDialog } from "~/components/common/MoveToPositionDialog";
 import {
   absoluteOrdinal,
   movedRowIndex,
   parseListUrlParams,
   redirectPastEnd,
-} from '~/lib/list-params';
+} from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -77,10 +78,10 @@ import {
  * needed for breadcrumbs and to compute the publish-cascade gate.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
+  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
-    throw new Response('Invalid module id', { status: 400 });
+    throw new Response("Invalid module id", { status: 400 });
   }
 
   // #1207: page + search live in the URL; `search` is applied server-side.
@@ -150,9 +151,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   // it is only disabled while a search is active, because a filtered list hides
   // the rows between two visible matches.
   const [movingLesson, setMovingLesson] = useState<Lesson | null>(null);
-  const searching = search !== '';
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
+  const searching = search !== "";
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -173,8 +174,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     title: string;
   } | null>(null);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingLesson, setDeletingLesson] = useState<Lesson | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -201,7 +202,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set('page', String(nextPage));
+        next.set("page", String(nextPage));
         return next;
       },
       { preventScrollReset: false },
@@ -213,9 +214,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const setLessonSearch = (term: string) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (term === '') next.delete('search');
-      else next.set('search', term);
-      next.delete('page');
+      if (term === "") next.delete("search");
+      else next.set("search", term);
+      next.delete("page");
       return next;
     });
   };
@@ -228,7 +229,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setLessons(lessonData.data);
       setLessonsTotal(lessonData.total);
     } catch (error) {
-      console.error('Failed to refresh lessons', error);
+      console.error("Failed to refresh lessons", error);
     }
   };
 
@@ -247,10 +248,10 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     let unfilteredTotal = lessonsTotal + 1;
     if (searching && numericModuleId) {
       try {
-        unfilteredTotal = (await api.lessonsForModule(numericModuleId, { page: 1, search: '' }))
+        unfilteredTotal = (await api.lessonsForModule(numericModuleId, { page: 1, search: "" }))
           .total;
       } catch (error) {
-        console.error('Failed to count lessons after create', error);
+        console.error("Failed to count lessons after create", error);
       }
     }
 
@@ -258,8 +259,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     if (searching || page !== lastPage) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        next.delete('search');
-        next.set('page', String(lastPage));
+        next.delete("search");
+        next.set("page", String(lastPage));
         return next;
       });
       return;
@@ -279,7 +280,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           : data;
         setAvailableCourses(nextCourses);
       })
-      .catch((error) => console.error('Failed to load courses', error))
+      .catch((error) => console.error("Failed to load courses", error))
       .finally(() => setLoadingSourceCourses(false));
   };
 
@@ -312,7 +313,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       }
     } catch (error) {
       if (sourceModulesRequestIdRef.current === courseRequestId) {
-        console.error('Failed to load modules for course', error);
+        console.error("Failed to load modules for course", error);
         setSourceModules([]);
       }
     } finally {
@@ -344,7 +345,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       }
     } catch (error) {
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
-        console.error('Failed to load lessons for module', error);
+        console.error("Failed to load lessons for module", error);
         setSourceLessons([]);
       }
     } finally {
@@ -361,14 +362,16 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       await api.createLesson(numericModuleId, {
         title: title.trim(),
-        ...(content.trim() ? { contentMd: content.trim() } : {}),
+        // An empty editor creates the lesson with no body rather than one
+        // holding an empty string.
+        contentMd: content.trim() || undefined,
       });
-      setTitle('');
-      setContent('');
+      setTitle("");
+      setContent("");
       setCreateOpen(false);
       await revealNewestLesson();
     } catch (error) {
-      console.error('Failed to create lesson', error);
+      console.error("Failed to create lesson", error);
     } finally {
       setCreating(false);
     }
@@ -401,7 +404,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       await handleSourceCourseSelection(null);
       refreshLessons();
     } catch (error) {
-      console.error('Import lessons failed', error);
+      console.error("Import lessons failed", error);
     } finally {
       setImporting(false);
     }
@@ -421,7 +424,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       // Confirm with server response
       setLessons((prev) => prev.map((l) => (l.id === lessonId ? updated : l)));
     } catch (error) {
-      console.error('Failed to toggle publish status', error);
+      console.error("Failed to toggle publish status", error);
       // Rollback on error to clear optimistic change
       setLessons((prev) =>
         prev.map((l) => (l.id === lessonId ? { ...l, isPublished: currentlyPublished } : l)),
@@ -443,8 +446,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       await api.moveLessonToPosition(lessonId, targetOrdinal);
       await refreshLessons();
     } catch (error) {
-      console.error('Failed to move lesson', error);
-      toast.error('Failed to reorder lessons. The previous order was restored.');
+      console.error("Failed to move lesson", error);
+      toast.error("Failed to reorder lessons. The previous order was restored.");
       setLessons(current);
     } finally {
       setReorderingLessons(false);
@@ -463,7 +466,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     if (next.length !== lessons.length) {
       // Dropped order came from a stale render (list changed mid-drag); refetch
       // rather than persisting a move against a list we no longer have.
-      toast.error('The lesson list changed while reordering. Refreshing — please try again.');
+      toast.error("The lesson list changed while reordering. Refreshing — please try again.");
       await refreshLessons();
       return;
     }
@@ -475,7 +478,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const openEditLesson = (lesson: Lesson) => {
     setEditingLesson(lesson);
     setEditTitle(lesson.title);
-    setEditContent(lesson.contentMd ?? '');
+    setEditContent(lesson.contentMd ?? "");
   };
 
   const onSaveEdit = async (event: FormEvent) => {
@@ -490,7 +493,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setEditingLesson(null);
       await refreshLessons();
     } catch (error) {
-      console.error('Failed to update lesson', error);
+      console.error("Failed to update lesson", error);
     } finally {
       setSavingEdit(false);
     }
@@ -504,35 +507,35 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setDeletingLesson(null);
       await refreshLessons();
     } catch (error) {
-      console.error('Failed to delete lesson', error);
+      console.error("Failed to delete lesson", error);
     } finally {
       setDeleting(false);
     }
   };
 
   useShellBreadcrumbs([
-    { label: 'Courses', href: '/instructor' },
+    { label: "Courses", href: "/instructor" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         module?.courseOfferingId != null ? (
           <CourseSwitcher
             courseId={module.courseOfferingId}
             basePath="/instructor"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },
     module?.title
       ? { label: splitTitle(module.title).label, title: module.title }
-      : { label: 'Module' },
+      : { label: "Module" },
   ]);
 
   const publishedCount = oLessons.filter((lesson) => lesson.isPublished).length;
   const heroStats = [
-    { label: oLessons.length === 1 ? 'Lesson' : 'Lessons', value: oLessons.length, accent: true },
-    { label: 'Published', value: publishedCount },
-    { label: 'Drafts', value: oLessons.length - publishedCount },
+    { label: oLessons.length === 1 ? "Lesson" : "Lessons", value: oLessons.length, accent: true },
+    { label: "Published", value: publishedCount },
+    { label: "Drafts", value: oLessons.length - publishedCount },
   ];
 
   return (
@@ -541,7 +544,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       hero={
         <ModuleHero
           order={moduleOrder > 0 ? moduleOrder : undefined}
-          title={module?.title || 'Module'}
+          title={module?.title || "Module"}
           description={module?.description}
           accentColor={accentColor}
           isPublished={module?.isPublished}
@@ -563,7 +566,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 }}
               >
                 <IconUpload size={15} aria-hidden="true" />
-                {showImport ? 'Close import' : 'Import lessons'}
+                {showImport ? "Close import" : "Import lessons"}
               </Button>
               <Button
                 type="button"
@@ -669,8 +672,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                           key={lesson.id}
                           className={`flex items-center gap-3 rounded-[var(--radius-md)] border p-3 cursor-pointer transition ${
                             selectedLessonIds.has(lesson.id)
-                              ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
-                              : 'border-border hover:border-primary/50'
+                              ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                              : "border-border hover:border-primary/50"
                           }`}
                         >
                           <input
@@ -684,8 +687,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                       ))}
                     </div>
                   </div>
-                  <Button type="button" onClick={onImportLessons} disabled={importing || selectedLessonIds.size === 0}>
-                    {importing ? 'Importing…' : 'Import selected lessons'}
+                  <Button
+                    type="button"
+                    onClick={onImportLessons}
+                    disabled={importing || selectedLessonIds.size === 0}
+                  >
+                    {importing ? "Importing…" : "Import selected lessons"}
                   </Button>
                 </div>
               )}
@@ -701,8 +708,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             if (creating) return;
             setCreateOpen(open);
             if (!open) {
-              setTitle('');
-              setContent('');
+              setTitle("");
+              setContent("");
             }
           }}
         >
@@ -710,7 +717,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <DialogHeader>
               <DialogTitle>Add lesson</DialogTitle>
               <DialogDescription>
-                Create a new lesson in {module?.title || 'this module'}. It starts as a draft — you
+                Create a new lesson in {module?.title || "this module"}. It starts as a draft — you
                 can add activities and publish it afterwards.
               </DialogDescription>
             </DialogHeader>
@@ -728,8 +735,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="new-lesson-content">
-                  Content{' '}
-                  <span className="font-normal text-muted-foreground">(optional)</span>
+                  Content <span className="font-normal text-muted-foreground">(optional)</span>
                 </Label>
                 <Textarea
                   id="new-lesson-content"
@@ -745,15 +751,15 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   variant="outline"
                   onClick={() => {
                     setCreateOpen(false);
-                    setTitle('');
-                    setContent('');
+                    setTitle("");
+                    setContent("");
                   }}
                   disabled={creating}
                 >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={creating || !title.trim()}>
-                  {creating ? 'Adding…' : 'Add lesson'}
+                  {creating ? "Adding…" : "Add lesson"}
                 </Button>
               </DialogFooter>
             </form>
@@ -787,8 +793,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-lesson-content">
-                  Content{' '}
-                  <span className="font-normal text-muted-foreground">(optional)</span>
+                  Content <span className="font-normal text-muted-foreground">(optional)</span>
                 </Label>
                 <Textarea
                   id="edit-lesson-content"
@@ -808,7 +813,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   Cancel
                 </Button>
                 <Button type="submit" disabled={savingEdit || !editTitle.trim()}>
-                  {savingEdit ? 'Saving…' : 'Save changes'}
+                  {savingEdit ? "Saving…" : "Save changes"}
                 </Button>
               </DialogFooter>
             </form>
@@ -827,8 +832,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <DialogHeader>
               <DialogTitle>Delete lesson</DialogTitle>
               <DialogDescription>
-                Delete <span className="font-semibold text-foreground">{deletingLesson?.title}</span>?
-                This removes its activities and can't be undone.
+                Delete{" "}
+                <span className="font-semibold text-foreground">{deletingLesson?.title}</span>? This
+                removes its activities and can't be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -840,8 +846,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               >
                 Cancel
               </Button>
-              <Button type="button" variant="destructive" onClick={onConfirmDelete} disabled={deleting}>
-                {deleting ? 'Deleting…' : 'Delete lesson'}
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={onConfirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete lesson"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -864,11 +875,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         <Card>
           <EmptyState
             icon={<IconNotebook size={22} aria-hidden="true" />}
-            title={searching ? 'No lessons match your search' : 'No lessons yet'}
+            title={searching ? "No lessons match your search" : "No lessons yet"}
             description={
               searching
-                ? 'Try a different search term.'
-                : 'Add a lesson, or import one from another course to get started.'
+                ? "Try a different search term."
+                : "Add a lesson, or import one from another course to get started."
             }
           />
         </Card>
@@ -877,34 +888,29 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           ids={oLessons.map((l) => l.id)}
           onReorder={reorderLessonsList}
           strategy="grid"
-          disabled={
-            !perms.canManageContent ||
-            lessonsTotal < 2 ||
-            reorderingLessons ||
-            searching
-          }
+          disabled={!perms.canManageContent || lessonsTotal < 2 || reorderingLessons || searching}
         >
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {oLessons.map((lesson, idx) => {
-            const canPublish = course?.isPublished && module?.isPublished;
-            const blocked = !lesson.isPublished && !canPublish;
-            const parentName = !course?.isPublished
-              ? course?.title || 'the parent course'
-              : !module?.isPublished
-                ? module?.title || 'the parent module'
-                : null;
-            const tooltipMessage =
-              blocked && parentName
-                ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
-                : null;
-            const busy = publishingId === lesson.id;
-            const canReorder = perms.canManageContent && lessonsTotal > 1 && !searching;
-            // Absolute 1-based ordinal, so numbering and the "3.2" order text
-            // stay correct on page 2 instead of restarting at 1 (#1207).
-            const ordinal = absoluteOrdinal(page, pageSize, idx) + 1;
-            return (
-              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
-                {({ handleProps }) => (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {oLessons.map((lesson, idx) => {
+              const canPublish = course?.isPublished && module?.isPublished;
+              const blocked = !lesson.isPublished && !canPublish;
+              const parentName = !course?.isPublished
+                ? course?.title || "the parent course"
+                : !module?.isPublished
+                  ? module?.title || "the parent module"
+                  : null;
+              const tooltipMessage =
+                blocked && parentName
+                  ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
+                  : null;
+              const busy = publishingId === lesson.id;
+              const canReorder = perms.canManageContent && lessonsTotal > 1 && !searching;
+              // Absolute 1-based ordinal, so numbering and the "3.2" order text
+              // stay correct on page 2 instead of restarting at 1 (#1207).
+              const ordinal = absoluteOrdinal(page, pageSize, idx) + 1;
+              return (
+                <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
+                  {({ handleProps }) => (
                     <LessonCard
                       index={ordinal}
                       orderText={moduleOrder > 0 ? `${moduleOrder}.${ordinal}` : undefined}
@@ -915,7 +921,10 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                       isPublished={lesson.isPublished}
                       leading={
                         canReorder ? (
-                          <DragHandle handleProps={handleProps} label={`Drag to reorder ${lesson.title}`} />
+                          <DragHandle
+                            handleProps={handleProps}
+                            label={`Drag to reorder ${lesson.title}`}
+                          />
                         ) : undefined
                       }
                       menuSlot={
@@ -937,8 +946,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                                   }
                                 : undefined
                             }
-                            onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
-                            onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
+                            onEdit={
+                              perms.canManageContent ? () => openEditLesson(lesson) : undefined
+                            }
+                            onDelete={
+                              perms.canManageContent ? () => setDeletingLesson(lesson) : undefined
+                            }
                             // Cross-page move (#1207): drag can only reach rows
                             // on this page.
                             onMove={
@@ -950,23 +963,23 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         ) : undefined
                       }
                     />
-                )}
-              </SortableItem>
-            );
-          })}
-          <PermissionGate allow={perms.canManageContent}>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className="group flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <span className="flex size-9 items-center justify-center rounded-full bg-muted transition-colors group-hover:bg-primary/10">
-                <IconPlus size={18} aria-hidden="true" />
-              </span>
-              <span className="text-sm font-semibold">Add lesson</span>
-            </button>
-          </PermissionGate>
-        </div>
+                  )}
+                </SortableItem>
+              );
+            })}
+            <PermissionGate allow={perms.canManageContent}>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="group flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <span className="flex size-9 items-center justify-center rounded-full bg-muted transition-colors group-hover:bg-primary/10">
+                  <IconPlus size={18} aria-hidden="true" />
+                </span>
+                <span className="text-sm font-semibold">Add lesson</span>
+              </button>
+            </PermissionGate>
+          </div>
         </SortableProvider>
       )}
 
@@ -975,7 +988,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         pageSize={pageSize}
         total={lessonsTotal}
         onPageChange={goToPage}
-        disabled={navigation.state === 'loading' || reorderingLessons}
+        disabled={navigation.state === "loading" || reorderingLessons}
       />
 
       <MoveToPositionDialog
@@ -983,11 +996,15 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         onOpenChange={(open) => {
           if (!open) setMovingLesson(null);
         }}
-        itemTitle={movingLesson?.title ?? ''}
+        itemTitle={movingLesson?.title ?? ""}
         itemNoun="lesson"
         currentPosition={
           movingLesson
-            ? absoluteOrdinal(page, pageSize, lessons.findIndex((l) => l.id === movingLesson.id)) + 1
+            ? absoluteOrdinal(
+                page,
+                pageSize,
+                lessons.findIndex((l) => l.id === movingLesson.id),
+              ) + 1
             : 1
         }
         total={lessonsTotal}
@@ -1006,17 +1023,17 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             ? pendingPublish.isPublished
               ? `Unpublish "${pendingPublish.title}"?`
               : `Publish "${pendingPublish.title}"?`
-            : ''
+            : ""
         }
         description={
           pendingPublish
             ? pendingPublish.isPublished
-              ? 'Students will lose access to this content.'
-              : 'Students will be able to see this content.'
-            : ''
+              ? "Students will lose access to this content."
+              : "Students will be able to see this content."
+            : ""
         }
-        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
-        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
+        variant={pendingPublish?.isPublished ? "destructive" : "default"}
         onConfirm={() => {
           if (!pendingPublish) return;
           void togglePublish(pendingPublish.id, pendingPublish.isPublished);
@@ -1026,3 +1043,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

@@ -23,7 +23,7 @@ const baseModel = {
   provider: "openai",
 };
 
-const makeProps = (overrides: Record<string, any> = {}) => ({
+const makeProps = (overrides: Partial<React.ComponentProps<typeof ChatInput>> = {}) => ({
   input: "",
   isLoading: false,
   onInputChange: vi.fn(),

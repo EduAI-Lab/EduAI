@@ -6,11 +6,11 @@
  * panels from real `api.*` responses and passes them in here. No fetching, no
  * fabricated numbers.
  */
-import type { ReactNode } from 'react';
-import { Link } from 'react-router';
-import { IconChevronRight } from '@tabler/icons-react';
-import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from '@eduai/ui';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
+import type { ReactNode } from "react";
+import { Link } from "react-router";
+import { IconChevronRight } from "@tabler/icons-react";
+import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from "@eduai/ui";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
 
 /**
  * Course rows the left panel renders. It is a curated preview, not a browser, so
@@ -155,7 +155,7 @@ export function DashboardView({
   return (
     <div className="flex flex-col gap-6">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-tour="dashboard-stats">
         {stats.map((s) => (
           <StatCard key={s.label} label={s.label} value={s.value} />
         ))}
@@ -189,14 +189,14 @@ export function DashboardView({
             )}
           </div>
 
-          <div>
+          <div data-tour="dashboard-quick-actions">
             <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
             <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
           </div>
         </div>
 
         {/* Right — role-specific resume/attention panel */}
-        <div className="flex flex-col">
+        <div className="flex flex-col" data-tour="dashboard-needs-attention">
           <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">{rightPanelTitle}</h2>
           {rightPanel}
         </div>

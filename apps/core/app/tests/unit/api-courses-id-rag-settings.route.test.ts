@@ -37,6 +37,7 @@ import {
 } from "~/lib/auth/course-access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(id?: string) {
   return {
@@ -46,13 +47,13 @@ function makeLoaderArgs(id?: string) {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "PATCH") {
+function makeActionArgs(body: RouteRequestBody, method = "PATCH") {
+  // A bodyless method carries no body at all, so the key is added only when the
+  // caller passed one.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/courses/course-1/rag-settings", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+    request: new Request("http://localhost/api/courses/course-1/rag-settings", init),
     params: { id: "course-1" },
     context: {} as never,
   } as never;

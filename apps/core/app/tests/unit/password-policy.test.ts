@@ -58,21 +58,21 @@ describe("PASSWORD_POLICY_MESSAGE", () => {
 
 describe("extractPolicyPassword", () => {
   it("returns the password field on sign-up", () => {
-    expect(
-      extractPolicyPassword("/sign-up/email", undefined, { password: "Abcdef1!" }),
-    ).toBe("Abcdef1!");
+    expect(extractPolicyPassword("/sign-up/email", undefined, { password: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 
   it("returns the newPassword field on change-password", () => {
-    expect(
-      extractPolicyPassword("/change-password", undefined, { newPassword: "Abcdef1!" }),
-    ).toBe("Abcdef1!");
+    expect(extractPolicyPassword("/change-password", undefined, { newPassword: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 
   it("returns the newPassword field on reset-password", () => {
-    expect(
-      extractPolicyPassword("/reset-password", undefined, { newPassword: "Abcdef1!" }),
-    ).toBe("Abcdef1!");
+    expect(extractPolicyPassword("/reset-password", undefined, { newPassword: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 
   it("returns null for paths that are not password-setting", () => {
@@ -94,23 +94,21 @@ describe("extractPolicyPassword", () => {
   });
 
   it("returns the newPassword field on set-password", () => {
-    expect(
-      extractPolicyPassword("/set-password", undefined, { newPassword: "Abcdef1!" }),
-    ).toBe("Abcdef1!");
+    expect(extractPolicyPassword("/set-password", undefined, { newPassword: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 
   it("returns the newPassword field for the setPassword operationId when path is undefined (#1385)", () => {
     // `setPassword` is a better-auth `serverOnly` endpoint: it has no route, so
     // `ctx.path` is always undefined for it and only `operationId` identifies it.
-    expect(
-      extractPolicyPassword(undefined, "setPassword", { newPassword: "Abcdef1!" }),
-    ).toBe("Abcdef1!");
+    expect(extractPolicyPassword(undefined, "setPassword", { newPassword: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 
   it("returns null when neither path nor a mapped operationId is given", () => {
-    expect(
-      extractPolicyPassword(undefined, undefined, { newPassword: "Abcdef1!" }),
-    ).toBeNull();
+    expect(extractPolicyPassword(undefined, undefined, { newPassword: "Abcdef1!" })).toBeNull();
     expect(
       extractPolicyPassword(undefined, "someOtherOperation", { newPassword: "Abcdef1!" }),
     ).toBeNull();

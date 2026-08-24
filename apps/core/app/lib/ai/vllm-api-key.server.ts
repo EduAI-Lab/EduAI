@@ -28,9 +28,7 @@ function pointsAtNonLoopbackHost(rawBaseUrl: string | undefined): boolean {
  * On cmps01 + s378, set VLLM_API_KEY to the same value as CMPS01_INTERNAL_KEY
  * (deploy-edge-proxy.sh renders LiteLLM master_key from that secret).
  */
-export function resolveVllmApiKey(
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
+export function resolveVllmApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const fromEnv = env.VLLM_API_KEY?.trim();
   if (fromEnv) return fromEnv;
 

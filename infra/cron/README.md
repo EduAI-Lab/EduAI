@@ -5,6 +5,17 @@ See `docs/implementations/EduAI_CronJob_DataLifecycle_Spec.md` for the full spec
 
 **Local testing (Windows / WSL / macOS):** [`docs/implementations/server-backup-cron-local-testing.md`](../../docs/implementations/server-backup-cron-local-testing.md) — use `bash infra/cron/dry-run-local.sh all` from repo root.
 
+Every production script records its lifecycle in Core's `cron_job_runs` table.
+When a script is invoked directly (without `CORE_CRON_RUN_ID`), `lib.sh`
+creates a database-timestamped `RUNNING` row with a database-generated owner
+token, heartbeat, and finite expiry. Set `CRON_STANDALONE_LEASE_MS` in
+`/etc/eduai/cron.env` when a direct run can exceed the 10-minute default. A
+start insert failure stops the job before any work runs; completion/error
+updates require the same owner token and an unexpired lease, then clear all
+lease columns. A stale process therefore cannot terminalize a successor's
+run. Core-triggered children keep their `CORE_CRON_RUN_ID` behavior and leave
+all audit transitions to Core.
+
 ## Scripts
 
 | Script | UTC Schedule | Purpose |
@@ -30,20 +41,30 @@ sudo chmod 750 /opt/eduai/cron/*.sh
 sudo mkdir -p /etc/eduai
 sudo cp infra/cron/cron.env.example /etc/eduai/cron.env
 sudo nano /etc/eduai/cron.env          # set DB_PASS, OFFSITE_BUCKET, ALERT_EMAIL
-sudo chmod 600 /etc/eduai/cron.env
-sudo chown root:root /etc/eduai/cron.env
+sudo chmod 640 /etc/eduai/cron.env
+sudo chown root:eduai-cron /etc/eduai/cron.env
 
 # 4. Create log directory
 sudo mkdir -p /var/log/eduai
 sudo chown eduai-cron:adm /var/log/eduai
 sudo chmod 750 /var/log/eduai
 
-# 5. Install logrotate
+# 5. Create the local backup directory
+sudo mkdir -p /var/backups/eduai
+sudo chown eduai-cron:eduai-cron /var/backups/eduai
+sudo chmod 750 /var/backups/eduai
+
+# 6. Install logrotate
 sudo cp infra/cron/logrotate.conf /etc/logrotate.d/eduai-cron
 
-# 6. Dry-run the nightly backup to verify connectivity before the first scheduled run
+# 7. Dry-run the nightly backup to verify connectivity before the first scheduled run
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
+
+The direct command above uses the standalone lease path. It is safe to invoke
+from an OS scheduler as long as `CRON_STANDALONE_LEASE_MS` is longer than the
+expected runtime. A second invocation for the same job fails closed if the
+database still has a live `RUNNING` lease.
 
 > **Note:** these scripts are scheduled by the Core in-process scheduler (`CRON_SCRIPT_DIR` env var must point to the directory containing them). Schedules are managed via the Admin → Cron Jobs panel and stored in the database — there is no system crontab entry for these jobs.
 
@@ -55,7 +76,7 @@ of the error handling and logging stays the same.
 
 AWS credentials must be accessible to the `eduai-cron` user. An EC2 IAM role
 is preferred over static keys; if using static keys, place them in
-`/home/eduai-cron/.aws/credentials` with `chmod 600`.
+`/var/lib/eduai-cron/.aws/credentials` with `chmod 600`.
 
 ## Legal hold
 

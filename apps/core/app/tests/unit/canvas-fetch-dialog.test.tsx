@@ -111,7 +111,9 @@ describe("CanvasFetchDialog", () => {
     vi.mocked(syncCanvasCourses).mockResolvedValue({
       synced: [],
       unsynced: [],
-      errors: [{ canvasId: "102", message: "Canvas course 102 not found or not taught by this account" }],
+      errors: [
+        { canvasId: "102", message: "Canvas course 102 not found or not taught by this account" },
+      ],
     });
     renderDialog();
 

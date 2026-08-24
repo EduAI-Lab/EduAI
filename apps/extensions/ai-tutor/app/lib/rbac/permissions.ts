@@ -1,51 +1,47 @@
-import type { Role } from '~/lib/types';
-import type { AtCourseAccess, AtUser } from './types';
+import type { Role } from "~/lib/types";
+import type { AtCourseAccess, AtUser } from "./types";
 
-export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
+export type EnrollmentRole = "STUDENT" | "TA" | "INSTRUCTOR";
 
 export function isPlatformAdmin(user: AtUser | null | undefined): boolean {
-  return user?.role === 'ADMIN';
+  return user?.role === "ADMIN";
 }
 
 export function isUnitAdmin(user: AtUser | null | undefined): boolean {
-  return user?.role === 'UNIT_ADMIN';
+  return user?.role === "UNIT_ADMIN";
 }
 
 export function isInstructorRole(user: AtUser | null | undefined): boolean {
-  return user?.role === 'INSTRUCTOR';
+  return user?.role === "INSTRUCTOR";
 }
 
 export function isTaPlatformRole(user: AtUser | null | undefined): boolean {
-  return user?.role === 'TA';
+  return user?.role === "TA";
 }
 
 export function isStudentRole(user: AtUser | null | undefined): boolean {
-  return user?.role === 'STUDENT';
+  return user?.role === "STUDENT";
 }
 
 /** True when the user uses the instructor route shell (authoring or TA read-only). */
 export function usesInstructorShell(user: AtUser | null | undefined): boolean {
   if (!user?.role) return false;
-  return (
-    user.role === 'INSTRUCTOR' ||
-    user.role === 'UNIT_ADMIN' ||
-    user.role === 'TA'
-  );
+  return user.role === "INSTRUCTOR" || user.role === "UNIT_ADMIN" || user.role === "TA";
 }
 
 export function resolvePlatformCourseAccess(user: AtUser | null | undefined): AtCourseAccess {
   if (!user?.role) return null;
-  if (user.role === 'ADMIN') return 'admin';
-  if (user.role === 'UNIT_ADMIN') return 'unit';
-  if (user.role === 'INSTRUCTOR') return 'instructor';
-  if (user.role === 'TA') return 'ta';
-  if (user.role === 'STUDENT') return 'student';
+  if (user.role === "ADMIN") return "admin";
+  if (user.role === "UNIT_ADMIN") return "unit";
+  if (user.role === "INSTRUCTOR") return "instructor";
+  if (user.role === "TA") return "ta";
+  if (user.role === "STUDENT") return "student";
   return null;
 }
 
 export function canManageContent(user: AtUser | null | undefined): boolean {
   const access = resolvePlatformCourseAccess(user);
-  return access === 'admin' || access === 'unit' || access === 'instructor';
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 export function canViewTeachingContent(user: AtUser | null | undefined): boolean {
@@ -67,11 +63,7 @@ export function canManageTopics(user: AtUser | null | undefined): boolean {
 
 export function canManageEnrollments(user: AtUser | null | undefined): boolean {
   if (!user?.role) return false;
-  return (
-    user.role === 'ADMIN' ||
-    user.role === 'UNIT_ADMIN' ||
-    user.role === 'INSTRUCTOR'
-  );
+  return user.role === "ADMIN" || user.role === "UNIT_ADMIN" || user.role === "INSTRUCTOR";
 }
 
 export function canAssignTaRole(user: AtUser | null | undefined): boolean {
@@ -80,7 +72,7 @@ export function canAssignTaRole(user: AtUser | null | undefined): boolean {
 
 export function canViewCourseSubmissions(user: AtUser | null | undefined): boolean {
   const access = resolvePlatformCourseAccess(user);
-  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 export function canViewCourseFeedback(user: AtUser | null | undefined): boolean {
@@ -97,12 +89,12 @@ export function canGradeSubmissions(
   user: AtUser | null | undefined,
   access: AtCourseAccess = resolvePlatformCourseAccess(user),
 ): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 export function canViewCourseAnalytics(user: AtUser | null | undefined): boolean {
   const access = resolvePlatformCourseAccess(user);
-  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 export function canViewCourseStudentMetrics(user: AtUser | null | undefined): boolean {
@@ -110,7 +102,7 @@ export function canViewCourseStudentMetrics(user: AtUser | null | undefined): bo
 }
 
 export function canAccessAdminConsole(user: AtUser | null | undefined): boolean {
-  return user?.role === 'ADMIN';
+  return user?.role === "ADMIN";
 }
 
 export function canSubmitBugReport(user: AtUser | null | undefined): boolean {
@@ -120,17 +112,17 @@ export function canSubmitBugReport(user: AtUser | null | undefined): boolean {
 
 export function getRoleViewLabel(role: Role | string | undefined): string {
   switch (role) {
-    case 'ADMIN':
-      return 'Administrator';
-    case 'UNIT_ADMIN':
-      return 'Unit administrator';
-    case 'INSTRUCTOR':
-      return 'Instructor';
-    case 'TA':
-      return 'Teaching assistant';
-    case 'STUDENT':
-      return 'Student';
+    case "ADMIN":
+      return "Administrator";
+    case "UNIT_ADMIN":
+      return "Unit administrator";
+    case "INSTRUCTOR":
+      return "Instructor";
+    case "TA":
+      return "Teaching assistant";
+    case "STUDENT":
+      return "Student";
     default:
-      return 'User';
+      return "User";
   }
 }

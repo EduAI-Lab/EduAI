@@ -36,7 +36,7 @@ describe("DemoLoginButtons", () => {
   });
 
   it("renders one button per demo role", () => {
-    render(<DemoLoginButtons redirectTo="/dashboard" />);
+    render(<DemoLoginButtons redirectTo="/dashboard" password="test-password" />);
 
     expect(screen.getByTitle("admin@eduai.local")).toBeInTheDocument();
     expect(screen.getByTitle("unitadmin.cosc@eduai.local")).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe("DemoLoginButtons", () => {
   });
 
   it("submits the matching hidden form with email/password/redirectTo when clicked", () => {
-    render(<DemoLoginButtons redirectTo="/courses" />);
+    render(<DemoLoginButtons redirectTo="/courses" password="test-password" />);
 
     fireEvent.click(screen.getByTitle("instructor.cs@eduai.local"));
 
@@ -54,7 +54,7 @@ describe("DemoLoginButtons", () => {
     const submittedForm = requestSubmitSpy.mock.instances[0] as HTMLFormElement;
     expect(formFields(submittedForm)).toEqual({
       email: "instructor.cs@eduai.local",
-      password: "EduAI2026!",
+      password: "test-password",
       redirectTo: "/courses",
     });
   });
@@ -66,7 +66,9 @@ describe("DemoLoginButtons", () => {
       calls.push("requestSubmit");
     });
 
-    render(<DemoLoginButtons redirectTo="/dashboard" onSubmit={onSubmit} />);
+    render(
+      <DemoLoginButtons redirectTo="/dashboard" password="test-password" onSubmit={onSubmit} />,
+    );
     fireEvent.click(screen.getByTitle("student1@eduai.local"));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -74,13 +76,13 @@ describe("DemoLoginButtons", () => {
   });
 
   it("works without an onSubmit prop (optional callback)", () => {
-    render(<DemoLoginButtons redirectTo="/dashboard" />);
+    render(<DemoLoginButtons redirectTo="/dashboard" password="test-password" />);
     expect(() => fireEvent.click(screen.getByTitle("admin@eduai.local"))).not.toThrow();
     expect(requestSubmitSpy).toHaveBeenCalledTimes(1);
   });
 
   it("applies hover styling on mouse enter/leave without throwing", () => {
-    render(<DemoLoginButtons redirectTo="/dashboard" />);
+    render(<DemoLoginButtons redirectTo="/dashboard" password="test-password" />);
     const button = screen.getByTitle("admin@eduai.local");
 
     fireEvent.mouseEnter(button);

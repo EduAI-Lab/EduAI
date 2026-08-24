@@ -64,8 +64,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   const parsed = parseModelIdentifier(input.resolvedModelId);
   if (!parsed || parsed.providerId !== "vllm") return null;
 
-  const jobType =
-    input.jobType ?? jobTypeForWorkloadFeature(input.feature);
+  const jobType = input.jobType ?? jobTypeForWorkloadFeature(input.feature);
   const candidates = getServersForJobType(jobType);
   if (candidates.length === 0) {
     throw new FleetUnavailableError("No fleet servers configured for this workload");
@@ -79,9 +78,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
       health: await getServerHealth(server.baseUrl),
     })),
   );
-  const excluded = new Set(
-    (input.excludeServerIds ?? []).map((id) => id.trim()).filter(Boolean),
-  );
+  const excluded = new Set((input.excludeServerIds ?? []).map((id) => id.trim()).filter(Boolean));
   const eligible = healthResults
     .filter(
       ({ server, health }) =>

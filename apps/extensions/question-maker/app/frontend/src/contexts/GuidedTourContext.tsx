@@ -1,9 +1,19 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { markMainTourSeen } from '../tour/mainTourStorage';
-import { TourId, TourStep } from '../tour/tourTypes';
-import { tourSteps } from '../tour/tourSteps';
-import { cn } from '../lib/utils';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { markMainTourSeen } from "../tour/mainTourStorage";
+import { TourId, TourStep } from "../tour/tourTypes";
+import { tourSteps } from "../tour/tourSteps";
+import { cn } from "../lib/utils";
 
 type TourState = {
   steps: TourStep[];
@@ -35,7 +45,9 @@ const getStepTargetId = (step: TourStep | undefined) => step?.targetId ?? step?.
 
 const getTarget = (step: TourStep | undefined) => {
   const targetId = getStepTargetId(step);
-  return targetId ? (document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null) : null;
+  return targetId
+    ? (document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null)
+    : null;
 };
 
 const waitForTarget = (step: TourStep | undefined, timeoutMs = 2500): Promise<void> =>
@@ -58,23 +70,44 @@ const waitForTarget = (step: TourStep | undefined, timeoutMs = 2500): Promise<vo
 const PADDING = 24;
 const TOOLTIP_WIDTH = 320;
 
-const rectsOverlap = (a: { top: number; left: number; width: number; height: number }, b: DOMRect) =>
+const rectsOverlap = (
+  a: { top: number; left: number; width: number; height: number },
+  b: DOMRect,
+) =>
   !(a.left > b.right || a.left + a.width < b.left || a.top > b.bottom || a.top + a.height < b.top);
 
-type TooltipPlacement = 'bottom-left' | 'top-left' | 'bottom-right' | 'top-right';
+type TooltipPlacement = "bottom-left" | "top-left" | "bottom-right" | "top-right";
 
-const getTooltipRect = (placement: TooltipPlacement, tooltipHeight: number): { top: number; left: number; width: number; height: number } => {
+/** A tooltip's viewport box, in the same fields the overlay renders from. */
+type TooltipRect = { top: number; left: number; width: number; height: number };
+
+const getTooltipRect = (placement: TooltipPlacement, tooltipHeight: number): TooltipRect => {
   const w = window.innerWidth;
   const h = window.innerHeight;
   switch (placement) {
-    case 'bottom-left':
-      return { top: h - PADDING - tooltipHeight, left: PADDING, width: TOOLTIP_WIDTH, height: tooltipHeight };
-    case 'top-left':
+    case "bottom-left":
+      return {
+        top: h - PADDING - tooltipHeight,
+        left: PADDING,
+        width: TOOLTIP_WIDTH,
+        height: tooltipHeight,
+      };
+    case "top-left":
       return { top: PADDING, left: PADDING, width: TOOLTIP_WIDTH, height: tooltipHeight };
-    case 'bottom-right':
-      return { top: h - PADDING - tooltipHeight, left: w - PADDING - TOOLTIP_WIDTH, width: TOOLTIP_WIDTH, height: tooltipHeight };
-    case 'top-right':
-      return { top: PADDING, left: w - PADDING - TOOLTIP_WIDTH, width: TOOLTIP_WIDTH, height: tooltipHeight };
+    case "bottom-right":
+      return {
+        top: h - PADDING - tooltipHeight,
+        left: w - PADDING - TOOLTIP_WIDTH,
+        width: TOOLTIP_WIDTH,
+        height: tooltipHeight,
+      };
+    case "top-right":
+      return {
+        top: PADDING,
+        left: w - PADDING - TOOLTIP_WIDTH,
+        width: TOOLTIP_WIDTH,
+        height: tooltipHeight,
+      };
   }
 };
 
@@ -86,7 +119,7 @@ const Tooltip = ({
   onPrev,
   onClose,
   isFirst,
-  isLast
+  isLast,
 }: {
   step: TourStep;
   position: HighlightPosition;
@@ -97,17 +130,17 @@ const Tooltip = ({
   isFirst: boolean;
   isLast: boolean;
 }) => {
-  const [placement, setPlacement] = useState<TooltipPlacement>('bottom-right');
+  const [placement, setPlacement] = useState<TooltipPlacement>("bottom-right");
   const boxRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     if (!targetEl || !boxRef.current) {
-      setPlacement('bottom-right');
+      setPlacement("bottom-right");
       return;
     }
     const tooltipHeight = boxRef.current.getBoundingClientRect().height;
     const targetRect = targetEl.getBoundingClientRect();
-    const order: TooltipPlacement[] = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
+    const order: TooltipPlacement[] = ["bottom-right", "bottom-left", "top-right", "top-left"];
     for (const p of order) {
       const tr = getTooltipRect(p, tooltipHeight);
       if (!rectsOverlap(tr, targetRect)) {
@@ -115,18 +148,18 @@ const Tooltip = ({
         return;
       }
     }
-    setPlacement('bottom-right');
+    setPlacement("bottom-right");
   }, [step.id, targetEl]);
 
   const style = useMemo(() => {
     switch (placement) {
-      case 'bottom-left':
+      case "bottom-left":
         return { bottom: PADDING, left: PADDING };
-      case 'top-left':
+      case "top-left":
         return { top: PADDING, left: PADDING };
-      case 'bottom-right':
+      case "bottom-right":
         return { bottom: PADDING, right: PADDING };
-      case 'top-right':
+      case "top-right":
         return { top: PADDING, right: PADDING };
     }
   }, [placement]);
@@ -158,10 +191,10 @@ const Tooltip = ({
           <button
             onClick={onPrev}
             className={cn(
-              'px-3 py-1 rounded border text-sm',
+              "px-3 py-1 rounded border text-sm",
               isFirst
-                ? 'border-border text-muted-foreground cursor-not-allowed'
-                : 'border-border text-foreground hover:border-border'
+                ? "border-border text-muted-foreground cursor-not-allowed"
+                : "border-border text-foreground hover:border-border",
             )}
             disabled={isFirst}
           >
@@ -171,7 +204,7 @@ const Tooltip = ({
             onClick={isLast ? onClose : onNext}
             className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
           >
-            {isLast ? 'Done' : 'Next'}
+            {isLast ? "Done" : "Next"}
           </button>
         </div>
       </div>
@@ -185,7 +218,7 @@ const GuidedTourOverlay = ({
   onPrev,
   onClose,
   index,
-  total
+  total,
 }: {
   step: TourStep;
   onNext: () => void;
@@ -216,7 +249,7 @@ const GuidedTourOverlay = ({
         top: rect.top - 8,
         left: rect.left - 8,
         width: rect.width + 16,
-        height: rect.height + 16
+        height: rect.height + 16,
       });
       setHasMeasured(true);
     };
@@ -224,14 +257,14 @@ const GuidedTourOverlay = ({
     const observer = new ResizeObserver(updatePosition);
     observer.observe(target);
     updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
 
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
     };
   }, [step]);
 
@@ -250,7 +283,7 @@ const GuidedTourOverlay = ({
             left: position.left,
             width: position.width,
             height: position.height,
-            transition: 'all 0.2s ease'
+            transition: "all 0.2s ease",
           }}
         />
       )}
@@ -265,7 +298,7 @@ const GuidedTourOverlay = ({
         isLast={index === total - 1}
       />
     </>,
-    document.body
+    document.body,
   );
 };
 
@@ -295,7 +328,11 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Default: some steps trigger a click to move the user forward (navigate, switch tab, or open builder).
-    if (step.id === 'course-select' || step.id === 'assessment-tab' || step.id === 'builder-add-section-button') {
+    if (
+      step.id === "course-select" ||
+      step.id === "assessment-tab" ||
+      step.id === "builder-add-section-button"
+    ) {
       getTarget(step)?.click();
     }
   }, []);
@@ -308,7 +345,7 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const stopTour = useCallback(() => {
-    if (activeTourIdRef.current === 'main') {
+    if (activeTourIdRef.current === "main") {
       markMainTourSeen();
     }
     const onEnd = onTourEndRef.current;
@@ -319,30 +356,24 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
     onEnd?.();
   }, []);
 
-  const advanceTo = useCallback(
-    (nextIndex: number) => {
-      setState((prev) => {
-        if (!prev.isActive) return prev;
-        if (!prev.steps[nextIndex]) {
-          return prev;
-        }
-        return { ...prev, currentIndex: nextIndex };
-      });
-    },
-    []
-  );
-
-  const startTour = useCallback(
-    (id: TourId) => {
-      const steps = tourSteps[id] ?? [];
-      if (steps.length === 0) {
-        return;
+  const advanceTo = useCallback((nextIndex: number) => {
+    setState((prev) => {
+      if (!prev.isActive) return prev;
+      if (!prev.steps[nextIndex]) {
+        return prev;
       }
-      setActiveTourId(id);
-      setState({ steps, currentIndex: 0, isActive: true });
-    },
-    []
-  );
+      return { ...prev, currentIndex: nextIndex };
+    });
+  }, []);
+
+  const startTour = useCallback((id: TourId) => {
+    const steps = tourSteps[id] ?? [];
+    if (steps.length === 0) {
+      return;
+    }
+    setActiveTourId(id);
+    setState({ steps, currentIndex: 0, isActive: true });
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -351,9 +382,9 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
       registerOnTourEnd,
       registerStepAction,
       isActive: state.isActive,
-      activeTourId
+      activeTourId,
     }),
-    [startTour, stopTour, registerOnTourEnd, registerStepAction, state.isActive, activeTourId]
+    [startTour, stopTour, registerOnTourEnd, registerStepAction, state.isActive, activeTourId],
   );
 
   const step = state.isActive ? state.steps[state.currentIndex] : null;
@@ -393,7 +424,7 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
 export const useGuidedTour = () => {
   const ctx = useContext(GuidedTourContext);
   if (!ctx) {
-    throw new Error('useGuidedTour must be used within GuidedTourProvider');
+    throw new Error("useGuidedTour must be used within GuidedTourProvider");
   }
   return ctx;
 };

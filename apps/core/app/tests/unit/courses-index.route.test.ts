@@ -52,20 +52,23 @@ describe("courses loader", () => {
     expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
-  it("splits enrollment rows into TA and enrolled course id lists (#499)", async () => {
+  it("splits enrollment rows into instructor/TA/enrolled course id lists (#499)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
+      { courseId: "course-instructor", role: "INSTRUCTOR" },
       { courseId: "course-ta", role: "TA" },
       { courseId: "course-student", role: "STUDENT" },
     ] as never);
 
     const result = (await loader(makeArgs())) as {
       taCourseIds: string[];
+      instructorCourseIds: string[];
       enrolledCourseIds: string[];
     };
     expect(result.taCourseIds).toEqual(["course-ta"]);
+    expect(result.instructorCourseIds).toEqual(["course-instructor"]);
     expect(result.enrolledCourseIds).toEqual(["course-student"]);
   });
 

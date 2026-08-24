@@ -12,6 +12,7 @@
  *    instead of recomputing `to_tsvector(content)` inline on every query
  */
 
+import type { JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -95,14 +96,19 @@ const RETRIEVAL_QUERY_CALL_INDEX = 1;
  * rather than template-string literals) are inlined recursively so their SQL
  * text is visible; every other value collapses to a placeholder.
  */
-function renderSqlValue(value: unknown): string {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    "strings" in value &&
-    "values" in value
-  ) {
-    const frag = value as { strings: readonly string[]; values: unknown[] };
+/** A nested `Prisma.sql` fragment: its literal text, and the values between. */
+type SqlFragment = { strings: readonly string[]; values: SqlValue[] };
+
+/** Either a nested fragment or a bound parameter value. */
+type SqlValue = SqlFragment | JsonValue | undefined;
+
+function isSqlFragment(value: SqlValue): value is SqlFragment {
+  return value !== null && typeof value === "object" && "strings" in value && "values" in value;
+}
+
+function renderSqlValue(value: SqlValue): string {
+  if (isSqlFragment(value)) {
+    const frag = value;
     return frag.strings
       .map((s, i) => s + (i < frag.values.length ? renderSqlValue(frag.values[i]) : ""))
       .join("");
@@ -113,7 +119,7 @@ function renderSqlValue(value: unknown): string {
 function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   const [templateStrings, ...values] = queryRawMock.mock.calls[callIndex] as [
     string[],
-    ...unknown[],
+    ...SqlValue[],
   ];
   return templateStrings
     .map((s, i) => s + (i < values.length ? renderSqlValue(values[i]) : ""))
@@ -235,9 +241,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
-    expect(sql).toMatch(
-      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
-    );
+    expect(sql).toMatch(/ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/);
     expect(sql.indexOf("ORDER BY me.embedding <=>")).toBeLessThan(
       sql.indexOf("ORDER BY score DESC"),
     );
@@ -252,7 +256,9 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     // statement (single round trip) rather than separate `SET LOCAL` calls.
     const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
     expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
-    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain(
+      "set_config('ivfflat.iterative_scan', 'relaxed_order', true)",
+    );
     expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
     // max_probes must be >= the index's lists=100 (pgvector's own default is
     // 32768), not one below it.
@@ -317,7 +323,6 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     const params = capturedParams();
     expect(params[params.length - 1]).toBe(2);
   });
-
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -325,7 +330,11 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
 describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", () => {
   beforeEach(() => {
     queryRawMock.mockResolvedValue([
-      { content: "Dijkstra finds shortest paths.", similarity: 0.91, material_title: "Week 9 Lecture" },
+      {
+        content: "Dijkstra finds shortest paths.",
+        similarity: 0.91,
+        material_title: "Week 9 Lecture",
+      },
     ]);
   });
 
@@ -340,9 +349,7 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
-    expect(sql).toMatch(
-      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
-    );
+    expect(sql).toMatch(/ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/);
     expect(sql).toContain("WHERE 1 - distance >");
     expect(sql).toContain("ORDER BY distance ASC");
   });
@@ -351,7 +358,9 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
     expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
-    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain(
+      "set_config('ivfflat.iterative_scan', 'relaxed_order', true)",
+    );
     expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
     // max_probes must be >= the index's lists=100 (pgvector's own default is
     // 32768), not one below it.
@@ -366,7 +375,6 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
       materialTitle: "Week 9 Lecture",
     });
   });
-
 });
 
 // ── Student-visibility gate (#839) ────────────────────────────────────────────
@@ -380,9 +388,7 @@ function capturedFragmentSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   return capturedParams(callIndex)
     .filter(
       (p): p is { strings: string[] } =>
-        typeof p === "object" &&
-        p !== null &&
-        Array.isArray((p as { strings?: unknown }).strings),
+        typeof p === "object" && p !== null && Array.isArray((p as { strings?: unknown }).strings),
     )
     .map((f) => f.strings.join(" "))
     .join(" ");

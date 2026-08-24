@@ -27,8 +27,12 @@ const EMBEDDING_DIMENSION = 1024;
 
 // Two maximally-different constant directions so the noise cluster and the
 // target cluster land in different ivfflat lists.
-const NOISE_DIRECTION = Array.from({ length: EMBEDDING_DIMENSION }, (_, i) => (i % 2 === 0 ? 1 : -1));
-const TARGET_DIRECTION = Array.from({ length: EMBEDDING_DIMENSION }, (_, i) => (i % 2 === 0 ? -1 : 1));
+const NOISE_DIRECTION = Array.from({ length: EMBEDDING_DIMENSION }, (_, i) =>
+  i % 2 === 0 ? 1 : -1,
+);
+const TARGET_DIRECTION = Array.from({ length: EMBEDDING_DIMENSION }, (_, i) =>
+  i % 2 === 0 ? -1 : 1,
+);
 
 // generateEmbedding() → embedWithConfiguredProvider() → embed() from "ai".
 // Always resolve to the target direction: the test's query text is
@@ -186,12 +190,7 @@ describe("findRelevantContent — filtered ANN recall with skewed course data (#
   it("returns nothing for an unrelated course even with the same low-probes iterative scan settings", async () => {
     process.env.RAG_IVFFLAT_PROBES = "1";
     try {
-      const results = await findRelevantContent(
-        "irrelevant query text",
-        noiseCourseId,
-        10,
-        0.5,
-      );
+      const results = await findRelevantContent("irrelevant query text", noiseCourseId, 10, 0.5);
       // The noise course's embeddings point the opposite direction from the
       // mocked query vector, so none should clear the similarity threshold —
       // proves the fix does not simply widen the result set indiscriminately.

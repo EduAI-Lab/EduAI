@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -7,8 +8,8 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -78,6 +79,7 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
@@ -95,7 +97,7 @@ const OVERSEEN = `**Top summary**
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -135,7 +137,7 @@ function mockStreamResult(text: string) {
   } as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
     model: "vllm:test-model",
@@ -245,9 +247,7 @@ describe("POST /api/chat — regenerateOnly content preview (#1246)", () => {
     mockStreamResult(BASELINE_DRAFT);
 
     const res = await action(
-      makeArgs(
-        baseBody({ regenerateOnly: true, adhdAssist: false, streaming: true }),
-      ),
+      makeArgs(baseBody({ regenerateOnly: true, adhdAssist: false, streaming: true })),
     );
     expect(res.status).toBe(200);
 

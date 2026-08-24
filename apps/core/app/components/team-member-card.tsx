@@ -10,21 +10,17 @@ export interface TeamMemberCardProps {
 export function TeamMemberCard({ member, index }: TeamMemberCardProps) {
   return (
     <Card className="relative bg-card/80 backdrop-blur-sm border border-border shadow-2xl overflow-hidden group hover:border-green-500/50 transition-all duration-300">
-
-
       <div className="lg:flex items-center p-8 gap-8">
         <div className="lg:w-1/4 mb-6 lg:mb-0">
           <div className="relative w-63 h-82 mx-auto overflow-hidden rounded-lg border-2 border-border group-hover:border-green-500/50 transition-all duration-300">
             <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             <img
-              src={member.image.replace('/public', '')}
+              src={member.image.replace("/public", "")}
               alt={member.name}
               className="object-cover w-full h-full transform group-hover:scale-105 transition-transform duration-300"
             />
             <div className="absolute inset-0 bg-gradient-to-tr from-background/60 to-transparent"></div>
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background p-2">
-
-            </div>
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background p-2"></div>
           </div>
         </div>
 
@@ -74,7 +70,6 @@ export function TeamMemberCard({ member, index }: TeamMemberCardProps) {
           </div>
         </div>
       </div>
-
     </Card>
   );
 }

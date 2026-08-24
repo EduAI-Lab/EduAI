@@ -191,12 +191,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (
         !serviceAuth &&
         (!access ||
-          (access.rank < 2 &&
-            !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
+          (access.rank < 2 && !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
@@ -217,7 +215,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return new Response(
           JSON.stringify({
             error: "Invalid input",
-            ...(result.details ? { details: result.details } : {}),
+            // JSON.stringify drops an undefined value, so a result without
+            // field errors still serializes to a bare `{ error }`.
+            details: result.details ?? undefined,
           }),
           {
             status: Number(result.status),
@@ -256,7 +256,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       if (
         !serviceAuth &&
-        (!access || !session?.user ||
+        (!access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,
@@ -267,7 +268,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await updateCourseTopic(courseId, topicId, body);
@@ -306,7 +306,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: "Invalid input",
-          ...(result.details ? { details: result.details } : {}),
+          // JSON.stringify drops an undefined value, so a result without field
+          // errors still serializes to a bare `{ error }`.
+          details: result.details ?? undefined,
         }),
         { status: Number(result.status), headers: { "Content-Type": "application/json" } },
       );
@@ -329,7 +331,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
 
         if (
-          !access || !session?.user ||
+          !access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,
@@ -350,7 +353,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? { error: "Topic not found" }
             : {
                 error: "Invalid input",
-                ...(result.details ? { details: result.details } : {}),
+                // JSON.stringify drops an undefined value, so a result without
+                // field errors still serializes to a bare `{ error }`.
+                details: result.details ?? undefined,
               };
         return new Response(JSON.stringify(responseBody), {
           status: Number(result.status),
