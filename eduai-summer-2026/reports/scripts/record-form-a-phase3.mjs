@@ -106,10 +106,10 @@ function buildMarkdown({
   lines.push("## Contextual appropriateness (per turn, Assist ON)");
   lines.push("");
   lines.push(
-    "Pass = response shape matches turn intent (e.g. S2 t2 redirect should **not** get a full Top summary block).",
+    "Pass = response profile matches turn intent (e.g. S2 t2 redirect should **not** get a full Top summary block).",
   );
   lines.push("");
-  lines.push("| Turn | Expected shape | Before contextual | After contextual | Δ |");
+  lines.push("| Turn | Expected response profile | Before contextual | After contextual | Δ |");
   lines.push("| --- | --- | :---: | :---: | :---: |");
 
   for (const row of afterOn) {
@@ -125,7 +125,7 @@ function buildMarkdown({
             ? "regressed"
             : "same";
     lines.push(
-      `| ${row.scenarioId} t${row.turn} | ${row.expectedShape ?? "—"} | ${passCell(bPass)} | ${passCell(aPass)} | ${delta} |`,
+      `| ${row.scenarioId} t${row.turn} | ${row.expectedResponseProfile ?? "—"} | ${passCell(bPass)} | ${passCell(aPass)} | ${delta} |`,
     );
   }
   lines.push("");
@@ -141,7 +141,7 @@ function buildMarkdown({
     `- **Strict structural:** before ${beforeStrict}/${baselineOn.length} → after ${afterStrict}/${afterOn.length}`,
   );
   lines.push(
-    `- **Contextual shape:** before ${beforeContext}/${baselineOn.length} → after ${afterContext}/${afterOn.length}`,
+    `- **Contextual profile:** before ${beforeContext}/${baselineOn.length} → after ${afterContext}/${afterOn.length}`,
   );
   lines.push("");
   lines.push("## Interpretation notes");

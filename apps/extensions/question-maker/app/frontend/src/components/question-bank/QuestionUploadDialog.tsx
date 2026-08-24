@@ -1020,14 +1020,11 @@ export const QuestionUploadDialog = ({
         primaryTopicId: fallbackPrimaryTopicId,
         topicName: fallbackTopicName,
         questions: payloadQuestions,
-        ...(saveTarget === "assessment"
-          ? {
-              assessment: {
-                type: assessmentType,
-                name: assessmentName.trim(),
-              },
-            }
-          : {}),
+        // Saving straight to the bank sends no assessment at all.
+        assessment:
+          saveTarget === "assessment"
+            ? { type: assessmentType, name: assessmentName.trim() }
+            : undefined,
       });
 
       onQuestionsSaved(result.questions, { assessmentId: result.assessmentId ?? null });

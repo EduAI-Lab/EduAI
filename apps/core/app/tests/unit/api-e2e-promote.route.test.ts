@@ -16,7 +16,7 @@ function makeArgs(method: string, body?: unknown) {
   return {
     request: new Request("http://localhost/api/e2e/promote", {
       method,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
     params: {},
     context: {} as never,

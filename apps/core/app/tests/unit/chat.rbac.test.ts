@@ -27,6 +27,12 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+// #1571: the admin chatMode gate re-checks isActive against the DB. Default the
+// mocked admin to active; the deactivated-admin test overrides it to false.
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,22 +52,24 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -80,6 +88,7 @@ beforeEach(() => {
   // that stubs an admin api-key session leaks it into every later test. Restore
   // the default here rather than at each call site.
   vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -277,8 +286,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
   });
 
   it("rejects a valid service key for admin chatMode", async () => {
@@ -598,7 +617,7 @@ describe("POST /api/chat — bounded ingress", () => {
 describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
   const PROMPT = "Reply in bullet points.";
 
-  const send = (body: object = {}) =>
+  const send = (body: Record<string, unknown> = {}) =>
     action(makeArgs({ messages: [], courseId: "c1", systemPrompt: PROMPT, ...body }));
 
   function mockRole(role: string) {

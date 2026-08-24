@@ -196,6 +196,44 @@ export async function recordSubmissionMetrics({ userId, activityId, isCorrect })
 }
 
 /**
+ * Re-derive one student's submission counters from the `Submission` rows
+ * themselves, then refresh the aggregate.
+ *
+ * Why: `recordSubmissionMetrics` above only ever *increments*, at submit time.
+ * A manual grade override (`PATCH /activities/:id/submissions/:id`) rewrites a
+ * `Submission.isCorrect` after the fact, which left Analytics disagreeing with
+ * the Submissions tab about the same course. Recomputing from the canonical
+ * rows — rather than nudging the counters — also self-heals any earlier drift.
+ * `helpRequestCount` is untouched: it has no `Submission` to derive from.
+ */
+export async function resyncSubmissionMetrics({ userId, activityId }) {
+  return prisma.$transaction(async (tx) => {
+    const submissions = await tx.submission.findMany({
+      where: { userId, activityId },
+      select: { isCorrect: true },
+    });
+
+    const submissionCount = submissions.length;
+    const correctSubmissionCount = submissions.filter((s) => s.isCorrect === true).length;
+    const incorrectSubmissionCount = submissions.filter((s) => s.isCorrect === false).length;
+
+    await tx.activityStudentMetric.upsert({
+      where: { userId_activityId: { userId, activityId } },
+      update: { submissionCount, correctSubmissionCount, incorrectSubmissionCount },
+      create: {
+        userId,
+        activityId,
+        submissionCount,
+        correctSubmissionCount,
+        incorrectSubmissionCount,
+      },
+    });
+
+    return recalculateActivityAnalytics(tx, activityId);
+  });
+}
+
+/**
  * Persist a student's post-activity rating/note and refresh aggregate analytics.
  *
  * Why: Feedback volume and average rating provide the only direct sentiment

@@ -9,13 +9,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiFetch, ApiError, STUB_ONLY } from "~/hooks/api/config";
+import type { JsonResponseBody } from "../helpers/route-fixtures";
 
 function res(init: {
   ok: boolean;
   status: number;
   headers?: Record<string, string>;
   text?: () => Promise<string>;
-  json?: () => Promise<unknown>;
+  json?: () => Promise<JsonResponseBody>;
 }): Response {
   const headers = new Headers(init.headers ?? {});
   return {
@@ -24,7 +25,7 @@ function res(init: {
     headers,
     text: init.text ?? (() => Promise.resolve("")),
     json: init.json ?? (() => Promise.resolve({})),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;

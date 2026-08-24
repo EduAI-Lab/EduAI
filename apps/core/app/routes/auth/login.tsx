@@ -1,6 +1,7 @@
-import { Form, useActionData, useLoaderData, redirect } from "react-router";
+import { useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
+import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
 import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
@@ -8,6 +9,7 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
+import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -51,8 +53,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+  let demoPassword: string | null = null;
+  if (isLocalDemoEnabled()) {
+    try {
+      demoPassword = getLocalSeedPassword();
+    } catch {
+      // Fail closed when local demo mode is enabled without a configured seed
+      // password. The normal login page remains available.
+    }
+  }
 
-  return { redirectTo, allowRegistration, forceReauth };
+  return {
+    redirectTo,
+    allowRegistration,
+    forceReauth,
+    // Demo credentials are available only for an explicitly configured local
+    // deployment with a caller-supplied seed password. This is evaluated on the
+    // server so production never renders the controls or receives the password.
+    showDemoLogin: demoPassword !== null,
+    demoPassword,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -193,11 +213,14 @@ export default function LoginPage() {
         formError?: string;
       }
     | undefined;
-  const { redirectTo, allowRegistration, forceReauth } = useLoaderData() as {
-    redirectTo: string;
-    allowRegistration: boolean;
-    forceReauth: boolean;
-  };
+  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
+    useLoaderData() as {
+      redirectTo: string;
+      allowRegistration: boolean;
+      forceReauth: boolean;
+      showDemoLogin: boolean;
+      demoPassword: string | null;
+    };
 
   return (
     <div
@@ -244,7 +267,13 @@ export default function LoginPage() {
             Sign in again so your session works across EduAI apps on this server.
           </p>
         )}
-        <Form method="post">
+        {/*
+         * Auth handlers return Set-Cookie headers. A full document submission
+         * ensures the browser applies those headers before following the
+         * redirect; React Router's single-fetch action transition can otherwise
+         * render dashboard loaders without the newly-created session cookie.
+         */}
+        <form method="post">
           <input type="hidden" name="redirectTo" value={redirectTo} />
           {actionData?.formError && (
             <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
@@ -254,7 +283,11 @@ export default function LoginPage() {
             isLoading={false}
             allowRegistration={allowRegistration}
           />
-        </Form>
+        </form>
+
+        {showDemoLogin && demoPassword && (
+          <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />
+        )}
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">

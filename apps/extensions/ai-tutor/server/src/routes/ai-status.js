@@ -16,9 +16,13 @@ router.get("/ai-status", async (req, res) => {
   try {
     const upstream = await fetch(`${CORE_URL}/api/ai-status`, {
       headers: { cookie: req.headers.cookie ?? "" },
-      // Mirror Core's own ~1.5s probe bound so a slow/hung Core can't pile up
-      // open sockets on the header poll interval; abort falls to UNKNOWN below.
-      signal: AbortSignal.timeout(2000),
+      // Must outlast Core's own worst-case probe, else we abort mid-probe and
+      // report UNKNOWN in exactly the degraded/outage cases the chips exist to
+      // surface. Core fleet-probes each host with a 5s health timeout (#1551),
+      // and its 30s status cache is shorter than this 60s poll, so most polls
+      // hit a cold cache and pay the live probe. Bound at 7s (5s health + slack)
+      // so a genuinely hung Core still can't pile up sockets; abort → UNKNOWN.
+      signal: AbortSignal.timeout(7000),
     });
     if (!upstream.ok) {
       return res.json({ cloud: UNKNOWN, ubc: UNKNOWN });

@@ -94,7 +94,7 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
         );
       }
       return realUpdateMany(args);
-    }) as unknown as typeof prisma.courseReEmbedJob.updateMany);
+    }) as typeof prisma.courseReEmbedJob.updateMany);
 
     try {
       await expect(startReEmbedJob(courseAId)).rejects.toBeInstanceOf(QueueUnavailableError);

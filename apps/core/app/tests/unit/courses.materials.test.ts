@@ -73,13 +73,14 @@ import {
   validateUploadedFile,
 } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
@@ -149,7 +150,7 @@ function stubUploadArgs() {
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
-  } as unknown as Request;
+  } as Request;
   return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
 }
 
@@ -599,7 +600,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
       }),
       body,
       signal: new AbortController().signal,
-    } as unknown as Request;
+    } as Request;
     expect(oversizedRequest.headers.get("content-length")).toBe(String(52 * 1024 * 1024 + 1));
     const res = await action({
       request: oversizedRequest,

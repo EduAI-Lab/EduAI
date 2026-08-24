@@ -172,4 +172,43 @@ describe("listEnabledRegistryProviders vllm key gate (#1268 review)", () => {
 
     expect(ids).not.toContain("vllm");
   });
+
+  it("keeps provider availability in lock-step with the registry across eligibility edges (#1568 review)", () => {
+    // Regression for the drift the review flagged: listEnabledRegistryProviders
+    // once reported vllm on `clientVllmUrlSupplied` alone, so the chat preflight
+    // could pass and registry.languageModel("vllm:…") then fail. Both now derive
+    // from resolveVllmRegistration, so membership and registration must never
+    // disagree — including when the SSRF guard rejects the client base URL and
+    // when no key is available.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.NODE_ENV = "production";
+    const scenarios = [
+      // key present, client URL rejected → falls back to deployment default
+      {
+        env: { VLLM_API_KEY: "k" },
+        settings: { vllm: { isEnabled: true, baseUrl: "http://169.254.169.254/meta" } },
+      },
+      // no key anywhere → ineligible
+      { env: {}, settings: { vllm: { isEnabled: true } } },
+      // user key, loopback client URL → eligible
+      {
+        env: {},
+        settings: { vllm: { isEnabled: true, apiKey: "u", baseUrl: "http://127.0.0.1:8001" } },
+      },
+    ];
+
+    for (const { env, settings } of scenarios) {
+      delete process.env.VLLM_BASE_URL;
+      delete process.env.VLLM_API_KEY;
+      Object.assign(process.env, env);
+      createOpenAIMock.mockClear();
+
+      const listed = listEnabledRegistryProviders(settings).includes("vllm");
+      createAIProviderRegistry(settings);
+      const registered = createOpenAIMock.mock.calls.length > 0;
+
+      expect(listed).toBe(registered);
+    }
+    errorSpy.mockRestore();
+  });
 });

@@ -2,6 +2,7 @@
 // Pre-MVP regression coverage: legacy queue inputs must stay on authenticated
 // direct chat even when old deployment configuration still sets the flag.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -93,7 +94,7 @@ import { enqueueQuestionGeneration } from "~/lib/queue/chat-producer.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

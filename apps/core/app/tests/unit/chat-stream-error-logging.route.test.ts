@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Learning-chat stream errors must be logged server-side too, not just admin chat (#989).
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -99,7 +100,7 @@ const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 let lateStreamErrorMessage: ((error: unknown) => string) | undefined;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

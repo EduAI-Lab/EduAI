@@ -38,7 +38,9 @@ describe("BugReportDialog", () => {
       target: { value: "Steps to reproduce the issue in detail." },
     });
     fireEvent.click(screen.getByTestId("bug-type"));
-    fireEvent.click(await screen.findByText("Performance issue"));
+    // Label comes from BUG_TYPE_LABELS, the same map the admin triage table
+    // renders, so a reporter and a triager read the same words for a type.
+    fireEvent.click(await screen.findByText("Performance"));
 
     fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
 

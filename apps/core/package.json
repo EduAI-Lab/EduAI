@@ -48,7 +48,17 @@
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
-    "eval:rag": "tsx scripts/eval-rag.ts"
+    "eval:rag": "tsx scripts/eval-rag.ts",
+    "loadtest:setup": "bash loadtest/scripts/setup-loadtest-env.sh",
+    "loadtest:mock-llm": "node loadtest/mock-llm/server.mjs",
+    "loadtest:instance": "bash loadtest/scripts/start-instance.sh",
+    "loadtest:monitoring:up": "docker compose -f loadtest/monitoring/docker-compose.yml up -d",
+    "loadtest:monitoring:down": "docker compose -f loadtest/monitoring/docker-compose.yml down",
+    "loadtest:smoke": "bash loadtest/scripts/run-k6.sh loadtest/k6/smoke.js",
+    "loadtest:stress": "bash loadtest/scripts/run-k6.sh --summary-export=loadtest/results/stress-500.summary.json loadtest/k6/stress-500.js",
+    "loadtest:stress:grafana": "bash loadtest/scripts/run-k6.sh --summary-export=loadtest/results/stress-500.summary.json --out influxdb=http://127.0.0.1:8086/k6 loadtest/k6/stress-500.js",
+    "loadtest:browser": "bash loadtest/scripts/run-k6.sh --summary-export=loadtest/results/browser.summary.json loadtest/k6/browser-flow.js",
+    "loadtest:browser:smoke": "BROWSER_SMOKE=1 BROWSER_VUS=2 bash loadtest/scripts/run-k6.sh --summary-export=loadtest/results/browser-5vu.summary.json loadtest/k6/browser-flow.js"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

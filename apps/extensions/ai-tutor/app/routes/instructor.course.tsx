@@ -85,6 +85,7 @@ import {
   parseListUrlParams,
   redirectPastEnd,
 } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -162,6 +163,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [movingModule, setMovingModule] = useState<Module | null>(null);
   const searching = search !== "";
   const [title, setTitle] = useState("");
+  // Optional at creation time, same field the edit dialog writes. Without it a
+  // description could only be added after the fact, from the card kebab.
+  const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -331,8 +335,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     if (!numericCourseId || !title.trim()) return;
     setCreating(true);
     try {
-      await api.createModule(numericCourseId, { title: title.trim() });
+      const payload: { title: string; description?: string } = {
+        title: title.trim(),
+      };
+      // Omit rather than send "" — the column is nullable and a blank string
+      // would render as an empty description line on the card.
+      if (description.trim()) payload.description = description.trim();
+      await api.createModule(numericCourseId, payload);
       setTitle("");
+      setDescription("");
       setCreateOpen(false);
       await revealNewestModule();
     } catch (error) {
@@ -593,6 +604,16 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       placeholder="e.g. Getting started"
                       autoFocus
                       required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-module-description">Description</Label>
+                    <Textarea
+                      id="new-module-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Optional — what this module covers"
+                      rows={3}
                     />
                   </div>
                   <DialogFooter>
@@ -999,3 +1020,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

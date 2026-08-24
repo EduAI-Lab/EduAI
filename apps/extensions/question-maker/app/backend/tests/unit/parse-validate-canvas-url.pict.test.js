@@ -38,7 +38,7 @@ describe.each(rows.map((row, index) => [index, row]))(
       // parser normalizes). ExtraPath `query-ssrf` remains rejected.
       const expected = {
         accept:
-          sharedExpected.accept && row.UrlShape === "https-host" && row.ExtraPath !== "query-ssrf",
+          sharedExpected.accept && row.UrlForm === "https-host" && row.ExtraPath !== "query-ssrf",
       };
       const rawUrl = canvasUrlStringForRow(row);
       const actual = runQmValidator(rawUrl);

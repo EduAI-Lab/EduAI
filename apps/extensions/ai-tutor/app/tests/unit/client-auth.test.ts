@@ -25,11 +25,15 @@ describe("requireClientUser", () => {
     await expect(requireClientUser()).rejects.toMatchObject({ status: 302 });
   });
 
-  it("redirects an authenticated user whose role is not allowed", async () => {
+  // A wrong role used to redirect to "/", which silently dropped the reader on
+  // the dashboard with no explanation. It is now a 404, rendered by the route's
+  // ErrorBoundary as the generic not-found page — which also avoids confirming
+  // that a page exists to someone who may not open it.
+  it("404s an authenticated user whose role is not allowed", async () => {
     vi.mocked(api.me).mockResolvedValue({
       user: { id: "student-1", name: "Student", role: "STUDENT" },
     } as never);
 
-    await expect(requireClientUser(["INSTRUCTOR"])).rejects.toMatchObject({ status: 302 });
+    await expect(requireClientUser(["INSTRUCTOR"])).rejects.toMatchObject({ status: 404 });
   });
 });

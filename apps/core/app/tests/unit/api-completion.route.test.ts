@@ -60,13 +60,14 @@ import { auth } from "~/lib/auth/server";
 import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
 
 function makeArgs(body: unknown, method = "POST") {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/completion", {
-      method,
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    }),
+    request: new Request("http://localhost/api/completion", init),
     params: {},
     context: {} as never,
   } as never;

@@ -3,8 +3,8 @@
  *
  * Route: /instructor/lesson/:lessonId
  * Auth: INSTRUCTOR
- * Loads: lesson + activities (parallel), then walks up to module + course
- *        for breadcrumbs (sequential — module/course IDs come from lesson).
+ * Loads: lesson + activities (parallel) with the role gate; breadcrumb
+ *        ancestry loads after paint via GET /lessons/:id/breadcrumb (#1334).
  * Owns:
  *   - Activity CRUD: create (AddActivityPanel), inline edit
  *     (EditActivityPanel), delete with confirm.
@@ -19,7 +19,9 @@
  *     being edited so reports can pinpoint it.
  * Gotchas:
  *   - Validation: at least one of teach/guide/custom must remain enabled.
- *     handleActivityModeChange refuses to disable the last one and alerts.
+ *     handleActivityModeChange refuses to disable the last one and records the
+ *     refusal in `modeErrors[activityId]`, rendered under that activity's AI
+ *     study buddy box (it used to be a native `alert()`).
  *   - Saving indicators are debounced ~300ms (NOT 500ms) via
  *     topicSavingTimeoutRef and modeSavingTimeoutRef to avoid flicker on
  *     fast saves; both timers must be cleared on unmount.
@@ -61,12 +63,12 @@ import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
 import type { ImportableActivity } from "../lib/api";
-import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from "../lib/types";
+import type { Activity, Course, Lesson, ModuleDetail, Topic } from "../lib/types";
 import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics";
 import type { Route } from "./+types/instructor.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 
-import type { ActivityUpdatePayload } from "../lib/activityForm";
+import { AI_MODE_REQUIRED, type ActivityUpdatePayload } from "../lib/activityForm";
 import {
   Badge,
   Button,
@@ -115,15 +117,14 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from "~/components/common/ListSearchInput";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
- * Loads the lesson and its activities (parallel), then walks up to the
- * module and course one step at a time because each ID lives on the
- * previous resource. The breadcrumb and EduAI sync path both depend on
- * having the parent course available.
+ * Loads the lesson and its activities in parallel with the role gate (#1334).
+ * Breadcrumb ancestry is fetched after paint in the component — not awaited
+ * here — so the editor body is not blocked on Core/ordinal work.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response("Invalid lesson id", { status: 400 });
@@ -132,8 +133,9 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   // #1207: page + search live in the URL; `search` is applied server-side.
   const { page, search } = parseListUrlParams(request);
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lesson, activitiesPage] = await Promise.all([
+    requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]),
+    api.lessonById(lessonId),
     api.activitiesForLesson(lessonId, { page, search }),
   ]);
 
@@ -143,36 +145,10 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     pageSize: activitiesPage.pageSize,
   });
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so newly-created lessons
-  // (whose titles carry no number) still follow the decimal system used on the
-  // module card grid.
-  //
-  // #1207: this comes from the server now. It used to be two `findIndex` walks
-  // over the full sibling module and lesson lists — a read that silently
-  // produced "0.0" for anything past the first page once those lists were
-  // paged.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
     page: activitiesPage.page,
     pageSize: activitiesPage.pageSize,
     search,
@@ -186,16 +162,16 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
   const {
-    course,
-    module,
     lesson,
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
-    orderText,
     page,
     pageSize,
     search,
   } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   // #1043/#1162: `total` is state, not a loader constant — refresh, delete, and
@@ -264,6 +240,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [titleDrafts, setTitleDrafts] = useState<Record<number, string>>({});
   const [savingPromptId, setSavingPromptId] = useState<number | null>(null);
   const [promptErrors, setPromptErrors] = useState<Record<number, string>>({});
+  // Keyed by activity id, like promptErrors: the refusal belongs under the AI
+  // study buddy box of the activity whose last mode was being turned off.
+  const [modeErrors, setModeErrors] = useState<Record<number, string>>({});
   const [promptSaved, setPromptSaved] = useState<Record<number, boolean>>({});
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
 
@@ -638,9 +617,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     const newCustom = mode === "custom" ? enabled : activity.enableCustomMode;
 
     if (!newTeach && !newGuide && !newCustom) {
-      alert("At least one AI mode must be enabled");
+      setModeErrors((prev) => ({ ...prev, [activityId]: AI_MODE_REQUIRED }));
       return;
     }
+
+    setModeErrors((prev) => {
+      if (!prev[activityId]) return prev;
+      const { [activityId]: _cleared, ...rest } = prev;
+      return rest;
+    });
 
     // Optimistic UI via useOptimistic
     addActivityOpt((items) =>
@@ -849,7 +834,46 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       : { label: "Lesson" },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
+
+  const skeletonBreadcrumbItems = [
+    { label: "Courses", href: "/instructor" },
+    { label: "…" },
+    { label: "…" },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: "Lesson" },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   return (
     <CourseTopicsProvider value={courseTopics}>
@@ -976,6 +1000,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
+                  const modeError = modeErrors[activity.id];
                   const canReorderActivity =
                     perms.canManageContent && activitiesTotal > 1 && !searching;
                   return (
@@ -1283,6 +1308,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     );
                                   })}
                                 </div>
+                                {modeError && (
+                                  <p role="alert" className="text-[0.75rem] text-destructive">
+                                    {modeError}
+                                  </p>
+                                )}
                                 {showModeSaving && isUpdatingModes && (
                                   <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
                                     <Spinner size="xs" />
@@ -1570,3 +1600,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     </CourseTopicsProvider>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

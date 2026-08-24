@@ -79,6 +79,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
@@ -96,7 +97,7 @@ const OVERSEEN = `**Top summary**
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

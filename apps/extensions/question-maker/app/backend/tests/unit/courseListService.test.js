@@ -523,6 +523,37 @@ describe("listCoursesForUser", () => {
       expect(rows[0].code).toBe("STUDY3");
     });
 
+    it("propagates a status-bearing 401/403 from the cookie-scoped Core list instead of returning an empty catalog (#1569 review)", async () => {
+      // An expired/invalid caller cookie makes the REAL listCoursesFromCore
+      // boundary throw a coreError with `.status` (401/403). Swallowing it would
+      // deny every row and return [], which the route would answer 200 — an auth
+      // failure masquerading as "you have no courses". The service must rethrow
+      // so the route surfaces Not Authorized. This crosses the actual Core call,
+      // unlike a route test that mocks listCoursesForUser itself.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      for (const status of [401, 403]) {
+        mockListCoursesFromCore.mockRejectedValueOnce(
+          Object.assign(new Error("Core request failed"), { status }),
+        );
+        await expect(
+          listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "stale" }),
+        ).rejects.toMatchObject({ status });
+      }
+    });
+
+    it("fails closed (empty, no throw) when the cookie-scoped Core list fails without an auth status (#1114)", async () => {
+      // Core unreachable / 5xx (no 401/403): degrade to an empty visible set
+      // rather than surfacing the failure — roleByCoreId stays empty and every
+      // row is denied. Distinguishes an infra failure from a caller-auth one.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      mockListCoursesFromCore.mockRejectedValue(
+        Object.assign(new Error("Core unavailable"), { status: 503 }),
+      );
+
+      const rows = await listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "s" });
+      expect(rows).toHaveLength(0);
+    });
+
     it("excludes a course where the caller has a TA callerEnrollmentRole (below MIN_LIST_RANK)", async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
       mockListCoursesFromCore.mockResolvedValue([{ id: "core-1", callerEnrollmentRole: "TA" }]);

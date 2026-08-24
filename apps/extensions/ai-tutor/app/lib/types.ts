@@ -62,6 +62,8 @@ export type ActivityFeedbackRow = {
 
 export type StudentMetricRow = {
   userId: string;
+  /** Resolved from Core; null when Core is unreachable or the user is gone. */
+  studentName?: string | null;
   submissionCount: number;
   correctSubmissionCount: number;
   incorrectSubmissionCount: number;
@@ -72,7 +74,8 @@ export type ActivityAnalyticsRow = {
   activityId: number;
   averageRating?: number | null;
   feedbackCount?: number;
-  difficultyScore?: string | null;
+  difficultyScore?: number | null;
+  difficultyLabel?: string | null;
   activity?: {
     id: number;
     title?: string | null;
@@ -291,8 +294,13 @@ export type PromptTemplate = {
   topP?: number | null;
 };
 
+/**
+ * `Topic.id` is a cuid string in the AI-Tutor database (`Topic.id String @id
+ * @default(cuid())`), and `mapTopic` sends it through unchanged. `number` is
+ * kept in the union only because older call sites compare and stringify it.
+ */
 export type Topic = {
-  id: number;
+  id: string | number;
   name: string;
 };
 

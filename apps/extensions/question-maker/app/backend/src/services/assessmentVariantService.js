@@ -203,7 +203,9 @@ async function loadCandidatesByMetadataId({ questionMetadataIds, courseId, inclu
   const rows = await tx.variants.findMany({
     where: {
       questionMetadataId: { in: ids },
-      ...(includeDrafts ? {} : { isDraft: false }),
+      // `undefined` is Prisma's "no constraint", so including drafts simply
+      // drops the filter instead of hiding it behind an empty spread.
+      isDraft: includeDrafts ? undefined : false,
       questionMetadata: { courseId },
     },
     select: { id: true, questionMetadataId: true },
@@ -940,7 +942,7 @@ Return exactly one question in the required JSON format.`;
             });
           }
           remainingProviderCalls -= 1;
-          return eduaiService.generateQuestions({
+          const generateParams = {
             prompt: promptText,
             courseCode,
             courseId: coreCourseId,
@@ -950,12 +952,15 @@ Return exactly one question in the required JSON format.`;
             difficultyDistribution,
             reasoningDistribution,
             cookie,
-            ...(expectedMcqChoiceCount != null
-              ? { mcqRequiredChoiceCount: expectedMcqChoiceCount }
-              : {}),
             signal,
             deadlineAt,
-          });
+          };
+          // A bank without a fixed choice count leaves the key out entirely so
+          // the generator falls back to its own default.
+          if (expectedMcqChoiceCount != null) {
+            generateParams.mcqRequiredChoiceCount = expectedMcqChoiceCount;
+          }
+          return eduaiService.generateQuestions(generateParams);
         };
 
         let generated = await callGenerate(baseVariantPrompt);

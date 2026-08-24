@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
 const mockActivitiesForLesson = vi.fn();
+const mockLessonBreadcrumb = vi.fn();
 const mockSetSearchParams = vi.fn();
 
 vi.mock("~/lib/api", () => ({
@@ -18,6 +19,7 @@ vi.mock("~/lib/api", () => ({
     courseById: vi.fn(),
     modulesForCourse: vi.fn(),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
+    lessonBreadcrumb: (...args: unknown[]) => mockLessonBreadcrumb(...args),
     submitAnswer: vi.fn(),
     mySubmissions: vi.fn().mockResolvedValue([]),
   },
@@ -70,7 +72,7 @@ describe("student.course — paged module grid (#1207)", () => {
               pageSize: 25,
               ...overrides,
             },
-          } as unknown as React.ComponentProps<typeof StudentCourseModules>)}
+          } as React.ComponentProps<typeof StudentCourseModules>)}
         />
       </MemoryRouter>,
     );
@@ -150,6 +152,13 @@ describe("student.lesson — paged activity walk (#1207)", () => {
       page: 2,
       pageSize: 50,
     });
+    mockLessonBreadcrumb.mockReset();
+    mockLessonBreadcrumb.mockResolvedValue({
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      course,
+      moduleOrdinal: 3,
+      lessonOrdinal: 2,
+    });
   });
 
   it("counts the whole lesson, not the loaded slice", () => {
@@ -176,9 +185,12 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
   });
 
-  it("shows the server-derived order text", () => {
+  it("shows the server-derived order text from the deferred breadcrumb", async () => {
     wrap();
-    expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(mockLessonBreadcrumb).toHaveBeenCalledWith(3);
+      expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
+    });
   });
 
   it("drops an activity page that resolves after the student changed lessons", async () => {
@@ -205,7 +217,7 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     });
 
     const props = (loaderData: Record<string, unknown>) =>
-      ({ loaderData }) as unknown as React.ComponentProps<typeof StudentLessonPlayer>;
+      ({ loaderData }) as React.ComponentProps<typeof StudentLessonPlayer>;
 
     const oldLesson = {
       course,

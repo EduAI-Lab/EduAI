@@ -19,7 +19,7 @@ type LookupResult =
   | { address: string | { address: string; family: number }[]; family?: number };
 
 function invokeLookup(hostname: string, options: { all?: boolean }): Promise<LookupResult> {
-  const lookup = createPinnedLookup() as unknown as (
+  const lookup = createPinnedLookup() as (
     hostname: string,
     options: { all?: boolean },
     callback: (

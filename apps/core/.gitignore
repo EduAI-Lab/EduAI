@@ -24,6 +24,15 @@ ecosystem.config.cjs
 .stryker-tmp/
 /reports/
 
+# Load test run output (#919) — most runs are point-in-time and not source,
+# but FINDINGS.md and the two baseline run summaries are kept as evidence.
+/loadtest/results/*
+!/loadtest/results/.gitkeep
+!/loadtest/results/FINDINGS.md
+!/loadtest/results/run-a-default-admission.json
+!/loadtest/results/run-b-connection-pool.json
+!/loadtest/results/browser-5vu.summary.json
+
 # Playwright visual regression (test:visual) — fixtures are regenerated from
 # component source by global-setup.ts before each run.
 /app/tests/visual/fixtures/

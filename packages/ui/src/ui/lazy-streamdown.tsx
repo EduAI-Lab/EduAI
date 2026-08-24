@@ -9,7 +9,13 @@ type StreamdownProps = ComponentProps<typeof import("streamdown").Streamdown>;
  * itself: `katex` is deliberately not a dependency here (streamdown and friends
  * are peers), and each app owns which of its chunks the sheet lands in.
  */
-export type MarkdownStyleLoader = () => Promise<unknown>;
+/**
+ * The module namespace a bundler produces for `import("….css")`. It is awaited
+ * purely for the side effect of injecting the sheet; none of its exports are read.
+ */
+export type StyleModule = { default: unknown };
+
+export type MarkdownStyleLoader = () => Promise<StyleModule>;
 
 function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
   return Promise.all([

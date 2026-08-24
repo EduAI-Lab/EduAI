@@ -173,25 +173,23 @@ export function useOCRHistory(): UseOCRHistoryReturn {
               ...previous,
               jobs: previous.jobs.map((job) => {
                 if (job.id !== id) return job;
-                return {
-                  ...job,
-                  status,
-                  ...(status === "success" || status === "error" || status === "discarded"
-                    ? { completedAt: new Date().toISOString() }
-                    : {}),
-                  ...(extras?.error ? { error: extras.error } : {}),
-                  ...(extras?.questionsCount !== undefined
-                    ? { questionsCount: extras.questionsCount }
-                    : {}),
-                  ...(extras?.storedQuestions
-                    ? {
-                        storedQuestions: extras.storedQuestions.slice(
-                          0,
-                          MAX_STORED_QUESTIONS_PER_JOB,
-                        ),
-                      }
-                    : {}),
-                };
+                const next = { ...job, status };
+                // A terminal status stamps the completion time; a running job
+                // keeps whatever it already had.
+                if (status === "success" || status === "error" || status === "discarded") {
+                  next.completedAt = new Date().toISOString();
+                }
+                if (extras?.error) next.error = extras.error;
+                if (extras?.questionsCount !== undefined) {
+                  next.questionsCount = extras.questionsCount;
+                }
+                if (extras?.storedQuestions) {
+                  next.storedQuestions = extras.storedQuestions.slice(
+                    0,
+                    MAX_STORED_QUESTIONS_PER_JOB,
+                  );
+                }
+                return next;
               }),
             }
           : previous,

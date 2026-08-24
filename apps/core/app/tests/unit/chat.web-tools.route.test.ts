@@ -60,11 +60,12 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

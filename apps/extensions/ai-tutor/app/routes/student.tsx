@@ -31,6 +31,7 @@ import {
   useCourseListFilters,
 } from "~/lib/course-list-filters";
 import { loadCourseFacets } from "~/lib/course-facets";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   await requireClientUser(["STUDENT", "TA"]);
@@ -256,3 +257,9 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

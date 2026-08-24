@@ -68,7 +68,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!access) return redirect("/courses?access=denied");
 
   // Students cannot view unpublished courses by direct URL
-  if (access === "student" && !course.isPublished) return redirect("/courses");
+  if (access === "student" && !course.isPublished) return redirect("/courses?access=unpublished");
 
   // Reassigning the instructor is ADMIN/UNIT_ADMIN only. Load the instructor
   // list only when usable.
@@ -94,7 +94,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
-    }) as unknown as CourseDetail & Record<string, unknown>,
+    }) as CourseDetail & Record<string, unknown>,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
     user,

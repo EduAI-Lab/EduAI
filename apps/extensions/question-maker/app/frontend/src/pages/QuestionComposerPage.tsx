@@ -40,6 +40,7 @@ import { courseService } from "@/services/courseService";
 import eduaiService, {
   type EduAIModelOption,
   type EduAICourseOption,
+  type EduAIQuestionGenerationRequest,
 } from "@/services/eduaiService";
 import { apiKeyStorage } from "@/services/apiKeyStorage";
 import { normalizeCourseCode } from "@/utils/courseDisplay";
@@ -511,19 +512,21 @@ export function QuestionComposerPage() {
           : undefined;
 
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
-      const response = await eduaiService.generateQuestions({
+      const generateParams: EduAIQuestionGenerationRequest = {
         prompt: promptWithTopics,
         courseId: validCourseId,
-        ...(code ? { courseCode: code } : {}),
+        courseCode: code || undefined,
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
-        ...(variantMcqRequiredCount != null
-          ? { mcqRequiredChoiceCount: variantMcqRequiredCount }
-          : {}),
-      });
+      };
+      // Left out entirely when unknown so the generator picks its own default.
+      if (variantMcqRequiredCount != null) {
+        generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
+      }
+      const response = await eduaiService.generateQuestions(generateParams);
 
       const generated = response?.data?.questions?.[0];
       if (!generated)

@@ -94,7 +94,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const audience = access.level === "student" ? "student" : "staff";
-  let responseCourse: Record<string, unknown> = course as unknown as Record<string, unknown>;
+  let responseCourse: Record<string, unknown> = course as Record<string, unknown>;
   if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
     const instructor = await prisma.user.findUnique({
       where: { id: course.instructorId },

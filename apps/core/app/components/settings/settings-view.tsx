@@ -114,7 +114,8 @@ export function SettingsView({
       const { data, error } = await authClient.apiKey.create({
         name: newKeyName || undefined,
         prefix: FIXED_PREFIX,
-        ...(expiresIn ? { expiresIn } : {}),
+        // "Never expires" sends no lifetime at all.
+        expiresIn: expiresIn || undefined,
       });
       if (error) throw new Error(error.message);
       if (data?.key) {

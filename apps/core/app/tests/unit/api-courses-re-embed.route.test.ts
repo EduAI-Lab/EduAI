@@ -40,12 +40,11 @@ function makeStartArgs(
   const body = options.idempotencyKey
     ? JSON.stringify({ idempotencyKey: options.idempotencyKey })
     : undefined;
+  // The poll route is a GET, which carries no body at all.
+  const init: RequestInit = { method, headers };
+  if (method !== "GET" && body !== undefined) init.body = body;
   return {
-    request: new Request("http://localhost/api/courses/course-1/re-embed", {
-      method,
-      headers,
-      ...(method === "GET" ? {} : { body }),
-    }),
+    request: new Request("http://localhost/api/courses/course-1/re-embed", init),
     params: { courseId: "course-1" },
     context: {} as never,
   } as never;
