@@ -2,6 +2,10 @@
 
 ## [Week 17 — August 17–23, 2026]
 
+### Added
+
+- [infra] feat: Add a CDK app at `infra/aws-bedrock-guardrails/` with a least-privilege Bedrock IAM policy (`InvokeModel` + stream on Llama 3 70B only), CloudWatch tripwires on `AWS/Bedrock` `Invocations` / `OutputTokenCount`, and an SNS topic exported as `EduaiBedrockGuardrailSnsTopicArn` for the #1620 circuit breaker. No `apps/core` change and no Lambda in this stack. `npm run verify` asserts the synthesized template. Refs #1619. (@Ayyhab, 2026-08-24)
+
 ### Tests
 
 - [question-maker] test: Lock the Canvas bank-mapping CUID schema invariant with real PostgreSQL regression coverage. #1108 was authored against the obsolete Sequelize models (`CanvasBankMapping.userId` / `CanvasBankQuestionMapping.userId` as `DataTypes.INTEGER`, referencing a CUID `User.id`); that implementation was since replaced by Prisma (#1274), where both `userId` fields are already `String` → PostgreSQL `TEXT` foreign keys to `users(id)` (migration `20260729130000_add_canvas_bank_mappings`), so the original defect is already gone on `development`. This PR therefore does not recreate the Sequelize models or add a speculative migration — it adds `canvasBankMappings.integration.test.js`, which asserts against a real migrated database that both `user_id` columns are `TEXT` FKs to `users(id)`, that valid string/CUID ids persist exactly, that nonexistent CUIDs fail FK validation and null/numeric/empty-string ids are rejected, and that the one-bank→one-course and per-course question-mapping isolation rules hold. The static-analysis acceptance criterion is satisfied by Prisma schema validation (FK type compatibility is enforced at `prisma generate`/`validate`, run in CI via `db:generate`) combined with the repository `typecheck` gate inherited from development (#1275/#1276); the PR does not add a duplicate tsconfig/typecheck/CI job, and the backend `tsc --noEmit` runs with `checkJs: false` (flipping it on is tracked in #1278). Closes #1108. (@gwan-kib, 2026-08-17) — [#1536](https://github.com/EduAI-Lab/EduAI/pull/1536)
