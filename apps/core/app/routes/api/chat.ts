@@ -2786,6 +2786,10 @@ ${buildEmptyCourseRagBlock()}`;
         await persistOverseenAssistantMessages(finalText);
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: finalText,
@@ -2805,10 +2809,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: {
-              ...jsonResponseHeaders(),
-              ...(ragLatencyMs !== null ? { "X-RAG-Latency-Ms": String(ragLatencyMs) } : {}),
-            },
+            headers: responseHeaders,
           },
         );
       } catch (error) {
@@ -2942,6 +2943,10 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: text,
@@ -2961,10 +2966,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: {
-              ...jsonResponseHeaders(),
-              ...(ragLatencyMs !== null ? { "X-RAG-Latency-Ms": String(ragLatencyMs) } : {}),
-            },
+            headers: responseHeaders,
           },
         );
       } catch (error) {
