@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import type { AdminBugReportRow } from "./types";
 import {
   CONSOLE_LEVELS,
-  CONSOLE_LEVEL_BADGE_VARIANT,
+  consoleLevelBadgeVariant,
   CONSOLE_LEVEL_OPTIONS,
   NETWORK_TABS,
   NETWORK_TAB_OPTIONS,
@@ -82,11 +82,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                 className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge
-                    variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? "muted"}
-                    size="sm"
-                    className="uppercase"
-                  >
+                  <Badge variant={consoleLevelBadgeVariant(level)} size="sm" className="uppercase">
                     {entry.level ?? "log"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{entry.timestamp ?? "-"}</span>

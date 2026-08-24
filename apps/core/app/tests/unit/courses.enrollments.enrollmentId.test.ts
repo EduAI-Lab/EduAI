@@ -40,7 +40,7 @@ import {
   deactivateEnrollment,
 } from "~/lib/courses/enrollments.server";
 import { getPolicy, denyByPolicy, POLICY_FLAGS } from "~/lib/policy.server";
-import type { CourseGateFixture } from "../helpers/route-fixtures";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true };
 
@@ -53,12 +53,12 @@ function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   });
 }
 
-function makeArgs(method: "PATCH" | "DELETE", body?: unknown) {
+function makeArgs(method: "PATCH" | "DELETE", body?: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/courses/c1/enrollments/e1", {
       method,
       headers: { "Content-Type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
     params: { id: "c1", enrollmentId: "e1" },
     context: {} as never,

@@ -45,20 +45,24 @@ export function guardOracle(row: AuthPrecedenceRow): GuardVerdict {
   return { outcome: "block", status: 403 };
 }
 
-/** GUARD site: does `enforceAdminIfApiKey` return a response, and if not, a session? */
-export function expectedGuardResult(row: AuthPrecedenceRow): {
+/** What the GUARD site produces: a response, or a session, never both. */
+export type ExpectedGuardResult = {
   hasResponse: boolean;
-  status?: number;
+  /** Spelled on every arm: only a blocked row carries a status. */
+  status: number | undefined;
   hasSession: boolean;
-} {
+};
+
+/** GUARD site: does `enforceAdminIfApiKey` return a response, and if not, a session? */
+export function expectedGuardResult(row: AuthPrecedenceRow): ExpectedGuardResult {
   const verdict = guardOracle(row);
   switch (verdict.outcome) {
     case "admit":
-      return { hasResponse: false, hasSession: true };
+      return { hasResponse: false, status: undefined, hasSession: true };
     case "block":
       return { hasResponse: true, status: verdict.status, hasSession: false };
     case "defer":
-      return { hasResponse: false, hasSession: false };
+      return { hasResponse: false, status: undefined, hasSession: false };
   }
 }
 

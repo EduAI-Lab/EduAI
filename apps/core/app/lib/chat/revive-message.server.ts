@@ -5,6 +5,8 @@ import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
+import { jsonObjectSchema, parseJsonText } from "~/lib/json-value";
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 
 /** Per-message metadata Core persists alongside a stored assistant turn. */
 export type StoredChatMessageMetadata = {
@@ -24,7 +26,17 @@ export type StoredChatMessage = Message & {
   metadata?: StoredChatMessageMetadata;
 };
 
-const isNonEmptyString = (value: unknown): value is string =>
+/** A JSON object, as opposed to a scalar or an array. */
+const isJsonObject = (value: JsonValue | undefined): value is JsonObject =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Decodes a JSON object from text, or `null` if the text is not one. */
+function parseJsonObject(text: string): JsonObject | null {
+  const decoded = jsonObjectSchema.safeParse(parseJsonText(text));
+  return decoded.success ? decoded.data : null;
+}
+
+const isNonEmptyString = (value: JsonValue | undefined): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
 /**
@@ -41,7 +53,7 @@ const isNonEmptyString = (value: unknown): value is string =>
  * restore and the read-only transcript always render the real markdown text
  * instead of "[object Object]", a blank bubble, or a raw JSON blob.
  */
-export function messageToText(value: unknown): string {
+export function messageToText(value: JsonValue | undefined): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") {
     // Recover a message object that was JSON.stringified into a text field.
@@ -50,30 +62,24 @@ export function messageToText(value: unknown): string {
       trimmed.startsWith("{") &&
       (trimmed.includes('"role"') || trimmed.includes('"parts"') || trimmed.includes('"content"'))
     ) {
-      try {
-        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-        if (parsed && typeof parsed === "object") {
-          return messageToText(parsed.content ?? parsed.parts ?? "");
-        }
-      } catch {
-        // Not actually JSON — fall through and treat as plain text.
-      }
+      const parsed = parseJsonObject(trimmed);
+      if (parsed) return messageToText(parsed.content ?? parsed.parts ?? "");
+      // Not actually a JSON object — fall through and treat as plain text.
     }
     return value;
   }
   if (Array.isArray(value)) {
     return value
-      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .filter(isJsonObject)
       .filter((p) => p.type === "text" || typeof p.text === "string")
       .map((p) => messageToText(p.text))
       .filter((t) => t.length > 0)
       .join("\n");
   }
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    if (typeof obj.text === "string") return messageToText(obj.text);
-    if (obj.content !== undefined && obj.content !== null) return messageToText(obj.content);
-    if (obj.parts !== undefined && obj.parts !== null) return messageToText(obj.parts);
+  if (isJsonObject(value)) {
+    if (typeof value.text === "string") return messageToText(value.text);
+    if (value.content !== undefined && value.content !== null) return messageToText(value.content);
+    if (value.parts !== undefined && value.parts !== null) return messageToText(value.parts);
   }
   return "";
 }
@@ -93,38 +99,41 @@ export function reviveStoredMessage(record: {
   role: string;
   content: Prisma.JsonValue;
 }): StoredChatMessage {
-  const parsed: Record<string, unknown> =
-    record.content && typeof record.content === "object" && !Array.isArray(record.content)
-      ? (record.content as Record<string, unknown>)
-      : {};
+  // SAFETY: the DB column is `Json`, so Prisma's `JsonValue` and ours describe
+  // the same set of values. Named once here so every reader below works off the
+  // named shape rather than re-asserting the row.
+  //
+  // Deliberately not run through `jsonValueSchema`: this is the transcript-load
+  // hot path, and a recursive union decode would walk (and deep-clone) every
+  // node of every message to prove something the column type already guarantees.
+  const content = record.content as JsonValue;
+  const parsed: JsonObject = isJsonObject(content) ? content : {};
 
   // Prefer an explicit non-empty string `content`; otherwise pull text out of
   // parts / array content / the whole stored value (handles every legacy shape).
   const source = isNonEmptyString(parsed.content)
     ? parsed.content
-    : (parsed.parts ?? parsed.content ?? record.content);
+    : (parsed.parts ?? parsed.content ?? content);
   const text = messageToText(source);
   const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
   const resolvedModelId = role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
   const wasAutoRouted = role === "assistant" && wasAutoRoutedFromMessage(parsed);
   const courseScopeRedirect = role === "assistant" ? courseScopeRedirectFromMessage(parsed) : false;
+  // `hitLongOutputCap` is owned by this module rather than chat-message-metadata:
+  // it is only ever read back out of a stored row, never written to a live turn.
   const hitLongOutputCap =
     role === "assistant" &&
-    parsed.metadata !== null &&
-    typeof parsed.metadata === "object" &&
-    !Array.isArray(parsed.metadata) &&
-    (parsed.metadata as Record<string, unknown>).hitLongOutputCap === true;
-  const metadata = {
-    ...(resolvedModelId
-      ? {
-          resolvedModelId,
-          wasAutoRouted,
-        }
-      : {}),
-    ...(hitLongOutputCap ? { hitLongOutputCap: true } : {}),
-    ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
-  };
-  return {
+    isJsonObject(parsed.metadata) &&
+    parsed.metadata.hitLongOutputCap === true;
+  const metadata: StoredChatMessageMetadata = {};
+  if (resolvedModelId) {
+    metadata.resolvedModelId = resolvedModelId;
+    metadata.wasAutoRouted = wasAutoRouted;
+  }
+  if (hitLongOutputCap) metadata.hitLongOutputCap = true;
+  if (courseScopeRedirect) metadata.courseScopeRedirect = true;
+
+  const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
     // SAFETY: `role` is whatever the row stored, and rows predate the current
     // role union. The value is only ever compared or rendered, never used to
@@ -133,6 +142,9 @@ export function reviveStoredMessage(record: {
     role: role as StoredChatMessage["role"],
     content: text,
     parts: [{ type: "text", text }],
-    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
+  // A turn with nothing worth recording carries no `metadata` key at all, so a
+  // restored transcript matches the shape a fresh turn produces.
+  if (Object.keys(metadata).length > 0) revived.metadata = metadata;
+  return revived;
 }

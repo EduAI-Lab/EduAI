@@ -12,7 +12,7 @@ import { invitableRolesFor } from "~/lib/invitations/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
-import type { JsonResponseBody } from "../helpers/route-fixtures";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn(), verifyApiKey: vi.fn() } },
@@ -54,7 +54,7 @@ function makeRequest(authorization?: string, apiKey?: string): Request {
   return new Request("http://localhost/api/test", { method: "GET", headers });
 }
 
-async function parseBody(response: Response): Promise<JsonResponseBody> {
+async function parseBody(response: Response): Promise<ParsedJsonBody> {
   return response.json();
 }
 

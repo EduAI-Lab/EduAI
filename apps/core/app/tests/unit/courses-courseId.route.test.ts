@@ -1,6 +1,7 @@
 // @vitest-environment node
 // #1213 — courses.$courseId.tsx loader: found/not-found/unauthorized cases
 // explicitly called out in the issue's done-when criteria.
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -124,7 +125,7 @@ describe("courses.$courseId loader", () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("student");
 
     const result = (await loader(makeArgs())) as {
-      course: Record<string, unknown>;
+      course: JsonObject;
       access: string;
       instructors: unknown[];
     };
@@ -147,7 +148,7 @@ describe("courses.$courseId loader", () => {
     ] as never);
 
     const result = (await loader(makeArgs())) as {
-      course: Record<string, unknown>;
+      course: JsonObject;
       instructors: unknown[];
     };
     expect(result.course).toHaveProperty("aiInstructions", null);

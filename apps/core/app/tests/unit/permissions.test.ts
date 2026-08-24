@@ -318,7 +318,9 @@ describe("canViewCourseChats", () => {
     // `never` entry (not a real PolicyKey — typed policies never carry one)
     // so a broken short-circuit would fall through to `policies[gate] ?? false`
     // and incorrectly return true.
-    const policiesWithNeverSet = { never: true } as Partial<Record<PolicyKey, boolean>>;
+    const policiesWithNeverSet: { [K in PolicyKey]?: boolean } = {};
+    // `never` is deliberately not a PolicyKey: this is the unknown-key case.
+    Reflect.set(policiesWithNeverSet, "never", true);
     expect(canViewCourseChats("ta", policiesWithNeverSet)).toBe(false);
   });
 

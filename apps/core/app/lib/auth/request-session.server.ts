@@ -71,14 +71,14 @@ export function getRequestSession(request: Request): Promise<Session | null> {
   return pending;
 }
 
+/** Live `getSession` resolutions vs. memo hits, since the last reset. */
+export type RequestSessionMetrics = { resolutions: number; memoHits: number };
+
 /**
  * How many live `getSession` resolutions vs. memo hits have happened.
  * Reset between measurements with `resetRequestSessionMetrics()`.
  */
-export function getRequestSessionMetrics(): {
-  resolutions: number;
-  memoHits: number;
-} {
+export function getRequestSessionMetrics(): RequestSessionMetrics {
   return { resolutions: resolutionCount, memoHits: memoHitCount };
 }
 

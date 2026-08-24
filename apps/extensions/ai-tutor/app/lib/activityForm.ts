@@ -108,6 +108,15 @@ export function parseHintsInput(value: string) {
 }
 
 /**
+ * Either a submittable payload or the reason the form is not submittable —
+ * one arm or the other, never both. Spelling the two arms out lets a caller
+ * that has checked `error` read `payload` without re-checking it.
+ */
+export type ActivityUpdateResult =
+  | { payload: ActivityUpdatePayload; error?: undefined }
+  | { payload?: undefined; error: string };
+
+/**
  * Compacts an MCQ's choice list and remaps its answer key, or explains why the
  * question is not submittable.
  *
@@ -156,10 +165,7 @@ export function buildMcqSubmission(
  * MCQ choice compaction and answer remapping are delegated to
  * `buildMcqSubmission`, which the add-activity form shares.
  */
-export function buildUpdatePayload(values: ActivityFormValues): {
-  payload?: ActivityUpdatePayload;
-  error?: string;
-} {
+export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateResult {
   const question = values.question.trim();
   if (!question) {
     return { error: "Question is required." };

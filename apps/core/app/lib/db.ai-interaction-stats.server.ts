@@ -65,10 +65,12 @@ function buildDateWhere(params: InteractionStatsParams) {
   if (!params.dateFrom && !params.dateTo) {
     return {};
   }
+  // An `undefined` bound is Prisma's "no constraint", so an open-ended range
+  // states both ends rather than omitting one.
   return {
     createdAt: {
-      ...(params.dateFrom ? { gte: params.dateFrom } : {}),
-      ...(params.dateTo ? { lte: params.dateTo } : {}),
+      gte: params.dateFrom ?? undefined,
+      lte: params.dateTo ?? undefined,
     },
   };
 }

@@ -121,7 +121,7 @@ const activity = (id: number) => ({
   customPromptTitle: null,
 });
 
-function wrap(overrides: Record<string, unknown> = {}) {
+function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
   const props = {
     loaderData: {
       course,

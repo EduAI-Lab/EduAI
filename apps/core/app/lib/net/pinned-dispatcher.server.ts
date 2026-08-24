@@ -38,8 +38,8 @@ export function createPinnedLookup(): LookupFunction {
         if (options?.all) callback(null, [{ address, family }]);
         else callback(null, address, family);
       },
-      (error: unknown) => {
-        callback(error instanceof Error ? error : new Error("Host resolution failed"), "");
+      (cause: unknown) => {
+        callback(cause instanceof Error ? cause : new Error("Host resolution failed"), "");
       },
     );
   };

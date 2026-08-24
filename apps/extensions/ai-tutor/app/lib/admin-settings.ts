@@ -1,4 +1,7 @@
+import { z } from "zod";
+
 import api from "~/lib/api";
+import { adminAiModelPolicySchema, type WireAdminAiModelPolicy } from "~/lib/api-schemas";
 import type { EduAiApiKeyStatus } from "~/lib/types";
 
 export type CostTier = "LOW" | "MEDIUM" | "HIGH";
@@ -21,24 +24,11 @@ export type AdminAiModelOption = {
 };
 
 /**
- * The AI-policy payload as Core sends it, before `normalizePolicy` validates
- * each field and applies fallbacks.
- *
- * Every field is optional and `unknown` on purpose: this is an unvalidated wire
- * payload, and `normalizePolicy` is the only thing that turns it into an
- * `AdminAiModelPolicy`. Naming it separately keeps that step from being skipped
- * by a value that merely claims to be a policy already.
+ * The AI-policy payload as Core sends it, before `normalizePolicy` applies the
+ * fallbacks. `api` decodes it at the wire boundary; this module only has to
+ * decide what an absent or out-of-range field should fall back to.
  */
-export type RawAdminAiModelPolicy = {
-  allowedTutorModelIds?: unknown;
-  defaultTutorModelId?: unknown;
-  defaultSupervisorModelId?: unknown;
-  dualLoopEnabled?: unknown;
-  maxSupervisorIterations?: unknown;
-};
-
-/** One model entry as Core sends it, before `normalizeModelOption`. */
-export type RawAdminAiModelOption = Record<string, unknown>;
+export type RawAdminAiModelPolicy = WireAdminAiModelPolicy;
 
 export type AdminSettingsLoaderData = {
   status: EduAiApiKeyStatus;
@@ -49,12 +39,6 @@ export type AdminSettingsLoaderData = {
   aiPolicyError: string | null;
 };
 
-type AdminSettingsApi = {
-  getAdminAiModelPolicy?: () => Promise<RawAdminAiModelPolicy>;
-  setAdminAiModelPolicy?: (payload: AdminAiModelPolicy) => Promise<RawAdminAiModelPolicy>;
-  listAiModels?: () => Promise<RawAdminAiModelOption[]>;
-};
-
 export const DEFAULT_POLICY: AdminAiModelPolicy = {
   allowedTutorModelIds: [],
   defaultTutorModelId: null,
@@ -63,20 +47,14 @@ export const DEFAULT_POLICY: AdminAiModelPolicy = {
   maxSupervisorIterations: 3,
 };
 
-export function getAdminSettingsApi(): AdminSettingsApi {
-  return api as typeof api & AdminSettingsApi;
-}
+const MIN_SUPERVISOR_ITERATIONS = 1;
+const MAX_SUPERVISOR_ITERATIONS = 5;
 
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
-  const settingsApi = getAdminSettingsApi();
-  const aiPolicyAvailable =
-    typeof settingsApi.getAdminAiModelPolicy === "function" &&
-    typeof settingsApi.setAdminAiModelPolicy === "function";
-
   const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
     api.getEduAiApiKeyStatus(),
-    loadAdminAiModels(settingsApi),
-    loadAdminAiPolicy(settingsApi),
+    loadAdminAiModels(),
+    loadAdminAiPolicy(),
   ]);
 
   return {
@@ -84,58 +62,45 @@ export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> 
     aiModels: aiModelsResult.models,
     aiPolicy: aiPolicyResult.policy,
     aiPolicyError: aiPolicyResult.error,
-    aiPolicyAvailable,
+    aiPolicyAvailable: true,
   };
 }
 
-export function normalizePolicy(raw: unknown, models: AdminAiModelOption[]): AdminAiModelPolicy {
+export function normalizePolicy(
+  raw: RawAdminAiModelPolicy | null,
+  models: AdminAiModelOption[],
+): AdminAiModelPolicy {
+  const policy = raw ?? adminAiModelPolicySchema.parse({});
   const fallbackTutor = models[0]?.modelId ?? null;
-  const allowedTutorModelIds = Array.isArray(
-    (raw as { allowedTutorModelIds?: unknown })?.allowedTutorModelIds,
-  )
-    ? (raw as { allowedTutorModelIds: unknown[] }).allowedTutorModelIds.filter(
-        (value): value is string => typeof value === "string",
-      )
-    : fallbackTutor
-      ? [fallbackTutor]
-      : [];
 
+  const allowedTutorModelIds =
+    policy.allowedTutorModelIds ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+
+  const requestedTutor = policy.defaultTutorModelId ?? allowedTutorModelIds[0] ?? null;
   const defaultTutorModelId =
-    typeof (raw as { defaultTutorModelId?: unknown })?.defaultTutorModelId === "string"
-      ? (raw as { defaultTutorModelId: string }).defaultTutorModelId
+    requestedTutor !== null && allowedTutorModelIds.includes(requestedTutor)
+      ? requestedTutor
       : (allowedTutorModelIds[0] ?? null);
 
   return {
     allowedTutorModelIds,
-    defaultTutorModelId:
-      defaultTutorModelId && allowedTutorModelIds.includes(defaultTutorModelId)
-        ? defaultTutorModelId
-        : (allowedTutorModelIds[0] ?? null),
-    defaultSupervisorModelId:
-      typeof (raw as { defaultSupervisorModelId?: unknown })?.defaultSupervisorModelId === "string"
-        ? (raw as { defaultSupervisorModelId: string }).defaultSupervisorModelId
-        : (models[0]?.modelId ?? null),
-    dualLoopEnabled:
-      typeof (raw as { dualLoopEnabled?: unknown })?.dualLoopEnabled === "boolean"
-        ? (raw as { dualLoopEnabled: boolean }).dualLoopEnabled
-        : true,
+    defaultTutorModelId,
+    defaultSupervisorModelId: policy.defaultSupervisorModelId ?? models[0]?.modelId ?? null,
+    dualLoopEnabled: policy.dualLoopEnabled ?? DEFAULT_POLICY.dualLoopEnabled,
     maxSupervisorIterations:
-      typeof (raw as { maxSupervisorIterations?: unknown })?.maxSupervisorIterations === "number"
-        ? Math.max(
-            1,
-            Math.min(5, (raw as { maxSupervisorIterations: number }).maxSupervisorIterations),
-          )
-        : DEFAULT_POLICY.maxSupervisorIterations,
+      policy.maxSupervisorIterations === undefined
+        ? DEFAULT_POLICY.maxSupervisorIterations
+        : clampSupervisorIterations(policy.maxSupervisorIterations),
   };
 }
 
-async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.getAdminAiModelPolicy !== "function") {
-    return { policy: null, error: null };
-  }
+function clampSupervisorIterations(value: number): number {
+  return Math.max(MIN_SUPERVISOR_ITERATIONS, Math.min(MAX_SUPERVISOR_ITERATIONS, value));
+}
 
+async function loadAdminAiPolicy() {
   try {
-    const policy = await settingsApi.getAdminAiModelPolicy();
+    const policy = await api.getAdminAiModelPolicy();
     return { policy, error: null };
   } catch {
     return {
@@ -146,58 +111,31 @@ async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
   }
 }
 
-async function loadAdminAiModels(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.listAiModels !== "function") {
-    return { models: [] as AdminAiModelOption[] };
-  }
-
+async function loadAdminAiModels() {
   try {
-    const models = await settingsApi.listAiModels();
-    const normalized = Array.isArray(models)
-      ? models
-          .map((model, index) => normalizeModelOption(model, index))
-          .filter((model): model is AdminAiModelOption => model !== null)
-      : [];
-
-    return { models: normalized };
+    const models = await api.listAiModels();
+    return {
+      models: models.map((model, index) => toModelOption(model, index)),
+    };
   } catch {
-    return { models: [] as AdminAiModelOption[] };
+    const models: AdminAiModelOption[] = [];
+    return { models };
   }
 }
 
-function normalizeModelOption(raw: unknown, index: number): AdminAiModelOption | null {
-  if (!raw || typeof raw !== "object") return null;
-
-  const record = raw as Record<string, unknown>;
-  const modelId =
-    typeof record.modelId === "string"
-      ? record.modelId
-      : typeof record.id === "string"
-        ? record.id
-        : null;
-
-  if (!modelId) {
-    return null;
-  }
-
-  const provider = typeof record.provider === "string" ? record.provider : inferProvider(modelId);
-  const costTier =
-    record.costTier === "LOW" || record.costTier === "MEDIUM" || record.costTier === "HIGH"
-      ? record.costTier
-      : inferCostTier(modelId, String(record.modelName ?? modelId));
-
+/** One model entry as `api.listAiModels` decoded it, given its admin-facing defaults. */
+function toModelOption(
+  model: Awaited<ReturnType<typeof api.listAiModels>>[number],
+  index: number,
+): AdminAiModelOption {
+  const modelName = model.modelName || model.modelId;
   return {
-    id: typeof record.id === "string" ? record.id : `${modelId}-${index}`,
-    modelId,
-    modelName:
-      typeof record.modelName === "string"
-        ? record.modelName
-        : typeof record.name === "string"
-          ? record.name
-          : modelId,
-    provider,
-    summary: typeof record.summary === "string" ? record.summary : null,
-    costTier,
+    id: model.id || `${model.modelId}-${index}`,
+    modelId: model.modelId,
+    modelName,
+    provider: model.provider ?? inferProvider(model.modelId),
+    summary: model.summary ?? null,
+    costTier: model.costTier ?? inferCostTier(model.modelId, modelName),
   };
 }
 
@@ -221,6 +159,8 @@ export function inferCostTier(modelId: string, modelName: string): CostTier {
   return "MEDIUM";
 }
 
+export type ApiKeySourceTag = { label: string };
+
 export function formatCostTier(costTier: CostTier | null | undefined) {
   if (costTier === "LOW") return "Low cost";
   if (costTier === "HIGH") return "Higher cost";
@@ -228,9 +168,9 @@ export function formatCostTier(costTier: CostTier | null | undefined) {
 }
 
 export function clampIterations(value: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_POLICY.maxSupervisorIterations;
-  return Math.max(1, Math.min(5, Math.round(parsed)));
+  const parsed = z.coerce.number().finite().safeParse(value);
+  if (!parsed.success) return DEFAULT_POLICY.maxSupervisorIterations;
+  return clampSupervisorIterations(Math.round(parsed.data));
 }
 
 export function formatApiKeyUpdatedTime(value: string | null) {
@@ -240,7 +180,7 @@ export function formatApiKeyUpdatedTime(value: string | null) {
   return date.toLocaleString();
 }
 
-export function getApiKeySourceTag(status: EduAiApiKeyStatus): { label: string } {
+export function getApiKeySourceTag(status: EduAiApiKeyStatus): ApiKeySourceTag {
   if (!status.configured) return { label: "Not configured" };
   if (status.source === "ADMIN") return { label: "Admin override" };
   if (status.source === "ENV") return { label: "From .env" };

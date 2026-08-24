@@ -1,4 +1,5 @@
 import "./load-core-env";
+import type { JsonObject } from "~/lib/json-value";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -1750,7 +1751,7 @@ async function seedBugReports() {
     status?: "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
     pageUrl?: string;
     userAgent?: string;
-    context?: Record<string, unknown>;
+    context?: JsonObject;
   };
 
   const bugs: SeedBug[] = [

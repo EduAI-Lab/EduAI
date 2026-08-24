@@ -38,13 +38,15 @@ function sortsAfter(row) {
  * @param {{ publishedOnly: boolean }} opts
  */
 export async function computeLessonTreeContext(lesson, module, { publishedOnly }) {
+  // Staff count across every sibling; a student counts only published ones.
+  // `undefined` is Prisma's "no constraint".
   const moduleScope = {
     courseOfferingId: module.courseOfferingId,
-    ...(publishedOnly ? { isPublished: true } : {}),
+    isPublished: publishedOnly ? true : undefined,
   };
   const lessonScope = {
     moduleId: lesson.moduleId,
-    ...(publishedOnly ? { isPublished: true } : {}),
+    isPublished: publishedOnly ? true : undefined,
   };
 
   const [modulesBefore, moduleTotal, lessonsBefore, lessonTotal, prev, next] = await Promise.all([

@@ -10,10 +10,11 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const candidate = { id: "u1", name: "Ada Lovelace", email: "ada@example.com" };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,

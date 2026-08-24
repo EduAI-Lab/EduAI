@@ -362,7 +362,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       await api.createLesson(numericModuleId, {
         title: title.trim(),
-        ...(content.trim() ? { contentMd: content.trim() } : {}),
+        // An empty editor creates the lesson with no body rather than one
+        // holding an empty string.
+        contentMd: content.trim() || undefined,
       });
       setTitle("");
       setContent("");

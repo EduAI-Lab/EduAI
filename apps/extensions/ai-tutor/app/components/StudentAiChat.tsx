@@ -92,7 +92,7 @@ type SingleChatState = {
 
 type ChatState = Record<ChatTab, SingleChatState>;
 
-type TopicOption = { label: string; value: number };
+type TopicOption = { label: string; value: string | number };
 
 type StudentSelectableModel = AiModel & {
   studentSelectable?: boolean;
@@ -123,8 +123,8 @@ type StudentAiChatProps = {
   /** Open the parent's fuller level picker to change it. */
   onAdjustKnowledgeLevel: () => void;
   topicOptions: TopicOption[];
-  currentTopicId: number | null;
-  onSelectTopic: (topicId: number) => void;
+  currentTopicId: string | number | null;
+  onSelectTopic: (topicId: string | number) => void;
   studentAnswer: number | string | null;
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */
@@ -158,12 +158,12 @@ function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   return true;
 }
 
-function getInitialChatState(): ChatState {
+function getInitialChatState() {
   return {
     teach: { messages: [], input: "", loading: false, chatId: null },
     guide: { messages: [], input: "", loading: false, chatId: null },
     custom: { messages: [], input: "", loading: false, chatId: null },
-  };
+  } satisfies ChatState;
 }
 
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(
@@ -415,7 +415,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
-      const topicId = typeof currentTopicId === "number" ? currentTopicId : undefined;
+      const topicId = currentTopicId ?? undefined;
       const normalizedStudentAnswer =
         typeof studentAnswer === "number"
           ? studentAnswer
@@ -747,8 +747,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <Select
               value={currentTopicId === null ? "" : String(currentTopicId)}
               onValueChange={(value) => {
-                const numericValue = Number(value);
-                if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
+                // Options are keyed by `String(topic.value)`, so map the
+                // selected key back to the option's own id rather than
+                // coercing it: topic ids are cuid strings, and `Number()`
+                // turned every real one into `NaN` and dropped the selection.
+                const selected = topicOptions.find((topic) => String(topic.value) === value);
+                if (selected) onSelectTopic(selected.value);
               }}
             >
               <SelectTrigger id="ai-chat-topic" className="w-full">

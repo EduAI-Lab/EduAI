@@ -45,15 +45,18 @@ function uniqueCode(prefix: string): string {
  * what makes activity authoring possible — the add-activity dialog requires a
  * main topic.
  */
+/** Options accepted by {@link seedAtCourse}; every field falls back to a default. */
+export interface SeedAtCourseOptions {
+  name?: string;
+  codePrefix?: string;
+  term?: string;
+  topics?: string[];
+  publish?: boolean;
+}
+
 export async function seedAtCourse(
   playwright: RequestFixture,
-  opts: {
-    name?: string;
-    codePrefix?: string;
-    term?: string;
-    topics?: string[];
-    publish?: boolean;
-  } = {},
+  opts: SeedAtCourseOptions = {},
 ): Promise<SeededCourse> {
   const instructor = await playwright.request.newContext();
   const admin = await playwright.request.newContext();
@@ -274,12 +277,13 @@ export async function seedCourseWithActivity(
   }
 > {
   const topics = opts.topics ?? ["Recursion", "Complexity"];
-  const seeded = await seedAtCourse(playwright, {
+  const seedOpts: SeedAtCourseOptions = {
     name: opts.name ?? "Activity Spine Course",
     codePrefix: opts.codePrefix ?? "SPIN",
     topics,
-    ...(opts.publish ? { publish: true } : {}),
-  });
+  };
+  if (opts.publish) seedOpts.publish = true;
+  const seeded = await seedAtCourse(playwright, seedOpts);
 
   const module = await seedModule(seeded.admin, seeded.atCourseId, { title: "Spine module" });
   const lesson = await seedLesson(seeded.admin, module.id, { title: "Spine lesson" });

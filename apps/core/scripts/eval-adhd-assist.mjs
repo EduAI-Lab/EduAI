@@ -348,8 +348,9 @@ async function postChat({
     streaming: false,
     adhdAssist,
     chatId,
-    ...(courseId ? { courseId } : {}),
-    ...(courseCode ? { courseCode } : {}),
+    // JSON.stringify drops undefined, so an uncoursed run posts neither key.
+    courseId: courseId || undefined,
+    courseCode: courseCode || undefined,
   };
 
   const res = await fetch(`${baseUrl}/api/chat`, {

@@ -37,11 +37,11 @@ function parseCanvasIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** A course's run: it always has a start, and may have no declared end. */
+export type CanvasCourseDates = { startDate: Date; endDate: Date | null };
+
 /** Course dates from course fields first, then enrollment term start date. */
-export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
-  startDate: Date;
-  endDate: Date | null;
-} {
+export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): CanvasCourseDates {
   const term = canvasCourse.term;
   const termEndDate = parseCanvasIsoDate(term?.end_at);
   const startDate =

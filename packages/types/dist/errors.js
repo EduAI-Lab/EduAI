@@ -108,15 +108,15 @@ export class ServiceUnavailableError extends AppError {
     }
 }
 /** True when `error` is an `AppError` from any copy of this module. */
-export function isAppError(error) {
-    if (error instanceof AppError)
+export function isAppError(cause) {
+    if (cause instanceof AppError)
         return true;
     // Fall back to structural checks: with workspace symlinks and a tracked
     // `dist/`, an app can end up holding a second realm's copy of this class,
-    // where `instanceof` is false for an otherwise identical error.
-    if (!(error instanceof Error))
+    // where `instanceof` is false for an otherwise identical cause.
+    if (!(cause instanceof Error))
         return false;
-    const candidate = error;
+    const candidate = cause;
     return (typeof candidate.status === "number" &&
         typeof candidate.code === "string" &&
         typeof candidate.expose === "boolean");
@@ -149,30 +149,30 @@ function codeForStatus(status) {
  * Matched by code string rather than by `instanceof`, so this works for both
  * Prisma clients in the monorepo without importing either.
  */
-const PRISMA_STATUS = {
-    P2002: { status: 409, code: "CONFLICT" }, // unique constraint violation
-    P2003: { status: 400, code: "VALIDATION_ERROR" }, // foreign key violation
-    P2025: { status: 404, code: "NOT_FOUND" }, // required record not found
+const PRISMA_STATUS = new Map([
+    ["P2002", { status: 409, code: "CONFLICT" }], // unique constraint violation
+    ["P2003", { status: 400, code: "VALIDATION_ERROR" }], // foreign key violation
+    ["P2025", { status: 404, code: "NOT_FOUND" }], // required record not found
     // Connectivity / pool failures — the database itself is unreachable.
-    P1001: { status: 503, code: "SERVICE_UNAVAILABLE" },
-    P1002: { status: 503, code: "SERVICE_UNAVAILABLE" },
-    P1008: { status: 503, code: "SERVICE_UNAVAILABLE" },
-    P1017: { status: 503, code: "SERVICE_UNAVAILABLE" },
-    P2024: { status: 503, code: "SERVICE_UNAVAILABLE" },
-};
+    ["P1001", { status: 503, code: "SERVICE_UNAVAILABLE" }],
+    ["P1002", { status: 503, code: "SERVICE_UNAVAILABLE" }],
+    ["P1008", { status: 503, code: "SERVICE_UNAVAILABLE" }],
+    ["P1017", { status: 503, code: "SERVICE_UNAVAILABLE" }],
+    ["P2024", { status: 503, code: "SERVICE_UNAVAILABLE" }],
+]);
 /**
  * Messages that are safe to show for a mapped Prisma failure. The raw Prisma
  * message is never reused — it embeds model and column names.
  */
-const PRISMA_MESSAGE = {
-    P2002: "Resource already exists",
-    P2003: "Referenced resource does not exist",
-    P2025: "Resource not found",
-};
-function isPrismaKnownRequestError(error) {
-    return (error instanceof Error &&
-        error.name === "PrismaClientKnownRequestError" &&
-        typeof error.code === "string");
+const PRISMA_MESSAGE = new Map([
+    ["P2002", "Resource already exists"],
+    ["P2003", "Referenced resource does not exist"],
+    ["P2025", "Resource not found"],
+]);
+function isPrismaKnownRequestError(cause) {
+    return (cause instanceof Error &&
+        cause.name === "PrismaClientKnownRequestError" &&
+        typeof cause.code === "string");
 }
 /**
  * Prisma initialization failures — the client could not connect at all (bad
@@ -184,18 +184,18 @@ function isPrismaKnownRequestError(error) {
  * `PrismaClientInitializationError` fell through to the generic 500 path even
  * though the database being unreachable is unambiguously a 503.
  */
-function isPrismaInitializationError(error) {
-    return error instanceof Error && error.name === "PrismaClientInitializationError";
+function isPrismaInitializationError(cause) {
+    return cause instanceof Error && cause.name === "PrismaClientInitializationError";
 }
 /** Zod errors expose `issues`; matched structurally to avoid a zod dependency. */
-function isZodError(error) {
-    return (error instanceof Error &&
-        error.name === "ZodError" &&
-        Array.isArray(error.issues));
+function isZodError(cause) {
+    return (cause instanceof Error &&
+        cause.name === "ZodError" &&
+        Array.isArray(cause.issues));
 }
-function fieldsFromZod(error) {
+function fieldsFromZod(zodError) {
     const fields = {};
-    for (const issue of error.issues) {
+    for (const issue of zodError.issues) {
         const key = issue.path.map(String).join(".");
         // First message wins, matching Core's existing `validationErrorFromZod`.
         if (key && !(key in fields))
@@ -212,26 +212,28 @@ function fieldsFromZod(error) {
  * existing hand-rolled errors. Everything else becomes a generic 500 — this is
  * what stops raw internal text from reaching clients.
  */
-export function normalizeError(error) {
-    if (isAppError(error)) {
-        return {
-            status: error.status,
-            code: error.code,
-            message: error.expose ? error.message : GENERIC_MESSAGE,
-            ...(error.fields ? { fields: error.fields } : {}),
-            exposed: error.expose,
+export function normalizeError(cause) {
+    if (isAppError(cause)) {
+        const normalized = {
+            status: cause.status,
+            code: cause.code,
+            message: cause.expose ? cause.message : GENERIC_MESSAGE,
+            exposed: cause.expose,
         };
+        if (cause.fields)
+            normalized.fields = cause.fields;
+        return normalized;
     }
-    if (isZodError(error)) {
+    if (isZodError(cause)) {
         return {
             status: 422,
             code: "VALIDATION_ERROR",
             message: "Validation failed",
-            fields: fieldsFromZod(error),
+            fields: fieldsFromZod(cause),
             exposed: true,
         };
     }
-    if (isPrismaInitializationError(error)) {
+    if (isPrismaInitializationError(cause)) {
         // A client that failed to initialize never reached the database, so this is
         // always a 503 regardless of the specific `errorCode` it carries. The code
         // and message are fixed — the raw Prisma text embeds the connection string.
@@ -242,24 +244,24 @@ export function normalizeError(error) {
             exposed: true,
         };
     }
-    if (isPrismaKnownRequestError(error)) {
-        const mapped = PRISMA_STATUS[error.code];
+    if (isPrismaKnownRequestError(cause)) {
+        const mapped = PRISMA_STATUS.get(cause.code);
         if (mapped) {
-            // Deliberately built from the code alone. `error.meta.target` holds the
+            // Deliberately built from the code alone. `cause.meta.target` holds the
             // database column names behind the violated constraint, so folding it
             // into the message would disclose internal schema identifiers to the
             // client — the exact thing this module exists to prevent. Callers that
             // want to name a public field do it explicitly, by catching the Prisma
-            // error and throwing a `ConflictError`/`ValidationError` with `fields`.
-            const message = PRISMA_MESSAGE[error.code] ?? "Service unavailable";
+            // cause and throwing a `ConflictError`/`ValidationError` with `fields`.
+            const message = PRISMA_MESSAGE.get(cause.code) ?? "Service unavailable";
             return { status: mapped.status, code: mapped.code, message, exposed: true };
         }
-        // Any other Prisma code is a bug or a schema problem, not a client error.
+        // Any other Prisma code is a bug or a schema problem, not a client cause.
         return { status: 500, code: "INTERNAL_ERROR", message: GENERIC_MESSAGE, exposed: false };
     }
-    // Express (and the apps' pre-#1279 errors) put the status on the error.
-    if (error instanceof Error) {
-        const withStatus = error;
+    // Express (and the apps' pre-#1279 errors) put the status on the cause.
+    if (cause instanceof Error) {
+        const withStatus = cause;
         const raw = typeof withStatus.status === "number" ? withStatus.status : withStatus.statusCode;
         if (typeof raw === "number" && raw >= 400 && raw < 600) {
             // A 4xx carrying an explicit status was constructed deliberately, so its
@@ -272,12 +274,12 @@ export function normalizeError(error) {
             // here. This is the type-gated rule from question-maker's errorHandler,
             // restated as a status gate so it also covers errors this module has
             // never heard of.
-            const ownCode = error.code;
+            const ownCode = cause.code;
             const code = exposed && typeof ownCode === "string" && ownCode.length > 0 ? ownCode : codeForStatus(raw);
             return {
                 status: raw,
                 code,
-                message: exposed && error.message ? error.message : GENERIC_MESSAGE,
+                message: exposed && cause.message ? cause.message : GENERIC_MESSAGE,
                 exposed,
             };
         }

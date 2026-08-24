@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { UserRole, type Prisma } from "@prisma/client";
 import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
@@ -49,16 +50,23 @@ async function parseCreateCourseBody(
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    let body: unknown;
+    let body: JsonValue;
     try {
-      body = await request.json();
+      // SAFETY: `Request#json` resolves to whatever the client sent; naming it
+      // `JsonValue` claims only what JSON parsing already guarantees.
+      body = (await request.json()) as JsonValue;
     } catch {
       return {
         ok: false as const,
         response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
       };
     }
-    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
+    if (
+      opts?.forceInstructorUserIds?.length &&
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body)
+    ) {
       body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
@@ -887,7 +895,9 @@ export async function setPublishState(request: Request, courseId: string, publis
 
 export async function getCourse(courseId: string, includeDeleted = false) {
   return prisma.course.findFirst({
-    where: { id: courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    // An `undefined` filter is Prisma's "no constraint", so the soft-delete
+    // gate is stated on the field rather than hidden behind a spread.
+    where: { id: courseId, deletedAt: includeDeleted ? undefined : null },
   });
 }
 
@@ -1015,7 +1025,7 @@ export async function getCourseRagSettings(courseId: string): Promise<{
 
 export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
-    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { courseId, deletedAt: includeDeleted ? undefined : null },
     orderBy: { name: "asc" },
   });
 }
@@ -1025,7 +1035,7 @@ export async function getCourseTopic(courseId: string, topicId: string, includeD
     where: {
       id: topicId,
       courseId,
-      ...(includeDeleted ? {} : { deletedAt: null }),
+      deletedAt: includeDeleted ? undefined : null,
     },
   });
 }
@@ -1147,8 +1157,10 @@ export async function deleteCourseTopic(
     where: {
       courseId,
       deletedAt: null,
-      ...(topicId ? { id: topicId } : {}),
-      ...(name ? { name } : {}),
+      // Whichever identifier the caller supplied narrows the lookup; the other
+      // stays `undefined`, which Prisma reads as "no constraint".
+      id: topicId || undefined,
+      name: name || undefined,
     },
     select: { id: true, name: true },
   });

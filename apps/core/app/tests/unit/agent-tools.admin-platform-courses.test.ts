@@ -31,7 +31,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
   getReEmbedJobForCourse: vi.fn(),
-  serializeReEmbedJob: vi.fn((job: unknown) => ({ serialized: true, ...(job as object) })),
+  serializeReEmbedJob: vi.fn(<T extends object>(job: T) => ({ serialized: true, ...job })),
   startOrResumeReEmbedJob: vi.fn(),
 }));
 
@@ -109,18 +109,16 @@ describe("createAdminCourse", () => {
 
   it("creates a course for admin with valid input", async () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1" }]);
-    prismaMock.$transaction.mockImplementation(async <T>(fn: (tx: unknown) => T) => {
-      const tx = {
-        course: { create: vi.fn().mockResolvedValue({ id: "c1", name: "Intro to CS" }) },
-        enrollment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        // createAdminCourse → ensureDefaultBank (#845)
-        questionBank: {
-          findFirst: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: "bank-1", name: "Default", courseId: "c1" }),
-        },
-      };
-      return fn(tx);
-    });
+    const tx = {
+      course: { create: vi.fn().mockResolvedValue({ id: "c1", name: "Intro to CS" }) },
+      enrollment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      // createAdminCourse → ensureDefaultBank (#845)
+      questionBank: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "bank-1", name: "Default", courseId: "c1" }),
+      },
+    };
+    prismaMock.$transaction.mockImplementation(async <T>(fn: (client: typeof tx) => T) => fn(tx));
 
     const result = await createAdminCourse(ADMIN, {
       name: "Intro to CS",

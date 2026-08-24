@@ -1,7 +1,7 @@
 /**
  * Bug report submission and admin listing API.
  */
-import api from "./api";
+import api, { type QueryParams } from "./api";
 import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
 import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
 
@@ -44,7 +44,8 @@ export const bugReportApi = {
   },
 
   async list(options?: { source?: string; limit?: number }): Promise<BugReportRow[]> {
-    const params: Record<string, string | number> = { limit: options?.limit ?? 100 };
+    const params: QueryParams = {};
+    params.limit = options?.limit ?? 100;
     if (options?.source) {
       params.source = options.source;
     }

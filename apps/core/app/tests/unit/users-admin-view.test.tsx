@@ -9,6 +9,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
 const useCourses = vi.fn();
+/** What the user form hands back on submit. */
+type UserFormSubmission = {
+  name: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+};
+
 vi.mock("~/hooks/api/use-courses", () => ({ useCourses: (...a: unknown[]) => useCourses(...a) }));
 
 // UserFormDialog is a fully-featured react-hook-form component covered by its
@@ -20,7 +28,7 @@ vi.mock("~/components/admin/user-form-dialog", () => ({
     open: boolean;
     onOpenChange: (open: boolean) => void;
     user?: { id: string } | null;
-    onSubmit: (data: unknown) => Promise<void>;
+    onSubmit: (data: UserFormSubmission) => Promise<void>;
   }) =>
     props.open ? (
       <div data-testid="user-form-dialog">

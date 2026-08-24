@@ -1,4 +1,5 @@
 import type { RbacUser } from "~/lib/auth/course-access.server";
+import type { ToolInputValue } from "./tool-input";
 
 export type ChatMode = "learning" | "admin";
 
@@ -15,7 +16,13 @@ export type ChatToolContext = {
   turnId?: string;
 };
 
-export function parseChatMode(value: unknown): ChatMode {
+/**
+ * `chatMode` arrives on the request body, so the value is whatever JSON the
+ * caller sent. Anything that is not the literal `"admin"` — a missing key, a
+ * different casing, a non-string — is a learning chat; admin mode is never
+ * reachable by accident.
+ */
+export function parseChatMode(value: ToolInputValue | undefined): ChatMode {
   return value === "admin" ? "admin" : "learning";
 }
 

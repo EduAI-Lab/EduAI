@@ -10,13 +10,13 @@ vi.mock("../../../prisma/seed", () => ({
 }));
 
 import { action } from "~/routes/api/e2e.seed";
+import type { JsonValue } from "~/lib/json-value";
 
-function makeArgs(method: string, body?: unknown) {
+function makeArgs(method: string, body?: JsonValue) {
+  const init: RequestInit = { method };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/e2e/seed", {
-      method,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/e2e/seed", init),
     params: {},
     context: {} as never,
   } as never;

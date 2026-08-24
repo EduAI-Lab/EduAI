@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -196,7 +197,7 @@ describe("Better Auth API-key Prisma contract", () => {
       );
       expect(list.status).toBe(200);
       const listed = (await list.json()) as {
-        apiKeys: Array<Record<string, unknown>>;
+        apiKeys: JsonObject[];
         total: number;
       };
       expect(listed.total).toBe(1);

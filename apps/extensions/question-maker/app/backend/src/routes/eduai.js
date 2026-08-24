@@ -304,7 +304,7 @@ router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async
         ? Math.min(26, Math.max(2, Math.floor(Number(mcqRequiredChoiceCount))))
         : undefined;
 
-    const questions = await eduaiService.generateQuestions({
+    const generateParams = {
       prompt: budget.prompt,
       courseCode: resolvedCourseCode,
       courseId: coreCourseId,
@@ -317,11 +317,15 @@ router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async
         analytical: 30,
         application: 30,
       },
-      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
       cookie: req.headers.cookie ?? "",
       signal: req.aiOperation?.signal,
       deadlineAt: req.aiOperation?.deadlineAt,
-    });
+    };
+    // An unusable choice count is left out entirely so the generator falls back
+    // to its own default instead of seeing an explicit "no value".
+    if (mcqN !== undefined) generateParams.mcqRequiredChoiceCount = mcqN;
+
+    const questions = await eduaiService.generateQuestions(generateParams);
 
     res.json({
       success: true,

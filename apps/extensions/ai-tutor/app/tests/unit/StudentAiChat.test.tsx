@@ -26,6 +26,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import StudentAiChat, { type StudentAiChatHandle } from "~/components/StudentAiChat";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import type { Activity } from "~/lib/types";
+import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
 const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
@@ -125,13 +126,16 @@ const MULTI_MODE_ACTIVITY: Activity = {
 /** A pending guide-message call the test controls, honoring AbortSignal like the real api.ts. */
 function deferredGuideCall() {
   let resolve!: (value: { message: string; chatId?: string | null }) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<{ message: string; chatId?: string | null }>((res, rej) => {
     resolve = res;
     reject = rej;
   });
+  // Typed off the real call so a signature change breaks the mock instead of
+  // silently accepting the wrong arguments. Only `signal` is exercised here.
+  type GuideCallArgs = Parameters<typeof api.sendGuideMessage>;
   sendGuideMessage.mockImplementationOnce(
-    (_activityId: unknown, _params: unknown, signal?: AbortSignal) => {
+    (_activityId: GuideCallArgs[0], _params: GuideCallArgs[1], signal?: AbortSignal) => {
       signal?.addEventListener("abort", () => {
         const err = new Error("Aborted");
         err.name = "AbortError";
@@ -498,7 +502,7 @@ describe("StudentAiChat — history restoration (#1003)", () => {
 function deferredRestoreCall() {
   type RestoredMessages = { id: string; role: "user" | "assistant"; content: string }[];
   let resolve!: (value: RestoredMessages) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<RestoredMessages>((res, rej) => {
     resolve = res;
     reject = rej;
@@ -583,5 +587,73 @@ describe("StudentAiChat — session restore failures (#1000 / PR #1023)", () => 
 
     expect(screen.getByText("Restored conversation B")).toBeInTheDocument();
     expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+// ── #1596 review: cuid topic ids ──────────────────────────────────────────
+
+/**
+ * `Topic.id` is a cuid string, but the focus-topic path was number-only end to
+ * end: the selector ran the chosen value through `Number()` and dropped the
+ * non-finite result, and `sendChat` only forwarded `currentTopicId` when it was
+ * a number. A real topic could therefore never reach `sendTeachMessage`.
+ */
+describe("StudentAiChat — cuid topic ids reach the tutor", () => {
+  const MAIN_TOPIC_ID = "cm4main0000000000000000a";
+  const SECONDARY_TOPIC_ID = "cm4second00000000000000b";
+
+  const TEACH_ACTIVITY: Activity = {
+    ...ACTIVITY,
+    enableTeachMode: true,
+    enableGuideMode: false,
+    mainTopic: { id: MAIN_TOPIC_ID, name: "Recursion" },
+    secondaryTopics: [{ id: SECONDARY_TOPIC_ID, name: "Base cases" }],
+  };
+
+  const TOPIC_OPTIONS = [
+    { label: "Recursion", value: MAIN_TOPIC_ID },
+    { label: "Base cases", value: SECONDARY_TOPIC_ID },
+  ];
+
+  function renderTeachChat(props: {
+    currentTopicId: string | number | null;
+    onSelectTopic?: (topicId: string | number) => void;
+  }) {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={TEACH_ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={TOPIC_OPTIONS}
+          currentTopicId={props.currentTopicId}
+          onSelectTopic={props.onSelectTopic ?? vi.fn()}
+          studentAnswer={null}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("forwards the selected cuid topic id to sendTeachMessage", async () => {
+    sendTeachMessage.mockResolvedValue({ message: "Teach reply", chatId: null });
+    renderTeachChat({ currentTopicId: SECONDARY_TOPIC_ID });
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    await typeAndSend("Explain base cases", "Ask about the topic…");
+
+    await waitFor(() => expect(sendTeachMessage).toHaveBeenCalledTimes(1));
+    expect(sendTeachMessage.mock.calls[0][1]).toMatchObject({ topicId: SECONDARY_TOPIC_ID });
+  });
+
+  it("passes the option's own cuid to onSelectTopic instead of coercing it", async () => {
+    const onSelectTopic = vi.fn();
+    renderTeachChat({ currentTopicId: MAIN_TOPIC_ID, onSelectTopic });
+
+    fireEvent.click(screen.getByLabelText("Focus topic"));
+    fireEvent.click(await screen.findByRole("option", { name: "Base cases" }));
+
+    await waitFor(() => expect(onSelectTopic).toHaveBeenCalledWith(SECONDARY_TOPIC_ID));
   });
 });

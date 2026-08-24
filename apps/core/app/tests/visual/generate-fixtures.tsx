@@ -65,14 +65,15 @@ function renderAnimated(node: ReactNode): string {
   return renderWithReducedMotion(node, false);
 }
 
-const fixtures: Record<string, string> = {
-  "process-flow": renderVisible(<AnimatedProcessFlow payload={processFlowPayload} />),
-  hierarchy: renderVisible(<AnimatedHierarchy payload={hierarchyPayload} />),
-  compare: renderVisible(<AnimatedCompare payload={comparePayload} />),
-  "gradient-descent": renderVisible(<AnimatedGradientDescent payload={gradientDescentPayload} />),
-};
+// A `Map` because the key is the fixture filename each entry is written to.
+const fixtures = new Map<string, string>([
+  ["process-flow", renderVisible(<AnimatedProcessFlow payload={processFlowPayload} />)],
+  ["hierarchy", renderVisible(<AnimatedHierarchy payload={hierarchyPayload} />)],
+  ["compare", renderVisible(<AnimatedCompare payload={comparePayload} />)],
+  ["gradient-descent", renderVisible(<AnimatedGradientDescent payload={gradientDescentPayload} />)],
+]);
 
-for (const [name, html] of Object.entries(fixtures)) {
+for (const [name, html] of fixtures) {
   fs.writeFileSync(path.join(outDir, `${name}.html`), html, "utf8");
 }
 
@@ -101,32 +102,34 @@ function chatMessageRow(diagram: ReactNode): string {
   );
 }
 
-const messageFixtures: Record<string, { base: string; head: string }> = {
-  "process-flow": {
-    base: chatMessageRow(<BaseAnimatedProcessFlow payload={processFlowPayload} />),
-    head: chatMessageRow(<AnimatedProcessFlow payload={processFlowPayload} />),
-  },
-  hierarchy: {
-    base: chatMessageRow(<BaseAnimatedHierarchy payload={hierarchyPayload} />),
-    head: chatMessageRow(<AnimatedHierarchy payload={hierarchyPayload} />),
-  },
-  compare: {
-    base: chatMessageRow(<BaseAnimatedCompare payload={comparePayload} />),
-    head: chatMessageRow(<AnimatedCompare payload={comparePayload} />),
-  },
-  "gradient-descent": {
-    base: chatMessageRow(<BaseAnimatedGradientDescent payload={gradientDescentPayload} />),
-    head: chatMessageRow(<AnimatedGradientDescent payload={gradientDescentPayload} />),
-  },
-};
+const messageFixtures = new Map<string, { base: string; head: string }>(
+  Object.entries({
+    "process-flow": {
+      base: chatMessageRow(<BaseAnimatedProcessFlow payload={processFlowPayload} />),
+      head: chatMessageRow(<AnimatedProcessFlow payload={processFlowPayload} />),
+    },
+    hierarchy: {
+      base: chatMessageRow(<BaseAnimatedHierarchy payload={hierarchyPayload} />),
+      head: chatMessageRow(<AnimatedHierarchy payload={hierarchyPayload} />),
+    },
+    compare: {
+      base: chatMessageRow(<BaseAnimatedCompare payload={comparePayload} />),
+      head: chatMessageRow(<AnimatedCompare payload={comparePayload} />),
+    },
+    "gradient-descent": {
+      base: chatMessageRow(<BaseAnimatedGradientDescent payload={gradientDescentPayload} />),
+      head: chatMessageRow(<AnimatedGradientDescent payload={gradientDescentPayload} />),
+    },
+  }),
+);
 
-for (const [name, { base, head }] of Object.entries(messageFixtures)) {
+for (const [name, { base, head }] of messageFixtures) {
   fs.writeFileSync(path.join(messageDir, `${name}-base.html`), base, "utf8");
   fs.writeFileSync(path.join(messageDir, `${name}-head.html`), head, "utf8");
 }
 
 console.log(
-  `[diagram-visual] wrote ${Object.keys(fixtures).length} fixtures to ${outDir}, ` +
+  `[diagram-visual] wrote ${fixtures.size} fixtures to ${outDir}, ` +
     `1 animated gradient-descent fixture, ` +
-    `${Object.keys(messageFixtures).length * 2} chat-message base/head fixtures to ${messageDir}`,
+    `${messageFixtures.size * 2} chat-message base/head fixtures to ${messageDir}`,
 );

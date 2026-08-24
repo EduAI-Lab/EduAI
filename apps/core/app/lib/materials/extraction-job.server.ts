@@ -62,10 +62,10 @@ export async function failMaterial(
   materialId: string,
   code: "MATERIAL_EXTRACT_FAILED" | "MATERIAL_EMBED_FAILED" | "MATERIAL_EXTRACT_ABANDONED",
   message: string,
-  error: unknown,
+  cause: unknown,
   requestContext: RequestContext,
 ): Promise<void> {
-  console.error(`${code}:`, error);
+  console.error(`${code}:`, cause);
   try {
     await prisma.courseMaterial.update({
       where: { id: materialId },
@@ -81,7 +81,7 @@ export async function failMaterial(
       source: "AI",
       code,
       message,
-      error,
+      error: cause,
     }),
   );
 }
@@ -480,8 +480,8 @@ export function startMaterialExtraction(
   requestContext: RequestContext,
 ): void {
   void claimAndRunExtraction(materialId, file, courseId, userId, requestContext).catch(
-    (error: unknown) => {
-      console.error("Material extraction job crashed:", error);
+    (cause: unknown) => {
+      console.error("Material extraction job crashed:", cause);
     },
   );
 }
@@ -614,8 +614,8 @@ export function ensureMaterialSweeperRunning(
 ): void {
   if (globalThis.__materialSweeperTimer) return;
   const sweep = () => {
-    sweepStrandedMaterialExtractions(requestContext).catch((error: unknown) => {
-      console.error("Material extraction sweep failed:", error);
+    sweepStrandedMaterialExtractions(requestContext).catch((cause: unknown) => {
+      console.error("Material extraction sweep failed:", cause);
     });
   };
   // One pass immediately: at startup the interesting rows are the ones the
@@ -634,11 +634,11 @@ export function ensureMaterialSweeperRunning(
  * check and race into the write — the DB constraint (not the check) is the real
  * guard (#225 RAG-04).
  */
-export function isChecksumConflict(error: unknown): boolean {
+export function isChecksumConflict(cause: unknown): boolean {
   return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    (cause as { code?: unknown }).code === "P2002"
   );
 }

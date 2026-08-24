@@ -461,10 +461,12 @@ async function handleAiInteraction({
         ? "The AI study buddy took too long to respond. Please try again."
         : "Unable to generate an AI tutoring response",
       code: timedOut ? "AI_TUTOR_TIMEOUT" : "AI_TUTOR_GUIDANCE_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   } finally {
     res.removeListener("close", onClientClose);
@@ -633,7 +635,9 @@ router.post(
       res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -677,7 +681,9 @@ router.patch(
       res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -1043,8 +1049,10 @@ router.get(
 
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
-        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      if (excludeLessonId !== null) {
+        importableScope.lessonId = { not: excludeLessonId };
+      }
       // #1207: this scope spans EVERY course the caller manages, so a bounded
       // page over it is an instructor's whole activity corpus — server-side
       // search is the only way to reach a candidate past the first page. The
@@ -1444,10 +1452,12 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     const body = {
       error: "Unable to generate a custom tutoring response",
       code: "AI_TUTOR_CUSTOM_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   }
 });
@@ -1970,9 +1980,9 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
 
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
-    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
-      headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },
-    });
+    const headers = { "Content-Type": "application/json" };
+    if (cookie) headers.cookie = cookie;
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }

@@ -35,26 +35,26 @@ export interface AnswerOptionProps {
   className?: string;
 }
 
-const containerByState: Record<AnswerOptionState, string> = {
+const containerByState = {
   default: "border-border bg-muted/40",
   selected: "border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary",
   correct: "border-[var(--color-success-500)] bg-[var(--color-success-100)]",
   incorrect: "border-destructive/50 bg-destructive/10",
-};
+} satisfies Record<AnswerOptionState, string>;
 
-const chipByState: Record<AnswerOptionState, string> = {
+const chipByState = {
   default: "bg-muted text-muted-foreground",
   selected: "bg-secondary text-secondary-foreground",
   correct: "bg-[var(--color-success-500)] text-white",
   incorrect: "bg-destructive text-destructive-foreground",
-};
+} satisfies Record<AnswerOptionState, string>;
 
-const plainByState: Record<AnswerOptionState, string> = {
+const plainByState = {
   default: "text-muted-foreground",
   selected: "text-secondary",
   correct: "text-[var(--color-success-700)]",
   incorrect: "text-destructive",
-};
+} satisfies Record<AnswerOptionState, string>;
 
 /**
  * Canonical lettered answer choice shared by AI-Tutor's lesson player and

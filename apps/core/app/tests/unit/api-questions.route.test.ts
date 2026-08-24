@@ -14,7 +14,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessGate: vi.fn(),
-  stripAnswerForStudents: vi.fn((q: unknown) => q),
+  stripAnswerForStudents: vi.fn(<T>(q: T) => q),
   wantsIncludeDeleted: vi.fn().mockReturnValue(false),
 }));
 
@@ -33,6 +33,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { listQuestions, createQuestion } from "~/lib/questions/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(query: string, headers: Record<string, string> = {}) {
   return {
@@ -42,13 +43,13 @@ function makeLoaderArgs(query: string, headers: Record<string, string> = {}) {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "POST") {
+function makeActionArgs(body: RouteRequestBody, method = "POST") {
+  // A bodyless method carries no body at all, so the key is added only when the
+  // caller passed one.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/questions", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/questions", init),
     params: {},
     context: {} as never,
   } as never;

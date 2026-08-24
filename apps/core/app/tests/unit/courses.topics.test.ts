@@ -53,7 +53,7 @@ import {
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
-import type { CourseGateFixture } from "../helpers/route-fixtures";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const VALID_KEY = "test-service-key";
@@ -97,14 +97,14 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
     : `/api/courses/${courseId}/topics`;
   return {
     request: new Request(`http://localhost${path}`, { method: "GET", headers }),
-    params: { courseId, ...(topicId ? { topicId } : {}) },
+    params: { courseId, topicId },
     context: {} as never,
   } as any;
 }
 
 function makeAction(
   method: string,
-  body: unknown,
+  body: RouteRequestBody,
   opts: { authorization?: string; topicId?: string } = {},
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
@@ -118,16 +118,16 @@ function makeAction(
       headers,
       body: JSON.stringify(body),
     }),
-    params: { courseId: COURSE_ID, ...(opts.topicId ? { topicId: opts.topicId } : {}) },
+    params: { courseId: COURSE_ID, topicId: opts.topicId },
     context: {} as never,
   } as any;
 }
 
-const makePost = (body: unknown, authorization?: string) =>
+const makePost = (body: RouteRequestBody, authorization?: string) =>
   makeAction("POST", body, { authorization });
-const makeDelete = (body: unknown, authorization?: string) =>
+const makeDelete = (body: RouteRequestBody, authorization?: string) =>
   makeAction("DELETE", body, { authorization });
-const makePatch = (body: unknown, topicId?: string, authorization?: string) =>
+const makePatch = (body: RouteRequestBody, topicId?: string, authorization?: string) =>
   makeAction("PATCH", body, { topicId, authorization });
 
 beforeEach(() => {

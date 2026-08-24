@@ -9,6 +9,7 @@
  * search is active — seeding it there would render the current course as if it
  * had matched the query.
  */
+import type { JsonValue } from "~/lib/json-value";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -57,6 +58,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** The slice of `Response` the component under test reads off a mocked fetch. */
+type FetchResponseStub = { ok?: boolean; status?: number; json: () => Promise<JsonValue> };
 
 describe("CourseSwitcher", () => {
   it("requests one bounded page with paging params — an unpaged read would 400", async () => {
@@ -116,7 +120,7 @@ describe("CourseSwitcher", () => {
   });
 
   it("drops a stale in-flight response when the component unmounts", async () => {
-    let resolveFetch: (value: unknown) => void = () => {};
+    let resolveFetch: (value: FetchResponseStub) => void = () => {};
     mockFetch.mockReturnValue(
       new Promise((resolve) => {
         resolveFetch = resolve;

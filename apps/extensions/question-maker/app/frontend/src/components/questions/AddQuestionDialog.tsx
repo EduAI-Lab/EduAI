@@ -5,6 +5,8 @@
  * Also handles view mode (mode="view") — displaying a question variant with its metadata,
  * choices, AI Tutor preview, and variant management actions. Folded in from QuestionDetailView.
  */
+import type { JsonValue } from "@eduai/types";
+
 import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
@@ -49,7 +51,11 @@ import { courseService } from "../../services/courseService";
 import assessmentService from "../../services/assessmentService";
 import { Assessment } from "../../types/question";
 import { Topic } from "../../types/topic";
-import eduaiService, { EduAIModelOption, EduAICourseOption } from "../../services/eduaiService";
+import eduaiService, {
+  EduAIModelOption,
+  EduAICourseOption,
+  type EduAIQuestionGenerationRequest,
+} from "../../services/eduaiService";
 import { Course } from "../../types/question";
 import { apiKeyStorage } from "../../services/apiKeyStorage";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
@@ -83,11 +89,17 @@ import {
 
 // ── View-mode constants ──────────────────────────────────────────────────────
 const QUESTION_TYPES: QuestionType[] = ["MCQ", "SA", "LA"];
-const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
+/**
+ * The two timestamp spellings variant rows carried before the camelCase
+ * migration. Only these two fields, because only these two are ever read.
+ */
+type LegacyVariantTimestamps = { created_at?: string; updated_at?: string };
+
+const QUESTION_TYPE_LABELS = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 const DIFFICULTIES: QuestionDifficulty[] = ["easy", "medium", "hard"];
 
 /** A compact labelled fact in the detail metadata grid — quiet label over emphasised value. */
@@ -231,11 +243,11 @@ const defaultForm: FormState = {
 
 const difficultyOptions: QuestionDifficulty[] = ["easy", "medium", "hard"];
 const reasoningLevelOptions: ReasoningLevel[] = ["factual", "analytical", "application"];
-const reasoningLevelLabels: Record<ReasoningLevel, string> = {
+const reasoningLevelLabels = {
   factual: "Factual",
   analytical: "Analytical",
   application: "Application",
-};
+} satisfies Record<ReasoningLevel, string>;
 const questionTypes: QuestionType[] = ["MCQ", "SA", "LA"];
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -293,11 +305,15 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         : "—"
     : "—";
 
+  // SAFETY: rows written before the camelCase migration carry the snake_case
+  // spellings instead; neither key is on the current type, so the assertion
+  // names exactly the two legacy fields rather than reopening the whole row.
+  const legacyVariant = viewVariant as LegacyVariantTimestamps | undefined;
   const createdTimestamp = viewEntry
     ? (viewVariant?.createdAt ??
       viewVariant?.updatedAt ??
-      (viewVariant as Record<string, any>)?.created_at ??
-      (viewVariant as Record<string, any>)?.updated_at)
+      legacyVariant?.created_at ??
+      legacyVariant?.updated_at)
     : null;
   const createdAtDisplay =
     createdTimestamp && !Number.isNaN(new Date(createdTimestamp).getTime())
@@ -1047,19 +1063,21 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             })()
           : undefined;
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
-      const response = await eduaiService.generateQuestions({
+      const generateParams: EduAIQuestionGenerationRequest = {
         prompt: promptWithTopics,
         courseId,
-        ...(courseCode ? { courseCode } : {}),
+        courseCode: courseCode || undefined,
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
-        ...(variantMcqRequiredCount != null
-          ? { mcqRequiredChoiceCount: variantMcqRequiredCount }
-          : {}),
-      });
+      };
+      // Left out entirely when unknown so the generator picks its own default.
+      if (variantMcqRequiredCount != null) {
+        generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
+      }
+      const response = await eduaiService.generateQuestions(generateParams);
       const generated = response?.data?.questions?.[0];
       if (!generated)
         throw new Error("AI service did not return a question. Try a different prompt.");
@@ -1095,7 +1113,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           ? Array.from(
               new Set(
                 generated.secondary_topic_ids
-                  .map((value: unknown) => String(value).trim())
+                  .map((value: JsonValue) => String(value).trim())
                   .filter(
                     (value) => value !== "" && topicIdSet.has(value) && value !== primaryTopicId,
                   ),
@@ -1818,12 +1836,12 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                               const secondaryChanged =
                                 !isApproved &&
                                 currentSecondary.join("|") !== nextSecondary.join("|");
-                              const variantPayload = {
-                                ...variantUpdates,
-                                ...(secondaryChanged
-                                  ? { secondaryTopicsId: editSecondaryTopics }
-                                  : {}),
-                              };
+                              // The empty-payload check below decides whether to
+                              // call at all, so an unchanged topic list must add
+                              // no key here — not even an undefined one.
+                              const variantPayload = secondaryChanged
+                                ? { ...variantUpdates, secondaryTopicsId: editSecondaryTopics }
+                                : { ...variantUpdates };
                               if (Object.keys(variantPayload).length > 0)
                                 await questionService.updateVariant(
                                   viewEntry.variant.id,

@@ -21,13 +21,13 @@
     "anti-slop/no-unknown-returns": "error",
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
 
     "anti-slop/no-chained-type-assertions": "warn",
-    "anti-slop/no-conditional-empty-object-spread": "warn",
-    "anti-slop/no-known-value-widening": "warn",
     "anti-slop/no-runtime-typeof": "warn",
-    "anti-slop/no-unknown-parameters": "warn",
-    "anti-slop/no-unsafe-dictionary-type": "warn",
     "anti-slop/require-safety-comment-for-type-assertion": "warn",
     // "hack" is ordinary prose, not a marker — it flagged a comment accurately
     // describing a workaround that had already been deleted. The other three

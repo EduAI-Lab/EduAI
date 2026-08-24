@@ -23,9 +23,9 @@ import { ApiHttpError } from "~/lib/api";
 import { NotFoundState } from "./NotFoundState";
 
 /** HTTP status behind this error, when it carries one. */
-export function statusOf(error: unknown): number | null {
-  if (isRouteErrorResponse(error)) return error.status;
-  if (error instanceof ApiHttpError) return error.status;
+export function statusOf(cause: unknown): number | null {
+  if (isRouteErrorResponse(cause)) return cause.status;
+  if (cause instanceof ApiHttpError) return cause.status;
   return null;
 }
 

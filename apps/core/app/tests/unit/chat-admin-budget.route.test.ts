@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Route-level coverage for admin chat 16k context budgeting (#1008 review).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -18,8 +19,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -143,7 +144,7 @@ function makeRequest(body: RouteRequestBody) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "List users named alice@ubc.ca" }],
     model: "vllm:qwen2.5-32b-instruct",
@@ -154,16 +155,18 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): {
+/**
+ * The slice of the `streamText` config this test reads back. `tools` is keyed by
+ * tool name; only which names are present is ever asserted.
+ */
+type StreamConfig = {
   maxTokens?: number;
   maxSteps?: number;
-  tools?: Record<string, unknown>;
-} {
-  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as {
-    maxTokens?: number;
-    maxSteps?: number;
-    tools?: Record<string, unknown>;
-  };
+  tools?: Record<string, { description?: string }>;
+};
+
+function lastStreamConfig(): StreamConfig {
+  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as StreamConfig;
 }
 
 const originalVllm = process.env.VLLM_BASE_URL;

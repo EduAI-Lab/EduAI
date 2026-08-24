@@ -2,6 +2,7 @@
 //
 // AUTH-04: concurrent demotions of the last two active ADMINs must leave >= 1.
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import prisma from "~/lib/prisma.server";
@@ -98,7 +99,7 @@ beforeEach(() => {
   }) as never);
 });
 
-function patchUser(actorCookie: string, userId: string, body: Record<string, unknown>) {
+function patchUser(actorCookie: string, userId: string, body: JsonObject) {
   return handleUsersApiRequest(
     new Request(`http://localhost/api/users/${userId}`, {
       method: "PATCH",
