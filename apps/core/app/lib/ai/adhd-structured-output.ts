@@ -78,7 +78,7 @@ export type AdhdStructuredResponse = {
 };
 
 export function isVllmStructuredAdhdAssistModel(modelIdentifier: string): boolean {
-  return /^vllm:[^:]+$/i.test(modelIdentifier);
+  return /^vllm:qwen3\.5-(?:2b|9b)-instruct$/i.test(modelIdentifier);
 }
 
 export function isStructuredAdhdAssistCandidate(options: {

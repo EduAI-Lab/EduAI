@@ -68,6 +68,19 @@ describe("structured Assist output", () => {
     ).toBe(true);
   });
 
+  it("does not enable constrained decoding for the retained 32B Assist model", () => {
+    expect(
+      isStructuredAdhdAssistCandidate({
+        modelIdentifier: "vllm:qwen2.5-32b-instruct",
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        profile: "full_tutoring",
+        toolsEnabled: false,
+      }),
+    ).toBe(false);
+  });
+
   it("constrains an explicitly requested stage count", () => {
     expect(
       resolveRequestedAssistStageCount(
