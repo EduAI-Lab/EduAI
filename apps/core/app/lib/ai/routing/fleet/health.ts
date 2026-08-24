@@ -16,10 +16,7 @@ const ejectedUntilByUrl = new Map<string, number>();
 function configuredDuration(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(
-    MAX_HEALTH_DURATION_MS,
-    Math.max(MIN_HEALTH_DURATION_MS, Math.floor(parsed)),
-  );
+  return Math.min(MAX_HEALTH_DURATION_MS, Math.max(MIN_HEALTH_DURATION_MS, Math.floor(parsed)));
 }
 
 /**
@@ -63,10 +60,7 @@ export function invalidateFleetHealthCacheForUrl(baseUrl: string): void {
 /** Temporarily remove a host after an inference failure. */
 export function recordFleetHostFailure(baseUrl: string): void {
   const normalized = baseUrl.replace(/\/$/, "");
-  const durationMs = configuredDuration(
-    "FLEET_FAILURE_EJECTION_MS",
-    DEFAULT_FAILURE_EJECTION_MS,
-  );
+  const durationMs = configuredDuration("FLEET_FAILURE_EJECTION_MS", DEFAULT_FAILURE_EJECTION_MS);
   ejectedUntilByUrl.set(normalized, Date.now() + durationMs);
   healthCache.delete(normalized);
 }
@@ -87,14 +81,8 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
     ejectedUntilByUrl.delete(normalized);
   }
   const cached = healthCache.get(normalized);
-  const cacheTtlMs = configuredDuration(
-    "FLEET_HEALTH_CACHE_TTL_MS",
-    DEFAULT_HEALTH_CACHE_TTL_MS,
-  );
-  const timeoutMs = configuredDuration(
-    "FLEET_HEALTH_TIMEOUT_MS",
-    DEFAULT_HEALTH_TIMEOUT_MS,
-  );
+  const cacheTtlMs = configuredDuration("FLEET_HEALTH_CACHE_TTL_MS", DEFAULT_HEALTH_CACHE_TTL_MS);
+  const timeoutMs = configuredDuration("FLEET_HEALTH_TIMEOUT_MS", DEFAULT_HEALTH_TIMEOUT_MS);
   if (cached && now - cached.checkedAt < cacheTtlMs) {
     return cached;
   }
