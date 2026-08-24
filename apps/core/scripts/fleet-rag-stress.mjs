@@ -92,8 +92,8 @@ async function request(path, options = {}, cookie = "") {
     const headers = {
       "Content-Type": "application/json",
       Origin: origin,
-      ...(options.headers || {}),
     };
+    if (options.headers) Object.assign(headers, options.headers);
     if (cookie) headers.Cookie = cookie;
     const started = performance.now();
     const response = await fetch(`${baseUrl}${path}`, {
@@ -149,17 +149,18 @@ function message(content) {
 }
 
 async function chat(cookie, model, content, chatId = undefined) {
+  const body = {
+    model,
+    courseId,
+    messages: [message(content)],
+    streaming,
+  };
+  if (chatId) body.chatId = chatId;
   const result = await request(
     "/api/chat",
     {
       method: "POST",
-      body: JSON.stringify({
-        model,
-        courseId,
-        messages: [message(content)],
-        streaming,
-        ...(chatId ? { chatId } : {}),
-      }),
+      body: JSON.stringify(body),
     },
     cookie,
   );

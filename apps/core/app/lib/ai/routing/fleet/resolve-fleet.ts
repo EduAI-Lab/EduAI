@@ -75,7 +75,7 @@ function pickServer(
   eligible: Array<{ id: string; baseUrl: string }>,
   jobType: JobType,
   affinityKey: string | undefined,
-): { server: { id: string; baseUrl: string }; reason: string } {
+) {
   const pool = poolCursorKey(jobType);
   const normalizedAffinityKey = affinityKey?.trim();
   if (normalizedAffinityKey) {
