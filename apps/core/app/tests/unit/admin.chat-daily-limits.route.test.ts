@@ -34,12 +34,13 @@ import { action, loader } from "~/routes/api/admin.chat-daily-limits";
 const settings = { studentLimit: 50, instructorLimit: 200 };
 
 function makeArgs(method = "GET", body?: unknown) {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/admin/chat-daily-limits", {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/admin/chat-daily-limits", init),
     params: {},
     context: {} as never,
   } as never;

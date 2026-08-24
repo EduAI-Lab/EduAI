@@ -152,6 +152,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 }));
 
 import { streamText } from "ai";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { action as chatAction } from "~/routes/api/chat";
 import { action as adminAction, loader as adminLoader } from "~/routes/api/admin.chat-daily-limits";
 import { auth } from "~/lib/auth/server";
@@ -185,13 +186,14 @@ function chatRequest(model = "vllm:test-model") {
   } as never;
 }
 
-function adminRequest(method: string, body?: object) {
+function adminRequest(method: string, body?: RouteRequestBody) {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/admin/chat-daily-limits", {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/admin/chat-daily-limits", init),
     params: {},
     context: {} as never,
   } as never;
@@ -358,7 +360,7 @@ describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
       vi
         .mocked(fireAndForget)
         .mock.results.map((result) => result.value)
-        .filter((value) => value != null),
+        .filter((value) => value !== undefined && value !== null),
     );
 
     const localAfterRefund = await chatAction(chatRequest());

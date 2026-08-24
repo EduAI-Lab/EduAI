@@ -116,6 +116,7 @@ vi.mock("~/lib/routing-model-settings.server", () => ({
 }));
 
 import { streamText } from "ai";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -125,7 +126,7 @@ import { invalidateChatDailyLimitSettingsCache } from "~/lib/chat-daily-limits.s
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
