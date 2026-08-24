@@ -1,11 +1,12 @@
 import express from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { config } from "../config/settings.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
 
 const router = express.Router();
 
-/** POST /api/bug-reports — submit a bug report (any authenticated user). */
-router.post("/bug-reports", requireAuth, async (req, res) => {
+/** POST /api/bug-reports — submit a report from a QM-authorized caller. */
+router.post("/bug-reports", requireAuth, requireRole(QM_AUTHORIZED), async (req, res) => {
   const serviceKey = config.eduaiApiKey;
   if (!serviceKey) {
     return res.status(503).json({ success: false, error: "Service key not configured" });

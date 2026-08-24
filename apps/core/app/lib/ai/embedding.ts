@@ -18,6 +18,7 @@ import {
   resolveEffectiveEmbeddingSettings,
 } from "./embedding-config";
 import { formatPgVectorLiteral } from "./pgvector";
+import { providerErrorDiagnostic } from "~/lib/ai/provider-errors.server";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -165,7 +166,7 @@ async function pgvectorSupportsIterativeScan(): Promise<boolean> {
           "[embeddings] failed to read pgvector extension version; " +
             "skipping ivfflat.iterative_scan / ivfflat.max_probes",
           {
-            error: err instanceof Error ? err.message : String(err),
+            error: providerErrorDiagnostic(err),
           },
         );
         return false;
@@ -195,6 +196,117 @@ const REINDEX_TRANSACTION_MAX_WAIT_MS = 10_000;
 const REINDEX_TRANSACTION_TIMEOUT_MS = 60_000;
 const MAX_TRANSIENT_EMBED_ATTEMPTS = 3;
 const TRANSIENT_EMBED_RETRY_DELAY_MS = 500;
+export const DEFAULT_EMBEDDING_REQUEST_TIMEOUT_MS = 30_000;
+const MIN_EMBEDDING_REQUEST_TIMEOUT_MS = 100;
+const MAX_EMBEDDING_REQUEST_TIMEOUT_MS = 120_000;
+
+export type EmbeddingRequestOptions = {
+  /** Cancels the provider call when the originating request/job is no longer useful. */
+  signal?: AbortSignal;
+};
+
+export class EmbeddingRequestTimeoutError extends Error {
+  readonly code = "EMBEDDING_REQUEST_TIMEOUT" as const;
+
+  constructor(readonly timeoutMs: number) {
+    super(`Embedding provider request timed out after ${timeoutMs}ms`);
+    this.name = "EmbeddingRequestTimeoutError";
+  }
+}
+
+export function resolveEmbeddingRequestTimeoutMs(): number {
+  const configured = Number(process.env.EMBEDDING_REQUEST_TIMEOUT_MS);
+  if (!Number.isSafeInteger(configured) || configured < MIN_EMBEDDING_REQUEST_TIMEOUT_MS) {
+    return DEFAULT_EMBEDDING_REQUEST_TIMEOUT_MS;
+  }
+  return Math.min(configured, MAX_EMBEDDING_REQUEST_TIMEOUT_MS);
+}
+
+/**
+ * The value to throw / reject / re-abort with when `signal` has fired.
+ *
+ * `AbortSignal.reason` carries no contract, so this normalizes it to something
+ * throwable. Every platform abort (and every abort this module raises) already
+ * supplies an `Error` — a `DOMException` on the server runtime — and is handed
+ * back untouched, so `isEmbeddingTimeoutError`'s name/cause walk is unaffected.
+ * Only a caller aborting with a bare value gets wrapped, and that value was
+ * already invisible to that walk (it bails on non-objects).
+ */
+function abortSignalReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+
+  const error =
+    reason === undefined
+      ? new Error("The embedding request was aborted")
+      : new Error(String(reason), { cause: reason });
+  error.name = "AbortError";
+  return error;
+}
+
+function isEmbeddingTimeoutError(cause: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = cause;
+
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof EmbeddingRequestTimeoutError) return true;
+    if (typeof current !== "object") return false;
+
+    const candidate = current as {
+      name?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    if (
+      candidate.name === "EmbeddingRequestTimeoutError" ||
+      candidate.name === "TimeoutError" ||
+      candidate.code === "EMBEDDING_REQUEST_TIMEOUT"
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+
+  return false;
+}
+
+/**
+ * Compose the caller/job signal with a finite per-attempt provider deadline.
+ * The cancellation promise is intentional: even a broken provider double that
+ * ignores AbortSignal cannot keep the application promise pending forever.
+ */
+async function withEmbeddingRequestDeadline<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  upstreamSignal?: AbortSignal,
+): Promise<T> {
+  if (upstreamSignal?.aborted) throw abortSignalReason(upstreamSignal);
+
+  const timeoutMs = resolveEmbeddingRequestTimeoutMs();
+  const controller = new AbortController();
+  const abortFromUpstream = () => controller.abort(abortSignalReason(upstreamSignal!));
+  upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+
+  let rejectCancellation: (cause: unknown) => void = () => undefined;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
+  const onAbort = () => rejectCancellation(abortSignalReason(controller.signal));
+  controller.signal.addEventListener("abort", onAbort, { once: true });
+
+  const timer = setTimeout(() => {
+    controller.abort(new EmbeddingRequestTimeoutError(timeoutMs));
+  }, timeoutMs);
+
+  try {
+    const provider = Promise.resolve().then(() => run(controller.signal));
+    return await Promise.race([provider, cancellation]);
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener("abort", onAbort);
+    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+  }
+}
 
 function reindexConcurrency(): number {
   const raw = process.env.REINDEX_CONCURRENCY;
@@ -208,54 +320,83 @@ function reindexConcurrency(): number {
   return Math.min(configured, MAX_REINDEX_CONCURRENCY);
 }
 
-function isTransientEmbeddingError(err: unknown): boolean {
+function isTransientEmbeddingError(cause: unknown): boolean {
+  if (isEmbeddingTimeoutError(cause)) return true;
+
   const status =
-    err && typeof err === "object" && "status" in err
-      ? Number((err as { status?: unknown }).status)
+    cause && typeof cause === "object" && "status" in cause
+      ? Number((cause as { status?: unknown }).status)
       : NaN;
   if (status === 429 || status === 503) return true;
 
-  const message = err instanceof Error ? err.message : String(err);
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /\b(429|503)\b|rate limit|too many requests|service unavailable/i.test(message);
 }
 
-async function retryTransientEmbeddingError<T>(run: () => Promise<T>): Promise<T> {
+async function waitForEmbeddingRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw abortSignalReason(signal);
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(abortSignalReason(signal!));
+    };
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function retryTransientEmbeddingError<T>(
+  run: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_TRANSIENT_EMBED_ATTEMPTS; attempt++) {
     try {
       return await run();
     } catch (err) {
       lastError = err;
-      if (!isTransientEmbeddingError(err) || attempt === MAX_TRANSIENT_EMBED_ATTEMPTS) {
+      if (
+        signal?.aborted ||
+        !isTransientEmbeddingError(err) ||
+        attempt === MAX_TRANSIENT_EMBED_ATTEMPTS
+      ) {
         throw err;
       }
 
-      const delayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      const exponentialDelayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      const delayMs = Math.round(exponentialDelayMs * (0.75 + Math.random() * 0.5));
       console.warn("[embeddings] transient provider failure; retrying", {
         attempt,
         maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
         delayMs,
-        error: err instanceof Error ? err.message : String(err),
+        error: providerErrorDiagnostic(err),
       });
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      await waitForEmbeddingRetry(delayMs, signal);
     }
   }
 
   throw lastError;
 }
 
-function isOllamaBadRequestError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+function isOllamaBadRequestError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /bad request/i.test(message) || /\b400\b/.test(message);
 }
 
-function isOllamaContextLengthError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+function isOllamaContextLengthError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /context length/i.test(message) || /input length exceeds/i.test(message);
 }
 
-function isOllamaSplittableError(err: unknown): boolean {
-  return isOllamaBadRequestError(err) || isOllamaContextLengthError(err);
+function isOllamaSplittableError(cause: unknown): boolean {
+  return isOllamaBadRequestError(cause) || isOllamaContextLengthError(cause);
 }
 
 /**
@@ -265,7 +406,10 @@ function isOllamaSplittableError(err: unknown): boolean {
  */
 const DEFAULT_OLLAMA_CHUNK_CHARS = 480;
 
-function resolveChunkParams(wantsLocal: boolean): { maxChunkSize: number; overlap: number } {
+/** How text is split before embedding: chunk width and the overlap carried between chunks. */
+type EmbeddingChunkParams = { maxChunkSize: number; overlap: number };
+
+function resolveChunkParams(wantsLocal: boolean): EmbeddingChunkParams {
   if (!wantsLocal) {
     return { maxChunkSize: 800, overlap: 80 };
   }
@@ -310,30 +454,43 @@ function ollamaEmbedEndpoint(): string {
 }
 
 /** Native Ollama `/api/embed` (same contract as `curl`); avoids AI SDK provider batch quirks. */
-async function fetchOllamaEmbeddings(modelId: string, values: string[]): Promise<number[][]> {
-  const res = await fetch(ollamaEmbedEndpoint(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...cmps01InternalAuthHeadersForUrl(resolveOllamaBaseUrl()),
-    },
-    body: JSON.stringify({
-      model: modelId,
-      input: values.length === 1 ? values[0] : values,
-    }),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
-  }
-  const data = (await res.json()) as { embeddings?: number[][] };
-  const embeddings = data.embeddings;
-  if (!Array.isArray(embeddings) || embeddings.length !== values.length) {
-    throw new Error(
-      `Ollama embed response invalid (expected ${values.length} vectors, got ${embeddings?.length ?? 0})`,
-    );
-  }
-  return embeddings;
+async function fetchOllamaEmbeddings(
+  modelId: string,
+  values: string[],
+  upstreamSignal?: AbortSignal,
+): Promise<number[][]> {
+  return retryTransientEmbeddingError(
+    () =>
+      withEmbeddingRequestDeadline(async (signal) => {
+        const res = await fetch(ollamaEmbedEndpoint(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...cmps01InternalAuthHeadersForUrl(resolveOllamaBaseUrl()),
+          },
+          body: JSON.stringify({
+            model: modelId,
+            input: values.length === 1 ? values[0] : values,
+          }),
+          signal,
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(
+            `${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+          );
+        }
+        const data = (await res.json()) as { embeddings?: number[][] };
+        const embeddings = data.embeddings;
+        if (!Array.isArray(embeddings) || embeddings.length !== values.length) {
+          throw new Error(
+            `Ollama embed response invalid (expected ${values.length} vectors, got ${embeddings?.length ?? 0})`,
+          );
+        }
+        return embeddings;
+      }, upstreamSignal),
+    upstreamSignal,
+  );
 }
 
 function sanitizeTextForOllamaEmbed(text: string): string {
@@ -341,27 +498,31 @@ function sanitizeTextForOllamaEmbed(text: string): string {
 }
 
 /** Split batch on Ollama 400 until each chunk embeds or a single chunk fails. */
-async function embedManyOllamaNative(modelId: string, values: string[]): Promise<number[][]> {
+async function embedManyOllamaNative(
+  modelId: string,
+  values: string[],
+  upstreamSignal?: AbortSignal,
+): Promise<number[][]> {
   if (values.length === 0) return [];
   const sanitized = values.map(sanitizeTextForOllamaEmbed);
 
   try {
-    return await fetchOllamaEmbeddings(modelId, sanitized);
+    return await fetchOllamaEmbeddings(modelId, sanitized, upstreamSignal);
   } catch (err) {
     if (values.length <= 1 || !isOllamaSplittableError(err)) {
       throw err;
     }
     const mid = Math.floor(values.length / 2);
-    const left = await embedManyOllamaNative(modelId, values.slice(0, mid));
-    const right = await embedManyOllamaNative(modelId, values.slice(mid));
+    const left = await embedManyOllamaNative(modelId, values.slice(0, mid), upstreamSignal);
+    const right = await embedManyOllamaNative(modelId, values.slice(mid), upstreamSignal);
     return [...left, ...right];
   }
 }
 
-function wrapLocalEmbeddingError(modelId: string, err: unknown): Error {
+function wrapLocalEmbeddingError(modelId: string, cause: unknown): Error {
   return new Error(
-    `Local embedding provider failed (${modelId}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
-    { cause: err },
+    `Local embedding provider failed (${modelId}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${cause instanceof Error ? cause.message : String(cause)}`,
+    { cause },
   );
 }
 
@@ -381,6 +542,16 @@ export type EmbeddingProviderKind =
   | "openrouter"
   | "google"
   | "openai";
+
+/**
+ * An embedding model plus the provider it came from. The `kind` travels with
+ * the model because index and query must share a model space: a vector written
+ * by one provider cannot be searched with another's.
+ */
+export type ResolvedEmbeddingModel = {
+  model: EmbeddingModel<string>;
+  kind: EmbeddingProviderKind;
+};
 
 export {
   ALLOWED_CLOUD_EMBEDDING_MODELS,
@@ -462,18 +633,30 @@ function getHybridAlpha(): number {
   return n;
 }
 
+/** One `[embedding]` console line: which provider served a call, and why. */
+type EmbeddingProviderLogEntry = {
+  provider: EmbeddingProviderKind;
+  dimension: number;
+  courseProvider: EffectiveEmbeddingSettings["provider"];
+  model: EffectiveEmbeddingSettings["model"];
+  detail?: string;
+};
+
 function logEmbeddingProvider(
   kind: EmbeddingProviderKind,
   settings: EffectiveEmbeddingSettings,
   detail?: string,
 ): void {
-  console.log("[embedding]", {
+  const entry: EmbeddingProviderLogEntry = {
     provider: kind,
     dimension: getExpectedEmbeddingDimension(),
     courseProvider: settings.provider,
     model: settings.model,
-    ...(detail ? { detail } : {}),
-  });
+  };
+  // A `detail: undefined` key would print in the log line, so it is added only
+  // when the caller passed one.
+  if (detail) entry.detail = detail;
+  console.log("[embedding]", entry);
 }
 
 function assertEmbeddingDimension(embedding: number[], context: string): void {
@@ -497,12 +680,13 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
  * cover the question) with no signal that RAG never ran.
  */
 export function classifyRagRetrievalError(
-  error: unknown,
-): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_FAILED" {
-  const message = error instanceof Error ? error.message : String(error);
+  cause: unknown,
+): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_TIMEOUT" | "RAG_RETRIEVAL_FAILED" {
+  const message = cause instanceof Error ? cause.message : String(cause);
   if (/dimension mismatch/i.test(message) || /different vector dimensions/i.test(message)) {
     return "RAG_DIMENSION_MISMATCH";
   }
+  if (isEmbeddingTimeoutError(cause)) return "RAG_RETRIEVAL_TIMEOUT";
   return "RAG_RETRIEVAL_FAILED";
 }
 
@@ -646,20 +830,18 @@ function createOpenRouterEmbeddingClient() {
   const referer =
     process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
+  const title = process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI";
+
   return createOpenAI({
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
-    headers: {
-      ...(referer ? { "HTTP-Referer": referer } : {}),
-      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-    },
+    // OpenRouter attributes traffic by these headers; the referer is sent only
+    // when this deployment actually has a public URL to claim.
+    headers: referer ? { "X-Title": title, "HTTP-Referer": referer } : { "X-Title": title },
   });
 }
 
-function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): {
-  model: EmbeddingModel<string>;
-  kind: EmbeddingProviderKind;
-} {
+function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): ResolvedEmbeddingModel {
   const vllm = createVllmEmbeddingClient();
   if (vllm) {
     const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
@@ -697,10 +879,7 @@ export function resolveMaterialChunks(
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
  */
-function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): {
-  model: EmbeddingModel<string>;
-  kind: EmbeddingProviderKind;
-} {
+function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): ResolvedEmbeddingModel {
   const dimension = getExpectedEmbeddingDimension();
 
   if (dimension === 1024) {
@@ -778,16 +957,21 @@ function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): {
 }
 
 async function embedWithConfiguredProvider<T>(
-  run: (model: EmbeddingModel<string>) => Promise<T>,
+  run: (model: EmbeddingModel<string>, signal: AbortSignal) => Promise<T>,
   courseId?: string,
+  settingsSnapshot?: EffectiveEmbeddingSettings,
+  requestOptions?: EmbeddingRequestOptions,
 ): Promise<T> {
-  const settings = await loadEffectiveEmbeddingSettings(courseId);
+  const settings = settingsSnapshot ?? (await loadEffectiveEmbeddingSettings(courseId));
   const model = settings.wantsLocal
     ? getLocalEmbeddingModel(settings).model
     : getCloudEmbeddingModel(settings).model;
 
   try {
-    return await retryTransientEmbeddingError(() => run(model));
+    return await retryTransientEmbeddingError(
+      () => withEmbeddingRequestDeadline((signal) => run(model, signal), requestOptions?.signal),
+      requestOptions?.signal,
+    );
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
@@ -805,10 +989,12 @@ async function embedWithConfiguredProvider<T>(
 export async function generateEmbeddings(
   chunks: string[],
   courseId?: string,
+  settingsSnapshot?: EffectiveEmbeddingSettings,
+  requestOptions?: EmbeddingRequestOptions,
 ): Promise<Array<{ embedding: number[]; content: string }>> {
   if (chunks.length === 0) return [];
 
-  const settings = await loadEffectiveEmbeddingSettings(courseId);
+  const settings = settingsSnapshot ?? (await loadEffectiveEmbeddingSettings(courseId));
   const batchSize = resolveEmbedManyBatchSize(settings.wantsLocal);
   const out: Array<{ embedding: number[]; content: string }> = [];
 
@@ -816,18 +1002,27 @@ export async function generateEmbeddings(
     const batch = chunks.slice(i, i + batchSize);
     const embeddings =
       settings.wantsLocal && !usesVllmEmbeddingEndpoint()
-        ? await embedManyOllamaNative(settings.model, batch).catch((err) => {
-            throw wrapLocalEmbeddingError(settings.model, err);
-          })
-        : settings.wantsLocal
-          ? await embedWithConfiguredProvider(async (model) => {
-              const result = await embedMany({ model, values: batch });
+        ? await embedManyOllamaNative(settings.model, batch, requestOptions?.signal).catch(
+            (err) => {
+              if (requestOptions?.signal?.aborted) {
+                throw abortSignalReason(requestOptions.signal);
+              }
+              throw wrapLocalEmbeddingError(settings.model, err);
+            },
+          )
+        : await embedWithConfiguredProvider(
+            async (model, abortSignal) => {
+              const result = await embedMany({
+                model,
+                values: batch,
+                abortSignal,
+              });
               return result.embeddings;
-            }, courseId)
-          : await embedWithConfiguredProvider(async (model) => {
-              const result = await embedMany({ model, values: batch });
-              return result.embeddings;
-            }, courseId);
+            },
+            courseId,
+            settingsSnapshot,
+            requestOptions,
+          );
 
     if (embeddings.length !== batch.length) {
       throw new Error(
@@ -847,7 +1042,11 @@ export async function generateEmbeddings(
 /**
  * Generate a single embedding for a query (LRU-ish in-memory cache by normalized text).
  */
-export async function generateEmbedding(query: string, courseId?: string): Promise<number[]> {
+export async function generateEmbedding(
+  query: string,
+  courseId?: string,
+  requestOptions?: EmbeddingRequestOptions,
+): Promise<number[]> {
   const settings = await loadEffectiveEmbeddingSettings(courseId);
   const cacheKey = queryCacheKey(courseId, settings, query);
   const now = Date.now();
@@ -860,15 +1059,26 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
   const embedding =
     settings.wantsLocal && !usesVllmEmbeddingEndpoint()
       ? (
-          await embedManyOllamaNative(settings.model, [query]).catch((err) => {
-            throw wrapLocalEmbeddingError(settings.model, err);
-          })
+          await embedManyOllamaNative(settings.model, [query], requestOptions?.signal).catch(
+            (err) => {
+              if (requestOptions?.signal?.aborted) {
+                throw abortSignalReason(requestOptions.signal);
+              }
+              throw wrapLocalEmbeddingError(settings.model, err);
+            },
+          )
         )[0]
       : settings.wantsLocal
         ? (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
             .embedding
-        : (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
-            .embedding;
+        : (
+            await embedWithConfiguredProvider(
+              (model, abortSignal) => embed({ model, value: query, abortSignal }),
+              courseId,
+              undefined,
+              requestOptions,
+            )
+          ).embedding;
 
   assertEmbeddingDimension(embedding, "generateEmbedding");
 
@@ -902,6 +1112,7 @@ export async function findRelevantContent(
   limit: number = 6,
   similarityThreshold?: number,
   restrictToStudentVisible: boolean = false,
+  requestOptions?: EmbeddingRequestOptions,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
   // Fetch per-course RAG overrides; both fields are nullable — null means "use default".
   const courseSettings = await getCourseRagSettings(courseId);
@@ -911,7 +1122,9 @@ export async function findRelevantContent(
     similarityThreshold ??
     getDefaultRagSimilarityThreshold();
 
-  const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
+  const queryEmbedding = formatPgVectorLiteral(
+    await generateEmbedding(userQuery, courseId, requestOptions),
+  );
 
   // Canvas publish-aware gate (#777): hide unpublished / selectively excluded
   // Canvas materials from RAG for student callers, same as the REST route's
@@ -1086,24 +1299,98 @@ export async function findRelevantContent(
   }));
 }
 
-/**
- * Delete all chunks (and embeddings) for a material so it can be re-indexed.
- */
-export async function clearMaterialEmbeddings(materialId: string): Promise<void> {
-  await prisma.materialChunk.deleteMany({ where: { materialId } });
+/** Immutable job/owner token used to fence every durable re-embed write. */
+export type ReEmbedLeaseFence = {
+  jobId: string;
+  leaseOwner: string;
+};
+
+export class ReEmbedInterruptedError extends Error {
+  constructor() {
+    super("Re-embed job lease is no longer owned by this worker");
+    this.name = "ReEmbedInterruptedError";
+  }
 }
 
-async function markCourseEmbedded(courseId: string): Promise<void> {
-  clearCourseEmbeddingSettingsCache(courseId);
-  const settings = await loadEffectiveEmbeddingSettings(courseId);
-  await prisma.course.update({
-    where: { id: courseId },
-    data: {
-      embeddedWithProvider: settings.provider,
-      embeddedWithModel: settings.model,
-      lastEmbeddedAt: new Date(),
-    },
-  });
+/**
+ * Verify a durable lease on the transaction's own connection. The no-op
+ * UPDATE obtains a row lock, preventing a successor claim from interleaving
+ * with the destructive write. The final invocation catches expiry during a
+ * long transaction and rolls back its vector/material changes.
+ */
+async function assertReEmbedLeaseInTransaction(
+  tx: Prisma.TransactionClient,
+  fence: ReEmbedLeaseFence,
+): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    UPDATE "course_re_embed_jobs"
+    SET "updatedAt" = "updatedAt"
+    WHERE id = ${fence.jobId}
+      AND status = 'RUNNING'
+      AND "leaseOwner" = ${fence.leaseOwner}
+      AND "leaseExpiresAt" > clock_timestamp()
+    RETURNING id
+  `;
+  if (rows.length !== 1) throw new ReEmbedInterruptedError();
+}
+
+async function runFencedReEmbedTransaction<T>(
+  fence: ReEmbedLeaseFence,
+  callback: (tx: Prisma.TransactionClient) => Promise<T>,
+  transactionOptions?: { maxWait: number; timeout: number },
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await assertReEmbedLeaseInTransaction(tx, fence);
+    const result = await callback(tx);
+    await assertReEmbedLeaseInTransaction(tx, fence);
+    return result;
+  }, transactionOptions);
+}
+
+type ReEmbedMaterialStatusUpdate = {
+  status: "PROCESSING" | "READY" | "FAILED";
+  processedAt?: Date;
+};
+
+async function updateMaterialStatus(
+  materialId: string,
+  data: ReEmbedMaterialStatusUpdate,
+  options?: {
+    leaseFence?: ReEmbedLeaseFence;
+    transactionOptions?: { maxWait: number; timeout: number };
+  },
+): Promise<void> {
+  if (!options?.leaseFence) {
+    await prisma.courseMaterial.update({ where: { id: materialId }, data });
+    return;
+  }
+
+  await runFencedReEmbedTransaction(
+    options.leaseFence,
+    (tx) => tx.courseMaterial.update({ where: { id: materialId }, data }).then(() => undefined),
+    options.transactionOptions,
+  );
+}
+
+async function markCourseEmbedded(
+  courseId: string,
+  settingsSnapshot?: EffectiveEmbeddingSettings,
+  leaseFence?: ReEmbedLeaseFence,
+): Promise<void> {
+  if (!settingsSnapshot) clearCourseEmbeddingSettingsCache(courseId);
+  const settings = settingsSnapshot ?? (await loadEffectiveEmbeddingSettings(courseId));
+  const data = {
+    embeddedWithProvider: settings.provider,
+    embeddedWithModel: settings.model,
+    lastEmbeddedAt: new Date(),
+  };
+  if (leaseFence) {
+    await runFencedReEmbedTransaction(leaseFence, (tx) =>
+      tx.course.update({ where: { id: courseId }, data }).then(() => undefined),
+    );
+  } else {
+    await prisma.course.update({ where: { id: courseId }, data });
+  }
 }
 
 export type ReEmbedProgress = {
@@ -1115,7 +1402,25 @@ export type ReEmbedProgress = {
 
 export type ReEmbedCourseMaterialsOptions = {
   onProgress?: (progress: ReEmbedProgress) => void | Promise<void>;
+  /** Immutable effective settings captured when the durable job was created. */
+  embeddingSettings?: EffectiveEmbeddingSettings;
+  /** DB-atomic durable job/owner fence for all material and course writes. */
+  leaseFence?: ReEmbedLeaseFence;
+  /** Lease fence checked before starting or committing each material. */
+  shouldContinue?: () => boolean | Promise<boolean>;
+  /** Cancels in-flight provider requests when the job/request is abandoned. */
+  signal?: AbortSignal;
 };
+
+async function assertReEmbedCanContinue(
+  shouldContinue: ReEmbedCourseMaterialsOptions["shouldContinue"],
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) throw abortSignalReason(signal);
+  if (shouldContinue && !(await shouldContinue())) {
+    throw new ReEmbedInterruptedError();
+  }
+}
 
 /**
  * Re-embed all materials for a course that have stored raw text.
@@ -1151,7 +1456,7 @@ export async function reEmbedCourseMaterials(
     progressQueue = progressQueue
       .then(() => options?.onProgress?.(snapshot))
       .catch((err) => {
-        console.error("[re-embed] progress write failed", err);
+        console.error("[re-embed] progress write failed", providerErrorDiagnostic(err));
       });
     return progressQueue;
   };
@@ -1165,47 +1470,80 @@ export async function reEmbedCourseMaterials(
   // same isolation semantics as the previous serial for-loop.
   const limit = pLimit(reindexConcurrency());
 
-  await Promise.all(
+  const materialResults = await Promise.allSettled(
     eligible.map((material) =>
       limit(async () => {
+        await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
         const content = material.rawText!.trim();
 
         try {
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "PROCESSING" },
-          });
+          await updateMaterialStatus(
+            material.id,
+            { status: "PROCESSING" },
+            {
+              leaseFence: options?.leaseFence,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
+            },
+          );
           await processMaterialEmbeddings(material.id, content, {
             replace: true,
             transactionOptions: {
               maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
               timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
             },
+            embeddingSettings: options?.embeddingSettings,
+            leaseFence: options?.leaseFence,
+            shouldContinue: options?.shouldContinue,
+            signal: options?.signal,
           });
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "READY", processedAt: new Date() },
-          });
+          await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
+          await updateMaterialStatus(
+            material.id,
+            { status: "READY", processedAt: new Date() },
+            {
+              leaseFence: options?.leaseFence,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
+            },
+          );
           processed += 1;
         } catch (err) {
+          if (err instanceof ReEmbedInterruptedError || options?.signal?.aborted) throw err;
+          // A provider/material error can race a lease heartbeat failure.
+          // Re-check before recording FAILED so an owner that has just been
+          // fenced cannot write a terminal material state.
+          await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
           failed.push(material.id);
           try {
-            await prisma.courseMaterial.update({
-              where: { id: material.id },
-              data: { status: "FAILED" },
-            });
+            await updateMaterialStatus(
+              material.id,
+              { status: "FAILED" },
+              {
+                leaseFence: options?.leaseFence,
+                transactionOptions: {
+                  maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                  timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+                },
+              },
+            );
           } catch (statusError) {
+            if (statusError instanceof ReEmbedInterruptedError) throw statusError;
             console.error("[re-embed] failed to persist material failure", {
               courseId,
               materialId: material.id,
-              error: statusError instanceof Error ? statusError.message : String(statusError),
+              error: providerErrorDiagnostic(statusError),
             });
           }
           console.error("[re-embed] material failed", {
             courseId,
             materialId: material.id,
             title: material.title,
-            error: err instanceof Error ? err.message : String(err),
+            error: providerErrorDiagnostic(err),
           });
         }
 
@@ -1214,8 +1552,14 @@ export async function reEmbedCourseMaterials(
     ),
   );
 
+  const interrupted = materialResults.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (interrupted) throw interrupted.reason;
+
   if (processed > 0 && failed.length === 0 && processed === eligible.length) {
-    await markCourseEmbedded(courseId);
+    await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
+    await markCourseEmbedded(courseId, options?.embeddingSettings, options?.leaseFence);
   }
 
   return { processed, failed, total: eligible.length };
@@ -1226,6 +1570,14 @@ export type ProcessMaterialEmbeddingsOptions = {
   replace?: boolean;
   /** Override interactive transaction limits for a bounded concurrent reindex. */
   transactionOptions?: { maxWait: number; timeout: number };
+  /** Immutable settings used by a durable re-embed job. */
+  embeddingSettings?: EffectiveEmbeddingSettings;
+  /** DB-atomic durable job/owner fence for vector replacement writes. */
+  leaseFence?: ReEmbedLeaseFence;
+  /** Lease fence checked immediately before replacing stored vectors. */
+  shouldContinue?: () => boolean | Promise<boolean>;
+  /** Cancels the embedding provider request before the storage transaction. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -1297,7 +1649,8 @@ export async function processMaterialEmbeddings(
     throw new Error(`Course material not found: ${materialId}`);
   }
 
-  const settings = await loadEffectiveEmbeddingSettings(material.courseId);
+  const settings =
+    options?.embeddingSettings ?? (await loadEffectiveEmbeddingSettings(material.courseId));
   const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
   const chunks = resolveMaterialChunks(content, maxChunkSize, overlap);
 
@@ -1305,9 +1658,13 @@ export async function processMaterialEmbeddings(
     throw new Error("No content chunks generated");
   }
 
-  const embeddings = await generateEmbeddings(chunks, material.courseId);
+  const embeddings = await generateEmbeddings(chunks, material.courseId, settings, {
+    signal: options?.signal,
+  });
 
-  await prisma.$transaction(async (tx) => {
+  await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
+
+  const writeChunks = async (tx: Prisma.TransactionClient) => {
     if (options?.replace) {
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
@@ -1335,5 +1692,11 @@ export async function processMaterialEmbeddings(
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
     await insertMaterialEmbeddingsBatched(tx, chunksByIndex, embeddings);
-  }, options?.transactionOptions);
+  };
+
+  if (options?.leaseFence) {
+    await runFencedReEmbedTransaction(options.leaseFence, writeChunks, options.transactionOptions);
+  } else {
+    await prisma.$transaction(writeChunks, options?.transactionOptions);
+  }
 }

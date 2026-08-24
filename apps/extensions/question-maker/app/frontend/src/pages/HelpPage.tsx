@@ -131,8 +131,8 @@ const ARTICLES: HelpArticle[] = [
               requires your personal API key).
             </li>
             <li>
-              If external, enter your provider API key (stored locally/encrypted; never sent to our
-              servers).
+              If external, enter your provider API key. It is stored for your account in this
+              browser, sent through EduAI services when you use AI, and removed when you sign out.
             </li>
             <li>
               Click Generate, review/edit the result, assign topics, set draft/reviewed, and save.
@@ -259,7 +259,7 @@ const ARTICLES: HelpArticle[] = [
     id: "ai-models",
     title: "AI models and API keys",
     keywords:
-      "ai models api keys internal external campus provider gemini openai deepseek anthropic",
+      "ai models api keys internal external campus provider gemini openai deepseek anthropic opencode go",
     body: (
       <ul className="list-inside list-disc space-y-1">
         <li>Model picker subheaders: “Internal” and “External”.</li>
@@ -268,12 +268,13 @@ const ARTICLES: HelpArticle[] = [
           infrastructure).
         </li>
         <li>
-          External: provider-hosted (Google/Gemini, OpenAI, DeepSeek, Anthropic). Prompts/data go to
-          that provider.
+          External: provider-hosted (Google/Gemini, OpenAI, DeepSeek, Anthropic, OpenCode Go).
+          Prompts/data go to that provider.
         </li>
+        <li>OpenCode Go requires a separate subscription and API key.</li>
         <li>
-          API keys (External only) are stored locally in your browser, encrypted; never sent to the
-          backend.
+          API keys (External only) are stored for your account in this browser, sent through EduAI
+          services when you use AI, and removed when you sign out.
         </li>
         <li>External selection shows a warning banner about data leaving campus systems.</li>
       </ul>

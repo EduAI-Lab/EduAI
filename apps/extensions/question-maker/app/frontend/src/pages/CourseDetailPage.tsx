@@ -34,6 +34,7 @@ import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { useGuidedTour } from "../contexts/GuidedTourContext";
 import { useQmLayout } from "../components/layout/QmLayoutContext";
 import { questionService } from "../services/questionService";
+import type { ProviderApiKeys } from "../services/apiKeyStorage";
 import { courseService } from "../services/courseService";
 import assessmentService from "../services/assessmentService";
 import {
@@ -57,6 +58,7 @@ import {
   AssessmentGenerationParams,
   MCQChoice,
   questionTypeLabels,
+  type QuestionType,
 } from "../types/question";
 import { Topic } from "../types/topic";
 import {
@@ -75,14 +77,16 @@ import {
 } from "../utils/assessmentExport";
 
 type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
+type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
+type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
 const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
-const TYPE_COLORS: Record<string, string> = {
+const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
   SA: "var(--color-series-7)",
   LA: "var(--color-series-8)",
-};
+} satisfies Record<QuestionType, string>;
 // Shared difficulty tokens (index.css) — keeps meters consistent + dark-mode aware.
 const DIFF_COLORS = {
   easy: "var(--diff-easy-solid)",
@@ -132,7 +136,7 @@ export const CourseDetailPage = () => {
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
     totalVariants: number;
-    typeStats: Array<{ type: string; count: number }>;
+    typeStats: Array<{ type: QuestionType; count: number }>;
     difficultyStats: Array<{ difficulty: string; count: number }>;
     aiCount: number;
     humanCount: number;
@@ -146,9 +150,8 @@ export const CourseDetailPage = () => {
   const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<
-    typeof mapExtractedToDraftQuestions
-  > | null>(null);
+  const [pendingExtractionReview, setPendingExtractionReview] =
+    useState<PendingExtractionReview | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
   const [isBanksLoading, setIsBanksLoading] = useState(false);
@@ -285,7 +288,7 @@ export const CourseDetailPage = () => {
           totalQuestions: Number(stats.totalQuestions) || 0,
           totalVariants: Number(stats.totalVariants) || 0,
           typeStats: (stats.typeStats ?? []).map((row) => ({
-            type: String(row.type),
+            type: row.type,
             count: Number(row.count) || 0,
           })),
           difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
@@ -471,7 +474,7 @@ export const CourseDetailPage = () => {
 
     if (!courseQuestionStats) return empty;
 
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
     for (const row of courseQuestionStats.typeStats) {
       typeCounts[row.type] = row.count;
     }
@@ -555,8 +558,11 @@ export const CourseDetailPage = () => {
 
   const handleUploadQuestions = useCallback(() => {
     if (courseId) void loadTopicsForCourse(courseId);
+    if (pendingExtractionReview && pendingExtractionReview.courseId !== courseId) {
+      setPendingExtractionReview(null);
+    }
     setIsUploadOpen(true);
-  }, [courseId, loadTopicsForCourse]);
+  }, [courseId, loadTopicsForCourse, pendingExtractionReview]);
 
   const handleUpdateVariant = useCallback(
     (
@@ -741,7 +747,7 @@ export const CourseDetailPage = () => {
       text: string;
       courseId: number;
       model: string;
-      apiKeys: Record<string, unknown>;
+      apiKeys: ProviderApiKeys;
       jobId?: string;
       onExtractionComplete?: (
         status: "success" | "error",
@@ -751,7 +757,7 @@ export const CourseDetailPage = () => {
       setIsUploadOpen(false);
       const processingToast = toast("Extraction in progress", {
         description:
-          "Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.",
+          "Your upload is being processed. Keep this page open until the extraction is ready.",
         duration: Infinity,
       });
       const dismissProcessing = () => {
@@ -781,10 +787,16 @@ export const CourseDetailPage = () => {
             return;
           }
           params.onExtractionComplete?.("success", { questionsCount: drafts.length });
-          setPendingExtractionDrafts(drafts);
+          setPendingExtractionReview({ courseId: params.courseId, drafts });
           toast("Your extraction is ready", {
-            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Open the upload dialog to review and save.`,
-            action: { label: "Review questions", onClick: () => setIsUploadOpen(true) },
+            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Review them in the source course before saving.`,
+            action: {
+              label: "Review questions",
+              onClick: () => {
+                navigate(`/courses/${params.courseId}?tab=questions`);
+                setIsUploadOpen(true);
+              },
+            },
             duration: Infinity,
           });
         })
@@ -795,7 +807,7 @@ export const CourseDetailPage = () => {
           toast.error("Extraction failed", { description: message, duration: Infinity });
         });
     },
-    [toast],
+    [navigate, toast],
   );
 
   // ── Assessment handlers ─────────────────────────────────────────────────────
@@ -1103,10 +1115,13 @@ export const CourseDetailPage = () => {
       {courseId && (
         <>
           <QuestionUploadDialog
-            open={isUploadOpen}
+            open={
+              isUploadOpen &&
+              (!pendingExtractionReview || pendingExtractionReview.courseId === courseId)
+            }
             onClose={() => {
               setIsUploadOpen(false);
-              setPendingExtractionDrafts(null);
+              setPendingExtractionReview(null);
             }}
             courseId={courseId}
             courseName={course.name}
@@ -1114,7 +1129,9 @@ export const CourseDetailPage = () => {
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
             onExtractInBackground={handleExtractInBackground}
-            initialDraftQuestions={pendingExtractionDrafts}
+            initialDraftQuestions={
+              pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null
+            }
           />
 
           {selectedAssessmentForExport && (

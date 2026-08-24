@@ -1,8 +1,13 @@
 /** Shared provider types and static config — safe for client hooks and unit tests. */
 
-export type SupportedProvider = "openai" | "google" | "ollama" | "vllm";
+export type SupportedProvider = "openai" | "google" | "ollama" | "vllm" | "opencode" | "bedrock";
 
-/** Local inference providers that do not require a user API key. */
+/**
+ * Local inference providers that do not require a user API key.
+ * Bedrock is intentionally excluded: mergeLocalInferenceFromEnv uses this
+ * list to auto-enable a provider from env vars. Bedrock may only be enabled
+ * by the overflow decision (#1441), never as a normal pool member.
+ */
 export const LOCAL_INFERENCE_PROVIDERS: SupportedProvider[] = ["ollama", "vllm"];
 
 export interface UserProviderSettings {
@@ -11,6 +16,16 @@ export interface UserProviderSettings {
     isEnabled: boolean;
     baseUrl?: string;
   };
+}
+
+// Kept out of the serialized settings object so a client payload cannot forge
+// deployment provenance and receive internal provider credentials/headers.
+const deploymentManagedSettings = new WeakSet<object>();
+
+export function isDeploymentManagedProviderSettings(
+  settings: UserProviderSettings[string] | undefined,
+): boolean {
+  return Boolean(settings && deploymentManagedSettings.has(settings));
 }
 
 export interface ProviderConfig {
@@ -22,7 +37,7 @@ export interface ProviderConfig {
   envVarName?: string;
 }
 
-export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
+export const PROVIDER_CONFIGS = {
   openai: {
     id: "openai",
     name: "OpenAI",
@@ -53,7 +68,37 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     defaultBaseUrl: "http://localhost:8001/v1",
     envVarName: "VLLM_BASE_URL",
   },
-};
+  opencode: {
+    id: "opencode",
+    name: "OpenCode Go",
+    description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+    requiresApiKey: true,
+    defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+    // Its key is account-scoped BYOK, so there is no deployment env var.
+    envVarName: undefined,
+  },
+  bedrock: {
+    id: "bedrock",
+    name: "Amazon Bedrock",
+    description: "Overflow-only Amazon Bedrock (Llama 3 Instruct 70B)",
+    requiresApiKey: false,
+    envVarName: "AWS_BEARER_TOKEN_BEDROCK",
+  },
+} satisfies Record<SupportedProvider, ProviderConfig>;
+
+/**
+ * Explains where a missing provider configuration belongs. Cloud providers
+ * are account-scoped BYOK settings; local providers remain deployment env.
+ */
+export function providerConfigurationHint(providerId: string): string {
+  if (providerId === "ollama") {
+    return "Set OLLAMA_BASE_URL in apps/core/.env and restart the dev process.";
+  }
+  if (providerId === "vllm") {
+    return "Set VLLM_BASE_URL in apps/core/.env and restart the dev process.";
+  }
+  return "Configure this provider in the calling app's API-key settings.";
+}
 
 export function parseModelIdentifier(
   identifier: string,
@@ -77,7 +122,12 @@ export function mergeLocalInferenceFromEnv(
   modelIdentifier?: string,
   vllmBaseUrlOverride?: string,
 ): UserProviderSettings {
-  const merged: UserProviderSettings = { ...userSettings };
+  const merged: UserProviderSettings = {};
+  for (const [providerId, settings] of Object.entries(userSettings)) {
+    const entry: UserProviderSettings[string] = { ...settings };
+    if (isDeploymentManagedProviderSettings(settings)) deploymentManagedSettings.add(entry);
+    merged[providerId] = entry;
+  }
   const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
   const providerIds = parsed
     ? LOCAL_INFERENCE_PROVIDERS.includes(parsed.providerId)
@@ -96,14 +146,18 @@ export function mergeLocalInferenceFromEnv(
     if (!envUrl) continue;
 
     // Server-managed: availability follows apps/core/.env on the app host, not browser toggles.
-    merged[providerId] = {
-      ...merged[providerId],
+    const existing = merged[providerId];
+    const baseUrl =
+      fleetVllmUrl && providerId === "vllm" ? fleetVllmUrl : existing?.baseUrl || envUrl;
+    const entry: UserProviderSettings[string] = {
+      ...existing,
       isEnabled: true,
-      baseUrl:
-        fleetVllmUrl && providerId === "vllm"
-          ? fleetVllmUrl
-          : merged[providerId]?.baseUrl || envUrl,
+      baseUrl,
     };
+    if (fleetVllmUrl || !existing?.baseUrl || isDeploymentManagedProviderSettings(existing)) {
+      deploymentManagedSettings.add(entry);
+    }
+    merged[providerId] = entry;
   }
 
   return merged;

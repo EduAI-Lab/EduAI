@@ -289,6 +289,11 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
   sectionId = Number(sectionId);
   variantId = Number(variantId);
   const section = await findSectionForUser(sectionId, userId, courseId);
+  // Validate the variant against the section's actual course before deleting
+  // any legacy link. The add path already enforces this, but malformed rows
+  // created before that guard must not let a same-owner caller mutate a foreign
+  // course variant through this section route.
+  const variant = await verifyVariantOwnership(variantId, userId, section.assessment.courseId);
 
   const { count: deleted } = await prisma.sectionVariants.deleteMany({
     where: { sectionId, variantId },
@@ -306,7 +311,6 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
 
   // If variant is not in any other sections of this assessment, clear the assessmentId
   if (otherSectionsCount === 0) {
-    const variant = await prisma.variants.findUnique({ where: { id: variantId } });
     if (variant && variant.assessmentId === assessmentId) {
       await prisma.variants.update({ where: { id: variantId }, data: { assessmentId: null } });
     }
@@ -325,7 +329,8 @@ export const updateVariantOrderInSection = async (
 ) => {
   sectionId = Number(sectionId);
   variantId = Number(variantId);
-  await findSectionForUser(sectionId, userId, courseId);
+  const section = await findSectionForUser(sectionId, userId, courseId);
+  await verifyVariantOwnership(variantId, userId, section.assessment.courseId);
 
   const link = await prisma.sectionVariants.findFirst({
     where: { sectionId, variantId },
@@ -399,11 +404,19 @@ export const checkQuestionInAssessments = async (questionId, userId) => {
 };
 
 /** Removes every section link for a question’s variants and clears their order metadata. */
-export const removeQuestionFromAllSections = async (questionId, userId) => {
+export const removeQuestionFromAllSections = async (questionId, userId, courseId = null) => {
   questionId = Number(questionId);
   // Verify user owns the question
   const question = await prisma.questionMetadata.findFirst({
-    where: { id: questionId, course: { userId } },
+    where: {
+      id: questionId,
+      course: {
+        userId,
+        // Without a course the ownership check spans every course the user
+        // owns; `undefined` is Prisma's "no constraint".
+        id: courseId != null ? Number(courseId) : undefined,
+      },
+    },
   });
 
   if (!question) {
@@ -423,7 +436,13 @@ export const removeQuestionFromAllSections = async (questionId, userId) => {
 
   // Find all section variant links for these variants
   const sectionVariantLinks = await prisma.sectionVariants.findMany({
-    where: { variantId: { in: variantIds } },
+    // Restrict the mutation to sections in the question's own course. A
+    // malformed legacy link must remain untouched rather than becoming an
+    // ownership-based cross-course delete primitive.
+    where: {
+      variantId: { in: variantIds },
+      section: { assessment: { courseId: question.courseId } },
+    },
     include: {
       section: {
         select: {
@@ -449,7 +468,10 @@ export const removeQuestionFromAllSections = async (questionId, userId) => {
 
   // Delete all section variant links
   const { count: deletedCount } = await prisma.sectionVariants.deleteMany({
-    where: { variantId: { in: variantIds } },
+    where: {
+      variantId: { in: variantIds },
+      section: { assessment: { courseId: question.courseId } },
+    },
   });
 
   // Update questionOrder for each affected assessment

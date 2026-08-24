@@ -65,8 +65,8 @@ export function MaterialPreviewDialog({
         setExcerpt(data.excerpt);
         setTruncated(data.truncated);
       })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
         setError("Could not load preview");
       })
       .finally(() => {

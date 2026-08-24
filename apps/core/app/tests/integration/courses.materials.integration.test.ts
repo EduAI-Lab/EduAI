@@ -3,6 +3,7 @@
 // Integration tests for /api/courses/:courseId/materials (#300).
 // Real Postgres; auth + AI processing mocked at the module level.
 
+import type { JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import prisma from "~/lib/prisma.server";
 
@@ -15,7 +16,9 @@ vi.mock("~/lib/ai/embedding", () => ({
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
-  processUploadedFile: vi.fn().mockResolvedValue({
+  processUploadedFile: vi.fn(),
+  validateUploadedFile: vi.fn().mockResolvedValue(undefined),
+  extractUploadedFileContent: vi.fn().mockResolvedValue({
     title: "lecture-notes.txt",
     mimeType: "text/plain",
     fileSize: 42,
@@ -62,29 +65,60 @@ beforeEach(() => {
   mockSession(null);
 });
 
-function uploadArgs(user: { id: string; role: string }) {
+/**
+ * #949: the provisional checksum is a hash of the raw bytes, so every upload in
+ * a course needs distinct bytes or it collides on `pending:<hash>` with any
+ * sibling still mid-flight. Callers pass a unique marker.
+ */
+function uploadArgs(user: { id: string; role: string }, marker = "lecture notes content") {
   mockSession(user);
   const form = new FormData();
-  form.append("file", new File(["lecture notes content"], "lecture-notes.txt"));
+  form.append("file", new File([marker], "lecture-notes.txt"));
   form.append("apiKeys", "{}");
   const request = {
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(form),
-  } as unknown as Request;
+  } as Request;
   return { request, params: { courseId }, context: {} as never } as any;
+}
+
+/**
+ * Uploads now return 202 and finish in a fire-and-forget background task
+ * (#949), so integration assertions must wait for the row to leave PROCESSING.
+ */
+async function settleMaterial(materialId: string, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const row = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    if (row && row.status !== "PROCESSING") return row;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Material ${materialId} never left PROCESSING`);
+}
+
+/** Upload and wait for the background pass to settle. Returns the material id. */
+async function uploadAndSettle(user: { id: string; role: string }, marker: string) {
+  const res = await action(uploadArgs(user, marker));
+  expect(res.status).toBe(202);
+  const { materialId } = await res.json();
+  await settleMaterial(materialId);
+  return materialId as string;
 }
 
 describe("materials upload → list → delete cycle (#300)", () => {
   it("INSTRUCTOR uploads, lists, and deletes a material end-to-end", async () => {
-    // Upload
+    // Upload — 202 up front, READY once the background pass lands (#949).
     const uploaded = await action(uploadArgs(instructor));
-    expect(uploaded.status).toBe(200);
+    expect(uploaded.status).toBe(202);
     const { materialId } = await uploaded.json();
 
-    const row = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    const row = await settleMaterial(materialId);
     expect(row?.uploadedBy).toBe(instructorId);
     expect(row?.status).toBe("READY");
+    // The provisional byte-hash checksum is replaced by the content checksum.
+    expect(row?.checksum).toBe("materials-integration-checksum");
+    expect(row?.rawText).toBe("lecture notes content");
 
     // List (instructor sees it even though the course is unpublished)
     mockSession(instructor);
@@ -129,29 +163,25 @@ describe("materials upload → list → delete cycle (#300)", () => {
 
   it("TA deletes own upload but not the instructor's (§7 own-only)", async () => {
     // TA uploads (distinct checksum so the unique constraint doesn't collide)
-    const { processUploadedFile } = await import("~/lib/ai/file-processing");
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    const { extractUploadedFileContent } = await import("~/lib/ai/file-processing");
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "ta-notes.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "ta-upload-checksum",
       content: "ta notes",
     } as never);
-    const uploaded = await action(uploadArgs(ta));
-    expect(uploaded.status).toBe(200);
-    const { materialId: taMaterialId } = await uploaded.json();
+    const taMaterialId = await uploadAndSettle(ta, "ta bytes");
 
     // Instructor uploads another one
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "prof-notes.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "prof-upload-checksum",
       content: "prof notes",
     } as never);
-    const profUploaded = await action(uploadArgs(instructor));
-    expect(profUploaded.status).toBe(200);
-    const { materialId: profMaterialId } = await profUploaded.json();
+    const profMaterialId = await uploadAndSettle(instructor, "prof bytes");
 
     // TA cannot delete the instructor's material
     mockSession(ta);
@@ -177,7 +207,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
   });
 });
 
-function renameArgs(user: { id: string; role: string }, materialId: string, title: unknown) {
+function renameArgs(user: { id: string; role: string }, materialId: string, title: JsonValue) {
   mockSession(user);
   return {
     request: new Request(`http://localhost/api/courses/${courseId}/materials/${materialId}`, {
@@ -192,17 +222,15 @@ function renameArgs(user: { id: string; role: string }, materialId: string, titl
 
 describe("materials rename (PATCH)", () => {
   it("INSTRUCTOR renames a material end-to-end and persists the new title", async () => {
-    const { processUploadedFile } = await import("~/lib/ai/file-processing");
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    const { extractUploadedFileContent } = await import("~/lib/ai/file-processing");
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "rename-me.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "rename-instructor-checksum",
       content: "content",
     } as never);
-    const uploaded = await action(uploadArgs(instructor));
-    expect(uploaded.status).toBe(200);
-    const { materialId } = await uploaded.json();
+    const materialId = await uploadAndSettle(instructor, "rename-me bytes");
 
     const res = await action(renameArgs(instructor, materialId, "  Renamed Notes  "));
     expect(res.status).toBe(200);
@@ -212,16 +240,15 @@ describe("materials rename (PATCH)", () => {
   });
 
   it("rejects a blank title with 400", async () => {
-    const { processUploadedFile } = await import("~/lib/ai/file-processing");
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    const { extractUploadedFileContent } = await import("~/lib/ai/file-processing");
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "keep.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "rename-blank-checksum",
       content: "content",
     } as never);
-    const uploaded = await action(uploadArgs(instructor));
-    const { materialId } = await uploaded.json();
+    const materialId = await uploadAndSettle(instructor, "keep bytes");
 
     const res = await action(renameArgs(instructor, materialId, "   "));
     expect(res.status).toBe(400);
@@ -230,16 +257,15 @@ describe("materials rename (PATCH)", () => {
   });
 
   it("STUDENT rename is rejected with 403", async () => {
-    const { processUploadedFile } = await import("~/lib/ai/file-processing");
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    const { extractUploadedFileContent } = await import("~/lib/ai/file-processing");
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "student-blocked.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "rename-student-checksum",
       content: "content",
     } as never);
-    const uploaded = await action(uploadArgs(instructor));
-    const { materialId } = await uploaded.json();
+    const materialId = await uploadAndSettle(instructor, "student-blocked bytes");
 
     const res = await action(renameArgs(student, materialId, "Hacked"));
     expect(res.status).toBe(403);
@@ -248,26 +274,24 @@ describe("materials rename (PATCH)", () => {
   });
 
   it("TA renames own upload but not the instructor's (§7 own-only)", async () => {
-    const { processUploadedFile } = await import("~/lib/ai/file-processing");
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    const { extractUploadedFileContent } = await import("~/lib/ai/file-processing");
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "ta-rename.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "rename-ta-own-checksum",
       content: "content",
     } as never);
-    const taUploaded = await action(uploadArgs(ta));
-    const { materialId: taMaterialId } = await taUploaded.json();
+    const taMaterialId = await uploadAndSettle(ta, "ta-rename bytes");
 
-    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+    vi.mocked(extractUploadedFileContent).mockResolvedValueOnce({
       title: "prof-rename.txt",
       mimeType: "text/plain",
       fileSize: 10,
       checksum: "rename-prof-checksum",
       content: "content",
     } as never);
-    const profUploaded = await action(uploadArgs(instructor));
-    const { materialId: profMaterialId } = await profUploaded.json();
+    const profMaterialId = await uploadAndSettle(instructor, "prof-rename bytes");
 
     // TA cannot rename the instructor's material
     const denied = await action(renameArgs(ta, profMaterialId, "TA was here"));

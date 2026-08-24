@@ -43,11 +43,11 @@ interface QuestionMetadataPanelProps {
 
 const difficultyOptions: QuestionDifficulty[] = ["easy", "medium", "hard"];
 const reasoningLevelOptions: ReasoningLevel[] = ["factual", "analytical", "application"];
-const reasoningLevelLabels: Record<ReasoningLevel, string> = {
+const reasoningLevelLabels = {
   factual: "Factual",
   analytical: "Analytical",
   application: "Application",
-};
+} satisfies Record<ReasoningLevel, string>;
 const questionTypes: QuestionType[] = ["MCQ", "SA", "LA"];
 
 export function QuestionMetadataPanel({

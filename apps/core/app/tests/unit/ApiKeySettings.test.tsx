@@ -11,7 +11,7 @@ const withOpenAIKey: UserProviderSettings = {
 const noConfigure = (_p: string) => false;
 const onlyOpenAI = (p: string) => p === "openai";
 
-const makeProps = (overrides: Record<string, any> = {}) => ({
+const makeProps = (overrides: Partial<React.ComponentProps<typeof ApiKeySettings>> = {}) => ({
   open: true,
   onOpenChange: vi.fn(),
   apiKeys: noKeys,
@@ -98,6 +98,27 @@ describe("ApiKeySettings — unconfigured providers", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /save google ai key/i })).toBeInTheDocument(),
     );
+  });
+
+  it("selects OpenCode Go and saves its account-scoped key", async () => {
+    const onUpdateProvider = vi.fn();
+    render(<ApiKeySettings {...makeProps({ onUpdateProvider })} />);
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: "OpenCode Go" }));
+
+    const input = await screen.findByPlaceholderText("OpenCode Go API key");
+    expect(screen.getByText(/requires an opencode go subscription/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "OpenCode Go setup" })).toHaveAttribute(
+      "href",
+      "https://opencode.ai/docs/go/",
+    );
+    fireEvent.change(input, { target: { value: "opencode-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: /save opencode go key/i }));
+
+    expect(onUpdateProvider).toHaveBeenCalledWith("opencode", {
+      apiKey: "opencode-secret",
+      isEnabled: true,
+    });
   });
 });
 

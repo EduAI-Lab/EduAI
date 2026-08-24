@@ -72,6 +72,7 @@ describe("generateQuestions (provider routing)", () => {
     const out = await generateQuestions("topic", AI_PROVIDERS.GROQ, genParams);
     expect(out).toHaveLength(2);
     expect(axios.post.mock.calls[0][0]).toContain("groq.com");
+    expect(axios.post.mock.calls[0][2].timeout).toBeGreaterThan(0);
   });
 
   it("routes to OpenAI", async () => {
@@ -107,6 +108,20 @@ describe("generateQuestions (provider routing)", () => {
     expect(out[0].content).toBe("good");
   });
 
+  it("caps normalized provider output at the requested question count", async () => {
+    const tooMany = Array.from({ length: 5 }, (_, index) => ({
+      content: `question ${index + 1}`,
+      difficulty: "easy",
+      bloom_level: "remember",
+    }));
+    axios.post.mockResolvedValue(completion(JSON.stringify(tooMany)));
+
+    const out = await generateQuestions("t", AI_PROVIDERS.GROQ, { ...genParams, numQuestions: 2 });
+
+    expect(out).toHaveLength(2);
+    expect(out.map((question) => question.content)).toEqual(["question 1", "question 2"]);
+  });
+
   it("falls back to a single raw question when the response is not JSON", async () => {
     axios.post.mockResolvedValue(completion("not json at all"));
     const out = await generateQuestions("t", AI_PROVIDERS.GROQ, genParams);
@@ -124,15 +139,31 @@ describe("generateQuestions (provider routing)", () => {
     expect(out[0].bloom_level).toBe("understand");
   });
 
-  it("propagates a provider HTTP error", async () => {
-    axios.post.mockRejectedValue(new Error("429 rate limited"));
-    await expect(generateQuestions("t", AI_PROVIDERS.GROQ, genParams)).rejects.toThrow(
-      /Groq API error: 429 rate limited/,
-    );
+  it("redacts provider error messages from the service boundary", async () => {
+    const secretCanary = "PROVIDER_SECRET_CANARY_429_RATE_LIMITED";
+    axios.post.mockRejectedValue(new Error(secretCanary));
+    const error = await generateQuestions("t", AI_PROVIDERS.GROQ, genParams).catch((err) => err);
+    expect(error.message).toBe("Groq API error");
+    expect(error.message).not.toContain(secretCanary);
+    expect(JSON.stringify(console.error.mock.calls)).not.toContain(secretCanary);
   });
 });
 
 describe("extractQuestionsFromText (EduAI extraction)", () => {
+  it("redacts DB/provider canaries from extraction logs", async () => {
+    const secretCanary = "EXTRACTION_DB_PROVIDER_SECRET_CANARY";
+    findAll.mockRejectedValue(new Error(secretCanary));
+    generateQuestionsMock.mockRejectedValueOnce(new Error(secretCanary));
+    generateQuestionsMock.mockResolvedValueOnce([
+      { content: "Recovered Q", difficulty: "easy", type: "SA", answer: null },
+    ]);
+
+    await extractQuestionsFromText("exam text", 7, "m", {});
+
+    expect(JSON.stringify(console.error.mock.calls)).not.toContain(secretCanary);
+    expect(JSON.stringify(console.warn.mock.calls)).not.toContain(secretCanary);
+  });
+
   it("throws when EduAI is not configured", async () => {
     isConfiguredMock.mockReturnValue(false);
     await expect(extractQuestionsFromText("Some exam text here.", 7, "m", {})).rejects.toThrow(

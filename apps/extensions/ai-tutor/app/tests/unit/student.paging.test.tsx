@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
 const mockActivitiesForLesson = vi.fn();
+const mockLessonBreadcrumb = vi.fn();
 const mockSetSearchParams = vi.fn();
 
 vi.mock("~/lib/api", () => ({
@@ -18,6 +19,7 @@ vi.mock("~/lib/api", () => ({
     courseById: vi.fn(),
     modulesForCourse: vi.fn(),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
+    lessonBreadcrumb: (...args: unknown[]) => mockLessonBreadcrumb(...args),
     submitAnswer: vi.fn(),
     mySubmissions: vi.fn().mockResolvedValue([]),
   },
@@ -57,7 +59,9 @@ import StudentLessonPlayer from "~/routes/student.lesson";
 const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
 
 describe("student.course — paged module grid (#1207)", () => {
-  const wrap = (overrides: Record<string, unknown> = {}) =>
+  const wrap = (
+    overrides: Partial<React.ComponentProps<typeof StudentCourseModules>["loaderData"]> = {},
+  ) =>
     render(
       <MemoryRouter>
         <StudentCourseModules
@@ -70,7 +74,7 @@ describe("student.course — paged module grid (#1207)", () => {
               pageSize: 25,
               ...overrides,
             },
-          } as unknown as React.ComponentProps<typeof StudentCourseModules>)}
+          } as React.ComponentProps<typeof StudentCourseModules>)}
         />
       </MemoryRouter>,
     );
@@ -123,15 +127,30 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     customPromptTitle: null,
   });
 
-  const wrap = (overrides: Record<string, unknown> = {}) =>
+  const wrap = (
+    overrides: Partial<React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]> = {},
+  ) =>
     render(
       <MemoryRouter>
         <StudentLessonPlayer
           {...({
             loaderData: {
               course,
-              module: { id: 2, title: "Module", courseOfferingId: 1 },
-              lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
+              module: {
+                id: 2,
+                title: "Module",
+                courseOfferingId: 1,
+                position: 0,
+                isPublished: true,
+              },
+              lesson: {
+                id: 3,
+                title: "Lesson",
+                moduleId: 2,
+                isPublished: true,
+                contentMd: "",
+                position: 0,
+              },
               activities: [activity(1), activity(2)],
               activitiesTotal: 2,
               orderText: "3.2",
@@ -149,6 +168,13 @@ describe("student.lesson — paged activity walk (#1207)", () => {
       total: 3,
       page: 2,
       pageSize: 50,
+    });
+    mockLessonBreadcrumb.mockReset();
+    mockLessonBreadcrumb.mockResolvedValue({
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      course,
+      moduleOrdinal: 3,
+      lessonOrdinal: 2,
     });
   });
 
@@ -176,9 +202,12 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
   });
 
-  it("shows the server-derived order text", () => {
+  it("shows the server-derived order text from the deferred breadcrumb", async () => {
     wrap();
-    expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(mockLessonBreadcrumb).toHaveBeenCalledWith(3);
+      expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
+    });
   });
 
   it("drops an activity page that resolves after the student changed lessons", async () => {
@@ -187,12 +216,19 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     // Appending that response mixes the old lesson's activities into the new
     // one — and the id-dedupe can't see it, the ids don't collide.
     const named = (id: number, question: string) => ({ ...activity(id), question });
-    let releaseStale: ((value: unknown) => void) | undefined;
+    /** One page of `activitiesForLesson`, as the player consumes it. */
+    type ActivitiesPage = {
+      data: ReturnType<typeof named>[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    let releaseStale: ((value: ActivitiesPage) => void) | undefined;
 
     mockActivitiesForLesson.mockReset();
     mockActivitiesForLesson.mockImplementation((lessonId: number) => {
       if (lessonId === 3) {
-        return new Promise((resolve) => {
+        return new Promise<ActivitiesPage>((resolve) => {
           releaseStale = resolve;
         });
       }
@@ -204,20 +240,35 @@ describe("student.lesson — paged activity walk (#1207)", () => {
       });
     });
 
-    const props = (loaderData: Record<string, unknown>) =>
-      ({ loaderData }) as unknown as React.ComponentProps<typeof StudentLessonPlayer>;
+    const props = (
+      loaderData: Partial<React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]>,
+    ) => ({ loaderData }) as React.ComponentProps<typeof StudentLessonPlayer>;
 
     const oldLesson = {
       course,
-      module: { id: 2, title: "Module", courseOfferingId: 1 },
-      lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      module: { id: 2, title: "Module", courseOfferingId: 1, position: 0, isPublished: true },
+      lesson: {
+        id: 3,
+        title: "Lesson",
+        moduleId: 2,
+        isPublished: true,
+        contentMd: "",
+        position: 0,
+      },
       activities: [named(1, "OLD ONE"), named(2, "OLD TWO")],
       activitiesTotal: 3,
       orderText: "3.2",
     };
     const newLesson = {
       ...oldLesson,
-      lesson: { id: 4, title: "Next lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      lesson: {
+        id: 4,
+        title: "Next lesson",
+        moduleId: 2,
+        isPublished: true,
+        contentMd: "",
+        position: 1,
+      },
       activities: [named(10, "NEW ONE")],
       activitiesTotal: 2,
       orderText: "3.3",

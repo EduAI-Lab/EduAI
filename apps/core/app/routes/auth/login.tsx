@@ -1,17 +1,41 @@
 import { useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { LoginForm } from "~/components/login-form";
 import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
+import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth, authBaseURL } from "~/lib/auth/server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
+import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server";
+
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+function formBodyErrorResponse(cause: unknown): Response | null {
+  if (cause instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (cause instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: cause.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
 
 /**
  * Remove a legacy host-only session cookie after issuing the configured
@@ -48,17 +72,43 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+  let demoPassword: string | null = null;
+  if (isLocalDemoEnabled()) {
+    try {
+      demoPassword = getLocalSeedPassword();
+    } catch {
+      // Fail closed when local demo mode is enabled without a configured seed
+      // password. The normal login page remains available.
+    }
+  }
 
-  return { redirectTo, allowRegistration, forceReauth };
+  return {
+    redirectTo,
+    allowRegistration,
+    forceReauth,
+    // Demo credentials are available only for an explicitly configured local
+    // deployment with a caller-supplied seed password. This is evaluated on the
+    // server so production never renders the controls or receives the password.
+    showDemoLogin: demoPassword !== null,
+    demoPassword,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
-  const formData = Object.fromEntries(await request.formData());
-  const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
+  const redirectTo = validateRedirectUrl(String(values.redirectTo || ""));
   const input = {
-    email: String(formData.email || ""),
-    password: String(formData.password || ""),
+    email: String(values.email || ""),
+    password: String(values.password || ""),
   };
 
   const result = signInSchema.safeParse(input);
@@ -183,11 +233,14 @@ export default function LoginPage() {
         formError?: string;
       }
     | undefined;
-  const { redirectTo, allowRegistration, forceReauth } = useLoaderData() as {
-    redirectTo: string;
-    allowRegistration: boolean;
-    forceReauth: boolean;
-  };
+  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
+    useLoaderData() as {
+      redirectTo: string;
+      allowRegistration: boolean;
+      forceReauth: boolean;
+      showDemoLogin: boolean;
+      demoPassword: string | null;
+    };
 
   return (
     <div
@@ -252,7 +305,9 @@ export default function LoginPage() {
           />
         </form>
 
-        <DemoLoginButtons redirectTo={redirectTo} />
+        {showDemoLogin && demoPassword && (
+          <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />
+        )}
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">

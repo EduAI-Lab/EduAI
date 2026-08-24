@@ -17,7 +17,7 @@ describe("carbon-policy", () => {
       resolveCarbonPolicyMode({
         globalMode: "balanced",
         courseCode: "COSC 315",
-        byCourse: { "COSC 315": "greener" },
+        byCourse: new Map([["COSC 315", "greener"] as const]),
       }),
     ).toBe("greener");
   });

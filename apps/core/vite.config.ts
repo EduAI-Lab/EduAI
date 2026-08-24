@@ -67,7 +67,7 @@ export default defineConfig(({ mode, isSsrBuild }) => {
       manifest: true,
       // Client build only — the SSR bundle is a single file and the React
       // Router server build rejects manualChunks.
-      ...(isSsrBuild ? {} : { rollupOptions: { output: { manualChunks } } }),
+      rollupOptions: isSsrBuild ? undefined : { output: { manualChunks } },
     },
     ssr: {
       // Server bundle is ESM (react-router default). Packages that need bundling:
@@ -97,6 +97,7 @@ export default defineConfig(({ mode, isSsrBuild }) => {
         "react-dom",
         "react-dom/client",
         "react-router",
+        "@tanstack/react-table",
         "streamdown",
         "@streamdown/math",
         "style-to-js",
@@ -113,15 +114,15 @@ export default defineConfig(({ mode, isSsrBuild }) => {
       fs: {
         allow: [monorepoRoot],
       },
-      ...(hmrPublicHost
+      // Behind the Apache proxy HMR needs the public host explicitly; locally
+      // Vite's own defaults are correct.
+      hmr: hmrPublicHost
         ? {
-            hmr: {
-              protocol: "wss",
-              host: hmrPublicHost,
-              clientPort: hmrClientPort,
-            },
+            protocol: "wss",
+            host: hmrPublicHost,
+            clientPort: hmrClientPort,
           }
-        : {}),
+        : undefined,
     },
   };
 });

@@ -37,7 +37,7 @@ export function atListResponse(
  * GET an AT list endpoint and return the envelope's rows, asserting the request
  * succeeded and the envelope is well-formed.
  */
-export async function atListData<T = Record<string, unknown>>(
+export async function atListData<T>(
   ctx: APIRequestContext,
   url: string,
   params: { page?: number; pageSize?: number } = {},

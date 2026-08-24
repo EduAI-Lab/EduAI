@@ -11,8 +11,35 @@ import {
   formatSemesterDisplay,
   deriveSemesterDisplayForCourseId,
 } from "./courseListService.js";
+import { safeRequestLogFields } from "../utils/safeLogging.js";
+import {
+  assertQmAiDeadline,
+  isQmAiDeadlineError,
+  validateBankVariantAdmission,
+  validateReviewAdmission,
+  qmReviewMaxPairs,
+} from "../middleware/aiAdmission.js";
 
 const VALID_STUDY_ROLES = ["reference_baseline", "generated_variant"];
+
+function publicVariantGenerationError(message) {
+  const error = new Error(message);
+  error.isPublic = true;
+  return error;
+}
+
+function publicAdmissionError(validation) {
+  const error = new Error(validation.message);
+  error.status = validation.status;
+  error.statusCode = validation.status;
+  error.code = validation.code;
+  error.isPublic = true;
+  return error;
+}
+
+function shouldStopAiFanout(error) {
+  return Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error);
+}
 
 /**
  * Prisma's interactive-transaction default timeout is 5s. Assembly is batched now (#1370) —
@@ -176,7 +203,9 @@ async function loadCandidatesByMetadataId({ questionMetadataIds, courseId, inclu
   const rows = await tx.variants.findMany({
     where: {
       questionMetadataId: { in: ids },
-      ...(includeDrafts ? {} : { isDraft: false }),
+      // `undefined` is Prisma's "no constraint", so including drafts simply
+      // drops the filter instead of hiding it behind an empty spread.
+      isDraft: includeDrafts ? undefined : false,
       questionMetadata: { courseId },
     },
     select: { id: true, questionMetadataId: true },
@@ -788,7 +817,19 @@ export async function generateBankVariantsForQuestions(userId, params) {
     variantsToAdd = 1,
     variantPromptInstructions = null,
     cookie = "",
+    signal,
+    deadlineAt,
   } = params;
+
+  // Keep the service boundary authoritative for non-HTTP callers as well as
+  // the route admission middleware. This runs before the first course read,
+  // write, or provider call.
+  const admission = validateBankVariantAdmission({ questionIds, variantsToAdd });
+  if (admission.status) throw publicAdmissionError(admission);
+  const normalizedQuestionIds = admission.questionIds;
+  const normalizedVariantsToAdd = admission.variantsToAdd;
+  let remainingProviderCalls = admission.providerCalls;
+  assertQmAiDeadline({ deadlineAt, signal });
 
   let extraInstructions = "";
   if (variantPromptInstructions != null && String(variantPromptInstructions).trim()) {
@@ -796,7 +837,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
     extraInstructions = `\n\nAdditional instructions from the instructor (apply to this variant):\n"""\n${trimmed}\n"""\n`;
   }
 
-  if (!courseId || !Array.isArray(questionIds) || questionIds.length === 0) {
+  if (!courseId) {
     throw new Error("courseId and a non-empty questionIds array are required");
   }
 
@@ -815,7 +856,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
   // `code` is Core-owned (#1072 §4 step 10) — read through Core. Preserve
   // spacing so Core can resolve by code; prefer coreCourseId when linked.
-  const courseDetail = await enrichCourseDetail(course, { cookie });
+  const courseDetail = await enrichCourseDetail(course, { cookie, signal });
   const courseCode = (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
   const coreCourseId =
     typeof course.coreCourseId === "string" && course.coreCourseId.trim()
@@ -833,7 +874,8 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const results = [];
   const errors = [];
 
-  for (const qid of questionIds) {
+  for (const qid of normalizedQuestionIds) {
+    assertQmAiDeadline({ deadlineAt, signal });
     const meta = await prisma.questionMetadata.findFirst({
       where: { id: qid, courseId: course.id },
       include: {
@@ -847,12 +889,14 @@ export async function generateBankVariantsForQuestions(userId, params) {
     }
 
     const primaryVariant = meta.variants[0];
+    assertQmAiDeadline({ deadlineAt, signal });
     await prisma.variants.update({ where: { id: primaryVariant.id }, data: { isDraft: false } });
 
     const createdVariantIds = [];
     const createdVariants = [];
 
-    for (let n = 0; n < variantsToAdd; n++) {
+    for (let n = 0; n < normalizedVariantsToAdd; n++) {
+      assertQmAiDeadline({ deadlineAt, signal });
       const difficultyDistribution = {
         easy: primaryVariant.difficulty === "easy" ? 1 : 0,
         medium: primaryVariant.difficulty === "medium" ? 1 : 0,
@@ -889,8 +933,16 @@ ${mcqOriginalChoicesBlock}${topicLines ? `Course topics (use numeric IDs in outp
 Return exactly one question in the required JSON format.`;
 
       try {
-        const callGenerate = (promptText) =>
-          eduaiService.generateQuestions({
+        const callGenerate = (promptText) => {
+          if (remainingProviderCalls <= 0) {
+            throw publicAdmissionError({
+              status: 400,
+              code: "QM_BANK_PROVIDER_CALL_BUDGET",
+              message: "bank variant provider-call budget exhausted",
+            });
+          }
+          remainingProviderCalls -= 1;
+          const generateParams = {
             prompt: promptText,
             courseCode,
             courseId: coreCourseId,
@@ -900,16 +952,22 @@ Return exactly one question in the required JSON format.`;
             difficultyDistribution,
             reasoningDistribution,
             cookie,
-            ...(expectedMcqChoiceCount != null
-              ? { mcqRequiredChoiceCount: expectedMcqChoiceCount }
-              : {}),
-          });
+            signal,
+            deadlineAt,
+          };
+          // A bank without a fixed choice count leaves the key out entirely so
+          // the generator falls back to its own default.
+          if (expectedMcqChoiceCount != null) {
+            generateParams.mcqRequiredChoiceCount = expectedMcqChoiceCount;
+          }
+          return eduaiService.generateQuestions(generateParams);
+        };
 
         let generated = await callGenerate(baseVariantPrompt);
 
         let q = Array.isArray(generated) ? generated[0] : null;
         if (!q || !q.content) {
-          throw new Error("EduAI returned no question content");
+          throw publicVariantGenerationError("EduAI returned no question content");
         }
 
         let answer = q.answer ?? null;
@@ -922,7 +980,9 @@ Return exactly one question in the required JSON format.`;
             generated = await callGenerate(baseVariantPrompt + repair);
             q = Array.isArray(generated) ? generated[0] : null;
             if (!q || !q.content) {
-              throw new Error("EduAI returned no question content on MCQ count retry");
+              throw publicVariantGenerationError(
+                "EduAI returned no question content on MCQ count retry",
+              );
             }
             answer = q.answer ?? null;
             choices = q.choices ?? null;
@@ -930,18 +990,19 @@ Return exactly one question in the required JSON format.`;
         }
 
         if (meta.type === "MCQ" && (!choices || choices.length < 2)) {
-          throw new Error("MCQ variant missing choices");
+          throw publicVariantGenerationError("MCQ variant missing choices");
         }
         if (
           meta.type === "MCQ" &&
           expectedMcqChoiceCount != null &&
           choices.length !== expectedMcqChoiceCount
         ) {
-          throw new Error(
+          throw publicVariantGenerationError(
             `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`,
           );
         }
 
+        assertQmAiDeadline({ deadlineAt, signal });
         const v = await prisma.variants.create({
           data: {
             questionMetadataId: meta.id,
@@ -980,7 +1041,13 @@ Return exactly one question in the required JSON format.`;
           isDraft: true,
         });
       } catch (err) {
-        errors.push({ questionId: qid, iteration: n + 1, error: err.message || String(err) });
+        console.error("Variant generation failed", safeRequestLogFields(err));
+        if (shouldStopAiFanout(err)) throw err;
+        errors.push({
+          questionId: qid,
+          iteration: n + 1,
+          error: err?.isPublic === true ? err.message : "Variant generation failed",
+        });
         break;
       }
     }
@@ -1135,11 +1202,21 @@ export async function reviewVariantExamWithAi(userId, params) {
     includeOverallSummary = true,
     // Core session cookie — preferred auth for eduaiService.chat (user-scoped).
     cookie = "",
+    signal,
+    deadlineAt,
   } = params;
 
   const reviewStartMs = Date.now();
 
-  if (!baselineAssessmentId || !variantAssessmentId || !courseId) {
+  const admission = validateReviewAdmission({
+    baselineAssessmentId,
+    variantAssessmentId,
+    includeOverallSummary,
+  });
+  if (admission.status) throw publicAdmissionError(admission);
+  assertQmAiDeadline({ deadlineAt, signal });
+
+  if (!courseId) {
     throw new Error("baselineAssessmentId, variantAssessmentId, and courseId are required");
   }
 
@@ -1160,21 +1237,31 @@ export async function reviewVariantExamWithAi(userId, params) {
     throw new Error("Variant assessment not found or course mismatch");
   }
 
+  const baselineVariants = await loadOrderedVariantsForAssessment(baselineAssessment.id);
+  const variantVariants = await loadOrderedVariantsForAssessment(variantAssessment.id);
+  const maxPairs = qmReviewMaxPairs();
+  if (baselineVariants.length > maxPairs || variantVariants.length > maxPairs) {
+    throw publicAdmissionError({
+      status: 400,
+      code: "QM_REVIEW_PAIR_COUNT_TOO_LARGE",
+      message: `AI review cannot compare more than ${maxPairs} baseline/variant pairs`,
+    });
+  }
+  const pairCount = Math.min(baselineVariants.length, variantVariants.length);
+  if (pairCount === 0) {
+    throw new Error("Both assessments must have at least one question");
+  }
+
+  // Resolve Core course metadata only after the bounded pair check. Oversized
+  // requests therefore perform no provider or Core metadata probe.
   const reviewCourse = baselineAssessment.course;
-  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie });
+  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie, signal });
   const reviewCourseCode =
     (courseDetail?.code && String(courseDetail.code).trim()) || `COURSE-${courseId}`;
   const reviewCoreCourseId =
     typeof reviewCourse?.coreCourseId === "string" && reviewCourse.coreCourseId.trim()
       ? reviewCourse.coreCourseId.trim()
       : undefined;
-
-  const baselineVariants = await loadOrderedVariantsForAssessment(baselineAssessment.id);
-  const variantVariants = await loadOrderedVariantsForAssessment(variantAssessment.id);
-  const pairCount = Math.min(baselineVariants.length, variantVariants.length);
-  if (pairCount === 0) {
-    throw new Error("Both assessments must have at least one question");
-  }
 
   const rubric =
     String(rubricText || "").trim() ||
@@ -1199,7 +1286,21 @@ export async function reviewVariantExamWithAi(userId, params) {
     "Respond with one JSON object only: no markdown fences, no commentary before or after the JSON.";
 
   const perQuestion = [];
+  let remainingProviderCalls = admission.providerCalls;
+  const callAi = (callParams) => {
+    assertQmAiDeadline({ deadlineAt, signal });
+    if (remainingProviderCalls <= 0) {
+      throw publicAdmissionError({
+        status: 400,
+        code: "QM_REVIEW_PROVIDER_CALL_BUDGET",
+        message: "AI review provider-call budget exhausted",
+      });
+    }
+    remainingProviderCalls -= 1;
+    return eduaiService.chat(callParams);
+  };
   for (let i = 0; i < pairCount; i++) {
+    assertQmAiDeadline({ deadlineAt, signal });
     const original = baselineVariants[i];
     const generated = variantVariants[i];
 
@@ -1243,7 +1344,7 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
   "brief_reason": "one sentence explanation"
 }`;
 
-    const response = await eduaiService.chat({
+    const response = await callAi({
       model,
       apiKeys,
       courseId: reviewCoreCourseId,
@@ -1255,6 +1356,8 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
       streaming: false,
       timeoutMs: 120000,
       cookie,
+      signal,
+      deadlineAt,
     });
 
     let content = response?.content ?? response?.message ?? "";
@@ -1269,7 +1372,7 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
 IMPORTANT — Your last answer was not valid JSON. Reply again with ONE JSON object only.
 Do NOT solve the exam question or discuss which choice is correct — only compare original vs variant quality in the rubric fields.
 Rules: no markdown, no code fences, no text before { or after }. Use double quotes on all keys and on brief_reason and usability. usability must be exactly usable_as_is OR usable_with_edits OR unusable (underscores). All six numeric fields must be integers 1–5.`;
-      const retryResponse = await eduaiService.chat({
+      const retryResponse = await callAi({
         model,
         apiKeys,
         courseId: reviewCoreCourseId,
@@ -1281,6 +1384,8 @@ Rules: no markdown, no code fences, no text before { or after }. Use double quot
         streaming: false,
         timeoutMs: 120000,
         cookie,
+        signal,
+        deadlineAt,
       });
       content = retryResponse?.content ?? retryResponse?.message ?? "";
       parsed = parseJsonObjectFromText(content);
@@ -1544,7 +1649,8 @@ If distinctnessAverage is low (near-duplicate/very similar), ensure at least one
 Do not include markdown fences. Keep strings concise.`;
 
     try {
-      const response = await eduaiService.chat({
+      assertQmAiDeadline({ deadlineAt, signal });
+      const response = await callAi({
         model,
         apiKeys,
         courseCode: `COURSE-${courseId}`,
@@ -1555,6 +1661,8 @@ Do not include markdown fences. Keep strings concise.`;
         streaming: false,
         timeoutMs: 60000,
         cookie,
+        signal,
+        deadlineAt,
       });
 
       const content = response?.content ?? response?.message ?? "";
@@ -1577,7 +1685,8 @@ Do not include markdown fences. Keep strings concise.`;
             .slice(0, 6),
         };
       }
-    } catch {
+    } catch (error) {
+      if (shouldStopAiFanout(error)) throw error;
       overallSummary = null;
     }
   }

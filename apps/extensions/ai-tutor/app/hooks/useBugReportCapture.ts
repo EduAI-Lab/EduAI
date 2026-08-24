@@ -1,5 +1,5 @@
 /**
- * @file Captures console logs, network traffic, and an on-demand screenshot
+ * @file Captures console logs, request metadata, and an on-demand screenshot
  *   so the bug-report dialog can attach diagnostic context.
  *
  * Responsibility: Owns the rolling diagnostic buffers and exposes
@@ -32,12 +32,8 @@ type ConsoleEntry = {
 type NetworkEntry = {
   method: string;
   url: string;
-  requestHeaders: Record<string, string>;
-  requestBody: string | null;
   status: number | null;
   durationMs: number;
-  responseHeaders: Record<string, string>;
-  responseBody: string | null;
   timestamp: string;
 };
 
@@ -45,6 +41,7 @@ const MAX_CONSOLE_ENTRIES = 200;
 const MAX_NETWORK_ENTRIES = 100;
 const SCREENSHOT_CACHE_WINDOW_MS = 5_000;
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- formats whatever was handed to a patched console.*; the rule's own `cause` hatch is the same case, minus the throwable.
 function stringifyArg(value: unknown) {
   if (value instanceof Error) {
     return value.message;
@@ -57,33 +54,6 @@ function stringifyArg(value: unknown) {
   } catch {
     return String(value);
   }
-}
-
-function headersToObject(headers: Headers) {
-  const output: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    output[key] = value;
-  });
-  return output;
-}
-
-async function readRequestBody(input: RequestInfo | URL, init?: RequestInit) {
-  if (typeof init?.body === "string") return init.body;
-  if (init?.body instanceof URLSearchParams) return init.body.toString();
-  if (init?.body instanceof FormData) {
-    return "[form-data]";
-  }
-  if (init?.body) {
-    return "[binary-body]";
-  }
-  if (input instanceof Request) {
-    try {
-      return await input.clone().text();
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
 
 export function useBugReportCapture() {
@@ -152,34 +122,18 @@ export function useBugReportCapture() {
       const startedAt = performance.now();
       const method = init?.method ?? (input instanceof Request ? input.method : "GET");
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      const requestHeaders = headersToObject(
-        new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)),
-      );
-      const requestBody = await readRequestBody(input, init);
       let status: number | null = null;
-      let responseHeaders: Record<string, string> = {};
-      let responseBody: string | null = null;
 
       try {
         const response = await originalFetch(input, init);
         status = response.status;
-        responseHeaders = headersToObject(response.headers);
-        try {
-          responseBody = await response.clone().text();
-        } catch {
-          responseBody = null;
-        }
         return response;
       } finally {
         networkBuffer.current.push({
           method,
           url,
-          requestHeaders,
-          requestBody,
           status,
           durationMs: Math.round(performance.now() - startedAt),
-          responseHeaders,
-          responseBody,
           timestamp: new Date().toISOString(),
         });
         if (networkBuffer.current.length > MAX_NETWORK_ENTRIES) {

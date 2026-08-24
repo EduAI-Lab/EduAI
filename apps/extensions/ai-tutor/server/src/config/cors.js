@@ -60,6 +60,15 @@ if (!corsOriginsEnv || corsOriginsEnv.trim() === "") {
   allowedOrigins = deduped.map((entry) => normalizeOrigin(entry));
 }
 
+/**
+ * True when `origin` (an `Origin` header value) is one the deployment trusts.
+ * Shared with the CSRF origin guard (#1571) so the allowlist has one source.
+ */
+export function isAllowedOrigin(origin) {
+  if (!origin || origin === "null") return false;
+  return allowedOrigins.includes(origin);
+}
+
 export function corsOriginCallback(origin, callback) {
   if (!origin || origin === "null") {
     return callback(null, false);

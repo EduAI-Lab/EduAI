@@ -63,7 +63,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
         courseRagNeeded: row.CourseRagNeeded === "yes",
         hits: buildHits(row),
         // Route calls without this argument; only AlwaysSource=arg rows pass it.
-        ...(useArg ? { alwaysWithCourse: true } : {}),
+        alwaysWithCourse: useArg ? true : undefined,
       });
 
       expect(actual).toBe(expectedCourseRagInject(row));

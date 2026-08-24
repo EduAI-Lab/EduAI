@@ -1,6 +1,10 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+import type { MutationResult } from "~/lib/agent-tools/admin-mutations.server";
+import type { ToolInput } from "~/lib/agent-tools/tool-input";
 
 vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   getAccessibleCourse: vi.fn(),
@@ -92,8 +96,8 @@ vi.mock("~/lib/idempotency.server", async (importOriginal) => {
   return {
     ...actual,
     withIdempotency: async (
-      opts: { body?: Record<string, unknown> | null },
-      handler: (body: Record<string, unknown> | null) => Promise<Response>,
+      opts: { body?: JsonObject | null },
+      handler: (body: JsonObject | null) => Promise<Response>,
     ) => handler(opts.body ?? null),
   };
 });
@@ -189,8 +193,8 @@ const call = { toolCallId: "test", messages: [] };
  * immediately (see admin-write-confirmation.server: same-turn rejection only applies
  * when the preview was bound to a non-null turnId). */
 async function runWrite(
-  tool: { execute: (args: never, call: never) => PromiseLike<unknown> },
-  args: Record<string, unknown>,
+  tool: { execute: (args: never, call: never) => PromiseLike<MutationResult> },
+  args: ToolInput,
 ) {
   const preview = await tool.execute({ ...args, confirmed: false } as never, call as never);
   expect(preview).toMatchObject({ writeSucceeded: false, error: "CONFIRMATION_REQUIRED" });

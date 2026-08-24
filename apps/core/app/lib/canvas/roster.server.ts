@@ -25,9 +25,9 @@ function mapCanvasRole(enrollmentType: "student" | "ta"): EnrollmentRole {
   return enrollmentType === "ta" ? EnrollmentRole.TA : EnrollmentRole.STUDENT;
 }
 
-function rosterUpsertError(error: unknown, canvasUserId: string): Error {
-  if (error instanceof Error) {
-    const message = error.message;
+function rosterUpsertError(cause: unknown, canvasUserId: string): Error {
+  if (cause instanceof Error) {
+    const message = cause.message;
     if (message.includes("sisUserIdLookup") || message.includes("Unknown argument")) {
       return new Error(
         `Roster sync failed for Canvas user ${canvasUserId}: the app database client is out of date. Run npx prisma migrate deploy and npx prisma generate, then restart the dev server.`,
@@ -148,8 +148,11 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
 }
 
 /** Deactivates all roster staging rows for a course. */
-export async function deactivateCourseRoster(courseId: string): Promise<number> {
-  const result = await prisma.canvasRosterMember.updateMany({
+export async function deactivateCourseRoster(
+  courseId: string,
+  db: RosterDb = prisma,
+): Promise<number> {
+  const result = await db.canvasRosterMember.updateMany({
     where: { courseId, isActive: true },
     data: { isActive: false },
   });

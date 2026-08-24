@@ -97,7 +97,7 @@ jobs:
       - name: Run Pull Request Analytics
         if: steps.schedule_gate.outputs.should_run == 'true'
         id: analytics
-        uses: AlexSim93/pull-request-analytics-action@v4
+        uses: AlexSim93/pull-request-analytics-action@2393847d9ed95dbecf321a527f7402aeb3012040 # v4.10.0
         with:
           GITHUB_TOKEN: ${{ secrets.PR_ANALYTICS_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_OWNER_FOR_ISSUE: ${{ github.repository_owner }}
@@ -126,7 +126,7 @@ jobs:
 
       - name: Upload PR analytics JSON
         if: steps.schedule_gate.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-analytics-json
           path: pr-analytics-output/pr-analytics.json
@@ -134,7 +134,7 @@ jobs:
 
       - name: Upload PR analytics Markdown
         if: steps.schedule_gate.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-analytics-markdown
           path: pr-analytics-output/pr-analytics.md

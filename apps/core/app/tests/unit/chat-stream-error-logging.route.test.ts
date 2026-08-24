@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Learning-chat stream errors must be logged server-side too, not just admin chat (#989).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -17,8 +19,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -93,12 +95,13 @@ import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { REDACTED_VALUE } from "~/lib/redact.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
-let lateStreamErrorMessage: ((error: unknown) => string) | undefined;
+let lateStreamErrorMessage: ((cause: unknown) => string) | undefined;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -110,7 +113,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -164,7 +167,7 @@ beforeEach(() => {
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
     toDataStreamResponse: vi.fn(
-      ({ getErrorMessage }: { getErrorMessage?: (error: unknown) => string }) => {
+      ({ getErrorMessage }: { getErrorMessage?: (cause: unknown) => string }) => {
         lateStreamErrorMessage = getErrorMessage;
         return new Response("stream", { status: 200 });
       },
@@ -186,12 +189,26 @@ describe("Learning-chat stream error logging (#989)", () => {
 
     const onError = lastOnError();
     expect(onError).toBeDefined();
-    onError?.({ error: new Error("provider blew up mid-stream") });
-
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "[chat-api] stream error",
-      expect.objectContaining({ error: "provider blew up mid-stream" }),
+    const providerError = new Error(
+      "provider blew up mid-stream https://provider.test/v1?api_key=chat-provider-secret",
     );
+    providerError.name = "AI_APICallError";
+    onError?.({ error: providerError });
+
+    const streamErrorCall = consoleErrorSpy.mock.calls.find(
+      ([message]) => message === "[chat-api] stream error",
+    );
+    expect(streamErrorCall).toEqual([
+      "[chat-api] stream error",
+      expect.objectContaining({
+        error: "LLM stream failed",
+        diagnostic: expect.objectContaining({
+          name: "AI_APICallError",
+          message: expect.stringContaining(REDACTED_VALUE),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("chat-provider-secret");
 
     consoleErrorSpy.mockRestore();
   });

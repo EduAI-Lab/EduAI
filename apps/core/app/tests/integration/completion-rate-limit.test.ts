@@ -1,10 +1,33 @@
 // @vitest-environment node
 // #1113: route-level completion limits backed by the integration Redis service.
+import type { JsonValue } from "~/lib/json-value";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: vi.fn(),
+  validateCompletionRequest: vi.fn((input: JsonValue) => ({
+    ok: true,
+    request: input,
+  })),
+  resolveCompletionInputLimits: vi.fn(() => ({
+    maxBodyBytes: 2 * 1024 * 1024,
+    maxMessages: 100,
+    maxMessageChars: 32_768,
+    maxTotalMessageChars: 131_072,
+    maxSystemPromptChars: 32_768,
+    maxApiKeyChars: 16_384,
+    maxBaseUrlChars: 2_048,
+    maxModelChars: 512,
+  })),
+  resolveCompletionModelPolicy: vi.fn(async (model: string) => ({
+    ok: true,
+    modelId: model,
+    parsedModel: {
+      providerId: model.split(":")[0],
+      modelId: model.split(":").slice(1).join(":"),
+    },
+  })),
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({

@@ -1,5 +1,7 @@
+import "./load-core-env";
+import type { JsonObject } from "~/lib/json-value";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
@@ -9,6 +11,10 @@ import {
 } from "../app/lib/canvas/student-id.server";
 // Canonical UBC term code + academic-year attribution (source of truth: packages/ui/src/lib/term.ts).
 import { termInfoFromDate, type TermCode } from "@eduai/ui/term";
+import {
+  assertLocalDemoEnvironment,
+  getLocalSeedPassword,
+} from "../app/lib/deployment-safety.server";
 
 export const prisma = new PrismaClient();
 
@@ -1216,6 +1222,25 @@ async function seedAIProvidersAndModels() {
     },
   });
 
+  const opencode = await prisma.aIProvider.upsert({
+    where: { name: "opencode" },
+    update: {
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+    create: {
+      name: "opencode",
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
     {
       modelId: "gpt-4.1",
@@ -1322,6 +1347,31 @@ async function seedAIProvidersAndModels() {
       },
     });
   }
+
+  await prisma.aIModel.upsert({
+    where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },
+    update: {
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      isActive: true,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+    },
+    create: {
+      modelId: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+      providerId: opencode.id,
+    },
+  });
 
   await applyRoutingTierAssignments();
 }
@@ -1463,10 +1513,8 @@ export async function seedUsers() {
   }
 }
 
-const SEED_PASSWORD = "EduAI2026!";
-
-async function seedPasswords() {
-  const hashed = await hashPassword(SEED_PASSWORD);
+async function seedPasswords(seedPassword: string) {
+  const hashed = await hashPassword(seedPassword);
   const userIds = Object.values(SEED_IDS.users);
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
@@ -1520,12 +1568,24 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
-async function seedDisciplines(): Promise<number> {
-  const csvPath = path.join(
+// import.meta.url normally resolves next to this file (true for the CLI path,
+// `tsx prisma/seed.ts`). But when main() is instead imported into the SSR app
+// bundle (the /api/e2e/seed test hook), the bundler relocates this module and
+// import.meta.url points into build/server/, where the CSV was never copied —
+// fall back to a cwd-relative path, which matches WORKDIR in both the CLI
+// (apps/core) and the served-app Docker image (also apps/core).
+function resolveDisciplinesCsvPath(): string {
+  const bundleRelative = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "data",
     "disciplines.csv",
   );
+  if (existsSync(bundleRelative)) return bundleRelative;
+  return path.join(process.cwd(), "prisma", "data", "disciplines.csv");
+}
+
+async function seedDisciplines(): Promise<number> {
+  const csvPath = resolveDisciplinesCsvPath();
   const lines = readFileSync(csvPath, "utf8").trim().split("\n").slice(1); // drop header
   for (const line of lines) {
     const parts = parseCsvLine(line);
@@ -1581,6 +1641,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
       create: {
         id: course.id,
@@ -1595,6 +1656,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
     });
 
@@ -1689,7 +1751,7 @@ async function seedBugReports() {
     status?: "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
     pageUrl?: string;
     userAgent?: string;
-    context?: Record<string, unknown>;
+    context?: JsonObject;
   };
 
   const bugs: SeedBug[] = [
@@ -2079,19 +2141,19 @@ async function seedMaterials() {
   }
 }
 
-async function main() {
-  console.log("Seeding Core...");
-
+export async function seedReferenceData() {
   const disciplineCount = await seedDisciplines();
   console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
   await seedAIProvidersAndModels();
   console.log("  AI providers and models seeded");
+}
 
+async function seedLocalFixtures(seedPassword: string) {
   await seedUsers();
-  await seedPasswords();
+  await seedPasswords(seedPassword);
   console.log(
-    "  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with default password",
+    "  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with EDUAI_LOCAL_SEED_PASSWORD",
   );
 
   // Fail fast BEFORE any course row is written — a bad term literal must not
@@ -2138,11 +2200,39 @@ async function main() {
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
+export async function main(options?: { seedPassword?: string }) {
+  console.log("Seeding Core...");
+  const referenceOnly = process.argv.includes("--reference-only") && !options?.seedPassword;
+  await seedReferenceData();
+  if (referenceOnly) {
+    console.log("Reference seed complete (no users or demo fixtures written)");
+    return;
+  }
+
+  // CLI callers still require the local-demo contract. Programmatic callers
+  // (POST /api/e2e/seed, already gated on NODE_ENV=test) pass seedPassword so
+  // they can populate fixtures without flipping NODE_ENV to development.
+  const password = options?.seedPassword ?? getLocalSeedPassword();
+  await seedLocalFixtures(password);
+}
+
 const isMainModule =
   process.argv[1] != null &&
   path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
+  if (!process.argv.includes("--reference-only")) {
+    try {
+      // Fixture mode creates deterministic privileged accounts. Reference-only
+      // mode contains idempotent catalog upserts and is safe on shared hosts.
+      assertLocalDemoEnvironment();
+      getLocalSeedPassword();
+    } catch (error) {
+      console.error("Seed refused:", error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  }
+
   main()
     .then(async () => {
       await prisma.$disconnect();

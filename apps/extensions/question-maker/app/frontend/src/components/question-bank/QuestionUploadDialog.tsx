@@ -64,7 +64,7 @@ import { MCQChoicesField } from "../questions/MCQChoicesField";
 import { Topic } from "../../types/topic";
 import { questionService } from "../../services/questionService";
 import { eduaiService, EduAIModelOption } from "../../services/eduaiService";
-import { apiKeyStorage } from "../../services/apiKeyStorage";
+import { apiKeyStorage, type ProviderApiKeys } from "../../services/apiKeyStorage";
 import { useOCRHistory } from "../../hooks/use-ocr-history";
 import { OCRHistoryPanel } from "../ocr/OCRHistoryPanel";
 import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
@@ -75,6 +75,10 @@ import {
 } from "../../utils/aiModels";
 import type { OCRJob, StoredQuestion } from "../../types/ocr";
 import { toast } from "sonner";
+import {
+  validateQuestionUploadFile,
+  validateQuestionUploadText,
+} from "../../utils/questionUploadLimits";
 
 // pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
 // and only the OCR path below touches them. Imported statically they landed in
@@ -82,27 +86,17 @@ import { toast } from "sonner";
 // render the dashboard. Loaded on demand instead, at the point a file is
 // actually being read. `pdf.worker?url` stays static — Vite resolves it to an
 // emitted asset URL, not to the library itself.
-const isProduction =
-  typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  !window.location.hostname.startsWith("127.0.0.1");
-
 // Configure PDF.js worker
-// In production, use CDN to avoid issues with worker file path resolution
-// In development, use the local worker file
-// This fixes the "Failed to fetch dynamically imported module" error in production
+// Vite fingerprints and serves the worker from the same release bundle. Do not
+// load third-party runtime code from a CDN: uploaded exams are sensitive, and
+// the worker must stay exactly version-matched to the installed PDF.js client.
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 function loadPdfjs() {
   // Memoised: the worker config must be applied exactly once, and re-importing
   // per upload would re-run it on every file.
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist").then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = isProduction
-        ? // Use jsDelivr CDN in production for reliability
-          // Version 4.10.38 matches the installed pdfjs-dist package version
-          "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs"
-        : // Use local worker in development
-          pdfWorkerSrc;
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
       return pdfjs;
     });
   }
@@ -124,11 +118,11 @@ type DraftQuestion = Required<Pick<ExtractedQuestion, "question">> &
 
 const difficultyOptions: QuestionDifficulty[] = ["easy", "medium", "hard"];
 const questionTypes: QuestionType[] = ["SA", "MCQ", "LA"];
-const questionTypeLabels: Record<QuestionType, string> = {
+const questionTypeLabels = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 const assessmentTypes = ["Assignment", "Lab", "Quiz", "Midterm", "Final"] as const;
 
 function QuestionFileUploadZone({
@@ -182,7 +176,7 @@ export interface BackgroundExtractionParams {
   text: string;
   courseId: number;
   model: string;
-  apiKeys: Record<string, unknown>;
+  apiKeys: ProviderApiKeys;
   /** OCR history job id — parent should call onExtractionComplete so the job is marked success/error. */
   jobId: string;
   /** Called with outcome so the dialog can update the job (e.g. mark failed when API errors). */
@@ -506,7 +500,9 @@ export const QuestionUploadDialog = ({
     try {
       await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
       setApiKeySaveState("saved");
-      toast("API key saved", { description: "Stored locally in your browser for this provider." });
+      toast("API key saved", {
+        description: "Stored for this account in this browser until you remove it or sign out.",
+      });
     } catch {
       setApiKeySaveState("error");
       toast.error("Failed to save API key", {
@@ -516,6 +512,8 @@ export const QuestionUploadDialog = ({
   }, [aiModel, providerApiKey, toast]);
 
   const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+    const fileError = validateQuestionUploadFile(file);
+    if (fileError) throw new Error(fileError);
     const { getDocument } = await loadPdfjs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: arrayBuffer }).promise;
@@ -533,6 +531,8 @@ export const QuestionUploadDialog = ({
   }, []);
 
   const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+    const fileError = validateQuestionUploadFile(file);
+    if (fileError) throw new Error(fileError);
     const { default: Tesseract } = await import("tesseract.js");
     const result = await Tesseract.recognize(file, "eng", {
       logger: (message) => {
@@ -546,6 +546,8 @@ export const QuestionUploadDialog = ({
 
   const performOcr = useCallback(
     async (file: File) => {
+      const fileError = validateQuestionUploadFile(file);
+      if (fileError) throw new Error(fileError);
       setProcessingStage("ocr");
       setProgress(5);
 
@@ -565,6 +567,9 @@ export const QuestionUploadDialog = ({
         throw new Error("No text detected in the uploaded file.");
       }
 
+      const textError = validateQuestionUploadText(text);
+      if (textError) throw new Error(textError);
+
       return text;
     },
     [performImageOcr, performPdfOcr],
@@ -575,6 +580,9 @@ export const QuestionUploadDialog = ({
       if (!courseId) {
         throw new Error("Select a course before extracting questions.");
       }
+
+      const textError = validateQuestionUploadText(text);
+      if (textError) throw new Error(textError);
 
       setProcessingStage("extracting");
       setProgress(85);
@@ -609,6 +617,19 @@ export const QuestionUploadDialog = ({
     async (file: File) => {
       setError(null);
       setDraftQuestions([]);
+
+      // Guard before creating a history entry, reading the file, allocating
+      // an ArrayBuffer, or starting OCR. The backend repeats this limit.
+      const fileError = validateQuestionUploadFile(file);
+      if (fileError) {
+        setError(fileError);
+        setProcessingStage("idle");
+        setProgress(0);
+        setLastFileName("");
+        toast.error("Upload rejected", { description: fileError, duration: Infinity });
+        return;
+      }
+
       setLastFileName(file.name);
 
       const jobId = addJob({
@@ -999,14 +1020,11 @@ export const QuestionUploadDialog = ({
         primaryTopicId: fallbackPrimaryTopicId,
         topicName: fallbackTopicName,
         questions: payloadQuestions,
-        ...(saveTarget === "assessment"
-          ? {
-              assessment: {
-                type: assessmentType,
-                name: assessmentName.trim(),
-              },
-            }
-          : {}),
+        // Saving straight to the bank sends no assessment at all.
+        assessment:
+          saveTarget === "assessment"
+            ? { type: assessmentType, name: assessmentName.trim() }
+            : undefined,
       });
 
       onQuestionsSaved(result.questions, { assessmentId: result.assessmentId ?? null });
@@ -1330,8 +1348,8 @@ export const QuestionUploadDialog = ({
                                   </div>
                                 )}
                                 <p className="text-xs text-muted-foreground">
-                                  Your API key is stored locally in your browser and never sent to
-                                  our servers.
+                                  Your key is stored for this account in this browser and sent
+                                  through EduAI services when you use AI. Signing out removes it.
                                 </p>
                               </div>
                             )}
@@ -1705,8 +1723,8 @@ export const QuestionUploadDialog = ({
                             </div>
                           )}
                           <p className="text-xs text-muted-foreground">
-                            Your API key is stored locally in your browser and never sent to our
-                            servers.
+                            Your key is stored for this account in this browser and sent through
+                            EduAI services when you use AI. Signing out removes it.
                           </p>
                         </div>
                       )}
@@ -1754,7 +1772,11 @@ export const QuestionUploadDialog = ({
                           <Progress value={progress} />
                         </div>
                       )}
-                      {error && <p className="text-sm text-red-600">{error}</p>}
+                      {error && (
+                        <p className="text-sm text-red-600" role="alert" aria-live="assertive">
+                          {error}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 )}

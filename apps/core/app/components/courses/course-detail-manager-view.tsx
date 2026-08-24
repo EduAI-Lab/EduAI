@@ -73,8 +73,13 @@ interface StaffUser {
   email: string;
 }
 
+export type CourseDetailManagerCourse = CourseDetail & {
+  /** Staff course loaders always include the persisted, non-null toggle. */
+  courseScopeGuardrailEnabled: boolean;
+};
+
 interface Props {
-  course: CourseDetail;
+  course: CourseDetailManagerCourse;
   access: CourseAccess;
   topics: CourseTopic[];
   enrollments: CourseEnrollment[];
@@ -163,6 +168,13 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
 
 // ── component ─────────────────────────────────────────────────────────────────
 
+/** The body of `PATCH /api/courses/:id/rag-settings`. */
+type RagSettingsPatch = {
+  courseScopeGuardrailEnabled: boolean;
+  ragTopK: number | null;
+  ragSimilarityThreshold: number | null;
+};
+
 export function CourseDetailManagerView({
   course,
   access,
@@ -222,6 +234,9 @@ export function CourseDetailManagerView({
   const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
+  );
+  const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] = useState(
+    course.courseScopeGuardrailEnabled,
   );
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
@@ -463,7 +478,10 @@ export function CourseDetailManagerView({
     setRagSaving(true);
     setRagSaveMsg(null);
     try {
-      const payload: Record<string, number | null> = {
+      // `null` on either tuning field means "use the deployment default", so
+      // both are always sent rather than omitted when blank.
+      const payload: RagSettingsPatch = {
+        courseScopeGuardrailEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
         ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),
       };
@@ -1400,6 +1418,23 @@ export function CourseDetailManagerView({
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 max-w-sm">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="course-scope-guardrail">
+                        Restrict Course Chat to this course
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        When enabled, clearly off-topic student requests are redirected. This is off
+                        by default.
+                      </p>
+                    </div>
+                    <Switch
+                      id="course-scope-guardrail"
+                      checked={courseScopeGuardrailEnabled}
+                      onCheckedChange={setCourseScopeGuardrailEnabled}
+                      aria-label="Restrict Course Chat to this course"
+                    />
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="ragTopK">
                       Results per question{" "}

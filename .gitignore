@@ -30,6 +30,7 @@ node_modules
 .env.local
 .env.production
 .env.development
+.env.loadtest
 
 # IDE
 .vscode/*
@@ -50,6 +51,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 playwright-report/
+test-results/
 .stryker-tmp/
 
 

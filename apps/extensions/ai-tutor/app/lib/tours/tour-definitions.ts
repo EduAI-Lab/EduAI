@@ -12,7 +12,7 @@ function selectedModuleRoute(context: TourContextState) {
   return context.selectedModuleRoute;
 }
 
-export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition> = {
+export const tourDefinitions = {
   "student-journey": {
     id: "student-journey",
     completionKey: "aitutor:tour:completed:student-journey",
@@ -52,6 +52,7 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
         description:
           "Modules break the material into manageable chunks. We will open the first one to keep moving.",
         target: '[data-tour="student-module-card-first"]',
+        emptyTarget: '[data-tour="student-modules-empty"]',
         route: selectedCourseRoute,
         side: "right",
         storeRouteFromTarget: "selectedModuleRoute",
@@ -62,6 +63,7 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
         description:
           "A lesson contains the questions, progress, and AI support tools you will use most often.",
         target: '[data-tour="student-lesson-card-first"]',
+        emptyTarget: '[data-tour="student-lessons-empty"]',
         route: selectedModuleRoute,
         side: "right",
         storeRouteFromTarget: "selectedLessonRoute",
@@ -109,6 +111,72 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
         target: '[data-tour="student-ai-chat"]',
         route: selectedLessonRoute,
         side: "left",
+      },
+    ],
+  },
+  /**
+   * Unit-administrator orientation.
+   *
+   * The two student tours are written in the learner's voice and would
+   * misdescribe this role's app, which is why a unit admin used to be offered
+   * no tour at all. This one is staff-voiced and walks the two screens the role
+   * actually lives on — the unit dashboard and the unit-scoped course list.
+   *
+   * It deliberately stops at the course list rather than driving into a course:
+   * the destination depends on which courses the unit has, and a tour that
+   * stalls on an empty unit is worse than one that hands over at the door.
+   */
+  "unit-admin-orientation": {
+    id: "unit-admin-orientation",
+    completionKey: "aitutor:tour:completed:unit-admin-orientation",
+    steps: [
+      {
+        id: "unit-admin-intro",
+        title: "A quick tour of your unit",
+        description:
+          "This walks you through the rollup on this page, the drafts waiting on you, and where your unit's courses live. You can restart it from here at any time.",
+        target: '[data-tour="nav-take-tour"]',
+        route: "/dashboard",
+        side: "bottom",
+        align: "end",
+      },
+      {
+        id: "unit-admin-stats",
+        title: "Your unit at a glance",
+        description:
+          "Every course in your authorized units, split by published and draft. These counts cover the whole unit, not just the courses listed below.",
+        target: '[data-tour="dashboard-stats"]',
+        route: "/dashboard",
+        side: "bottom",
+      },
+      {
+        id: "unit-admin-needs-attention",
+        title: "Drafts waiting on you",
+        description:
+          "Courses your unit hasn't published yet. Publish one straight from here, or open it first to check its content. Publishing a course doesn't publish its modules and lessons — those stay hidden until you publish them individually.",
+        target: '[data-tour="dashboard-needs-attention"]',
+        route: "/dashboard",
+        side: "left",
+      },
+      {
+        id: "unit-admin-quick-actions",
+        title: "Shortcuts to the rest",
+        description:
+          "Jump to your course list, the next draft, or your own settings. Courses themselves are created in EduAI Core, not here.",
+        target: '[data-tour="dashboard-quick-actions"]',
+        route: "/dashboard",
+        side: "top",
+      },
+      {
+        id: "unit-admin-course-list",
+        title: "Every course in your units",
+        description:
+          "Search, filter by term or status, and open any course to manage its modules, lessons and activities. Courses outside your authorized units never appear here.",
+        // No `emptyTarget`: this anchor wraps the list view itself, so it is
+        // present whether the unit has courses, none, or only filtered-out ones.
+        target: '[data-tour="staff-course-list"]',
+        route: "/instructor",
+        side: "top",
       },
     ],
   },
@@ -171,4 +239,4 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
       },
     ],
   },
-};
+} satisfies Record<AppTourDefinition["id"], AppTourDefinition>;

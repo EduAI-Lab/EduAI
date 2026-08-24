@@ -9,6 +9,7 @@
  * the analytics slot — with `ChatTranscriptViewer` and `fetchChatTranscript`
  * mocked so only DashboardView's own logic is under test.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -26,7 +27,7 @@ vi.mock("~/hooks/api/use-chat-history", () => ({
 }));
 
 vi.mock("~/components/chat/chat-transcript-viewer", () => ({
-  ChatTranscriptViewer: (props: Record<string, unknown>) => (
+  ChatTranscriptViewer: (props: JsonObject) => (
     <div data-testid="transcript-viewer">{JSON.stringify(props)}</div>
   ),
 }));
@@ -108,7 +109,7 @@ beforeEach(() => {
       ownerName: "Jane Doe",
       updatedAt: new Date().toISOString(),
     },
-    messages: [{ role: "user", content: "hi" }],
+    messages: [{ id: "msg-1", role: "user", content: "hi" }],
     canEdit: true,
   });
 });

@@ -11,6 +11,7 @@
  * @eduai/ui design system: two-column grid, sticky action bar, live QuestionCard preview,
  * AI assist panel. Tabler icons only.
  */
+import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
@@ -40,6 +41,7 @@ import { courseService } from "@/services/courseService";
 import eduaiService, {
   type EduAIModelOption,
   type EduAICourseOption,
+  type EduAIQuestionGenerationRequest,
 } from "@/services/eduaiService";
 import { apiKeyStorage } from "@/services/apiKeyStorage";
 import { normalizeCourseCode } from "@/utils/courseDisplay";
@@ -307,12 +309,12 @@ export function QuestionComposerPage() {
           description: question.description ?? "",
         }));
       })
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
         const message =
-          (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data
+          (cause as { response?: { data?: { error?: string } }; message?: string })?.response?.data
             ?.error ??
-          (err as { message?: string })?.message ??
+          (cause as { message?: string })?.message ??
           "Could not load the source question.";
         setSourceError(message);
       })
@@ -369,14 +371,17 @@ export function QuestionComposerPage() {
       ? `AI service does not recognize course code "${resolvedCourseCode}". Generation will still run, but results may be less accurate.`
       : null;
 
+  /** Per-field composer validation messages; an absent key means that field is fine. */
+  type ComposerValidationErrors = {
+    questionText?: string;
+    primaryTopic?: string;
+    choices?: string;
+    answer?: string;
+  };
+
   // ── Validation ───────────────────────────────────────────────────────────
   const validation = useMemo(() => {
-    const errors: {
-      questionText?: string;
-      primaryTopic?: string;
-      choices?: string;
-      answer?: string;
-    } = {};
+    const errors: ComposerValidationErrors = {};
     if (!form.questionText.trim()) errors.questionText = "Question text is required.";
     if (mode !== "variant" && !form.primaryTopicId.trim())
       errors.primaryTopic = "Select a primary topic.";
@@ -425,12 +430,6 @@ export function QuestionComposerPage() {
       return;
     }
     const code = resolveCourseCodeForEduAI();
-    if (!code) {
-      setError(
-        "AI service requires a course code. Update the course with a code or ensure it exists in the AI service.",
-      );
-      return;
-    }
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
@@ -517,18 +516,21 @@ export function QuestionComposerPage() {
           : undefined;
 
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
-      const response = await eduaiService.generateQuestions({
+      const generateParams: EduAIQuestionGenerationRequest = {
         prompt: promptWithTopics,
-        courseCode: code,
+        courseId: validCourseId,
+        courseCode: code || undefined,
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
-        ...(variantMcqRequiredCount != null
-          ? { mcqRequiredChoiceCount: variantMcqRequiredCount }
-          : {}),
-      });
+      };
+      // Left out entirely when unknown so the generator picks its own default.
+      if (variantMcqRequiredCount != null) {
+        generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
+      }
+      const response = await eduaiService.generateQuestions(generateParams);
 
       const generated = response?.data?.questions?.[0];
       if (!generated)
@@ -568,7 +570,7 @@ export function QuestionComposerPage() {
           ? Array.from(
               new Set(
                 generated.secondary_topic_ids
-                  .map((v: unknown) => String(v).trim())
+                  .map((v: JsonValue) => String(v).trim())
                   .filter((v) => v !== "" && topicIdSet.has(v) && v !== primaryTopicId),
               ),
             )
@@ -1048,7 +1050,8 @@ export function QuestionComposerPage() {
                 await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState("saved");
                 toast("API key saved", {
-                  description: "Stored locally in your browser for this provider.",
+                  description:
+                    "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
                 });
               } catch {
                 setApiKeySaveState("error");

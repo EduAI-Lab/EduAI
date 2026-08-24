@@ -35,26 +35,29 @@ import {
 import apiKeyStorage, { type AIProvider } from "../services/apiKeyStorage";
 import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
 import { canvasService, type CanvasIntegration } from "../services/canvasService";
+import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const KEY_PROVIDERS: AIProvider[] = ["google", "openai", "deepseek", "anthropic"];
+const KEY_PROVIDERS: AIProvider[] = ["google", "openai", "deepseek", "anthropic", "opencode"];
 
-const PROVIDER_LABELS: Record<AIProvider, string> = {
+const PROVIDER_LABELS = {
   google: "Google AI (Gemini)",
   openai: "OpenAI",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
-};
+  opencode: "OpenCode Go",
+} satisfies Record<AIProvider, string>;
 
-const PROVIDER_PLACEHOLDERS: Record<AIProvider, string> = {
+const PROVIDER_PLACEHOLDERS = {
   google: "AIza-...",
   openai: "sk-...",
   deepseek: "sk-...",
   anthropic: "sk-ant-...",
-};
+  opencode: "OpenCode Go API key",
+} satisfies Record<AIProvider, string>;
 
 const DEFAULT_MODEL_KEY = "qm:default-model";
 const EXPORT_PREFS_KEY = "qm:export-prefs";
@@ -92,7 +95,7 @@ function readExportPrefs(): ExportPrefs {
   }
 }
 
-const CANVAS_DEFAULT_URL = import.meta.env.DEV ? "http://localhost:8080" : "https://canvas.ubc.ca";
+const CANVAS_DEFAULT_URL = getCanvasDefaultUrl(import.meta.env.DEV);
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -270,7 +273,17 @@ export default function SettingsPage() {
       footer={
         <SignOutCard
           action={
-            <Button type="button" variant="outline" onClick={() => void logout()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void logout().catch(() => {
+                  toast.error("Could not log out", {
+                    description: "Your session is still active. Please try again.",
+                  });
+                });
+              }}
+            >
               <IconLogout className="size-4" />
               Log out
             </Button>
@@ -289,7 +302,9 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle>Model Providers</CardTitle>
                   <CardDescription>
-                    Browser-encrypted API keys used when generating questions with AI.
+                    Keys are stored for this account in this browser and sent through EduAI services
+                    to the selected provider when you use AI. Signing out removes them from this
+                    browser.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -299,6 +314,19 @@ export default function SettingsPage() {
                     return (
                       <div key={provider} className="space-y-2">
                         <Label className="mb-1">{PROVIDER_LABELS[provider]}</Label>
+                        {provider === "opencode" && (
+                          <p className="text-xs text-muted-foreground">
+                            Requires an OpenCode Go subscription.{" "}
+                            <a
+                              href="https://opencode.ai/docs/go/"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline underline-offset-2"
+                            >
+                              Setup guide
+                            </a>
+                          </p>
+                        )}
                         {existing ? (
                           <div className="flex items-center gap-2">
                             <Badge variant="secondary">Configured ({maskKey(existing)})</Badge>

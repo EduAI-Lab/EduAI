@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -67,7 +68,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
-  const { courses } = useCourses({ pageSize: 200 });
+  // Facets are only consumed by the course-list filter toolbar, so skip them.
+  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -172,7 +174,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
-  const { getValidApiKeys } = useApiKeys();
+  // ChatScreen creates the CurrentUserIdProvider below this hook, inside
+  // CoreAppShell. Pass the loader-owned user id explicitly so this instance
+  // and the nested ChatInput instance address the same module-level key store.
+  // Otherwise they alternate between the anonymous and authenticated owners,
+  // repeatedly resetting the store until React trips its update-depth guard.
+  const { getValidApiKeys } = useApiKeys(user.id);
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
@@ -361,7 +368,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             annotation !== null &&
             typeof annotation === "object" &&
             !Array.isArray(annotation) &&
-            (annotation as Record<string, unknown>).hitLongOutputCap === true,
+            (annotation as JsonObject).hitLongOutputCap === true,
         );
 
       if (hitLongOutputCap) {

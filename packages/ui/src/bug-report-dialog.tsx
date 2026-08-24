@@ -13,6 +13,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
+import { BUG_TYPE_LABELS } from "./bug-reports/bug-reports-utils";
 
 export type BugReportType =
   | "UI_DISPLAY"
@@ -33,14 +34,11 @@ export type BugReportSubmitData = {
   userAgent?: string;
 };
 
-const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
-  { value: "UI_DISPLAY", label: "UI / display issue" },
-  { value: "FEATURE_NOT_WORKING", label: "Feature not working" },
-  { value: "PERFORMANCE", label: "Performance issue" },
-  { value: "CONTENT_ERROR", label: "Content error" },
-  { value: "ACCESS_PERMISSION", label: "Access / permission issue" },
-  { value: "OTHER", label: "Other" },
-];
+// Labels come from the same map the admin triage table renders, so a reporter
+// and a triager read the same words for the same type.
+const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = (
+  Object.keys(BUG_TYPE_LABELS) as BugReportType[]
+).map((value) => ({ value, label: BUG_TYPE_LABELS[value] }));
 
 const MIN_DESC = 10;
 const MAX_DESC = 2000;
@@ -50,9 +48,9 @@ type BugReportDialogProps = {
   onOpenChange: (open: boolean) => void;
   /** Called on submit. Throw to surface an inline error; resolve to close the dialog. */
   onSubmit: (data: BugReportSubmitData) => Promise<void>;
-  /** If provided, called when the dialog opens to refresh the screenshot cache. */
+  /** If provided, called only after the user opts in to diagnostic attachments. */
   captureScreenshot?: () => Promise<string | null>;
-  /** If provided, diagnostic data is attached to the submission automatically. */
+  /** If provided, the user may explicitly opt in to diagnostic attachments. */
   getCapturedData?: () => { consoleLogs: string; networkLogs: string; screenshot: string | null };
 };
 
@@ -70,14 +68,12 @@ export function BugReportDialog({
   const [typeError, setTypeError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [includeDiagnostics, setIncludeDiagnostics] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setSubmitError(null);
-    if (captureScreenshot) {
-      void captureScreenshot();
-    }
-  }, [captureScreenshot, open]);
+  }, [open]);
 
   const reset = () => {
     setDescription("");
@@ -86,6 +82,7 @@ export function BugReportDialog({
     setDescError(null);
     setTypeError(null);
     setSubmitError(null);
+    setIncludeDiagnostics(false);
   };
 
   const handleClose = () => {
@@ -124,7 +121,7 @@ export function BugReportDialog({
         bugType,
         isAnonymous,
       };
-      if (getCapturedData) {
+      if (includeDiagnostics && getCapturedData) {
         const captured = getCapturedData();
         data.consoleLogs = captured.consoleLogs;
         data.networkLogs = captured.networkLogs;
@@ -151,7 +148,10 @@ export function BugReportDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Report a bug</DialogTitle>
-          <DialogDescription>Describe the issue you encountered.</DialogDescription>
+          <DialogDescription>
+            Describe the issue you encountered. Diagnostic attachments are optional and off by
+            default.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -220,6 +220,26 @@ export function BugReportDialog({
               onCheckedChange={setIsAnonymous}
             />
           </div>
+
+          {getCapturedData && (
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+              <div>
+                <Label htmlFor="bug-report-diagnostics">Include diagnostics</Label>
+                <p className="text-xs text-muted-foreground">
+                  Attaches recent console and request metadata plus a screenshot of the current
+                  page. Review the page for sensitive course or student information first.
+                </p>
+              </div>
+              <Switch
+                id="bug-report-diagnostics"
+                checked={includeDiagnostics}
+                onCheckedChange={(next) => {
+                  setIncludeDiagnostics(next);
+                  if (next && captureScreenshot) void captureScreenshot();
+                }}
+              />
+            </div>
+          )}
 
           {submitError && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

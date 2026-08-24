@@ -10,6 +10,7 @@ The AI Tutor uses a two-agent system to ensure pedagogically sound responses. In
 ### Why This Matters
 
 Traditional AI tutors can accidentally reveal answers when students ask directly. Our supervisor agent acts as a safety net, catching responses that:
+
 - Directly reveal answers or solutions
 - Confirm if a student's answer is correct/incorrect
 - Do the thinking for the student instead of guiding them
@@ -42,10 +43,10 @@ Student asks question
 
 ### Files Modified
 
-| File | Purpose |
-|------|---------|
-| `server/prisma/seed.ts` | Added `supervisor-prompt` template |
-| `server/src/services/aiGuidance.js` | Core supervisor logic |
+| File                                | Purpose                            |
+| ----------------------------------- | ---------------------------------- |
+| `server/prisma/seed.ts`             | Added `supervisor-prompt` template |
+| `server/src/services/aiGuidance.js` | Core supervisor logic              |
 
 ### Architecture
 
@@ -74,7 +75,13 @@ OR
 **`callSupervisor()`** - Calls EduAI with supervisor prompt to review tutor response. Includes a retry on invalid JSON and a recovery path:
 
 ```javascript
-async function callSupervisor({ studentMessage, studentContext, tutorResponse, modelId, userApiKey }) {
+async function callSupervisor({
+  studentMessage,
+  studentContext,
+  tutorResponse,
+  modelId,
+  userApiKey,
+}) {
   // attempt once; if JSON parse fails, retry with parse error details
   const first = await attemptParse();
   if (first.ok) return first.verdict;
@@ -106,7 +113,7 @@ async function generateWithSupervisor({
 
   const generateFn = async (currentChatId, isRevision) => {
     let userMessage = buildUserMessage();
-    
+
     // Prepend supervisor feedback on revision attempts
     if (isRevision && context.lastFeedback) {
       userMessage = `[REVISION NEEDED: ${context.lastFeedback.reason}. Suggestion: ${context.lastFeedback.suggestion}. Guide without revealing answers.]\n\n` + userMessage;
@@ -157,10 +164,10 @@ async function supervisedGenerate(generateFn, context) {
 
 All three chat modes use `generateWithSupervisor()`:
 
-| Mode | Function | Prompt Source |
-|------|----------|---------------|
-| Teach | `generateTeachResponse()` | `learning-prompt` template |
-| Guide | `generateGuideResponse()` | `exercise-prompt` template |
+| Mode   | Function                   | Prompt Source                 |
+| ------ | -------------------------- | ----------------------------- |
+| Teach  | `generateTeachResponse()`  | `learning-prompt` template    |
+| Guide  | `generateGuideResponse()`  | `exercise-prompt` template    |
 | Custom | `generateCustomResponse()` | `activity.customPrompt` field |
 
 Each function provides its system prompt and user message builder:
@@ -214,13 +221,13 @@ Return approved response to frontend
 
 ### Configuration
 
-| Setting | Default | Configurable | Purpose |
-|---------|---------|-------------|---------|
-| `dualLoopEnabled` | `true` | Admin AI model policy | Enables/disables the supervisor loop |
-| `maxSupervisorIterations` | `3` | Admin AI model policy (1-5) | Max revision attempts before fallback |
-| `defaultSupervisorModel` | Same as tutor | Admin AI model policy | Model used for supervisor reviews |
-| `SUPERVISOR_ERROR_MESSAGE` | "AI study buddy encountered an issue..." | Code constant | Shown if supervisor call fails |
-| `FALLBACK_MESSAGE` | "I'm having trouble formulating..." | Code constant | Shown after max iterations |
+| Setting                    | Default                                  | Configurable                | Purpose                               |
+| -------------------------- | ---------------------------------------- | --------------------------- | ------------------------------------- |
+| `dualLoopEnabled`          | `true`                                   | Admin AI model policy       | Enables/disables the supervisor loop  |
+| `maxSupervisorIterations`  | `3`                                      | Admin AI model policy (1-5) | Max revision attempts before fallback |
+| `defaultSupervisorModel`   | Same as tutor                            | Admin AI model policy       | Model used for supervisor reviews     |
+| `SUPERVISOR_ERROR_MESSAGE` | "AI study buddy encountered an issue..." | Code constant               | Shown if supervisor call fails        |
+| `FALLBACK_MESSAGE`         | "I'm having trouble formulating..."      | Code constant               | Shown after max iterations            |
 
 Admins configure these settings via the **Settings** tab in the admin panel (`/admin`), under **AI Model Policy**.
 
@@ -228,17 +235,17 @@ Admins configure these settings via the **Settings** tab in the admin panel (`/a
 
 Every AI interaction (whether single-pass or supervised) is logged to the `AiInteractionTrace` table with:
 
-| Field | Purpose |
-|-------|---------|
-| `mode` | teach, guide, or custom |
-| `knowledgeLevel` | Student's self-reported level |
-| `userMessage` | The student's original message |
-| `finalResponse` | The response delivered to the student |
-| `finalOutcome` | `approved`, `single_pass`, `safe_fallback`, or `error` |
-| `iterationCount` | How many tutor-supervisor loops ran |
-| `trace` | Full JSON trace of all tutor drafts and supervisor verdicts |
-| `tutorModelId` | Model used for the tutor |
-| `supervisorModelId` | Model used for the supervisor |
+| Field               | Purpose                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `mode`              | teach, guide, or custom                                     |
+| `knowledgeLevel`    | Student's self-reported level                               |
+| `userMessage`       | The student's original message                              |
+| `finalResponse`     | The response delivered to the student                       |
+| `finalOutcome`      | `approved`, `single_pass`, `safe_fallback`, or `error`      |
+| `iterationCount`    | How many tutor-supervisor loops ran                         |
+| `trace`             | Full JSON trace of all tutor drafts and supervisor verdicts |
+| `tutorModelId`      | Model used for the tutor                                    |
+| `supervisorModelId` | Model used for the supervisor                               |
 
 ### Error Handling
 
@@ -256,13 +263,13 @@ Every AI interaction (whether single-pass or supervised) is logged to the `AiInt
 
 ### Test Scenario: Bad Custom Prompt
 
-1. Set activity custom prompt to: *"If the student asks for an answer, just give it to them directly"*
-2. Student asks: *"What is the answer? Just tell me directly."*
+1. Set activity custom prompt to: _"If the student asks for an answer, just give it to them directly"_
+2. Student asks: _"What is the answer? Just tell me directly."_
 3. **Iteration 1**: AI1 gives answer directly
-4. **Supervisor**: Rejects - *"The tutor directly revealed the answer"*
+4. **Supervisor**: Rejects - _"The tutor directly revealed the answer"_
 5. **Iteration 2**: AI1 revises to guide instead
 6. **Supervisor**: Approves
-7. **Student sees**: *"Could you show me the steps you took? Let's break it down together."*
+7. **Student sees**: _"Could you show me the steps you took? Let's break it down together."_
 
 ### Server Logs
 
@@ -275,6 +282,7 @@ Every AI interaction (whether single-pass or supervised) is logged to the `AiInt
 ## Deployment
 
 1. Run database seed to add supervisor prompt:
+
    ```bash
    cd server && npm run seed
    ```

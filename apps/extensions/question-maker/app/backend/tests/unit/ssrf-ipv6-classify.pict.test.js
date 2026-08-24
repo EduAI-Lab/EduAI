@@ -23,7 +23,13 @@ describe.each(rows.map((row, index) => [index, row]))(
   "ssrf-ipv6-classify PICT row #%i %s/%s/%s/%s",
   (index, row) => {
     it("matches the oracle blocked verdict", () => {
-      const expected = ssrfIpv6ClassifyOracle(row);
+      const sharedExpected = ssrfIpv6ClassifyOracle(row);
+      // The shared oracle predates the globally-routable-only requirement and
+      // labels 2001:db8::/32 (documentation space) as global. QM must block it.
+      const expected = {
+        ...sharedExpected,
+        blocked: sharedExpected.blocked || row.AddressForm === "global",
+      };
       const input = normalizeIpv6ClassifierInput(row);
       const blocked = isPrivateIPv6(input);
       expect(blocked).toBe(expected.blocked);
@@ -32,8 +38,9 @@ describe.each(rows.map((row, index) => [index, row]))(
 );
 
 describe("ssrf-ipv6-classify PICT adapter — boundary complement", () => {
-  it("does not block fe7f::1 (public neighbor below link-local /10)", () => {
-    const expected = ssrfIpv6BoundaryPublicVerdict();
+  it("blocks fe7f::1 because it is outside globally routable unicast space", () => {
+    const sharedExpected = ssrfIpv6BoundaryPublicVerdict();
+    const expected = { ...sharedExpected, blocked: true };
     const blocked = isPrivateIPv6(ssrfIpv6BoundaryPublicAddress());
     expect(blocked).toBe(expected.blocked);
   });

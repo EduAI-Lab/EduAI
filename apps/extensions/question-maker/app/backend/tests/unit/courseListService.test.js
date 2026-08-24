@@ -58,6 +58,7 @@ const {
   listCoursesPageForUser,
   resetCourseAccessSyncForTests,
   enrichCourseDetail,
+  findCoursesByProjectedCode,
 } = await import("../../src/services/courseListService.js");
 
 describe("listCoursesForUser", () => {
@@ -67,8 +68,18 @@ describe("listCoursesForUser", () => {
     mockFindMany.mockResolvedValue([]);
     mockCount.mockReset();
     const CORE_CATALOG = [
-      { id: "core-1", name: "Core Course One", code: "STUDY3", department: "COSC" },
-      { id: "core-2", name: "Core Course Two", code: "MATH100", department: "MATH" },
+      {
+        id: "core-1",
+        name: "Core Course One",
+        code: "STUDY3",
+        department: "COSC",
+      },
+      {
+        id: "core-2",
+        name: "Core Course Two",
+        code: "MATH100",
+        department: "MATH",
+      },
     ];
     mockGetAllCoursesFromCore.mockResolvedValue(CORE_CATALOG);
     // #1041/#1125: non-ADMIN callers resolve Core fields through the `?ids=`
@@ -80,7 +91,10 @@ describe("listCoursesForUser", () => {
     // The cookie-scoped list is unwrapped to a plain array (#1041).
     mockListCoursesFromCore.mockResolvedValue([]);
     mockGetAuthorizedUnits.mockResolvedValue([]);
-    mockGetCourseFromCore.mockResolvedValue({ id: "core-1", name: "Core Course One" });
+    mockGetCourseFromCore.mockResolvedValue({
+      id: "core-1",
+      name: "Core Course One",
+    });
     mockCount.mockResolvedValue(0);
     mockCourseAccessDeleteMany.mockReset();
     mockCourseAccessDeleteMany.mockResolvedValue({ count: 0 });
@@ -92,7 +106,11 @@ describe("listCoursesForUser", () => {
   describe("listCoursesPageForUser (#1206)", () => {
     it("refreshes access once, then applies the same SQL visibility predicate to count and page", async () => {
       mockListCoursesFromCore.mockResolvedValue([
-        { id: "core-1", callerEnrollmentRole: "INSTRUCTOR", department: "COSC" },
+        {
+          id: "core-1",
+          callerEnrollmentRole: "INSTRUCTOR",
+          department: "COSC",
+        },
       ]);
       mockFindMany
         .mockResolvedValueOnce([{ id: 10, coreCourseId: "core-1" }])
@@ -118,7 +136,14 @@ describe("listCoursesForUser", () => {
         where: { userId: "instructor-1" },
       });
       expect(mockCourseAccessCreateMany).toHaveBeenCalledWith({
-        data: [{ userId: "instructor-1", courseId: 10, role: "INSTRUCTOR", department: "COSC" }],
+        data: [
+          {
+            userId: "instructor-1",
+            courseId: 10,
+            role: "INSTRUCTOR",
+            department: "COSC",
+          },
+        ],
         skipDuplicates: true,
       });
 
@@ -160,12 +185,21 @@ describe("listCoursesForUser", () => {
       expect(result.courses[0].accessLevel).toBe("unit");
       // The department-only grant is persisted even without an enrollment role.
       expect(mockCourseAccessCreateMany).toHaveBeenCalledWith({
-        data: [{ userId: "unit-admin-1", courseId: 10, role: "NONE", department: "COSC" }],
+        data: [
+          {
+            userId: "unit-admin-1",
+            courseId: 10,
+            role: "NONE",
+            department: "COSC",
+          },
+        ],
         skipDuplicates: true,
       });
       const pageWhere = mockFindMany.mock.calls[1][0].where;
       expect(pageWhere.OR).toContainEqual({
-        accessGrants: { some: { userId: "unit-admin-1", department: { in: ["COSC"] } } },
+        accessGrants: {
+          some: { userId: "unit-admin-1", department: { in: ["COSC"] } },
+        },
       });
     });
 
@@ -174,7 +208,10 @@ describe("listCoursesForUser", () => {
       mockCount.mockResolvedValue(0);
 
       const user = { id: "instructor-ttl", role: "INSTRUCTOR" };
-      const options = { cookie: "session=x", pagination: { offset: 0, limit: 25 } };
+      const options = {
+        cookie: "session=x",
+        pagination: { offset: 0, limit: 25 },
+      };
       await listCoursesPageForUser(user, options);
       await listCoursesPageForUser(user, options);
 
@@ -226,7 +263,9 @@ describe("listCoursesForUser", () => {
       // The predicate itself proves a linked course owned by the caller
       // cannot match: the owner branch requires `coreCourseId: null`, and
       // every other OR branch is dropped while the mirror is unhealthy.
-      expect(countWhere).toEqual({ OR: [{ userId: "linked-owner", coreCourseId: null }] });
+      expect(countWhere).toEqual({
+        OR: [{ userId: "linked-owner", coreCourseId: null }],
+      });
       expect(pageWhere).toEqual(countWhere);
     });
 
@@ -404,7 +443,10 @@ describe("listCoursesForUser", () => {
         .mockResolvedValueOnce([{ id: 2, coreCourseId: "core-2" }]); // only core-2 landed
       mockEnsureCourseAnchor.mockImplementation(async (_userId, coreCourseId) => {
         if (coreCourseId === "core-1") throw new Error("P2024: pool timeout");
-        return { course: { id: 2, userId: "admin-7", coreCourseId: "core-2" }, created: true };
+        return {
+          course: { id: 2, userId: "admin-7", coreCourseId: "core-2" },
+          created: true,
+        };
       });
 
       const rows = await listCoursesForUser({ id: "admin-7", role: "ADMIN" });
@@ -458,7 +500,9 @@ describe("listCoursesForUser", () => {
       expect(mockGetAllCoursesFromCore).not.toHaveBeenCalled();
       expect(mockGetCoursesByIdsFromCore).toHaveBeenCalledTimes(1);
       expect(mockListCoursesFromCore).toHaveBeenCalledTimes(1);
-      expect(mockListCoursesFromCore).toHaveBeenCalledWith("session=x", { all: true });
+      expect(mockListCoursesFromCore).toHaveBeenCalledWith("session=x", {
+        all: true,
+      });
     });
 
     it("grants instructor access from an INSTRUCTOR callerEnrollmentRole", async () => {
@@ -467,13 +511,47 @@ describe("listCoursesForUser", () => {
         { id: "core-1", callerEnrollmentRole: "INSTRUCTOR" },
       ]);
 
-      const rows = await listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" });
+      const rows = await listCoursesForUser({
+        id: "inst-1",
+        role: "INSTRUCTOR",
+      });
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe(1);
       expect(rows[0].accessLevel).toBe("instructor");
       // Name/code are read through from Core exclusively (#1076/#1072 §4 step 10).
       expect(rows[0].name).toBe("Core Course One");
       expect(rows[0].code).toBe("STUDY3");
+    });
+
+    it("propagates a status-bearing 401/403 from the cookie-scoped Core list instead of returning an empty catalog (#1569 review)", async () => {
+      // An expired/invalid caller cookie makes the REAL listCoursesFromCore
+      // boundary throw a coreError with `.status` (401/403). Swallowing it would
+      // deny every row and return [], which the route would answer 200 — an auth
+      // failure masquerading as "you have no courses". The service must rethrow
+      // so the route surfaces Not Authorized. This crosses the actual Core call,
+      // unlike a route test that mocks listCoursesForUser itself.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      for (const status of [401, 403]) {
+        mockListCoursesFromCore.mockRejectedValueOnce(
+          Object.assign(new Error("Core request failed"), { status }),
+        );
+        await expect(
+          listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "stale" }),
+        ).rejects.toMatchObject({ status });
+      }
+    });
+
+    it("fails closed (empty, no throw) when the cookie-scoped Core list fails without an auth status (#1114)", async () => {
+      // Core unreachable / 5xx (no 401/403): degrade to an empty visible set
+      // rather than surfacing the failure — roleByCoreId stays empty and every
+      // row is denied. Distinguishes an infra failure from a caller-auth one.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      mockListCoursesFromCore.mockRejectedValue(
+        Object.assign(new Error("Core unavailable"), { status: 503 }),
+      );
+
+      const rows = await listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "s" });
+      expect(rows).toHaveLength(0);
     });
 
     it("excludes a course where the caller has a TA callerEnrollmentRole (below MIN_LIST_RANK)", async () => {
@@ -501,7 +579,10 @@ describe("listCoursesForUser", () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "owner-1", coreCourseId: "core-1" }]);
       mockListCoursesFromCore.mockResolvedValue([]);
 
-      const rows = await listCoursesForUser({ id: "owner-1", role: "INSTRUCTOR" });
+      const rows = await listCoursesForUser({
+        id: "owner-1",
+        role: "INSTRUCTOR",
+      });
       expect(rows).toHaveLength(0);
     });
 
@@ -509,14 +590,20 @@ describe("listCoursesForUser", () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "owner-1", coreCourseId: "core-1" }]);
       mockListCoursesFromCore.mockResolvedValue([]);
 
-      const rows = await listCoursesForUser({ id: "stranger-1", role: "INSTRUCTOR" });
+      const rows = await listCoursesForUser({
+        id: "stranger-1",
+        role: "INSTRUCTOR",
+      });
       expect(rows).toHaveLength(0);
     });
 
     it("denies an unlinked course even for the local owner (#1114)", async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "owner-1", coreCourseId: null }]);
 
-      const rows = await listCoursesForUser({ id: "owner-1", role: "INSTRUCTOR" });
+      const rows = await listCoursesForUser({
+        id: "owner-1",
+        role: "INSTRUCTOR",
+      });
       expect(rows).toHaveLength(0);
     });
 
@@ -527,7 +614,10 @@ describe("listCoursesForUser", () => {
       ]);
       mockListCoursesFromCore.mockRejectedValue(new Error("Core unreachable"));
 
-      const rows = await listCoursesForUser({ id: "owner-1", role: "INSTRUCTOR" });
+      const rows = await listCoursesForUser({
+        id: "owner-1",
+        role: "INSTRUCTOR",
+      });
       expect(rows).toHaveLength(0);
     });
 
@@ -537,7 +627,10 @@ describe("listCoursesForUser", () => {
         mockGetAuthorizedUnits.mockResolvedValue(["COSC"]);
         mockListCoursesFromCore.mockResolvedValue([]);
 
-        const rows = await listCoursesForUser({ id: "ua-1", role: "UNIT_ADMIN" });
+        const rows = await listCoursesForUser({
+          id: "ua-1",
+          role: "UNIT_ADMIN",
+        });
         expect(rows).toHaveLength(1);
         expect(rows[0].accessLevel).toBe("unit");
         // Department came from the already-fetched service-key catalog — no
@@ -551,7 +644,10 @@ describe("listCoursesForUser", () => {
           { id: "core-2", callerEnrollmentRole: "INSTRUCTOR" },
         ]);
 
-        const rows = await listCoursesForUser({ id: "ua-1", role: "UNIT_ADMIN" });
+        const rows = await listCoursesForUser({
+          id: "ua-1",
+          role: "UNIT_ADMIN",
+        });
         expect(rows).toHaveLength(1);
         expect(rows[0].accessLevel).toBe("instructor");
       });
@@ -566,5 +662,33 @@ describe("listCoursesForUser", () => {
         expect(mockGetAuthorizedUnits).not.toHaveBeenCalled();
       });
     });
+  });
+});
+
+describe("findCoursesByProjectedCode (#1362)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindMany.mockReset();
+    mockSearchCoursesFromCore.mockReset();
+  });
+
+  it("matches a spaced Core code when the client sends a compact courseCode", async () => {
+    // Core search is literal contains — "cosc121" does not match "COSC 121".
+    // Lookup must also try the spaced candidate so QM AI gen can resolve.
+    mockSearchCoursesFromCore.mockImplementation(async (q) => {
+      if (String(q).replace(/\s+/g, "").toLowerCase() === "cosc121" && String(q).includes(" ")) {
+        return [{ id: "core-spaced", code: "COSC 121", name: "Programming II" }];
+      }
+      if (String(q).toLowerCase() === "cosc121") return [];
+      return [];
+    });
+    mockFindMany.mockResolvedValue([{ id: 42, coreCourseId: "core-spaced", userId: "inst-1" }]);
+
+    const rows = await findCoursesByProjectedCode("COSC121");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(42);
+    expect(mockSearchCoursesFromCore.mock.calls.map((c) => c[0])).toEqual(
+      expect.arrayContaining(["COSC121", "COSC 121"]),
+    );
   });
 });

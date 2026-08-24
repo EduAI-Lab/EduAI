@@ -6,13 +6,12 @@
  * predicate and the backend gate — disagreement is the bug.
  *
  * Known drift (do not relax the oracle; use it.fails on the divergent side):
- *   - delete-material: UI uses canManageTopics (topics policy) as the
- *     "manage any material" staff bypass; backend materials use
- *     canDeleteMaterial (own-upload for TA, no topics policy). TA + topics
- *     policy on + other ownership is the divergent cell.
  *   - manage-rag: backend `PATCH /api/courses/:id/rag-settings` allows
  *     rank >= 2 (admin | unit | instructor); client only enables admin |
  *     instructor. Unit + manage-rag is the divergent cell (#1406).
+ *
+ * Resolved: delete-material TA + topics + other ownership (#1390) — client
+ * now mirrors backend canDeleteMaterial (own-upload only for TA).
  */
 
 export type ManagerViewRow = {
@@ -102,17 +101,8 @@ export function courseDetailManagerViewOracle(row: ManagerViewRow): ManagerViewV
 
 /**
  * Client predicates that intentionally disagree with the oracle / backend:
- *   - delete-material: topics canManage staff bypass (#1390)
  *   - manage-rag: client omits unit while backend rank >= 2 includes it (#1406)
  */
 export function managerViewClientKnownDivergence(row: ManagerViewRow): boolean {
-  if (
-    row.Capability === "delete-material" &&
-    row.Access === "ta" &&
-    row.PolicyOn === "yes" &&
-    row.MaterialOwn === "no"
-  ) {
-    return true;
-  }
   return row.Capability === "manage-rag" && row.Access === "unit";
 }

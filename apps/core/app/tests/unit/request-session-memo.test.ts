@@ -55,7 +55,7 @@ describe("getRequestSession — per-request memoization", () => {
   });
 
   it("caches the in-flight promise so concurrent callers dedupe instead of racing", async () => {
-    let resolveSession: (value: unknown) => void = () => {};
+    let resolveSession: (session: ReturnType<typeof sessionFor>) => void = () => {};
     getSessionMock.mockReturnValue(
       new Promise((resolve) => {
         resolveSession = resolve;
@@ -164,7 +164,7 @@ describe("measured: getSession calls per navigation", () => {
    * real router to count resolutions with and without the memo.
    */
   async function countResolutionsForNavigation(
-    resolve: (request: Request) => Promise<unknown>,
+    resolve: (request: Request) => ReturnType<typeof getRequestSession>,
   ): Promise<number> {
     getSessionMock.mockReset();
     getSessionMock.mockResolvedValue(sessionFor("u1") as never);

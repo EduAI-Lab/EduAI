@@ -32,6 +32,7 @@
  * *quality* still needs `seed-rag-ingestion-fixtures.ts`. For a perf baseline the
  * distinction does not matter — the cost is in the vector scan, not the content.
  */
+import type { JsonValue } from "~/lib/json-value";
 import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -39,6 +40,7 @@ import { hashPassword } from "better-auth/crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../app/lib/prisma.server";
 import { formatPgVectorLiteral } from "../app/lib/ai/pgvector";
+import { getLocalSeedPassword } from "../app/lib/deployment-safety.server";
 
 const MARKER = "perf-volume";
 const CHAT_PREFIX = "perf-vol ";
@@ -97,7 +99,6 @@ function randomVector(dim = 1024): number[] {
 // of truth and rewrites the manifest each time). The manifest below is the
 // contract the perf script reads (ids are cuids, not guessable → must be passed).
 // ---------------------------------------------------------------------------
-const SEED_PASSWORD = "EduAI2026!"; // matches apps/core/prisma/seed.ts
 const POOL = num("PERF_POOL_SIZE", 15); // victims per destructive endpoint
 const POOL_EMAIL = (p: string, n: number) =>
   `perf.pool-${p}-${String(n).padStart(3, "0")}@perf.local`;
@@ -122,7 +123,8 @@ function poolDir(): string {
   }
   return path.join(process.cwd(), ".perf-pool");
 }
-function writeManifest(obj: unknown) {
+/** The pool manifest is written straight to disk as JSON, so that is its type. */
+function writeManifest(obj: JsonValue) {
   const dir = poolDir();
   mkdirSync(dir, { recursive: true });
   const f = path.join(dir, "core.json");
@@ -150,7 +152,7 @@ async function makeUser(email: string, name: string, role: "STUDENT" | "INSTRUCT
 }
 
 // Build the whole disposable pool + return the manifest the perf script consumes.
-async function seedPool(instructorId: string, deptCode: string) {
+async function seedPool(instructorId: string, deptCode: string, seedPassword: string) {
   console.log(`▶ perf pool: ${POOL} victims/endpoint · dept=${deptCode}`);
   await resetPool();
   const now = new Date();
@@ -163,7 +165,7 @@ async function seedPool(instructorId: string, deptCode: string) {
       providerId: "credential",
       accountId: actor.email,
       userId: actor.id,
-      password: await hashPassword(SEED_PASSWORD),
+      password: await hashPassword(seedPassword),
     },
   });
 
@@ -272,11 +274,23 @@ async function seedPool(instructorId: string, deptCode: string) {
   }
 
   // --- chats owned by student1 (script reads chats as `student` role) in sharedCourse ---
+  // student1 is a REQUIRED cross-service fixture: the AI Tutor perf seed mirrors
+  // `seed_user_student_01` as the local STUDENT enrollment, and the perf harness
+  // mints its `student` cookie from student1@eduai.local. sharedCourse must
+  // therefore carry an active STUDENT enrollment for this same user, or
+  // `syncCourseEnrollments()` (Core is the enrollment source of truth) will
+  // prune the AI Tutor mirror and the student chat-session reads 403.
   const student1 = await prisma.user.findFirst({
     where: { email: "student1@eduai.local" },
     select: { id: true },
   });
-  const chatOwnerId = student1?.id ?? actor.id;
+  if (!student1) {
+    throw new Error("student1@eduai.local not found — run the main seed first (npm run db:seed).");
+  }
+  await prisma.enrollment.create({
+    data: { courseId: sharedCourse.id, userId: student1.id, role: "STUDENT", isActive: true },
+  });
+  const chatOwnerId = student1.id;
   const deleteChatPool = [];
   for (const i of range(POOL)) {
     const chat = await prisma.chat.create({
@@ -368,7 +382,7 @@ async function seedPool(instructorId: string, deptCode: string) {
     poolSize: POOL,
     department: deptCode,
     instructorUserId: instructorId,
-    actor: { id: actor.id, email: actor.email, password: SEED_PASSWORD },
+    actor: { id: actor.id, email: actor.email, password: seedPassword },
     sharedCourseId: sharedCourse.id,
     updateCourseId: updateCourse.id,
     deleteCoursePool,
@@ -416,6 +430,10 @@ async function reset() {
 }
 
 async function main() {
+  // Perf-volume writes and reset operations are local fixtures too. Require
+  // the same loopback deployment contract and explicit password as the main
+  // seed before touching the database.
+  const seedPassword = getLocalSeedPassword();
   const t0 = Date.now();
   const resetMode = process.argv.includes("--reset") || process.env.PERF_RESET;
   if (resetMode) await reset();
@@ -623,7 +641,7 @@ async function main() {
   // Mutation pool + manifest (always, so db:seed:perf populates everything the
   // perf script needs in one run). Prefer COSC as the FK department if present.
   const deptCode = deptCodes.includes("COSC") ? "COSC" : deptCodes[0];
-  await seedPool(instructor.id, deptCode);
+  await seedPool(instructor.id, deptCode, seedPassword);
 
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(

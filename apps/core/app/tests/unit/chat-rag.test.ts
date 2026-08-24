@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, afterEach } from "vitest";
 import {
   buildCappedRagContextText,
@@ -262,7 +263,7 @@ function toolResultMessage(id: string, markdownLength: number, role = "assistant
 }
 
 /** Model-input size, counting tool payloads — mirrors production wiring. */
-function totalModelChars(messages: Array<Record<string, unknown>>): number {
+function totalModelChars(messages: JsonObject[]): number {
   return messages.reduce((sum, message) => sum + estimateMessageCharsForModel(message), 0);
 }
 

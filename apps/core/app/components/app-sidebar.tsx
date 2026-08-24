@@ -15,7 +15,6 @@ import {
   IconShieldLock,
   IconHelp,
   IconMail,
-  IconUser,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react";
@@ -33,7 +32,7 @@ import { getNavForUser, getNavSecondaryForUser, type NavItemKey } from "~/lib/rb
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
 
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
@@ -51,7 +50,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-};
+} satisfies Record<NavItemKey, Icon>;
 
 function toNavMainItems(
   items: ReturnType<typeof getNavForUser>,
@@ -189,13 +188,6 @@ export function useCoreSidebarProps({
           label: "Settings",
           icon: <IconSettings size={15} strokeWidth={1.75} />,
           href: "/settings",
-        },
-        // TODO: remove Account menu item (note carried over from the old Core
-        // nav-user, which was extracted into @eduai/ui during the QM redesign).
-        {
-          label: "Account",
-          icon: <IconUser size={15} strokeWidth={1.75} />,
-          href: "/settings/account",
         },
       ],
       logoutElement: (

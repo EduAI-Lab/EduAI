@@ -13,6 +13,7 @@ import {
   Button,
   CommandSearchButton,
   AIServiceIndicators,
+  NavSecondary,
 } from "@eduai/ui";
 import {
   IconBooks,
@@ -31,27 +32,31 @@ import { useCourses } from "@/hooks/useCourses";
 import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
 import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
-import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
+import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
 import type { QmNavItemKey } from "@/lib/rbac/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
+import { toast } from "sonner";
 
-const ROUTE_TITLES: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/courses": "Courses",
-  "/library": "Question Library",
-  "/settings": "Settings",
-  "/help": "Help",
-  "/admin/bug-reports": "Bug reports",
-};
+// A `Map` because the key is whatever path the router is on: an unlisted
+// route falls back to the app name rather than reading `undefined` off a
+// dictionary that claimed to have every string.
+const ROUTE_TITLES = new Map<string, string>([
+  ["/dashboard", "Dashboard"],
+  ["/courses", "Courses"],
+  ["/library", "Question Library"],
+  ["/settings", "Settings"],
+  ["/help", "Help"],
+  ["/admin/bug-reports", "Bug reports"],
+]);
 
 function resolveTitle(pathname: string): string {
   if (pathname.startsWith("/courses/") && pathname !== "/courses") {
     return "Course workspace";
   }
-  return ROUTE_TITLES[pathname] ?? "Question Maker";
+  return ROUTE_TITLES.get(pathname) ?? "Question Maker";
 }
 
 /**
@@ -110,14 +115,14 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   );
 }
 
-const NAV_ICONS: Record<QmNavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
   "bug-reports": IconBug,
   "back-to-eduai": IconBooks,
-};
+} satisfies Record<QmNavItemKey, Icon>;
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
 const qmLogo = (
@@ -148,6 +153,13 @@ function QmAppLayoutInner() {
   const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
+  const handleLogout = () => {
+    void logout().catch(() => {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    });
+  };
 
   const handleGuidedTourClick = () => {
     if (guidedTourHandler) {
@@ -171,6 +183,13 @@ function QmAppLayoutInner() {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   // The question composer relies on a page-level sticky action bar. AppShell's
   // default `<main>` is `overflow-auto`, which makes it the sticky containing
   // block — but it never actually scrolls (the document does), so any sticky
@@ -188,6 +207,9 @@ function QmAppLayoutInner() {
         logoHref: "/dashboard",
         navMain,
         navSecondary,
+        footerLeading: (
+          <NavSecondary items={navFooter} currentPath={pathname} LinkComponent={Link} />
+        ),
         currentPath: pathname,
         LinkComponent: Link,
         launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
@@ -204,7 +226,7 @@ function QmAppLayoutInner() {
                 },
               ],
               LinkComponent: Link,
-              onLogout: logout,
+              onLogout: handleLogout,
             }
           : undefined,
       }}
@@ -281,6 +303,13 @@ export function QmAppLayout() {
 /** Sidebar shell for access-denied and other minimal states. */
 export function QmAccessShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const handleLogout = () => {
+    void logout().catch(() => {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    });
+  };
 
   const navMain = getNavForUser(user).map((item) => ({
     title: item.title,
@@ -296,6 +325,13 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   return (
     <QmLayoutProvider>
       <AppShell
@@ -304,6 +340,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           logoHref: "/dashboard",
           navMain,
           navSecondary,
+          footerLeading: <NavSecondary items={navFooter} currentPath="/" LinkComponent={Link} />,
           currentPath: "/",
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
@@ -315,7 +352,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
                 role: user.role,
               }
             : { name: "Guest", email: "", role: "GUEST" },
-          navUser: user ? { items: [], onLogout: logout } : undefined,
+          navUser: user ? { items: [], onLogout: handleLogout } : undefined,
         }}
         title="Question Maker"
       >

@@ -63,42 +63,64 @@ interface AssessmentSectionProps {
   onImportFromCanvas?: () => void;
 }
 
-/** Semantic accent per assessment type — a dot + badge tint, dark-mode safe via tokens. */
-const TYPE_ACCENT: Record<
-  string,
-  { dot: string; badge: string; bar: string; tile: string; Icon: typeof IconClipboardList }
-> = {
-  Quiz: {
-    dot: "bg-success-500",
-    badge: "bg-success-100 text-success-700",
-    bar: "border-l-[var(--color-success-500)]",
-    tile: "bg-success-100 text-success-700",
-    Icon: IconClipboardList,
-  },
-  Lab: {
-    dot: "bg-secondary",
-    badge: "bg-secondary/15 text-secondary",
-    bar: "border-l-secondary",
-    tile: "bg-secondary/15 text-secondary",
-    Icon: IconFlask,
-  },
-  Midterm: {
-    dot: "bg-warning-500",
-    badge: "bg-warning-100 text-warning-700",
-    bar: "border-l-[var(--color-warning-500)]",
-    tile: "bg-warning-100 text-warning-700",
-    Icon: IconPencil,
-  },
-  Final: {
-    dot: "bg-error-500",
-    badge: "bg-error-100 text-error-700",
-    bar: "border-l-[var(--color-error-500)]",
-    tile: "bg-error-100 text-error-700",
-    Icon: IconCertificate,
-  },
+/** The classes and glyph one assessment type renders with. */
+type TypeAccent = {
+  dot: string;
+  badge: string;
+  bar: string;
+  tile: string;
+  Icon: typeof IconClipboardList;
 };
+
+/**
+ * Semantic accent per assessment type — a dot + badge tint, dark-mode safe via
+ * tokens. Keyed by the type string off the row, so `typeAccent` supplies a
+ * neutral accent for a type this table has not been taught yet.
+ */
+const TYPE_ACCENT = new Map<string, TypeAccent>([
+  [
+    "Quiz",
+    {
+      dot: "bg-success-500",
+      badge: "bg-success-100 text-success-700",
+      bar: "border-l-[var(--color-success-500)]",
+      tile: "bg-success-100 text-success-700",
+      Icon: IconClipboardList,
+    },
+  ],
+  [
+    "Lab",
+    {
+      dot: "bg-secondary",
+      badge: "bg-secondary/15 text-secondary",
+      bar: "border-l-secondary",
+      tile: "bg-secondary/15 text-secondary",
+      Icon: IconFlask,
+    },
+  ],
+  [
+    "Midterm",
+    {
+      dot: "bg-warning-500",
+      badge: "bg-warning-100 text-warning-700",
+      bar: "border-l-[var(--color-warning-500)]",
+      tile: "bg-warning-100 text-warning-700",
+      Icon: IconPencil,
+    },
+  ],
+  [
+    "Final",
+    {
+      dot: "bg-error-500",
+      badge: "bg-error-100 text-error-700",
+      bar: "border-l-[var(--color-error-500)]",
+      tile: "bg-error-100 text-error-700",
+      Icon: IconCertificate,
+    },
+  ],
+]);
 const typeAccent = (type: string) =>
-  TYPE_ACCENT[type] ?? {
+  TYPE_ACCENT.get(type) ?? {
     dot: "bg-primary",
     badge: "bg-muted text-foreground",
     bar: "border-l-border",
@@ -106,12 +128,13 @@ const typeAccent = (type: string) =>
     Icon: IconClipboardList,
   };
 
+/** How many of an assessment's variants sit at each difficulty. */
+type DifficultyDistribution = { easy: number; medium: number; hard: number };
+
 const countTotalQuestions = (assessment: Assessment): number =>
   (assessment.sections ?? []).reduce((acc, s) => acc + (s.sectionVariants ?? []).length, 0);
 
-const difficultyDistribution = (
-  assessment: Assessment,
-): { easy: number; medium: number; hard: number } => {
+const difficultyDistribution = (assessment: Assessment): DifficultyDistribution => {
   const counts = { easy: 0, medium: 0, hard: 0 };
   (assessment.sections ?? []).forEach((section) => {
     (section.sectionVariants ?? []).forEach((link) => {
@@ -227,7 +250,7 @@ export const AssessmentSection = ({
         : "Build quizzes, labs, midterms and finals from your question bank.";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-testid="assessments-panel">
       {selectedCourseId && !accessLoading && !hasCourseAccess && (
         <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       )}

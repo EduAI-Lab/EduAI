@@ -78,10 +78,10 @@ const rectsOverlap = (
 
 type TooltipPlacement = "bottom-left" | "top-left" | "bottom-right" | "top-right";
 
-const getTooltipRect = (
-  placement: TooltipPlacement,
-  tooltipHeight: number,
-): { top: number; left: number; width: number; height: number } => {
+/** A tooltip's viewport box, in the same fields the overlay renders from. */
+type TooltipRect = { top: number; left: number; width: number; height: number };
+
+const getTooltipRect = (placement: TooltipPlacement, tooltipHeight: number): TooltipRect => {
   const w = window.innerWidth;
   const h = window.innerHeight;
   switch (placement) {

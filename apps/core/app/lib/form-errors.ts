@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 /**
  * Helpers for turning server-side validation payloads into user-facing copy.
  *
@@ -8,11 +9,11 @@
  * hides specific reasons (e.g. the #567 UBC-email gate). `firstFieldError` digs
  * out the first concrete field message so the form can show it instead.
  */
-export function firstFieldError(details: unknown): string | null {
-  if (!details || typeof details !== "object") return null;
-  const fieldErrors = (details as { fieldErrors?: unknown }).fieldErrors;
-  if (!fieldErrors || typeof fieldErrors !== "object") return null;
-  for (const messages of Object.values(fieldErrors as Record<string, unknown>)) {
+export function firstFieldError(details: JsonValue | undefined): string | null {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
+  const fieldErrors = details.fieldErrors;
+  if (!fieldErrors || typeof fieldErrors !== "object" || Array.isArray(fieldErrors)) return null;
+  for (const messages of Object.values(fieldErrors)) {
     if (Array.isArray(messages) && typeof messages[0] === "string" && messages[0]) {
       return messages[0];
     }

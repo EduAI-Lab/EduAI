@@ -6,7 +6,8 @@
  *
  *   cd apps/core && npx prisma db seed
  *
- * All demo accounts share the password defined as SEED_PASSWORD in seed.ts.
+ * All demo accounts share the password configured by the server's local seed
+ * contract. The password is passed only to this local-only component at runtime.
  * Do NOT use these credentials in production — they are development fixtures only.
  */
 
@@ -14,10 +15,8 @@ import { RoleBadge } from "@eduai/ui";
 import { useRef } from "react";
 
 // ---------------------------------------------------------------------------
-// Seed credentials — kept in sync with apps/core/prisma/seed.ts
+// Seed account identities — kept in sync with apps/core/prisma/seed.ts
 // ---------------------------------------------------------------------------
-
-const DEMO_PASSWORD = "EduAI2026!";
 
 const DEMO_ACCOUNTS = [
   {
@@ -48,6 +47,7 @@ interface DemoLoginButtonsProps {
   /** The hidden <input name="redirectTo"> value in the outer form. Needed so
    *  the submit targets the same redirect as a normal login. */
   redirectTo: string;
+  password: string;
   /** Called when a demo button is clicked, before the form submits.
    *  Use this to set isLoading state in the parent if needed. */
   onSubmit?: () => void;
@@ -59,7 +59,7 @@ interface DemoLoginButtonsProps {
  * normal server-side login action handles auth — no client-side credentials
  * are exposed beyond what the server already processes.
  */
-export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps) {
+export function DemoLoginButtons({ redirectTo, password, onSubmit }: DemoLoginButtonsProps) {
   const formRefs = useRef<Map<string, HTMLFormElement>>(new Map());
 
   function handleClick(email: string) {
@@ -111,7 +111,7 @@ export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps
             >
               <input type="hidden" name="redirectTo" value={redirectTo} />
               <input type="hidden" name="email" value={email} />
-              <input type="hidden" name="password" value={DEMO_PASSWORD} />
+              <input type="hidden" name="password" value={password} />
             </form>
 
             <button

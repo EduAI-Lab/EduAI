@@ -46,6 +46,7 @@ import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(courseId?: string, query = "") {
   return {
@@ -55,14 +56,15 @@ function makeLoaderArgs(courseId?: string, query = "") {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "POST", courseId?: string) {
+function makeActionArgs(body?: RouteRequestBody, method = "POST", courseId?: string) {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/courses/course-1/canvas-materials", {
-      method,
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    }),
+    request: new Request("http://localhost/api/courses/course-1/canvas-materials", init),
     params: courseId === undefined ? { courseId: "course-1" } : { courseId },
     context: {} as never,
   } as never;

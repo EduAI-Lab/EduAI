@@ -69,9 +69,9 @@ describe("student-chat-history", () => {
   it("maps user and assistant messages from loadSessionMessages", async () => {
     mockGetChatMessages.mockResolvedValue({
       messages: [
-        { messageId: "m1", role: "user", content: "Hello" },
-        { messageId: "m2", role: "assistant", content: "Hi there" },
-        { messageId: "m3", role: "system", content: "ignored" },
+        { id: "m1", role: "user", content: "Hello" },
+        { id: "m2", role: "assistant", content: "Hi there" },
+        { id: "m3", role: "system", content: "ignored" },
       ],
     });
     await expect(loadSessionMessages(1, "chat-1")).resolves.toEqual([

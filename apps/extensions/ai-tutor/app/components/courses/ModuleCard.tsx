@@ -98,6 +98,10 @@ export function ModuleCard({
     <Card
       hoverable
       role="button"
+      // Without an explicit name, the card's accessible name is computed from
+      // its contents — which include the kebab's "More options" label, so the
+      // card announced (and matched by-role as) the menu it contains.
+      aria-label={`Module: ${titleName(title)}`}
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}

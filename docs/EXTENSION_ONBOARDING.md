@@ -62,7 +62,8 @@ CORE_URL=http://localhost:3000
 EXTENSION_URL=http://localhost:8000
 
 # Shared service key — must match EDUAI_API_KEY in Core's .env
-# Used for server-to-server calls that are not on behalf of a specific user
+# Required for POST /api/sessions/validate (missing key yields 403) and for
+# server-to-server calls that are not on behalf of a specific user
 EDUAI_API_KEY=
 
 # Core API base URL — used by service-level API calls
@@ -88,9 +89,16 @@ function normalizeRole(role) {
 
 export async function requireAuth(req, res, next) {
   try {
+    const headers = { cookie: req.headers.cookie ?? '' };
+    // Core requires EDUAI_API_KEY on POST /api/sessions/validate.
+    // Unset keys produce 403. Still attempt the request so a template can
+    // run without Core (e.g. local UI-only experiments).
+    const serviceKey = process.env.EDUAI_API_KEY?.trim();
+    if (serviceKey) headers.authorization = `Bearer ${serviceKey}`;
+
     const response = await fetch(`${process.env.CORE_URL}/api/sessions/validate`, {
       method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers,
     });
 
     if (!response.ok) {
@@ -112,6 +120,7 @@ export async function requireAuth(req, res, next) {
 
 Key points:
 
+- **`EDUAI_API_KEY` is required for `POST /api/sessions/validate`.** Send `Authorization: Bearer ${EDUAI_API_KEY}` (trim the env var) alongside the cookie. A missing key yields an opaque 403 from Core.
 - **Forward the raw `Cookie` header verbatim.** Do not parse or filter it — Core's session store resolves the correct session from the cookie value.
 - **API routes (`/api/*`) return 401.** These are called by fetch, not browser navigation. Let the client handle it.
 - **All other routes redirect to Core login.** The `?redirect=` param tells Core where to send the user after authentication.
@@ -234,6 +243,12 @@ async function getUserCourses(req, { page = 1, pageSize = 25 } = {}) {
 > instead — it is unpaged, returns the same envelope, and cannot be combined
 > with `page`/`pageSize`. `?search=` is also available on both. Do not page-loop
 > a whole table to build an id→record map; that is what `?ids=` is for.
+>
+> `/api/courses` additionally accepts repeatable `?status=` (`published`|`draft`),
+> `?term=<code>::<year>`, and `?department=` filters that narrow the complete
+> role-scoped dataset before pagination, and a role-scoped
+> `GET /api/courses/facets` returns those filter option values for the caller's
+> whole accessible set (never just the current page).
 
 ### Service-level calls
 

@@ -23,6 +23,7 @@ import {
   upsertUserProviderSetting,
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function withSession(userId = "u1") {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: userId } } as never);
@@ -38,7 +39,7 @@ function getReq() {
   return { request: new Request(BASE_URL) } as never;
 }
 
-function postReq(body: unknown) {
+function postReq(body: RouteRequestBody) {
   return {
     request: new Request(BASE_URL, {
       method: "POST",
@@ -48,7 +49,7 @@ function postReq(body: unknown) {
   } as never;
 }
 
-function deleteReq(body: unknown) {
+function deleteReq(body: RouteRequestBody) {
   return {
     request: new Request(BASE_URL, {
       method: "DELETE",
@@ -154,6 +155,13 @@ describe("POST /api/user-provider-settings", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 403 when a caller tries to enable bedrock from user settings", async () => {
+    withSession();
+    const res = await action(postReq({ providerName: "bedrock", isEnabled: true }));
+    expect(res.status).toBe(403);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
+
   it("returns 204 on success and calls upsert with the correct args", async () => {
     withSession("user-7");
     vi.mocked(upsertUserProviderSetting).mockResolvedValue(undefined);
@@ -180,6 +188,37 @@ describe("POST /api/user-provider-settings", () => {
       expect.objectContaining({ baseUrl: "http://localhost:11434" }),
     );
   });
+
+  it("rejects an oversized request body before persistence", async () => {
+    withSession();
+    const request = new Request(BASE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerName: "openai",
+        isEnabled: true,
+        apiKey: "x".repeat(40_000),
+      }),
+    });
+
+    const res = await action({ request } as never);
+
+    expect(res.status).toBe(413);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["providerName", { providerName: "p".repeat(65), isEnabled: true }],
+    ["apiKey", { providerName: "openai", isEnabled: true, apiKey: "x".repeat(16_385) }],
+    ["baseUrl", { providerName: "ollama", isEnabled: true, baseUrl: "x".repeat(2_049) }],
+  ])("rejects an oversized %s field", async (_field, body) => {
+    withSession();
+
+    const res = await action(postReq(body));
+
+    expect(res.status).toBe(400);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
 });
 
 // --- DELETE (action) ---
@@ -196,6 +235,13 @@ describe("DELETE /api/user-provider-settings", () => {
     withSession();
     const res = await action(deleteReq({}));
     expect(res.status).toBe(400);
+    expect(deleteUserProviderSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when a caller tries to delete bedrock from user settings", async () => {
+    withSession();
+    const res = await action(deleteReq({ providerName: "bedrock" }));
+    expect(res.status).toBe(403);
     expect(deleteUserProviderSetting).not.toHaveBeenCalled();
   });
 

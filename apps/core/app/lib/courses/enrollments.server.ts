@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
@@ -5,7 +6,7 @@ import { splitPage, type CursorParams } from "~/lib/cursor-list.server";
 
 const ENROLLMENT_ROLES = ["STUDENT", "TA", "INSTRUCTOR"] as const;
 
-export function isEnrollmentRole(value: unknown): value is EnrollmentRole {
+export function isEnrollmentRole(value: JsonValue | undefined): value is EnrollmentRole {
   return typeof value === "string" && (ENROLLMENT_ROLES as readonly string[]).includes(value);
 }
 
@@ -53,6 +54,14 @@ export async function getCourseEnrollments(courseId: string) {
   });
 }
 
+/** Service-key authorization lookup that avoids loading or reconciling a full roster. */
+export async function getCourseEnrollmentForUser(courseId: string, userId: string) {
+  return prisma.enrollment.findUnique({
+    where: { courseId_userId: { courseId, userId } },
+    select: ENROLLMENT_SELECT,
+  });
+}
+
 /**
  * Cursor-paginated student roster for the browser-facing course detail page
  * (#1042). Filters to active STUDENT rows — the same set the Students tab
@@ -63,14 +72,18 @@ export async function getCourseEnrollments(courseId: string) {
  */
 export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit }: CursorParams) {
   const where = { courseId, role: "STUDENT" as const, isActive: true };
+  const pageArgs = {
+    where,
+    select: ENROLLMENT_SELECT,
+    orderBy: [{ enrolledAt: "asc" as const }, { id: "asc" as const }],
+    take: limit + 1,
+  };
   const [rows, total] = await prisma.$transaction([
-    prisma.enrollment.findMany({
-      where,
-      select: ENROLLMENT_SELECT,
-      orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    }),
+    // A cursor page resumes past the cursor row itself; the first page sends
+    // neither key, so Prisma never sees a half-specified pair.
+    cursor
+      ? prisma.enrollment.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+      : prisma.enrollment.findMany(pageArgs),
     prisma.enrollment.count({ where }),
   ]);
   const { page, nextCursor } = splitPage(rows, limit);
@@ -78,6 +91,20 @@ export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit
 }
 
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Serialize enrollment mutations that can affect the instructor floor. A row
+ * lock on the parent course makes the subsequent count-and-write decision
+ * observe any earlier concurrent mutation before it proceeds.
+ */
+async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "courses"
+    WHERE "id" = ${courseId}
+    FOR UPDATE
+  `;
+}
 
 /**
  * §6 instructor-floor invariant: a course must always retain >= 1 active
@@ -108,20 +135,21 @@ async function instructorFloorViolation(
   return null;
 }
 
+/** The request body of "add someone to this course", straight off the wire. */
 export type AddEnrollmentPayload = {
-  userId?: unknown;
-  role?: unknown;
+  userId?: JsonValue;
+  role?: JsonValue;
 };
 
 /**
  * §6 — manage enrollments requires rank >= 2; adding an INSTRUCTOR requires
  * rank >= 3 (ADMIN / UNIT_ADMIN). Single source of truth for REST + service.
  */
-export function requiredRankForEnrollmentRole(role: unknown): number {
+export function requiredRankForEnrollmentRole(role: JsonValue | undefined): number {
   return role === "INSTRUCTOR" ? 3 : 2;
 }
 
-export function canAddEnrollmentRole(actorRank: number, role: unknown): boolean {
+export function canAddEnrollmentRole(actorRank: number, role: JsonValue | undefined): boolean {
   return actorRank >= requiredRankForEnrollmentRole(role);
 }
 
@@ -195,7 +223,7 @@ export async function addEnrollment(
 export async function updateEnrollmentRole(
   courseId: string,
   enrollmentId: string,
-  payload: { role?: unknown },
+  payload: { role?: JsonValue },
 ) {
   if (!isEnrollmentRole(payload.role)) {
     return { status: "422", error: "VALIDATION_ERROR", fields: { role: "invalid role" } } as const;
@@ -203,6 +231,7 @@ export async function updateEnrollmentRole(
 
   const role = payload.role;
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });
@@ -231,6 +260,7 @@ export async function updateEnrollmentRole(
  */
 export async function deactivateEnrollment(courseId: string, enrollmentId: string) {
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });

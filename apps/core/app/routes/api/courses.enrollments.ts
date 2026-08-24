@@ -20,6 +20,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { requireServiceKey } from "~/lib/auth/guards.server";
+import { jsonObjectSchema } from "~/lib/json-value";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { resolvePolicyGate } from "~/lib/rbac/permissions";
@@ -27,6 +28,7 @@ import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import {
   addEnrollment,
+  getCourseEnrollmentForUser,
   getCourseEnrollments,
   getCourseEnrollmentsPage,
   requiredRankForEnrollmentRole,
@@ -64,8 +66,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    // Service key path stays a full, unpaged read — AI Tutor's enrollmentSync.js
-    // depends on getting every row back in one call (see module docblock).
+    const userId = url.searchParams.get("userId")?.trim();
+    if (userId) {
+      const enrollment = await getCourseEnrollmentForUser(courseId, userId);
+      return new Response(
+        JSON.stringify({ enrollment: enrollment ? mapEnrollment(enrollment) : null }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Explicit roster synchronization remains available to background/admin
+    // callers, but live authorization uses the bounded single-user lookup.
     return fullEnrollmentsResponse(courseId);
   }
 
@@ -182,10 +193,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     .clone()
     .json()
     .catch(() => null);
-  const bodyPreview =
-    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
-      ? (peekedBody as Record<string, unknown>)
-      : null;
+  const peeked = jsonObjectSchema.safeParse(peekedBody);
+  const bodyPreview = peeked.success ? peeked.data : null;
   // Rank authority lives in enrollments.server; route defers to the same helper.
   const requiredRank = requiredRankForEnrollmentRole(bodyPreview?.role);
   if (!access || access.rank < requiredRank) {

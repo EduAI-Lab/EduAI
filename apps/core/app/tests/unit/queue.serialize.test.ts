@@ -57,7 +57,7 @@ describe("serializeAiJob", () => {
       result: null,
       startedAt: null,
       completedAt: null,
-    } as unknown as AiJob;
+    } as AiJob;
 
     expect(serializeAiJob(pending)).toMatchObject({
       result: null,

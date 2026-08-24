@@ -6,6 +6,7 @@
  * Session control for the admin-gated endpoints is done by spying on
  * `auth.api.getSession`. The mailer is mocked so no SMTP is attempted.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
@@ -17,6 +18,11 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
+import {
+  acceptInvitation,
+  resendInvitation,
+  revokeInvitation,
+} from "~/lib/invitations/service.server";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
@@ -26,6 +32,7 @@ import { action as invitationIdAction } from "~/routes/api/invitations.$id";
 // The accept flow has a single live path: the user-facing page route. There is no
 // API equivalent, so the page's loader/action are what we drive here.
 import { loader as acceptLoader, action as acceptAction } from "~/routes/auth/accept-invitation";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const getSessionSpy = vi.spyOn(auth.api, "getSession");
 const sendEmailMock = vi.mocked(sendEmail);
@@ -61,7 +68,7 @@ function asAnon() {
 }
 
 const ctx = { context: {} as never } as any;
-function createReq(body: unknown) {
+function createReq(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/invitations", {
       method: "POST",
@@ -402,6 +409,87 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
 });
 
 describe("accept flow", () => {
+  async function pauseAfterSignup() {
+    const originalHandler = auth.handler.bind(auth);
+    let signupFinished!: () => void;
+    const signupSignal = new Promise<void>((resolve) => {
+      signupFinished = resolve;
+    });
+    let release!: () => void;
+    const releaseSignup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handlerSpy = vi.spyOn(auth, "handler").mockImplementation(async (request) => {
+      const response = await originalHandler(request);
+      signupFinished();
+      await releaseSignup;
+      return response;
+    });
+    return { signupSignal, release, handlerSpy };
+  }
+
+  it("loses atomically to revoke and rolls back the newly-created account", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+    const paused = await pauseAfterSignup();
+    const accepting = acceptInvitation(
+      {
+        token,
+        name: "Race Winner",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+    await paused.signupSignal;
+    const revoked = await revokeInvitation(created.invitation.id);
+    expect(revoked.ok).toBe(true);
+    paused.release();
+    const result = await accepting;
+    paused.handlerSpy.mockRestore();
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(
+      (await prisma.invitation.findUnique({ where: { id: created.invitation.id } }))?.status,
+    ).toBe("REVOKED");
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+    expect(await prisma.account.findMany({ where: { accountId: email } })).toHaveLength(0);
+    expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(0);
+  });
+
+  it("loses atomically to token rotation and rolls back the stale accept account", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+    const paused = await pauseAfterSignup();
+    const accepting = acceptInvitation(
+      {
+        token,
+        name: "Rotated Race",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+    await paused.signupSignal;
+    const resent = await resendInvitation(created.invitation.id, { id: adminId, name: "Admin" });
+    expect(resent.ok).toBe(true);
+    paused.release();
+    const result = await accepting;
+    paused.handlerSpy.mockRestore();
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+    expect(await prisma.account.findMany({ where: { accountId: email } })).toHaveLength(0);
+    expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(0);
+    const current = await prisma.invitation.findUnique({ where: { id: created.invitation.id } });
+    expect(current?.status).toBe("PENDING");
+    expect(current?.tokenHash).not.toBe(hashToken(token));
+  });
+
   it("loader validates a token and returns email + role", async () => {
     asAdmin();
     const email = uniqueEmail();
@@ -610,7 +698,7 @@ describe("accept flow", () => {
       if (typeof fn !== "function") {
         return originalTransaction(fn as never, ...args);
       }
-      // Fail only the promote-step invitation update inside a real transaction so
+      // Fail only the promote-step invitation conditional consume inside a real transaction so
       // password-history writes during sign-up still succeed and user.update rolls back.
       return originalTransaction(
         async (tx) => {
@@ -619,17 +707,18 @@ describe("accept flow", () => {
               if (prop === "invitation") {
                 return new Proxy(target.invitation, {
                   get(invTarget, invProp) {
-                    if (invProp === "update") {
+                    if (invProp === "updateMany") {
                       return () => Promise.reject(new Error("db hiccup"));
                     }
-                    const value = (invTarget as unknown as Record<string, unknown>)[
-                      invProp as string
-                    ];
+                    // SAFETY: a proxy trap is handed every key of its target,
+                    // so the key is one of them by construction.
+                    const value = invTarget[invProp as keyof typeof invTarget];
                     return typeof value === "function" ? value.bind(invTarget) : value;
                   },
                 });
               }
-              const value = (target as unknown as Record<string, unknown>)[prop as string];
+              // SAFETY: as above — the trap only ever sees this target's keys.
+              const value = target[prop as keyof typeof target];
               return typeof value === "function" ? value.bind(target) : value;
             },
           });
@@ -689,7 +778,7 @@ describe("public registration — UBC backend gate (§567)", () => {
   // marker) so the §567 check inside the before-hook runs — the backend layer
   // that catches API calls bypassing register.tsx's signUpSchema. Both cases use
   // a Date.now offset to land past Better Auth's per-IP sign-up rate window.
-  function publicSignup(email: string, extra: Record<string, unknown> = {}): Promise<Response> {
+  function publicSignup(email: string, extra: JsonObject = {}): Promise<Response> {
     const base = new Request("http://localhost/auth/register");
     const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
       method: "POST",

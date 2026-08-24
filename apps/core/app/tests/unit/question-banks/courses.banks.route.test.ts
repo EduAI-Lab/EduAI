@@ -69,9 +69,8 @@ function args(
     url = `http://localhost/api/courses/${COURSE_ID}/banks${splat ? `/${splat}` : ""}`,
   }: { body?: unknown; bearer?: boolean; url?: string } = {},
 ) {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
   if (bearer) headers.Authorization = "Bearer test-key";
   return {
     request: new Request(url, {
