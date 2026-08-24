@@ -8,6 +8,7 @@
 
 ### Changed
 
+- [core] fix: Submit login as a full-document form and expire the legacy host-only Better Auth session cookie when `COOKIE_DOMAIN` enables cross-subdomain sessions, preventing stale production cookies from masking the newly issued shared session — [#1580](https://github.com/EduAI-Lab/EduAI/pull/1580)
 - [production] ops: Align AI Tutor and Question Maker with the canonical public domains, add build-time frontend environment templates and Apache reverse-proxy templates, and document their production prerequisites. Partially addresses #1567. (@superbolt08, 2026-08-18) — [#1577](https://github.com/EduAI-Lab/EduAI/pull/1577)
 - [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall via `GET /lessons/:id/breadcrumb` (auth + lesson/activity loaders stay concurrent; breadcrumb loads after paint so the lesson body is not blocked), with header crumbs upgrading from skeleton once ancestry resolves. Closes #1334. (@GlowyBlack, 2026-08-17) — [#1559](https://github.com/EduAI-Lab/EduAI/pull/1559)
 
