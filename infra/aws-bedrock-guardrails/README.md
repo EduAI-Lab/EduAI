@@ -55,7 +55,7 @@ From this directory:
 
 ```bash
 npm install
-npm run verify    # cdk synth + template assertions (#1619 how-to-verify, IAM half)
+npm run verify    # cdk synth + template assertions (ARN from cdk.json) + threshold unit tests
 ```
 
 Deploy is **not** required to close the code half of this issue. When the

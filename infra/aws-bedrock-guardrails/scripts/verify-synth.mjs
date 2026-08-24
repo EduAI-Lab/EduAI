@@ -9,11 +9,24 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url)) + "/..";
-const MODEL_ID = "meta.llama3-70b-instruct-v1:0";
-const MODEL_ARN = `arn:aws:bedrock:us-east-1::foundation-model/${MODEL_ID}`;
+// Expected ARN comes from cdk.json context, not a second hardcoded region,
+// so changing the default region cannot silently desync this check.
+const cdkJson = JSON.parse(readFileSync(join(root, "cdk.json"), "utf8"));
+const ctx = cdkJson.context ?? {};
+const region = ctx.bedrockRegion;
+const modelId = ctx.modelId;
+if (typeof region !== "string" || !region) {
+  console.error("verify-synth failed: cdk.json context.bedrockRegion missing");
+  process.exit(1);
+}
+if (typeof modelId !== "string" || !modelId) {
+  console.error("verify-synth failed: cdk.json context.modelId missing");
+  process.exit(1);
+}
+const MODEL_ARN = `arn:aws:bedrock:${region}::foundation-model/${modelId}`;
 const ACTIONS = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"];
 
-const synth = spawnSync("npx", ["cdk", "synth", "--quiet"], {
+const synth = spawnSync("npx", ["--no-install", "cdk", "synth", "--quiet"], {
   cwd: root,
   encoding: "utf8",
   env: { ...process.env, CDK_DEFAULT_ACCOUNT: "123456789012" },
