@@ -145,7 +145,7 @@ docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
-  --max-model-len 16384 \
+  --max-model-len 57344 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes
 ```

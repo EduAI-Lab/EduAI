@@ -12,8 +12,8 @@ import {
 } from "~/lib/ai/providers.server";
 
 describe("resolveModelContextWindow", () => {
-  it("uses 16384 for vLLM when DB stores 8192", () => {
-    expect(resolveModelContextWindow(8192, "vllm")).toBe(16384);
+  it("uses the 56K vLLM window when DB stores 8192", () => {
+    expect(resolveModelContextWindow(8192, "vllm")).toBe(56 * 1024);
   });
 
   it("respects explicit large vLLM context values", () => {
