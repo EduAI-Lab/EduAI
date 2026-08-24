@@ -83,6 +83,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 }));
 
 import { streamText } from "ai";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
@@ -124,7 +125,7 @@ function setToolSupport(supportsTools: boolean) {
   } as never);
 }
 
-function makeRequest(body: object = {}, headers: Record<string, string> = {}) {
+function makeRequest(body: RouteRequestBody = {}, headers: Record<string, string> = {}) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
