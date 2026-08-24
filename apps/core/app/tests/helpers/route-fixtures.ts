@@ -9,14 +9,20 @@
  * here touches the database.
  */
 
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+
 /**
  * A JSON request body handed to a route handler.
  *
  * Deliberately open: route tests routinely post deliberately malformed or
  * partial bodies to exercise validation, so the fixture cannot be the route's
- * parsed input type.
+ * parsed input type. It is any JSON value rather than an object for the same
+ * reason — a test that posts `null` or a bare array is testing something real.
+ *
+ * What it still rules out is a fixture JSON cannot carry at all (a function, a
+ * `Map`, a `Date`), which would serialise to something the route never sees.
  */
-export type RouteRequestBody = Record<string, unknown>;
+export type RouteRequestBody = JsonValue;
 
 /**
  * A course row as returned by the course access gates
@@ -40,8 +46,12 @@ export type CourseGateFixture = {
  * Route tests assert on these with `toEqual`, so the fixture only has to say
  * "a JSON object" — naming it keeps the assertion from being written against
  * `unknown`, which every caller would then have to narrow for no benefit.
+ *
+ * Named for the parsed side on purpose: `~/lib/api/json-response.server` owns
+ * `JsonResponseBody`, which is what a route may *hand* to `JSON.stringify`
+ * (`Date`s included). This is what comes back out of it.
  */
-export type JsonResponseBody = Record<string, unknown>;
+export type ParsedJsonBody = JsonObject;
 
 /** Options accepted by the child-process helpers in `app/tests/globalSetup.ts`. */
 export type ExecBinOptions = {

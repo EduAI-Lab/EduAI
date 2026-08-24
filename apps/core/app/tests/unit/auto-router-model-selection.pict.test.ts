@@ -88,11 +88,14 @@ const ORIGINAL_ENV = {
   VLLM_BASE_URL: process.env.VLLM_BASE_URL,
 };
 
-function buildRouterInputs(row: AutoRouterRow): {
+/** The three arguments a PICT row turns into for the router call. */
+type RouterInputs = {
   prompt: string;
   context: RouterInputContext;
   modeOverride?: RouterMode;
-} {
+};
+
+function buildRouterInputs(row: AutoRouterRow): RouterInputs {
   const prompt = row.Tier3RuleMatch === "yes" ? TIER3_PROMPT : NEUTRAL_PROMPT;
   const context: RouterInputContext = {
     courseId: row.Tier3RuleMatch === "yes" ? null : "course-1",

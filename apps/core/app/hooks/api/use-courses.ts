@@ -13,7 +13,12 @@ const SEARCH_DEBOUNCE_MS = 300;
 /** Filter-group ids the Core course list exposes (matches `build*FilterGroup` in @eduai/ui). */
 export const COURSE_FILTER_KEYS = ["status", "term", "department"] as const;
 export type CourseFilterKey = (typeof COURSE_FILTER_KEYS)[number];
-export type CourseFilters = Record<CourseFilterKey, string[]>;
+/**
+ * The selected values per filter group. A mapped type over the known groups
+ * rather than an open dictionary: there are exactly these three, and a reader
+ * may take any of them without checking it exists.
+ */
+export type CourseFilters = { [K in CourseFilterKey]: string[] };
 
 const EMPTY_FILTERS: CourseFilters = { status: [], term: [], department: [] };
 

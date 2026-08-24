@@ -24,13 +24,13 @@ export type RbacUser = {
   authorizedUnits?: string[] | null;
 };
 
-const LEVELS: Record<AccessLevel["level"], AccessLevel> = {
+const LEVELS = {
   admin: { level: "admin", rank: 4 },
   unit: { level: "unit", rank: 3 },
   instructor: { level: "instructor", rank: 2 },
   ta: { level: "ta", rank: 1 },
   student: { level: "student", rank: 0 },
-};
+} satisfies Record<AccessLevel["level"], AccessLevel>;
 
 /** Look up the shared AccessLevel for a resolved course access level string. */
 export function accessLevelFor(level: AccessLevel["level"]): AccessLevel {

@@ -14,7 +14,7 @@ vi.mock("~/lib/courses/access.server", () => ({
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
   startOrResumeReEmbedJob: vi.fn(),
-  serializeReEmbedJob: vi.fn((job: unknown) => job),
+  serializeReEmbedJob: vi.fn(<T>(job: T) => job),
   getReEmbedJobForCourse: vi.fn(),
 }));
 
@@ -35,7 +35,8 @@ function makeStartArgs(
   method = "POST",
   options: { idempotencyKey?: string; headerKey?: string } = {},
 ) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
   if (options.headerKey) headers["Idempotency-Key"] = options.headerKey;
   const body = options.idempotencyKey
     ? JSON.stringify({ idempotencyKey: options.idempotencyKey })

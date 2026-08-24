@@ -18,11 +18,9 @@ import {
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { readBoundedJson } from "~/lib/chat-input.server";
+import { readBoundedJson, type BoundedJsonReadResult } from "~/lib/chat-input.server";
 
-type CompletionBodyResult =
-  | { ok: true; body: unknown }
-  | { ok: false; status: 400 | 413 | 499; error: string };
+type CompletionBodyResult = BoundedJsonReadResult;
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 

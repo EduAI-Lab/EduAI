@@ -13,6 +13,12 @@ import prisma from "~/lib/prisma.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
+/** A course row as this endpoint answers with it: the query's shape, plus the
+ * instructor the student payload attaches when the query did not include one. */
+type CourseWithInstructor = Awaited<ReturnType<typeof getCourse>> & {
+  instructor?: { name: string; email: string } | null;
+};
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
   if (!courseId) {
@@ -94,7 +100,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const audience = access.level === "student" ? "student" : "staff";
-  let responseCourse: Record<string, unknown> = course as Record<string, unknown>;
+  // The student payload gains an `instructor` the staff query already includes.
+  let responseCourse: CourseWithInstructor = course;
   if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
     const instructor = await prisma.user.findUnique({
       where: { id: course.instructorId },

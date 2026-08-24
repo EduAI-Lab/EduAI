@@ -11,8 +11,9 @@ import { saveUserPreference } from "~/lib/user-preferences.server";
 import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },

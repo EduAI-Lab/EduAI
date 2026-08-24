@@ -4,6 +4,8 @@
  * must stay free of server-only imports.
  */
 
+import type { JsonValue } from "~/lib/json-value";
+
 /** Minimum length for a complex password that mixes character classes. */
 export const MIN_COMPLEX_PASSWORD_LENGTH = 8;
 /** Minimum length for a passphrase that need not mix character classes. */
@@ -55,12 +57,12 @@ export function isStrongPassword(password: string): boolean {
 /**
  * Maps auth paths to the password field in the request body.
  */
-const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
-  "/sign-up/email": "password",
-  "/change-password": "newPassword",
-  "/reset-password": "newPassword",
-  "/set-password": "newPassword",
-};
+const PASSWORD_SETTING_PATHS = new Map<string, "password" | "newPassword">([
+  ["/sign-up/email", "password"],
+  ["/change-password", "newPassword"],
+  ["/reset-password", "newPassword"],
+  ["/set-password", "newPassword"],
+]);
 
 /**
  * `setPassword` is declared `serverOnly`, so it has no route and `ctx.path`
@@ -68,9 +70,9 @@ const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
  * `operationId` (the `auth.api.*` map key) even when there's no path, so
  * that's the identity a server-only endpoint has to be matched on instead.
  */
-const PASSWORD_SETTING_OPERATIONS: Record<string, "password" | "newPassword"> = {
-  setPassword: "newPassword",
-};
+const PASSWORD_SETTING_OPERATIONS = new Map<string, "password" | "newPassword">([
+  ["setPassword", "newPassword"],
+]);
 
 /**
  * Auth paths that resolve a user via a reset token instead of a session.
@@ -90,14 +92,17 @@ export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
 export function extractPolicyPassword(
   path: string | undefined,
   operationId: string | undefined,
-  body: unknown,
+  body: JsonValue | undefined,
 ): string | null {
   const field =
-    (path ? PASSWORD_SETTING_PATHS[path] : undefined) ??
-    (operationId ? PASSWORD_SETTING_OPERATIONS[operationId] : undefined);
+    (path ? PASSWORD_SETTING_PATHS.get(path) : undefined) ??
+    (operationId ? PASSWORD_SETTING_OPERATIONS.get(operationId) : undefined);
   if (!field) {
     return null;
   }
-  const value = (body as Record<string, unknown> | null | undefined)?.[field];
+  if (body === null || body === undefined || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+  const value = body[field];
   return typeof value === "string" ? value : null;
 }

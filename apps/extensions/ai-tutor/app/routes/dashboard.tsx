@@ -89,7 +89,10 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   } satisfies DashboardLoaderData;
 }
 
-function heroCopy(role: Role, firstName: string | null): { heading: string; subheading: string } {
+/** The two lines of the dashboard hero, chosen per role. */
+type HeroCopy = { heading: string; subheading: string };
+
+function heroCopy(role: Role, firstName: string | null): HeroCopy {
   switch (role) {
     case "ADMIN":
       return {

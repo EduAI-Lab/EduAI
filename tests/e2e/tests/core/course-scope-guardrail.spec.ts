@@ -68,11 +68,17 @@ async function getSettings(ctx: APIRequestContext, courseId: string) {
   return res.json();
 }
 
-async function patchSettings(
-  ctx: APIRequestContext,
-  courseId: string,
-  body: Record<string, unknown>,
-) {
+/**
+ * The three fields this endpoint accepts. `null` clears an override and falls
+ * back to the instance default, which is what the clearing test asserts.
+ */
+type RagSettingsPatch = {
+  courseScopeGuardrailEnabled?: boolean;
+  ragTopK?: number | null;
+  ragSimilarityThreshold?: number | null;
+};
+
+async function patchSettings(ctx: APIRequestContext, courseId: string, body: RagSettingsPatch) {
   const res = await ctx.patch(`${CORE_URL}/api/courses/${courseId}/rag-settings`, { data: body });
   expect(res.status()).toBe(200);
   return res.json();

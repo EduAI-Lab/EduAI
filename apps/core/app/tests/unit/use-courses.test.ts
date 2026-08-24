@@ -12,10 +12,11 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCourses } from "~/hooks/api/use-courses";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const course = { id: "course-1", name: "Intro", code: "CS101" };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,
@@ -24,7 +25,7 @@ function okJson(body: unknown) {
   } as Response;
 }
 
-function page(data: unknown[] = [course], total = data.length) {
+function page(data: ParsedJsonBody[] = [course], total = data.length) {
   return okJson({ data, total, page: 1, pageSize: 25 });
 }
 

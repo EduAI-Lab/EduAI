@@ -6,6 +6,7 @@
  * database, provider, or admission work can start.
  */
 
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { BoundedBodyError, readBoundedBody } from "~/lib/net/bounded-body.server";
 
 export const CHAT_MAX_BODY_BYTES_DEFAULT = 2 * 1024 * 1024;
@@ -23,7 +24,7 @@ export type ChatInputLimits = {
 export type ChatInputLimitOverrides = Partial<ChatInputLimits>;
 
 export type BoundedJsonReadResult =
-  | { ok: true; body: unknown }
+  | { ok: true; body: JsonValue }
   | { ok: false; status: 400 | 413 | 499; error: string };
 
 export type ChatBodyReadResult = BoundedJsonReadResult;
@@ -31,10 +32,16 @@ export type ChatBodyReadResult = BoundedJsonReadResult;
 export type ChatBodyValidationResult =
   | {
       ok: true;
-      body: Record<string, unknown>;
-      messages: unknown[];
+      body: JsonObject;
+      messages: JsonValue[];
     }
   | { ok: false; status: 400 | 422; error: string };
+
+/** The over-cap arm: a 413 naming the limit that was passed. */
+type SizeExceededResult = { ok: false; status: 413; error: string };
+
+/** The rejection arm both readers share: a 400 with the reason. */
+type InvalidBodyResult = { ok: false; status: 400; error: string };
 
 function positiveEnvInt(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -70,15 +77,11 @@ export function resolveChatInputLimits(overrides: ChatInputLimitOverrides = {}):
   };
 }
 
-function invalidBody(error = "Invalid JSON body"): {
-  ok: false;
-  status: 400;
-  error: string;
-} {
+function invalidBody(error = "Invalid JSON body"): InvalidBodyResult {
   return { ok: false, status: 400, error };
 }
 
-function sizeExceeded(error: string): { ok: false; status: 413; error: string } {
+function sizeExceeded(error: string): SizeExceededResult {
   return {
     ok: false,
     status: 413,
@@ -99,7 +102,9 @@ export async function readBoundedJson(
   try {
     const bytes = await readBoundedBody(request, maxBytes);
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return { ok: true, body: JSON.parse(text) as unknown };
+    // SAFETY: `JSON.parse` produces exactly a `JsonValue` by construction; the
+    // assertion names that rather than widening the body back to `unknown`.
+    return { ok: true, body: JSON.parse(text) as JsonValue };
   } catch (error) {
     if (error instanceof BoundedBodyError) {
       if (error.status === 413) return sizeExceeded(sizeError);
@@ -117,7 +122,7 @@ export async function readBoundedChatJson(
   return readBoundedJson(request, maxBytes, "Chat request body exceeds size limit");
 }
 
-function serializedContentChars(content: unknown): number {
+function serializedContentChars(content: JsonValue | undefined): number {
   if (typeof content === "string") return content.length;
   if (!Array.isArray(content)) return 0;
   try {
@@ -134,7 +139,7 @@ function serializedContentChars(content: unknown): number {
  * boundary is about preventing unbounded work and persistence.
  */
 export function validateChatBody(
-  input: unknown,
+  input: JsonValue | undefined,
   overrides: ChatInputLimitOverrides = {},
 ): ChatBodyValidationResult {
   const limits = resolveChatInputLimits(overrides);
@@ -142,7 +147,7 @@ export function validateChatBody(
     return { ok: false, status: 400, error: "Invalid chat request body" };
   }
 
-  const body = input as Record<string, unknown>;
+  const body = input;
   if (body.messages !== undefined && !Array.isArray(body.messages)) {
     return { ok: false, status: 422, error: "messages must be an array" };
   }
@@ -160,7 +165,7 @@ export function validateChatBody(
     if (!message || typeof message !== "object" || Array.isArray(message)) {
       return { ok: false, status: 422, error: "each message must be an object" };
     }
-    const candidate = message as Record<string, unknown>;
+    const candidate = message;
     const contentChars = serializedContentChars(candidate.content);
     if (contentChars > limits.maxMessageChars) {
       return {

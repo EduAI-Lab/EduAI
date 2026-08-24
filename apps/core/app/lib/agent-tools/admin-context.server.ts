@@ -35,7 +35,7 @@ function parseOptionalDate(value: string | undefined, field: string): Date | nul
   return parsed;
 }
 
-function adminToolPayload<T extends Record<string, unknown>>(data: T) {
+function adminToolPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     queriedAt: new Date().toISOString(),

@@ -163,11 +163,14 @@ async function unsyncSingleCanvasCourse(
  * revoked, etc.) is left untouched rather than unsynced, since the instructor never had a
  * chance to see it in the picker and choose to omit it.
  */
+/** Which Canvas courses this save should start syncing, and which to drop. */
+export type CanvasSyncDelta = { toSync: string[]; toUnsync: string[] };
+
 export function computeCanvasSyncDelta(
   currentlySynced: Iterable<string>,
   canvasCourseIds: string[],
   liveCanvasIds: Iterable<string>,
-): { toSync: string[]; toUnsync: string[] } {
+): CanvasSyncDelta {
   const syncedSet = new Set(currentlySynced);
   const requested = new Set(canvasCourseIds);
   const liveSet = new Set(liveCanvasIds);

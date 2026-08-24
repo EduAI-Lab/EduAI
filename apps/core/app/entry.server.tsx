@@ -95,10 +95,10 @@ export default function handleRequest(
             }),
           );
         },
-        onShellError(error: unknown) {
-          reject(error);
+        onShellError(cause: unknown) {
+          reject(cause);
         },
-        onError(error: unknown) {
+        onError(cause: unknown) {
           responseStatusCode = 500;
           // Log streaming rendering errors from inside the shell.  Don't log
           // errors encountered during initial shell rendering since they'll
@@ -106,7 +106,7 @@ export default function handleRequest(
           if (shellRendered) {
             // Loader/action failures surface here with the upstream fetch URL (and its query
             // string) in the message, so redact before writing to stdout.
-            console.error(redactErrorForConsole(error));
+            console.error(redactErrorForConsole(cause));
           }
         },
       },

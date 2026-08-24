@@ -30,7 +30,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
   startOrResumeReEmbedJob: vi.fn(),
-  serializeReEmbedJob: vi.fn((job: unknown) => job),
+  serializeReEmbedJob: vi.fn(<T>(job: T) => job),
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -46,6 +46,7 @@ import { parseEmbeddingSettingsUpdate, validateEmbeddingSettingsUpdate } from "~
 import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const BASE_COURSE = {
   id: "course-1",
@@ -64,7 +65,7 @@ function makeLoaderArgs(courseId?: string) {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "PATCH") {
+function makeActionArgs(body: RouteRequestBody, method = "PATCH") {
   // A bodyless method carries no body at all, so the key is added only when the
   // caller passed one.
   const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };

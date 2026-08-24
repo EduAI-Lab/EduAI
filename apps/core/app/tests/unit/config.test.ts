@@ -9,14 +9,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiFetch, ApiError, STUB_ONLY } from "~/hooks/api/config";
-import type { JsonResponseBody } from "../helpers/route-fixtures";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 function res(init: {
   ok: boolean;
   status: number;
   headers?: Record<string, string>;
   text?: () => Promise<string>;
-  json?: () => Promise<JsonResponseBody>;
+  json?: () => Promise<ParsedJsonBody>;
 }): Response {
   const headers = new Headers(init.headers ?? {});
   return {

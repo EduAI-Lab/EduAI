@@ -88,11 +88,11 @@ export function classifyCloudStatus(keys: {
   return { state: "operational", detail: `Cloud providers configured: ${live.join(", ")}.` };
 }
 
+/** The UBC-hosted endpoints to probe; a missing one is simply not configured. */
+export type UbcBaseUrls = { vllm?: string; ollama?: string };
+
 /** The legacy single-URL UBC bases, used only when fleet routing is disabled. */
-export function resolveUbcBaseUrls(env: NodeJS.ProcessEnv = process.env): {
-  vllm?: string;
-  ollama?: string;
-} {
+export function resolveUbcBaseUrls(env: NodeJS.ProcessEnv = process.env): UbcBaseUrls {
   return {
     vllm: env.VLLM_BASE_URL?.trim() || undefined,
     ollama: env.OLLAMA_BASE_URL?.trim() || undefined,

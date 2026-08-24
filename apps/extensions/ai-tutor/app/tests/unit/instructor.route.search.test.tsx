@@ -150,7 +150,10 @@ describe("instructor clientLoader — filter threading", () => {
 describe("InstructorHome — controlled list", () => {
   let currentSearch = "";
 
-  function renderPage(overrides: Record<string, unknown> = {}, entry = "/instructor") {
+  function renderPage(
+    overrides: Partial<Route.ComponentProps["loaderData"]> = {},
+    entry = "/instructor",
+  ) {
     currentSearch = "";
     const props = {
       loaderData: {

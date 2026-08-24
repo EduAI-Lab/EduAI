@@ -27,10 +27,15 @@
 import { useCallback } from "react";
 import { useAiServiceStatus, type AiServiceStatusPair, type ServiceStatus } from "@eduai/ui";
 import eduaiService from "../services/eduaiService";
-import { apiKeyStorage, isCloudProvider, isCampusProvider } from "../services/apiKeyStorage";
+import {
+  apiKeyStorage,
+  isCloudProvider,
+  isCampusProvider,
+  type ProviderApiKeys,
+} from "../services/apiKeyStorage";
 
 async function probeCloud(signal: AbortSignal): Promise<ServiceStatus> {
-  let cloudKeys: Record<string, any> = {};
+  let cloudKeys: ProviderApiKeys = {};
   try {
     const stored = await apiKeyStorage.getAllApiKeys();
     cloudKeys = Object.fromEntries(

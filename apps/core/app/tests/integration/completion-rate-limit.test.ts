@@ -1,11 +1,12 @@
 // @vitest-environment node
 // #1113: route-level completion limits backed by the integration Redis service.
+import type { JsonValue } from "~/lib/json-value";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: vi.fn(),
-  validateCompletionRequest: vi.fn((input: unknown) => ({
+  validateCompletionRequest: vi.fn((input: JsonValue) => ({
     ok: true,
     request: input,
   })),
