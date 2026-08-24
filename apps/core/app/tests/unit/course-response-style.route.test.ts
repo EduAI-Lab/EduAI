@@ -7,6 +7,7 @@
 // tests drive the real route and assert on what `streamText` actually receives,
 // on BOTH prompt-assembly paths (tool-calling and hybrid), because those build
 // their system prompt through separate code and could drift apart.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -19,8 +20,8 @@ vi.mock("ai", async (importOriginal) => {
       execute({ write: (part: string) => chunks.push(part) });
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -99,7 +100,7 @@ const SOCRATIC = RESPONSE_STYLE_TAGS.find((t) => t.id === "socratic")!;
 const AI_INSTRUCTIONS = "Insist on epsilon-delta rigor; avoid hand-waving.";
 
 /** A course whose staff configured both a style tag and free-text instructions. */
-function mockCourse(overrides: Record<string, unknown> = {}) {
+function mockCourse(overrides: JsonObject = {}) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: {
       id: COURSE_ID,

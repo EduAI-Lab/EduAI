@@ -56,6 +56,7 @@ import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { JsonObject } from "~/lib/json-value";
 import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
@@ -617,7 +618,7 @@ describe("POST /api/chat — bounded ingress", () => {
 describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
   const PROMPT = "Reply in bullet points.";
 
-  const send = (body: Record<string, unknown> = {}) =>
+  const send = (body: JsonObject = {}) =>
     action(makeArgs({ messages: [], courseId: "c1", systemPrompt: PROMPT, ...body }));
 
   function mockRole(role: string) {
