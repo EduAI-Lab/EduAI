@@ -14,9 +14,14 @@
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
+### Fixed
+
+- [core] fix: Replace the fleet router's `hash(affinityKey) % eligible.length` chat-affinity scheme with rendezvous (highest random weight) hashing, keyed by affinity key + server id. Naive modulo hashing remapped most chats to a different host whenever the eligible pool size changed (e.g. one host ejected after a failure), even though only that host's own chats needed to move; rendezvous hashing keeps every other chat pinned to its original host. Addresses review feedback on #1582. (@superbolt08, 2026-08-24) — [#1582](https://github.com/EduAI-Lab/EduAI/pull/1582)
+
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1582](https://github.com/EduAI-Lab/EduAI/pull/1582)
+- [core] test: Cover fleet-router host-ejection cooldown recovery with fake timers, `FLEET_FAILURE_EJECTION_MS` min/max bound clamping, and rendezvous-hashing affinity stability when a host is ejected from the pool. (@superbolt08, 2026-08-24) — [#1582](https://github.com/EduAI-Lab/EduAI/pull/1582)
 
 ## [Week 17 — August 17–23, 2026]
 
