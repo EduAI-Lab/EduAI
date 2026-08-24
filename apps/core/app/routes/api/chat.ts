@@ -2958,7 +2958,7 @@ ${buildEmptyCourseRagBlock()}`;
           response?.messages,
           normalizedText,
         ).map((message) => ({
-          ...(message as GenericMessage),
+          ...chatMessageSchema.parse(message),
           metadata: {
             finishReason,
             hitLongOutputCap: didHitLongOutputCap(usage),
@@ -3058,7 +3058,7 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (!providerResultResolved) {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
             ...streamTrace,
             stage: "structured-provider",
           });

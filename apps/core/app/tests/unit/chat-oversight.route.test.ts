@@ -339,6 +339,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
       makeArgs(
         baseBody({
           streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
           messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
         }),
       ),
@@ -360,6 +361,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
       makeArgs(
         baseBody({
           streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
           messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
         }),
       ),
@@ -379,6 +381,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
       makeArgs(
         baseBody({
           streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
           messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
         }),
       ),
@@ -401,6 +404,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
       makeArgs(
         baseBody({
           streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
           messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
         }),
       ),
