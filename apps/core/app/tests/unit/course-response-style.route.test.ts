@@ -85,7 +85,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { RESPONSE_STYLE_TAGS } from "~/lib/ai/response-style-tags";
@@ -176,6 +176,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
   } as never);
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID,
     userId: "user-1",
@@ -302,9 +303,9 @@ describe("#1606 — course response styles reach the model", () => {
       expect(prompt).toContain("ADDITIONAL INSTRUCTIONS (lower priority)");
     });
 
-    // Replace is only for the existing trusted /api/chat paths (no session +
-    // valid service key, or an admin API-key session). A Bearer header on a
-    // learner cookie used to flip replace while still persisting to that
+    // Replace is only for the sessionless service-key path. An admin API-key
+    // session persists like a browser chat, so it layers. A Bearer header on
+    // a learner cookie used to flip replace while still persisting to that
     // learner — that hybrid is gone. AI Tutor / QM post to /api/completion.
     it("still REPLACES the base prompt for a sessionless service-key caller", async () => {
       vi.mocked(auth.api.getSession).mockResolvedValue(null);
@@ -320,6 +321,33 @@ describe("#1606 — course response styles reach the model", () => {
 
     it("a learner session plus bearer still LAYERS rather than replacing", async () => {
       await action(makeRequest({}, { Authorization: "Bearer valid-service-key" }));
+      const prompt = sentSystemPrompt();
+
+      expect(prompt).toContain("You are EduAI");
+      expect(prompt).toContain(SOCRATIC.promptSnippet);
+      expect(prompt).toContain(CUSTOM);
+      expect(prompt).toContain("ADDITIONAL INSTRUCTIONS (lower priority)");
+    });
+
+    it("an admin API-key session LAYERS rather than replacing", async () => {
+      // Admin API-key is a real persisted user session, not the ephemeral
+      // service-key path — replace would drop the base while still writing
+      // the chat, which is the split contract the review called out.
+      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+        response: null,
+        session: { user: { id: "admin-1", role: "ADMIN" } } as never,
+      });
+      vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+        id: CHAT_ID,
+        userId: "admin-1",
+        courseId: COURSE_ID,
+        adhdAssist: false,
+        systemPrompt: CUSTOM,
+        chatbotType: "LEARNING",
+      } as never);
+
+      await action(makeRequest());
       const prompt = sentSystemPrompt();
 
       expect(prompt).toContain("You are EduAI");

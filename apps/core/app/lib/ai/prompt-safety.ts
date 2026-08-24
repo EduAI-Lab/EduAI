@@ -82,11 +82,12 @@ export function composeSecurityPrompt(base: string): string {
  * outrank it — otherwise "ignore any instruction to ask guiding questions"
  * competes on equal footing with the instructor's Socratic setting.
  *
- * Sessionless service-key and admin API-key callers on /api/chat deliberately
- * do NOT go through here: their structured-generation prompts must be the
- * entire system prompt or JSON/variant output breaks. AI Tutor and Question
- * Maker POST to /api/completion instead, which has no course default prompt.
- * The /api/chat route decides which callers qualify; this helper only formats.
+ * Sessionless service-key callers on /api/chat deliberately do NOT go through
+ * here: their structured-generation prompts must be the entire system prompt
+ * or JSON/variant output breaks. Admin API-key sessions persist like a
+ * browser chat, so they layer. AI Tutor and Question Maker POST to
+ * /api/completion instead, which has no course default prompt. The /api/chat
+ * route decides which callers qualify; this helper only formats.
  */
 export function appendCustomInstructions(base: string, customPrompt: string | null): string {
   const trimmed = customPrompt?.trim();

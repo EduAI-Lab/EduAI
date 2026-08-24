@@ -944,17 +944,18 @@ export async function action({ request }: ActionFunctionArgs) {
     // identity, the instructor's configured response style, or the
     // course-scope guardrail.
     //
-    // Replace stays on the existing trusted /api/chat paths only:
-    // sessionless service-key (`isServiceKeyCaller`) and admin API-key
-    // sessions. Those callers are already ephemeral / skip course-scope, so
-    // replace and the rest of the service-caller contract stay aligned.
-    // A Bearer header on a real user session does NOT flip this — that hybrid
-    // used to replace the base while still persisting to the learner chat.
+    // Replace stays on the sessionless service-key path only
+    // (`isServiceKeyCaller`). Those callers are already ephemeral and skip
+    // course-scope, so replace and the rest of that contract stay aligned.
+    // An admin API-key session is a real persisted chat — it layers, same as
+    // a browser. A Bearer header on a real user session does NOT flip this
+    // either; that hybrid used to replace the base while still persisting
+    // to the learner chat.
     //
     // AI Tutor and Question Maker do not use this route. They POST to
     // /api/completion, which has no EduAI course default and uses the
     // supplied systemPrompt as-is.
-    const replacesBasePrompt = isServiceKeyCaller || Boolean(apiKeySession);
+    const replacesBasePrompt = isServiceKeyCaller;
 
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
@@ -1879,9 +1880,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
       const defaultCourseSystemPrompt = [
         appendCustomInstructions(
           appendCourseStyleToSystemPrompt(
-            // Sessionless service-key / admin API-key prompts still REPLACE
-            // the base: structured JSON generation cannot carry a tutor
-            // persona above it. Browser sessions always layer instead (#1606).
+            // Sessionless service-key prompts still REPLACE the base:
+            // structured JSON generation cannot carry a tutor persona
+            // above it. Admin API-key and browser sessions layer (#1606).
             replacesBasePrompt
               ? (resolvedSystemPrompt ?? eduAiCourseDefaultPrompt)
               : eduAiCourseDefaultPrompt,
