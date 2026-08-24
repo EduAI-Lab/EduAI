@@ -181,7 +181,7 @@ export const activitySchema = z
       .object({ choices: z.array(z.string()).optional() })
       .passthrough()
       .nullable(),
-    answer: z.any(),
+    answer: z.any().optional(),
     hints: z.array(z.string()),
     promptTemplateId: z.number().nullish(),
     promptTemplate: z.object({ id: z.number(), name: z.string() }).passthrough().nullish(),

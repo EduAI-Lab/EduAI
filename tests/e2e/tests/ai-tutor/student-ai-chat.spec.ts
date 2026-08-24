@@ -221,8 +221,8 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify([
-          { id: "e2e-teach-1", mode: "teach", text: teachPrompt },
-          { id: "e2e-guide-1", mode: "guide", text: "E2E: give me a hint." },
+          { id: 1, mode: "teach", text: teachPrompt },
+          { id: 2, mode: "guide", text: "E2E: give me a hint." },
         ]),
       }),
     );
