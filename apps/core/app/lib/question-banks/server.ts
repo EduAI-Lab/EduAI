@@ -99,9 +99,11 @@ export async function updateQuestionBank(
 
   const updated = await prisma.questionBank.update({
     where: { id: bankId },
+    // Prisma leaves a column untouched when its update value is `undefined`,
+    // so a partial payload only writes the fields the caller actually sent.
     data: {
-      ...(parsed.data.name !== undefined ? { name: parsed.data.name.trim() } : {}),
-      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      name: parsed.data.name !== undefined ? parsed.data.name.trim() : undefined,
+      description: parsed.data.description,
     },
   });
 

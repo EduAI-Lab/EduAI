@@ -117,11 +117,9 @@ beforeEach(() => {
       typeof args === "object" && args !== null && "where" in args
         ? ((args as { where?: { id?: unknown } }).where?.id as string | undefined)
         : undefined;
-    lastUpdatedJob = {
-      ...claimedJob,
-      ...(result && typeof result === "object" ? result : {}),
-      ...(jobId ? { id: jobId } : {}),
-    };
+    const patch = result && typeof result === "object" ? result : undefined;
+    lastUpdatedJob = { ...claimedJob, ...patch };
+    if (jobId) lastUpdatedJob.id = jobId;
     return { count: 1 };
   });
   del.mockResolvedValue({});

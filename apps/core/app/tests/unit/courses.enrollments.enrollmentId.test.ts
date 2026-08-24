@@ -58,7 +58,7 @@ function makeArgs(method: "PATCH" | "DELETE", body?: unknown) {
     request: new Request("http://localhost/api/courses/c1/enrollments/e1", {
       method,
       headers: { "Content-Type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
     params: { id: "c1", enrollmentId: "e1" },
     context: {} as never,

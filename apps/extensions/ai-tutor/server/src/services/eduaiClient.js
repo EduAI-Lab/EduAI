@@ -59,13 +59,15 @@ async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === "string" ? options.cookie : "";
 
   const url = `${getEduAiBaseUrl()}${path}`;
+  // Caller-supplied headers still win over the forwarded session cookie, which
+  // is why they are applied last.
+  const headers = { "Content-Type": "application/json" };
+  if (cookie) headers.cookie = cookie;
+  Object.assign(headers, options.headers);
+
   const response = await fetch(url, {
     method: options.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookie ? { cookie } : {}),
-      ...options.headers,
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
   });

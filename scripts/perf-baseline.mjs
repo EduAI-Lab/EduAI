@@ -727,7 +727,8 @@ function mutRow(app, method, path, role, samples, note) {
     cold_start_ms: round(samples[0]?.ms ?? null),
     cold_status: samples[0]?.status ?? 0,
     ...summarize(samples),
-    ...(note ? { note } : {}),
+    // JSON.stringify drops the undefined, so an unannotated row stays clean.
+    note: note || undefined,
   };
 }
 const capN = (arr) => Math.max(0, Math.min(MUT, Array.isArray(arr) ? arr.length : MUT));

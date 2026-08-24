@@ -620,18 +620,30 @@ function getHybridAlpha(): number {
   return n;
 }
 
+/** One `[embedding]` console line: which provider served a call, and why. */
+type EmbeddingProviderLogEntry = {
+  provider: EmbeddingProviderKind;
+  dimension: number;
+  courseProvider: EffectiveEmbeddingSettings["provider"];
+  model: EffectiveEmbeddingSettings["model"];
+  detail?: string;
+};
+
 function logEmbeddingProvider(
   kind: EmbeddingProviderKind,
   settings: EffectiveEmbeddingSettings,
   detail?: string,
 ): void {
-  console.log("[embedding]", {
+  const entry: EmbeddingProviderLogEntry = {
     provider: kind,
     dimension: getExpectedEmbeddingDimension(),
     courseProvider: settings.provider,
     model: settings.model,
-    ...(detail ? { detail } : {}),
-  });
+  };
+  // A `detail: undefined` key would print in the log line, so it is added only
+  // when the caller passed one.
+  if (detail) entry.detail = detail;
+  console.log("[embedding]", entry);
 }
 
 function assertEmbeddingDimension(embedding: number[], context: string): void {
@@ -805,13 +817,14 @@ function createOpenRouterEmbeddingClient() {
   const referer =
     process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
+  const title = process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI";
+
   return createOpenAI({
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
-    headers: {
-      ...(referer ? { "HTTP-Referer": referer } : {}),
-      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-    },
+    // OpenRouter attributes traffic by these headers; the referer is sent only
+    // when this deployment actually has a public URL to claim.
+    headers: referer ? { "X-Title": title, "HTTP-Referer": referer } : { "X-Title": title },
   });
 }
 

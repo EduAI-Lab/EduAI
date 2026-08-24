@@ -127,10 +127,12 @@ async function runRow(row: PasswordSetReuseGateRow) {
     const base = new Request("http://localhost/settings");
     const req = buildAuthSubRequest("/api/auth/change-password", base, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(row.Session === "present" ? { cookie } : {}),
-      },
+      // A header set to undefined would be sent as the literal string
+      // "undefined", so the anonymous rows must omit the key outright.
+      headers:
+        row.Session === "present"
+          ? { "Content-Type": "application/json", cookie }
+          : { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const res = await auth.handler(req);

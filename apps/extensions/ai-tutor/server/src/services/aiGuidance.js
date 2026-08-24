@@ -372,9 +372,11 @@ async function callEduAI({
     apiKeys,
     streaming: false,
     routingContext: { feature: "tutor", jobType: "interactive" },
-    ...(chatId ? { chatId } : {}),
-    ...(trimmedCourseId ? { courseId: trimmedCourseId } : {}),
-    ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
+    // `undefined` is dropped by JSON.stringify, so an unlinked offering sends
+    // no key at all rather than an explicit null Core would have to interpret.
+    chatId: chatId || undefined,
+    courseId: trimmedCourseId ?? undefined,
+    courseCode: trimmedCourseCode ?? undefined,
   };
 
   const callStartedAt = Date.now();

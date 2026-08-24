@@ -73,8 +73,10 @@ router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
     const envelope = await listCoreAdminUsers(cookie, {
       page,
       pageSize,
-      ...(req.query.search ? { search: String(req.query.search) } : {}),
-      ...(req.query.role ? { role: String(req.query.role) } : {}),
+      // An absent filter stays undefined; the client only appends the ones it
+      // actually received.
+      search: req.query.search ? String(req.query.search) : undefined,
+      role: req.query.role ? String(req.query.role) : undefined,
     });
     const rows = Array.isArray(envelope?.data) ? envelope.data : [];
     res.json({

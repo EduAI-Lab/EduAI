@@ -836,7 +836,7 @@ try {
       path: urlPath,
       url: `${p.baseUrl}${urlPath}`,
       requiresAuth: p.role !== "anon",
-      ...(p.redirectsTo ? { redirectsTo: p.redirectsTo } : {}),
+      redirectsTo: p.redirectsTo || undefined,
     });
   }
 

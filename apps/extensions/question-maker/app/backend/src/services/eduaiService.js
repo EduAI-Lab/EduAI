@@ -271,8 +271,10 @@ class EduAIService {
           jobType: "background",
           ...params.routingContext,
         },
-        ...(params.temperature != null ? { temperature: params.temperature } : {}),
-        ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
+        // Unset sampling controls leave Core on its own defaults; a null must
+        // not reach it, and JSON.stringify drops the undefined.
+        temperature: params.temperature ?? undefined,
+        maxTokens: params.maxTokens ?? undefined,
       };
       if (params.courseId) {
         requestPayload.courseId = params.courseId;
@@ -930,7 +932,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   } = {}) {
     const admission = validateTestApiKeyAdmission({
       apiKeys: clientApiKeys,
-      ...(forceProvider != null ? { provider: forceProvider } : {}),
+      // No forced provider means admission picks one from the supplied keys.
+      provider: forceProvider ?? undefined,
     });
     if (admission.status) {
       const error = new Error(admission.message);

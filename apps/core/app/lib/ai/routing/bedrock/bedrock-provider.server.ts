@@ -102,8 +102,10 @@ export function convertPromptToConverse(prompt: LanguageModelV1Prompt): {
   }
 
   return {
+    // Converse rejects an empty system block, so a prompt with no system parts
+    // sends none at all.
     messages,
-    ...(systemParts.length > 0 ? { system: [{ text: systemParts.join("\n\n") }] } : {}),
+    system: systemParts.length > 0 ? [{ text: systemParts.join("\n\n") }] : undefined,
   };
 }
 
@@ -145,7 +147,9 @@ function buildConverseBody(options: LanguageModelV1CallOptions): {
   return {
     body: {
       ...converted,
-      ...(Object.keys(inferenceConfig).length > 0 ? { inferenceConfig } : {}),
+      // An empty config block is rejected upstream; send it only once a call
+      // option has actually populated it.
+      inferenceConfig: Object.keys(inferenceConfig).length > 0 ? inferenceConfig : undefined,
     },
     warnings,
   };

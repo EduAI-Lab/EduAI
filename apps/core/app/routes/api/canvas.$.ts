@@ -73,7 +73,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         entityType: "Canvas",
         entityId: userId,
         entityLabel: session.user.email ?? null,
-        ...(session.user.email ? { details: { email: session.user.email } } : {}),
+        details: session.user.email ? { email: session.user.email } : undefined,
       }),
     );
     return json({ success: false, error: "FORBIDDEN" }, 403);
@@ -178,7 +178,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                 entityType: "Canvas",
                 entityId: userId,
                 entityLabel: session.user.email ?? null,
-                ...(session.user.email ? { details: { email: session.user.email } } : {}),
+                details: session.user.email ? { email: session.user.email } : undefined,
               }),
             );
             return json(
@@ -235,9 +235,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
             entityType: "CanvasIntegration",
             entityId: userId,
             entityLabel: existingIntegration?.canvasUrl ?? null,
-            ...(existingIntegration?.canvasUrl
-              ? { details: { canvasUrl: existingIntegration.canvasUrl } }
-              : {}),
+            details: existingIntegration?.canvasUrl
+              ? { canvasUrl: existingIntegration.canvasUrl }
+              : undefined,
           }),
         );
 
