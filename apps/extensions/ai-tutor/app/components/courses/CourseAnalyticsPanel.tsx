@@ -25,7 +25,7 @@ type CourseAnalyticsPanelProps = {
   courseId: number;
 };
 
-// Cycled onto each distinct `difficultyScore` label in appearance order.
+// Cycled onto each distinct `difficultyLabel` in appearance order.
 // Generic on purpose — the field is a free-text string, not a fixed enum, so
 // this can't assume an Easy/Medium/Hard domain.
 const DIFFICULTY_PALETTE = [
@@ -76,8 +76,8 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
   const difficultyMix = useMemo<DonutSegment[]>(() => {
     const counts = new Map<string, number>();
     for (const row of rows) {
-      if (!row.difficultyScore) continue;
-      counts.set(row.difficultyScore, (counts.get(row.difficultyScore) ?? 0) + 1);
+      if (!row.difficultyLabel) continue;
+      counts.set(row.difficultyLabel, (counts.get(row.difficultyLabel) ?? 0) + 1);
     }
     return Array.from(counts.entries()).map(([label, value], index) => ({
       label,
@@ -197,8 +197,8 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
                       {row.activity?.title ?? `Activity ${row.activityId}`}
                     </TableCell>
                     <TableCell>
-                      {row.difficultyScore ? (
-                        <Badge variant="outline">{row.difficultyScore}</Badge>
+                      {row.difficultyLabel ? (
+                        <Badge variant="outline">{row.difficultyLabel}</Badge>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

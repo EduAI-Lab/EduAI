@@ -37,12 +37,15 @@ const settings = {
 };
 
 function makeArgs(method = "GET", body?: unknown) {
+  // A GET carries no body at all, so neither the body nor its content type is
+  // set unless the caller passed one.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/routing-model-settings", {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/routing-model-settings", init),
     params: {},
     context: {} as never,
   } as any;

@@ -59,7 +59,7 @@ async function readServiceKeyPage(path, { signal } = {}) {
   try {
     res = await fetch(`${config.coreUrl}${path}`, {
       headers: serviceHeaders(),
-      ...(signal ? { signal } : {}),
+      signal,
     });
   } catch (error) {
     if (signal?.aborted) assertQmAiDeadline({ signal });
@@ -148,12 +148,14 @@ async function fetchFromCore(
   for (const authHeaders of variants) {
     let res;
     try {
-      res = await fetch(url, {
+      const init = {
         method,
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        ...(signal ? { signal } : {}),
-      });
+        signal,
+      };
+      // Reads default to GET, which must not carry a body at all.
+      if (body !== undefined) init.body = JSON.stringify(body);
+      res = await fetch(url, init);
     } catch (error) {
       if (signal?.aborted) assertQmAiDeadline({ signal });
       throw error;
@@ -178,11 +180,14 @@ function coreError(message, status, body) {
     typeof body?.error === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
       ? body.error
       : null;
-  return Object.assign(new Error(code || "Core request failed"), {
-    status,
-    body,
-    ...(code ? { code, isPublic: true } : {}),
-  });
+  const error = Object.assign(new Error(code || "Core request failed"), { status, body });
+  // Only a machine-readable Core code is safe to relay to the caller; a free
+  // text message stays internal, so `isPublic` rides along with `code` alone.
+  if (code) {
+    error.code = code;
+    error.isPublic = true;
+  }
+  return error;
 }
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
@@ -377,7 +382,7 @@ export async function getMyProfileFromCore(cookieHeader, opts = {}) {
   try {
     res = await fetch(`${config.coreUrl}/api/me`, {
       headers: { cookie: cookieHeader ?? "" },
-      ...(opts.signal ? { signal: opts.signal } : {}),
+      signal: opts.signal,
     });
   } catch (error) {
     if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });

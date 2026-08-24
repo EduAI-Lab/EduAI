@@ -227,22 +227,16 @@ async function finalizePick(
     chosenRegistryId: modelId,
     chosenTierFromDb: picked?.tier ?? null,
     fallbackUsed,
-    ...(meta.knn
-      ? {
-          knnTier: meta.knn.tier,
-          knnConfidence: meta.knn.confidence,
-          knnTopNeighbor: meta.knn.neighbors[0]?.prompt ?? null,
-          knnTopSimilarity: meta.knn.neighbors[0]?.similarity ?? null,
-          knnExemplarCount: meta.knn.exemplarCount,
-        }
-      : {}),
-    ...(meta.llm
-      ? {
-          llmTask: meta.llm.task,
-          llmComplexity: meta.llm.complexity,
-          llmConfidence: meta.llm.confidence,
-        }
-      : {}),
+    // A decision that never ran the kNN or the LLM classifier records nothing
+    // for it, rather than recording zeroes that would read as real measurements.
+    knnTier: meta.knn?.tier,
+    knnConfidence: meta.knn?.confidence,
+    knnTopNeighbor: meta.knn ? (meta.knn.neighbors[0]?.prompt ?? null) : undefined,
+    knnTopSimilarity: meta.knn ? (meta.knn.neighbors[0]?.similarity ?? null) : undefined,
+    knnExemplarCount: meta.knn?.exemplarCount,
+    llmTask: meta.llm?.task,
+    llmComplexity: meta.llm?.complexity,
+    llmConfidence: meta.llm?.confidence,
   };
 
   return { modelId, tier, features };

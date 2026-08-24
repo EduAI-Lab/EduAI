@@ -887,7 +887,9 @@ export async function setPublishState(request: Request, courseId: string, publis
 
 export async function getCourse(courseId: string, includeDeleted = false) {
   return prisma.course.findFirst({
-    where: { id: courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    // An `undefined` filter is Prisma's "no constraint", so the soft-delete
+    // gate is stated on the field rather than hidden behind a spread.
+    where: { id: courseId, deletedAt: includeDeleted ? undefined : null },
   });
 }
 
@@ -1015,7 +1017,7 @@ export async function getCourseRagSettings(courseId: string): Promise<{
 
 export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
-    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { courseId, deletedAt: includeDeleted ? undefined : null },
     orderBy: { name: "asc" },
   });
 }
@@ -1025,7 +1027,7 @@ export async function getCourseTopic(courseId: string, topicId: string, includeD
     where: {
       id: topicId,
       courseId,
-      ...(includeDeleted ? {} : { deletedAt: null }),
+      deletedAt: includeDeleted ? undefined : null,
     },
   });
 }
@@ -1147,8 +1149,10 @@ export async function deleteCourseTopic(
     where: {
       courseId,
       deletedAt: null,
-      ...(topicId ? { id: topicId } : {}),
-      ...(name ? { name } : {}),
+      // Whichever identifier the caller supplied narrows the lookup; the other
+      // stays `undefined`, which Prisma reads as "no constraint".
+      id: topicId || undefined,
+      name: name || undefined,
     },
     select: { id: true, name: true },
   });

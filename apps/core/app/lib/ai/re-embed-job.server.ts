@@ -323,7 +323,10 @@ export async function acquireReEmbedJob(
             leaseOwner: null,
             leaseHeartbeatAt: null,
             leaseExpiresAt: null,
-            ...(idempotencyKey && !activeSnapshot.idempotencyKey ? { idempotencyKey } : {}),
+            // Prisma skips an `undefined` column, so a row that already carries
+            // a key keeps it instead of being overwritten by this recycle.
+            idempotencyKey:
+              idempotencyKey && !activeSnapshot.idempotencyKey ? idempotencyKey : undefined,
           },
         });
         return {
@@ -374,7 +377,9 @@ export async function acquireReEmbedJob(
     const created = await client.create({
       data: {
         courseId,
-        ...(idempotencyKey ? { idempotencyKey } : {}),
+        // No key means the column takes its default; an empty string must never
+        // stand in for "none" against the unique index.
+        idempotencyKey: idempotencyKey || undefined,
         status: "PENDING",
         embeddingProviderSnapshot: settings.provider,
         embeddingModelSnapshot: settings.model,

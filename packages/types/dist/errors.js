@@ -214,13 +214,15 @@ function fieldsFromZod(error) {
  */
 export function normalizeError(error) {
     if (isAppError(error)) {
-        return {
+        const normalized = {
             status: error.status,
             code: error.code,
             message: error.expose ? error.message : GENERIC_MESSAGE,
-            ...(error.fields ? { fields: error.fields } : {}),
             exposed: error.expose,
         };
+        if (error.fields)
+            normalized.fields = error.fields;
+        return normalized;
     }
     if (isZodError(error)) {
         return {

@@ -97,7 +97,7 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
     : `/api/courses/${courseId}/topics`;
   return {
     request: new Request(`http://localhost${path}`, { method: "GET", headers }),
-    params: { courseId, ...(topicId ? { topicId } : {}) },
+    params: { courseId, topicId },
     context: {} as never,
   } as any;
 }
@@ -118,7 +118,7 @@ function makeAction(
       headers,
       body: JSON.stringify(body),
     }),
-    params: { courseId: COURSE_ID, ...(opts.topicId ? { topicId: opts.topicId } : {}) },
+    params: { courseId: COURSE_ID, topicId: opts.topicId },
     context: {} as never,
   } as any;
 }

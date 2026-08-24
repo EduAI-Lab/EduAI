@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import {
   createDataStreamResponse,
   formatDataStreamPart,
@@ -17,7 +17,8 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
+  classifyPublicProviderError,
   createProviderFailure,
   isProviderAbortError,
   providerFailureBody,
@@ -25,7 +26,6 @@ import {
   providerErrorDiagnostic,
   type ProviderFailure,
 } from "~/lib/ai/provider-errors.server";
-import { providerConfigurationHint } from "~/lib/ai/provider-types";
 import {
   activeRouterVersion,
   parseRouterMode,
@@ -188,10 +188,9 @@ function autoRoutingHeaders(
   wasAuto: boolean,
   routerVersion?: string | null,
   fleetServerId?: string | null,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "X-Routed-Model": resolvedModelId,
-  };
+) {
+  const headers: Record<string, string> = {};
+  headers["X-Routed-Model"] = resolvedModelId;
   if (wasAuto) {
     if (routingTier != null) {
       headers["X-Routing-Tier"] = String(routingTier);
@@ -214,11 +213,70 @@ function usageProviderOptions(providerId: string) {
   return undefined;
 }
 
-function resolveAutoRouting(model: string | undefined): {
+/**
+ * The request fields this route reads by name, decoded once `validateChatBody`
+ * has cleared the size limits. Every field is independently recoverable: a
+ * client sending the wrong type for one field must not fail the whole turn, it
+ * simply reads as absent, exactly as the hand-written checks did before.
+ *
+ * Fields the route inspects for *presence* (`adhdAssist`, `systemPrompt`) are
+ * still read off the raw body, since "sent as null" and "not sent" differ there.
+ */
+const chatRequestSchema = z
+  .object({
+    model: z.string().optional().catch(undefined),
+    courseId: z.string().optional().catch(undefined),
+    courseCode: z.string().optional().catch(undefined),
+    chatId: z.string().optional().catch(undefined),
+    systemPrompt: z.string().optional().catch(undefined),
+    proxyUser: z
+      .object({
+        provider: z.string().optional().catch(undefined),
+        id: z.string().optional().catch(undefined),
+        email: z.string().optional().catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
+  })
+  .passthrough();
+
+/**
+ * Token counts as the AI SDK and the OpenAI-compatible providers spell them.
+ * `coalesceTokenUsage` picks between the spellings; this only has to decode the
+ * vendor object into named numbers first, and read a missing or malformed count
+ * as absent rather than dropping the whole usage report.
+ */
+const tokenUsageSchema = z
+  .object({
+    promptTokens: z.number().optional().catch(undefined),
+    inputTokens: z.number().optional().catch(undefined),
+    prompt_tokens: z.number().optional().catch(undefined),
+    completionTokens: z.number().optional().catch(undefined),
+    outputTokens: z.number().optional().catch(undefined),
+    completion_tokens: z.number().optional().catch(undefined),
+    totalTokens: z.number().optional().catch(undefined),
+    total_tokens: z.number().optional().catch(undefined),
+  })
+  .catch({});
+
+type ChatTokenUsage = z.infer<typeof tokenUsageSchema>;
+
+/**
+ * The registry keys models as `provider:model`. Splitting and rejoining proves
+ * that shape to the type system without asserting it.
+ */
+function toRegistryModelId(modelId: string): RegistryModelId {
+  const [providerId, ...rest] = modelId.split(":");
+  return `${providerId}:${rest.join(":")}`;
+}
+
+type AutoRoutingDecision = {
   routeWithAuto: boolean;
   modeOverride?: RouterMode;
   requestedAuto: string | null;
-} {
+};
+
+function resolveAutoRouting(model: string | undefined): AutoRoutingDecision {
   if (model === undefined || model === "auto") {
     return { routeWithAuto: true, requestedAuto: model ?? "auto" };
   }
@@ -233,7 +291,31 @@ function resolveAutoRouting(model: string | undefined): {
 }
 
 const TOOL_MAX_STEPS = Math.min(32, Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12));
-type GenericMessage = Record<string, any>;
+/**
+ * A chat turn as it travels through this route.
+ *
+ * The client payload, a revived DB row and an AI SDK response message all decode
+ * into this envelope. Only the fields this route reads are named; everything else
+ * a provider or client attaches passes through untouched, because the whole
+ * message is what gets persisted and replayed to the model.
+ */
+const chatMessageSchema = z
+  .object({
+    id: z.string().optional(),
+    role: z.string().optional(),
+    content: z.unknown(),
+    parts: z.unknown(),
+  })
+  .passthrough();
+
+type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+/** An id or role that survives a round-trip: present, and not just whitespace. */
+const presentTextSchema = z.string().trim().min(1);
+
+const isPresentText = (value: string | undefined): value is string =>
+  value !== undefined && presentTextSchema.safeParse(value).success;
+
 type RegistryModelId = `${string}:${string}`;
 
 type StoredMessageRecord = {
@@ -248,9 +330,6 @@ type ProxyUserPayload = {
   email?: string;
 };
 
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0;
-
 /**
  * Normalizes arbitrary incoming message payloads so downstream code can rely on
  * `id` and `role` being present. If a client omits `id`, we stamp one here so
@@ -260,21 +339,12 @@ const isNonEmptyString = (value: unknown): value is string =>
  * sending it. This enables optimistic UI updates and allows the server to
  * deduplicate retries safely.
  */
-function normalizeMessage(message: unknown): GenericMessage | null {
-  if (!message || typeof message !== "object") {
+function normalizeMessage(message: ChatMessage): ChatMessage | null {
+  if (!isPresentText(message.role)) {
     return null;
   }
 
-  const normalized = { ...(message as GenericMessage) };
-  if (!isNonEmptyString(normalized.role)) {
-    return null;
-  }
-
-  if (!isNonEmptyString(normalized.id)) {
-    normalized.id = randomUUID();
-  }
-
-  return normalized;
+  return isPresentText(message.id) ? message : { ...message, id: randomUUID() };
 }
 
 /**
@@ -282,12 +352,14 @@ function normalizeMessage(message: unknown): GenericMessage | null {
  * always stores the original JSON, but `messageId`/`role` are kept separately as
  * an escape hatch if the payload ever changes shape.
  */
-function reviveStoredMessage(record: StoredMessageRecord): GenericMessage {
-  if (record.content && typeof record.content === "object") {
-    const parsed = record.content as GenericMessage;
-    const id = isNonEmptyString(parsed.id) ? parsed.id : record.messageId;
-    const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
-    return { ...parsed, id, role };
+function reviveStoredMessage(record: StoredMessageRecord): ChatMessage {
+  const stored = chatMessageSchema.safeParse(record.content);
+  if (stored.success) {
+    return {
+      ...stored.data,
+      id: presentTextSchema.safeParse(stored.data.id).success ? stored.data.id : record.messageId,
+      role: presentTextSchema.safeParse(stored.data.role).success ? stored.data.role : record.role,
+    };
   }
 
   return {
@@ -302,21 +374,17 @@ function reviveStoredMessage(record: StoredMessageRecord): GenericMessage {
  * This lets clients resend the latest user turn without worrying about the
  * server duplicating history.
  */
-function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): GenericMessage[] {
+function mergeMessages(stored: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   if (incoming.length === 0) {
     return stored;
   }
 
-  const seenIds = new Set(
-    stored
-      .map((message) => (isNonEmptyString(message.id) ? message.id : null))
-      .filter(isNonEmptyString),
-  );
+  const seenIds = new Set(stored.map((message) => message.id).filter(isPresentText));
 
   const merged = [...stored];
 
   for (const message of incoming) {
-    if (!isNonEmptyString(message.id)) {
+    if (!isPresentText(message.id)) {
       continue;
     }
     if (seenIds.has(message.id)) {
@@ -330,8 +398,8 @@ function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): Ge
 }
 
 /** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
-function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
-  const systemChars = typeof system === "string" ? system.length : 0;
+function llmPromptSizeHints(system: string | undefined, messages: ChatMessage[]) {
+  const systemChars = system?.length ?? 0;
   let messageTextChars = 0;
   for (const m of messages) {
     // Count what the model actually receives (incl. tool-call/result payloads),
@@ -357,13 +425,33 @@ export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): n
 }
 
 /** Serializes a message object to JSON, handling circular references. */
-function serializeMessage(message: GenericMessage): Prisma.JsonValue {
+function serializeMessage(message: ChatMessage): Prisma.InputJsonValue {
   try {
-    return structuredClone(message) as Prisma.JsonValue;
+    // SAFETY: a structured clone of an already-JSON-decoded message is plain
+    // JSON data, so the clone is by construction a `Prisma.InputJsonValue`.
+    return structuredClone(message) as Prisma.InputJsonValue;
   } catch {
-    return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+    // A circular reference is the only way to get here; the JSON round-trip
+    // drops it and returns plain JSON data, which needs no assertion.
+    return JSON.parse(JSON.stringify(message));
   }
 }
+
+/**
+ * Assistant content as the AI SDK writes it: already-plain text, or an array of
+ * typed parts where only the `text` parts carry anything renderable.
+ */
+const assistantTextSchema = z.union([
+  z.string(),
+  z.array(z.unknown()).transform((parts) =>
+    parts
+      .flatMap((part) => {
+        const textPart = z.object({ type: z.literal("text"), text: z.string() }).safeParse(part);
+        return textPart.success ? [textPart.data.text] : [];
+      })
+      .join("\n"),
+  ),
+]);
 
 /**
  * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
@@ -371,24 +459,24 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
  * field is empty. Keeps persisted assistant content as a string so chat history
  * restore renders real markdown instead of a blank bubble or raw JSON.
  */
-function extractAssistantText(messages: GenericMessage[] | undefined): string {
+function extractAssistantText(messages: ChatMessage[] | undefined): string {
   if (!messages?.length) return "";
-  const collectText = (content: unknown): string => {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter((p): p is GenericMessage => !!p && typeof p === "object")
-        .filter((p) => p.type === "text" && typeof p.text === "string")
-        .map((p) => p.text as string)
-        .join("\n");
-    }
-    return "";
+  const collectText = (content: ChatMessage["content"]): string => {
+    const text = assistantTextSchema.safeParse(content);
+    return text.success ? text.data : "";
   };
   return messages
     .filter((m) => m.role === "assistant")
     .map((m) => collectText(m.content))
     .filter((t) => t.length > 0)
     .join("\n");
+}
+
+/** Prisma reports a unique-constraint collision as error code `P2002`. */
+const prismaErrorSchema = z.object({ code: z.string() }).catch({ code: "" });
+
+function isUniqueConstraintViolation(cause: unknown): boolean {
+  return prismaErrorSchema.parse(cause).code === "P2002";
 }
 
 /**
@@ -458,12 +546,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       },
     });
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
+    if (isUniqueConstraintViolation(error)) {
       // The email already belongs to an existing EduAI account. Refuse to
       // bind an external identity onto it — that is exactly the AUTH-01
       // escalation path this fix closes.
@@ -482,12 +565,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       },
     });
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
+    if (isUniqueConstraintViolation(error)) {
       const mapping = await prisma.externalUser.findUnique({
         where: {
           provider_externalUserId: {
@@ -507,19 +585,43 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   return user;
 }
 
-function formatStreamError(error: unknown): string {
-  return classifyProviderError(error, "stream").message;
+/**
+ * Free-form request context attached to a rejection or stream-error log line.
+ * Values stay JSON-shaped because every trace is serialized straight to stdout.
+ */
+type ChatTraceValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | ChatTraceValue[]
+  | { [key: string]: ChatTraceValue };
+
+type ChatTrace = { [key: string]: ChatTraceValue };
+
+/**
+ * Router and telemetry bags are logged verbatim and never interpreted, so one
+ * JSON round-trip is what makes them JSON-shaped — no assertion required, and
+ * anything unserializable is dropped here rather than at the log call.
+ */
+function asTrace<T extends object>(values: T): ChatTrace {
+  return JSON.parse(JSON.stringify(values));
 }
 
-function logStreamError(error: unknown, trace: Record<string, unknown>): void {
+function formatStreamError(cause: unknown): string {
+  return classifyPublicProviderError(cause, "stream").message;
+}
+
+function logStreamError(cause: unknown, trace: ChatTrace): void {
   console.error("[chat-api] stream error", {
-    error: formatStreamError(error),
+    error: formatStreamError(cause),
     trace,
-    diagnostic: providerErrorDiagnostic(error),
+    diagnostic: providerErrorDiagnostic(cause),
   });
 }
 
-function rejectProviderFailure(failure: ProviderFailure, trace: Record<string, unknown>): Response {
+function rejectProviderFailure(failure: ProviderFailure, trace: ChatTrace): Response {
   return chatApiReject(
     failure.status,
     providerFailureBody(failure),
@@ -528,18 +630,14 @@ function rejectProviderFailure(failure: ProviderFailure, trace: Record<string, u
   );
 }
 
-function providerStreamErrorMessage(
-  provider: string,
-  error: unknown,
-  trace: Record<string, unknown>,
-): string {
-  logStreamError(error, trace);
-  return JSON.stringify(providerFailureBody(classifyProviderError(provider, error)));
+function providerStreamErrorMessage(provider: string, cause: unknown, trace: ChatTrace): string {
+  logStreamError(cause, trace);
+  return JSON.stringify(providerFailureBody(classifyProviderFailure(provider, cause)));
 }
 
-function isClientAbort(error: unknown, signal: AbortSignal): boolean {
+function isClientAbort(cause: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
-  return isProviderAbortError(error);
+  return isProviderAbortError(cause);
 }
 
 /** Empty response when the client cancelled (e.g. stop button / fetch abort). */
@@ -571,6 +669,9 @@ export async function action({ request }: ActionFunctionArgs) {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
       isServiceKeyCaller = true;
+      // SAFETY: a service-key caller has no database session, so this stands in
+      // for one. Only `session.user.{id,role}` is read past this point, and both
+      // are set here; the assertion just borrows the session type's shape.
       session = {
         user: { id: "service", name: "Service", role: "ADMIN" },
       } as typeof session;
@@ -599,8 +700,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
     const body = validationResult.body;
+    const request_ = chatRequestSchema.parse(body);
     const rawMessages: unknown[] = validationResult.messages;
-    let model = typeof body.model === "string" ? body.model.trim() : undefined;
+    let model = request_.model?.trim();
     if (model === "") {
       model = undefined;
     }
@@ -679,8 +781,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const autoRouting = resolveAutoRouting(model);
     const routeWithAuto = autoRouting.routeWithAuto;
-    const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
-    const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
+    const courseId = request_.courseId;
+    const courseCode = request_.courseCode;
     // #1246: re-generate the last turn's response under a different ADHD Assist
     // policy for in-place preview (toggling Assist swaps content, not just
     // styling). Always non-streaming and never persists anything — it requires
@@ -693,7 +795,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ? true
         : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
-    const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
+    const chatId = request_.chatId;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
@@ -718,10 +820,7 @@ export async function action({ request }: ActionFunctionArgs) {
       userId: session.user.id,
       userRole: session.user.role,
     });
-    const proxyUserPayload =
-      body.proxyUser && typeof body.proxyUser === "object"
-        ? (body.proxyUser as ProxyUserPayload)
-        : null;
+    const proxyUserPayload: ProxyUserPayload | null = request_.proxyUser ?? null;
     const workloadFeature = parseWorkloadFeature(body.routingContext);
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
@@ -729,8 +828,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
-    if (typeof body.systemPrompt === "string") {
-      trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
+    if (request_.systemPrompt !== undefined) {
+      trimmedSystemPrompt = sanitizeSystemPrompt(request_.systemPrompt);
     } else if (body.systemPrompt === null) {
       trimmedSystemPrompt = null;
     }
@@ -809,8 +908,15 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    // The client's turns enter the route here: decode each one, then normalize
+    // what decoded. Anything that is not a message-shaped object is dropped.
     const normalizedIncomingMessages = filterIncomingClientMessages(
-      rawMessages.map((m) => normalizeMessage(m)).filter((m): m is GenericMessage => m !== null),
+      rawMessages.flatMap((raw) => {
+        const decoded = chatMessageSchema.safeParse(raw);
+        if (!decoded.success) return [];
+        const normalized = normalizeMessage(decoded.data);
+        return normalized === null ? [] : [normalized];
+      }),
     );
 
     // Resolve course code to internal ID when needed.
@@ -820,7 +926,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Single findMany keeps candidate priority without N round-trips; case is
     // insensitive so "cosc121" still resolves.
     let resolvedCourseId: string | null = null;
-    if (courseCode && typeof courseCode === "string") {
+    if (courseCode) {
       try {
         const candidates = courseCodeLookupCandidates(courseCode);
         if (candidates.length > 0) {
@@ -1117,6 +1223,9 @@ export async function action({ request }: ActionFunctionArgs) {
     // Stateless callers get an in-memory chat stub (id: null) so downstream code
     // can read systemPrompt/adhdAssist without persisting anything.
     if (ephemeral && !chat) {
+      // SAFETY: a stateless turn has no chat row, so this stub stands in for
+      // one. `id: null` marks it as unpersisted, and downstream code reads only
+      // the five fields set here; the assertion borrows the row type's shape.
       chat = {
         id: null,
         userId: actingUser.id,
@@ -1226,11 +1335,12 @@ export async function action({ request }: ActionFunctionArgs) {
         ? trimmedMessages
             .slice(0, lastUserMessageIndex)
             .slice(-MAX_COURSE_SCOPE_HISTORY_TURNS)
-            .filter((message) => message.role === "user" || message.role === "assistant")
-            .map((message) => ({
-              role: message.role as CourseScopeConversationTurn["role"],
-              content: extractMessageText(message),
-            }))
+            .flatMap((message): CourseScopeConversationTurn[] => {
+              const role = message.role;
+              return role === "user" || role === "assistant"
+                ? [{ role, content: extractMessageText(message) }]
+                : [];
+            })
             .filter((turn) => turn.content.trim().length > 0)
         : [];
     const hasCourse = Boolean(effectiveCourseId);
@@ -1324,7 +1434,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let wasAuto = false;
     let routingTier: 1 | 2 | 3 | null = null;
-    let routerContext: Record<string, unknown> | null = null;
+    let routerContext: ChatTrace | null = null;
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
@@ -1371,12 +1481,10 @@ export async function action({ request }: ActionFunctionArgs) {
         ...decision.features,
         requestedAuto: autoRouting.requestedAuto,
       };
-      resolvedRouterVersion =
-        typeof decision.features.routerVersion === "string"
-          ? decision.features.routerVersion
-          : activeRouterVersion(
-              autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE),
-            );
+      const declaredRouterVersion = z.string().safeParse(decision.features.routerVersion);
+      resolvedRouterVersion = declaredRouterVersion.success
+        ? declaredRouterVersion.data
+        : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
       chatApiDebug("Auto routing resolved model", {
         resolvedModelId: decision.modelId,
         routingTier: decision.tier,
@@ -1483,10 +1591,10 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    routerContext = {
+    routerContext = asTrace({
       ...routerContext,
       ...buildFleetRouterFeatures(workloadFeature, fleetPick),
-    };
+    });
 
     // Service key callers (AI Tutor, QM) have no real User row to look up DB
     // settings for (actingUser.id is the synthetic "service" id), so they
@@ -1495,7 +1603,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let providerSettingsBase: Awaited<ReturnType<typeof getUserProviderSettings>>;
     let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
     if (isServiceKeyCaller) {
-      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
+      if (!z.record(z.string(), z.unknown()).safeParse(body.apiKeys).success) {
         return new Response(JSON.stringify({ error: "Missing required fields" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -1547,9 +1655,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const existingMessageIds = new Set(
-      storedMessages.map((message) => message.id).filter(isNonEmptyString),
+      storedMessages.map((message) => message.id).filter(isPresentText),
     );
-    const appendMessages = async (messages: GenericMessage[]) => {
+    const appendMessages = async (messages: ChatMessage[]) => {
       // Stateless callers never persist messages (no chat row / no real user).
       // regenerateOnly is a read-only content preview (#1246) — never persists.
       if (ephemeral || regenerateOnly || !chat?.id) return;
@@ -1558,7 +1666,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
 
       for (const message of messages) {
-        if (!isNonEmptyString(message.role) || !isNonEmptyString(message.id)) {
+        if (!isPresentText(message.role) || !isPresentText(message.id)) {
           continue;
         }
 
@@ -1575,7 +1683,7 @@ export async function action({ request }: ActionFunctionArgs) {
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
+          content: serializeMessage(messageToPersist),
         });
 
         existingMessageIds.add(message.id);
@@ -1618,11 +1726,14 @@ export async function action({ request }: ActionFunctionArgs) {
     // turns that were already trimmed from this request also prevents a caller
     // from turning a single bounded POST into an unbounded storage write.
     const persistableMessageIds = new Set(
-      trimmedMessages.map((message) => message.id).filter(isNonEmptyString),
+      trimmedMessages.map((message) => message.id).filter(isPresentText),
     );
     await appendMessages(
       normalizedIncomingMessages.filter(
-        (message) => message.role !== "assistant" && persistableMessageIds.has(message.id),
+        (message) =>
+          message.role !== "assistant" &&
+          isPresentText(message.id) &&
+          persistableMessageIds.has(message.id),
       ),
     );
 
@@ -1648,9 +1759,11 @@ export async function action({ request }: ActionFunctionArgs) {
       // createDataStreamResponse return in this route so a redirected turn's
       // client model badge/routing telemetry isn't blank — that read as an
       // indistinguishable-from-failure routing gap otherwise.
-      const redirectHeaders: Record<string, string> = {
-        ...autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
-      };
+      const redirectHeaders: Record<string, string> = {};
+      Object.assign(
+        redirectHeaders,
+        autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
+      );
       if (chat.id) {
         redirectHeaders["X-Chat-Id"] = chat.id;
       }
@@ -1690,9 +1803,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let aiModel;
     try {
-      aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
+      aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
     } catch (err: unknown) {
-      return rejectProviderFailure(classifyProviderError(parsedModel.providerId, err), {
+      return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, err), {
         chatMode,
         userId: actingUser.id,
         model: resolvedModelId,
@@ -2059,10 +2172,8 @@ ${buildEmptyCourseRagBlock()}`;
 
     let longOutputCapApplied =
       longOutputCap.isLongOutputIntent && longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
-    const didHitLongOutputCap = (usage: unknown): boolean => {
-      const completionTokens = coalesceTokenUsage(
-        usage as Record<string, unknown> | undefined,
-      ).completionTokens;
+    const didHitLongOutputCap = (usage: ChatTokenUsage): boolean => {
+      const completionTokens = coalesceTokenUsage(usage).completionTokens;
 
       return didHitAppliedLongOutputCap({
         capApplied: longOutputCapApplied,
@@ -2123,15 +2234,15 @@ ${buildEmptyCourseRagBlock()}`;
     // reserve room for admin tool JSON schemas (the previous 512 flat allowance
     // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
     if (chatMode === "admin" && adminContextWindow != null && adminDesiredMaxOutput != null) {
-      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      const systemChars = z.string().safeParse(streamConfig.system).success
+        ? String(streamConfig.system).length
+        : 0;
       let messageChars = 0;
       for (const message of modelMessages) {
         messageChars += estimateMessageCharsForModel(message);
       }
-      const toolCount =
-        streamConfig.tools && typeof streamConfig.tools === "object"
-          ? Object.keys(streamConfig.tools).length
-          : 0;
+      const declaredTools = z.record(z.string(), z.unknown()).safeParse(streamConfig.tools);
+      const toolCount = declaredTools.success ? Object.keys(declaredTools.data).length : 0;
       const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
       const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
       const estimatedInputTokens =
@@ -2293,7 +2404,7 @@ ${buildEmptyCourseRagBlock()}`;
       fleetPick = null;
       validatedApiKeys = enableBedrockOnSettings(validatedApiKeys);
       registry = createAIProviderRegistry(validatedApiKeys);
-      aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
+      aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
       streamConfig.model = aiModel;
       routerContext = {
         ...routerContext,
@@ -2349,6 +2460,18 @@ ${buildEmptyCourseRagBlock()}`;
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
+    /** Headers for the non-streaming JSON turn: content type, admission, fleet. */
+    const jsonResponseHeaders = () => {
+      const headers: Record<string, string> = {};
+      headers["Content-Type"] = "application/json";
+      Object.assign(headers, admissionHeaders());
+      const fleetServerId = telemetryServerId ?? fleetPick?.serverId;
+      if (fleetServerId) {
+        headers["X-Fleet-Server"] = fleetServerId;
+      }
+      return headers;
+    };
+
     const persistTurnTelemetry = async (params: {
       responseText: string;
       usage:
@@ -2398,6 +2521,10 @@ ${buildEmptyCourseRagBlock()}`;
       // here also keeps rejected/aborted startup promises inside the existing
       // retry and AbortError handling path.
       const result = await streamText({
+        // SAFETY: `streamConfig` is assembled field by field above out of the
+        // AI SDK's own values (model, messages, tools, sampling settings); the
+        // assertion only re-states that assembly, which the accumulating object
+        // type cannot carry on its own.
         ...(streamConfig as Parameters<typeof streamText>[0]),
         experimental_output: structuredOutput,
         providerOptions: usageProviderOptions(parsedModel.providerId),
@@ -2421,9 +2548,7 @@ ${buildEmptyCourseRagBlock()}`;
                 if (!streaming) {
                   return;
                 }
-                const normalizedUsage = coalesceTokenUsage(
-                  usage as Record<string, unknown> | undefined,
-                );
+                const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
                 await persistTurnTelemetry({
                   responseText: text ?? "",
                   usage: {
@@ -2439,7 +2564,7 @@ ${buildEmptyCourseRagBlock()}`;
                   completionTokens: usage?.completionTokens,
                 });
                 streamData?.appendMessageAnnotation({
-                  hitLongOutputCap: didHitLongOutputCap(usage),
+                  hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 });
                 void streamData?.close();
                 const assistantText = text || extractAssistantText(response?.messages);
@@ -2451,7 +2576,7 @@ ${buildEmptyCourseRagBlock()}`;
                       content: assistantText,
                       metadata: {
                         finishReason,
-                        hitLongOutputCap: didHitLongOutputCap(usage),
+                        hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                       },
                     },
                   ]).catch((err) => {
@@ -2533,7 +2658,7 @@ ${buildEmptyCourseRagBlock()}`;
               nextPick.baseUrl,
             );
             registry = createAIProviderRegistry(validatedApiKeys);
-            aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
+            aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
             streamConfig.model = aiModel;
             console.log("[fleet] retry attempt", {
               from: failedPick.serverId,
@@ -2582,16 +2707,19 @@ ${buildEmptyCourseRagBlock()}`;
             return clientAbortResponse();
           }
           logStreamError(retryError, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, retryError), {
-            ...streamTrace,
-            stage: "stream-startup",
-            fleetRetry,
-          });
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, retryError),
+            {
+              ...streamTrace,
+              stage: "stream-startup",
+              fleetRetry,
+            },
+          );
         }
       } else {
         releaseAdmission();
         logStreamError(error, streamTrace);
-        return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+        return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
           ...streamTrace,
           stage: "stream-startup",
         });
@@ -2666,9 +2794,7 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
             })
           : audited.text || draft;
-        const normalizedOversightUsage = coalesceTokenUsage(
-          usage as Record<string, unknown> | undefined,
-        );
+        const normalizedOversightUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
         // Both helpers no-op internally for regenerateOnly (#1246) — a
         // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
@@ -2695,11 +2821,11 @@ ${buildEmptyCourseRagBlock()}`;
         const persistOverseenAssistantMessages = async (text: string) => {
           const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
 
-          const messagesWithMetadata: GenericMessage[] = toPersist.map((message) => ({
-            ...(message as GenericMessage),
+          const messagesWithMetadata: ChatMessage[] = toPersist.map((message) => ({
+            ...chatMessageSchema.parse(message),
             metadata: {
               finishReason,
-              hitLongOutputCap: didHitLongOutputCap(usage),
+              hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
             },
           }));
 
@@ -2709,11 +2835,10 @@ ${buildEmptyCourseRagBlock()}`;
         };
 
         if (streaming) {
-          const headers: Record<string, string> = {
-            "Content-Encoding": "none",
-            "Transfer-Encoding": "chunked",
-            Connection: "keep-alive",
-          };
+          const headers: Record<string, string> = {};
+          headers["Content-Encoding"] = "none";
+          headers["Transfer-Encoding"] = "chunked";
+          headers["Connection"] = "keep-alive";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
@@ -2740,7 +2865,7 @@ ${buildEmptyCourseRagBlock()}`;
               }
 
               dataStream.writeMessageAnnotation({
-                hitLongOutputCap: didHitLongOutputCap(usage),
+                hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
               });
 
               dataStream.write(
@@ -2761,7 +2886,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
-            hitLongOutputCap: didHitLongOutputCap(usage),
+            hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2771,16 +2896,7 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...admissionHeaders(),
-              ...((telemetryServerId ?? fleetPick?.serverId)
-                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
-                : {}),
-            },
-          },
+          { status: 200, headers: jsonResponseHeaders() },
         );
       } catch (error) {
         releaseAdmission();
@@ -2789,7 +2905,7 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (oversightStage === "provider") {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
             ...streamTrace,
             stage: "oversight-provider",
           });
@@ -2959,12 +3075,11 @@ ${buildEmptyCourseRagBlock()}`;
     }
 
     if (streaming) {
-      const headers: Record<string, string> = {
-        "Content-Encoding": "none",
-        "Transfer-Encoding": "chunked",
-        Connection: "keep-alive",
-        ...admissionHeaders(),
-      };
+      const headers: Record<string, string> = {};
+      headers["Content-Encoding"] = "none";
+      headers["Transfer-Encoding"] = "chunked";
+      headers["Connection"] = "keep-alive";
+      Object.assign(headers, admissionHeaders());
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -2981,18 +3096,18 @@ ${buildEmptyCourseRagBlock()}`;
       );
       const release = admissionRelease;
       admissionRelease = null;
-      return withAdmissionRelease(
-        result.toDataStreamResponse({
-          headers,
-          ...(liveStreamData ? { data: liveStreamData } : {}),
-          // HTTP status/headers are immutable after this 200 stream begins.
-          // Publish the same stable provider body through the AI SDK's stream
-          // error channel instead of pretending a late failure can be a 502.
-          getErrorMessage: (error) =>
-            providerStreamErrorMessage(parsedModel.providerId, error, streamTrace),
-        }),
-        release,
-      );
+      const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {
+        headers,
+        // HTTP status/headers are immutable after this 200 stream begins.
+        // Publish the same stable provider body through the AI SDK's stream
+        // error channel instead of pretending a late failure can be a 502.
+        getErrorMessage: (error) =>
+          providerStreamErrorMessage(parsedModel.providerId, error, streamTrace),
+      };
+      if (liveStreamData) {
+        dataStreamOptions.data = liveStreamData;
+      }
+      return withAdmissionRelease(result.toDataStreamResponse(dataStreamOptions), release);
     } else {
       let providerResultResolved = false;
       try {
@@ -3011,13 +3126,13 @@ ${buildEmptyCourseRagBlock()}`;
         providerResultResolved = true;
 
         if (response?.messages?.length) {
-          const assistantMessages: GenericMessage[] = response.messages
+          const assistantMessages: ChatMessage[] = response.messages
             .filter((message) => message.role === "assistant")
             .map((message) => ({
-              ...(message as GenericMessage),
+              ...chatMessageSchema.parse(message),
               metadata: {
                 finishReason,
-                hitLongOutputCap: didHitLongOutputCap(usage),
+                hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
               },
             }));
 
@@ -3032,14 +3147,14 @@ ${buildEmptyCourseRagBlock()}`;
                 content: assistantText,
                 metadata: {
                   finishReason,
-                  hitLongOutputCap: didHitLongOutputCap(usage),
+                  hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 },
               },
             ]);
           }
         }
 
-        const normalizedUsage = coalesceTokenUsage(usage as Record<string, unknown> | undefined);
+        const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
         // Both helpers no-op internally for regenerateOnly (#1246) — a
         // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
@@ -3067,7 +3182,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
-            hitLongOutputCap: didHitLongOutputCap(usage),
+            hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -3077,16 +3192,7 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...admissionHeaders(),
-              ...((telemetryServerId ?? fleetPick?.serverId)
-                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
-                : {}),
-            },
-          },
+          { status: 200, headers: jsonResponseHeaders() },
         );
       } catch (error) {
         releaseAdmission();
@@ -3095,7 +3201,7 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (!providerResultResolved) {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
             ...streamTrace,
             stage: "non-streaming-provider",
           });

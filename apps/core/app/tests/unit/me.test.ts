@@ -35,15 +35,14 @@ const PROFILE = {
 };
 
 function makeArgs(method = "GET", body?: unknown, headers?: Record<string, string>) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json", ...headers },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/me", {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/me", init),
     params: {},
     context: {} as never,
   } as any;

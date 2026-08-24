@@ -49,7 +49,11 @@ import { courseService } from "../../services/courseService";
 import assessmentService from "../../services/assessmentService";
 import { Assessment } from "../../types/question";
 import { Topic } from "../../types/topic";
-import eduaiService, { EduAIModelOption, EduAICourseOption } from "../../services/eduaiService";
+import eduaiService, {
+  EduAIModelOption,
+  EduAICourseOption,
+  type EduAIQuestionGenerationRequest,
+} from "../../services/eduaiService";
 import { Course } from "../../types/question";
 import { apiKeyStorage } from "../../services/apiKeyStorage";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
@@ -1047,19 +1051,21 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             })()
           : undefined;
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
-      const response = await eduaiService.generateQuestions({
+      const generateParams: EduAIQuestionGenerationRequest = {
         prompt: promptWithTopics,
         courseId,
-        ...(courseCode ? { courseCode } : {}),
+        courseCode: courseCode || undefined,
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
-        ...(variantMcqRequiredCount != null
-          ? { mcqRequiredChoiceCount: variantMcqRequiredCount }
-          : {}),
-      });
+      };
+      // Left out entirely when unknown so the generator picks its own default.
+      if (variantMcqRequiredCount != null) {
+        generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
+      }
+      const response = await eduaiService.generateQuestions(generateParams);
       const generated = response?.data?.questions?.[0];
       if (!generated)
         throw new Error("AI service did not return a question. Try a different prompt.");
@@ -1818,12 +1824,12 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                               const secondaryChanged =
                                 !isApproved &&
                                 currentSecondary.join("|") !== nextSecondary.join("|");
-                              const variantPayload = {
-                                ...variantUpdates,
-                                ...(secondaryChanged
-                                  ? { secondaryTopicsId: editSecondaryTopics }
-                                  : {}),
-                              };
+                              // The empty-payload check below decides whether to
+                              // call at all, so an unchanged topic list must add
+                              // no key here — not even an undefined one.
+                              const variantPayload = secondaryChanged
+                                ? { ...variantUpdates, secondaryTopicsId: editSecondaryTopics }
+                                : { ...variantUpdates };
                               if (Object.keys(variantPayload).length > 0)
                                 await questionService.updateVariant(
                                   viewEntry.variant.id,

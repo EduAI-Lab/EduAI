@@ -71,14 +71,18 @@ export async function getCourseEnrollmentForUser(courseId: string, userId: strin
  */
 export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit }: CursorParams) {
   const where = { courseId, role: "STUDENT" as const, isActive: true };
+  const pageArgs = {
+    where,
+    select: ENROLLMENT_SELECT,
+    orderBy: [{ enrolledAt: "asc" as const }, { id: "asc" as const }],
+    take: limit + 1,
+  };
   const [rows, total] = await prisma.$transaction([
-    prisma.enrollment.findMany({
-      where,
-      select: ENROLLMENT_SELECT,
-      orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    }),
+    // A cursor page resumes past the cursor row itself; the first page sends
+    // neither key, so Prisma never sees a half-specified pair.
+    cursor
+      ? prisma.enrollment.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+      : prisma.enrollment.findMany(pageArgs),
     prisma.enrollment.count({ where }),
   ]);
   const { page, nextCursor } = splitPage(rows, limit);

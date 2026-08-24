@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   resolveToolResultMaxChars,
   truncateToMaxChars,
@@ -142,7 +143,18 @@ export function resolveSessionDigestMaxChars(): number {
   );
 }
 
-function safeJsonLength(value: unknown): number {
+/**
+ * The fields this module reads on a chat message. Callers keep their own richer
+ * message type — this is only the contract the budgeting and digest helpers
+ * need, so an AI SDK message, a stored row and a test fixture all satisfy it.
+ */
+export type ChatSessionMessage = {
+  role?: string;
+  content?: unknown;
+  parts?: unknown;
+};
+
+function safeJsonLength<T>(value: T): number {
   try {
     return JSON.stringify(value)?.length ?? 0;
   } catch {
@@ -150,7 +162,7 @@ function safeJsonLength(value: unknown): number {
   }
 }
 
-function safeStringify(value: unknown): string {
+function safeStringify<T>(value: T): string {
   try {
     return JSON.stringify(value) ?? "";
   } catch {
@@ -158,25 +170,49 @@ function safeStringify(value: unknown): string {
   }
 }
 
+/** A content part that carries display text, in either of the shapes the AI SDK emits. */
+const textPartSchema = z.union([
+  z.string(),
+  z.object({ text: z.string() }).transform((part) => part.text),
+]);
+
+/**
+ * Message text as the AI SDK writes it: a bare string, a single text part, or an
+ * array mixing text parts with tool-call parts that contribute nothing readable.
+ */
+const messageTextSchema = z.union([
+  textPartSchema,
+  z.array(z.unknown()).transform((parts) =>
+    parts
+      .map((part) => {
+        const text = textPartSchema.safeParse(part);
+        return text.success ? text.data : "";
+      })
+      .filter((text) => text.length > 0)
+      .join(" "),
+  ),
+]);
+
 /**
  * Best-effort size of a message *as the model receives it* — it counts tool-call
  * and tool-result payloads, not just `text` parts. Used for the session char
  * budget and the `messageTextChars` debug metric so tool-heavy turns (#260) are
  * not under-counted and the digest (#259) triggers when it should.
  */
-export function estimateMessageCharsForModel(message?: Record<string, unknown>): number {
+export function estimateMessageCharsForModel(message?: ChatSessionMessage): number {
   if (!message) {
     return 0;
   }
   const content = message.content;
-  if (typeof content === "string") {
-    return content.length;
+  const text = z.string().safeParse(content);
+  if (text.success) {
+    return text.data.length;
   }
   if (content !== undefined && content !== null) {
     return safeJsonLength(content);
   }
   // Some AI SDK messages carry their payload under `parts` instead of `content`.
-  if ("parts" in message && message.parts != null) {
+  if (message.parts !== undefined && message.parts !== null) {
     return safeJsonLength(message.parts);
   }
   return 0;
@@ -187,70 +223,54 @@ export function estimateMessageCharsForModel(message?: Record<string, unknown>):
  * by the chat route for lightweight keyword checks (so the two paths share one
  * extractor instead of drifting).
  */
-export function extractMessageText(message?: Record<string, unknown>): string {
+export function extractMessageText(message?: ChatSessionMessage): string {
   const content = message?.content;
-  if (typeof content === "string") {
-    return content;
+  const text = messageTextSchema.safeParse(content);
+  if (text.success) {
+    return text.data;
   }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (
-          part &&
-          typeof part === "object" &&
-          "text" in part &&
-          typeof (part as { text?: unknown }).text === "string"
-        ) {
-          return (part as { text: string }).text;
-        }
-        return "";
-      })
-      .filter((part) => part.length > 0)
-      .join(" ");
-  }
-  if (
-    content &&
-    typeof content === "object" &&
-    "text" in content &&
-    typeof (content as { text?: unknown }).text === "string"
-  ) {
-    return (content as { text: string }).text;
-  }
-  return content == null ? "" : safeStringify(content);
+  return content === undefined || content === null ? "" : safeStringify(content);
 }
 
-function isImagePart(part: unknown): boolean {
-  if (!part || typeof part !== "object") return false;
-  const p = part as Record<string, unknown>;
-  const type = typeof p.type === "string" ? p.type : "";
-  if (type === "image" || type === "image_url") return true;
-  if (type === "file" && typeof p.mimeType === "string" && p.mimeType.startsWith("image/")) {
-    return true;
-  }
-  return p.image != null || p.image_url != null;
-}
+/**
+ * An image arrives either as a typed part (`image`/`image_url`, or a `file` part
+ * with an image mime type) or as a part carrying an image payload directly.
+ */
+const imagePartSchema = z
+  .object({
+    type: z.string().optional().catch(undefined),
+    mimeType: z.string().optional().catch(undefined),
+    image: z.unknown(),
+    image_url: z.unknown(),
+  })
+  .refine(
+    (part) =>
+      part.type === "image" ||
+      part.type === "image_url" ||
+      (part.type === "file" && part.mimeType?.startsWith("image/") === true) ||
+      (part.image !== undefined && part.image !== null) ||
+      (part.image_url !== undefined && part.image_url !== null),
+  );
 
 /** True when the message includes image parts (AI SDK content/parts arrays). */
-export function messageHasImageParts(message?: Record<string, unknown>): boolean {
+export function messageHasImageParts(message?: ChatSessionMessage): boolean {
   if (!message) return false;
-  for (const field of ["content", "parts"] as const) {
-    const value = message[field];
-    if (Array.isArray(value) && value.some(isImagePart)) {
+  for (const value of [message.content, message.parts]) {
+    if (Array.isArray(value) && value.some((part) => imagePartSchema.safeParse(part).success)) {
       return true;
     }
   }
   return false;
 }
 
-function totalMessageChars<T extends Record<string, unknown>>(
+function totalMessageChars<T extends ChatSessionMessage>(
   messages: T[],
   estimate: (message?: T) => number,
 ): number {
   return messages.reduce((sum, message) => sum + estimate(message), 0);
 }
 
-function buildSessionDigest<T extends Record<string, unknown>>(
+function buildSessionDigest<T extends ChatSessionMessage>(
   messages: T[],
   previewText: (message?: T) => string,
   maxDigestChars: number,
@@ -258,7 +278,7 @@ function buildSessionDigest<T extends Record<string, unknown>>(
   const lines: string[] = [];
 
   for (const message of messages) {
-    const role = typeof message.role === "string" ? message.role : "unknown";
+    const role = message.role ?? "unknown";
     const normalized = previewText(message).replace(/\s+/g, " ").trim();
     if (!normalized) {
       continue;
@@ -318,48 +338,56 @@ function hardTruncate(text: string, maxChars: number): string {
  * preview — collapsing a tool turn into free text would make the AI SDK treat it
  * as a plain assistant message and orphan any paired tool messages.
  */
-function enforceMessageBudget<T extends Record<string, unknown>>(message: T, maxChars: number): T {
+/** Replace only a message's `content`, keeping the caller's own message type. */
+function withContent<T extends ChatSessionMessage>(message: T, content: CappedValue): T {
+  // SAFETY: `content` is the single field replaced, and every value passed here
+  // is derived from `message.content` itself, so the result still carries `T`'s
+  // own fields. The assertion only restates what a spread over a generic cannot.
+  return { ...message, content } as T;
+}
+
+function enforceMessageBudget<T extends ChatSessionMessage>(message: T, maxChars: number): T {
   if (estimateMessageCharsForModel(message) <= maxChars) {
     return message;
   }
 
   const content = message.content;
-  if (typeof content === "string") {
-    return { ...message, content: hardTruncate(content, maxChars) };
+  const text = z.string().safeParse(content);
+  if (text.success) {
+    return withContent(message, hardTruncate(text.data, maxChars));
   }
 
   if (Array.isArray(content) && content.length > 0) {
-    let parts = content as unknown[];
+    let parts: CappedValue[] = content;
     while (
       parts.length > 1 &&
-      estimateMessageCharsForModel({
-        ...message,
-        content: capStringsInValue(parts, maxChars, hardTruncate),
-      } as T) > maxChars
+      estimateMessageCharsForModel(
+        withContent(message, capStringsInValue(parts, maxChars, hardTruncate)),
+      ) > maxChars
     ) {
       parts = parts.slice(1);
     }
     return shrinkStructuredContentToBudget(message, parts, maxChars);
   }
 
-  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+  return withContent(message, hardTruncate(safeStringify(content), maxChars));
 }
 
-function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
+function shrinkStructuredContentToBudget<T extends ChatSessionMessage>(
   message: T,
-  content: unknown,
+  content: CappedValue,
   maxChars: number,
 ): T {
   let cap = maxChars;
   for (let attempt = 0; attempt < 8 && cap > 0; attempt++) {
     const capped = capStringsInValue(content, cap, hardTruncate);
-    const size = estimateMessageCharsForModel({ ...message, content: capped } as T);
+    const size = estimateMessageCharsForModel(withContent(message, capped));
     if (size <= maxChars) {
-      return { ...message, content: capped } as T;
+      return withContent(message, capped);
     }
     cap = Math.max(0, cap - (size - maxChars) - 1);
   }
-  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+  return withContent(message, hardTruncate(safeStringify(content), maxChars));
 }
 
 /**
@@ -368,7 +396,7 @@ function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
  * minimum set still exceeds it, truncate the survivors to an even share so the
  * model never receives more than `charBudget` characters.
  */
-function enforceSessionCharBudget<T extends Record<string, unknown>>(
+function enforceSessionCharBudget<T extends ChatSessionMessage>(
   messages: T[],
   estimate: (message?: T) => number,
   charBudget: number,
@@ -410,7 +438,7 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
  * labeled "Session digest" so the model reads it as context, not a new question.
  * DB / UI are unchanged.
  */
-export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
+export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
   messages: T[],
   opts?: {
     charBudget?: number;
@@ -493,34 +521,45 @@ type CappedValue =
  * `truncate` defaults to {@link truncateToMaxChars} (the `maxChars + 1` tool-cap
  * convention); pass {@link hardTruncate} when the result must stay `<= maxChars`
  * for strict budget enforcement.
+ *
+ * The `typeof` branches below are deliberate and are not a missing parse. A tool
+ * result is whatever an arbitrary tool returned, so there is no schema to decode
+ * it against: the walk is polymorphic over the value's own runtime shape, and
+ * each branch narrows `value` into one arm of `CappedValue` so that every
+ * non-string leaf passes through without an assertion. They are the only
+ * `anti-slop/no-runtime-typeof` exemption in the tree and are suppressed
+ * per-line below so the rule can still reach zero elsewhere and be promoted to
+ * `error` (#1599).
  */
-function capStringsInValue(
-  value: unknown,
+function capStringsInValue<T>(
+  value: T,
   maxChars: number,
   truncate: (text: string, max: number) => string = truncateToMaxChars,
 ): CappedValue {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "string") {
     return truncate(value, maxChars);
   }
 
-  // Non-string leaves are returned as they came in: only strings can be
-  // oversized. Taking them before the object walk lets each `typeof` narrow
-  // `value` into one arm of `CappedValue`, so no passthrough needs an assertion.
-  if (value === null || value === undefined) return value;
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return value;
+    const leaf: number | boolean | bigint = value;
+    return leaf;
   }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "symbol" || typeof value === "function") {
-    return value;
+    const leaf: symbol | Function = value;
+    return leaf;
   }
 
   if (Array.isArray(value)) {
     return value.map((item) => capStringsInValue(item, maxChars, truncate));
   }
 
-  const record = value as Record<string, unknown>;
   const capped: Record<string, CappedValue> = {};
-  for (const [key, nested] of Object.entries(record)) {
+  for (const [key, nested] of Object.entries(value)) {
     capped[key] = capStringsInValue(nested, maxChars, truncate);
   }
   return capped;
@@ -530,7 +569,7 @@ function capStringsInValue(
  * Truncates oversized strings inside assistant/tool messages before `streamText`.
  * User turns are left unchanged. Does not mutate DB-stored history.
  */
-export function capToolResultsInMessages<T extends Record<string, unknown>>(
+export function capToolResultsInMessages<T extends ChatSessionMessage>(
   messages: T[],
   maxCharsPerResult?: number,
 ): T[] {
@@ -542,6 +581,8 @@ export function capToolResultsInMessages<T extends Record<string, unknown>>(
       return message;
     }
 
+    // SAFETY: the walk rebuilds the same object graph and only shortens string
+    // leaves, so every key and nesting level of `T` survives unchanged.
     return capStringsInValue(message, maxChars) as T;
   });
 }

@@ -335,12 +335,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     if (!numericCourseId || !title.trim()) return;
     setCreating(true);
     try {
-      await api.createModule(numericCourseId, {
+      const payload: { title: string; description?: string } = {
         title: title.trim(),
-        // Omit rather than send "" — the column is nullable and a blank string
-        // would render as an empty description line on the card.
-        ...(description.trim() ? { description: description.trim() } : {}),
-      });
+      };
+      // Omit rather than send "" — the column is nullable and a blank string
+      // would render as an empty description line on the card.
+      if (description.trim()) payload.description = description.trim();
+      await api.createModule(numericCourseId, payload);
       setTitle("");
       setDescription("");
       setCreateOpen(false);
