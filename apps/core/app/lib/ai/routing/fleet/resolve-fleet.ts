@@ -54,14 +54,37 @@ function nextRoundRobinIndex(pool: "interactive" | "background"): number {
   return current;
 }
 
-/** Small deterministic hash; unlike the process-local cursor this is stable across Core workers. */
-function affinityIndex(value: string, length: number): number {
+/** Small deterministic hash (FNV-1a); stable across Core workers. */
+function fnv1a(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return (hash >>> 0) % length;
+  return hash >>> 0;
+}
+
+/**
+ * Rendezvous (highest random weight) hashing: score every eligible server by
+ * hashing the affinity key together with that server's id, and pick the
+ * highest score. Unlike `hash(key) % eligible.length`, this only remaps keys
+ * that actually resolved to the removed/added host — every other key keeps
+ * scoring highest for the same server it always did, so a single host
+ * ejection (or recovery) reshuffles roughly 1/N of affinity keys instead of
+ * nearly all of them.
+ */
+function affinityServer<T extends { id: string }>(value: string, eligible: T[]): T {
+  let best = eligible[0]!;
+  let bestScore = fnv1a(`${value}#${best.id}`);
+  for (let index = 1; index < eligible.length; index += 1) {
+    const candidate = eligible[index]!;
+    const score = fnv1a(`${value}#${candidate.id}`);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function pickReason(jobType: JobType): string {
@@ -80,7 +103,7 @@ function pickServer(
   const normalizedAffinityKey = affinityKey?.trim();
   if (normalizedAffinityKey) {
     return {
-      server: eligible[affinityIndex(normalizedAffinityKey, eligible.length)]!,
+      server: affinityServer(normalizedAffinityKey, eligible),
       reason:
         jobType === "background" && heavyFleetConfigured()
           ? "background-affinity"
