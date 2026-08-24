@@ -5,7 +5,7 @@
 
 import type { JsonValue } from "~/lib/json-value";
 import { z } from "zod";
-import { jsonObjectSchema, jsonValueSchema } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, jsonValueSchema } from "~/lib/json-value";
 import { streamText } from "ai";
 import {
   createAIProviderRegistry,
@@ -196,12 +196,12 @@ function decodeApiKeys(
   if (value === undefined) {
     return rejected(400, "Invalid apiKeys");
   }
-  const envelope = jsonObjectSchema.safeParse(value);
-  if (!envelope.success) {
+  const envelope = asJsonObject(value);
+  if (!envelope) {
     return rejected(422, "apiKeys must be an object");
   }
 
-  for (const [providerId, providerValue] of Object.entries(envelope.data)) {
+  for (const [providerId, providerValue] of Object.entries(envelope)) {
     if (providerId.length > limits.maxModelChars) {
       return rejected(422, "apiKeys provider id exceeds maximum length");
     }
@@ -245,11 +245,12 @@ export function validateCompletionRequest(
   overrides: CompletionInputLimitOverrides = {},
 ): CompletionValidationResult {
   const limits = resolveCompletionInputLimits(overrides);
-  const bodyEnvelope = jsonObjectSchema.safeParse(input);
-  if (!bodyEnvelope.success) {
+  // Shallow on purpose: this runs before the size limits are enforced, so it
+  // must not walk an unbounded body. Every field below is decoded on its own.
+  const body = asJsonObject(input);
+  if (!body) {
     return completionValidationError(400, "Invalid completion request body");
   }
-  const body = bodyEnvelope.data;
 
   const model = z.string().safeParse(body.model);
   if (!model.success || model.data.trim().length === 0) {
@@ -277,11 +278,11 @@ export function validateCompletionRequest(
 
   let rawMessages: JsonValue[] = [];
   if (body.messages !== undefined) {
-    const decoded = z.array(jsonValueSchema).safeParse(body.messages);
-    if (!decoded.success) {
+    const decoded = asJsonArray(body.messages);
+    if (!decoded) {
       return completionValidationError(422, "messages must be an array");
     }
-    rawMessages = decoded.data;
+    rawMessages = decoded;
   }
   if (rawMessages.length > limits.maxMessages) {
     return completionValidationError(422, "messages exceeds maximum count");
@@ -290,11 +291,11 @@ export function validateCompletionRequest(
   const messages: CompletionMessage[] = [];
   let totalMessageChars = 0;
   for (const raw of rawMessages) {
-    const envelope = jsonObjectSchema.safeParse(raw);
-    if (!envelope.success) {
+    const envelope = asJsonObject(raw);
+    if (!envelope) {
       return completionValidationError(422, "each message must be an object");
     }
-    const role = z.string().safeParse(envelope.data.role);
+    const role = z.string().safeParse(envelope.role);
     if (!role.success) {
       return completionValidationError(422, "each message role must be a string");
     }

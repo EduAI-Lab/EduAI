@@ -91,7 +91,9 @@ function parseAndValidateTarget(raw: string): URL {
 type FetchedDoc = { url: string; title: string; markdown: string };
 
 function coerceDoc(record: GenericDoc | undefined, fallbackUrl: string): FetchedDoc | null {
-  if (!record) return null;
+  // A crawl response that is not a doc-shaped object has nothing to read; the
+  // caller's failure path is the right answer, not a doc with empty content.
+  if (!(record instanceof Object)) return null;
   // An empty string is a real answer for `markdown`, so `content` is only a
   // fallback for an absent field; a blank `url` or `title` is not useful to a
   // reader, so those do fall through.

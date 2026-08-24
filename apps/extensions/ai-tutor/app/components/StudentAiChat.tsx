@@ -153,22 +153,31 @@ const STUDENT_POLICY_FLAGS = [
 
 function studentPolicyFlag(model: StudentSelectableModel): boolean | undefined {
   for (const key of STUDENT_POLICY_FLAGS) {
+    // Only an actual boolean counts as a decision: `/ai-models` carries these
+    // four spellings through unvalidated, and a `null` there means "not
+    // configured", not "blocked".
     const value = model[key];
-    if (value !== undefined) return value;
+    if (value === true || value === false) return value;
   }
   return undefined;
 }
 
+/** `availability` counts only when the API actually sent one; a `null` there is
+ * "not configured", the same as an absent field. */
+function hasAvailability(model: StudentSelectableModel): boolean {
+  return model.availability !== undefined && model.availability !== null;
+}
+
 // Detects whether the API has decorated this model with any student-policy field.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
-  return studentPolicyFlag(model) !== undefined || model.availability !== undefined;
+  return studentPolicyFlag(model) !== undefined || hasAvailability(model);
 }
 
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   const flag = studentPolicyFlag(model);
   if (flag !== undefined) return flag;
-  if (model.availability !== undefined) return model.availability === "allowed";
+  if (hasAvailability(model)) return model.availability === "allowed";
   return true;
 }
 

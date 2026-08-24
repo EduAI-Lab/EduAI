@@ -162,8 +162,8 @@ function ChatMessageBody({
   const safeParts = message.parts?.filter((part) => part != null) ?? [];
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
-    const t = (part as any).type as string | undefined;
-    if (t === undefined || (t !== "tool-invocation" && !t.startsWith("tool-"))) {
+    const t = asText((part as any).type);
+    if (t === null || (t !== "tool-invocation" && !t.startsWith("tool-"))) {
       return false;
     }
 

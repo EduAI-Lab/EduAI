@@ -136,16 +136,17 @@ export function parseEmbeddingSettingsUpdate(
 
   if (hasProvider) {
     const raw = record.data.embeddingProvider;
+    const rawProvider = asText(raw);
     if (raw === null || raw === "") {
       value.embeddingProvider = null;
-    } else if (asText(raw) !== null) {
-      if (normalizeEmbeddingProvider(String(raw)) == null) {
+    } else if (rawProvider !== null) {
+      if (normalizeEmbeddingProvider(rawProvider) == null) {
         return {
           ok: false,
           error: "embeddingProvider must be local, ollama, cloud, or null",
         };
       }
-      const provider = String(raw).trim().toLowerCase();
+      const provider = rawProvider.trim().toLowerCase();
       value.embeddingProvider = provider === "ollama" ? "local" : provider;
     } else {
       return { ok: false, error: "embeddingProvider must be a string or null" };
@@ -154,10 +155,11 @@ export function parseEmbeddingSettingsUpdate(
 
   if (hasModel) {
     const raw = record.data.embeddingModel;
+    const rawModel = asText(raw);
     if (raw === null || raw === "") {
       value.embeddingModel = null;
-    } else if (asText(raw) !== null) {
-      value.embeddingModel = String(raw).trim();
+    } else if (rawModel !== null) {
+      value.embeddingModel = rawModel.trim();
     } else {
       return { ok: false, error: "embeddingModel must be a string or null" };
     }

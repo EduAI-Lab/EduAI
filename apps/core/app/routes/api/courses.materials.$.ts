@@ -216,10 +216,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       if (hasAvailableAt) {
         // null clears the schedule; a valid ISO string sets a future/past reveal.
+        const availableAt = z.string().safeParse(body.availableAt);
         if (body.availableAt === null) {
           data.availableAt = null;
-        } else if (z.string().safeParse(body.availableAt).success) {
-          const parsed = new Date(String(body.availableAt));
+        } else if (availableAt.success) {
+          const parsed = new Date(availableAt.data);
           if (Number.isNaN(parsed.getTime())) {
             return json(400, { error: "INVALID_AVAILABLE_AT" });
           }
