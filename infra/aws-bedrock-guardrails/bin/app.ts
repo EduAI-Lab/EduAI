@@ -20,7 +20,7 @@ const outputTokenAlarmThreshold = requirePositiveThreshold(
 
 new BedrockGuardrailsStack(app, "EduaiBedrockGuardrails", {
   description:
-    "EduAI Bedrock overflow guardrails: least-privilege IAM, CloudWatch tripwire, SNS topic for #1620",
+    "EduAI Bedrock overflow guardrails: least-privilege IAM, CloudWatch tripwire, SNS mailbox",
   env: {
     region: bedrockRegion,
     account: process.env.CDK_DEFAULT_ACCOUNT,

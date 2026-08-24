@@ -1,8 +1,8 @@
 # AWS Bedrock overflow guardrails (#1619)
 
-Least-privilege IAM + a CloudWatch usage tripwire + an SNS topic for the
-#1620 Lambda circuit breaker. **No EduAI runtime change. No Lambda in this
-stack.**
+Least-privilege IAM + a CloudWatch usage tripwire + an SNS mailbox.
+**No EduAI runtime change. No Lambda in this stack.** #1620 (auto-disable
+overflow) is post-MVP and is not required to close #1619.
 
 Follow-up to #1441 / #1527 / #1547. Spend/rate caps still live in app code
 (Redis + Postgres). This stack is the AWS-side statement of *what the bearer
@@ -14,7 +14,7 @@ token may call* and a fast alarm when Bedrock usage spikes — AWS Budgets lag
 | Resource | Purpose |
 | --- | --- |
 | IAM managed policy `EduaiBedrockLlama370bInvokeOnly` | `bedrock:InvokeModel` + `bedrock:InvokeModelWithResponseStream` on **one** model ARN |
-| SNS topic `eduai-bedrock-overflow-alarm` | Alarm destination. **Exported** as `EduaiBedrockGuardrailSnsTopicArn` — #1620 must subscribe, not recreate |
+| SNS topic `eduai-bedrock-overflow-alarm` | Alarm mailbox. **Exported** as `EduaiBedrockGuardrailSnsTopicArn`. Empty until a later subscriber attaches. |
 | CloudWatch alarm on `AWS/Bedrock` `Invocations` | 5-minute Sum tripwire |
 | CloudWatch alarm on `AWS/Bedrock` `OutputTokenCount` | 5-minute Sum tripwire (spend proxy) |
 
@@ -72,6 +72,6 @@ is not run in CI.
 
 ## Out of scope
 
-- Lambda that disables overflow (#1620)
+- Lambda that disables overflow (#1620, post-MVP)
 - Any change under `apps/core`
 - AWS Budgets / Cost Explorer as the primary trigger

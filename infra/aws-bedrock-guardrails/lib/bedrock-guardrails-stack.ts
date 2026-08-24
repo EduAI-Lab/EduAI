@@ -22,9 +22,9 @@ export interface BedrockGuardrailsStackProps extends cdk.StackProps {
  * Owns:
  * - least-privilege IAM managed policy (two Invoke* actions, one model ARN)
  * - CloudWatch alarms on AWS/Bedrock Invocations and OutputTokenCount
- * - SNS topic those alarms publish to (exported for #1620; do not redefine there)
+ * - SNS topic those alarms publish to (exported mailbox; empty until a later subscriber)
  *
- * Does not own: Lambda circuit breaker, apps/core routes, AWS Budgets.
+ * Does not own: Lambda circuit breaker (#1620, post-MVP), apps/core routes, AWS Budgets.
  */
 export class BedrockGuardrailsStack extends cdk.Stack {
   public readonly alarmTopic: sns.Topic;
@@ -103,7 +103,7 @@ export class BedrockGuardrailsStack extends cdk.Stack {
     new cdk.CfnOutput(this, "BedrockGuardrailSnsTopicArn", {
       value: this.alarmTopic.topicArn,
       description:
-        "SNS topic ARN for Bedrock overflow alarms. #1620 must subscribe here and must not create a second topic.",
+        "SNS topic ARN for Bedrock overflow alarms. Mailbox only; #1620 (post-MVP) may subscribe later and must not create a second topic.",
       exportName: "EduaiBedrockGuardrailSnsTopicArn",
     });
 
