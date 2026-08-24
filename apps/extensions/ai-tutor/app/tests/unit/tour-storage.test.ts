@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canAccessStudentTour, resolveSuggestedTourId } from "~/lib/tours/tour-storage";
+import {
+  canAccessStudentTour,
+  canAccessTour,
+  canAccessUnitAdminTour,
+  resolveSuggestedTourId,
+} from "~/lib/tours/tour-storage";
 
 describe("tour access helpers", () => {
   it("allows students on student routes", () => {
@@ -19,6 +24,37 @@ describe("tour access helpers", () => {
     expect(canAccessStudentTour("INSTRUCTOR", "/instructor")).toBe(false);
     expect(canAccessStudentTour("ADMIN", "/instructor")).toBe(false);
     expect(canAccessStudentTour("UNIT_ADMIN", "/instructor")).toBe(false);
+  });
+
+  it("offers the unit-admin tour only to a unit admin, and only where it runs", () => {
+    // The staff tour is a separate tour from the learner-voiced ones — a unit
+    // admin is still out of scope for `canAccessStudentTour` (asserted above).
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/dashboard")).toBe(true);
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor")).toBe(true);
+    // Routes the tour never visits — starting it there would yank the reader
+    // away. That includes everything *below* /instructor: the course-list step
+    // anchors on /instructor exactly, so a course, module or lesson page has no
+    // step of its own and would jump the reader back to the dashboard.
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor/courses/1")).toBe(false);
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor/modules/1")).toBe(false);
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/settings")).toBe(false);
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/help")).toBe(false);
+    // Other roles keep their own answer.
+    expect(canAccessUnitAdminTour("INSTRUCTOR", "/dashboard")).toBe(false);
+    expect(canAccessUnitAdminTour("ADMIN", "/dashboard")).toBe(false);
+  });
+
+  it("canAccessTour is the union the sidebar control gates on", () => {
+    expect(canAccessTour("UNIT_ADMIN", "/dashboard")).toBe(true);
+    expect(canAccessTour("STUDENT", "/student")).toBe(true);
+    expect(canAccessTour("INSTRUCTOR", "/dashboard")).toBe(false);
+  });
+
+  it("suggests the unit-admin orientation for a unit admin", () => {
+    expect(resolveSuggestedTourId("UNIT_ADMIN", "/dashboard")).toBe("unit-admin-orientation");
+    expect(resolveSuggestedTourId("UNIT_ADMIN", "/instructor")).toBe("unit-admin-orientation");
+    expect(resolveSuggestedTourId("UNIT_ADMIN", "/instructor/courses/1")).toBe(null);
+    expect(resolveSuggestedTourId("UNIT_ADMIN", "/settings")).toBe(null);
   });
 
   it("suggests student-journey for TAs on instructor routes", () => {

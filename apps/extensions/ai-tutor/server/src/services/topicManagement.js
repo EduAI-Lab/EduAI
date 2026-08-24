@@ -26,7 +26,21 @@ function chunkIds(ids, size = ID_CHUNK_SIZE) {
   return out;
 }
 
-/** Shared course membership lookup used by topic list/create routes. */
+/**
+ * Shared course membership lookup used by topic list/create routes.
+ *
+ * `authorized` answers "may this caller *read* the course's topics". It admits
+ * course staff via the same `isCourseAdmin` predicate every other course-scoped
+ * gate uses — which is what puts UNIT_ADMIN in scope for courses in their
+ * `authorizedUnits`. Reading the local membership tables alone used to leave
+ * them out, so a unit admin got a 403 on a course in their own unit: the topic
+ * chips vanished from the course hero and, because the activity form refuses to
+ * save without a main topic, activity authoring was blocked outright.
+ *
+ * Read access is all this grants. Creating a topic stays a separate decision on
+ * the POST route (course admin *and* a non-imported course) — topics on a
+ * Core-imported course are owned by EduAI Core and are added there, not here.
+ */
 export async function ensureCourseTopicAccess(courseId, user) {
   const userId = user?.id;
   const course = await prisma.courseOffering.findUnique({
@@ -41,8 +55,11 @@ export async function ensureCourseTopicAccess(courseId, user) {
 
   const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
   const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
-  const isAdmin = user?.role === "ADMIN";
-  return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
+  // Local rows first — they answer without a Core round trip for the common
+  // enrolled-student and mirrored-instructor cases.
+  if (isInstructor || isStudent) return { course, authorized: true, isInstructor };
+
+  return { course, authorized: await isCourseAdmin(user, course), isInstructor };
 }
 
 async function preloadSecondaryTopics(tx, courseId, normalized) {

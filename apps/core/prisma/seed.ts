@@ -1,3 +1,4 @@
+import "./load-core-env";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";

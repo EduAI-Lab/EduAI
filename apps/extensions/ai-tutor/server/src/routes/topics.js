@@ -67,7 +67,9 @@ router.use("/courses/:courseId/topics", gateCourseById());
 /**
  * GET /courses/:courseId/topics — list topics for a course.
  *
- * Auth: enrolled student or course instructor.
+ * Auth: enrolled student, or course staff — an assigned instructor, a
+ * UNIT_ADMIN whose `authorizedUnits` cover the course's department, or ADMIN
+ * (see `ensureCourseTopicAccess`).
  *
  * Why: Core is the source of truth for topics. For EduAI-imported courses,
  * this pulls the latest topic list from Core before responding, so the topic
