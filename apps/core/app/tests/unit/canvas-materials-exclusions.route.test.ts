@@ -24,6 +24,7 @@ import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { excludeCanvasMaterial, unexcludeCanvasMaterial } from "~/lib/canvas/materials.server";
 import { action } from "~/routes/api/courses.canvas-materials.exclusions.$";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -36,7 +37,7 @@ beforeEach(() => {
   } as never);
 });
 
-function makeRequest(method: string, body: unknown) {
+function makeRequest(method: string, body: RouteRequestBody) {
   return new Request("http://localhost/api/courses/core-course-1/canvas-materials/exclusions", {
     method,
     headers: { "Content-Type": "application/json" },

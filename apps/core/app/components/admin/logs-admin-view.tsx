@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { useMemo, useRef, useState } from "react";
 import { Form, Link, useNavigation } from "react-router";
 
@@ -52,7 +53,7 @@ export type HourlyUsageStat = {
 
 type LogsAdminViewProps = {
   tab: LogsTab;
-  rows: Array<Record<string, unknown>>;
+  rows: JsonObject[];
   total: number;
   page: number;
   pageSize: number;
@@ -151,7 +152,7 @@ export function buildLogsTabLinks(query: LogsQueryState) {
 /**
  * Formats timestamps consistently across all log tabs.
  */
-function formatTimestamp(value: unknown) {
+function formatTimestamp(value: JsonValue | undefined) {
   if (typeof value !== "string") {
     return "-";
   }
@@ -163,7 +164,7 @@ function formatTimestamp(value: unknown) {
 /**
  * Keeps row-key lookup stable while allowing mixed log row shapes.
  */
-function getRowValue(row: Record<string, unknown>, key: string) {
+function getRowValue(row: JsonObject, key: string) {
   const value = row[key];
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -174,10 +175,10 @@ function getRowValue(row: Record<string, unknown>, key: string) {
 /**
  * Combines live user-join data with stored actorRole so actor attribution remains readable over time.
  */
-function formatActorDisplay(row: Record<string, unknown>) {
+function formatActorDisplay(row: JsonObject) {
   const user = row.user;
   const userRecord =
-    typeof user === "object" && user !== null ? (user as Record<string, unknown>) : null;
+    typeof user === "object" && user !== null && !Array.isArray(user) ? user : null;
 
   const actorNameRaw = userRecord?.name;
   const actorRoleRaw = row.actorRole ?? userRecord?.role;
@@ -705,7 +706,7 @@ export function LogsAdminView({
   modelStats,
   peakUsageHours,
 }: LogsAdminViewProps) {
-  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null);
+  const [selectedRow, setSelectedRow] = useState<JsonObject | null>(null);
 
   // Hoisted above ServerRoutingPanel (rather than read inside it) so the
   // pending state also covers navigating *into* the Servers tab from

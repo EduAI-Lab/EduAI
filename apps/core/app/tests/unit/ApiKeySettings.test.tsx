@@ -11,7 +11,7 @@ const withOpenAIKey: UserProviderSettings = {
 const noConfigure = (_p: string) => false;
 const onlyOpenAI = (p: string) => p === "openai";
 
-const makeProps = (overrides: Record<string, any> = {}) => ({
+const makeProps = (overrides: Partial<React.ComponentProps<typeof ApiKeySettings>> = {}) => ({
   open: true,
   onOpenChange: vi.fn(),
   apiKeys: noKeys,

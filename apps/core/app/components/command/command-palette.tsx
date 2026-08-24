@@ -49,7 +49,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 /** Window event that opens the palette — dispatched by the header search button. */
 export const CORE_COMMAND_EVENT = "eduai:open-command";
 
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
@@ -67,7 +67,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-};
+} satisfies Record<NavItemKey, Icon>;
 
 type PaletteCourse = { id: string; code: string; name: string };
 

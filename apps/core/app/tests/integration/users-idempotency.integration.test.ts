@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import prisma from "~/lib/prisma.server";
@@ -44,7 +45,7 @@ beforeEach(() => {
   } as never);
 });
 
-function postUser(body: Record<string, unknown>, idempotencyKey: string) {
+function postUser(body: JsonObject, idempotencyKey: string) {
   return handleUsersApiRequest(
     new Request("http://localhost/api/users", {
       method: "POST",

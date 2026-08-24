@@ -45,22 +45,22 @@ export interface AIServiceIndicatorsProps {
   className?: string;
 }
 
-const DOT_CLASS: Record<ServiceState, string> = {
+const DOT_CLASS = {
   operational: "bg-emerald-500",
   // Steady amber, distinct from the pulsing amber `loading` dot below.
   degraded: "bg-amber-500",
   outage: "bg-red-500",
   loading: "bg-amber-400 animate-pulse",
   unknown: "bg-muted-foreground/40",
-};
+} satisfies Record<ServiceState, string>;
 
-const STATE_WORD: Record<ServiceState, string> = {
+const STATE_WORD = {
   operational: "Operational",
   degraded: "Degraded",
   outage: "Outage",
   loading: "Checking…",
   unknown: "Unknown",
-};
+} satisfies Record<ServiceState, string>;
 
 function Chip({
   label,

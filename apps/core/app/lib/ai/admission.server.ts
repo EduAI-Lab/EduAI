@@ -51,7 +51,10 @@ export function resetAiAdmission(): void {
   inflight = 0;
 }
 
-export function getAiAdmissionStats(): { inflight: number; queued: number; max: number } {
+/** A snapshot of the admission gate: what is running, what is waiting, the cap. */
+export type AiAdmissionStats = { inflight: number; queued: number; max: number };
+
+export function getAiAdmissionStats(): AiAdmissionStats {
   return { inflight, queued: waiters.length, max: maxInflight() };
 }
 

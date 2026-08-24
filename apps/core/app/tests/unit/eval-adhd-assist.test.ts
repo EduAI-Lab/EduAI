@@ -58,7 +58,7 @@ describe("CONDITIONS metadata", () => {
   });
 
   it("keeps legacy aliases aligned with canonical keys", () => {
-    expect(LEGACY_MODE_ALIASES.off).toBe("baseline");
-    expect(LEGACY_MODE_ALIASES.on).toBe("assist-oversight");
+    expect(LEGACY_MODE_ALIASES.get("off")).toBe("baseline");
+    expect(LEGACY_MODE_ALIASES.get("on")).toBe("assist-oversight");
   });
 });

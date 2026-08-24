@@ -1,4 +1,5 @@
 import { withIdempotency } from "~/lib/idempotency.server";
+import type { ToolInput } from "./tool-input";
 
 /**
  * Build a valid absolute URL from an idempotency composite route key
@@ -46,7 +47,7 @@ export async function runIdempotentAdminMutation<T>(
   actorId: string,
   route: string,
   idempotencyKey: string,
-  body: Record<string, unknown>,
+  body: ToolInput,
   mutation: () => Promise<T>,
 ): Promise<T> {
   const request = new Request(requestUrlFromIdempotencyRoute(route), {

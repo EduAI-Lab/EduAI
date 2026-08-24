@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CronJobsAdminView } from "~/components/admin/cron-jobs-admin-view";
 import type { CronJobEntry } from "~/lib/db.cron-jobs.server";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 function job(overrides: Partial<CronJobEntry> = {}): CronJobEntry {
   return {
@@ -16,7 +17,7 @@ function job(overrides: Partial<CronJobEntry> = {}): CronJobEntry {
   };
 }
 
-function mockFetchJson(body: unknown, ok = true) {
+function mockFetchJson(body: ParsedJsonBody, ok = true) {
   return vi.fn().mockResolvedValue({
     ok,
     json: () => Promise.resolve(body),

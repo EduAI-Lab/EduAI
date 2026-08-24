@@ -16,7 +16,9 @@
  *     from the raw appendix when `report.isAnonymous` is true.
  */
 
-import { hasAttachmentContent } from "@eduai/types";
+import { hasAttachmentContent, type JsonObject, type JsonValue } from "@eduai/types";
+
+import type { BadgeVariant } from "../ui/badge";
 
 import type { AdminBugReportRow, BugReportContext, BugReportStatus, BugReportType } from "./types";
 
@@ -57,29 +59,28 @@ export type NetworkLogEntry = {
 };
 
 export const STATUS_OPTIONS: BugReportStatus[] = ["unhandled", "in progress", "resolved"];
-export const STATUS_LABELS: Record<BugReportStatus, string> = {
+export const STATUS_LABELS = {
   unhandled: "Unhandled",
   "in progress": "In progress",
   resolved: "Resolved",
-};
+} satisfies Record<BugReportStatus, string>;
 // Traffic-light triage semantics: unhandled needs attention (red), in progress
 // is underway (amber), resolved is done (green). Drives the Badge rendered
 // inside the status Select's trigger.
-export const STATUS_BADGE_VARIANT: Record<BugReportStatus, "destructive" | "warning" | "success"> =
-  {
-    unhandled: "destructive",
-    "in progress": "warning",
-    resolved: "success",
-  };
+export const STATUS_BADGE_VARIANT = {
+  unhandled: "destructive",
+  "in progress": "warning",
+  resolved: "success",
+} satisfies Record<BugReportStatus, BadgeVariant>;
 
-export const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+export const BUG_TYPE_LABELS = {
   UI_DISPLAY: "UI / display",
   FEATURE_NOT_WORKING: "Feature not working",
   PERFORMANCE: "Performance",
   CONTENT_ERROR: "Content error",
   ACCESS_PERMISSION: "Access / permission",
   OTHER: "Other",
-};
+} satisfies Record<BugReportType, string>;
 export const CONSOLE_LEVELS = ["all", "log", "warn", "error"] as const;
 export const NETWORK_TABS = ["meta", "request", "response", "headers"] as const;
 export const CONSOLE_LEVEL_OPTIONS = CONSOLE_LEVELS.map((level) => ({
@@ -87,11 +88,21 @@ export const CONSOLE_LEVEL_OPTIONS = CONSOLE_LEVELS.map((level) => ({
   label: level,
 }));
 export const NETWORK_TAB_OPTIONS = NETWORK_TABS.map((tab) => ({ value: tab, label: tab }));
-export const CONSOLE_LEVEL_BADGE_VARIANT: Record<string, "destructive" | "warning" | "muted"> = {
-  error: "destructive",
-  warn: "warning",
-  log: "muted",
-};
+/**
+ * A captured console entry carries whatever `level` string the page logged, so
+ * this is a function rather than a table: the lookup key is not a domain union
+ * and every unrecognised level has to land somewhere.
+ */
+export function consoleLevelBadgeVariant(level: string): BadgeVariant {
+  switch (level) {
+    case "error":
+      return "destructive";
+    case "warn":
+      return "warning";
+    default:
+      return "muted";
+  }
+}
 export const COPY_FEEDBACK_DURATION_MS = 2_000;
 
 export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
@@ -206,7 +217,7 @@ export function buildBugReportCopyText(report: AdminBugReportRow) {
     report.description,
   ].filter(Boolean);
 
-  const rawAppendix: Record<string, unknown> = {
+  const requiredAppendix = {
     id: report.id,
     status: report.status,
     description: report.description,
@@ -214,36 +225,41 @@ export function buildBugReportCopyText(report: AdminBugReportRow) {
     isAnonymous: report.isAnonymous,
   };
 
-  if (report.createdAt) rawAppendix.createdAt = report.createdAt;
-  if (report.updatedAt) rawAppendix.updatedAt = report.updatedAt;
+  // The rest of the appendix is filled key by key, so it is a `JsonObject`
+  // accumulator: everything that lands in it is a scalar off the row and goes
+  // straight back out through `JSON.stringify`.
+  const optionalAppendix: JsonObject = {};
+
+  if (report.createdAt) optionalAppendix.createdAt = report.createdAt;
+  if (report.updatedAt) optionalAppendix.updatedAt = report.updatedAt;
   if (includeReporterIdentity && report.reporterName)
-    rawAppendix.reporterName = report.reporterName;
+    optionalAppendix.reporterName = report.reporterName;
   if (includeReporterIdentity && report.reporterEmail)
-    rawAppendix.reporterEmail = report.reporterEmail;
-  if (reporterRole) rawAppendix.reporterRole = reporterRole;
-  if (report.pageUrl) rawAppendix.pageUrl = report.pageUrl;
-  if (report.userAgent) rawAppendix.userAgent = report.userAgent;
+    optionalAppendix.reporterEmail = report.reporterEmail;
+  if (reporterRole) optionalAppendix.reporterRole = reporterRole;
+  if (report.pageUrl) optionalAppendix.pageUrl = report.pageUrl;
+  if (report.userAgent) optionalAppendix.userAgent = report.userAgent;
   if (report.courseOfferingId !== null && report.courseOfferingId !== undefined) {
-    rawAppendix.courseOfferingId = report.courseOfferingId;
+    optionalAppendix.courseOfferingId = report.courseOfferingId;
   }
   if (report.moduleId !== null && report.moduleId !== undefined) {
-    rawAppendix.moduleId = report.moduleId;
+    optionalAppendix.moduleId = report.moduleId;
   }
   if (report.lessonId !== null && report.lessonId !== undefined) {
-    rawAppendix.lessonId = report.lessonId;
+    optionalAppendix.lessonId = report.lessonId;
   }
   if (report.activityId !== null && report.activityId !== undefined) {
-    rawAppendix.activityId = report.activityId;
+    optionalAppendix.activityId = report.activityId;
   }
-  if (report.courseTitle) rawAppendix.courseTitle = report.courseTitle;
-  if (report.moduleTitle) rawAppendix.moduleTitle = report.moduleTitle;
-  if (report.lessonTitle) rawAppendix.lessonTitle = report.lessonTitle;
-  if (report.activityTitle) rawAppendix.activityTitle = report.activityTitle;
-  if (report.consoleLogs) rawAppendix.consoleLogs = report.consoleLogs;
-  if (report.networkLogs) rawAppendix.networkLogs = report.networkLogs;
-  if (report.screenshot) rawAppendix.screenshot = report.screenshot;
+  if (report.courseTitle) optionalAppendix.courseTitle = report.courseTitle;
+  if (report.moduleTitle) optionalAppendix.moduleTitle = report.moduleTitle;
+  if (report.lessonTitle) optionalAppendix.lessonTitle = report.lessonTitle;
+  if (report.activityTitle) optionalAppendix.activityTitle = report.activityTitle;
+  if (report.consoleLogs) optionalAppendix.consoleLogs = report.consoleLogs;
+  if (report.networkLogs) optionalAppendix.networkLogs = report.networkLogs;
+  if (report.screenshot) optionalAppendix.screenshot = report.screenshot;
 
-  return `${summaryLines.join("\n")}\n\nRaw Appendix\n${JSON.stringify(rawAppendix, null, 2)}`;
+  return `${summaryLines.join("\n")}\n\nRaw Appendix\n${JSON.stringify({ ...requiredAppendix, ...optionalAppendix }, null, 2)}`;
 }
 
 export async function copyTextToClipboard(text: string) {
@@ -339,56 +355,61 @@ export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: 
  * only in STATUS_LABELS, which would delete this map entirely; that requires
  * changing AI Tutor's server-side mapper and is deliberately not done here.
  */
-export const CORE_STATUS_TO_UI: Record<string, BugReportStatus> = {
-  UNHANDLED: "unhandled",
-  IN_PROGRESS: "in progress",
-  RESOLVED: "resolved",
-};
+// A `Map` rather than an object because the key is whatever string arrives on
+// the wire, not a union this package controls: `get` answers "unknown status"
+// with `undefined` where an index signature would have promised a value.
+export const CORE_STATUS_TO_UI = new Map<string, BugReportStatus>([
+  ["UNHANDLED", "unhandled"],
+  ["IN_PROGRESS", "in progress"],
+  ["RESOLVED", "resolved"],
+]);
 
-export const UI_STATUS_TO_CORE: Record<BugReportStatus, string> = {
+export const UI_STATUS_TO_CORE = {
   unhandled: "UNHANDLED",
   "in progress": "IN_PROGRESS",
   resolved: "RESOLVED",
-};
+} satisfies Record<BugReportStatus, string>;
 
 /** Tolerates either casing, so callers can pass raw API payloads. */
 export function toUiStatus(status: string): BugReportStatus {
-  return CORE_STATUS_TO_UI[status] ?? (status as BugReportStatus);
+  return CORE_STATUS_TO_UI.get(status) ?? (status as BugReportStatus);
 }
 
 /**
  * Core's admin payload, as it comes off the wire. Every field is optional
  * because the list endpoint omits the diagnostic blobs (#979) and the extension
- * proxies pass the body through untouched.
+ * proxies pass the body through untouched, and every field is a `JsonValue`
+ * because this is the shape straight out of `JSON.parse` — the coercers below
+ * are what turn it into an `AdminBugReportRow`.
  */
 export type RawAdminBugReport = {
-  id?: unknown;
-  description?: unknown;
-  bugType?: unknown;
-  status?: unknown;
-  source?: unknown;
-  consoleLogs?: unknown;
-  networkLogs?: unknown;
-  screenshot?: unknown;
-  hasConsoleLogs?: unknown;
-  hasNetworkLogs?: unknown;
-  hasScreenshot?: unknown;
-  pageUrl?: unknown;
-  userAgent?: unknown;
-  isAnonymous?: unknown;
-  userId?: unknown;
-  userName?: unknown;
-  userEmail?: unknown;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-  context?: unknown;
+  id?: JsonValue;
+  description?: JsonValue;
+  bugType?: JsonValue;
+  status?: JsonValue;
+  source?: JsonValue;
+  consoleLogs?: JsonValue;
+  networkLogs?: JsonValue;
+  screenshot?: JsonValue;
+  hasConsoleLogs?: JsonValue;
+  hasNetworkLogs?: JsonValue;
+  hasScreenshot?: JsonValue;
+  pageUrl?: JsonValue;
+  userAgent?: JsonValue;
+  isAnonymous?: JsonValue;
+  userId?: JsonValue;
+  userName?: JsonValue;
+  userEmail?: JsonValue;
+  createdAt?: JsonValue;
+  updatedAt?: JsonValue;
+  context?: JsonValue;
 };
 
-function optionalString(value: unknown): string | null {
+function optionalString(value: JsonValue | undefined): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function optionalInt(value: unknown): number | null {
+function optionalInt(value: JsonValue | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
@@ -397,12 +418,12 @@ function optionalInt(value: unknown): number | null {
   return null;
 }
 
-function optionalBoolean(value: unknown): boolean | undefined {
+function optionalBoolean(value: JsonValue | undefined): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
 /** Core stores per-app context as a `Json?` column; non-objects mean "no context". */
-function readContext(value: unknown): BugReportContext {
+function readContext(value: JsonValue | undefined): BugReportContext {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as BugReportContext;
 }

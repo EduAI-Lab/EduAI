@@ -60,6 +60,8 @@ import {
   deleteAdminAiModelMutation,
   triggerAdminCronJobMutation,
 } from "./admin-mutations.server";
+import type { MutationResult } from "./admin-mutations.server";
+import type { ToolInput } from "./tool-input";
 import {
   getAdminCourseRagSettings,
   getAdminCourseEmbeddingSettings,
@@ -115,8 +117,8 @@ export function createAdminChatTools(ctx: ChatToolContext) {
   const confirmWrite = (
     toolName: string,
     confirmed: boolean,
-    run: () => Promise<Record<string, unknown>>,
-    payload: Record<string, unknown> = {},
+    run: () => Promise<MutationResult>,
+    payload: ToolInput = {},
   ) => runConfirmedAdminWriteTool(toolName, user, confirmed, run, payload, turnId);
 
   const resolveCourse = (courseId?: string, courseCode?: string) =>

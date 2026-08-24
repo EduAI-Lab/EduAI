@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import prisma from "~/lib/prisma.server";
 
@@ -221,7 +222,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   it("maps all three roles correctly from real DB data", async () => {
     const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const roles = body.enrollments.map((e: Record<string, unknown>) => e.role);
+    const roles = body.enrollments.map((e: JsonObject) => e.role);
     expect(roles).toContain("STUDENT");
     expect(roles).toContain("TA");
     expect(roles).toContain("INSTRUCTOR");
@@ -231,7 +232,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   it("returns both active and inactive enrollments", async () => {
     const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
+    const activeStates = body.enrollments.map((e: JsonObject) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });
@@ -240,9 +241,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   it("returns correct student data from real DB", async () => {
     const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const student = body.enrollments.find(
-      (e: Record<string, unknown>) => e.studentId === studentId,
-    );
+    const student = body.enrollments.find((e: JsonObject) => e.studentId === studentId);
     expect(student).toBeDefined();
     expect(student.studentEmail).toBe("enroll-student@test.com");
     expect(student.studentName).toBe("Enroll Student");
@@ -254,7 +253,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   it("returns inactive TA with correct data", async () => {
     const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const ta = body.enrollments.find((e: Record<string, unknown>) => e.studentId === taId);
+    const ta = body.enrollments.find((e: JsonObject) => e.studentId === taId);
     expect(ta).toBeDefined();
     expect(ta.studentEmail).toBe("enroll-ta@test.com");
     expect(ta.isActive).toBe(false);

@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 /**
  * Honest in-flight progress for course chat (#1171).
  *
@@ -31,7 +32,7 @@ export type ChatProgressStage = {
 };
 
 /** Soft stage floors — timed elapsed/expected is the primary fill signal. */
-const STAGE_FLOOR: Record<ChatProgressStageId, number> = {
+const STAGE_FLOOR = {
   routing: 8,
   waiting_for_model: 18,
   searching_materials: 38,
@@ -39,12 +40,12 @@ const STAGE_FLOOR: Record<ChatProgressStageId, number> = {
   working: 42,
   generating: 58,
   preparing_assist: 48,
-};
+} satisfies Record<ChatProgressStageId, number>;
 
 /** Cap while the request is still in flight (never imply "done"). */
 export const CHAT_PROGRESS_IN_FLIGHT_CAP = 96;
 
-const STAGE_LABEL: Record<ChatProgressStageId, string> = {
+const STAGE_LABEL = {
   routing: "Routing…",
   waiting_for_model: "Waiting for model…",
   searching_materials: "Searching course materials…",
@@ -53,7 +54,7 @@ const STAGE_LABEL: Record<ChatProgressStageId, string> = {
   generating: "Generating…",
   // Covers both slow TTFT and oversight buffering — not oversight-only.
   preparing_assist: "Working on Assist reply…",
-};
+} satisfies Record<ChatProgressStageId, string>;
 
 /** Brief window before we assume the request has left the client. */
 export const CHAT_PROGRESS_ROUTING_MS = 450;
@@ -284,9 +285,15 @@ export function formatChatProgressRemaining(remainingMs: number): string {
   return rem === 0 ? `${minutes}m` : `${minutes}m ${rem}s`;
 }
 
-type MessageLike = {
+/**
+ * The bits of a chat message the progress heuristics read. Exported because
+ * `use-chat-progress` feeds the same messages in and had grown its own copy of
+ * this shape.
+ */
+export type MessageLike = {
+  id?: string;
   role?: string;
-  content?: unknown;
+  content?: JsonValue;
   parts?: Array<{
     type?: string;
     text?: string;
@@ -296,15 +303,15 @@ type MessageLike = {
   } | null> | null;
 };
 
-function contentAsDisplayText(content: unknown): string {
+function contentAsDisplayText(content: JsonValue | undefined): string {
   if (typeof content === "string") return content;
   if (
     content &&
     typeof content === "object" &&
     !Array.isArray(content) &&
-    typeof (content as { text?: unknown }).text === "string"
+    typeof content.text === "string"
   ) {
-    return (content as { text: string }).text;
+    return content.text;
   }
   return "";
 }

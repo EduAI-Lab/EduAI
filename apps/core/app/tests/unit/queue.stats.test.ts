@@ -4,11 +4,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => {
   const aiJob = { count: vi.fn() };
+  // getQueueSnapshot runs both reads on a transaction client; the mock hands
+  // the callback this same client so the count assertions still apply.
+  const txClient = { aiJob };
   return {
     aiJob,
-    // getQueueSnapshot runs both reads on a transaction client; the mock hands
-    // the callback this same client so the count assertions still apply.
-    $transaction: vi.fn(async <T>(fn: (tx: unknown) => T) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: typeof txClient) => T) => fn(txClient)),
   };
 });
 

@@ -6,6 +6,7 @@
 // try/catch around line ~1330) — a bug in that retry/fallback wiring is not
 // visible from router-unit tests alone. These tests drive the real
 // /api/chat action for admin and service-key Auto callers.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -24,8 +25,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -164,7 +165,7 @@ const imageMessage = {
   ],
 };
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [imageMessage],
     model: "auto",

@@ -12,6 +12,7 @@
  *    instead of recomputing `to_tsvector(content)` inline on every query
  */
 
+import type { JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -95,9 +96,19 @@ const RETRIEVAL_QUERY_CALL_INDEX = 1;
  * rather than template-string literals) are inlined recursively so their SQL
  * text is visible; every other value collapses to a placeholder.
  */
-function renderSqlValue(value: unknown): string {
-  if (value !== null && typeof value === "object" && "strings" in value && "values" in value) {
-    const frag = value as { strings: readonly string[]; values: unknown[] };
+/** A nested `Prisma.sql` fragment: its literal text, and the values between. */
+type SqlFragment = { strings: readonly string[]; values: SqlValue[] };
+
+/** Either a nested fragment or a bound parameter value. */
+type SqlValue = SqlFragment | JsonValue | undefined;
+
+function isSqlFragment(value: SqlValue): value is SqlFragment {
+  return value !== null && typeof value === "object" && "strings" in value && "values" in value;
+}
+
+function renderSqlValue(value: SqlValue): string {
+  if (isSqlFragment(value)) {
+    const frag = value;
     return frag.strings
       .map((s, i) => s + (i < frag.values.length ? renderSqlValue(frag.values[i]) : ""))
       .join("");
@@ -108,7 +119,7 @@ function renderSqlValue(value: unknown): string {
 function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   const [templateStrings, ...values] = queryRawMock.mock.calls[callIndex] as [
     string[],
-    ...unknown[],
+    ...SqlValue[],
   ];
   return templateStrings
     .map((s, i) => s + (i < values.length ? renderSqlValue(values[i]) : ""))

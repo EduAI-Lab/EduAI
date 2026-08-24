@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
@@ -299,6 +300,9 @@ function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
   };
 }
 
+/** The slice of `Response` the component under test reads off a mocked fetch. */
+type FetchResponseStub = { ok?: boolean; status?: number; json: () => Promise<JsonValue> };
+
 describe("ChatScreen — header", () => {
   it("binds its provider-key store to the authenticated loader user", () => {
     renderChatScreen();
@@ -387,7 +391,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     act(() => {
@@ -407,7 +411,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>, details?: { finishReason?: string }) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -431,7 +435,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>, details?: { finishReason?: string }) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -459,7 +463,7 @@ describe("ChatScreen — header", () => {
 
     let latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     await act(async () => {
@@ -586,12 +590,10 @@ describe("ChatScreen — header", () => {
   });
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
-    let resolveFetch: (value: { json: () => Promise<Record<string, unknown>> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<Record<string, unknown>> }>(
-      (resolve) => {
-        resolveFetch = resolve;
-      },
-    );
+    let resolveFetch: (value: FetchResponseStub) => void;
+    const fetchPromise = new Promise<FetchResponseStub>((resolve) => {
+      resolveFetch = resolve;
+    });
     const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(fetchPromise as Promise<Response>);
 
     const { router } = renderChatScreen(null, autoRoutingData);
@@ -709,7 +711,7 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
   };
 
   it("calls the regenerateOnly endpoint and swaps in the new content when toggled on", async () => {
-    let resolveFetch: (value: unknown) => void;
+    let resolveFetch: (value: FetchResponseStub) => void;
     const fetchPromise = new Promise((resolve) => {
       resolveFetch = resolve;
     });

@@ -9,6 +9,9 @@ import {
   sanitizeSensitiveData,
 } from "~/lib/redact.server";
 
+/** A node that may reference itself, for the cycle-guard tests. */
+type CircularNode = { name: string; self?: CircularNode };
+
 describe("redactSecretValuesInString", () => {
   it("redacts provider keys embedded in unstructured error prose", () => {
     expect(redactSecretValuesInString("provider rejected key sk-do-not-leak")).toBe(
@@ -464,7 +467,9 @@ describe("redactErrorForMessage", () => {
   });
 
   it("falls back to string coercion for circular objects", () => {
-    const circular: Record<string, unknown> = { name: "loop" };
+    // A graph that points back at itself — the case JSON cannot hold and the
+    // redactor has to survive.
+    const circular: CircularNode = { name: "loop" };
     circular.self = circular;
 
     expect(() => redactErrorForMessage(circular)).not.toThrow();

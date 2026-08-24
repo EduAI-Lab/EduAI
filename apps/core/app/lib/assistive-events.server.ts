@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import {
@@ -118,12 +119,12 @@ export function isAssistiveClientEventType(value: string): value is AssistiveCli
   return (ASSISTIVE_CLIENT_EVENT_TYPES as readonly string[]).includes(value);
 }
 
-export function sanitizeClientMetrics(metrics: unknown): Prisma.InputJsonValue {
+export function sanitizeClientMetrics(metrics: JsonValue | undefined): Prisma.InputJsonValue {
   if (metrics == null || typeof metrics !== "object" || Array.isArray(metrics)) {
     return {};
   }
 
-  const raw = metrics as Record<string, unknown>;
+  const raw = metrics;
   const allowed = [
     "durationMs",
     "success",
@@ -135,7 +136,7 @@ export function sanitizeClientMetrics(metrics: unknown): Prisma.InputJsonValue {
     "clientTimestamp",
   ] as const;
 
-  const out: Record<string, unknown> = {};
+  const out: JsonObject = {};
   for (const key of allowed) {
     const value = raw[key];
     if (value === undefined) continue;

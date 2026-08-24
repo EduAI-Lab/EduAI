@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
@@ -21,7 +22,8 @@ export interface UnitChatSummary extends CourseChatSummary {
 export interface ChatMessageView {
   messageId: string;
   role: string;
-  content: unknown;
+  /** The stored message body, as it came back from the API. */
+  content: JsonValue;
   position: number;
 }
 

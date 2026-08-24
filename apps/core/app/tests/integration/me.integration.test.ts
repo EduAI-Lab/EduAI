@@ -11,6 +11,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/me";
 import { seedUser, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const createdUserIds: string[] = [];
 
@@ -27,7 +28,7 @@ function getArgs() {
   } as any;
 }
 
-function patchArgs(body: unknown) {
+function patchArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/me", {
       method: "PATCH",

@@ -351,6 +351,7 @@ function redactSensitiveKeyValuePairs(text: string): string {
  * `name` as if the key itself were that header.
  */
 function isHarHeaderEntry(
+  // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- classifies one arm of the redactor's walk over an arbitrary runtime graph; there is no payload schema to derive a value type from.
   value: Record<string, unknown>,
 ): value is { name: string; value: unknown } {
   // Real HAR cookie rows also carry domain/path/httpOnly/secure/expires — match
@@ -421,6 +422,7 @@ export function redactSecretValuesInString(text: string): string {
  * Used for audit / security / system log details and bug-report console+network captures.
  */
 export function sanitizeSensitiveData(
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- callers pass whatever they are about to log: Error, Map, Set, class instance, cycle. Classifying that graph is what this function is for.
   value: unknown,
   seen: WeakSet<object> = new WeakSet(),
 ): RedactedValue {
@@ -462,6 +464,7 @@ export function sanitizeSensitiveData(
   } else if (value instanceof Set) {
     result = Array.from(value, (entry) => sanitizeSensitiveData(entry, seen));
   } else {
+    // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the last arm of that walk: a plain object whose values are still unclassified, one level down.
     const record = value as Record<string, unknown>;
     // HAR-style header rows: `{ name: "Cookie", value: "session=…" }`
     if (isHarHeaderEntry(record) && shouldRedactKey(record.name)) {
@@ -497,20 +500,20 @@ export function sanitizeSensitiveData(
  * Returns a plain shape rather than an `Error` because `console.error` prints an Error's own
  * (unredacted) fields rather than the properties we set on it.
  */
-export function redactErrorForConsole(error: unknown): RedactedValue {
-  if (error instanceof Error) {
+export function redactErrorForConsole(cause: unknown): RedactedValue {
+  if (cause instanceof Error) {
     return {
-      name: error.name,
-      message: redactSecretValuesInString(error.message),
-      stack: error.stack ? redactSecretValuesInString(error.stack) : undefined,
+      name: cause.name,
+      message: redactSecretValuesInString(cause.message),
+      stack: cause.stack ? redactSecretValuesInString(cause.stack) : undefined,
     };
   }
 
-  if (typeof error === "string") {
-    return redactSecretValuesInString(error);
+  if (typeof cause === "string") {
+    return redactSecretValuesInString(cause);
   }
 
-  return sanitizeSensitiveData(error);
+  return sanitizeSensitiveData(cause);
 }
 
 /**
@@ -522,23 +525,23 @@ export function redactErrorForConsole(error: unknown): RedactedValue {
  * message, say) want this instead. The stack is deliberately dropped: these
  * strings land in database columns, and the console path already carries it.
  */
-export function redactErrorForMessage(error: unknown): string {
-  if (error instanceof Error) {
-    const message = redactSecretValuesInString(error.message);
-    return message ? `${error.name}: ${message}` : error.name;
+export function redactErrorForMessage(cause: unknown): string {
+  if (cause instanceof Error) {
+    const message = redactSecretValuesInString(cause.message);
+    return message ? `${cause.name}: ${message}` : cause.name;
   }
-  if (typeof error === "string") return redactSecretValuesInString(error);
+  if (typeof cause === "string") return redactSecretValuesInString(cause);
   // `String(value)` on a plain object is "[object Object]" — the same loss this
   // function exists to prevent — so serialize the sanitized value instead.
-  if (typeof error === "object" && error !== null) {
+  if (typeof cause === "object" && cause !== null) {
     try {
-      const serialized = JSON.stringify(sanitizeSensitiveData(error));
+      const serialized = JSON.stringify(sanitizeSensitiveData(cause));
       if (serialized) return redactSecretValuesInString(serialized);
     } catch {
       // Circular or non-serializable: fall through to the string coercion.
     }
   }
-  return redactSecretValuesInString(String(error));
+  return redactSecretValuesInString(String(cause));
 }
 
 /**

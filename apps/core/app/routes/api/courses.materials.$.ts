@@ -4,6 +4,7 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
+import type { Prisma } from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createHash } from "crypto";
 import { validateUploadedFile } from "~/lib/ai/file-processing";
@@ -33,8 +34,9 @@ import {
 } from "~/lib/multipart.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -188,11 +190,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const hasVisibility = body.visibleToStudents !== undefined;
       const hasAvailableAt = body.availableAt !== undefined;
 
-      const data: {
-        title?: string;
-        visibleToStudents?: boolean;
-        availableAt?: Date | null;
-      } = {};
+      // Only the fields the request actually carried are written, so this
+      // starts empty and is filled key by key below.
+      const data: Prisma.CourseMaterialUpdateInput = {};
 
       if (hasTitle) {
         const rawTitle = typeof body.title === "string" ? body.title.trim() : "";

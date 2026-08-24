@@ -6,29 +6,37 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
-const prismaMock = vi.hoisted(() => ({
-  questionBank: {
-    findFirst: vi.fn(),
-    findMany: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-  questionBankMembership: {
-    count: vi.fn(),
-    findMany: vi.fn(),
-    findUnique: vi.fn(),
-    upsert: vi.fn(),
-    create: vi.fn(),
-    createMany: vi.fn(),
-    delete: vi.fn(),
-    deleteMany: vi.fn(),
-  },
-  course: {
-    findUnique: vi.fn(),
-  },
-  $transaction: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn(prismaMock)),
-}));
+const prismaMock = vi.hoisted(() => {
+  // The models are named separately so the transaction callback can be typed as
+  // receiving them: these helpers run the same model calls inside and outside a
+  // transaction, and the mock hands back the same client either way.
+  const models = {
+    questionBank: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    questionBankMembership: {
+      count: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      createMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    course: {
+      findUnique: vi.fn(),
+    },
+  };
+  return {
+    ...models,
+    $transaction: vi.fn(async <T>(fn: (tx: typeof models) => Promise<T>) => fn(models)),
+  };
+});
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
@@ -61,7 +69,7 @@ const EXTRA_BANK = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.$transaction.mockImplementation(async <T>(fn: (tx: unknown) => Promise<T>) =>
+  prismaMock.$transaction.mockImplementation(async <T>(fn: (tx: typeof prismaMock) => Promise<T>) =>
     fn(prismaMock),
   );
 });

@@ -87,11 +87,14 @@ describe("useCourseListFilters", () => {
    * frozen selection that disagrees with the URL it just wrote, and the
    * URL→input sync would fight every assertion.
    */
+  /** What the harness exposes back to a test: the hook's live return and the URL. */
+  type FilterHarness = {
+    current: ReturnType<typeof useCourseListFilters> | null;
+    search: string;
+  };
+
   function mount(initialEntry: string) {
-    const api: {
-      current: ReturnType<typeof useCourseListFilters> | null;
-      search: string;
-    } = { current: null, search: "" };
+    const api: FilterHarness = { current: null, search: "" };
 
     function Harness() {
       const location = useLocation();

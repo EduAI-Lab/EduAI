@@ -95,11 +95,11 @@ export async function getCachedTierModels(): Promise<TierModelRow[]> {
         }
         return rows;
       })
-      .catch((error: unknown) => {
+      .catch((cause: unknown) => {
         if (generation === cacheGeneration && loading?.generation === generation) {
           loading = null;
         }
-        throw error;
+        throw cause;
       });
     loading = { generation, promise };
   }

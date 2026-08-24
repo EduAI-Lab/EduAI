@@ -79,10 +79,9 @@ function accessFor(row: CrossExtPushRow) {
 }
 
 function makeRequest(row: CrossExtPushRow): Request {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Idempotency-Key": "k1",
-  };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
+  headers["Idempotency-Key"] = "k1";
   if (row.Session === "present") {
     headers.cookie = "session=abc";
   }

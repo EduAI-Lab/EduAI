@@ -4,6 +4,7 @@
  * These helpers isolate storage/query rules so route actions can log accountability events
  * without duplicating pagination, filtering, and security-category conventions.
  */
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
 
@@ -63,7 +64,7 @@ export type SecurityLogListParams = Omit<AuditLogListParams, "category" | "inclu
 export type AuditLogRow = Awaited<ReturnType<typeof prisma.auditLog.findFirst>>;
 
 function buildAuditLogWhere(params: AuditLogListParams, opts: { forceSecurityCategory: boolean }) {
-  const where: Record<string, unknown> = {};
+  const where: Prisma.AuditLogWhereInput = {};
 
   // Security tab queries are always hard-scoped to SECURITY so caller mistakes cannot leak tabs.
   if (opts.forceSecurityCategory) {

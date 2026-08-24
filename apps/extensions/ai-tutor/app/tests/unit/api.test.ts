@@ -1,6 +1,8 @@
 // We need to set up mocks BEFORE importing the module under test.
 // The api module reads import.meta.env.VITE_API_URL at module level.
 
+import type { JsonValue } from "@eduai/types";
+
 const mockFetch = vi.fn();
 
 beforeEach(() => {
@@ -271,7 +273,7 @@ describe("api methods", () => {
   it("all expected API methods exist", async () => {
     const { api } = await import("~/lib/api");
 
-    const expectedMethods = [
+    const expectedMethods: (keyof typeof api)[] = [
       "me",
       "listCourses",
       "courseById",
@@ -294,7 +296,7 @@ describe("api methods", () => {
     ];
 
     for (const method of expectedMethods) {
-      expect(typeof (api as Record<string, unknown>)[method]).toBe("function");
+      expect(typeof api[method]).toBe("function");
     }
   });
 
@@ -577,7 +579,7 @@ describe("search + move endpoints (#1207)", () => {
       json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 25 }),
     });
 
-  const okJson = (body: unknown) =>
+  const okJson = (body: JsonValue) =>
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) });
 
   const calledUrl = () => mockFetch.mock.calls[0][0] as string;
@@ -787,7 +789,7 @@ describe("AI request topic ids", () => {
 // payload below is copied from the handler that produces it, so a future edit
 // to either side has to break this test before it can break the feature.
 describe("response shapes match what the routes actually send", () => {
-  const respondWith = (body: unknown) =>
+  const respondWith = (body: JsonValue) =>
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,

@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import type { Prisma, UserRole } from "@prisma/client";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -367,7 +368,7 @@ export async function handleUsersApiRequest(request: Request) {
 
       try {
         const { studentId: studentIdInput, taCourseIds, ...userUpdateFields } = result.data;
-        const updateData: Record<string, unknown> = { ...userUpdateFields };
+        const updateData: Prisma.UserUpdateInput = { ...userUpdateFields };
 
         if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
           updateData.authorizedUnits = [];
@@ -650,7 +651,7 @@ export async function handleUsersApiRequest(request: Request) {
 }
 
 async function createUserFromBody(
-  body: Record<string, unknown> | null,
+  body: JsonObject | null,
   actor: { id: string; name?: string | null; email?: string | null },
   requestContext: ReturnType<typeof getRequestContext>,
 ): Promise<Response> {

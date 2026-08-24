@@ -44,12 +44,12 @@ export const VALID_NUM_QUESTIONS = 10;
 export const EXCEEDING_NUM_QUESTIONS = 51;
 export const DEFAULT_NUM_QUESTIONS = 5;
 
-export const MCQ_INPUT: Record<Mcq, number | undefined> = {
+export const MCQ_INPUT = {
   absent: undefined,
   valid: 4,
   low: 1,
   high: 30,
-};
+} satisfies Record<Mcq, number | undefined>;
 export const DEFAULT_DIFFICULTY_DISTRIBUTION = { easy: 1, medium: 2, hard: 2 };
 export const PROVIDED_DIFFICULTY_DISTRIBUTION = { easy: 2, medium: 2, hard: 1 };
 export const DEFAULT_REASONING_DISTRIBUTION = { factual: 40, analytical: 30, application: 30 };
