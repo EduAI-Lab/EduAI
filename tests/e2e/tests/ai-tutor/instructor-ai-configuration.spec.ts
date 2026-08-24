@@ -214,11 +214,27 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
     // Configuring modes is pointless if no provider is up, and this is the only
-    // in-app signal of that. Assert the shape of the accessible name, not a
-    // particular state — which backend is reachable varies by environment.
-    const ubc = page.getByRole("button", { name: /^UBC-hosted AI: (Online|Offline|Checking)/ });
-    const cloud = page.getByRole("button", { name: /^Cloud AI: (Online|Offline|Checking)/ });
+    // in-app signal of that. Both chips are present and named for their service.
+    const ubc = page.getByRole("button", { name: /^UBC-hosted AI: / });
+    const cloud = page.getByRole("button", { name: /^Cloud AI: / });
     await expect(ubc).toBeVisible();
     await expect(cloud).toBeVisible();
+
+    // Pinning current behaviour, not endorsing it (Findings #5): the state word
+    // in the accessible name renders as the literal string "undefined" on this
+    // stack. `STATE_WORD` in `@eduai/ui`'s `ai-service-indicators.tsx` maps
+    // exactly `operational | degraded | outage | loading | unknown`, so any
+    // `state` outside that set — or a payload that omits it — reads back as
+    // `undefined` to a screen reader rather than falling back to "Unknown".
+    //
+    // The previous assertion here alleged the words were `Online`/`Offline`,
+    // which the component never emits for any state; it passed only because it
+    // was never reached on a stack where the chips resolved. Asserting the real
+    // name keeps the defect visible. Flip to the `STATE_WORD` alternation once
+    // the payload and the map are reconciled — this is a shared-header issue
+    // (Core, AI Tutor and Question Maker all render these chips), not an
+    // instructor-workflow one, so it is recorded rather than fixed here.
+    await expect(ubc).toHaveAccessibleName("UBC-hosted AI: undefined");
+    await expect(cloud).toHaveAccessibleName("Cloud AI: undefined");
   });
 });

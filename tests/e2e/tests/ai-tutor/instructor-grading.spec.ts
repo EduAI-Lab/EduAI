@@ -233,11 +233,10 @@ test.describe("INSTRUCTOR submissions and grading", () => {
     // Clear empties both fields…
     await expect(activityField).toHaveValue("");
 
-    // …but pinning current behaviour, not endorsing it: `clearFilters` resets
-    // the fields and the applied filters and never calls `setError(null)`, so
-    // the validation message stays on screen above a table that is no longer
-    // filtered — it now describes an input the user can see is empty. Flip this
-    // to `toHaveCount(0)` when Clear also clears the error.
-    await expect(page.getByText("Activity ID must be a number.")).toBeVisible();
+    // …and takes the validation message with them, so the panel stops
+    // describing an input the reader can see is empty. `clearFilters` used to
+    // reset the fields and the applied filters but never `setError(null)`, and
+    // with no applied filter to change, no reload followed to clear it either.
+    await expect(page.getByText("Activity ID must be a number.")).toHaveCount(0);
   });
 });

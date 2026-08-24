@@ -66,6 +66,40 @@ async function freshLesson(page: import("@playwright/test").Page, label: string)
   return lesson.id;
 }
 
+/**
+ * Drag a row's grip onto another row and drop it there.
+ *
+ * `SortableProvider` arms a `PointerSensor` with a 6px activation distance (so
+ * the grip still supports plain clicks) and resolves the drop with
+ * `closestCenter`. Driving the pointer rather than the KeyboardSensor keeps the
+ * assertion independent of layout: arrow keys mean different things under the
+ * grid strategy (modules, lessons) and the list strategy (activities), and the
+ * grid's own row breaks move with the viewport.
+ *
+ * Takes the grip as a locator rather than a name: the activity list labels every
+ * grip "Drag to reorder activity" when the activities have no title, so the
+ * caller is the only one that can say which row it means.
+ */
+async function dragOnto(
+  page: import("@playwright/test").Page,
+  handle: import("@playwright/test").Locator,
+  target: import("@playwright/test").Locator,
+) {
+  const from = await handle.boundingBox();
+  const to = await target.boundingBox();
+  if (!from || !to) throw new Error("drag handle or target is not on screen");
+
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Clear the 6px activation constraint first, then travel in steps — dnd-kit
+  // tracks movement, so a single jump can be missed entirely.
+  await page.mouse.move(startX + 12, startY, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 20 });
+  await page.mouse.up();
+}
+
 test.describe("INSTRUCTOR activity authoring", () => {
   test("authors an MCQ activity end to end", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
@@ -132,22 +166,20 @@ test.describe("INSTRUCTOR activity authoring", () => {
     await dialog.getByRole("button", { name: "Add activity" }).click();
     await expect(dialog).toHaveCount(0, { timeout: 30_000 });
 
-    // Pinning current behaviour, not endorsing it: the two untouched slots are
-    // persisted as empty strings rather than dropped, so a student is offered
-    // four options of which two are blank. The form gives no warning — the only
-    // signal is the per-option "Remove option X" control the author has to know
-    // to use. Recorded in docs/end-to-end-user-workflows/ai-tutor-workflows.md.
+    // The two untouched slots are dropped rather than persisted as empty
+    // strings, so a student is offered exactly the two options that were
+    // authored. Both forms now share `buildMcqSubmission`; the add path used to
+    // ship all four slots while the edit path beside it compacted them.
     const activities = await (
       await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
     ).json();
     const rows = Array.isArray(activities) ? activities : activities.data;
     const saved = rows.find((a: { question: string }) => a.question === question);
-    expect(saved.options?.choices).toEqual(["First", "Second", "", ""]);
+    expect(saved.options?.choices).toEqual(["First", "Second"]);
+    expect(saved.answer?.correctIndex, "the marked letter survives compaction").toBe(0);
   });
 
-  test("an MCQ saves with no correct answer marked, keyed to option A (known defect)", async ({
-    page,
-  }) => {
+  test("an MCQ cannot be saved with no correct answer marked", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     const lessonId = await freshLesson(page, "Answer Gate");
     await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
@@ -167,35 +199,40 @@ test.describe("INSTRUCTOR activity authoring", () => {
     // The hint is on screen and no letter has been marked…
     await expect(dialog.getByText("No correct answer selected yet.")).toBeVisible();
 
-    // …and the form saves anyway. `hasSelectedCorrect` is display-only: it
-    // styles the marked letter and renders the line above, and nothing else
-    // reads it. `handleAddActivity` guards the question, the main topic and the
-    // AI-mode pair but never the answer key, and the submit button is
-    // `disabled={busy || !question.trim()}`.
+    // …and the submit is refused. The button stays enabled — the gate is in
+    // `handleAddActivity`, beside the existing main-topic and AI-mode guards,
+    // so the refusal is stated rather than left to a disabled control with no
+    // explanation.
     await expect(dialog.getByRole("button", { name: "Add activity" })).toBeEnabled();
     await dialog.getByRole("button", { name: "Add activity" }).click();
-    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
 
-    // Pinning current behaviour, not endorsing it: `correct` is still at its
-    // `useState(0)` default, so option A silently becomes the key and students
-    // are graded against it. Recorded as Finding #4 in
-    // docs/end-to-end-user-workflows/ai-tutor-workflows.md. When the form gains
-    // a real gate, this test should assert the dialog *stays open* with an
-    // error instead.
+    // The dialog stays open, naming what is missing, and nothing was written.
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.getByText("Mark one choice as the correct answer.")).toBeVisible();
+
     const activities = await (
       await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
     ).json();
     const rows = Array.isArray(activities) ? activities : activities.data;
-    const saved = rows.find((a: { question: string }) => a.question === question);
-    expect(saved, "the un-keyed activity was saved rather than refused").toBeTruthy();
-    expect(saved.answer?.correctIndex).toBe(0);
+    expect(
+      rows.find((a: { question: string }) => a.question === question),
+      "the un-keyed activity must be refused, not saved against option A",
+    ).toBeFalsy();
 
-    // Marking a letter does clear the hint — the hint itself works, it just
-    // gates nothing.
-    await page.getByRole("button", { name: "Add activity" }).first().click();
-    const second = page.getByRole("dialog");
-    await second.getByRole("button", { name: "Mark option A correct" }).click();
-    await expect(second.getByText("No correct answer selected yet.")).toHaveCount(0);
+    // Marking a letter clears the refusal and the save then goes through,
+    // keyed to the letter the author actually picked.
+    await dialog.getByRole("button", { name: "Mark option B correct" }).click();
+    await expect(dialog.getByText("Mark one choice as the correct answer.")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+
+    const after = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const afterRows = Array.isArray(after) ? after : after.data;
+    const saved = afterRows.find((a: { question: string }) => a.question === question);
+    expect(saved, "the keyed activity saves").toBeTruthy();
+    expect(saved.answer?.correctIndex, "keyed to B, not the option-A default").toBe(1);
   });
 
   test("switches the activity type to short answer", async ({ page }) => {
@@ -312,6 +349,66 @@ test.describe("INSTRUCTOR activity authoring", () => {
     await expect
       .poll(async () => activityCount(page, lessonId), { timeout: 30_000 })
       .toBeGreaterThan(0);
+  });
+
+  test("moves an activity to an explicit position, and reorders by dragging", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Activity Order");
+    const topicIds = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics`)
+    ).json();
+    const mainTopicId = (Array.isArray(topicIds) ? topicIds : topicIds.data)[0].id;
+
+    // Two activities minimum: both affordances only appear once order means
+    // something.
+    const questions = [unique("First question"), unique("Second question")];
+    for (const question of questions) {
+      await page.request.post(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`, {
+        data: {
+          question,
+          type: "SHORT_TEXT",
+          answer: { text: "answer" },
+          hints: [],
+          mainTopicId,
+          secondaryTopicIds: [],
+          enableTeachMode: true,
+          enableGuideMode: true,
+        },
+      });
+    }
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    await expect(page.getByText(questions[1])).toBeVisible({ timeout: 30_000 });
+
+    const order = async () => {
+      const res = await page.request.get(
+        `${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities?page=1&pageSize=200`,
+      );
+      const body = await res.json();
+      const rows = Array.isArray(body) ? body : body.data;
+      return rows.map((a: { question: string }) => a.question);
+    };
+    expect(await order()).toEqual(questions);
+
+    // The module list has had a "Move to position" row since #1207; the
+    // activity list has the same control and had no coverage. It is the only
+    // way to move a row to a *different page*, which a drag cannot express.
+    await page.getByRole("button", { name: "Move activity to position" }).last().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("New position").fill("1");
+    await dialog.getByRole("button", { name: /Move|Save/ }).click();
+
+    await expect.poll(order, { timeout: 20_000 }).toEqual([questions[1], questions[0]]);
+
+    // Third and last of the reorder surfaces — same sensor, its own endpoint.
+    // This list uses the vertical-list strategy rather than the grid one, which
+    // is exactly why it needs its own coverage.
+    // Every grip here carries the same label — these activities have no title,
+    // so `Drag to reorder activity` is all any of them says. Position is the
+    // only thing that distinguishes them.
+    const lastGrip = page.getByRole("button", { name: "Drag to reorder activity" }).last();
+    await dragOnto(page, lastGrip, page.getByText(questions[1]).first());
+
+    await expect.poll(order, { timeout: 20_000 }).toEqual(questions);
   });
 });
 

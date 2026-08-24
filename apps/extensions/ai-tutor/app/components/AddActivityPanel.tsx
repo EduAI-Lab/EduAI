@@ -59,7 +59,7 @@ import {
 import { cn } from "~/lib/utils";
 import api from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
-import { AI_MODE_REQUIRED } from "~/lib/activityForm";
+import { AI_MODE_REQUIRED, ANSWER_REQUIRED, buildMcqSubmission } from "~/lib/activityForm";
 
 const TYPE_OPTIONS = [
   { value: "MCQ" as const, label: "MCQ" },
@@ -103,6 +103,9 @@ export default function AddActivityPanel({
   // Shown under the AI study buddy box. Was a native `alert()`, which is modal,
   // unstyled, and detached from the control that caused it.
   const [aiModeError, setAiModeError] = useState<string | null>(null);
+  // Shown under the choice list. "No correct answer selected yet." was only ever
+  // a hint; this is the gate, so an unmarked MCQ can no longer key to option A.
+  const [answerError, setAnswerError] = useState<string | null>(null);
 
   const [enableTeachMode, setEnableTeachMode] = useState(true);
   const [enableGuideMode, setEnableGuideMode] = useState(true);
@@ -163,20 +166,41 @@ export default function AddActivityPanel({
       return;
     }
 
+    // MCQ answer key: refuse an unmarked question outright, then compact the
+    // blank slots and remap the key the way the edit form already does.
+    let mcq: { options: string[]; correctIndex: number } | null = null;
+    if (type === "MCQ") {
+      if (!hasSelectedCorrect) {
+        setAnswerError(ANSWER_REQUIRED);
+        return;
+      }
+
+      const submission = buildMcqSubmission(choices, correct);
+      if (submission.error || !submission.options || submission.correctIndex === undefined) {
+        setAnswerError(submission.error ?? "Invalid answer choices.");
+        return;
+      }
+      mcq = { options: submission.options, correctIndex: submission.correctIndex };
+    }
+
     setBusy(true);
     setTopicSelectionError(null);
     setAiModeError(null);
+    setAnswerError(null);
 
     const mainTopicId = selectedMainTopicId;
     const secondaryIds = selectedSecondaryTopicIds.filter((id) => id !== mainTopicId);
 
     try {
-      if (type === "MCQ") {
+      // `mcq` is non-null for exactly the MCQ path — the guard above returns
+      // rather than falling through, so this cannot post a text answer for a
+      // multiple-choice question.
+      if (mcq) {
         await api.createActivity(lessonId, {
           question: question.trim(),
           type,
-          options: { choices },
-          answer: { correctIndex: correct },
+          options: { choices: mcq.options },
+          answer: { correctIndex: mcq.correctIndex },
           hints: hint.trim() ? [hint.trim()] : [],
           mainTopicId,
           secondaryTopicIds: secondaryIds,
@@ -275,6 +299,7 @@ export default function AddActivityPanel({
                           onClick={() => {
                             setCorrect(index);
                             setHasSelectedCorrect(true);
+                            setAnswerError(null);
                           }}
                           aria-pressed={isCorrect}
                           aria-label={
@@ -333,9 +358,10 @@ export default function AddActivityPanel({
                     </Button>
                   )}
                 </div>
-                {!hasSelectedCorrect && (
+                {!hasSelectedCorrect && !answerError && (
                   <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
                 )}
+                {answerError && <p className="text-xs text-destructive">{answerError}</p>}
               </div>
             ) : (
               <div className="space-y-2">

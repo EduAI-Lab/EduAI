@@ -78,28 +78,37 @@ test.describe("INSTRUCTOR settings", () => {
     await expect(page.locator("html")).not.toHaveAttribute("data-density", "compact");
   });
 
-  test("density and reduce motion are lost on reload (known defect)", async ({ page }) => {
+  test("density and reduce motion survive a reload", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, "/settings");
     await openTab(page, "Accessibility");
 
     await page.getByRole("radio", { name: "Compact" }).click();
     await expect(page.getByRole("radio", { name: "Compact" })).toBeChecked();
+    const reduceMotion = page.getByRole("switch", { name: "Reduce motion" });
+    await reduceMotion.click();
+    await expect(reduceMotion).toHaveAttribute("aria-checked", "true");
 
     await page.reload();
+
+    // Both are re-applied before the Settings screen is even opened —
+    // `UiPreferencesProvider` is mounted at the root, so the preference holds
+    // app-wide rather than only while this screen happens to be rendered.
+    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "true");
+
     await openTab(page, "Accessibility");
 
-    // Pinning current behaviour, not endorsing it. `handleDensityChange` (and
-    // `handleMotionReducedChange`) only set a `data-*` attribute on
-    // `documentElement`, and `readInitialDensity`/`readInitialMotionReduced`
-    // read that same attribute back — so the choice lives entirely in the DOM
-    // of the current document and a reload resets it. Theme and assistive mode
-    // are persisted (`useTheme` / `useAssistiveMode`); these two are the
-    // outliers. Flip this assertion to `toBeChecked()` when they are fixed.
-    await expect(page.getByRole("radio", { name: "Comfortable" })).toBeChecked({
-      timeout: 30_000,
-    });
-    await expect(page.getByRole("radio", { name: "Compact" })).not.toBeChecked();
+    // …and the controls come back showing the stored choice, like theme and
+    // assistive mode already did. These two used to be the outliers: they lived
+    // only as `data-*` attributes on `documentElement`, read back from there,
+    // so a reload reset them.
+    await expect(page.getByRole("radio", { name: "Compact" })).toBeChecked({ timeout: 30_000 });
+    await expect(page.getByRole("radio", { name: "Comfortable" })).not.toBeChecked();
+    await expect(page.getByRole("switch", { name: "Reduce motion" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 
   test("chooses a theme from the accessibility tab", async ({ page }) => {
@@ -138,8 +147,8 @@ test.describe("INSTRUCTOR settings", () => {
     const motionBefore = await reduceMotion.getAttribute("aria-checked");
     await reduceMotion.click();
     await expect(reduceMotion).not.toHaveAttribute("aria-checked", motionBefore ?? "");
-    // It reaches the document, same as density — though nothing in AI Tutor
-    // reads the attribute yet (Findings #1).
+    // It reaches the document, same as density, and AI Tutor's `app.css` now
+    // carries the rules that read it (ported from Core's).
     await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "true");
     await expect(assistive).not.toHaveAttribute("aria-checked", assistiveBefore ?? "");
   });

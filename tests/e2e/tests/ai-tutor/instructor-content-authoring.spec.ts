@@ -78,6 +78,40 @@ async function openKebab(page: import("@playwright/test").Page, title: string) {
   await row.getByRole("button", { name: "More options" }).click();
 }
 
+/**
+ * Drag a row's grip onto another row and drop it there.
+ *
+ * `SortableProvider` arms a `PointerSensor` with a 6px activation distance (so
+ * the grip still supports plain clicks) and resolves the drop with
+ * `closestCenter`. Driving the pointer rather than the KeyboardSensor keeps the
+ * assertion independent of layout: arrow keys mean different things under the
+ * grid strategy (modules, lessons) and the list strategy (activities), and the
+ * grid's own row breaks move with the viewport.
+ *
+ * Takes the grip as a locator rather than a name: the activity list labels every
+ * grip "Drag to reorder activity" when the activities have no title, so the
+ * caller is the only one that can say which row it means.
+ */
+async function dragOnto(
+  page: import("@playwright/test").Page,
+  handle: import("@playwright/test").Locator,
+  target: import("@playwright/test").Locator,
+) {
+  const from = await handle.boundingBox();
+  const to = await target.boundingBox();
+  if (!from || !to) throw new Error("drag handle or target is not on screen");
+
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Clear the 6px activation constraint first, then travel in steps — dnd-kit
+  // tracks movement, so a single jump can be missed entirely.
+  await page.mouse.move(startX + 12, startY, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 20 });
+  await page.mouse.up();
+}
+
 test.describe("INSTRUCTOR module authoring", () => {
   test("creates a module in a course they teach", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
@@ -150,6 +184,101 @@ test.describe("INSTRUCTOR module authoring", () => {
       await page.request.get(`${AI_TUTOR_API_URL}/api/modules/${created.id}`)
     ).json();
     expect(after.isPublished).toBe(true);
+  });
+
+  test("unpublishes a module, and the cascade reaches its lessons", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const title = unique("E2E Unpublish Module");
+    const moduleRow = await (
+      await page.request.post(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/modules`, {
+        data: { title },
+      })
+    ).json();
+    const lesson = await (
+      await page.request.post(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons`, {
+        data: { title: unique("E2E Cascade Lesson") },
+      })
+    ).json();
+    // Publish top-down: a lesson may only be published under a published
+    // module, so this is the only order that reaches the state under test.
+    await page.request.patch(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/publish`);
+    await page.request.patch(`${AI_TUTOR_API_URL}/api/lessons/${lesson.id}/publish`);
+
+    await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
+    await openKebab(page, title);
+    await page.getByRole("menuitem", { name: "Unpublish module" }).click();
+
+    // The reverse of publish is the one with blast radius: it takes live
+    // content away from students who can currently see it, so the confirm has
+    // to name the module and say what is lost, and it is styled destructive.
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText(title);
+    await expect(confirm).toContainText("Students will lose access to this content.");
+    await confirm.getByRole("button", { name: "Unpublish", exact: true }).click();
+
+    // The badge flips to Draft — a positive signal, not merely the absence of
+    // "Published" (which "Unpublished" would also satisfy).
+    await expect(card(page, title)).toContainText("Draft", { timeout: 30_000 });
+
+    const afterModule = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}`)
+    ).json();
+    expect(afterModule.isPublished).toBe(false);
+
+    // The cascade is server-side and invisible in this view: the lesson below
+    // is unpublished too, so nothing is left reachable under a hidden module.
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lesson.id}`);
+          return (await res.json()).isPublished;
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(false);
+  });
+
+  test("reorders modules by dragging one onto another", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const first = unique("E2E Drag Module A");
+    const second = unique("E2E Drag Module B");
+    for (const title of [first, second]) {
+      await page.request.post(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/modules`, {
+        data: { title },
+      });
+    }
+    await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
+    await expect(card(page, second)).toBeVisible({ timeout: 30_000 });
+
+    // The grip is the only drag activator — the rest of the card stays a normal
+    // link, which is why dragging it has to be tested through the grip.
+    const positions = async () => {
+      const res = await page.request.get(
+        `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/modules?page=1&pageSize=200`,
+      );
+      const titles = (await res.json()).data.map((m: { title: string }) => m.title);
+      return [titles.indexOf(first), titles.indexOf(second)];
+    };
+    const [firstBefore, secondBefore] = await positions();
+    expect(secondBefore).toBeGreaterThan(firstBefore);
+
+    await dragOnto(
+      page,
+      page.getByRole("button", { name: `Drag to reorder ${second}` }),
+      card(page, first),
+    );
+
+    // Asserted as *relative* order: this course accumulates modules across the
+    // tests in this file, so a one-step move says nothing about absolute index.
+    await expect
+      .poll(
+        async () => {
+          const [firstAt, secondAt] = await positions();
+          return secondAt < firstAt;
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(true);
   });
 
   test("deletes a module, and the confirm says what goes with it", async ({ page }) => {
@@ -488,5 +617,44 @@ test.describe("INSTRUCTOR lesson authoring", () => {
         { timeout: 30_000, message: "imported lesson never appeared in the destination module" },
       )
       .toBe(true);
+  });
+
+  test("reorders lessons by keyboard inside a module", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const moduleRow = await (
+      await page.request.post(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/modules`, {
+        data: { title: unique("E2E Lesson Order Module") },
+      })
+    ).json();
+    const first = unique("E2E Order Lesson A");
+    const second = unique("E2E Order Lesson B");
+    for (const title of [first, second]) {
+      await page.request.post(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons`, {
+        data: { title },
+      });
+    }
+    await gotoAiTutor(page, `/instructor/module/${moduleRow.id}`);
+    await expect(card(page, second)).toBeVisible({ timeout: 30_000 });
+
+    // Second of the three reorder surfaces; each has its own endpoint, so
+    // covering one says nothing about the others. The module is fresh, so these
+    // two lessons are the only rows and absolute order is meaningful here.
+    await dragOnto(
+      page,
+      page.getByRole("button", { name: `Drag to reorder ${second}` }),
+      card(page, first),
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get(
+            `${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons?page=1&pageSize=200`,
+          );
+          return (await res.json()).data[0]?.title;
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(second);
   });
 });

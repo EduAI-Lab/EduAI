@@ -19,12 +19,23 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
-import { createTeachingInstructor, type InstructorFixture } from "../helpers/at-instructor";
+import {
+  createTeachingInstructor,
+  seedInstructorSpine,
+  type InstructorFixture,
+} from "../helpers/at-instructor";
 import { errorBoundary, sidebar } from "../helpers/at-ui";
+
+/** Run-unique suffix so a re-run never collides with a previous run's rows. */
+function unique(prefix: string): string {
+  return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+}
 
 let fx: InstructorFixture;
 /** A module + lesson inside the course taught by the *other* instructor. */
 let foreignSpine: { moduleId: number; lessonId: number };
+/** A published module → lesson → activity inside this instructor's own course. */
+let spine: Awaited<ReturnType<typeof seedInstructorSpine>>;
 
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
@@ -44,6 +55,14 @@ test.beforeAll(async ({ playwright }) => {
       })
     ).json();
     foreignSpine = { moduleId: moduleRow.id, lessonId: lesson.id };
+
+    // The instructor's *own* activity — the control for the chat and
+    // tutor-invocation refusals below, which must be about the caller's role
+    // rather than about a record they cannot reach. Left unpublished: this
+    // fixture's course is a draft (a module may only be published under a
+    // published course), and both refusals are decided on the caller's role
+    // before any publish or enrollment logic runs.
+    spine = await seedInstructorSpine(ctx, fx);
   } finally {
     await ctx.dispose();
   }
@@ -174,6 +193,78 @@ test.describe("INSTRUCTOR access boundaries", () => {
     expect(res.status()).toBe(403);
   });
 
+  test("the API refuses writes BELOW the course level in someone else's course", async ({
+    page,
+  }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // The course-level gates above are the ones a caller meets first, but a
+    // module or lesson id is guessable and addresses its course only
+    // indirectly. Each of these resolves the owning course itself; without
+    // that, a foreign id would be an unguarded side door into content this
+    // instructor cannot even read.
+    const renameModule = await page.request.patch(
+      `${AI_TUTOR_API_URL}/api/modules/${foreignSpine.moduleId}`,
+      { data: { title: "Should never be renamed" } },
+    );
+    expect(renameModule.status()).toBe(403);
+
+    const addLesson = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/modules/${foreignSpine.moduleId}/lessons`,
+      { data: { title: "Should never exist" } },
+    );
+    expect(addLesson.status()).toBe(403);
+
+    const addActivity = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/lessons/${foreignSpine.lessonId}/activities`,
+      { data: { question: "Should never exist", type: "SHORT_TEXT", answer: { text: "no" } } },
+    );
+    expect(addActivity.status()).toBe(403);
+  });
+
+  test("an instructor cannot read a student's AI chat transcripts", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // A deliberate privacy boundary, and a surprising one: this is the
+    // instructor of the course the activity belongs to, and they are still
+    // refused. Both routes hard-check the caller is a STUDENT before any
+    // enrollment logic runs, so teaching the course grants nothing here.
+    // Pinned so the refusal cannot be relaxed by accident — a tutoring
+    // transcript is a student's own record.
+    const sessions = await page.request.get(
+      `${AI_TUTOR_API_URL}/api/activities/${spine.activityId}/chat-sessions`,
+    );
+    expect(sessions.status()).toBe(403);
+
+    // The messages route refuses one step earlier and more strongly: it looks
+    // the session up scoped to `userId: authUser.id`, so a caller cannot even
+    // address someone else's chat — the answer is 404 "Session not found"
+    // rather than 403, and the role gate sits behind that as a second line.
+    // Asserting 404 here pins the ownership scoping; weakening it to 403 would
+    // pass just as well if that scoping were dropped.
+    const messages = await page.request.get(
+      `${AI_TUTOR_API_URL}/api/activities/${spine.activityId}/chat-sessions/1/messages`,
+    );
+    expect(messages.status()).toBe(404);
+  });
+
+  test("an instructor cannot invoke the tutor they configure", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // Recorded as an open design question, not a defect: an instructor writes a
+    // custom prompt for an activity and has no way to see what it produces,
+    // because all three generation endpoints admit students only. Pinned as it
+    // stands so the decision is visible and any change to it is deliberate.
+    for (const mode of ["teach", "guide", "custom"]) {
+      const res = await page.request.post(
+        `${AI_TUTOR_API_URL}/api/activities/${spine.activityId}/${mode}`,
+        { data: { message: "Walk me through this" } },
+      );
+      expect(res.status(), `${mode} must refuse a non-student`).toBe(403);
+      expect((await res.json()).error).toMatch(/only students/i);
+    }
+  });
+
   test("the prompt-template store is open to teaching roles", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
@@ -184,5 +275,57 @@ test.describe("INSTRUCTOR access boundaries", () => {
     const res = await page.request.get(`${AI_TUTOR_API_URL}/api/prompts`);
     expect(res.status()).toBe(200);
     expect(Array.isArray(await res.json())).toBe(true);
+  });
+
+  test("writing a prompt template is open to teaching roles too", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // The write sibling of the read above, open to the same `TEACHING_ROLES`
+    // and equally UI-less. It is an AI-affecting write, so leaving it untested
+    // because nothing calls it yet is exactly the gap worth closing.
+    const created = await page.request.post(`${AI_TUTOR_API_URL}/api/prompts`, {
+      data: {
+        name: unique("E2E instructor prompt"),
+        systemPrompt: "Be concise and ask one question at a time.",
+      },
+    });
+    expect(created.status()).toBe(201);
+
+    // It is really stored, not merely accepted.
+    const createdId = (await created.json()).id;
+    const listed = await (await page.request.get(`${AI_TUTOR_API_URL}/api/prompts`)).json();
+    const rows = Array.isArray(listed) ? listed : listed.data;
+    expect(rows.some((p: { id?: number }) => p.id === createdId)).toBe(true);
+  });
+
+  test("the UI-less topic writes are reachable on a course this instructor teaches", async ({
+    page,
+  }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // `POST /topics/sync` is the manual counterpart to the sync-on-read seam the
+    // topic rows depend on, and neither it nor `remap` has a caller anywhere in
+    // `app/`. Covered so the contract is pinned while the decision about
+    // whether they should exist at all is still open (recorded in the workflow
+    // doc alongside the unit-admin pass's note on the same pair).
+    const sync = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics/sync`,
+      { data: {} },
+    );
+    expect(sync.status()).toBe(200);
+
+    // And they are refused on a course this instructor does not teach — the
+    // same enrollment gate as every other write.
+    const foreignSync = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/topics/sync`,
+      { data: {} },
+    );
+    expect(foreignSync.status()).toBe(403);
+
+    const foreignRemap = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/topics/remap`,
+      { data: { from: 1, to: 2 } },
+    );
+    expect(foreignRemap.status()).toBe(403);
   });
 });
