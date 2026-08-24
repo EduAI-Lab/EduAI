@@ -52,6 +52,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
 import { AIServiceIndicators } from "../eduai/AIServiceIndicators";
+import { isString } from "@eduai/ui/primitive-union";
 
 import {
   ExtractedQuestion,
@@ -235,8 +236,8 @@ export function mapExtractedToDraftQuestions(items: ExtractedQuestion[]): DraftQ
         isMCQ && Array.isArray(item.choices) && item.choices.length >= 2
           ? item.choices
               .map((c: { letter?: string; text?: string }) => ({
-                letter: typeof c.letter === "string" ? c.letter.trim().toUpperCase() || "A" : "A",
-                text: typeof c.text === "string" ? c.text.trim() : String(c.text ?? ""),
+                letter: isString(c.letter) ? c.letter.trim().toUpperCase() || "A" : "A",
+                text: isString(c.text) ? c.text.trim() : String(c.text ?? ""),
               }))
               .filter((c: MCQChoice) => c.text.length > 0)
           : null;
@@ -291,7 +292,7 @@ function pdfItemsToTextWithLineBreaks(items: PdfTextItem[]): string {
   let hadEOL = false;
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const str = typeof item?.str === "string" ? item.str : "";
+    const str = isString(item?.str) ? item.str : "";
     if (str) parts.push(str);
     const useEOL = Boolean(item?.hasEOL);
     if (useEOL) {
@@ -307,7 +308,7 @@ function pdfItemsToTextWithLineBreaks(items: PdfTextItem[]): string {
 
 function pdfItemsToTextByPosition(items: PdfTextItem[]): string {
   const withPos = items
-    .filter((item) => typeof item?.str === "string" && item.str.length > 0)
+    .filter((item) => isString(item?.str) && item.str.length > 0)
     .map((item) => {
       const y = Array.isArray(item.transform) && item.transform.length >= 6 ? item.transform[5] : 0;
       const x = Array.isArray(item.transform) && item.transform.length >= 5 ? item.transform[4] : 0;
