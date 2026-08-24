@@ -27,10 +27,7 @@ export const DEFAULT_CHAT_DAILY_LIMIT_SETTINGS: ChatDailyLimitSettings = {
   instructorLimit: DEFAULT_INSTRUCTOR_DAILY_LIMIT,
 };
 
-export const CHAT_DAILY_LIMIT_DEFINITIONS: Record<
-  ChatDailyLimitKey,
-  { label: string; description: string }
-> = {
+export const CHAT_DAILY_LIMIT_DEFINITIONS = {
   studentLimit: {
     label: "Student daily cap",
     description:
@@ -41,7 +38,7 @@ export const CHAT_DAILY_LIMIT_DEFINITIONS: Record<
     description:
       "Maximum local-chatbot messages one instructor (or other staff role) may send in 24 hours. Default 200. 0 disables the daily cap for that role.",
   },
-};
+} satisfies Record<ChatDailyLimitKey, { label: string; description: string }>;
 
 export function defaultChatDailyLimitSettings(): ChatDailyLimitSettings {
   return { ...DEFAULT_CHAT_DAILY_LIMIT_SETTINGS };

@@ -1,6 +1,7 @@
 // @vitest-environment node
 vi.unmock("~/lib/chat-daily-limits.server");
 
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
@@ -31,8 +32,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -138,7 +139,7 @@ function makeRequest(body: RouteRequestBody) {
   } as never;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",

@@ -29,11 +29,12 @@ vi.mock("~/lib/request-context.server", () => ({
   getRequestContext: vi.fn(() => ({ routePath: "/api/admin/chat-daily-limits" })),
 }));
 
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { action, loader } from "~/routes/api/admin.chat-daily-limits";
 
 const settings = { studentLimit: 50, instructorLimit: 200 };
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { "Content-Type": "application/json" };

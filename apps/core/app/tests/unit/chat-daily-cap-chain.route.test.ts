@@ -4,6 +4,7 @@
 vi.unmock("~/lib/chat-daily-limits.server");
 
 import { randomUUID } from "node:crypto";
+import type { JsonValue } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const systemConfigStore = new Map<string, { key: string; value: string }>();
@@ -23,8 +24,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
