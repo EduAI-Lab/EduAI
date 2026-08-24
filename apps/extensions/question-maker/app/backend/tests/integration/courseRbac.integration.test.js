@@ -28,6 +28,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 const OWNER = { id: "cuid-rbac-owner", email: "owner@test.com", role: "INSTRUCTOR", name: "Owner" };
+const STUDENT_OWNER = { ...OWNER, role: "STUDENT" };
 const STRANGER = {
   id: "cuid-rbac-stranger",
   email: "stranger@test.com",
@@ -44,7 +45,13 @@ function multiUserHandlers(ownerFetch) {
     const cookie = opts?.headers?.cookie ?? "";
 
     if (path.endsWith("/api/sessions/validate")) {
-      const user = cookie.includes("owner") ? OWNER : cookie.includes("admin") ? ADMIN : STRANGER;
+      const user = cookie.includes("student-owner")
+        ? STUDENT_OWNER
+        : cookie.includes("owner")
+          ? OWNER
+          : cookie.includes("admin")
+            ? ADMIN
+            : STRANGER;
       return { ok: true, json: async () => ({ user }) };
     }
 
@@ -60,6 +67,7 @@ function multiUserHandlers(ownerFetch) {
 }
 
 const asOwner = () => ({ Cookie: "session=owner" });
+const asStudentOwner = () => ({ Cookie: "session=student-owner" });
 const asStranger = () => ({ Cookie: "session=stranger" });
 const asAdmin = () => ({ Cookie: "session=admin" });
 
@@ -98,10 +106,43 @@ describeDb("course RBAC (integration)", () => {
   });
 
   describe("GET /api/course/:id/access", () => {
-    it("returns instructor level for the owner", async () => {
+    it("denies a linked owner when Core returns no active enrollment", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(
+          multiUserHandlers(async (url) => {
+            if (String(url).split("?")[0].endsWith("/enrollments")) {
+              return { ok: true, json: async () => ({ enrollments: [] }) };
+            }
+            return { ok: false, status: 404, json: async () => ({}) };
+          }),
+        ),
+      );
       const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({ level: "instructor", rank: 2 });
+      expect(res.body.data).toBeNull();
+    });
+
+    it("does not grant ownership-based access to an unlinked QM-native course", async () => {
+      await prisma.course.update({
+        where: { id: courseId },
+        data: { coreCourseId: null },
+      });
+
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+      expect(res.status).toBe(200);
+      expect(res.body.data).toBeNull();
+    });
+
+    it("does not grant a STUDENT owner access to an unlinked QM-native course", async () => {
+      await prisma.course.update({
+        where: { id: courseId },
+        data: { coreCourseId: null },
+      });
+
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStudentOwner());
+      expect(res.status).toBe(200);
+      expect(res.body.data).toBeNull();
     });
 
     it("returns admin level for an ADMIN on a course they do not own", async () => {

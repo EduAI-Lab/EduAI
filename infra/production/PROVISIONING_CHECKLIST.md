@@ -57,11 +57,18 @@ sudo install -o root -g eduai -m 0640 /path/to/eduai-core.env /etc/eduai/eduai-c
 sudo grep -nE '<[^>]+>|CHANGE_ME|REPLACE_ME' /etc/eduai/eduai-core.env
 ```
 
-Required secrets must be generated outside Git. Keep the initial fleet value limited to the reachable cmps host:
+Required secrets must be generated outside Git. This release requires the
+interactive cmps01 fleet and the retained Assist Auto model on cmps02:
 
 ```env
-VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001
+VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001
+VLLM_FLEET_DEFAULT_MODELS=qwen3.5-2b-instruct,qwen3.5-9b-instruct
+ADHD_ASSIST_AUTO_MODEL=vllm:qwen2.5-32b-instruct
 ```
+
+Run `cd apps/core && npm run fleet:smoke` from a host with campus access and
+do not enable the service until both hosts are healthy and cmps02 advertises
+`qwen2.5-32b-instruct`.
 
 ## 6. Install and enable Core
 
@@ -92,8 +99,9 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - `pgvector` is available.
 - `DATABASE_URL` connects as the dedicated application role.
 - Redis decision is documented; queue remains disabled if no worker exists.
-- cmps01 inference endpoint is reachable from production.
-- cmps02/03 are not configured until firewall access is confirmed.
+- cmps01 and cmps02 inference endpoints are reachable from production.
+- cmps02 advertises `qwen2.5-32b-instruct`; cmps03 remains unconfigured until
+  firewall access and its model inventory are confirmed.
 - No extension URL is configured until the new aliases and authentication flow are ready.
 - Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.

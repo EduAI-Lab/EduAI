@@ -29,6 +29,53 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
+import { hasValidServiceKey } from "~/lib/auth/guards.server";
+
+/**
+ * Parse a URL-like value to its origin, skipping invalid or opaque (`null`)
+ * origins so they cannot join the CSRF allow-list.
+ */
+function parseOrigin(value: string): string | null {
+  try {
+    const origin = new URL(value).origin;
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Origins allowed to prove same-site intent for cookie-authenticated mutations.
+ *
+ * `request.url` is not a reliable public origin behind TLS-terminating Apache:
+ * `@react-router/express` builds it from `req.protocol`, which stays `http`
+ * because Express does not trust `X-Forwarded-Proto` by default. Browsers then
+ * send `Origin: https://host` while `url.origin` is `http://host`, and a naive
+ * equality check 403s every legitimate mutation. We do not enable `trust proxy`
+ * or trust raw forwarded proto here — those are client-spoofable unless the
+ * proxy layer is locked down.
+ *
+ * `BETTER_AUTH_URL` is the configured public origin (same source as
+ * `authBaseURL`). `request.url`'s origin stays in the set so same-scheme
+ * unit/dev requests still match without that env var.
+ */
+function trustedMutationOrigins(requestUrl: URL): Set<string> {
+  const origins = new Set<string>();
+  const configured =
+    process.env.BETTER_AUTH_URL?.trim() ||
+    import.meta.env.BETTER_AUTH_URL?.trim() ||
+    "http://localhost:3000";
+  const configuredOrigin = parseOrigin(configured);
+  if (configuredOrigin) origins.add(configuredOrigin);
+  const requestOrigin = parseOrigin(requestUrl.origin);
+  if (requestOrigin) origins.add(requestOrigin);
+  return origins;
+}
+
+function originMatchesTrusted(candidate: string, trusted: Set<string>): boolean {
+  const origin = parseOrigin(candidate);
+  return origin !== null && trusted.has(origin);
+}
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -42,6 +89,42 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
+    const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
+    const hasCookie = Boolean(request.headers.get("cookie"));
+    const origin = request.headers.get("origin");
+
+    // Origin is the primary browser proof. Referer and Fetch Metadata are
+    // fallback evidence for clients that omit Origin. Missing or malformed
+    // evidence fails closed for ambient-cookie mutations. A non-browser call
+    // may bypass only by proving the configured service key in constant time.
+    // Compare against the trusted origin set, not `url.origin` alone — see
+    // `trustedMutationOrigins` for the TLS-terminating proxy mismatch.
+    if (isUnsafeMethod && hasCookie) {
+      const trusted = trustedMutationOrigins(url);
+      let isSameOrigin = false;
+      if (origin !== null) {
+        isSameOrigin = originMatchesTrusted(origin, trusted);
+      } else {
+        const referer = request.headers.get("referer");
+        if (referer !== null) {
+          isSameOrigin = originMatchesTrusted(referer, trusted);
+        } else {
+          isSameOrigin = request.headers.get("sec-fetch-site") === "same-origin";
+        }
+      }
+
+      if (!isSameOrigin && !hasValidServiceKey(request)) {
+        const blocked = new Response(JSON.stringify({ error: "CROSS_ORIGIN_MUTATION" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+        applySecurityHeaders(blocked.headers, {
+          isProd: process.env.NODE_ENV === "production",
+        });
+        return blocked;
+      }
+    }
+
     // `.data` is React Router's internal single-fetch transport. This app does
     // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
     // client request needs this public URL. Reject every variant rather than
@@ -183,7 +266,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
-        <Links />
+        {/* HydratedRouter does not retain ServerRouter's nonce context. */}
+        <Links nonce={nonce} />
         {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           nonce={nonce}

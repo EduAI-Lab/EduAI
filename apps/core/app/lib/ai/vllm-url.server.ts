@@ -1,4 +1,7 @@
-import { resolveAllowedLocalInferenceBaseUrl } from "./local-inference-url.server";
+import {
+  canonicalLocalInferenceBaseUrl,
+  resolveAllowedLocalInferenceBaseUrl,
+} from "./local-inference-url.server";
 
 export class InvalidVllmBaseUrlError extends Error {
   constructor(message: string) {
@@ -12,9 +15,10 @@ function defaultVllmBaseUrl(): string {
   return `http://localhost:${port}`;
 }
 
-/** Hostnames of every vLLM endpoint the deployment has explicitly configured via env. */
-function configuredVllmHostnames(): Set<string> {
-  const hosts = new Set<string>();
+/** Exact bases of every vLLM endpoint the deployment has configured via env. */
+function configuredVllmBaseUrls(): Set<string> {
+  const bases = new Set<string>();
+  let hasConfiguredEntry = false;
   const rawUrls = [
     process.env.VLLM_BASE_URL,
     process.env.CMPS01_INTERNAL_BASE_URL,
@@ -25,27 +29,33 @@ function configuredVllmHostnames(): Set<string> {
   for (const raw of rawUrls) {
     const trimmed = raw?.trim();
     if (!trimmed) continue;
-    try {
-      hosts.add(new URL(trimmed).hostname.toLowerCase());
-    } catch {
-      // ignore malformed env entries
+    hasConfiguredEntry = true;
+    const canonical = canonicalLocalInferenceBaseUrl(trimmed);
+    if (!canonical) continue;
+    bases.add(canonical);
+    if (canonical.endsWith("/v1")) {
+      bases.add(canonical.slice(0, -3));
+    } else {
+      bases.add(`${canonical}/v1`);
     }
   }
-  return hosts;
+  if (!hasConfiguredEntry) {
+    const fallback = canonicalLocalInferenceBaseUrl(defaultVllmBaseUrl());
+    if (fallback) bases.add(fallback);
+  }
+  return bases;
 }
 
 /**
- * Restricts user-supplied vLLM endpoints to loopback or a hostname explicitly
- * configured by the deployment (VLLM_BASE_URL / CMPS01_INTERNAL_BASE_URL /
- * VLLM_TRUSTED_BASE_URLS / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL).
- * Mirrors resolveAllowedOllamaBaseUrl's SSRF guard via
- * the shared resolveAllowedLocalInferenceBaseUrl helper.
+ * Restricts user-supplied vLLM endpoints to an exact deployment-owned base
+ * (VLLM_BASE_URL / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL); explicit
+ * development/test runs may additionally use loopback for local tooling.
  */
 export function resolveAllowedVllmBaseUrl(raw?: string | null): string {
   return resolveAllowedLocalInferenceBaseUrl(raw, {
     label: "vLLM",
     defaultBaseUrl: process.env.VLLM_BASE_URL?.trim() || defaultVllmBaseUrl(),
-    allowedHostnames: configuredVllmHostnames(),
+    allowedBaseUrls: configuredVllmBaseUrls(),
     createError: (message) => new InvalidVllmBaseUrlError(message),
   });
 }

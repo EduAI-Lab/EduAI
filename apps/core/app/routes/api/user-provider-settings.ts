@@ -5,7 +5,17 @@ import {
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
 import prisma from "~/lib/prisma.server";
+import { readBoundedJson } from "~/lib/chat-input.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  BEDROCK_USER_SETTINGS_ERROR,
+  isBedrockProviderName,
+} from "~/lib/ai/routing/bedrock/bedrock-settings";
+
+const PROVIDER_SETTINGS_MAX_BODY_BYTES = 32 * 1024;
+const PROVIDER_NAME_MAX_CHARS = 64;
+const PROVIDER_API_KEY_MAX_CHARS = 16_384;
+const PROVIDER_BASE_URL_MAX_CHARS = 2_048;
 
 function unauthorized() {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -29,12 +39,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  const result = rows.map((row) => ({
-    providerName: row.provider.name,
-    isEnabled: row.isEnabled,
-    hasKey: row.apiKey != null,
-    baseUrl: row.baseUrl,
-  }));
+  const result = rows
+    .filter((row) => !isBedrockProviderName(row.provider.name))
+    .map((row) => ({
+      providerName: row.provider.name,
+      isEnabled: row.isEnabled,
+      hasKey: row.apiKey != null,
+      baseUrl: row.baseUrl,
+    }));
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -43,15 +55,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 const UpsertSchema = z.object({
-  providerName: z.string().min(1),
+  providerName: z.string().min(1).max(PROVIDER_NAME_MAX_CHARS),
   isEnabled: z.boolean(),
-  apiKey: z.string().optional(),
-  baseUrl: z.string().optional(),
+  apiKey: z.string().max(PROVIDER_API_KEY_MAX_CHARS).optional(),
+  baseUrl: z.string().max(PROVIDER_BASE_URL_MAX_CHARS).optional(),
 });
 
 const DeleteSchema = z.object({
-  providerName: z.string().min(1),
+  providerName: z.string().min(1).max(PROVIDER_NAME_MAX_CHARS),
 });
+
+async function readProviderSettingsBody(request: Request) {
+  return readBoundedJson(
+    request,
+    PROVIDER_SETTINGS_MAX_BODY_BYTES,
+    "Provider settings request body exceeds size limit",
+  );
+}
 
 /** POST to upsert, DELETE to remove. */
 export async function action({ request }: ActionFunctionArgs) {
@@ -59,11 +79,23 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!session?.user) return unauthorized();
 
   if (request.method === "POST") {
-    const body = await request.json();
-    const parsed = UpsertSchema.safeParse(body);
+    const bodyResult = await readProviderSettingsBody(request);
+    if (!bodyResult.ok) {
+      return new Response(JSON.stringify({ error: bodyResult.error }), {
+        status: bodyResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const parsed = UpsertSchema.safeParse(bodyResult.body);
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: "Invalid body" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (isBedrockProviderName(parsed.data.providerName)) {
+      return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -80,17 +112,35 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (err instanceof Error && err.message === BEDROCK_USER_SETTINGS_ERROR) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       throw err;
     }
     return new Response(null, { status: 204 });
   }
 
   if (request.method === "DELETE") {
-    const body = await request.json();
-    const parsed = DeleteSchema.safeParse(body);
+    const bodyResult = await readProviderSettingsBody(request);
+    if (!bodyResult.ok) {
+      return new Response(JSON.stringify({ error: bodyResult.error }), {
+        status: bodyResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const parsed = DeleteSchema.safeParse(bodyResult.body);
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: "Invalid body" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (isBedrockProviderName(parsed.data.providerName)) {
+      return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       });
     }

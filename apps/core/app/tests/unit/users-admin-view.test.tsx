@@ -71,7 +71,7 @@ const user = {
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
   _count: { enrolledCourses: 0, assistedCourses: 0, taughtCourses: 0, aiInteractions: 0 },
-} as unknown as PlatformUser;
+} as PlatformUser;
 
 function renderView(overrides: Partial<React.ComponentProps<typeof UsersAdminView>> = {}) {
   return render(
@@ -104,8 +104,9 @@ describe("UsersAdminView", () => {
     renderView();
 
     // The picker needs a browsable set, not the whole table — and `/api/courses`
-    // caps pageSize at 200, so anything larger would be clamped anyway.
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200 });
+    // caps pageSize at 200, so anything larger would be clamped anyway. It opts
+    // out of facets, which only the filter toolbar consumes.
+    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200, includeFacets: false });
   });
 
   it("renders the server-reported platform counts rather than counting the loaded page", () => {

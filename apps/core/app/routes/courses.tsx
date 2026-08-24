@@ -7,6 +7,7 @@ import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { CoursesView, type CoursesRole } from "~/components/courses/courses-view";
 import { useCourses } from "~/hooks/api/use-courses";
+import type { CourseFilterKey } from "~/hooks/api/use-courses";
 import { TablePagination } from "~/components/ui/table-pagination";
 import {
   Breadcrumb,
@@ -54,28 +55,60 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
   const authorizedUnits = dbUser?.authorizedUnits ?? [];
   const taCourseIds = enrollmentRows.filter((r) => r.role === "TA").map((r) => r.courseId);
+  const instructorCourseIds = enrollmentRows
+    .filter((r) => r.role === "INSTRUCTOR")
+    .map((r) => r.courseId);
   const enrolledCourseIds = enrollmentRows
     .filter((r) => r.role === "STUDENT")
     .map((r) => r.courseId);
 
-  return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors };
+  return {
+    user: session.user,
+    authorizedUnits,
+    taCourseIds,
+    instructorCourseIds,
+    enrolledCourseIds,
+    instructors,
+  };
 }
 
 export default function CoursesPage() {
-  const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } =
-    useLoaderData<typeof loader>();
+  const {
+    user,
+    authorizedUnits,
+    taCourseIds,
+    instructorCourseIds,
+    enrolledCourseIds,
+    instructors,
+  } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const accessDenied = searchParams.get("access") === "denied";
+  const accessUnpublished = searchParams.get("access") === "unpublished";
   const {
     courses,
     total: courseTotal,
     pagination,
     setPagination,
+    search,
+    setSearch,
+    selectedFilters,
+    setFilter,
+    clearFilters,
+    availableValues,
     loading,
     createCourse,
     updateCourse,
     deleteCourse,
   } = useCourses();
+
+  const handleFilterChange = (groupId: string, values: string[]) => {
+    setFilter(groupId as CourseFilterKey, values);
+  };
+
+  const handleClearAll = () => {
+    setSearch("");
+    clearFilters();
+  };
 
   const isAdmin = user.role === "ADMIN";
   const isUnitAdmin = user.role === "UNIT_ADMIN";
@@ -117,7 +150,10 @@ export default function CoursesPage() {
     return Promise.resolve();
   };
 
-  if (loading) {
+  // `loading` is only true for the genuine first load (the hook never flips it
+  // back on for background refreshes), but gate on "no rows yet" too so a
+  // refetch can never tear down an already-mounted page.
+  if (loading && courses.length === 0) {
     return (
       <Layout user={user}>
         <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -141,11 +177,30 @@ export default function CoursesPage() {
             </button>
           </div>
         )}
+        {accessUnpublished && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            That course isn&apos;t published yet. You&apos;ll be able to open it once your
+            instructor publishes it.
+            <button type="button" className="ml-2 underline" onClick={() => setSearchParams({})}>
+              Dismiss
+            </button>
+          </div>
+        )}
         {effectiveRole === "admin" ? (
           <CoursesView
             role="admin"
             courses={courses}
             instructors={instructors}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => {
               await createCourse(data);
             }}
@@ -167,6 +222,13 @@ export default function CoursesPage() {
             courses={courses}
             authorizedUnits={authorizedUnits}
             instructors={instructors}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => {
               await createCourse(data);
             }}
@@ -182,6 +244,13 @@ export default function CoursesPage() {
           <CoursesView
             role="instructor"
             courses={courses}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => {
               await createCourse(data);
             }}
@@ -198,7 +267,15 @@ export default function CoursesPage() {
             role="mixed"
             courses={courses}
             taCourseIds={taCourseIds}
+            instructorCourseIds={instructorCourseIds}
             enrolledCourseIds={enrolledCourseIds}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
           />
         )}
         <div className="mt-4">

@@ -1,3 +1,4 @@
+import { AppError } from "@eduai/types";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
@@ -5,12 +6,18 @@ import { ZodError } from "zod";
  * Infrastructure outage on the enqueue path (Redis down, DB unreachable, etc.).
  * Routes must map this to HTTP 503 — never 400 (#1112).
  */
-export class QueueUnavailableError extends Error {
+export class QueueUnavailableError extends AppError {
+  // Kept as literal types: callers narrow on these, and #1112's contract is
+  // specifically that this error is a 503.
   readonly status = 503 as const;
   readonly code = "QUEUE_UNAVAILABLE" as const;
 
   constructor(message = "Queue unavailable", options?: { cause?: unknown }) {
-    super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
+    super(503, message, {
+      code: "QUEUE_UNAVAILABLE",
+      expose: true,
+      ...(options?.cause !== undefined ? { cause: options.cause } : {}),
+    });
     this.name = "QueueUnavailableError";
   }
 }

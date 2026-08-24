@@ -62,6 +62,8 @@ export type ActivityFeedbackRow = {
 
 export type StudentMetricRow = {
   userId: string;
+  /** Resolved from Core; null when Core is unreachable or the user is gone. */
+  studentName?: string | null;
   submissionCount: number;
   correctSubmissionCount: number;
   incorrectSubmissionCount: number;

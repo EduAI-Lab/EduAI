@@ -28,6 +28,7 @@ compose file, independent of any `.env.example`. The files below are for local (
 | `apps/extensions/question-maker/.env.example` | `apps/extensions/question-maker/.env` | QM backend (`app/backend/src/config/settings.js`) **and** QM frontend (Vite `VITE_*` vars) |
 | `infra/cron/cron.env.example` | `/etc/eduai/cron.env` (manual, production only) | Production cron scripts |
 | `infra/cron/cron.env.local.example` | `infra/cron/cron.env.local` (manual, gitignored) | `infra/cron/dry-run-local.sh` only |
+| `apps/core/loadtest/.env.loadtest.example` | `apps/core/.env.loadtest` (manual, gitignored) | Isolated #919 k6 harness (`npm run loadtest:*`) — never the shared study host |
 
 The AI Tutor **frontend** app (`apps/extensions/ai-tutor/`, distinct from its `server/`
 sibling) has no `.env` of its own — it does not inherit from `apps/core/.env` or
@@ -82,51 +83,48 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `BETTER_AUTH_SECRET` | required | dev | Auth session signing secret — generate with `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | required | dev | Base URL of the Core app |
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) and shared chat/completion sliding-window limits |
-| `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
-| `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
-| `AI_JOB_DEFAULT_MODEL` | optional | dev/prod | Worker model override. When unset, the worker uses Auto routing and falls back to `vllm:qwen2.5-32b-instruct` if routing fails |
-| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | optional (defaults `8` / `1`) | dev/prod | BullMQ worker concurrency for the chat and heavy fleet-pool queues |
-| `AI_JOB_EXECUTION_TIMEOUT_MS` | optional (default `120000`) | dev/prod | Maximum provider execution time for an async AI job before it is aborted and retried |
-| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | optional (defaults `3` / `5000`) | dev/prod | BullMQ attempts and exponential retry base delay for async AI jobs |
+| `QUEUE_ENQUEUE_ENABLED` | deprecated (ignored) | dev/prod | Pre-MVP fail-closed boundary: setting this to `true` does not enable queuing. `/api/chat` continues through direct chat. Re-enabling requires a reviewed code change after owner-scoped status/cancellation and server-side model authorization exist. |
+| `QUEUE_MAX_DEPTH` | dormant pre-MVP | dev/prod | Retained for the future queue contract; has no effect on `/api/chat` while the queue is hard-disabled. |
+| `AI_JOB_DEFAULT_MODEL` | dormant pre-MVP | dev/prod | Retained for future worker model authorization; no worker starts while the queue is hard-disabled. |
+| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | dormant pre-MVP | dev/prod | Retained for future BullMQ worker concurrency. |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | dormant pre-MVP | dev/prod | Retained for the future async-job execution deadline. |
+| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | dormant pre-MVP | dev/prod | Retained for future BullMQ retry policy. |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
-| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `VLLM_EMBEDDING_BASE_URL`, `VLLM_EMBEDDING_MODEL`, `CMPS01_INTERNAL_BASE_URL` | optional | dev/prod | RAG embeddings — local OpenAI-compatible CMPS endpoint and independent trust boundary |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
+| `EMBEDDING_REQUEST_TIMEOUT_MS` | optional (default `30000`, range `100-120000`) | dev/prod | Hard per-attempt deadline for native Ollama `fetch` and cloud SDK `embed` / `embedMany` calls. Timeouts abort the provider request, retry within the fixed three-attempt cap using exponential jitter, then surface as `RAG_RETRIEVAL_TIMEOUT`. Invalid or sub-minimum values use the default; larger values are capped at 120 seconds. |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
 | `REINDEX_CONCURRENCY` | optional (default `4`, range `1-16`) | dev/prod | #945 — max materials `reEmbedCourseMaterials` (course re-embed background job) processes concurrently via `p-limit`. Non-positive, fractional, blank, and non-numeric values use the default; values above 16 are capped at 16. Keeps large re-embed runs from overwhelming the Postgres connection pool or the embedding provider's rate limit; bump cautiously alongside `OLLAMA_EMBED_MANY_BATCH_SIZE` / `EMBED_MANY_BATCH_SIZE` |
-| `VLLM_BASE_URL`, `VLLM_API_KEY`, `VLLM_TRUSTED_BASE_URLS` | optional | dev/prod | vLLM proxy and independently configured endpoint allowlist |
+| `CRON_RUN_LEASE_MS` | optional (default `60000`, range `15000-600000`) | dev/prod | Lifetime of a Core cron execution lease. The child renews the lease every third of this interval and terminates if renewal fails. Invalid and sub-minimum values use the default; larger values are capped at 10 minutes. |
+| `CRON_STANDALONE_LEASE_MS` | optional (default `600000`, positive integer milliseconds) | `/etc/eduai/cron.env` | Lifetime of a direct `infra/cron` script invocation that does not receive `CORE_CRON_RUN_ID`. The script creates and owns the lease but does not heartbeat it, so set this longer than the slowest direct run. Invalid values fail closed before work starts. If unset, `CRON_RUN_LEASE_MS` is accepted as a fallback. |
+| `CRON_OUTPUT_MAX_BYTES` | optional (default `65536`, range `1024-1048576`) | dev/prod | Maximum combined stdout/stderr bytes retained for a spawned cron script. Core terminates and fails a child that exceeds the cap. Invalid and sub-minimum values use the default; larger values are capped at 1 MiB. |
+| `CRON_SCRIPT_DIR` | optional (default repository `infra/cron`) | dev/prod | Directory that contains Core-triggered shell scripts. Production can set `/opt/eduai/cron`. |
+| `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
+| `CHAT_MAX_BODY_BYTES`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_MESSAGE_CHARS`, `CHAT_MAX_TOTAL_MESSAGE_CHARS` | optional (defaults 2 MiB, 100, 32768, 131072) | dev/prod | Bounded `/api/chat` ingress; rejects oversized request bodies with 413 and message count/content overages with 422 before persistence or provider admission |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.1+: Teacher requires literal `**Top summary**` / `**Next?**`; UI TLDR/Continue remapping is client-only). |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |
-| `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Rate limit for `POST /api/sessions/validate` |
+| `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Per-original-client pre-auth and per-user/anonymous post-auth limits for the service-authenticated `POST /api/sessions/validate` extension endpoint |
+| `SESSION_VALIDATE_PREAUTH_RATE_LIMIT` | optional (default 1200) | dev/prod | Coarse per-original-client-IP admission ceiling for `POST /api/sessions/validate`, enforced before Better Auth session lookup. Keep this above the post-auth per-user limit. |
 | `CHAT_RATE_LIMIT`, `CHAT_RATE_LIMIT_WINDOW_MS` | optional (defaults `100` / `60000`) | dev/prod | Shared Redis sliding-window limit for `POST /api/chat` and `POST /api/completion`. Session/API-key callers are keyed by user; direct service-key callers use a stable shared service bucket. Denials return `429 {"error":"RATE_LIMITED","retryAfter":<seconds>}` plus `Retry-After`. `CHAT_RATE_WINDOW_MS` remains a legacy fallback only when the canonical window variable is unset. If Redis is unavailable, Core fails over quickly to a bounded per-process limiter; protection remains, but decisions are no longer shared across app instances until Redis recovers. |
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
+| `BETTER_AUTH_DISABLE_RATE_LIMIT` | optional | loadtest / integration tests | Set `1` to turn off Better Auth's per-IP sign-in limiter. Core integration tests set this in `app/tests/setup.env.ts`. The #919 harness sets it in `.env.loadtest` so 500 loopback VUs are not measuring "how fast does the auth limiter trip." |
+| `LOADTEST_BASE_URL` | optional (default `http://127.0.0.1:4100`) | loadtest | k6 target. Loopback only unless `LOADTEST_ALLOW_REMOTE=1`. Live hosts `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca` are always refused (trailing-dot FQDNs included). |
+| `LOADTEST_ALLOW_REMOTE` | optional | loadtest | Set `1` to allow a non-loopback `LOADTEST_BASE_URL` for a **dedicated** load-test host. Does not unlock the live study/prod hosts. |
+| `LOADTEST_VUS` | optional (default `500`) | loadtest | How many `loadtest.vu-NNN@eduai.local` accounts `seed-loadtest-users.ts` creates. |
+| `EDUAI_LOCAL_SEED_PASSWORD` | required for `loadtest:setup` | loadtest | Explicit fixture password for `prisma/seed.ts` and the VU seeder. `loadtest:setup` generates it if empty and invokes seed with a local-demo contract; the app runtime in `.env.loadtest` stays `NODE_ENV=production`. k6 reads the same value via `loadtest/scripts/run-k6.sh`. |
+| `LOADTEST_UNIQUE_USERS` | optional | loadtest | Set `0` to round-robin the five demo students instead of one account per VU. |
+| `HOST` | optional (loadtest default `127.0.0.1`) | loadtest | Bind address for the mock LLM and `react-router-serve` during a harness run. |
+| `ROUTING_LOCAL_VLLM_ONLY` | optional | loadtest / research | Set `1` so Auto routing stays on `vllm:*` models. The #919 harness also sets `VLLM_FLEET_CHAT_URLS` to the mock so chat does not wait on campus fleet hosts. |
 
-### Operating `QUEUE_MAX_DEPTH`
+### Future queue settings
 
-**A Redis outage can present as `429 queue full` rather than `502`.** When the BullMQ
-add fails, an enqueue with no `idempotencyKey` deliberately leaves its `PENDING`
-row behind for the (not-yet-shipped) reaper, and depth reads count those rows for
-a 5-minute grace window — they may still be in Redis. So while Redis is down,
-client retries accumulate rows that consume the cap: the first callers get a
-truthful `502`, and once accumulated rows reach `QUEUE_MAX_DEPTH` later callers
-get `429` instead. `/api/chat` requests carry no `idempotencyKey` unless the
-caller supplies one, so this is the common shape of the failure.
-
-Operator guidance when the cap is enabled:
-
-- Treat a `429` spike with no matching rise in *completed* jobs as a suspected
-  queue-transport outage, not real saturation. Check Redis reachability and the
-  `ai_job_enqueue_failed` system log before assuming the cap was hit honestly.
-- Rows age out after 5 minutes, so the condition self-clears once Redis recovers;
-  no manual cleanup of `ai_jobs` is needed.
-- Set the cap generously above expected steady-state depth. A tight cap makes an
-  outage reach the 429 threshold faster and hides the real fault for longer.
-- Client copy for a `429` should stay neutral ("the queue is busy, retry shortly")
-  rather than asserting a specific queue length, since the number can reflect
-  failed-transport rows.
+`QUEUE_MAX_DEPTH` and the `AI_JOB_*` variables describe the dormant future
+contract only. They must not be operated or tuned before the queue's security
+contract is completed and the compile-time disable is deliberately removed.
 
 ## `apps/core/.env.test.example`
 
@@ -149,6 +147,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `NODE_ENV` | required | Runtime mode. The local template actively sets `development`, which `setup-env.js` copies or merges; production deployments must set `production` explicitly. |
 | `PORT` | optional (default 4000) | Server port |
 | `CORE_URL` | required | Core base URL — session validation and login redirect |
+| `CORE_AUTH_TIMEOUT_MS` | optional (default 5000) | Finite deadline for Core session-validation and logout requests; invalid or non-positive values fall back to 5000 ms |
 | `EDUAI_API_KEY` | required | Must match Core's `EDUAI_API_KEY` exactly (Core does not read admin-UI overrides) |
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
@@ -181,6 +180,7 @@ Copied to `apps/extensions/question-maker/.env`, read by both the backend
 | `PORT` | optional (default 8000) | Backend port |
 | `DATABASE_URL` | required | Postgres connection string (use `postgres:5432` host instead of `localhost:55432` inside Docker Compose) |
 | `CORE_URL` | required | Core auth server — used by session validation middleware |
+| `CORE_AUTH_TIMEOUT_MS` | optional (default 5000) | Finite deadline for Core session-validation and logout requests; invalid or non-positive values fall back to 5000 ms |
 | `EXTENSION_URL` | required | This extension's public URL — builds the post-login `?redirect=` param |
 | `CORS_ORIGINS` | required | Comma-separated allowed browser origins, no spaces |
 | `ENCRYPTION_KEY` | required in production | 64-char hex (32 bytes); same format/purpose as Core's `ENCRYPTION_KEY`, separate key |

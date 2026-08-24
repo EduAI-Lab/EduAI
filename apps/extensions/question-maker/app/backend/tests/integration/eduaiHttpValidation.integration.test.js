@@ -42,7 +42,7 @@ describe("EduAI HTTP validation (integration)", () => {
       expect(String(res.body.error || "")).toMatch(/[Mm]essage/i);
     });
 
-    it("returns 400 when courseCode is missing", async () => {
+    it("returns 400 when courseId and courseCode are both missing", async () => {
       const res = await request(app)
         .post("/api/eduai/chat")
         .set("Cookie", "session=valid")
@@ -62,13 +62,23 @@ describe("EduAI HTTP validation (integration)", () => {
       expect(String(res.body.error || "")).toMatch(/[Pp]rompt|required/i);
     });
 
-    it("returns 400 when courseCode is missing", async () => {
+    it("returns 400 when courseId and courseCode are both missing", async () => {
       const res = await request(app)
         .post("/api/eduai/generate-questions")
         .set("Cookie", "session=valid")
         .send({ prompt: "Write one MCQ" });
       expect(res.status).toBe(400);
       expect(String(res.body.error || "")).toMatch(/[Cc]ourse|required/i);
+    });
+
+    it("returns 400 for missing identifiers before numQuestions exceeds max", async () => {
+      const res = await request(app)
+        .post("/api/eduai/generate-questions")
+        .set("Cookie", "session=valid")
+        .send({ prompt: "Write many MCQs", numQuestions: 10000 });
+      expect(res.status).toBe(400);
+      expect(String(res.body.error || "")).toMatch(/course/i);
+      expect(String(res.body.error || "")).not.toMatch(/numQuestions|exceed|max/i);
     });
 
     it("returns 400 when numQuestions exceeds maxQuestions", async () => {

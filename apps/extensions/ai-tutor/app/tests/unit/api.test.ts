@@ -4,7 +4,7 @@
 const mockFetch = vi.fn();
 
 beforeEach(() => {
-  global.fetch = mockFetch as unknown as typeof fetch;
+  global.fetch = mockFetch as typeof fetch;
   mockFetch.mockReset();
 
   // Reset window.location before each test
@@ -392,6 +392,26 @@ describe("api methods", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("api.logout propagates a non-OK response instead of reporting success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ ok: false, error: "Logout service unavailable" }),
+    });
+
+    const { api } = await import("~/lib/api");
+
+    await expect(api.logout()).rejects.toThrow("Logout service unavailable");
+  });
+
+  it("api.logout propagates a network failure instead of reporting success", async () => {
+    mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    const { api, ApiNetworkError } = await import("~/lib/api");
+
+    await expect(api.logout()).rejects.toThrow(ApiNetworkError);
+  });
+
   // #1041: Core's user list is server-paginated, so these two calls always send
   // paging params and the admin views read the envelope (and its `stats`) rather
   // than counting an array.
@@ -589,13 +609,11 @@ describe("search + move endpoints (#1207)", () => {
     ["moveModuleToPosition", "modules", "module"],
     ["moveLessonToPosition", "lessons", "lesson"],
     ["moveActivityToPosition", "activities", "activity"],
-  ])("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
+  ] as const)("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
     okJson({ [key]: { id: 4 }, position: 12, total: 40 });
     const { api } = await import("~/lib/api");
 
-    const result = await (
-      api as unknown as Record<string, (id: number, p: number) => Promise<unknown>>
-    )[method](4, 12);
+    const result = await api[method](4, 12);
 
     const [url, options] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://localhost:4000/api/${segment}/4/position`);

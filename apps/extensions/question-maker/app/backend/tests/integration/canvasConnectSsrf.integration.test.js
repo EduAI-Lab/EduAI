@@ -84,6 +84,11 @@ describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
     ["private 10/8", "https://10.1.2.3/"],
     ["private 192.168/16", "https://192.168.1.1/"],
     ["non-HTTPS scheme", "http://canvas.example.com/"],
+    ["credentials", "https://user:password@canvas.example.com/"],
+    ["query", "https://canvas.example.com/?tenant=one"],
+    ["fragment", "https://canvas.example.com/#tenant"],
+    ["carrier-grade NAT", "https://100.64.0.1/"],
+    ["benchmark range", "https://198.18.0.1/"],
   ])("rejects %s (%s) with 400 and never persists it", async (_label, canvasUrl) => {
     const res = await request(app)
       .post("/api/canvas/connect")
@@ -93,6 +98,24 @@ describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ success: false });
     expect(canvas.saveCanvasIntegration).not.toHaveBeenCalled();
+  });
+
+  it("persists the validated canonical Canvas origin", async () => {
+    canvas.saveCanvasIntegration.mockResolvedValue({
+      canvasUrl: "https://canvas.example.com",
+      isTestMode: true,
+    });
+
+    const res = await request(app)
+      .post("/api/canvas/connect")
+      .set("Cookie", "session=v")
+      .send({ canvasUrl: "https://CANVAS.example.com:443/", isTestMode: true });
+
+    expect(res.status).toBe(200);
+    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ canvasUrl: "https://canvas.example.com" }),
+    );
   });
 
   it("accepts a valid https Canvas URL and persists it", async () => {
@@ -110,6 +133,42 @@ describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
     expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
       INSTRUCTOR.id,
       expect.objectContaining({ canvasUrl: "https://canvas.example.com" }),
+    );
+  });
+
+  it("retains a legitimate explicit HTTPS port in the persisted origin", async () => {
+    canvas.saveCanvasIntegration.mockResolvedValue({
+      canvasUrl: "https://canvas.example.com:8443",
+      isTestMode: true,
+    });
+
+    const res = await request(app)
+      .post("/api/canvas/connect")
+      .set("Cookie", "session=v")
+      .send({ canvasUrl: "https://canvas.example.com:8443/", isTestMode: true });
+
+    expect(res.status).toBe(200);
+    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ canvasUrl: "https://canvas.example.com:8443" }),
+    );
+  });
+
+  it.each([
+    ["https://canvas.example.com/lms", "https://canvas.example.com/lms"],
+    ["https://canvas.example.com/lms/", "https://canvas.example.com/lms"],
+  ])("persists an HTTPS path prefix from %s", async (canvasUrl, canonical) => {
+    canvas.saveCanvasIntegration.mockResolvedValue({ canvasUrl: canonical, isTestMode: true });
+
+    const res = await request(app)
+      .post("/api/canvas/connect")
+      .set("Cookie", "session=v")
+      .send({ canvasUrl, isTestMode: true });
+
+    expect(res.status).toBe(200);
+    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ canvasUrl: canonical }),
     );
   });
 });

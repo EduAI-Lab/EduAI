@@ -9,7 +9,7 @@ const assessment = {
     { id: 1, name: "A", position: 0, sectionVariants: [] },
     { id: 2, name: "B", position: 1, sectionVariants: [] },
   ],
-} as unknown as Assessment;
+} as Assessment;
 
 describe("AssessmentBuilder reorder", () => {
   beforeEach(() => cleanup());

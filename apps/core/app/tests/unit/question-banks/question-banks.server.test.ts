@@ -27,7 +27,7 @@ const prismaMock = vi.hoisted(() => ({
   course: {
     findUnique: vi.fn(),
   },
-  $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock)),
+  $transaction: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn(prismaMock)),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -61,7 +61,7 @@ const EXTRA_BANK = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+  prismaMock.$transaction.mockImplementation(async <T>(fn: (tx: unknown) => Promise<T>) =>
     fn(prismaMock),
   );
 });

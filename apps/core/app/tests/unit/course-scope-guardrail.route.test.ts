@@ -5,6 +5,7 @@
 // its own module boundary, and is skipped for admin-preview/service-key
 // callers regardless of the enabled flag.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -124,7 +125,14 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
@@ -136,7 +144,7 @@ import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -210,6 +218,7 @@ function mockPriorCourseConversation(
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   // getCourseTopicNamesCached (lib/courses/server.ts) is a module-level cache
   // shared across tests in this file — clear it so each test's

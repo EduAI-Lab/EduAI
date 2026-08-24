@@ -11,20 +11,33 @@ vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
   resolveCourseAccessGate: vi.fn(),
 }));
 
-vi.mock("~/lib/prisma.server", () => ({
-  default: {
+vi.mock("~/lib/prisma.server", () => {
+  const client: any = {
     courseMaterial: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
+    },
+    materialUploadBlob: {
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
     },
-  },
-}));
+    course: {
+      findUnique: vi.fn(),
+    },
+  };
+  // Interactive transaction: hand the callback the same client the assertions
+  // read, so a write made inside the reclaim transaction is still observable.
+  client.$transaction = vi.fn(async (fn: any) => fn(client));
+  return { default: client };
+});
 
 vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn().mockResolvedValue(undefined),
@@ -32,6 +45,8 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
+  validateUploadedFile: vi.fn(),
+  extractUploadedFileContent: vi.fn(),
 }));
 
 // getPolicy resolves to each flag's real code default unless a test overrides it.
@@ -47,19 +62,25 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
 });
 
 import { loader, action } from "~/routes/api/courses.materials.$";
+import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { processUploadedFile } from "~/lib/ai/file-processing";
+import {
+  extractUploadedFileContent,
+  processUploadedFile,
+  validateUploadedFile,
+} from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
@@ -129,13 +150,113 @@ function stubUploadArgs() {
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
-  } as unknown as Request;
+  } as Request;
   return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
+}
+
+/**
+ * The upload action starts `processMaterialAsync` with `void` and returns 202
+ * immediately (#949). Yielding to the macrotask queue lets the whole chain of
+ * already-resolved mock promises settle before assertions run.
+ */
+async function flushBackgroundWork() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Standard extracted-content stub for the background half of an upload. */
+function mockExtraction(overrides: Record<string, unknown> = {}) {
+  vi.mocked(extractUploadedFileContent).mockResolvedValue({
+    checksum: "content-checksum",
+    title: "file",
+    mimeType: "application/pdf",
+    fileSize: 100,
+    content: "text",
+    ...overrides,
+  } as never);
+}
+
+/**
+ * The upload path issues two distinct conditional `updateMany` claims, told
+ * apart by their predicate: reclaiming a stranded provisional row asks for
+ * anything *not* live-PROCESSING, while taking the extraction lease asks for a
+ * PROCESSING row whose lease is absent or expired.
+ */
+function isReclaimClaim(where: any): boolean {
+  return (
+    Array.isArray(where?.OR) &&
+    // The restore claim carries a `status: { not: 'PROCESSING' }` arm too, but
+    // only ever paired with `deletedAt` (#1494 review) — that pairing is what
+    // separates the two.
+    where.OR.some((c: any) => c?.status?.not === "PROCESSING" && c?.deletedAt === undefined)
+  );
+}
+
+/**
+ * Restore-claim `updateMany` calls — the conditional un-delete that takes the
+ * restore target's lease. Told apart from the reclaim claim by its
+ * soft-delete arm (#1494 review).
+ */
+function restoreClaims(): Array<{ where?: any; data?: any }> {
+  return vi
+    .mocked(prisma.courseMaterial.updateMany)
+    .mock.calls.map(([arg]) => arg as any)
+    .filter(
+      (arg) =>
+        Array.isArray(arg?.where?.OR) && arg.where.OR.some((c: any) => c?.deletedAt?.not === null),
+    );
+}
+
+/** Reclaim-claim `updateMany` calls only, in call order. */
+function reclaimClaims(): Array<{ where?: any; data?: any }> {
+  return vi
+    .mocked(prisma.courseMaterial.updateMany)
+    .mock.calls.map(([arg]) => arg as any)
+    .filter((arg) => isReclaimClaim(arg?.where));
+}
+
+/**
+ * Drive the reclaim claim's outcome per call (1 = won, 0 = lost), leaving the
+ * lease claim to always succeed so tests can isolate reclaim contention.
+ */
+function mockReclaim(...counts: number[]): void {
+  let index = 0;
+  vi.mocked(prisma.courseMaterial.updateMany).mockImplementation((async (args: any) => {
+    if (!isReclaimClaim(args?.where)) return { count: 1 };
+    const count = counts[Math.min(index, counts.length - 1)] ?? 1;
+    index += 1;
+    return { count };
+  }) as never);
+}
+
+/** Every `courseMaterial.update` argument object, in call order. */
+function updateCalls(): Array<{ where?: any; data?: any }> {
+  return vi.mocked(prisma.courseMaterial.update).mock.calls.map(([arg]) => arg as any);
+}
+
+/** Index of the first `update` matching `predicate`, or -1. */
+function updateCallIndex(predicate: (call: { where?: any; data?: any }) => boolean): number {
+  return updateCalls().findIndex(predicate);
+}
+
+/**
+ * Updates that write the duplicate receipt onto *this upload's* provisional row
+ * (`mat-restore` in the restore tests) — as opposed to the restored original.
+ */
+function receiptUpdates(): Array<{ where?: any; data?: any }> {
+  return updateCalls().filter((c) => c.where?.id === "mat-restore");
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(validateUploadedFile).mockResolvedValue(undefined);
+  mockExtraction();
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
+  // Two different conditional updateMany claims now run per upload: reclaiming a
+  // stranded `pending:` row, and taking the extraction lease. Default both to
+  // "this caller won"; contention tests override via `mockReclaim`.
+  vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
+  vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
+  vi.mocked(prisma.materialUploadBlob.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
   mockAccess({ level: "instructor", rank: 2 });
   // Reset to code defaults so per-test overrides don't leak across tests.
@@ -461,6 +582,71 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns HTTP 413 for an oversized declared multipart body before formData parsing", async () => {
+    mockSession("INSTRUCTOR");
+    expect(MATERIAL_UPLOAD_BODY_MAX_BYTES).toBe(52 * 1024 * 1024);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("--boundary\r\n"));
+        controller.close();
+      },
+    });
+    const oversizedRequest = {
+      url: `http://localhost/api/courses/${COURSE_ID}/materials`,
+      method: "POST",
+      headers: new Headers({
+        "Content-Type": "multipart/form-data; boundary=boundary",
+        "Content-Length": String(52 * 1024 * 1024 + 1),
+      }),
+      body,
+      signal: new AbortController().signal,
+    } as Request;
+    expect(oversizedRequest.headers.get("content-length")).toBe(String(52 * 1024 * 1024 + 1));
+    const res = await action({
+      request: oversizedRequest,
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+    const responseBody = await res.text();
+    expect(responseBody).toContain("PAYLOAD_TOO_LARGE");
+    expect(res.status).toBe(413);
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("returns HTTP 413 for chunked overflow, cancels the source, and never double-reads it", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    const cancel = vi.fn();
+    let index = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          const chunk = index++ === 0 ? "x".repeat(52 * 1024 * 1024) : "y";
+          controller.enqueue(new TextEncoder().encode(chunk));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const formData = vi.fn(() => Promise.reject(new Error("formData must not be called")));
+    const result = await action({
+      request: {
+        url: `http://localhost/api/courses/${COURSE_ID}/materials`,
+        method: "POST",
+        headers: new Headers({ "Content-Type": "multipart/form-data; boundary=boundary" }),
+        body,
+        signal: new AbortController().signal,
+        formData,
+      } as unknown as Request,
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+    expect(result.status).toBe(413);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(formData).not.toHaveBeenCalled();
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when course not found", async () => {
     mockSession("INSTRUCTOR");
     mockAccess(null, null);
@@ -479,18 +665,12 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("admits a TA upload (rank 1)", async () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c1",
-      title: "f.pdf",
-      mimeType: "application/pdf",
-      fileSize: 1,
-      content: "x",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
   });
 
   it("returns 403 for a TA upload when tas.canManageMaterials is off", async () => {
@@ -507,18 +687,12 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockSession("STUDENT");
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(getPolicy).mockResolvedValue(true);
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c2",
-      title: "f.pdf",
-      mimeType: "application/pdf",
-      fileSize: 1,
-      content: "x",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-2" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-2" } as never);
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
   });
 
   it("returns 403 for a STUDENT uploading to an UNPUBLISHED course even when students.canUploadMaterials is on (§7/§19 publish gate)", async () => {
@@ -545,151 +719,175 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 500 with a sanitized message when embedding fails with a Prisma error (#54)", async () => {
+  it("returns 400 when the file fails validation or MIME sniffing (stays synchronous)", async () => {
     mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "prisma-fail",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-prisma" } as never);
-    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-prisma" } as never);
-    vi.mocked(processMaterialEmbeddings).mockRejectedValue(
-      new Error("Invalid `prisma.$executeRaw()` invocation:\nRaw query failed."),
+    vi.mocked(validateUploadedFile).mockRejectedValueOnce(
+      new Error(
+        "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX",
+      ),
     );
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe(
-      "Couldn't save this material's search data due to a database error. Please try again or contact support.",
-    );
-    expect(body.error).not.toMatch(/prisma/i);
+    expect(res.status).toBe(400);
+    // Nothing is persisted for a file that never passes the gate.
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
   });
 
-  it("persists a FAILED material when PDF extraction dies before create (#1018)", async () => {
+  it("returns 202 with a PROCESSING row before extraction runs (#949)", async () => {
     mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockRejectedValueOnce(
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-202" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-202" } as never);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.materialId).toBe("mat-202");
+    expect(body.status).toBe("PROCESSING");
+    // The row is persisted with the provisional byte-hash checksum and no text.
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "PROCESSING",
+          rawText: null,
+          checksum: expect.stringMatching(/^pending:[0-9a-f]{64}$/),
+        }),
+      }),
+    );
+    await flushBackgroundWork();
+  });
+
+  it("finalizes the checksum and rawText in the background, then marks READY", async () => {
+    mockSession("INSTRUCTOR");
+    mockExtraction({ checksum: "final-checksum", content: "extracted text", title: "file" });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-ok" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-ok" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-ok" },
+        data: expect.objectContaining({
+          checksum: "final-checksum",
+          rawText: "extracted text",
+        }),
+      }),
+    );
+    // `replace: true` even on a first run: the embed commits before the READY
+    // update, so a resumed row must not append a second set of chunks.
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-ok", "extracted text", {
+      replace: true,
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-ok" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+  });
+
+  it("marks the row FAILED in the background when extraction dies (#1018)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(extractUploadedFileContent).mockRejectedValueOnce(
       new Error(
         "Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)",
       ),
     );
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-failed" } as never);
+
+    // The caller is already gone by the time extraction dies — the row, not the
+    // response, is the auditable record now.
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-failed" },
+      // The lease is released alongside the terminal status so the sweeper does
+      // not later mistake a settled row for an abandoned one.
+      data: { status: "FAILED", extractionLeaseUntil: null },
+    });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("marks the row FAILED in the background when embedding fails (#54)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-embed" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-embed" } as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(
+      new Error("Invalid `prisma.$executeRaw()` invocation:\nRaw query failed."),
+    );
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.materialId).toBe("mat-failed");
-    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: "FAILED",
-          checksum: expect.stringMatching(/^failed:[0-9a-f]{64}$/),
-        }),
-      }),
-    );
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-embed" },
+      // The lease is released alongside the terminal status so the sweeper does
+      // not later mistake a settled row for an abandoned one.
+      data: { status: "FAILED", extractionLeaseUntil: null },
+    });
   });
 
   it("persists uploadedBy as the session user on create (#294)", async () => {
     mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "new-checksum",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ uploadedBy: "user-1" }),
       }),
     );
+    await flushBackgroundWork();
   });
 
-  it("returns 409 when duplicate file checksum exists", async () => {
+  it("leaves a FAILED receipt pointing at the winner when the content is a late duplicate", async () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-dupe" } as never);
+    // Post-extraction lookup finds an existing, live row with the same content.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
     } as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({ id: "existing-mat" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-dupe" } as never);
 
+    // The old synchronous 409 is now a 202 whose outcome lands on the row.
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(409);
-  });
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
 
-  it("returns 409 (not 500) when a concurrent upload wins the checksum race (#225 RAG-04)", async () => {
-    mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "race-checksum",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    // Our findFirst dedupe check sees no existing row (the race window)...
-    vi.mocked(prisma.courseMaterial.findFirst)
-      .mockResolvedValueOnce(null)
-      // ...but a concurrent request's create() already committed by the time
-      // we look the winner up to build the 409 response.
-      .mockResolvedValueOnce({ id: "winner-mat" } as never);
-    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
-      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
-        code: "P2002",
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-dupe" },
+        data: expect.objectContaining({
+          status: "FAILED",
+          duplicateOfId: "existing-mat",
+        }),
       }),
     );
-
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.materialId).toBe("winner-mat");
+    // The duplicate's content must never be embedded a second time.
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
-  it("re-throws a create() failure unrelated to the checksum unique constraint", async () => {
-    mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "other-failure",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
-
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    // Only the checksum-conflict path re-queries for a winner; any other
-    // create() failure should not trigger the extra findFirst lookup.
-    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledTimes(1);
-  });
-
-  it("restores a soft-deleted material on re-upload instead of 409", async () => {
+  it("restores a soft-deleted material in the background, re-embedding with replace (#685)", async () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    // Same-checksum row exists but is soft-deleted → should restore, not 409.
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "existing-mat",
       deletedAt: new Date(),
@@ -697,19 +895,413 @@ describe("POST /api/courses/:courseId/materials action", () => {
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
-    // First update call clears the soft-delete markers and re-queues processing.
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // The soft-deleted original comes back — as a conditional claim that takes a
+    // lease in the same write, so a crash mid-restore is recoverable rather than
+    // leaving the target PROCESSING with nothing owning it (#1494 review).
+    expect(restoreClaims()).toHaveLength(1);
+    expect(restoreClaims()[0].data).toEqual(
+      expect.objectContaining({
+        deletedAt: null,
+        deletedBy: null,
+        status: "PROCESSING",
+        extractionLeaseUntil: expect.any(Date),
+      }),
+    );
+    // ...and its stale chunks are replaced rather than appended (#685 review).
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("existing-mat", "text", {
+      replace: true,
+    });
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+    // This upload's own row becomes the receipt pointing at the restored one.
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-restore" },
+        data: expect.objectContaining({ duplicateOfId: "existing-mat" }),
+      }),
+    );
+  });
+
+  it("resumes a restore whose worker died instead of resolving the receipt (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    // A previous attempt un-deleted the target and then died: it is PROCESSING,
+    // no longer soft-deleted, and its lease has lapsed. Reading "not deleted" as
+    // "settled" would resolve the receipt and strand the target forever — the
+    // receipt is the only thing that can reach it, because the target carries a
+    // content checksum the sweeper's `pending:` scan cannot see.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
+      status: "PROCESSING",
+      extractionLeaseUntil: new Date(Date.now() - 60_000),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(restoreClaims()).toHaveLength(1);
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("existing-mat", "text", {
+      replace: true,
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+    // Only now does the receipt resolve.
+    expect(receiptUpdates()).toHaveLength(1);
+  });
+
+  it("leaves the receipt open while another worker's restore is still live (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
+      status: "PROCESSING",
+      extractionLeaseUntil: new Date(Date.now() + 60_000),
+    } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    // Pointing the receipt at a target that is still mid-flight would promise a
+    // settled winner that is not one. Wait; a later sweep sees the truth.
+    expect(restoreClaims()).toHaveLength(0);
+    expect(receiptUpdates()).toHaveLength(0);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("keeps the receipt PROCESSING until a slow restore settles (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+    // Re-embedding the restored material is still in flight.
+    let finishEmbedding: () => void = () => {};
+    vi.mocked(processMaterialEmbeddings).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishEmbedding = () => resolve();
+        }),
+    );
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // Marking the receipt terminal here would tell a polling client "duplicate,
+    // nothing was added" while the restored row is still PROCESSING — and the
+    // client deletes the receipt on that outcome, losing the later truth.
+    expect(receiptUpdates()).toHaveLength(0);
+
+    finishEmbedding();
+    await flushBackgroundWork();
+    expect(receiptUpdates()).toHaveLength(1);
+    expect(receiptUpdates()[0].data).toEqual(
+      expect.objectContaining({ status: "FAILED", duplicateOfId: "existing-mat" }),
+    );
+  });
+
+  it("resolves the receipt only after a failing restore has landed FAILED (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("embedding provider down"));
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // The restored row records the failure...
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "FAILED" }),
+      }),
+    );
+    // ...and only then does the receipt resolve, so the client's poll observes
+    // the settled outcome rather than a premature "nothing was added".
+    const restoreFailedAt = updateCallIndex(
+      (c) => c.where?.id === "existing-mat" && c.data?.status === "FAILED",
+    );
+    const receiptAt = updateCallIndex((c) => c.where?.id === "mat-restore");
+    expect(receiptAt).toBeGreaterThan(restoreFailedAt);
+  });
+
+  it("returns 409 when the identical bytes are already being processed", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    // The colliding `pending:` row is still mid-flight → a genuine concurrent
+    // upload of the same file, which still fails fast exactly as before #949.
+    // The conditional claim matches nothing because the row is live PROCESSING.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "inflight-mat",
+    } as never);
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.materialId).toBe("inflight-mat");
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("reclaims and retries a stranded pending row instead of 409ing", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    // A previous attempt died and left the row FAILED — re-uploading the same
+    // bytes is the recovery path for the fire-and-forget hole.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.materialId).toBe("stranded-mat");
+    expect(reclaimClaims()).toHaveLength(1);
+    expect(reclaimClaims()[0].data).toEqual(
+      expect.objectContaining({
+        status: "PROCESSING",
+        duplicateOfId: null,
+        // The reclaimed row must come back as a fresh job, not one strike from
+        // the sweeper abandoning it.
+        extractionAttempts: 0,
+        extractionLeaseUntil: null,
+      }),
+    );
+    // The bytes are replaced too, so a resume re-runs what this caller uploaded.
+    expect(prisma.materialUploadBlob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { materialId: "stranded-mat" } }),
+    );
+    await flushBackgroundWork();
+    expect(extractUploadedFileContent).toHaveBeenCalled();
+  });
+
+  it("commits the reclaim and the replacement bytes together (#1494 review)", async () => {
+    // Two statements left a window: fail between the claim and the blob upsert
+    // and the row is PROCESSING with no bytes — the sweeper skips it for want of
+    // a blob, and an identical retry answers 409. Permanently stranded, with no
+    // recovery path at all. Claim and blob now share one transaction.
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(202);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Both writes ran against the transaction client, not the base one.
+    const tx = vi.mocked(prisma.$transaction).mock.calls[0][0];
+    expect(typeof tx).toBe("function");
+    expect(prisma.materialUploadBlob.upsert).toHaveBeenCalledTimes(1);
+    await flushBackgroundWork();
+  });
+
+  it("leaves the loser's bytes alone when the reclaim claim is lost (#1494 review)", async () => {
+    // Overwriting the blob after losing the claim would swap the bytes out from
+    // under the run the winner just started.
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "stranded-mat",
+    } as never);
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(409);
+    expect(prisma.materialUploadBlob.upsert).not.toHaveBeenCalled();
+  });
+
+  it("claims a stranded row conditionally, not with a blind update (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+    } as never);
+
+    await action(stubUploadArgs());
+
+    // Every condition that made the row reclaimable must live in the UPDATE's
+    // WHERE, so the database — not a stale read — decides who gets the row.
+    expect(reclaimClaims()[0].where).toEqual(
+      expect.objectContaining({
+        id: "stranded-mat",
+        // Pins the row to the provisional state the lookup saw it in.
+        checksum: expect.stringMatching(/^pending:/),
+        OR: [{ status: { not: "PROCESSING" } }, { extractionLeaseUntil: { lt: expect.any(Date) } }],
+      }),
+    );
+  });
+
+  it("does not reclaim a row a worker finalized between the read and the write (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "finalized-mat",
+    } as never);
+    // The row's worker finalized it in the gap: its `pending:` checksum is now
+    // the real content hash, so the claim's checksum condition matches nothing.
+    // Without that condition the UPDATE would reset a READY row to PROCESSING
+    // with a null rawText.
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).materialId).toBe("finalized-mat");
+    expect(reclaimClaims()[0].where.checksum).toEqual(expect.stringMatching(/^pending:/));
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("does not hand a soft-deleted row to a second worker while the first still holds it (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "deleted-inflight-mat",
+    } as never);
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    // A DELETE issued mid-processing used to make the row reclaimable on
+    // `deletedAt != null` alone, so a re-upload could start a second worker on a
+    // row the first was still writing to. Reclaim now requires the lease to have
+    // expired, soft-deleted or not — the live case is a 409.
+    expect(res.status).toBe(409);
+    expect(reclaimClaims()[0].where.OR).toEqual([
+      { status: { not: "PROCESSING" } },
+      { extractionLeaseUntil: { lt: expect.any(Date) } },
+    ]);
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("409s the loser when two identical retries race for the same stranded row (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    const p2002 = () =>
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      });
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(p2002());
+    // Both retries read the row as reclaimable...
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "stranded-mat",
+    } as never);
+    // ...but the conditional claim only matches for the first one.
+    mockReclaim(1, 0);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const [first, second] = await Promise.all([action(stubUploadArgs()), action(stubUploadArgs())]);
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(409);
+    expect((await second.json()).materialId).toBe("stranded-mat");
+    await flushBackgroundWork();
+    // Exactly one background run against the shared row — the whole point of
+    // the atomic claim is that the loser never starts a second extraction.
+    expect(extractUploadedFileContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 500 for a create() failure unrelated to the checksum unique constraint", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    // Only the checksum-conflict path re-queries; any other create() failure
+    // must not trigger the reclaim lookup.
+    expect(prisma.courseMaterial.findFirst).not.toHaveBeenCalled();
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("turns a finalize-time unique violation into a receipt (#225 RAG-04, deferred)", async () => {
+    mockSession("INSTRUCTOR");
+    mockExtraction({ checksum: "race-checksum" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "loser-mat" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst)
+      // The duplicate pre-check sees nothing (the race window)...
+      .mockResolvedValueOnce(null)
+      // ...but a concurrent finalize committed first, so the winner is only
+      // visible after our own update is rejected by the unique index.
+      .mockResolvedValueOnce({ id: "winner-mat" } as never);
+    vi.mocked(prisma.courseMaterial.update)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      )
+      .mockResolvedValue({ id: "loser-mat" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "loser-mat" },
         data: expect.objectContaining({
-          deletedAt: null,
-          deletedBy: null,
-          status: "PROCESSING",
+          status: "FAILED",
+          duplicateOfId: "winner-mat",
         }),
       }),
     );
-    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 });
 
@@ -754,6 +1346,54 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     mockAccess({ level: "student", rank: 0 });
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("lets a student clear their own duplicate receipt (#1494 review)", async () => {
+    // Students may upload when `students.canUploadMaterials` is on, and a late
+    // content-duplicate leaves them a FAILED receipt the client is expected to
+    // delete. Rank 0 could not, so every student duplicate left a dead row in
+    // the course's material list, one per retry.
+    mockSession("STUDENT", "student-user");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "receipt-1",
+      uploadedBy: "student-user",
+      status: "FAILED",
+      duplicateOfId: "winner-1",
+    } as never);
+
+    const res = await action(makeDeleteArgs("receipt-1"));
+
+    expect(res.status).toBe(204);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "receipt-1" } }),
+    );
+  });
+
+  it("does not let the receipt carve-out reach real material", async () => {
+    // The carve-out is scoped to the receipt shape: own row, FAILED, pointing at
+    // a winner. A material that merely failed to parse is still material.
+    mockSession("STUDENT", "student-user");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "student-user",
+      status: "FAILED",
+      duplicateOfId: null,
+    } as never);
+
+    expect((await action(makeDeleteArgs("mat-1"))).status).toBe(403);
+
+    // Nor another student's receipt.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "receipt-2",
+      uploadedBy: "other-student",
+      status: "FAILED",
+      duplicateOfId: "winner-1",
+    } as never);
+
+    expect((await action(makeDeleteArgs("receipt-2"))).status).toBe(403);
     expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
 
@@ -988,6 +1628,99 @@ describe("GET materials — student visibility gate (#839)", () => {
     await loader(makePreviewArgs("mat-1"));
     const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any).where;
     expect(where).toEqual(expect.objectContaining({ visibleToStudents: true }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loader — list payload excludes rawText (#948)
+// ---------------------------------------------------------------------------
+
+describe("GET materials — list payload excludes rawText (#948)", () => {
+  /** Every column list responses are contracted to carry. */
+  const EXPECTED_LIST_COLUMNS = [
+    "id",
+    "courseId",
+    "title",
+    "mimeType",
+    "fileSize",
+    "checksum",
+    "status",
+    "externalId",
+    "externalSource",
+    "canvasUpdatedAt",
+    "uploadedBy",
+    "visibleToStudents",
+    "availableAt",
+    "deletedAt",
+    "deletedBy",
+    "unpublishedAt",
+    "createdAt",
+    "updatedAt",
+    "processedAt",
+  ];
+
+  function listSelect() {
+    return (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any).select;
+  }
+
+  it("selects an explicit column set with rawText omitted (student/staff loader path)", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader(makeArgs("GET"));
+
+    const args = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any;
+    // `include` and `select` cannot coexist at the same level in Prisma.
+    expect(args.include).toBeUndefined();
+    expect(listSelect()).toBeDefined();
+    expect(listSelect().rawText).toBeUndefined();
+    for (const col of EXPECTED_LIST_COLUMNS) {
+      expect(listSelect()[col]).toBe(true);
+    }
+    expect(listSelect()._count).toEqual({ select: { chunks: true } });
+  });
+
+  it("keeps visibleToStudents/availableAt selected so the staff branch does not emit undefined", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader(makeArgs("GET"));
+    expect(listSelect().visibleToStudents).toBe(true);
+    expect(listSelect().availableAt).toBe(true);
+  });
+
+  it("uses the same select on the ADMIN includeDeleted list path (no drift)", async () => {
+    mockSession("ADMIN");
+    vi.mocked(prisma.course.findUnique).mockResolvedValue({ id: COURSE_ID } as never);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader({
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials?includeDeleted=true`,
+        { method: "GET" },
+      ),
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+
+    const args = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any;
+    expect(args.include).toBeUndefined();
+    expect(args.select.rawText).toBeUndefined();
+    for (const col of EXPECTED_LIST_COLUMNS) {
+      expect(args.select[col]).toBe(true);
+    }
+  });
+
+  it("never serializes rawText into the list response body", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    // Simulate a driver that ignored the select and handed back rawText anyway:
+    // the response must still not carry it for a staff caller.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-1", title: "Slides", _count: { chunks: 2 } },
+    ] as never);
+    const body = await (await loader(makeArgs("GET"))).json();
+    expect(body.materials[0]).not.toHaveProperty("rawText");
+    expect(body.materials[0].chunkCount).toBe(2);
   });
 });
 

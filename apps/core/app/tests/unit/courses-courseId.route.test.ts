@@ -34,6 +34,7 @@ const BASE_COURSE = {
   isPublished: true,
   responseStyleTags: [],
   aiInstructions: null,
+  courseScopeGuardrailEnabled: false,
   ragTopK: 5,
   ragSimilarityThreshold: 0.5,
   instructorId: "instructor-1",
@@ -98,7 +99,7 @@ describe("courses.$courseId loader", () => {
     expect(res.headers.get("Location")).toBe("/courses?access=denied");
   });
 
-  it("redirects a student to /courses for an unpublished course", async () => {
+  it("redirects a student to /courses?access=unpublished for an unpublished course", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
@@ -109,7 +110,7 @@ describe("courses.$courseId loader", () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("student");
     const res = (await loader(makeArgs())) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses");
+    expect(res.headers.get("Location")).toBe("/courses?access=unpublished");
   });
 
   it("returns course data with hasAiConfig (not aiInstructions) for a student", async () => {
@@ -130,6 +131,7 @@ describe("courses.$courseId loader", () => {
     expect(result.access).toBe("student");
     expect(result.course).not.toHaveProperty("aiInstructions");
     expect(result.course).toHaveProperty("hasAiConfig");
+    expect(result.course).not.toHaveProperty("courseScopeGuardrailEnabled");
     expect(result.instructors).toEqual([]);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
@@ -150,6 +152,7 @@ describe("courses.$courseId loader", () => {
     };
     expect(result.course).toHaveProperty("aiInstructions", null);
     expect(result.course).not.toHaveProperty("hasAiConfig");
+    expect(result.course).toHaveProperty("courseScopeGuardrailEnabled", false);
     expect(result.instructors).toHaveLength(1);
   });
 

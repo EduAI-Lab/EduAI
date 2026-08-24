@@ -19,6 +19,7 @@ import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext"
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   await requireClientUser(["STUDENT", "TA"]);
@@ -109,7 +110,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
       }
     >
       {moduleList.length === 0 ? (
-        <Card className="mx-auto max-w-lg">
+        <Card className="mx-auto max-w-lg" data-tour="student-modules-empty">
           <EmptyState
             icon={<IconFolders size={22} aria-hidden="true" />}
             title="No modules available"
@@ -146,3 +147,9 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

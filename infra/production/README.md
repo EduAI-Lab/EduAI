@@ -35,7 +35,7 @@ The application service runs from `current`. The old checkout remains available 
 - Internal Core port: `127.0.0.1:3000`
 - PostgreSQL: private production database, not the legacy checkout's database
 - Redis: private production Redis instance for the optional BullMQ worker
-- Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
+- Inference: this release requires cmps01 for the Qwen3.5 interactive fleet and cmps02 for the retained Qwen2.5 32B Assist Auto model; cmps03 remains optional after firewall validation
 - Extension links: omit `VITE_AI_TUTOR_URL` and `VITE_QUESTION_MAKER_URL` until the new production aliases and authentication path are ready
 
 ## One-time server preparation

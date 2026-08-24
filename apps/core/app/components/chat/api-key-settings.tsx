@@ -25,7 +25,7 @@ import {
 } from "@tabler/icons-react";
 import type { UserProviderSettings } from "~/lib/ai/providers";
 
-type Provider = "openai" | "google";
+type Provider = "openai" | "google" | "opencode";
 
 export interface ApiKeySettingsProps {
   open: boolean;
@@ -112,6 +112,14 @@ export function ApiKeySettings({
       placeholder: "AIza...",
       learnMoreLabel: "Google AI Studio",
       learnMoreHref: "https://aistudio.google.com/app/apikey",
+    },
+    {
+      id: "opencode",
+      label: "OpenCode Go",
+      description: "Requires an OpenCode Go subscription and API key",
+      placeholder: "OpenCode Go API key",
+      learnMoreLabel: "OpenCode Go setup",
+      learnMoreHref: "https://opencode.ai/docs/go/",
     },
   ];
 

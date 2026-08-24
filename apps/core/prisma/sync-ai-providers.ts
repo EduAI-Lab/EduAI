@@ -125,6 +125,25 @@ async function main() {
     },
   });
 
+  const opencode = await prisma.aIProvider.upsert({
+    where: { name: "opencode" },
+    update: {
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+    create: {
+      name: "opencode",
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
     {
       modelId: "gpt-4.1",
@@ -260,8 +279,33 @@ async function main() {
     data: { isActive: false, routerTier: null },
   });
 
+  await prisma.aIModel.upsert({
+    where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },
+    update: {
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      isActive: true,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+    },
+    create: {
+      modelId: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+      providerId: opencode.id,
+    },
+  });
+
   await applyRoutingTierAssignments();
-  console.log("[sync-ai-providers] Done (vLLM provider + models synced)");
+  console.log("[sync-ai-providers] Done (vLLM + OpenCode providers and models synced)");
 }
 
 main()

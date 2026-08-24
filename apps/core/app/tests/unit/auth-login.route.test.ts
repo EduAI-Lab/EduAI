@@ -98,6 +98,61 @@ describe("auth/login action", () => {
     expect(auth.handler).not.toHaveBeenCalled();
   });
 
+  it("returns HTTP 413 for an oversized declared form before auth parsing", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("email=a@ubc.ca"));
+      },
+    });
+    const result = (await action({
+      request: new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": String(64 * 1024 + 1),
+        },
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
+  it("returns HTTP 413 for chunked overflow, cancels the source, and never double-reads it", async () => {
+    const cancel = vi.fn();
+    let index = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          const chunk = index++ === 0 ? "x".repeat(64 * 1024) : "y";
+          controller.enqueue(new TextEncoder().encode(chunk));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const formData = vi.fn(() => Promise.reject(new Error("formData must not be called")));
+    const result = (await action({
+      request: {
+        url: "http://localhost/auth/login",
+        method: "POST",
+        headers: new Headers({ "Content-Type": "application/x-www-form-urlencoded" }),
+        body,
+        signal: new AbortController().signal,
+        formData,
+      } as unknown as Request,
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(formData).not.toHaveBeenCalled();
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
   it("logs LOGIN_FAILED and returns a formError when the handler rejects", async () => {
     vi.mocked(auth.handler).mockResolvedValue(
       new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 401 }),

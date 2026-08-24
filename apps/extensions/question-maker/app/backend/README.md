@@ -24,7 +24,10 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Auth**: session cookie validated against EduAI Core (no local passwords/JWTs issued by this service)
 - **AI**: EduAI's hosted chat/generation API, with direct Groq/OpenAI/DeepSeek as optional fallbacks
 - **File upload**: none — OCR runs client-side in the frontend; the backend receives the already-extracted text
-- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys
+- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys,
+  and SSRF-safe Canvas networking. Canvas bases are canonical HTTPS origins (explicit HTTPS ports are
+  supported); IP literals and every DNS answer must be globally routable, DNS is pinned per request,
+  redirects are revalidated, and bearer credentials are removed before any cross-origin redirect.
 
 ## Project Structure
 
@@ -147,10 +150,11 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
 | `CORE_URL` | Base URL of EduAI Core (session validation, course/enrollment reads) | Yes |
+| `CORE_AUTH_TIMEOUT_MS` | Deadline in milliseconds for Core session-validation and logout calls (default `5000`) | No |
 | `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins | Yes |
 | `ENCRYPTION_KEY` | 32-byte hex key for encrypting stored Canvas API keys | Yes in production |
-| `EDUAI_API_URL` / `EDUAI_API_KEY` | EduAI hosted AI service (course/topic sync, question generation) | Yes for AI features |
+| `EDUAI_API_URL` / `EDUAI_API_KEY` | Core/EduAI service integration; `EDUAI_API_KEY` must match Core for session validation | `EDUAI_API_KEY`: Yes; URL: Yes for AI features |
 | `GROQ_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | Direct provider fallbacks for question generation | No |
 | `TEST_DATABASE_URL` | Postgres URL for the integration test suite | Only for `npm run test:integration` |
 

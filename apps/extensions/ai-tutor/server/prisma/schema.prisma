@@ -199,6 +199,8 @@ model Submission {
   activity         Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
   activityId       Int
   activityFeedback ActivityFeedback[]
+
+  @@unique([userId, activityId, attemptNumber])
 }
 
 model ActivitySecondaryTopic {

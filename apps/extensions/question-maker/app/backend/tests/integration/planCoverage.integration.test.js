@@ -14,6 +14,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -36,7 +37,10 @@ function sessionFetch(user) {
   return vi.fn().mockImplementation((url) => {
     const path = String(url).split("?")[0];
     if (path.endsWith("/api/sessions/validate")) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ user }),
+      });
     }
     if (path.endsWith("/enrollments")) {
       return Promise.resolve({
@@ -58,12 +62,18 @@ function twoUserFetch() {
     const cookie = opts?.headers?.cookie ?? "";
     const user = cookie.includes("session=user-a") ? USER_A : USER_B;
     if (path.endsWith("/api/sessions/validate")) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ user }),
+      });
     }
     if (path.endsWith("/enrollments")) {
       const enrollments =
         user.id === USER_A.id ? [{ studentId: USER_A.id, role: "INSTRUCTOR", isActive: true }] : [];
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ enrollments }) });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ enrollments }),
+      });
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
@@ -91,6 +101,7 @@ describeDb("Plan coverage (integration)", () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
+    resetCourseAccessSyncForTests();
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -101,16 +112,24 @@ describeDb("Plan coverage (integration)", () => {
 
   // Helper: seed a user with default courses and return their first course + topic.
   async function seedUser(user) {
-    await prisma.user.create({ data: { id: user.id, email: user.email, name: user.name } });
+    await prisma.user.create({
+      data: { id: user.id, email: user.email, name: user.name },
+    });
     await seedCoursesForNewUser(user.id);
-    const course = await prisma.course.findFirst({ where: { userId: user.id } });
-    const topic = await prisma.topics.findFirst({ where: { courseId: course.id } });
+    const course = await prisma.course.findFirst({
+      where: { userId: user.id },
+    });
+    const topic = await prisma.topics.findFirst({
+      where: { courseId: course.id },
+    });
     return { courseId: course.id, topicId: topic.id };
   }
 
   it("returns 404 when fetching another user course by id", async () => {
     const { courseId: courseIdA } = await seedUser(USER_A);
-    await prisma.user.create({ data: { id: USER_B.id, email: USER_B.email, name: USER_B.name } });
+    await prisma.user.create({
+      data: { id: USER_B.id, email: USER_B.email, name: USER_B.name },
+    });
 
     vi.stubGlobal("fetch", twoUserFetch());
 
@@ -332,10 +351,12 @@ describeDb("Plan coverage (integration)", () => {
     expect(createQ.status).toBe(201);
     const questionId = createQ.body.data.id;
 
-    const baseline = await request(app)
-      .post("/api/assessments")
-      .set(cookieA())
-      .send({ type: "Quiz", name: "Concurrent Baseline", semester: "2026W", courseId });
+    const baseline = await request(app).post("/api/assessments").set(cookieA()).send({
+      type: "Quiz",
+      name: "Concurrent Baseline",
+      semester: "2026W",
+      courseId,
+    });
     expect(baseline.status).toBe(201);
     const baselineId = baseline.body.data.id;
 
@@ -379,7 +400,11 @@ describeDb("Plan coverage (integration)", () => {
       .send({ variantId: refRes.body.data.id, displayOrder: 0 });
     expect(addRef.status).toBe(201);
 
-    const payload = { referenceAssessmentId: baselineId, courseId, includeDrafts: false };
+    const payload = {
+      referenceAssessmentId: baselineId,
+      courseId,
+      includeDrafts: false,
+    };
     const [asmA, asmB] = await Promise.all([
       request(app)
         .post("/api/assessment-variant/assemble-variants")

@@ -189,7 +189,7 @@ const call = { toolCallId: "test", messages: [] };
  * immediately (see admin-write-confirmation.server: same-turn rejection only applies
  * when the preview was bound to a non-null turnId). */
 async function runWrite(
-  tool: { execute: (args: never, call: never) => PromiseLike<unknown> },
+  tool: { execute: (args: never, call: never) => PromiseLike<Record<string, unknown>> },
   args: Record<string, unknown>,
 ) {
   const preview = await tool.execute({ ...args, confirmed: false } as never, call as never);

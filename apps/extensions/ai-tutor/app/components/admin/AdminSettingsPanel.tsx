@@ -45,11 +45,21 @@ function costTierBadgeVariant(
 
 type AdminSettingsPanelProps = {
   loaderData: AdminSettingsLoaderData;
+  /**
+   * Notified whenever the key status changes, so a caller rendering the
+   * key-source badge from the loader can follow a save/clear instead of
+   * showing a stale source until the route reloads.
+   */
+  onStatusChange?: (status: EduAiApiKeyStatus) => void;
 };
 
-export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
+export function AdminSettingsPanel({ loaderData, onStatusChange }: AdminSettingsPanelProps) {
   const settingsApi = getAdminSettingsApi();
-  const [status, setStatus] = useState<EduAiApiKeyStatus>(loaderData.status);
+  const [status, setStatusState] = useState<EduAiApiKeyStatus>(loaderData.status);
+  const setStatus = (next: EduAiApiKeyStatus) => {
+    setStatusState(next);
+    onStatusChange?.(next);
+  };
   const [aiPolicy, setAiPolicy] = useState<AdminAiModelPolicy>(
     normalizePolicy(loaderData.aiPolicy ?? DEFAULT_POLICY, loaderData.aiModels),
   );

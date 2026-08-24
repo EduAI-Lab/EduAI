@@ -150,20 +150,14 @@ describe("instructor.lesson clientLoader", () => {
     expect(api.activitiesForLesson).toHaveBeenCalledWith(3, { page: 2, search: "heap" });
   });
 
-  it("builds the order text from the server context", async () => {
+  it("leaves breadcrumb/order text off the loader (#1334)", async () => {
+    // Ancestry loads after paint via GET /lessons/:id/breadcrumb so the lesson
+    // body is not blocked on Core course resolution or sibling ordinals.
     const result = await load("http://x/instructor/lesson/3");
-    expect(api.lessonContext).toHaveBeenCalledWith(3);
-    expect(result).toMatchObject({ orderText: "3.2" });
-    // Neither sibling list is fetched any more.
+    expect(result).not.toHaveProperty("orderText");
+    expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.modulesForCourse).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
-  });
-
-  it("skips the context lookup for a lesson with no parent module", async () => {
-    api.lessonById.mockResolvedValue({ id: 3, title: "Orphan", moduleId: null });
-    const result = await load("http://x/instructor/lesson/3");
-    expect(result.orderText).toBeUndefined();
-    expect(api.lessonContext).not.toHaveBeenCalled();
   });
 });
 
@@ -232,10 +226,10 @@ describe("student.lesson clientLoader", () => {
     expect(result).toMatchObject({ activitiesTotal: 120 });
   });
 
-  it("derives the order text from the server context", async () => {
+  it("leaves breadcrumb/order text off the loader (#1334)", async () => {
     const result = await load();
-    expect(result.orderText).toBe("3.2");
-    expect(api.lessonContext).toHaveBeenCalledWith(3);
+    expect(result).not.toHaveProperty("orderText");
+    expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
   });
 

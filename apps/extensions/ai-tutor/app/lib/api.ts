@@ -42,6 +42,7 @@ import type {
   EnrollmentRole,
   Lesson,
   Module,
+  ModuleDetail,
   StudentMetricRow,
   SubmissionRow,
   SuggestedPrompt,
@@ -150,6 +151,16 @@ export interface LessonContext {
   lessonTotal: number;
   prevLessonId: number | null;
   nextLessonId: number | null;
+}
+
+/**
+ * Ancestry returned by `GET /lessons/:id/breadcrumb` (#1334). Collapses the
+ * former moduleById + courseById + /context fan-out into one follow-up call
+ * that runs after the lesson body paints (not on the initial lesson GET).
+ */
+export interface LessonBreadcrumb extends LessonContext {
+  module: ModuleDetail;
+  course: Course;
 }
 
 /**
@@ -336,6 +347,22 @@ export class ApiNetworkError extends Error {
   }
 }
 
+/**
+ * Thrown for any non-OK HTTP response `http()` doesn't handle specially.
+ * Carries `status` so a route error boundary can tell "no such course" apart
+ * from "something broke"; the message is still the server's body text, so
+ * existing `error.message` callers are unaffected.
+ */
+export class ApiHttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+  }
+}
+
 /** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
 export class ApiTimeoutError extends Error {
   constructor(message = "Request timed out") {
@@ -432,7 +459,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
       throw new ApiTimeoutError();
     }
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    throw new ApiHttpError(res.status, text || `Request failed: ${res.status}`);
   }
   // Optional chaining: some lightweight test doubles for `Response` omit
   // `headers` entirely — a real `fetch` Response always has it.
@@ -469,10 +496,16 @@ export const api = {
     });
     return meInFlight;
   },
-  aiStatus: () =>
-    http("/api/ai-status") as Promise<{
-      cloud: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
-      ubc: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
+  aiStatus: (signal?: AbortSignal) =>
+    http("/api/ai-status", { signal }) as Promise<{
+      cloud: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
+      ubc: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
     }>,
   listCourses: (params?: CourseListParams) =>
     http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
@@ -483,14 +516,19 @@ export const api = {
    */
   listCourseFacets: () => http("/api/courses/facets") as Promise<CourseFacets>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
+  /**
+   * Flip a course published. Course publish state is owned by EduAI Core, so
+   * this proxies through to Core and re-reads it; `corePublishStale` on the
+   * result means the write landed but the read-back didn't (#225 SEAM-04).
+   */
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
       method: "PATCH",
-    }),
+    }) as Promise<Course>,
   unpublishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/unpublish`, {
       method: "PATCH",
-    }),
+    }) as Promise<Course>,
   importIntoCourse: (
     courseId: number,
     payload: {
@@ -582,7 +620,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
+  lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`) as Promise<Lesson>,
+  /**
+   * Module/course ancestry + ordinals for lesson shell crumbs (#1334).
+   * Fetched after paint — not awaited in the lesson clientLoader.
+   */
+  lessonBreadcrumb: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}/breadcrumb`) as Promise<LessonBreadcrumb>,
   activitiesForLesson: (lessonId: number, params?: ListParams) =>
     http(
       `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
@@ -882,7 +926,8 @@ export const api = {
   gradeSubmission: (
     activityId: number,
     submissionId: number,
-    body: { score?: number; isCorrect?: boolean },
+    // null clears the field — the route accepts an explicit null for both.
+    body: { score?: number | null; isCorrect?: boolean | null },
   ) =>
     http(`/api/activities/${activityId}/submissions/${submissionId}`, {
       method: "PATCH",
@@ -972,10 +1017,28 @@ export const api = {
    * session is already stale by the time logout is called.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => {});
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      throw new ApiNetworkError("Logout service unreachable");
+    }
+    if (!response.ok) {
+      let message = `Logout failed: ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: unknown };
+        if (typeof payload?.error === "string" && payload.error.trim()) {
+          message = payload.error;
+        }
+      } catch {
+        // A status-bearing error is still actionable when the body is empty or malformed.
+      }
+      if (response.status === 504) throw new ApiTimeoutError(message);
+      throw new Error(message);
+    }
     return { ok: true } as const;
   },
 };

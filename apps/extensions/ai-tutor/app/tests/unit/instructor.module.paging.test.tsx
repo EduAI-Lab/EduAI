@@ -116,7 +116,7 @@ function wrap(overrides: Record<string, unknown> = {}) {
       search: "",
       ...overrides,
     },
-  } as unknown as Route.ComponentProps;
+  } as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorModuleLessons {...props} />

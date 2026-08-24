@@ -27,6 +27,12 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+// #1571: the admin chatMode gate re-checks isActive against the DB. Default the
+// mocked admin to active; the deactivated-admin test overrides it to false.
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,22 +52,24 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -76,6 +84,7 @@ function makeArgs(body: object) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -273,8 +282,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
   });
 
   it("rejects a valid service key for admin chatMode", async () => {
@@ -529,5 +548,59 @@ describe("POST /api/chat — proxyUser delegation", () => {
       expect.objectContaining({ id: "mapped-user", role: "STUDENT" }),
       "c1",
     );
+  });
+});
+
+describe("POST /api/chat — bounded ingress", () => {
+  it("rejects a body that exceeds the byte budget before routing or persistence", async () => {
+    const body = JSON.stringify({
+      model: "auto-hybrid",
+      messages: [],
+      oversized: "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    const args = {
+      request: new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Deliberately omit Content-Length so the stream byte cap is exercised.
+        },
+        body,
+      }),
+      params: {},
+      context: {} as never,
+    } as any;
+
+    const res = await action(args);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Chat request body exceeds size limit",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized message list before routing or persistence", async () => {
+    const body = {
+      model: "auto-hybrid",
+      messages: Array.from({ length: 101 }, (_, index) => ({
+        id: `message-${index}`,
+        role: "user",
+        content: "hi",
+      })),
+    };
+    const args = makeArgs(body);
+
+    const res = await action(args);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "messages exceeds maximum count",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 });

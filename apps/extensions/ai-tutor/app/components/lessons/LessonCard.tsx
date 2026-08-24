@@ -124,6 +124,9 @@ export function LessonCard({
     <Card
       hoverable={clickable}
       role={clickable ? "button" : undefined}
+      // See ModuleCard: name the card explicitly so it doesn't absorb the
+      // labels of the controls nested inside it (the publish kebab).
+      aria-label={clickable ? `Lesson: ${titleName(title)}` : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={onClick}
       onKeyDown={handleKeyDown}

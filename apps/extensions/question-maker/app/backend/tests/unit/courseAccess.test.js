@@ -21,7 +21,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getMyProfileFromCore: mockMe,
 }));
 
-const { resolveCourseAccess, requireCourseAccess, LEVELS } =
+const { resolveCourseAccess, requireCourseAccess, requireOptionalCourseAccess, LEVELS } =
   await import("../../src/middleware/courseAccess.js");
 
 const LINKED = { id: 1, userId: "owner-1", coreCourseId: "core-c1" };
@@ -61,6 +61,12 @@ describe("resolveCourseAccess", () => {
 
     it("denies the owner — ownership alone is not access (#1114)", async () => {
       const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 2);
+      expect(access).toBeNull();
+      expect(mockEnrollments).not.toHaveBeenCalled();
+    });
+
+    it("denies a STUDENT owner access to an unlinked course", async () => {
+      const access = await resolveCourseAccess({ id: "owner-1", role: "STUDENT" }, 2);
       expect(access).toBeNull();
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
@@ -117,6 +123,14 @@ describe("resolveCourseAccess", () => {
     it("fails closed for the owner when no matching enrollment exists (#1114)", async () => {
       mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
       const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
+      expect(access).toBeNull();
+    });
+
+    it("fails closed when Core returns a malformed enrollment payload", async () => {
+      mockEnrollments.mockResolvedValueOnce({
+        enrollments: { studentId: "u1", role: "INSTRUCTOR" },
+      });
+      const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
   });
@@ -205,6 +219,34 @@ describe("resolveCourseAccess", () => {
       const access = await resolveCourseAccess({ id: "owner-1", role: "UNIT_ADMIN" }, 1);
       expect(access).toBeNull();
     });
+  });
+});
+
+describe("requireOptionalCourseAccess", () => {
+  it("returns a validation error before resolving malformed target ids", async () => {
+    const req = {
+      user: { id: "u1", role: "INSTRUCTOR" },
+      body: { courseId: "not-a-number" },
+      headers: {},
+    };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+    const next = vi.fn();
+
+    await requireOptionalCourseAccess({
+      min: "instructor",
+      getCourseId: (request) => request.body.courseId,
+    })(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Valid courseId is required",
+    });
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
-import { serializeReEmbedJob, startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { serializeReEmbedJob, startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
@@ -50,10 +50,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return jsonResponse({ error: "Course not found or access denied" }, 404);
     }
 
-    const { job, created, keyHonored } = await startReEmbedJob(courseId, { idempotencyKey });
+    const { job, created, keyHonored } = await startOrResumeReEmbedJob(courseId, {
+      idempotencyKey,
+    });
 
-    // Only a freshly-started job is a "created" event; reusing an active /
-    // idempotent job is a no-op and must not be logged as a creation.
+    // Only a freshly-started job is a "created" event; reusing an active job is
+    // a no-op and must not be logged as a creation.
     if (created) {
       fireAndForget(
         logAuditAction({

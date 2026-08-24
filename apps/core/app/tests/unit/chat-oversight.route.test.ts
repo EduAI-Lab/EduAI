@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -115,7 +116,7 @@ const STRUCTURED_ASSIST = JSON.stringify({
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -303,14 +304,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     mockAuditResult();
     vi.mocked(prisma.chatMessage.createMany)
       .mockResolvedValueOnce({ count: 1 })
-      .mockRejectedValueOnce(new Error("db down"));
+      .mockRejectedValueOnce(
+        new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+      );
 
     const res = await action(makeArgs(baseBody({ streaming: true })));
     expect(res.status).toBe(500);
 
     const body = await res.json();
     expect(body.error).toBe("Failed to generate overseen response");
-    expect(body.details).toContain("db down");
+    expect(body.code).toBe("ADHD_OVERSIGHT_FAILED");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
   });
 
   it("skips oversight when ADHD_ASSIST_OVERSIGHT is disabled", async () => {
@@ -361,6 +367,50 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("**Top summary**");
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed or Markdown Assist output without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body.details).toContain("invalid structured Assist output");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
+  });
+
+  it("rejects malformed or Markdown Assist output on the streaming path without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body.details).toContain("invalid structured Assist output");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
   });
 });
 

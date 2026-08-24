@@ -228,10 +228,28 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
   );
 }
 
+/**
+ * A screenshot is only ever a base64 raster image data URL or an https image
+ * URL. Guarding the "Open in new tab" `href` to those schemes prevents a
+ * user-authored `javascript:` (or other) value from becoming an
+ * admin-clickable link-injection sink (#1570). The raster allowlist mirrors the
+ * Core write guard (`SCREENSHOT_DATA_URL_RE`) so a `data:image/svg+xml` payload
+ * — which can carry an inline `<script>` that executes when opened top-level at
+ * a null origin — is rejected here too. Server-side ingest also rejects
+ * non-image screenshots; this is the defense-in-depth render guard.
+ */
+function isSafeScreenshotHref(value: string): boolean {
+  return (
+    /^data:image\/(png|jpe?g|webp|gif|avif);base64,/i.test(value) || /^https:\/\//i.test(value)
+  );
+}
+
 function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
   if (!report.screenshot) {
     return <p className="text-sm text-muted-foreground">No screenshot captured.</p>;
   }
+
+  const canOpenInNewTab = isSafeScreenshotHref(report.screenshot);
 
   return (
     <div className="space-y-3">
@@ -242,14 +260,16 @@ function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
           className="w-full rounded-md border"
         />
       </div>
-      <a
-        href={report.screenshot}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex text-sm text-primary-text underline underline-offset-2"
-      >
-        Open in new tab
-      </a>
+      {canOpenInNewTab ? (
+        <a
+          href={report.screenshot}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-sm text-primary-text underline underline-offset-2"
+        >
+          Open in new tab
+        </a>
+      ) : null}
     </div>
   );
 }
