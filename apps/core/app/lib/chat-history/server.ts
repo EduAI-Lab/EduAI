@@ -3,6 +3,8 @@ import prisma from "~/lib/prisma.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy } from "~/lib/policy.server";
+import { z } from "zod";
+import { asJsonArray, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 
 /**
  * Chat-history access control (#chat-history).
@@ -54,20 +56,23 @@ export type ListChatsOptions = {
 /** Pull a short plain-text preview out of a stored ChatMessage `content` JSON. */
 function extractText(content: Prisma.JsonValue | null | undefined): string | null {
   if (!content) return null;
-  if (typeof content === "string") return content.trim() || null;
-  if (typeof content === "object" && !Array.isArray(content)) {
-    const obj = content;
-    if (typeof obj.content === "string" && obj.content.trim()) return obj.content.trim();
-    if (Array.isArray(obj.parts)) {
-      const text = obj.parts
-        .filter(
-          (p): p is { type: string; text: string } =>
-            !!p &&
-            typeof p === "object" &&
-            (p as any).type === "text" &&
-            typeof (p as any).text === "string",
-        )
-        .map((p) => p.text)
+  const plain = z.string().safeParse(content);
+  if (plain.success) return plain.data.trim() || null;
+
+  const obj = asJsonObject(content);
+  if (obj) {
+    const inner = asPresentText(obj.content);
+    if (inner) return inner;
+
+    const parts = asJsonArray(obj.parts);
+    if (parts) {
+      const text = parts
+        .flatMap((part) => {
+          const fields = asJsonObject(part);
+          if (!fields || fields.type !== "text") return [];
+          const partText = asText(fields.text);
+          return partText === null ? [] : [partText];
+        })
         .join(" ")
         .trim();
       if (text) return text;

@@ -1,4 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
+import { asJsonObject, asText } from "~/lib/json-value";
 /**
  * Honest in-flight progress for course chat (#1171).
  *
@@ -304,16 +305,9 @@ export type MessageLike = {
 };
 
 function contentAsDisplayText(content: JsonValue | undefined): string {
-  if (typeof content === "string") return content;
-  if (
-    content &&
-    typeof content === "object" &&
-    !Array.isArray(content) &&
-    typeof content.text === "string"
-  ) {
-    return content.text;
-  }
-  return "";
+  const plain = asText(content);
+  if (plain !== null) return plain;
+  return asText(asJsonObject(content)?.text) ?? "";
 }
 
 /** Stable fingerprint of visible assistant text for follow-up detection. */
@@ -324,8 +318,10 @@ export function assistantTextFingerprint(message: MessageLike | null | undefined
   if (Array.isArray(parts)) {
     const texts: string[] = [];
     for (const part of parts) {
-      if (part && part.type === "text" && typeof part.text === "string" && part.text.length > 0) {
-        texts.push(part.text);
+      if (!part || part.type !== "text") continue;
+      const text = asText(part.text);
+      if (text !== null && text.length > 0) {
+        texts.push(text);
       }
     }
     if (texts.length > 0) return texts.join("\n");
@@ -362,9 +358,11 @@ export function activeToolNameFromMessage(message: MessageLike | null | undefine
   }
 
   for (const part of message.parts) {
-    if (!part || typeof part.type !== "string") continue;
+    if (!part) continue;
+    const partType = part.type;
+    if (partType === undefined) continue;
 
-    if (part.type === "tool-invocation" && part.toolInvocation) {
+    if (partType === "tool-invocation" && part.toolInvocation) {
       const name = part.toolInvocation.toolName?.trim();
       if (!name) continue;
       const state = part.toolInvocation.state;
@@ -373,8 +371,8 @@ export function activeToolNameFromMessage(message: MessageLike | null | undefine
       return name;
     }
 
-    if (part.type.startsWith("tool-")) {
-      const name = (part.toolName || part.type.replace(/^tool-/, "")).trim();
+    if (partType.startsWith("tool-")) {
+      const name = (part.toolName || partType.replace(/^tool-/, "")).trim();
       if (!name) continue;
       const state = part.state;
       if (state && TOOL_PART_DONE.has(state)) continue;

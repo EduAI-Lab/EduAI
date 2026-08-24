@@ -87,14 +87,27 @@ export function asBoolean(value: JsonValue | undefined): boolean | null {
   return decoded.success ? decoded.data : null;
 }
 
+/**
+ * Container checks, deliberately shallow.
+ *
+ * These answer "is this an object" and "is this an array", not "is every leaf
+ * below it well-formed". `jsonObjectSchema` and `jsonValueSchema` are the deep
+ * decoders and stay available for the boundaries that want one; asking for a
+ * full walk here would both change the answer for an odd payload and re-validate
+ * an entire message blob every time a caller reads one field off it. The values
+ * are `JsonValue` because the argument already is one.
+ */
+const shallowObjectSchema = z.record(z.custom<JsonValue | undefined>());
+const shallowArraySchema = z.array(z.custom<JsonValue>());
+
 /** A plain JSON object — not an array, not null, not a scalar — or null. */
 export function asJsonObject(value: JsonValue | undefined): JsonObject | null {
-  const decoded = jsonObjectSchema.safeParse(value);
+  const decoded = shallowObjectSchema.safeParse(value);
   return decoded.success ? decoded.data : null;
 }
 
 /** A JSON array, or null. */
 export function asJsonArray(value: JsonValue | undefined): JsonValue[] | null {
-  const decoded = z.array(jsonValueSchema).safeParse(value);
+  const decoded = shallowArraySchema.safeParse(value);
   return decoded.success ? decoded.data : null;
 }
