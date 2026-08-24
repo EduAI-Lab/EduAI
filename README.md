@@ -126,6 +126,9 @@ continuity/citations and `X-Fleet-Server`, then runs the controlled
 16/32/64/128/256/512/768/1000 concurrency ladder. First-run results and raw
 artifacts are recorded in
 [`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
+the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
+and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
+provide the per-server measurements and machine-readable artifact context.
 those results are baseline evidence and do not replace a later load-aware
 rerun.
 
