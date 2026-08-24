@@ -36,14 +36,13 @@ import { DEFAULT_LABELS_OUT } from "./paths.mjs";
 /** Representative rag_top_similarity/rag_chunk_count for a "strong" rag_context
  * label — matches the rule stack's own routingRagStrongSimilarity() default
  * (0.8) with headroom, since the label pool doesn't record the real value. */
-const RAG_CONTEXT_PROXY: Record<
-  string,
-  { ragTopSimilarity: number; ragChunkCount: number } | null
-> = {
-  strong: { ragTopSimilarity: 0.85, ragChunkCount: 3 },
-  weak: null,
-  none: null,
-};
+type RagContextProxy = { ragTopSimilarity: number; ragChunkCount: number };
+
+const RAG_CONTEXT_PROXY = new Map<string, RagContextProxy | null>([
+  ["strong", { ragTopSimilarity: 0.85, ragChunkCount: 3 }],
+  ["weak", null],
+  ["none", null],
+]);
 
 function readEnv(name: string): string | undefined {
   const v = process.env[name];
@@ -103,7 +102,7 @@ async function main() {
     if (!prompt || oracle == null) continue;
 
     const ragContextKey = typeof row.rag_context === "string" ? row.rag_context : "none";
-    const ragProxy = RAG_CONTEXT_PROXY[ragContextKey] ?? null;
+    const ragProxy = RAG_CONTEXT_PROXY.get(ragContextKey) ?? null;
     const courseRagNeeded = ragContextKey !== "none";
 
     try {
