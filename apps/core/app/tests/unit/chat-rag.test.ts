@@ -353,6 +353,67 @@ describe("prepareBoundedSessionContext", () => {
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(28_000);
   });
 
+  it("digest preserves middle and recent older topics, not just the earliest (#1639)", () => {
+    // The regression: the old digest walked older turns earliest→latest then
+    // tail-truncated, keeping the first topic and dropping the middle/recent
+    // ones. With a generous digest cap every older topic must survive.
+    const topics = Array.from({ length: 12 }, (_, i) => `TOPIC${i}`);
+    const older = topics.map((topic, i) => ({
+      id: `o${i}`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Discussion about ${topic}: ${"x".repeat(300)}`,
+    }));
+    const messages = [
+      ...older,
+      { id: "r1", role: "user", content: "latest question" },
+      { id: "r2", role: "assistant", content: "latest answer" },
+    ];
+
+    // charBudget below the ~3.8k of older content so the digest triggers, but
+    // above the assembled digest so the tail is not further trimmed.
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 3_000,
+      recentCount: 2,
+      digestMaxChars: 14_000,
+    });
+
+    expect(bounded[0].id).toBe("session-digest");
+    const digest = String(bounded[0].content);
+    for (const topic of topics) {
+      expect(digest).toContain(topic);
+    }
+  });
+
+  it("under a tiny digest cap keeps the newest older turns and marks the omitted oldest (#1639)", () => {
+    const topics = Array.from({ length: 10 }, (_, i) => `TOPIC${i}`);
+    const older = topics.map((topic, i) => ({
+      id: `o${i}`,
+      role: "user",
+      content: `About ${topic} ${"y".repeat(400)}`,
+    }));
+    const messages = [
+      ...older,
+      { id: "r1", role: "user", content: "latest" },
+      { id: "r2", role: "assistant", content: "reply" },
+    ];
+
+    // charBudget below the ~4.1k of older content triggers the digest; the tiny
+    // digestMaxChars then forces most older turns to be dropped.
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 1_500,
+      recentCount: 2,
+      digestMaxChars: 400,
+    });
+
+    const digest = String(bounded[0].content);
+    // The most-recent older topic is retained (nearest the current question)...
+    expect(digest).toContain("TOPIC9");
+    // ...the earliest is dropped, reversing the old tail-truncation bug...
+    expect(digest).not.toContain("TOPIC0");
+    // ...and the omission is disclosed rather than silent.
+    expect(digest).toMatch(/earlier turns? omitted/);
+  });
+
   it("truncates a single string message that alone exceeds the budget", () => {
     const messages = [{ id: "1", role: "user", content: "x".repeat(50_000) }];
 
@@ -482,9 +543,11 @@ describe("resolveMaxContextMessages", () => {
     }
   });
 
-  it("defaults to 20 when env is unset", () => {
+  it("defaults to a generous load ceiling when env is unset (#1639)", () => {
     delete process.env.CHAT_MAX_CONTEXT_MESSAGES;
-    expect(resolveMaxContextMessages()).toBe(20);
+    // Raised from 20 so long threads reach the digest and get summarized rather
+    // than dropped before the digest sees them; the token budget is the real cap.
+    expect(resolveMaxContextMessages()).toBe(100);
   });
 });
 

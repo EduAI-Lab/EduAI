@@ -83,15 +83,22 @@ export const HYBRID_RAG_MAX_CONTEXT_CHARS = 14_000;
 /** Minimum remaining chars before truncating the last hybrid RAG excerpt. */
 export const HYBRID_RAG_MIN_TRUNCATE_CHARS = 120;
 
-const DEFAULT_MAX_CONTEXT_MESSAGES = 20;
+// Generous load ceiling so long threads reach the digest and get summarized
+// rather than dropped before the digest ever sees them (#1639). The real bound
+// on what reaches the model is now the token budget, not this count.
+const DEFAULT_MAX_CONTEXT_MESSAGES = 100;
 const DEFAULT_SESSION_RECENT_MESSAGES = 6;
-/** Max total characters in `messages[]` before older turns are digested (#259). */
+/**
+ * Fallback char budget for `messages[]` when the model context window is unknown
+ * (#259). The chat route normally derives the budget from the model window
+ * instead — see `resolveSessionCharBudgetForModel` (#1639).
+ */
 const DEFAULT_SESSION_CHAR_BUDGET = 28_000;
 /** Max size of the synthetic digest block replacing older turns (#259). */
 const DEFAULT_SESSION_DIGEST_MAX_CHARS = 14_000;
 const MIN_SESSION_MESSAGES = 2;
 
-const MAX_CONTEXT_MESSAGES_CEILING = 50;
+const MAX_CONTEXT_MESSAGES_CEILING = 200;
 const SESSION_CHAR_BUDGET_CEILING = 100_000;
 const SESSION_DIGEST_MAX_CEILING = 50_000;
 
@@ -270,31 +277,87 @@ function totalMessageChars<T extends ChatSessionMessage>(
   return messages.reduce((sum, message) => sum + estimate(message), 0);
 }
 
+/** Min chars of message text kept per older turn so no topic silently vanishes. */
+const DIGEST_MIN_PREVIEW_CHARS = 60;
+/** Upper bound on per-turn preview so one verbose turn cannot crowd out the rest. */
+const DIGEST_MAX_PREVIEW_CHARS = 200;
+
+/** Fixed per-line cost around a digest preview: `- **role**: ` + `…` + `\n`. */
+function digestLineOverhead(role: string): number {
+  return `- **${role}**: …\n`.length;
+}
+
 function buildSessionDigest<T extends ChatSessionMessage>(
   messages: T[],
   previewText: (message?: T) => string,
   maxDigestChars: number,
 ): string {
-  const lines: string[] = [];
-
+  const entries: { role: string; text: string }[] = [];
   for (const message of messages) {
-    const role = message.role ?? "unknown";
     const normalized = previewText(message).replace(/\s+/g, " ").trim();
     if (!normalized) {
       continue;
     }
-    const preview = normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
-    lines.push(`- **${role}**: ${preview}`);
+    entries.push({ role: message.role ?? "unknown", text: normalized });
   }
 
-  if (lines.length === 0) {
+  if (entries.length === 0) {
     return "";
   }
 
   const header =
     "## Session digest (earlier turns — context only; do not re-answer unless the latest message asks)\n\n";
-  // Strict cap: keep the digest `<= maxDigestChars` so it cannot push the
-  // assembled session total past `charBudget` and silently drop a recent turn.
+  // Reserve room for a possible "N earlier turns omitted" marker so the assembled
+  // digest fits `maxDigestChars` without the backstop truncation nibbling the
+  // newest kept line (its topic label sits at the line start, but keep it clean).
+  const MARKER_RESERVE = 48;
+  const lineBudget = Math.max(0, maxDigestChars - header.length - MARKER_RESERVE);
+
+  // Keep the NEWEST older turns that fit — they are nearest the current
+  // question. When everything fits (the common case) every turn is kept, so no
+  // topic is dropped. Only under extreme overflow do we drop turns, and we drop
+  // the OLDEST rather than the middle. This reverses the previous behavior,
+  // where a tail `hardTruncate` cut the most-recent older turns and left only
+  // the earliest — the "keeps first, drops middle" content loss (#chat-digest).
+  let kept = 0;
+  let used = 0;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const cost = digestLineOverhead(entries[i].role) + DIGEST_MIN_PREVIEW_CHARS;
+    if (kept > 0 && used + cost > lineBudget) {
+      break;
+    }
+    used += cost;
+    kept++;
+  }
+  kept = Math.max(1, kept);
+
+  const dropped = entries.length - kept;
+  const keptEntries = entries.slice(entries.length - kept);
+
+  // Distribute the remaining room evenly so every kept turn gets a fair preview,
+  // bounded so a single verbose turn cannot crowd the others out.
+  const perLineContentCap = Math.min(
+    DIGEST_MAX_PREVIEW_CHARS,
+    Math.max(
+      DIGEST_MIN_PREVIEW_CHARS,
+      Math.floor(lineBudget / kept) - digestLineOverhead("assistant"),
+    ),
+  );
+
+  const lines: string[] = [];
+  if (dropped > 0) {
+    lines.push(`- _(${dropped} earlier turn${dropped === 1 ? "" : "s"} omitted for length)_`);
+  }
+  for (const entry of keptEntries) {
+    const preview =
+      entry.text.length > perLineContentCap
+        ? `${entry.text.slice(0, perLineContentCap)}…`
+        : entry.text;
+    lines.push(`- **${entry.role}**: ${preview}`);
+  }
+
+  // Strict cap backstop: keep the digest `<= maxDigestChars` so it cannot push
+  // the assembled session total past `charBudget` and silently drop a recent turn.
   return hardTruncate(`${header}${lines.join("\n")}`, maxDigestChars);
 }
 

@@ -62,7 +62,7 @@ import {
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
-  ESTIMATED_CHARS_PER_TOKEN,
+  resolveSessionCharBudgetForModel,
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
@@ -1810,9 +1810,18 @@ export async function action({ request }: ActionFunctionArgs) {
     // later (outside the branch) for debug logging and the
     // X-Web-Tools-Enabled response header.
     let webToolsEnabled: boolean;
-    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
-    let adminContextWindow: number | undefined;
+    /** Admin's desired completion cap, re-applied after composeSecurityPrompt expands `system`. */
     let adminDesiredMaxOutput: number | undefined;
+
+    // Model-derived inputs for the token-based history budget (#1639), set in
+    // both the admin and non-admin branches so the digest triggers on the actual
+    // context window — everything sharing it (system + RAG + tool schemas +
+    // reserved output) is reserved before history — instead of a fixed char cap.
+    let budgetContextWindow: number | undefined;
+    let budgetFillRatio: number | null = null;
+    let budgetToolCount = 0;
+    let budgetReserveToolSteps = false;
+    let budgetToolResultCap: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -1858,29 +1867,18 @@ export async function action({ request }: ActionFunctionArgs) {
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
-      // Leave room for the ~17 admin tool schemas on small context models.
-      const adminSessionBudget =
-        contextWindow <= 16_384
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
-          : contextWindow <= 32_768
-            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
-            : undefined;
-
       const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
-      modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
-        adminSessionBudget
-          ? {
-              charBudget: adminSessionBudget,
-              recentCount: 3,
-              digestMaxChars: toolResultCapChars,
-            }
-          : undefined,
-      );
-
-      adminContextWindow = contextWindow;
+      // History is trimmed by the token-based budget at the unified recompute
+      // after composeSecurityPrompt (#1639), once the final system prompt + tool
+      // schemas are known. Admin reserves the ~17 tool JSON schemas + mid-turn
+      // tool-step payloads, replacing the old fixed 0.12/0.25 char fractions.
       adminDesiredMaxOutput = desiredMaxOutput;
+      budgetContextWindow = contextWindow;
+      budgetFillRatio = activeChatModel?.contextFillRatio ?? null;
+      budgetToolCount = Object.keys(tools).length;
+      budgetReserveToolSteps = true;
+      budgetToolResultCap = toolResultCapChars;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -1888,7 +1886,6 @@ export async function action({ request }: ActionFunctionArgs) {
         supportsTools,
         contextWindow,
         desiredMaxOutput,
-        adminSessionBudget: adminSessionBudget ?? null,
         dbMaxTokens: activeChatModel?.maxTokens ?? null,
         chatId: chat?.id ?? null,
       });
@@ -1989,6 +1986,18 @@ export async function action({ request }: ActionFunctionArgs) {
         (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
       useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
+
+      // Token-based history budget inputs (#1639); the digest recompute after
+      // composeSecurityPrompt uses the final system prompt (RAG already folded
+      // into `system` on this path, so it is counted via systemChars — not
+      // reserved twice). Small vLLM windows keep a tighter verbatim tail.
+      budgetContextWindow = resolveModelContextWindow(
+        modelCapabilities.maxTokens,
+        parsedModel.providerId,
+      );
+      budgetFillRatio = modelCapabilities.contextFillRatio ?? null;
+      budgetToolCount = useToolCalling ? Object.keys(tools).length : 0;
+      budgetReserveToolSteps = useToolCalling;
 
       const courseStyleBlock = effectiveCourse
         ? buildCourseResponseStylePrompt(
@@ -2206,10 +2215,44 @@ ${buildEmptyCourseRagBlock()}`;
       }),
     );
 
-    // Re-cap after composeSecurityPrompt so the security block is included, and
-    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
-    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
-    if (chatMode === "admin" && adminContextWindow != null && adminDesiredMaxOutput != null) {
+    // Token-based history budget (#1639): now that the final system prompt (RAG
+    // + security + ADHD blocks) and tool schemas are known, digest older turns so
+    // the assembled input fits within `ratio × contextWindow`. Everything else
+    // sharing the input allowance is reserved first; history takes the rest.
+    // Runs for every mode with a resolved window — the fixed-char default at the
+    // early call above is only a fallback when the window is unknown.
+    if (budgetContextWindow != null) {
+      const budgetSystemChars = z.string().safeParse(streamConfig.system).success
+        ? String(streamConfig.system).length
+        : 0;
+      const historyCharBudget = resolveSessionCharBudgetForModel({
+        contextWindow: budgetContextWindow,
+        perModelRatio: budgetFillRatio,
+        systemChars: budgetSystemChars,
+        toolCount: budgetToolCount,
+        reserveToolSteps: budgetReserveToolSteps,
+      });
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, budgetToolResultCap),
+        {
+          charBudget: historyCharBudget,
+          recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
+          digestMaxChars: budgetToolResultCap,
+        },
+      );
+      streamConfig.messages = modelMessages;
+    }
+
+    // Re-cap the completion after composeSecurityPrompt so the security block +
+    // tool JSON schemas are inside the budget (the old flat 512 under-counted
+    // ~17 admin tools and blew 16k windows: ContextWindowExceededError). Applied
+    // to every mode so output always fits `contextWindow − input`; only admin
+    // hard-rejects an over-budget prompt — its tool schemas can be unshrinkable,
+    // whereas other modes have already had history digested to fit.
+    if (budgetContextWindow != null) {
+      const parsedStreamMaxTokens = z.number().safeParse(streamConfig.maxTokens);
+      const desiredMaxOutput =
+        adminDesiredMaxOutput ?? (parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 256);
       const systemChars = z.string().safeParse(streamConfig.system).success
         ? String(streamConfig.system).length
         : 0;
@@ -2220,42 +2263,55 @@ ${buildEmptyCourseRagBlock()}`;
       const declaredTools = z.record(z.string(), z.unknown()).safeParse(streamConfig.tools);
       const toolCount = declaredTools.success ? Object.keys(declaredTools.data).length : 0;
       const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
-      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const toolStepReserve = budgetReserveToolSteps
+        ? estimateAdminToolStepReserve(budgetContextWindow)
+        : 0;
       const estimatedInputTokens =
         estimateTokensFromChars(systemChars + messageChars) +
         toolDefinitionTokens +
         toolStepReserve;
 
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow: adminContextWindow,
+      const contextFitMaxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         toolDefinitionTokens: 0,
         safetyBuffer: 512,
         minOutput: 256,
       });
 
-      if (longOutputCap.isLongOutputIntent) {
-        const adminContextMaxTokens = streamConfig.maxTokens;
-        streamConfig.maxTokens = Math.min(adminContextMaxTokens, longOutputCap.maxTokens);
-        longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+      if (chatMode === "admin") {
+        streamConfig.maxTokens = contextFitMaxTokens;
+        if (longOutputCap.isLongOutputIntent) {
+          const adminContextMaxTokens = streamConfig.maxTokens;
+          streamConfig.maxTokens = Math.min(adminContextMaxTokens, longOutputCap.maxTokens);
+          longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+        }
+      } else {
+        // Non-admin already applied the long-output cap earlier; only tighten the
+        // completion so it still fits the window after history was digested —
+        // never loosen it, so the long-output flag/value are left intact.
+        const current = parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 0;
+        streamConfig.maxTokens = Math.min(current, contextFitMaxTokens);
       }
 
       chatApiTrace("max output tokens capped", {
-        contextWindow: adminContextWindow,
+        chatMode,
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
         toolCount,
         toolDefinitionTokens,
         toolStepReserve,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         effectiveMaxTokens: streamConfig.maxTokens,
         systemChars,
         messageChars,
       });
 
       if (
+        chatMode === "admin" &&
         !promptFitsContextWindow({
-          contextWindow: adminContextWindow,
+          contextWindow: budgetContextWindow,
           estimatedInputTokens,
           maxOutputTokens: streamConfig.maxTokens,
           safetyBuffer: 256,
@@ -2264,10 +2320,10 @@ ${buildEmptyCourseRagBlock()}`;
         return chatApiReject(
           400,
           {
-            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
             code: "ADMIN_CONTEXT_TOO_LARGE",
             estimatedInputTokens,
-            contextWindow: adminContextWindow,
+            contextWindow: budgetContextWindow,
             toolCount,
           },
           { model, chatId: chat?.id ?? null },

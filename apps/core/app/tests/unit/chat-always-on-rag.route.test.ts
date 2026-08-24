@@ -49,7 +49,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     supportsImages: false,
@@ -189,6 +192,9 @@ beforeEach(() => {
   resetRateLimitsForTests();
   delete process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  // Pin the message-load ceiling so the #225 RAG-11 cap assertions stay exact;
+  // the default was raised to 100 (#1639) and is covered in chat-rag.test.ts.
+  process.env.CHAT_MAX_CONTEXT_MESSAGES = "20";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
