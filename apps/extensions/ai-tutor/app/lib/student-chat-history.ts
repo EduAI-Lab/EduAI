@@ -32,7 +32,7 @@ export async function loadSessionMessages(
   return data.messages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({
-      id: m.messageId,
+      id: m.id,
       role: m.role as "user" | "assistant",
       content: typeof m.content === "string" ? m.content : extractText(m.content),
     }));

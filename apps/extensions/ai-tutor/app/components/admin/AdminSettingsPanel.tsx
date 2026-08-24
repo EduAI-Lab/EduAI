@@ -22,7 +22,6 @@ import {
   clampIterations,
   formatApiKeyUpdatedTime,
   formatCostTier,
-  getAdminSettingsApi,
   inferProvider,
   normalizePolicy,
   type AdminAiModelOption,
@@ -54,7 +53,6 @@ type AdminSettingsPanelProps = {
 };
 
 export function AdminSettingsPanel({ loaderData, onStatusChange }: AdminSettingsPanelProps) {
-  const settingsApi = getAdminSettingsApi();
   const [status, setStatusState] = useState<EduAiApiKeyStatus>(loaderData.status);
   const setStatus = (next: EduAiApiKeyStatus) => {
     setStatusState(next);
@@ -132,14 +130,14 @@ export function AdminSettingsPanel({ loaderData, onStatusChange }: AdminSettings
   };
 
   const saveAiPolicy = async () => {
-    if (!aiPolicyAvailable || typeof settingsApi.setAdminAiModelPolicy !== "function") {
+    if (!aiPolicyAvailable) {
       toast.error("AI model settings cannot be saved right now. Please try again later.");
       return;
     }
 
     setSavingAiPolicy(true);
     try {
-      const saved = await settingsApi.setAdminAiModelPolicy(aiPolicy);
+      const saved = await api.setAdminAiModelPolicy(aiPolicy);
       const normalized = normalizePolicy(saved, aiModels);
       setAiPolicy(normalized);
       setInitialAiPolicy(normalized);

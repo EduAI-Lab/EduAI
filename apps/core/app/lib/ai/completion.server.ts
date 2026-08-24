@@ -12,7 +12,7 @@ import {
 } from "~/lib/ai/providers";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
   createProviderFailure,
   providerErrorDiagnostic,
 } from "~/lib/ai/provider-errors.server";
@@ -497,7 +497,7 @@ export async function runCompletion(request: CompletionRequest) {
       providerId: parsedModel.providerId,
       diagnostic: providerErrorDiagnostic(error),
     });
-    return classifyProviderError(parsedModel.providerId, error);
+    return classifyProviderFailure(parsedModel.providerId, error);
   }
 
   const streaming = request.streaming === true;
@@ -530,7 +530,7 @@ export async function runCompletion(request: CompletionRequest) {
       providerId: parsedModel.providerId,
       diagnostic: providerErrorDiagnostic(error),
     });
-    return classifyProviderError(parsedModel.providerId, error);
+    return classifyProviderFailure(parsedModel.providerId, error);
   }
 
   if (streaming) {
@@ -575,6 +575,6 @@ export async function runCompletion(request: CompletionRequest) {
       providerId: parsedModel.providerId,
       diagnostic: providerErrorDiagnostic(error),
     });
-    return classifyProviderError(parsedModel.providerId, error);
+    return classifyProviderFailure(parsedModel.providerId, error);
   }
 }

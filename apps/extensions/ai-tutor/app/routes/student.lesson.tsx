@@ -166,7 +166,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
   const [tempKnowledgeLevel, setTempKnowledgeLevel] = useState("");
   const [knowledgeLevels, setKnowledgeLevels] = useState<Record<number, string>>({});
-  const [topicSelection, setTopicSelection] = useState<Record<number, number>>({});
+  const [topicSelection, setTopicSelection] = useState<Record<number, string | number>>({});
   const [feedbackByActivity, setFeedbackByActivity] = useState<
     Record<number, StudentFeedbackState>
   >({});
@@ -365,7 +365,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   }, [currentKnowledgeLevel]);
 
   const handleTopicSelect = useCallback(
-    (topicId: number) => {
+    (topicId: string | number) => {
       if (!activity) return;
       setTopicSelection((prev) => ({ ...prev, [activity.id]: topicId }));
     },
