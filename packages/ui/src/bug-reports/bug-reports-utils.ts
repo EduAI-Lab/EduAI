@@ -406,12 +406,25 @@ export type RawAdminBugReport = {
   context?: JsonValue;
 };
 
+/**
+ * One named decoder per JSON primitive Core can put in an admin row.
+ *
+ * `packages/ui` carries no zod — it is a browser bundle shared by all three
+ * apps and deliberately dependency-light — so these are the parse step for this
+ * boundary rather than a shortcut past one. That makes them the standing
+ * `anti-slop/no-runtime-typeof` exemption for this file, suppressed per-line so
+ * the rule can still reach zero elsewhere (#1599). Everything downstream reads
+ * the decoded value, never the raw field.
+ */
 function optionalString(value: JsonValue | undefined): string | null {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   return typeof value === "string" ? value : null;
 }
 
 function optionalInt(value: JsonValue | undefined): number | null {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "number" && Number.isFinite(value)) return value;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -420,11 +433,22 @@ function optionalInt(value: JsonValue | undefined): number | null {
 }
 
 function optionalBoolean(value: JsonValue | undefined): boolean | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   return typeof value === "boolean" ? value : undefined;
+}
+
+/**
+ * An ISO timestamp, from either the string Core sends or a `Date` a caller has
+ * already revived.
+ */
+function optionalIsoString(value: JsonValue | undefined): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return optionalString(value);
 }
 
 /** Core stores per-app context as a `Json?` column; non-objects mean "no context". */
 function readContext(value: JsonValue | undefined): BugReportContext {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as BugReportContext;
 }
@@ -461,7 +485,7 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
 
   return {
     id: String(raw.id ?? ""),
-    description: typeof raw.description === "string" ? raw.description : "",
+    description: optionalString(raw.description) ?? "",
     bugType: (raw.bugType as BugReportType | null) ?? null,
     status: toUiStatus(String(raw.status ?? "UNHANDLED")),
     source: optionalString(raw.source),
@@ -481,18 +505,8 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
     user: { id: userId, name: userName, email: userEmail, role: null },
     userName,
     userEmail,
-    createdAt:
-      typeof raw.createdAt === "string"
-        ? raw.createdAt
-        : raw.createdAt instanceof Date
-          ? raw.createdAt.toISOString()
-          : "",
-    updatedAt:
-      typeof raw.updatedAt === "string"
-        ? raw.updatedAt
-        : raw.updatedAt instanceof Date
-          ? raw.updatedAt.toISOString()
-          : undefined,
+    createdAt: optionalIsoString(raw.createdAt) ?? "",
+    updatedAt: optionalIsoString(raw.updatedAt) ?? undefined,
     context,
     courseOfferingId: optionalInt(context.courseOfferingId),
     moduleId: optionalInt(context.moduleId),
