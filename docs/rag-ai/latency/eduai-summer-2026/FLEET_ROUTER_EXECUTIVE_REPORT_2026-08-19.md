@@ -58,7 +58,7 @@ xychart-beta
 
 ## 2. Individual-server stress testing
 
-Each server was tested independently with both deployed models through concurrency 128 using direct authenticated vLLM requests. All individual-server ladders completed without request errors, OOMs, crashes, or container restarts. cmps03 was the clear performance outlier, especially under concurrent load.
+Each server was tested independently with both deployed models through concurrency 128 using direct authenticated vLLM requests. The recorded per-request results show zero request errors across these ladders; this report does not include host/container telemetry for OOMs, crashes, or restarts. cmps03 was the clear performance outlier, especially under concurrent load.
 
 ### p95 latency by server — Qwen 3.5 2B
 
@@ -168,7 +168,7 @@ cmps02 was restored to Qwen 2.5 32B after the fleet run, so no comparable native
 
 The fleet/router behavior is promising for production use under the tested workload, but production sign-off should wait for a separate public-ingress capacity test. That test should isolate rate-limit buckets, measure proxy and upstream timeouts, and collect synchronized Core, Redis, database, GPU, and vLLM metrics.
 
-The current results support the one-model-per-GPU 2B/9B topology. They do not establish that multiple model instances on one GPU would improve performance; that remains a separate VRAM-budget and latency experiment.
+The measured results are consistent with the tested one-model-per-GPU 2B/9B deployment, but they do not establish that topology as optimal. GPU utilization, VRAM/KV-cache, and token-rate measurements were not captured; whether multiple model instances on one GPU would improve performance remains a separate VRAM-budget and latency experiment.
 
 ## Restoration
 
