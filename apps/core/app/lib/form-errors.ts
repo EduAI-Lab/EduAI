@@ -1,4 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asPresentText } from "~/lib/json-value";
 /**
  * Helpers for turning server-side validation payloads into user-facing copy.
  *
@@ -10,13 +11,13 @@ import type { JsonValue } from "~/lib/json-value";
  * out the first concrete field message so the form can show it instead.
  */
 export function firstFieldError(details: JsonValue | undefined): string | null {
-  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
-  const fieldErrors = details.fieldErrors;
-  if (!fieldErrors || typeof fieldErrors !== "object" || Array.isArray(fieldErrors)) return null;
+  const flattened = asJsonObject(details);
+  if (!flattened) return null;
+  const fieldErrors = asJsonObject(flattened.fieldErrors);
+  if (!fieldErrors) return null;
   for (const messages of Object.values(fieldErrors)) {
-    if (Array.isArray(messages) && typeof messages[0] === "string" && messages[0]) {
-      return messages[0];
-    }
+    const first = asPresentText(asJsonArray(messages)?.[0]);
+    if (first) return first;
   }
   return null;
 }

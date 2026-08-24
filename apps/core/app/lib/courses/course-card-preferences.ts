@@ -1,7 +1,7 @@
 /** Canvas-style preset swatches — re-exported from shared UI theme tokens. */
 export { COURSE_COLOR_PRESETS as COURSE_CARD_COLOR_PRESETS } from "@eduai/ui";
 
-import { parseJsonText } from "~/lib/json-value";
+import { asJsonObject, asText, parseJsonText } from "~/lib/json-value";
 import { resolvePaletteAccent } from "@eduai/ui";
 import { isBrowser } from "@eduai/ui/runtime-env";
 
@@ -54,14 +54,17 @@ export function readCourseCardPreferences(): CourseCardPreferencesMap {
   try {
     const raw = window.localStorage.getItem(COURSE_CARD_PREFERENCES_KEY);
     if (!raw) return new Map();
-    const parsed = parseJsonText(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return new Map();
+    const parsed = asJsonObject(parseJsonText(raw));
+    if (!parsed) return new Map();
     const result: CourseCardPreferencesMap = new Map();
     for (const [id, entry] of Object.entries(parsed)) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const fields = asJsonObject(entry);
+      if (!fields) continue;
       const validated: CourseCardPreference = {};
-      if (typeof entry.nickname === "string") validated.nickname = entry.nickname;
-      if (typeof entry.color === "string") validated.color = entry.color;
+      const nickname = asText(fields.nickname);
+      if (nickname !== null) validated.nickname = nickname;
+      const color = asText(fields.color);
+      if (color !== null) validated.color = color;
       result.set(id, validated);
     }
     return result;
