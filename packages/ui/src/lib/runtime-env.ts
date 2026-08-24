@@ -34,6 +34,12 @@ export function hasNavigator(): boolean {
   return typeof navigator !== "undefined";
 }
 
+/** True where `location` exists: the page's own URL, absent under SSR. */
+export function hasLocation(): boolean {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  return typeof location !== "undefined";
+}
+
 /** True where `FileReader` exists: the browser path for reading a picked file. */
 export function hasFileReader(): boolean {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof

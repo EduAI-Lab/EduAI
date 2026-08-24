@@ -32,6 +32,7 @@ import {
   type NetworkLogEntry,
   type ViewerType,
 } from "./bug-reports-utils";
+import { isString } from "../lib/primitive-union";
 
 function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
   return (
@@ -73,7 +74,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
           </div>
         ) : (
           filtered.map((entry, index) => {
-            const hasStack = typeof entry.stack === "string" && entry.stack.length > 0;
+            const hasStack = (entry.stack ?? "").length > 0;
             const expanded = expandedStacks[index] ?? false;
             const level = (entry.level ?? "log").toLowerCase();
             return (
@@ -193,15 +194,11 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
           </div>
         ) : tab === "request" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof requestBody === "string"
-              ? requestBody
-              : JSON.stringify(requestBody ?? {}, null, 2)}
+            {isString(requestBody) ? requestBody : JSON.stringify(requestBody ?? {}, null, 2)}
           </pre>
         ) : tab === "response" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof responseBody === "string"
-              ? responseBody
-              : JSON.stringify(responseBody ?? {}, null, 2)}
+            {isString(responseBody) ? responseBody : JSON.stringify(responseBody ?? {}, null, 2)}
           </pre>
         ) : (
           <div className="space-y-4 text-xs">

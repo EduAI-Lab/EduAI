@@ -21,7 +21,7 @@
  * back to same-origin behaviour.
  */
 
-import { hasDocument, isBrowser } from "./runtime-env";
+import { hasDocument, hasLocation, isBrowser } from "./runtime-env";
 export type Theme = "light" | "dark" | "system";
 
 const BROADCAST_CHANNEL_NAME = "eduai_theme_sync";
@@ -56,7 +56,7 @@ function writeThemeCookie(theme: Theme): void {
     "SameSite=Lax",
   ];
   if (domain) parts.push(`domain=${domain}`);
-  if (typeof location !== "undefined" && location.protocol === "https:") {
+  if (hasLocation() && location.protocol === "https:") {
     parts.push("Secure");
   }
   document.cookie = parts.join("; ");

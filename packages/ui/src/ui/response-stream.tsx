@@ -66,7 +66,7 @@ function useTextStream({
   }, [onComplete]);
 
   const getChunkSize = useCallback(() => {
-    if (typeof characterChunkSizeRef.current === "number") {
+    if (characterChunkSizeRef.current !== undefined) {
       return Math.max(1, characterChunkSizeRef.current);
     }
 
@@ -83,7 +83,7 @@ function useTextStream({
   }, []);
 
   const getProcessingDelay = useCallback(() => {
-    if (typeof segmentDelayRef.current === "number") {
+    if (segmentDelayRef.current !== undefined) {
       return Math.max(0, segmentDelayRef.current);
     }
 
@@ -92,14 +92,14 @@ function useTextStream({
   }, []);
 
   const getFadeDuration = useCallback(() => {
-    if (typeof fadeDurationRef.current === "number") return Math.max(10, fadeDurationRef.current);
+    if (fadeDurationRef.current !== undefined) return Math.max(10, fadeDurationRef.current);
 
     const normalizedSpeed = Math.min(100, Math.max(1, speedRef.current));
     return Math.round(1000 / Math.sqrt(normalizedSpeed));
   }, []);
 
   const getSegmentDelay = useCallback(() => {
-    if (typeof segmentDelayRef.current === "number") return Math.max(0, segmentDelayRef.current);
+    if (segmentDelayRef.current !== undefined) return Math.max(0, segmentDelayRef.current);
 
     const normalizedSpeed = Math.min(100, Math.max(1, speedRef.current));
     return Math.max(1, Math.round(100 / Math.sqrt(normalizedSpeed)));
@@ -221,7 +221,7 @@ function useTextStream({
   const startStreaming = useCallback(() => {
     reset();
 
-    if (typeof textStream === "string") {
+    if (isTextString(textStream)) {
       processStringTypewriter(textStream);
     } else if (textStream) {
       processAsyncIterable(textStream);
@@ -236,7 +236,7 @@ function useTextStream({
   }, []);
 
   const resume = useCallback(() => {
-    if (typeof textStream === "string" && !isComplete) {
+    if (isTextString(textStream) && !isComplete) {
       processStringTypewriter(textStream);
     }
   }, [textStream, isComplete, processStringTypewriter]);
@@ -278,6 +278,20 @@ export type ResponseStreamProps = {
   segmentDelay?: number; // Custom delay between segments in ms (overrides speed)
   characterChunkSize?: number; // Custom characters per frame for typewriter mode (overrides speed)
 };
+
+/**
+ * Which arm of `string | AsyncIterable<string>` this is.
+ *
+ * The two arms differ only by primitive type, so `typeof` is the discriminator
+ * the union offers — there is no tag to read and no payload to decode.
+ * `packages/ui` also carries no zod by design, so this is the standing
+ * `anti-slop/no-runtime-typeof` exemption for a union like this one: named
+ * once, suppressed once, rather than repeated at each branch (#1599).
+ */
+function isTextString(value: string | AsyncIterable<string>): value is string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  return typeof value === "string";
+}
 
 function ResponseStream({
   textStream,

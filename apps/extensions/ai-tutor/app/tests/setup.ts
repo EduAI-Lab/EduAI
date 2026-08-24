@@ -6,11 +6,11 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-if (typeof globalThis.ResizeObserver === "undefined") {
+if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
 }
 
-if (typeof window.matchMedia === "undefined") {
+if (!window.matchMedia) {
   window.matchMedia = (query: string) => ({
     matches: false,
     media: query,
@@ -23,6 +23,6 @@ if (typeof window.matchMedia === "undefined") {
   });
 }
 
-if (typeof Element.prototype.scrollIntoView !== "function") {
+if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }

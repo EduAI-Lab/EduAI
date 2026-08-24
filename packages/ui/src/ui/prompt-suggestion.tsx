@@ -1,6 +1,7 @@
 import { Button, buttonVariants } from "./button";
 import { cn } from "../utils";
 import type { VariantProps } from "class-variance-authority";
+import { isString } from "../lib/primitive-union";
 
 export type PromptSuggestionProps = {
   children: React.ReactNode;
@@ -19,7 +20,7 @@ function PromptSuggestion({
   ...props
 }: PromptSuggestionProps) {
   const isHighlightMode = highlight !== undefined && highlight.trim() !== "";
-  const content = typeof children === "string" ? children : "";
+  const content = isString(children) ? children : "";
 
   if (!isHighlightMode) {
     return (

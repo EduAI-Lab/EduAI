@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { JsonObject, JsonValue } from "@eduai/types";
+import { isString } from "../lib/primitive-union";
 
 export type ToolPart = {
   type: string;
@@ -39,8 +40,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
   const { state, input, output, toolCallId } = toolPart;
 
   const writeFailed =
-    output &&
-    typeof output === "object" &&
+    output instanceof Object &&
     ("writeSucceeded" in output
       ? output.writeSucceeded === false
       : "error" in output && Boolean((output as { error?: unknown }).error));
@@ -126,8 +126,8 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
   const formatValue = (value: JsonValue | undefined): string => {
     if (value === null) return "null";
     if (value === undefined) return "undefined";
-    if (typeof value === "string") return value;
-    if (typeof value === "object") {
+    if (isString(value)) return value;
+    if (value instanceof Object) {
       return JSON.stringify(value, null, 2);
     }
     return String(value);
