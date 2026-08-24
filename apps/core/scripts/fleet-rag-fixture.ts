@@ -78,10 +78,10 @@ async function main() {
       ) {
         throw new Error(`Refusing to delete non-fixture course ${courseId}`);
       }
-      await prisma.$transaction(async (tx) => {
-        await tx.chat.deleteMany({ where: { courseId } });
-        await tx.course.delete({ where: { id: courseId } });
-      });
+      await prisma.$transaction([
+        prisma.chat.deleteMany({ where: { courseId } }),
+        prisma.course.delete({ where: { id: courseId } }),
+      ]);
       console.log(JSON.stringify({ code, courseId, removed: true }));
       return;
     }
