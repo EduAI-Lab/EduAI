@@ -38,16 +38,17 @@ import { toast } from "sonner";
 import { useAssistiveMode } from "~/components/settings/assistive-mode";
 import { ProvidersSettings } from "~/components/settings/providers-settings";
 import { useLocalUser } from "~/hooks/useLocalUser";
+import { hasDocument } from "@eduai/ui/runtime-env";
 
 function readInitialDensity(): AccessibilityUiDensity {
-  if (typeof document === "undefined") return "comfortable";
+  if (!hasDocument()) return "comfortable";
   return document.documentElement.getAttribute("data-density") === "compact"
     ? "compact"
     : "comfortable";
 }
 
 function readInitialMotionReduced(): boolean {
-  if (typeof document === "undefined") return false;
+  if (!hasDocument()) return false;
   return document.documentElement.hasAttribute("data-reduce-motion");
 }
 

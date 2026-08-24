@@ -14,6 +14,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(frontendDir, "./src"),
+      // Subpath exports must precede the barrel: vite's alias matcher treats
+      // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
+      // would rewrite subpaths to `.../src/index.ts/<subpath>`.
+      "@eduai/ui/runtime-env": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/lib/runtime-env.ts",
+      ),
       "@eduai/ui": path.resolve(frontendDir, "../../../../../packages/ui/src/index.ts"),
     },
     dedupe: ["react", "react-dom"],

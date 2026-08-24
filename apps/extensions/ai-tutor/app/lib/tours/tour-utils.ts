@@ -1,8 +1,9 @@
 import type { AppTourStep, TourContextState } from "./tour-types";
+import { hasDocument } from "@eduai/ui/runtime-env";
 
 export function waitForElement(selector: string, timeoutMs = 4000) {
   return new Promise<Element>((resolve, reject) => {
-    if (typeof document === "undefined") {
+    if (!hasDocument()) {
       reject(new Error("document is unavailable"));
       return;
     }
@@ -48,7 +49,7 @@ export type EitherElementMatch = {
  */
 export function waitForEitherElement(selector: string, emptySelector: string, timeoutMs = 4000) {
   return new Promise<EitherElementMatch>((resolve, reject) => {
-    if (typeof document === "undefined") {
+    if (!hasDocument()) {
       reject(new Error("document is unavailable"));
       return;
     }

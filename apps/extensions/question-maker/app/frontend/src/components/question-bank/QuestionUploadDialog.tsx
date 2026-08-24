@@ -79,6 +79,7 @@ import {
   validateQuestionUploadFile,
   validateQuestionUploadText,
 } from "../../utils/questionUploadLimits";
+import { randomId } from "@eduai/ui/runtime-env";
 
 // pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
 // and only the OCR path below touches them. Imported statically they landed in
@@ -199,12 +200,7 @@ interface QuestionUploadDialogProps {
   saveTarget?: "bank" | "assessment";
 }
 
-const generateId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return Math.random().toString(36).slice(2, 11);
-};
+const generateId = () => randomId();
 
 /** Maps API extracted questions to draft shape. Used by dialog and by parent for background extraction. */
 export function mapExtractedToDraftQuestions(items: ExtractedQuestion[]): DraftQuestion[] {

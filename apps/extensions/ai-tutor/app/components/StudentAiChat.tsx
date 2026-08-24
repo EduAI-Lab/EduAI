@@ -65,6 +65,7 @@ import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
 // see MARKDOWN_STYLES below.
 import "~/styles/chat-markdown.css";
+import { randomId } from "@eduai/ui/runtime-env";
 
 /**
  * KaTeX's stylesheet is loaded on demand, only for messages that actually
@@ -1033,8 +1034,5 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 export default StudentAiChat;
 
 function generateMessageId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId();
 }

@@ -1,4 +1,5 @@
 import type { VariantAiReviewResult } from "./assessmentVariantService";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 /** Unsafe pre-account-scoping key. Its contents are discarded, never guessed/migrated. */
 export const AI_REVIEW_HISTORY_LEGACY_KEY = "assessmentVariant.aiReview.history.v1";
@@ -26,7 +27,7 @@ export function getAiReviewHistoryStorageKey(userId: string | null | undefined):
 }
 
 export function discardLegacyAiReviewHistory(): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   try {
     localStorage.removeItem(AI_REVIEW_HISTORY_LEGACY_KEY);
   } catch {
@@ -35,7 +36,7 @@ export function discardLegacyAiReviewHistory(): void {
 }
 
 export function loadAiReviewHistory(storageKey: string | null): AiReviewHistoryItem[] {
-  if (typeof window === "undefined" || !storageKey) return [];
+  if (!isBrowser() || !storageKey) return [];
   discardLegacyAiReviewHistory();
   try {
     const raw = localStorage.getItem(storageKey);
@@ -51,7 +52,7 @@ export function loadAiReviewHistory(storageKey: string | null): AiReviewHistoryI
 }
 
 export function saveAiReviewHistory(storageKey: string | null, items: AiReviewHistoryItem[]): void {
-  if (typeof window === "undefined" || !storageKey) return;
+  if (!isBrowser() || !storageKey) return;
   try {
     const limitedItems = items.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS);
     if (limitedItems.length === 0) {
@@ -65,7 +66,7 @@ export function saveAiReviewHistory(storageKey: string | null, items: AiReviewHi
 }
 
 export function clearAiReviewHistoryForUser(userId: string | null | undefined): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   const storageKey = getAiReviewHistoryStorageKey(userId);
   try {
     if (storageKey) localStorage.removeItem(storageKey);

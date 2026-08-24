@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 type ConsoleEntry = {
   level: "log" | "warn" | "error";
@@ -70,7 +71,7 @@ export function useBugReportCapture() {
   } | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || patchedRef.current) {
+    if (!isBrowser() || patchedRef.current) {
       return;
     }
     patchedRef.current = true;
@@ -155,7 +156,7 @@ export function useBugReportCapture() {
   }, []);
 
   const captureScreenshot = useCallback(async () => {
-    if (typeof window === "undefined") return null;
+    if (!isBrowser()) return null;
     const now = Date.now();
     // Reuse the most recent screenshot within the cache window to avoid the
     // visible flash and CPU cost of re-rendering the DOM via html2canvas

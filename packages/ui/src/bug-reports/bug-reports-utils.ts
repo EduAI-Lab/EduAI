@@ -21,6 +21,7 @@ import { hasAttachmentContent, type JsonObject, type JsonValue } from "@eduai/ty
 import type { BadgeVariant } from "../ui/badge";
 
 import type { AdminBugReportRow, BugReportContext, BugReportStatus, BugReportType } from "./types";
+import { hasDocument, hasNavigator } from "../lib/runtime-env";
 
 export type StatusFilter = BugReportStatus | "all";
 export type TypeFilter = BugReportType | "all";
@@ -263,12 +264,12 @@ export function buildBugReportCopyText(report: AdminBugReportRow) {
 }
 
 export async function copyTextToClipboard(text: string) {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+  if (hasNavigator() && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return;
   }
 
-  if (typeof document === "undefined") {
+  if (!hasDocument()) {
     throw new Error("Clipboard is not available");
   }
 

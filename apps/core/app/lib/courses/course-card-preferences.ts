@@ -3,6 +3,7 @@ export { COURSE_COLOR_PRESETS as COURSE_CARD_COLOR_PRESETS } from "@eduai/ui";
 
 import { parseJsonText } from "~/lib/json-value";
 import { resolvePaletteAccent } from "@eduai/ui";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 export type CourseCardPreference = {
   color?: string;
@@ -49,7 +50,7 @@ export function normalizeCourseCardColor(value: string): string | null {
 }
 
 export function readCourseCardPreferences(): CourseCardPreferencesMap {
-  if (typeof window === "undefined") return new Map();
+  if (!isBrowser()) return new Map();
   try {
     const raw = window.localStorage.getItem(COURSE_CARD_PREFERENCES_KEY);
     if (!raw) return new Map();
@@ -70,7 +71,7 @@ export function readCourseCardPreferences(): CourseCardPreferencesMap {
 }
 
 export function writeCourseCardPreferences(prefs: CourseCardPreferencesMap): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   try {
     if (prefs.size === 0) {
       window.localStorage.removeItem(COURSE_CARD_PREFERENCES_KEY);

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import html2canvas from "html2canvas";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 interface ConsoleEntry {
   level: string;
@@ -37,7 +38,7 @@ export function useBugReportCapture(enabled: boolean) {
   } | null>(null);
 
   useEffect(() => {
-    if (!enabled || typeof window === "undefined") {
+    if (!enabled || !isBrowser()) {
       if (originalsRef.current && patchedRef.current) {
         console.log = originalsRef.current.log;
         console.warn = originalsRef.current.warn;
@@ -140,7 +141,7 @@ export function useBugReportCapture(enabled: boolean) {
   }, [enabled]);
 
   const captureScreenshot = useCallback(async (): Promise<string | null> => {
-    if (!enabled || typeof window === "undefined") return null;
+    if (!enabled || !isBrowser()) return null;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
     const generation = captureGenerationRef.current;

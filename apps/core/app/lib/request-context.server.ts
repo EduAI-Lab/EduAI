@@ -5,6 +5,7 @@
  * auth guards, and background sync entry points.
  */
 
+import { randomId } from "@eduai/ui/runtime-env";
 export type RequestContext = {
   requestId: string;
   routePath: string;
@@ -21,10 +22,7 @@ export type ActorContext = {
 
 function buildRequestId() {
   // A generated fallback ensures every event can still be correlated when proxies omit IDs.
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId("req-");
 }
 
 // Derive the client IP from the LAST `x-forwarded-for` entry.
