@@ -46,7 +46,7 @@ export type ApiErrorPayload = { error: string; hint?: string };
 
 /** Map Prisma / unknown errors to a JSON-safe API error payload. */
 export function formatApiError(cause: unknown): ApiErrorPayload {
-  if (cause && typeof cause === "object") {
+  if (cause instanceof Object) {
     const prisma = cause as PrismaLikeError;
     if (prisma.code === "P2022") {
       return {

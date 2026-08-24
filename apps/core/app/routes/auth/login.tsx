@@ -188,7 +188,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
     let message = "Sign in failed";
-    if (typeof err === "object" && err && "message" in err) {
+    if (err instanceof Object && "message" in err) {
       message = String((err as { message?: string }).message ?? message);
     }
     fireAndForget(

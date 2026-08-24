@@ -211,7 +211,7 @@ async function runRow(row: PasswordSetReuseGateRow) {
   } catch (err) {
     const apiErr = err as { status?: number; body?: { message?: string; code?: string } };
     res = new Response(JSON.stringify({ message: apiErr.body?.message ?? apiErr.body?.code }), {
-      status: typeof apiErr.status === "number" ? apiErr.status : 400,
+      status: apiErr.status ?? 400,
     });
   }
 

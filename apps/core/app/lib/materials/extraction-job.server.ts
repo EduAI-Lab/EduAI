@@ -636,9 +636,6 @@ export function ensureMaterialSweeperRunning(
  */
 export function isChecksumConflict(cause: unknown): boolean {
   return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code?: unknown }).code === "P2002"
+    cause instanceof Object && "code" in cause && (cause as { code?: unknown }).code === "P2002"
   );
 }

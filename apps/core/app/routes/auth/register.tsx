@@ -118,7 +118,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect("/onboarding/student-id", { headers });
   } catch (err: unknown) {
     let message = "Sign up failed";
-    if (typeof err === "object" && err && "message" in err) {
+    if (err instanceof Object && "message" in err) {
       message = String((err as { message?: string }).message ?? message);
     }
     return { formError: message };

@@ -53,7 +53,11 @@ export function isInfrastructureError(cause: unknown): boolean {
 
   if (z.record(z.unknown()).safeParse(cause).success) {
     const code = (cause as { code?: unknown }).code;
-    if (typeof code === "string" && (PRISMA_INFRA_CODES.has(code) || INFRA_MESSAGE_RE.test(code))) {
+    const codeText = z.string().safeParse(code);
+    if (
+      codeText.success &&
+      (PRISMA_INFRA_CODES.has(codeText.data) || INFRA_MESSAGE_RE.test(codeText.data))
+    ) {
       return true;
     }
   }

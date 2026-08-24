@@ -54,6 +54,7 @@ import {
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asPresentText } from "~/lib/json-value";
 
 // Unit admins may invite instructors and students only.
 type InviteRole = "INSTRUCTOR" | "STUDENT";
@@ -531,6 +532,6 @@ function errorMessage(code: JsonValue, status: number, details?: JsonValue): str
     case "NOT_FOUND":
       return "Invitation not found.";
     default:
-      return typeof code === "string" && code ? code : `Request failed (${status}).`;
+      return asPresentText(code) ?? `Request failed (${status}).`;
   }
 }
