@@ -595,13 +595,24 @@ function logStreamError(cause: unknown, trace: ChatTrace): void {
   });
 }
 
-function rejectProviderFailure(failure: ProviderFailure, trace: ChatTrace): Response {
-  return chatApiReject(
-    failure.status,
-    providerFailureBody(failure),
-    trace,
-    providerFailureHeaders(failure),
-  );
+// `chatId` is a required, explicitly-typed parameter (not read out of the
+// free-form `trace` bag) so a call site that forgets to pass it is a compile
+// error, not a silently-missing X-Chat-Id header on a future gate (#1621
+// review) — pass `null` explicitly for the rare case there's genuinely no
+// chat yet.
+function rejectProviderFailure(
+  failure: ProviderFailure,
+  chatId: string | null,
+  trace: ChatTrace,
+): Response {
+  const headers = providerFailureHeaders(failure);
+  // Surface the chat id back to the client (X-Chat-Id, read in onResponse)
+  // even on a provider failure, so a retry continues the same thread instead
+  // of spawning another orphaned "New conversation" row (#1561).
+  if (chatId) {
+    headers["X-Chat-Id"] = chatId;
+  }
+  return chatApiReject(failure.status, providerFailureBody(failure), trace, headers);
 }
 
 function providerStreamErrorMessage(provider: string, cause: unknown, trace: ChatTrace): string {
@@ -633,6 +644,12 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   const requestStartMs = Date.now();
+  // Declared outside the try block (assigned inside, below) so the outer
+  // catch-all can still echo X-Chat-Id when an exception outside the
+  // explicit provider-failure gates fires after the user's message has
+  // already been persisted (#1621 review) — otherwise the client can't
+  // resume the same thread on retry even though nothing was lost server-side.
+  let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
   try {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
@@ -921,7 +938,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Load the owned chat up front so a follow-up turn that sends a `chatId`
     // but no `courseId`/`courseCode` can inherit the course from the persisted
     // chat row, instead of failing COURSE_REQUIRED below (#685 review).
-    let chat = null;
+    // (`chat` itself is declared above the try block — see the comment there.)
     if (chatId) {
       chat = await prisma.chat.findFirst({
         where: { id: chatId, userId: actingUser.id },
@@ -1500,6 +1517,87 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Persist the user's message(s) now — the request has already cleared
+    // every structural/content validation gate above (course-scope image
+    // support, model image-capability), so anything that fails from here on
+    // (fleet/provider availability, the model call itself) is an
+    // infrastructure failure, not a bad request. A provider/availability
+    // failure must not silently discard what the user typed and leave
+    // behind an empty, unrecoverable "New conversation" row (#1561).
+    const existingMessageIds = new Set(
+      storedMessages.map((message) => message.id).filter(isPresentText),
+    );
+    const appendMessages = async (messages: ChatMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
+      if (!messages.length) return;
+
+      const rows: Prisma.ChatMessageCreateManyInput[] = [];
+
+      for (const message of messages) {
+        if (!isPresentText(message.role) || !isPresentText(message.id)) {
+          continue;
+        }
+
+        if (existingMessageIds.has(message.id)) {
+          continue;
+        }
+
+        const messageToPersist =
+          message.role === "assistant"
+            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
+            : message;
+
+        rows.push({
+          chatId: chat!.id,
+          messageId: message.id,
+          role: message.role,
+          content: serializeMessage(messageToPersist),
+        });
+
+        existingMessageIds.add(message.id);
+      }
+
+      if (rows.length > 0) {
+        await prisma.chatMessage.createMany({
+          data: rows,
+          skipDuplicates: true,
+        });
+      }
+    };
+
+    // Persist only client-authored turns (user messages) that remain in the
+    // bounded model context. The assistant reply is owned by `onFinish`/the
+    // awaited path below, which stores it once under a server id. Clients resend
+    // their whole `useChat` transcript every turn, and their assistant copies
+    // carry client-generated ids that never match the server id — persisting
+    // those here is what duplicated history on restore. Discarding incoming
+    // turns that were already trimmed from this request also prevents a caller
+    // from turning a single bounded POST into an unbounded storage write.
+    const persistableMessageIds = new Set(
+      trimmedMessages.map((message) => message.id).filter(isPresentText),
+    );
+    await appendMessages(
+      normalizedIncomingMessages.filter(
+        (message) =>
+          message.role !== "assistant" &&
+          isPresentText(message.id) &&
+          persistableMessageIds.has(message.id),
+      ),
+    );
+
+    // Shared trace fields for the provider/model-availability gates below —
+    // each only varies by `stage`, and building it here means chatId can't
+    // be forgotten at a future gate the way a hand-copied literal could.
+    const providerGateTrace = (stage: string) =>
+      asTrace({
+        chatMode,
+        userId: actingUser.id,
+        model: resolvedModelId,
+        stage,
+      });
+
     let fleetPick: FleetPick | null = null;
     if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
       try {
@@ -1519,12 +1617,8 @@ export async function action({ request }: ActionFunctionArgs) {
         if (err instanceof FleetUnavailableError) {
           return rejectProviderFailure(
             createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE"),
-            {
-              chatMode,
-              userId: actingUser.id,
-              model: resolvedModelId,
-              stage: "fleet-resolution",
-            },
+            chat?.id ?? null,
+            providerGateTrace("fleet-resolution"),
           );
         }
         throw err;
@@ -1585,57 +1679,10 @@ export async function action({ request }: ActionFunctionArgs) {
           parsedModel.providerId,
           isServerManagedProvider ? "PROVIDER_UNAVAILABLE" : "INVALID_PROVIDER_CONFIG",
         ),
-        {
-          chatMode,
-          userId: actingUser.id,
-          model: resolvedModelId,
-          stage: "provider-configuration",
-        },
+        chat?.id ?? null,
+        providerGateTrace("provider-configuration"),
       );
     }
-
-    const existingMessageIds = new Set(
-      storedMessages.map((message) => message.id).filter(isPresentText),
-    );
-    const appendMessages = async (messages: ChatMessage[]) => {
-      // Stateless callers never persist messages (no chat row / no real user).
-      // regenerateOnly is a read-only content preview (#1246) — never persists.
-      if (ephemeral || regenerateOnly || !chat?.id) return;
-      if (!messages.length) return;
-
-      const rows: Prisma.ChatMessageCreateManyInput[] = [];
-
-      for (const message of messages) {
-        if (!isPresentText(message.role) || !isPresentText(message.id)) {
-          continue;
-        }
-
-        if (existingMessageIds.has(message.id)) {
-          continue;
-        }
-
-        const messageToPersist =
-          message.role === "assistant"
-            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
-            : message;
-
-        rows.push({
-          chatId: chat!.id,
-          messageId: message.id,
-          role: message.role,
-          content: serializeMessage(messageToPersist),
-        });
-
-        existingMessageIds.add(message.id);
-      }
-
-      if (rows.length > 0) {
-        await prisma.chatMessage.createMany({
-          data: rows,
-          skipDuplicates: true,
-        });
-      }
-    };
 
     let registry = createAIProviderRegistry(validatedApiKeys);
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
@@ -1648,34 +1695,10 @@ export async function action({ request }: ActionFunctionArgs) {
           parsedModel.providerId,
           isServerManagedProvider ? "PROVIDER_UNAVAILABLE" : "INVALID_PROVIDER_CONFIG",
         ),
-        {
-          chatMode,
-          userId: actingUser.id,
-          model: resolvedModelId,
-          stage: "provider-registry",
-        },
+        chat?.id ?? null,
+        providerGateTrace("provider-registry"),
       );
     }
-
-    // Persist only client-authored turns (user messages) that remain in the
-    // bounded model context. The assistant reply is owned by `onFinish`/the
-    // awaited path below, which stores it once under a server id. Clients resend
-    // their whole `useChat` transcript every turn, and their assistant copies
-    // carry client-generated ids that never match the server id — persisting
-    // those here is what duplicated history on restore. Discarding incoming
-    // turns that were already trimmed from this request also prevents a caller
-    // from turning a single bounded POST into an unbounded storage write.
-    const persistableMessageIds = new Set(
-      trimmedMessages.map((message) => message.id).filter(isPresentText),
-    );
-    await appendMessages(
-      normalizedIncomingMessages.filter(
-        (message) =>
-          message.role !== "assistant" &&
-          isPresentText(message.id) &&
-          persistableMessageIds.has(message.id),
-      ),
-    );
 
     // Course-scope guardrail: resolve the classifier promise kicked off
     // earlier (alongside the RAG prefetch) and short-circuit before touching
@@ -1745,12 +1768,11 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
     } catch (err: unknown) {
-      return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, err), {
-        chatMode,
-        userId: actingUser.id,
-        model: resolvedModelId,
-        stage: "model-resolution",
-      });
+      return rejectProviderFailure(
+        classifyProviderFailure(parsedModel.providerId, err),
+        chat?.id ?? null,
+        providerGateTrace("model-resolution"),
+      );
     }
 
     const resolvedSystemPrompt =
@@ -2261,7 +2283,7 @@ ${buildEmptyCourseRagBlock()}`;
         adhdProfile != null ? isProfileStructuralPass(metrics, adhdProfile, trimmed) : undefined;
       void recordResponseComplianceEvent({
         userId: actingUser.id,
-        chatId: chat.id,
+        chatId: chat!.id,
         adhdAssist: effectiveAdhdAssist,
         assistantText: trimmed,
         extras: {
@@ -2627,20 +2649,21 @@ ${buildEmptyCourseRagBlock()}`;
           logStreamError(retryError, streamTrace);
           return rejectProviderFailure(
             classifyProviderFailure(parsedModel.providerId, retryError),
-            {
-              ...streamTrace,
-              stage: "stream-startup",
-              fleetRetry,
-            },
+            streamTrace.chatId,
+            { ...streamTrace, stage: "stream-startup", fleetRetry },
           );
         }
       } else {
         releaseAdmission();
         logStreamError(error, streamTrace);
-        return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
-          ...streamTrace,
-          stage: "stream-startup",
-        });
+        return rejectProviderFailure(
+          classifyProviderFailure(parsedModel.providerId, error),
+          streamTrace.chatId,
+          {
+            ...streamTrace,
+            stage: "stream-startup",
+          },
+        );
       }
     }
 
@@ -2802,10 +2825,11 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (oversightStage === "provider") {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
-            ...streamTrace,
-            stage: "oversight-provider",
-          });
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, error),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "oversight-provider" },
+          );
         }
         console.error("Error in ADHD oversight response:", providerErrorDiagnostic(error));
         return new Response(
@@ -2948,10 +2972,11 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (!providerResultResolved) {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
-            ...streamTrace,
-            stage: "non-streaming-provider",
-          });
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, error),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "non-streaming-provider" },
+          );
         }
         console.error("[chat-api] non-streaming response finalization failed", {
           trace: streamTrace,
@@ -2973,6 +2998,15 @@ ${buildEmptyCourseRagBlock()}`;
       return clientAbortResponse();
     }
     console.error("Chat API error:", providerErrorDiagnostic(error));
+    // The user's message may already be persisted onto `chat` by the time an
+    // unhandled exception reaches here (#1621 review) — echo its id so a
+    // client retry continues that thread instead of spawning another one.
+    if (chat?.id) {
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", "X-Chat-Id": chat.id },
+      });
+    }
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
