@@ -1420,11 +1420,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragLatencyMs: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
-    if (
-      routeWithAuto &&
-      effectiveCourseId &&
-      lastUserMessageTextForRouting.trim().length > 0
-    ) {
+    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
       const ragStartedAt = Date.now();
       try {
         routerRagPrefetch = await findRelevantContent(
@@ -2861,17 +2857,14 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate:
-              ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
             ragLatencyMs,
           }),
           {
             status: 200,
             headers: {
               ...jsonResponseHeaders(),
-              ...(ragLatencyMs !== null
-                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
-                : {}),
+              ...(ragLatencyMs !== null ? { "X-RAG-Latency-Ms": String(ragLatencyMs) } : {}),
             },
           },
         );
@@ -3021,17 +3014,14 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate:
-              ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
             ragLatencyMs,
           }),
           {
             status: 200,
             headers: {
               ...jsonResponseHeaders(),
-              ...(ragLatencyMs !== null
-                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
-                : {}),
+              ...(ragLatencyMs !== null ? { "X-RAG-Latency-Ms": String(ragLatencyMs) } : {}),
             },
           },
         );

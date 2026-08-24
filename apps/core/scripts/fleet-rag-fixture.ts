@@ -12,7 +12,11 @@ if (existsSync(envPath)) {
     if (!line || line.startsWith("#") || split < 1) continue;
     const key = line.slice(0, split).trim();
     let value = line.slice(split + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    )
+      value = value.slice(1, -1);
     if (!(key in process.env)) process.env[key] = value;
   }
 }
@@ -23,7 +27,8 @@ async function main() {
 
   const code = process.env.FLEET_STRESS_FIXTURE_CODE || "FLEET-ROUTER-STRESS-20260818";
   const title = "Fleet router RAG stress fixture";
-  const fact = "FLEET_ROUTER_STRESS_FACT_7391: the blue heron represents deterministic cross-server context continuity.";
+  const fact =
+    "FLEET_ROUTER_STRESS_FACT_7391: the blue heron represents deterministic cross-server context continuity.";
   const content = `Fleet router stress-test fixture\n\n${fact}\n\nUse this exact fact to verify retrieval and cite this source title: ${title}.`;
   const instructorId = process.env.FLEET_STRESS_FIXTURE_INSTRUCTOR_ID || "seed_user_instructor_cs";
 
@@ -74,9 +79,14 @@ async function main() {
   }
 
   await processMaterialEmbeddings(material.id, content, { replace: true });
-  await prisma.courseMaterial.update({ where: { id: material.id }, data: { status: "READY", processedAt: new Date() } });
+  await prisma.courseMaterial.update({
+    where: { id: material.id },
+    data: { status: "READY", processedAt: new Date() },
+  });
   const chunkCount = await prisma.materialChunk.count({ where: { materialId: material.id } });
-  console.log(JSON.stringify({ code, courseId: course.id, materialId: material.id, title, fact, chunkCount }));
+  console.log(
+    JSON.stringify({ code, courseId: course.id, materialId: material.id, title, fact, chunkCount }),
+  );
   await prisma.$disconnect();
 }
 

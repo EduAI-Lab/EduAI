@@ -25,7 +25,10 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const baseUrl = (process.env.FLEET_STRESS_CORE_URL || "https://dev.eduai.ok.ubc.ca").replace(/\/$/, "");
+const baseUrl = (process.env.FLEET_STRESS_CORE_URL || "https://dev.eduai.ok.ubc.ca").replace(
+  /\/$/,
+  "",
+);
 const origin = (process.env.FLEET_STRESS_ORIGIN || baseUrl).replace(/\/$/, "");
 const email = process.env.FLEET_STRESS_EMAIL;
 const password = process.env.FLEET_STRESS_PASSWORD;
@@ -42,10 +45,13 @@ const ladder = (process.env.FLEET_STRESS_LADDER || "16,32,64,128,256,512,768,100
 const streaming = process.env.FLEET_STRESS_STREAMING === "1";
 const timeoutMs = Number(process.env.FLEET_STRESS_TIMEOUT_MS || 300_000);
 const outputPath = process.env.FLEET_STRESS_OUT || "/tmp/fleet-rag-stress.json";
-const expectedSource = process.env.FLEET_STRESS_EXPECTED_SOURCE || "Fleet router RAG stress fixture";
+const expectedSource =
+  process.env.FLEET_STRESS_EXPECTED_SOURCE || "Fleet router RAG stress fixture";
 
 if (!email || !password || !courseId) {
-  throw new Error("FLEET_STRESS_EMAIL, FLEET_STRESS_PASSWORD, and FLEET_STRESS_COURSE_ID are required");
+  throw new Error(
+    "FLEET_STRESS_EMAIL, FLEET_STRESS_PASSWORD, and FLEET_STRESS_COURSE_ID are required",
+  );
 }
 
 function percentile(values, p) {
@@ -65,20 +71,36 @@ function parseJson(text) {
 
 function responseCookies(response) {
   if (typeof response.headers.getSetCookie === "function") {
-    return response.headers.getSetCookie().map((value) => value.split(";", 1)[0]).join("; ");
+    return response.headers
+      .getSetCookie()
+      .map((value) => value.split(";", 1)[0])
+      .join("; ");
   }
   const value = response.headers.get("set-cookie");
-  return value ? value.split(/,(?=[^;]+=[^;]+)/).map((part) => part.split(";", 1)[0]).join("; ") : "";
+  return value
+    ? value
+        .split(/,(?=[^;]+=[^;]+)/)
+        .map((part) => part.split(";", 1)[0])
+        .join("; ")
+    : "";
 }
 
 async function request(path, options = {}, cookie = "") {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-  const headers = { "Content-Type": "application/json", Origin: origin, ...(options.headers || {}) };
+    const headers = {
+      "Content-Type": "application/json",
+      Origin: origin,
+      ...(options.headers || {}),
+    };
     if (cookie) headers.Cookie = cookie;
     const started = performance.now();
-    const response = await fetch(`${baseUrl}${path}`, { ...options, headers, signal: controller.signal });
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
     let firstByteMs = null;
     let body = "";
     if (streaming && response.body) {
@@ -115,7 +137,8 @@ async function signIn() {
     method: "POST",
     body: JSON.stringify({ email, password, rememberMe: true }),
   });
-  if (!result.response.ok) throw new Error(`sign-in failed: HTTP ${result.response.status} ${result.body.slice(0, 300)}`);
+  if (!result.response.ok)
+    throw new Error(`sign-in failed: HTTP ${result.response.status} ${result.body.slice(0, 300)}`);
   const cookie = responseCookies(result.response);
   if (!cookie) throw new Error("sign-in succeeded without a session cookie");
   return cookie;
@@ -126,16 +149,20 @@ function message(content) {
 }
 
 async function chat(cookie, model, content, chatId = undefined) {
-  const result = await request("/api/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      courseId,
-      messages: [message(content)],
-      streaming,
-      ...(chatId ? { chatId } : {}),
-    }),
-  }, cookie);
+  const result = await request(
+    "/api/chat",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        model,
+        courseId,
+        messages: [message(content)],
+        streaming,
+        ...(chatId ? { chatId } : {}),
+      }),
+    },
+    cookie,
+  );
   const headers = result.response.headers;
   return {
     status: result.response.status,
@@ -149,9 +176,15 @@ async function chat(cookie, model, content, chatId = undefined) {
       ? Number(result.response.headers.get("x-rag-latency-ms"))
       : (result.json?.ragLatencyMs ?? null),
     sources: Array.isArray(result.json?.sources) ? result.json.sources : [],
-    responseText: typeof result.json?.content === "string" ? result.json.content.slice(0, 600) : null,
-    citationPresent: typeof result.json?.content === "string" && result.json.content.toLowerCase().includes(expectedSource.toLowerCase()),
-    error: result.json?.error || result.json?.code || (result.response.ok ? null : result.body.slice(0, 240)),
+    responseText:
+      typeof result.json?.content === "string" ? result.json.content.slice(0, 600) : null,
+    citationPresent:
+      typeof result.json?.content === "string" &&
+      result.json.content.toLowerCase().includes(expectedSource.toLowerCase()),
+    error:
+      result.json?.error ||
+      result.json?.code ||
+      (result.response.ok ? null : result.body.slice(0, 240)),
   };
 }
 
@@ -161,14 +194,16 @@ async function smoke(cookie) {
     models[0],
     "According to the course materials, what is the unique fleet-router stress fact? Cite the source title.",
   );
-  if (first.status < 200 || first.status >= 300) throw new Error(`RAG smoke first turn failed: ${JSON.stringify(first)}`);
+  if (first.status < 200 || first.status >= 300)
+    throw new Error(`RAG smoke first turn failed: ${JSON.stringify(first)}`);
   const followUp = await chat(
     cookie,
     models[Math.min(1, models.length - 1)],
     "What source title did you use for the fact in my previous question?",
     first.chatId,
   );
-  if (followUp.status < 200 || followUp.status >= 300) throw new Error(`RAG smoke follow-up failed: ${JSON.stringify(followUp)}`);
+  if (followUp.status < 200 || followUp.status >= 300)
+    throw new Error(`RAG smoke follow-up failed: ${JSON.stringify(followUp)}`);
   return {
     first,
     followUp,
@@ -179,19 +214,33 @@ async function smoke(cookie) {
 
 async function runLevel(cookie, concurrency) {
   const started = performance.now();
-  const rows = await Promise.all(Array.from({ length: concurrency }, (_, index) =>
-    chat(
-      cookie,
-      models[index % models.length],
-      "According to the course materials, state the unique fleet-router stress fact in one sentence and cite the source.",
-    ).then((row) => ({ index, model: models[index % models.length], ...row }))
-      .catch((error) => ({ index, model: models[index % models.length], status: 0, elapsedMs: null, firstByteMs: null, error: String(error) })),
-  ));
+  const rows = await Promise.all(
+    Array.from({ length: concurrency }, (_, index) =>
+      chat(
+        cookie,
+        models[index % models.length],
+        "According to the course materials, state the unique fleet-router stress fact in one sentence and cite the source.",
+      )
+        .then((row) => ({ index, model: models[index % models.length], ...row }))
+        .catch((error) => ({
+          index,
+          model: models[index % models.length],
+          status: 0,
+          elapsedMs: null,
+          firstByteMs: null,
+          error: String(error),
+        })),
+    ),
+  );
   const elapsedMs = Math.round(performance.now() - started);
   const successes = rows.filter((row) => row.status >= 200 && row.status < 300);
-  const counts = (values) => Object.fromEntries(
-    [...new Set(values)].map((key) => [key || "(none)", values.filter((value) => value === key).length]),
-  );
+  const counts = (values) =>
+    Object.fromEntries(
+      [...new Set(values)].map((key) => [
+        key || "(none)",
+        values.filter((value) => value === key).length,
+      ]),
+    );
   return {
     concurrency,
     requestCount: rows.length,
@@ -200,11 +249,26 @@ async function runLevel(cookie, concurrency) {
     failureCount: rows.length - successes.length,
     rps: Number((successes.length / (elapsedMs / 1000 || 1)).toFixed(2)),
     latencyMs: {
-      p50: percentile(rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs), 50),
-      p95: percentile(rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs), 95),
-      p99: percentile(rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs), 99),
-      ttftP50: percentile(rows.filter((row) => row.firstByteMs != null).map((row) => row.firstByteMs), 50),
-      ttftP95: percentile(rows.filter((row) => row.firstByteMs != null).map((row) => row.firstByteMs), 95),
+      p50: percentile(
+        rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs),
+        50,
+      ),
+      p95: percentile(
+        rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs),
+        95,
+      ),
+      p99: percentile(
+        rows.filter((row) => row.elapsedMs != null).map((row) => row.elapsedMs),
+        99,
+      ),
+      ttftP50: percentile(
+        rows.filter((row) => row.firstByteMs != null).map((row) => row.firstByteMs),
+        50,
+      ),
+      ttftP95: percentile(
+        rows.filter((row) => row.firstByteMs != null).map((row) => row.firstByteMs),
+        95,
+      ),
     },
     serverCounts: counts(rows.map((row) => row.fleetServer)),
     modelCounts: counts(rows.map((row) => row.model)),
@@ -212,13 +276,30 @@ async function runLevel(cookie, concurrency) {
     rag: {
       responsesWithChunks: successes.filter((row) => Number(row.ragChunkCount) > 0).length,
       averageTopSimilarity: successes.length
-        ? Number((successes.reduce((sum, row) => sum + Number(row.ragTopSimilarity || 0), 0) / successes.length).toFixed(4))
+        ? Number(
+            (
+              successes.reduce((sum, row) => sum + Number(row.ragTopSimilarity || 0), 0) /
+              successes.length
+            ).toFixed(4),
+          )
         : null,
-      sourceTitles: [...new Set(successes.flatMap((row) => row.sources.map((source) => source.materialTitle || source.title || "(unknown)")))],
+      sourceTitles: [
+        ...new Set(
+          successes.flatMap((row) =>
+            row.sources.map((source) => source.materialTitle || source.title || "(unknown)"),
+          ),
+        ),
+      ],
       citationResponses: successes.filter((row) => row.citationPresent).length,
       latencyMs: {
-        p50: percentile(successes.filter((row) => row.ragLatencyMs != null).map((row) => row.ragLatencyMs), 50),
-        p95: percentile(successes.filter((row) => row.ragLatencyMs != null).map((row) => row.ragLatencyMs), 95),
+        p50: percentile(
+          successes.filter((row) => row.ragLatencyMs != null).map((row) => row.ragLatencyMs),
+          50,
+        ),
+        p95: percentile(
+          successes.filter((row) => row.ragLatencyMs != null).map((row) => row.ragLatencyMs),
+          95,
+        ),
       },
     },
     errorCounts: counts(rows.map((row) => row.error).filter(Boolean)),
@@ -244,6 +325,9 @@ const result = {
   smoke: smokeResult,
   levels,
 };
-mkdirSync(outputPath.includes("/") ? outputPath.slice(0, outputPath.lastIndexOf("/")) || "/" : ".", { recursive: true });
+mkdirSync(
+  outputPath.includes("/") ? outputPath.slice(0, outputPath.lastIndexOf("/")) || "/" : ".",
+  { recursive: true },
+);
 writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 console.log(`RESULT_FILE=${outputPath}`);

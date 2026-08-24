@@ -282,8 +282,7 @@ describe("resolveFleetHost", () => {
   });
 
   it("ejects an inference-failed host before selecting the next request", async () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     resetFleetRegistryCache();
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
