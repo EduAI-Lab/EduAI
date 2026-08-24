@@ -120,6 +120,17 @@ CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
  ```
 
+For authenticated RAG fleet testing, use
+[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
+fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
+The harness signs in, verifies a two-turn RAG conversation, records chat
+continuity/citations and `X-Fleet-Server`, then runs the controlled
+16/32/64/128/256/512/768/1000 concurrency ladder. First-run results and raw
+artifacts are recorded in
+[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
+those results are baseline evidence and do not replace a later load-aware
+rerun.
+
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
 **Long-output response caps** (`#152`): detected long-output requests default to `1200` output tokens, or `600` when ADHD Assist is enabled. Override these positive-integer limits with `CHAT_LONG_OUTPUT_MAX_TOKENS` and `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` in `apps/core/.env`. The cap never increases the model/provider's existing output limit. If a response reaches this cap, chat shows a durable **Continue** action.
