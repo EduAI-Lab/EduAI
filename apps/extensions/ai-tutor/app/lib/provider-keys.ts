@@ -6,6 +6,7 @@
  */
 
 import { isBrowser } from "@eduai/ui/runtime-env";
+import { z } from "zod";
 export type ProviderId = "google" | "openai" | "opencode";
 
 /** Providers a student can configure a key for, in display order. */
@@ -79,12 +80,13 @@ export function loadApiKeysFromStorage(userId: string | null | undefined): Recor
     discardLegacyApiKeysFromStorage();
     const stored = localStorage.getItem(getApiKeysStorageKey(userId));
     if (!stored) return {};
-    const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const parsed = z.record(z.unknown()).safeParse(JSON.parse(stored));
+    if (!parsed.success) return {};
     return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
-      ),
+      Object.entries(parsed.data).flatMap(([provider, value]) => {
+        const key = z.string().min(1).safeParse(value);
+        return key.success ? [[provider, key.data] as const] : [];
+      }),
     );
   } catch {
     return {};

@@ -58,6 +58,7 @@ import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-his
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { getProviderFromModelId, getProviderLabel, maskApiKey } from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
+import { z } from "zod";
 import { cn } from "~/lib/utils";
 import api, { ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
@@ -138,24 +139,36 @@ type StudentAiChatProps = {
 // `isDefaultTutor` flag on each /ai-models entry — prefer that over this.
 const DEFAULT_MODEL_ID = "google:gemini-2.5-flash";
 
+/**
+ * The boolean spellings of "may a student pick this model", in precedence
+ * order. They accumulated as the /ai-models contract changed and any given
+ * deployment sends at most one, so the first field actually present wins.
+ */
+const STUDENT_POLICY_FLAGS = [
+  "studentSelectable",
+  "isStudentSelectable",
+  "allowedForStudents",
+  "isAllowed",
+] as const satisfies readonly (keyof StudentSelectableModel)[];
+
+function studentPolicyFlag(model: StudentSelectableModel): boolean | undefined {
+  for (const key of STUDENT_POLICY_FLAGS) {
+    const value = model[key];
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 // Detects whether the API has decorated this model with any student-policy field.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
-  return (
-    typeof model.studentSelectable === "boolean" ||
-    typeof model.isStudentSelectable === "boolean" ||
-    typeof model.allowedForStudents === "boolean" ||
-    typeof model.isAllowed === "boolean" ||
-    typeof model.availability === "string"
-  );
+  return studentPolicyFlag(model) !== undefined || model.availability !== undefined;
 }
 
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
-  if (typeof model.studentSelectable === "boolean") return model.studentSelectable;
-  if (typeof model.isStudentSelectable === "boolean") return model.isStudentSelectable;
-  if (typeof model.allowedForStudents === "boolean") return model.allowedForStudents;
-  if (typeof model.isAllowed === "boolean") return model.isAllowed;
-  if (typeof model.availability === "string") return model.availability === "allowed";
+  const flag = studentPolicyFlag(model);
+  if (flag !== undefined) return flag;
+  if (model.availability !== undefined) return model.availability === "allowed";
   return true;
 }
 
@@ -417,12 +430,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
       const topicId = currentTopicId ?? undefined;
-      const normalizedStudentAnswer =
-        typeof studentAnswer === "number"
-          ? studentAnswer
-          : typeof studentAnswer === "string" && studentAnswer.trim()
-            ? studentAnswer.trim()
-            : undefined;
+      const answerText = z.string().safeParse(studentAnswer);
+      const normalizedStudentAnswer = answerText.success
+        ? answerText.data.trim() || undefined
+        : (z.number().safeParse(studentAnswer).data ?? undefined);
 
       const messageId = generateMessageId();
 

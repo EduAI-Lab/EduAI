@@ -14,11 +14,11 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
   const details = useMemo(() => {
     const choices = activity.options?.choices ?? [];
     const correctChoiceIndex =
-      activity.type === "MCQ" && typeof activity.answer?.correctIndex === "number"
+      activity.type === "MCQ" && activity.answer?.correctIndex !== undefined
         ? activity.answer.correctIndex
         : null;
     const shortAnswerText =
-      activity.type === "SHORT_TEXT" && typeof activity.answer?.text === "string"
+      activity.type === "SHORT_TEXT" && activity.answer?.text !== undefined
         ? activity.answer.text
         : null;
 

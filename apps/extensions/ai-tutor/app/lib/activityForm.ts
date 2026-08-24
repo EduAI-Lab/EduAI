@@ -68,10 +68,7 @@ export function hintsToTextarea(hints: string[]) {
 export function activityToFormValues(activity: Activity): ActivityFormValues {
   const baseChoices = activity.options?.choices ?? [];
   const normalizedChoices = ensureChoiceSlots(baseChoices);
-  const existingCorrectIndex =
-    activity.type === "MCQ" && typeof activity.answer?.correctIndex === "number"
-      ? activity.answer.correctIndex
-      : 0;
+  const existingCorrectIndex = activity.type === "MCQ" ? (activity.answer?.correctIndex ?? 0) : 0;
 
   return {
     title: activity.title ?? "",
@@ -83,10 +80,7 @@ export function activityToFormValues(activity: Activity): ActivityFormValues {
       existingCorrectIndex >= 0 && existingCorrectIndex < normalizedChoices.length
         ? existingCorrectIndex
         : 0,
-    textAnswer:
-      activity.type === "SHORT_TEXT" && typeof activity.answer?.text === "string"
-        ? activity.answer.text
-        : "",
+    textAnswer: activity.type === "SHORT_TEXT" ? (activity.answer?.text ?? "") : "",
     hintsText: hintsToTextarea(activity.hints ?? []),
   };
 }
