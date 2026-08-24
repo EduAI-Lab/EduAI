@@ -86,7 +86,10 @@ router.patch("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req
       return res.status(error.status).json({ error: error.message });
     }
     logSafeError("[bug-reports] update failed", error);
-    sendSafeError(res, error, "Unable to update bug report");
+    // Preserve the upstream status like the two GET handlers above. Collapsing
+    // it to 500 is what hid a Core 403 behind "Unable to update bug report".
+    const status = typeof error?.status === "number" ? error.status : 500;
+    sendSafeError(res, error, "Unable to update bug report", { status });
   }
 });
 

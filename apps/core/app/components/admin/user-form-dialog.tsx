@@ -35,6 +35,15 @@ type FormData = {
   emailVerified?: boolean;
 };
 
+/**
+ * The form's fields plus the two role/mode-dependent lists. Both are optional
+ * because their absence is meaningful: the server only reads a key it receives.
+ */
+type SubmittedUserForm = FormData & {
+  authorizedUnits?: string[];
+  taCourseIds?: string[];
+};
+
 export interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -146,11 +155,12 @@ export function UserFormDialog({
   const handleSubmit = async (data: FormData) => {
     if (submissionInFlightRef.current) return;
 
-    const payload = {
-      ...data,
-      ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
-      ...(isEditing ? { taCourseIds: data.role === "STUDENT" ? selectedTACourseIds : [] } : {}),
-    };
+    // Unit scoping exists only for a UNIT_ADMIN, and TA course assignment only
+    // on edit. Neither key is sent otherwise — the server strips fields outside
+    // the mode's schema, so an absent key is the only way to mean "unchanged".
+    const payload: SubmittedUserForm = { ...data };
+    if (data.role === "UNIT_ADMIN") payload.authorizedUnits = selectedUnits;
+    if (isEditing) payload.taCourseIds = data.role === "STUDENT" ? selectedTACourseIds : [];
 
     // Lightweight pre-submit checks so the admin gets an inline message without
     // a round trip. These mirror the create/update schema's field messages; the

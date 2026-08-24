@@ -2,12 +2,15 @@
  * @file Admin console — bug-report triage, AI tutoring configuration, and AI oversight.
  *
  * Route: /admin
- * Auth: ADMIN and UNIT_ADMIN. Bug reports + AI settings stay ADMIN-only (they
- *       touch platform-wide config/PII); AI oversight is visible to both, since
- *       unit admins need to audit AI tutoring within their own unit too.
- * Loads: bug reports to triage + admin AI settings (loop policy, model policy,
- *        EduAI API key status) for ADMIN; recent AI interaction traces for both
- *        roles.
+ * Auth: ADMIN only. The console is platform administration — bug-report triage,
+ *       platform AI configuration, and cross-course AI oversight — and none of
+ *       it is a unit administrator's job. UNIT_ADMIN used to be admitted here
+ *       with the tab list collapsed to AI oversight; that is gone, and a unit
+ *       admin now gets the same in-shell 404 as any other role. `getNavForUser`
+ *       has always gated the sidebar entry on `canAccessAdminConsole()`
+ *       (ADMIN-only), so the route and the navigation finally agree.
+ * Loads: bug reports to triage, admin AI settings (loop policy, model policy,
+ *        EduAI API key status), and recent AI interaction traces.
  * Owns: the single admin surface. User/enrollment management is owned by EduAI
  *       Core (synced from Canvas); it is intentionally not exposed here. AI
  *       configuration used to live in Settings → Admin — it now lives here so
@@ -38,13 +41,13 @@ import {
   loadAdminSettingsData,
   type AdminSettingsLoaderData,
 } from "~/lib/admin-settings";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
-const ADMIN_ROLES: Role[] = ["ADMIN", "UNIT_ADMIN"];
+const ADMIN_ROLES: Role[] = ["ADMIN"];
 
 type AdminLoaderData = {
-  role: Role;
-  adminSettings: AdminSettingsLoaderData | null;
-  bugReports: AdminBugReportRow[] | null;
+  adminSettings: AdminSettingsLoaderData;
+  bugReports: AdminBugReportRow[];
   aiTraces: AiTraceRow[];
 };
 
@@ -58,27 +61,25 @@ function sourceTagBadgeVariant(status: EduAiApiKeyStatus): "default" | "secondar
 }
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  const user = await requireClientUser(ADMIN_ROLES);
-
-  // Bug reports + AI settings hit ADMIN-only server routes (403 for
-  // UNIT_ADMIN) — only fetch them for ADMIN so a unit admin's Promise.all
-  // doesn't fail wholesale and lock them out of the AI oversight tab.
-  const isAdmin = user.role === "ADMIN";
+  await requireClientUser(ADMIN_ROLES);
 
   const [adminSettings, bugReports, aiTraces] = await Promise.all([
-    isAdmin ? loadAdminSettingsData() : Promise.resolve(null),
-    isAdmin ? api.listAdminBugReports() : Promise.resolve(null),
+    loadAdminSettingsData(),
+    api.listAdminBugReports(),
     api.adminAiTraces({ limit: 50 }),
   ]);
 
-  return { role: user.role, adminSettings, bugReports, aiTraces } satisfies AdminLoaderData;
+  return { adminSettings, bugReports, aiTraces } satisfies AdminLoaderData;
 }
 
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
-  const { role, adminSettings, bugReports, aiTraces } = loaderData;
-  const isAdmin = role === "ADMIN";
-  const [activeTab, setActiveTab] = useState(isAdmin ? "bug-reports" : "ai-oversight");
-  const sourceTag = adminSettings ? getApiKeySourceTag(adminSettings.status) : null;
+  const { adminSettings, bugReports, aiTraces } = loaderData;
+  const [activeTab, setActiveTab] = useState("bug-reports");
+  // Seeded from the loader, then kept in step with saves/clears inside the
+  // panel — the loader is not revalidated, so reading it directly left the
+  // badge claiming ".env" after an override had been saved.
+  const [keyStatus, setKeyStatus] = useState<EduAiApiKeyStatus | null>(adminSettings.status);
+  const sourceTag = keyStatus ? getApiKeySourceTag(keyStatus) : null;
 
   useShellBreadcrumbs([{ label: "Admin" }]);
 
@@ -86,37 +87,27 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
       <PageHeading
         heading="Admin console"
-        subheading={
-          isAdmin
-            ? "Triage bug reports, configure AI tutoring, and review AI oversight."
-            : "Review AI tutoring activity in your unit."
-        }
+        subheading="Triage bug reports, configure AI tutoring, and review AI oversight."
       />
 
       <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <PageTabsList>
-          {isAdmin ? (
-            <PageTabsTrigger value="bug-reports">
-              <IconBug className="h-4 w-4" /> Bug reports
-            </PageTabsTrigger>
-          ) : null}
-          {isAdmin ? (
-            <PageTabsTrigger value="ai-settings">
-              <IconSettings className="h-4 w-4" /> AI settings
-            </PageTabsTrigger>
-          ) : null}
+          <PageTabsTrigger value="bug-reports">
+            <IconBug className="h-4 w-4" /> Bug reports
+          </PageTabsTrigger>
+          <PageTabsTrigger value="ai-settings">
+            <IconSettings className="h-4 w-4" /> AI settings
+          </PageTabsTrigger>
           <PageTabsTrigger value="ai-oversight">
             <IconBrain className="h-4 w-4" /> AI oversight
           </PageTabsTrigger>
         </PageTabsList>
 
-        {isAdmin && bugReports ? (
-          <PageTabsContent value="bug-reports" className="space-y-6">
-            <BugReportsTab initialReports={bugReports} />
-          </PageTabsContent>
-        ) : null}
+        <PageTabsContent value="bug-reports" className="space-y-6">
+          <BugReportsTab initialReports={bugReports} />
+        </PageTabsContent>
 
-        {isAdmin && adminSettings && sourceTag ? (
+        {sourceTag ? (
           <PageTabsContent value="ai-settings" className="space-y-6">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
               <div>
@@ -125,9 +116,11 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
                   Configure the AI loop policy and EduAI API integration.
                 </p>
               </div>
-              <Badge variant={sourceTagBadgeVariant(adminSettings.status)}>{sourceTag.label}</Badge>
+              <Badge variant={sourceTagBadgeVariant(keyStatus ?? adminSettings.status)}>
+                {sourceTag.label}
+              </Badge>
             </div>
-            <AdminSettingsPanel loaderData={adminSettings} />
+            <AdminSettingsPanel loaderData={adminSettings} onStatusChange={setKeyStatus} />
           </PageTabsContent>
         ) : null}
 
@@ -138,3 +131,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

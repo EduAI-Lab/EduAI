@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { encrypt, decrypt } from "~/lib/canvas/encryption";
 import type { UserProviderSettings } from "~/lib/ai/provider-types";
@@ -49,6 +50,12 @@ export async function upsertUserProviderSetting(
   const encryptedKey =
     input.apiKey !== undefined ? (input.apiKey ? encrypt(input.apiKey) : null) : undefined;
 
+  // A field the caller did not send must not reach the UPDATE at all, so an
+  // absent `apiKey` keeps the stored secret rather than clearing it.
+  const update: Prisma.UserProviderSettingsUpdateInput = { isEnabled: input.isEnabled };
+  if (encryptedKey !== undefined) update.apiKey = encryptedKey;
+  if (input.baseUrl !== undefined) update.baseUrl = input.baseUrl || null;
+
   await prisma.userProviderSettings.upsert({
     where: { userId_providerId: { userId, providerId: provider.id } },
     create: {
@@ -58,11 +65,7 @@ export async function upsertUserProviderSetting(
       apiKey: encryptedKey ?? null,
       baseUrl: input.baseUrl ?? null,
     },
-    update: {
-      isEnabled: input.isEnabled,
-      ...(encryptedKey !== undefined ? { apiKey: encryptedKey } : {}),
-      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl || null } : {}),
-    },
+    update,
   });
 }
 

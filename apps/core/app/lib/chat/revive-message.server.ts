@@ -1,9 +1,28 @@
 import type { Prisma } from "@prisma/client";
+import type { Message } from "ai";
 import {
   courseScopeRedirectFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
+
+/** Per-message metadata Core persists alongside a stored assistant turn. */
+export type StoredChatMessageMetadata = {
+  resolvedModelId?: string;
+  wasAutoRouted?: boolean;
+  hitLongOutputCap?: boolean;
+  courseScopeRedirect?: boolean;
+};
+
+/**
+ * A stored message revived for the client.
+ *
+ * AI-SDK's `Message` has no `metadata` field, so the two are named together
+ * here rather than being re-asserted at every render site.
+ */
+export type StoredChatMessage = Message & {
+  metadata?: StoredChatMessageMetadata;
+};
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -73,7 +92,7 @@ export function reviveStoredMessage(record: {
   messageId: string;
   role: string;
   content: Prisma.JsonValue;
-}): Record<string, unknown> {
+}): StoredChatMessage {
   const parsed: Record<string, unknown> =
     record.content && typeof record.content === "object" && !Array.isArray(record.content)
       ? (record.content as Record<string, unknown>)
@@ -95,21 +114,26 @@ export function reviveStoredMessage(record: {
     typeof parsed.metadata === "object" &&
     !Array.isArray(parsed.metadata) &&
     (parsed.metadata as Record<string, unknown>).hitLongOutputCap === true;
-  const metadata = {
-    ...(resolvedModelId
-      ? {
-          resolvedModelId,
-          wasAutoRouted,
-        }
-      : {}),
-    ...(hitLongOutputCap ? { hitLongOutputCap: true } : {}),
-    ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
-  };
-  return {
+  const metadata: StoredChatMessageMetadata = {};
+  if (resolvedModelId) {
+    metadata.resolvedModelId = resolvedModelId;
+    metadata.wasAutoRouted = wasAutoRouted;
+  }
+  if (hitLongOutputCap) metadata.hitLongOutputCap = true;
+  if (courseScopeRedirect) metadata.courseScopeRedirect = true;
+
+  const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
-    role,
+    // SAFETY: `role` is whatever the row stored, and rows predate the current
+    // role union. The value is only ever compared or rendered, never used to
+    // pick a code path that assumes a narrower role, so preserving the stored
+    // string is safer here than coercing an unrecognized one to a valid role.
+    role: role as StoredChatMessage["role"],
     content: text,
     parts: [{ type: "text", text }],
-    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
+  // A turn with nothing worth recording carries no `metadata` key at all, so a
+  // restored transcript matches the shape a fresh turn produces.
+  if (Object.keys(metadata).length > 0) revived.metadata = metadata;
+  return revived;
 }

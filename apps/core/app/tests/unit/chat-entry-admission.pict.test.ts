@@ -88,7 +88,14 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
@@ -303,6 +310,7 @@ function makeArgs(body: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
     autoLlmEnabled: true,
     autoRulesEnabled: false,

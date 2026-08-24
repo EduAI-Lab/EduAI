@@ -351,9 +351,15 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // local row needs a verdict, so this walks the caller's pages.
     const scopedCourses = await listCoursesFromCore(cookie, { all: true });
     roleByCoreId = new Map(scopedCourses.map((c) => [c.id, c.callerEnrollmentRole ?? null]));
-  } catch {
-    // Core unreachable — roleByCoreId stays empty; deriveListAccess fails closed
-    // (#1114). Ownership alone does not keep rows visible.
+  } catch (error) {
+    // An expired/invalid caller cookie surfaces here as a status-bearing 401/403
+    // from Core (coreError sets `.status`). Propagate it so the route answers
+    // Not Authorized instead of silently returning an empty catalog (#1569
+    // review) — an auth failure must not read as "you have no courses". Any
+    // other failure (Core unreachable, 5xx) fails closed: roleByCoreId stays
+    // empty and deriveListAccess denies every row (#1114). Ownership alone does
+    // not keep rows visible.
+    if (error?.status === 401 || error?.status === 403) throw error;
   }
 
   const authorizedUnits =

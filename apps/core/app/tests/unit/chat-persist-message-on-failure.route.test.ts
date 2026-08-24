@@ -119,17 +119,24 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode failure paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 
 const NEW_CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: Record<string, unknown>) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -164,6 +171,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "ADMIN" },
   } as never);
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
 
   // No `chatId` in the request body — the handler must create a brand-new
   // Chat row (the exact scenario in #1561's DB query: a fresh row with

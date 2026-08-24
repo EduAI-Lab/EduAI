@@ -222,9 +222,24 @@ export function resolveEmbeddingRequestTimeoutMs(): number {
   return Math.min(configured, MAX_EMBEDDING_REQUEST_TIMEOUT_MS);
 }
 
-function abortSignalReason(signal: AbortSignal): unknown {
-  if (signal.reason !== undefined) return signal.reason;
-  const error = new Error("The embedding request was aborted");
+/**
+ * The value to throw / reject / re-abort with when `signal` has fired.
+ *
+ * `AbortSignal.reason` carries no contract, so this normalizes it to something
+ * throwable. Every platform abort (and every abort this module raises) already
+ * supplies an `Error` — a `DOMException` on the server runtime — and is handed
+ * back untouched, so `isEmbeddingTimeoutError`'s name/cause walk is unaffected.
+ * Only a caller aborting with a bare value gets wrapped, and that value was
+ * already invisible to that walk (it bails on non-objects).
+ */
+function abortSignalReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+
+  const error =
+    reason === undefined
+      ? new Error("The embedding request was aborted")
+      : new Error(String(reason), { cause: reason });
   error.name = "AbortError";
   return error;
 }
@@ -605,18 +620,30 @@ function getHybridAlpha(): number {
   return n;
 }
 
+/** One `[embedding]` console line: which provider served a call, and why. */
+type EmbeddingProviderLogEntry = {
+  provider: EmbeddingProviderKind;
+  dimension: number;
+  courseProvider: EffectiveEmbeddingSettings["provider"];
+  model: EffectiveEmbeddingSettings["model"];
+  detail?: string;
+};
+
 function logEmbeddingProvider(
   kind: EmbeddingProviderKind,
   settings: EffectiveEmbeddingSettings,
   detail?: string,
 ): void {
-  console.log("[embedding]", {
+  const entry: EmbeddingProviderLogEntry = {
     provider: kind,
     dimension: getExpectedEmbeddingDimension(),
     courseProvider: settings.provider,
     model: settings.model,
-    ...(detail ? { detail } : {}),
-  });
+  };
+  // A `detail: undefined` key would print in the log line, so it is added only
+  // when the caller passed one.
+  if (detail) entry.detail = detail;
+  console.log("[embedding]", entry);
 }
 
 function assertEmbeddingDimension(embedding: number[], context: string): void {
@@ -790,13 +817,14 @@ function createOpenRouterEmbeddingClient() {
   const referer =
     process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
+  const title = process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI";
+
   return createOpenAI({
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
-    headers: {
-      ...(referer ? { "HTTP-Referer": referer } : {}),
-      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-    },
+    // OpenRouter attributes traffic by these headers; the referer is sent only
+    // when this deployment actually has a public URL to claim.
+    headers: referer ? { "X-Title": title, "HTTP-Referer": referer } : { "X-Title": title },
   });
 }
 

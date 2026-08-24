@@ -39,6 +39,7 @@ import prisma from "~/lib/prisma.server";
 import { loader as listLoader, action as postAction } from "~/routes/api/questions";
 import { loader as getLoader, action as patchAction } from "~/routes/api/questions.$id";
 import { bodyForIdempotencyHash, hashRequestBody } from "~/lib/idempotency.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const mockGetSession = auth.api.getSession as any;
 const db = prisma as unknown as {
@@ -88,7 +89,7 @@ function makeListArgs(
   } as any;
 }
 
-function makePostArgs(body: object, sessionCookie?: string) {
+function makePostArgs(body: RouteRequestBody, sessionCookie?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (sessionCookie) headers.set("Cookie", sessionCookie);
   return {
@@ -113,7 +114,12 @@ function makeGetByIdArgs(id: string, authorization?: string, sessionCookie?: str
   } as any;
 }
 
-function makePatchArgs(id: string, body: object, authorization?: string, sessionCookie?: string) {
+function makePatchArgs(
+  id: string,
+  body: RouteRequestBody,
+  authorization?: string,
+  sessionCookie?: string,
+) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   if (sessionCookie) headers.set("Cookie", sessionCookie);
@@ -314,7 +320,7 @@ describe("POST /api/questions", () => {
       courseId: COURSE_ID,
       deletedAt: null,
     });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -350,7 +356,7 @@ describe("POST /api/questions", () => {
       courseId: COURSE_ID,
       deletedAt: null,
     });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -402,7 +408,7 @@ describe("POST /api/questions", () => {
       courseId: COURSE_ID,
       deletedAt: null,
     });
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });
@@ -693,7 +699,7 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
       deletedAt: null,
     });
     db.question.findUnique.mockResolvedValue(null);
-    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+    db.$transaction.mockImplementation(async <T>(fn: (tx: typeof db) => T) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
     });

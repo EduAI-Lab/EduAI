@@ -24,9 +24,11 @@ afterEach(() => {
 
 describe("GET /api/ai-status", () => {
   it("proxies Core status through on a healthy response", async () => {
+    // AI Tutor delegates to Core, so it forwards whatever tiers Core reports —
+    // including the #1551 `degraded` state — verbatim.
     const payload = {
-      cloud: { state: "online", detail: "ok" },
-      ubc: { state: "offline", detail: "no" },
+      cloud: { state: "operational", detail: "ok" },
+      ubc: { state: "degraded", detail: "UBC-hosted inference under heavy load." },
     };
     vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => payload });
 

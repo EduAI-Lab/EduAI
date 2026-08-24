@@ -379,9 +379,10 @@ export function validateBugReportStatus(status) {
  * @throws BugReportError - When the id is invalid, the status is unsupported,
  * or the target report does not exist.
  *
- * Why: Status changes are the only mutable admin action on bug reports, so this
- * helper preserves the same include shape as listing to let the UI refresh from
- * the PATCH response directly.
+ * Why: Status changes are the only mutable admin action on bug reports, and the
+ * admin view already holds the full row it is changing, so this returns just the
+ * two fields the write touched and lets the caller merge them onto that row
+ * rather than paying for a re-read of the listing shape.
  */
 export async function updateBugReportStatus(bugReportId, nextStatus, cookie) {
   if (typeof bugReportId !== "string" || bugReportId.trim().length === 0) {

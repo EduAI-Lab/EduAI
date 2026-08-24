@@ -160,8 +160,9 @@ async function main() {
       apiKeys,
       messages: [{ id: messageId, role: "user", content: prompt }],
       streaming,
-      ...(chatId ? { chatId } : {}),
-      ...(courseCode ? { courseCode } : {}),
+      // JSON.stringify drops undefined, so an uncoursed run posts neither key.
+      chatId: chatId || undefined,
+      courseCode: courseCode || undefined,
     };
 
     const t0 = performance.now();

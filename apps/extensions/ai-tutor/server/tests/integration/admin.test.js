@@ -844,7 +844,7 @@ describe("Admin routes", () => {
       expect(res.status).toBe(403);
     });
 
-    it("UNIT_ADMIN enrolls a student in a COSC course", async () => {
+    it("UNIT_ADMIN enrolls a student in a COSC course, writing through to Core", async () => {
       const student = makeStudent();
       const res = await request(unitAdminApp)
         .post(`/api/admin/courses/${coscCourse.id}/enrollments`)
@@ -864,6 +864,31 @@ describe("Admin routes", () => {
       });
       expect(row).not.toBeNull();
       expect(row.role).toBe("STUDENT");
+      // A local-only row would grant access Core never recorded, and
+      // PATCH .../role would then refuse to manage it.
+      expect(createCoreEnrollment).toHaveBeenCalledWith(
+        coscCourse.coreOfferingId,
+        student.id,
+        "STUDENT",
+        expect.anything(),
+      );
+    });
+
+    it("refuses the enrolment when Core rejects the write-through", async () => {
+      const student = makeStudent();
+      const coreError = new Error("Enrollment refused");
+      coreError.status = 422;
+      createCoreEnrollment.mockRejectedValueOnce(coreError);
+
+      const res = await request(unitAdminApp)
+        .post(`/api/admin/courses/${coscCourse.id}/enrollments`)
+        .send({ userId: student.id });
+
+      expect(res.status).toBe(422);
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: student.id } },
+      });
+      expect(row).toBeNull();
     });
 
     it("UNIT_ADMIN can enroll with role TA", async () => {

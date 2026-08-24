@@ -369,7 +369,6 @@ describe("ChatScreen — header", () => {
           content: "Stored partial answer",
           metadata: {
             resolvedModelId: "openai:gpt-4",
-            finishReason: "length",
             hitLongOutputCap: true,
           },
         },
@@ -587,13 +586,13 @@ describe("ChatScreen — header", () => {
   });
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
-    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
-      resolveFetch = resolve;
-    });
-    const fetchSpy = vi
-      .spyOn(global, "fetch")
-      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+    let resolveFetch: (value: { json: () => Promise<Record<string, unknown>> }) => void;
+    const fetchPromise = new Promise<{ json: () => Promise<Record<string, unknown>> }>(
+      (resolve) => {
+        resolveFetch = resolve;
+      },
+    );
+    const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(fetchPromise as Promise<Response>);
 
     const { router } = renderChatScreen(null, autoRoutingData);
 

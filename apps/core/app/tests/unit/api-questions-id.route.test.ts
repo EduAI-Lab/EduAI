@@ -38,12 +38,15 @@ function makeLoaderArgs(headers: Record<string, string> = {}) {
 }
 
 function makeActionArgs(body: unknown, method = "PATCH", headers: Record<string, string> = {}) {
+  // A bodyless method carries no body at all, so the key is added only when the
+  // caller passed one.
+  const init: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json", ...headers },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/questions/q1", {
-      method,
-      headers: { "Content-Type": "application/json", ...headers },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/questions/q1", init),
     params: { id: "q1" },
     context: {} as never,
   } as never;

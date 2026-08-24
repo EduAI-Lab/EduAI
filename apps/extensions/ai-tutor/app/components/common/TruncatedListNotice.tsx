@@ -18,12 +18,18 @@ export function TruncatedListNotice({
   action,
   className,
 }: {
-  shown: number;
-  total: number;
+  /**
+   * Both are optional because the guard below deliberately handles a loader
+   * that has not resolved a count yet — typing them as required `number` made
+   * that branch unreachable on paper while it still ran in practice.
+   */
+  shown: number | undefined;
+  total: number | undefined;
   noun?: string;
   action?: string;
   className?: string;
 }) {
+  if (total === undefined || shown === undefined) return null;
   if (!Number.isFinite(total) || !Number.isFinite(shown) || total <= shown) return null;
 
   return (

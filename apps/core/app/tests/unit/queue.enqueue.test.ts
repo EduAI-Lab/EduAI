@@ -39,7 +39,7 @@ const prismaMock = vi.hoisted(() => {
     aiJob,
     // The post-enqueue snapshot reads position + depth inside one REPEATABLE
     // READ transaction; the mock runs that callback against the same client.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: unknown) => T) => fn({ aiJob })),
   };
 });
 

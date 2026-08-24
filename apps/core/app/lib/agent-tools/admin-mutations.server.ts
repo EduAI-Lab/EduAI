@@ -246,9 +246,8 @@ function mapEnrollmentResult(
     if (result.status === "409" && "error" in result) {
       return mutationFailure({
         error: result.error,
-        ...("currentInstructorCount" in result
-          ? { currentInstructorCount: result.currentInstructorCount }
-          : {}),
+        currentInstructorCount:
+          "currentInstructorCount" in result ? result.currentInstructorCount : undefined,
       });
     }
     if (result.status === "403" && "error" in result) {

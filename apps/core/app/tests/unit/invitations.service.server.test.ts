@@ -11,7 +11,7 @@ const prismaMock = vi.hoisted(() => {
   return {
     invitation: { findUnique: vi.fn(), updateMany: vi.fn() },
     user: { findUnique: vi.fn(), delete: vi.fn() },
-    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    $transaction: vi.fn(async <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx)),
     __tx: tx,
   };
 });

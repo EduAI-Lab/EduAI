@@ -46,9 +46,11 @@ export function buildFleetRouterFeatures(
   feature: WorkloadFeature,
   fleetPick: FleetPick | null,
 ): Record<string, unknown> {
+  // A request the fleet router did not place carries no server attribution.
   return {
     feature,
-    ...(fleetPick ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason } : {}),
+    fleetServerId: fleetPick?.serverId,
+    fleetReason: fleetPick?.reason,
   };
 }
 

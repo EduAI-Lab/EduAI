@@ -4,7 +4,7 @@
 const mockFetch = vi.fn();
 
 beforeEach(() => {
-  global.fetch = mockFetch as unknown as typeof fetch;
+  global.fetch = mockFetch as typeof fetch;
   mockFetch.mockReset();
 
   // Reset window.location before each test
@@ -161,7 +161,13 @@ describe("api methods", () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ terms: ["W1::2026"], statuses: ["published"], progress: [] }),
+        json: () =>
+          Promise.resolve({
+            terms: ["W1::2026"],
+            statuses: ["published"],
+            progress: [],
+            coreUnavailable: false,
+          }),
       });
       const { api } = await import("~/lib/api");
       const facets = await api.listCourseFacets();
@@ -184,7 +190,12 @@ describe("api methods", () => {
   });
 
   it("successful response returns parsed JSON", async () => {
-    const mockData = { courses: [{ id: 1, title: "Math 101" }] };
+    const mockData = {
+      data: [{ id: 1, title: "Math 101", isPublished: true }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    };
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -417,7 +428,15 @@ describe("api methods", () => {
   // than counting an array.
   it("api.listAdminUsers() defaults to the first page and returns the envelope", async () => {
     const page = {
-      data: [{ id: "u1", name: "Student", role: "STUDENT" }],
+      data: [
+        {
+          id: "u1",
+          name: "Student",
+          email: "student@ubc.ca",
+          role: "STUDENT",
+          createdAt: "2026-01-05T00:00:00.000Z",
+        },
+      ],
       total: 137,
       page: 1,
       pageSize: 25,
@@ -439,7 +458,14 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ data: [], total: 0, page: 4, pageSize: 100 }),
+      json: () =>
+        Promise.resolve({
+          data: [],
+          total: 0,
+          page: 4,
+          pageSize: 100,
+          stats: { total: 0, active: 0, byRole: {} },
+        }),
     });
 
     const { api } = await import("~/lib/api");
@@ -454,7 +480,7 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+      json: () => Promise.resolve(emptyEnrollments()),
     });
 
     const { api } = await import("~/lib/api");
@@ -471,8 +497,16 @@ describe("api methods", () => {
       status: 200,
       json: () =>
         Promise.resolve({
-          enrollments: [],
-          availableStudents: [{ id: "u9" }],
+          ...emptyEnrollments(),
+          availableStudents: [
+            {
+              id: "u9",
+              name: "Ali",
+              email: "ali@ubc.ca",
+              role: "STUDENT",
+              createdAt: "2026-01-05T00:00:00.000Z",
+            },
+          ],
           availableStudentsPage: { total: 900, page: 2, pageSize: 50 },
         }),
     });
@@ -494,7 +528,7 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+      json: () => Promise.resolve(emptyEnrollments()),
     });
 
     const { api } = await import("~/lib/api");
@@ -582,6 +616,23 @@ describe("search + move endpoints (#1207)", () => {
     expect(calledUrl()).toContain("search=recursion");
   });
 
+  // Topic ids are cuid strings in the DB (`Topic.id String @id @default(cuid())`),
+  // so a numeric-only schema would reject every real topic row and, through
+  // `mainTopic`/`secondaryTopics`, every real activity row with it.
+  it("accepts the cuid topic ids the server actually sends", async () => {
+    okJson({
+      data: [{ id: "cm4t0p1cabcdef0123456789", name: "Recursion" }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    const { api } = await import("~/lib/api");
+
+    const topics = await api.topicsForCourse(4);
+
+    expect(topics.data[0]).toEqual({ id: "cm4t0p1cabcdef0123456789", name: "Recursion" });
+  });
+
   it("sends page alongside search so the pager pages the filtered set", async () => {
     okEmptyPage();
     const { api } = await import("~/lib/api");
@@ -609,13 +660,11 @@ describe("search + move endpoints (#1207)", () => {
     ["moveModuleToPosition", "modules", "module"],
     ["moveLessonToPosition", "lessons", "lesson"],
     ["moveActivityToPosition", "activities", "activity"],
-  ])("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
-    okJson({ [key]: { id: 4 }, position: 12, total: 40 });
+  ] as const)("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
+    okJson({ [key]: movedRow(key), position: 12, total: 40 });
     const { api } = await import("~/lib/api");
 
-    const result = await (
-      api as unknown as Record<string, (id: number, p: number) => Promise<unknown>>
-    )[method](4, 12);
+    const result = await api[method](4, 12);
 
     const [url, options] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://localhost:4000/api/${segment}/4/position`);
@@ -649,5 +698,203 @@ describe("search + move endpoints (#1207)", () => {
 
     expect(calledUrl()).toBe("http://localhost:4000/api/modules/5/context");
     expect(result).toEqual({ moduleOrdinal: 4, moduleTotal: 12 });
+  });
+});
+
+/** The enrollment route's envelope with no rows in it (`server/src/routes/admin.js`). */
+function emptyEnrollments() {
+  return {
+    courseId: 9,
+    enrolledStudents: [],
+    availableStudents: [],
+    availableStudentsPage: { total: 0, page: 1, pageSize: 25 },
+  };
+}
+
+/** A minimal but complete module/lesson/activity row, as a move response returns it. */
+function movedRow(key: "module" | "lesson" | "activity") {
+  if (key === "activity") {
+    return {
+      id: 4,
+      instructionsMd: "",
+      position: 12,
+      question: "Q",
+      type: "SHORT_TEXT",
+      options: null,
+      hints: [],
+      mainTopic: null,
+      secondaryTopics: [],
+      enableTeachMode: true,
+      enableGuideMode: true,
+      enableCustomMode: false,
+      customPrompt: null,
+      customPromptTitle: null,
+    };
+  }
+  return { id: 4, title: "Moved", position: 12, isPublished: true };
+}
+
+// #1596 review: `TeachRequestSchema`/`CustomRequestSchema` take `topicId` as the
+// cuid string `Topic.id` is, so the api layer must send it as a string. It used
+// to declare the parameter as `number`, which the server rejected outright.
+describe("AI request topic ids", () => {
+  const okChatReply = () =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ message: "reply", chatId: null }),
+    });
+
+  const sentBody = () => JSON.parse(mockFetch.mock.calls[0][1].body);
+
+  const params = {
+    knowledgeLevel: "beginner",
+    message: "Explain base cases",
+    modelId: "google:gemini-2.5-flash",
+    apiKey: "test-key",
+  };
+
+  it("sends a cuid topic id through unchanged on teach", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendTeachMessage(4, { ...params, topicId: "cm4t0p1cabcdef0123456789" });
+
+    expect(sentBody().topicId).toBe("cm4t0p1cabcdef0123456789");
+  });
+
+  it("stringifies a numeric topic id so the wire stays single-typed", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendCustomMessage(4, { ...params, topicId: 7 });
+
+    expect(sentBody().topicId).toBe("7");
+  });
+
+  it("omits topicId entirely when no topic is selected", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendTeachMessage(4, params);
+
+    expect(sentBody()).not.toHaveProperty("topicId");
+  });
+});
+
+// #1616 review: three schemas named fields their routes have never sent, so
+// every call decoded into a ZodError the UI surfaced as a failed action. Each
+// payload below is copied from the handler that produces it, so a future edit
+// to either side has to break this test before it can break the feature.
+describe("response shapes match what the routes actually send", () => {
+  const respondWith = (body: unknown) =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+    });
+
+  // Core's `reviveStoredMessage` keys each message by `id`; the proxy in
+  // `server/src/routes/activities.js` forwards Core's body verbatim.
+  it("getChatMessages decodes Core's id-keyed messages", async () => {
+    respondWith({
+      chat: { id: "chat-1", title: "Recursion" },
+      messages: [
+        { id: "m1", role: "user", content: "Explain base cases" },
+        { id: "m2", role: "assistant", content: "A base case is..." },
+      ],
+      canEdit: true,
+    });
+
+    const { api } = await import("~/lib/api");
+    const result = await api.getChatMessages(4, "chat-1");
+
+    expect(result.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("getChatMessages rejects a message with no id", async () => {
+    respondWith({
+      chat: { id: "chat-1", title: null },
+      messages: [{ role: "user", content: "Explain base cases" }],
+    });
+
+    const { api } = await import("~/lib/api");
+    await expect(api.getChatMessages(4, "chat-1")).rejects.toThrow();
+  });
+
+  // `POST /bug-reports` discards the created row and answers `{ ok: true }`.
+  it("submitBugReport decodes the bare ok envelope the route sends", async () => {
+    respondWith({ ok: true });
+
+    const { api } = await import("~/lib/api");
+    await expect(
+      api.submitBugReport({
+        description: "The topic selector drops my selection",
+        bugType: "UI_DISPLAY",
+        isAnonymous: false,
+        consoleLogs: "[]",
+        networkLogs: "[]",
+        screenshot: null,
+        pageUrl: "http://localhost:3001/activities/4",
+        userAgent: "vitest",
+      }),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  // `updateBugReportStatus` returns only the two fields it wrote; the admin
+  // view spread-merges them onto the row it already holds.
+  // The service maps Core's enum back to the UI casing before responding, so
+  // the decoded status is `"resolved"`, not Core's `RESOLVED`.
+  it("updateAdminBugReportStatus decodes the status-only row", async () => {
+    respondWith({ id: "bug-1", status: "resolved" });
+
+    const { api } = await import("~/lib/api");
+    await expect(api.updateAdminBugReportStatus("bug-1", { status: "resolved" })).resolves.toEqual({
+      id: "bug-1",
+      status: "resolved",
+    });
+  });
+
+  // `mapImportableActivity` folds the question into `title`; there is no
+  // `question` on the wire, so requiring one emptied the import picker.
+  it("listImportableActivities decodes the row the mapper actually builds", async () => {
+    respondWith({
+      data: [
+        {
+          id: 7,
+          title: "What is recursion?",
+          type: "MCQ",
+          lessonId: 3,
+          lessonTitle: "Recursion",
+          moduleTitle: "Fundamentals",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
+    const { api } = await import("~/lib/api");
+    const page = await api.listImportableActivities();
+    expect(page.data[0]).toMatchObject({ id: 7, title: "What is recursion?", type: "MCQ" });
+  });
+
+  // `ActivityAnalytics.difficultyScore` is an Int and `difficultyLabel` is the
+  // bucket; typing the score as a string rejected every analytics row.
+  it("courseAnalytics decodes a numeric difficultyScore beside its label", async () => {
+    respondWith([
+      {
+        activityId: 7,
+        averageRating: 4.5,
+        feedbackCount: 2,
+        difficultyScore: 42,
+        difficultyLabel: "MEDIUM",
+        activity: { id: 7, title: "What is recursion?", lessonId: 3 },
+      },
+    ]);
+
+    const { api } = await import("~/lib/api");
+    const rows = await api.courseAnalytics(1);
+    expect(rows[0]).toMatchObject({ difficultyScore: 42, difficultyLabel: "MEDIUM" });
   });
 });

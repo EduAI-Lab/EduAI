@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Fleet Slice 2: fleetRetry: true success marker only after alternate host succeeds.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -111,7 +112,14 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
@@ -137,7 +145,7 @@ const pick2 = {
   reason: "interactive-round-robin-retry",
 };
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -195,6 +203,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetAiAdmission();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   process.env.AI_MAX_INFLIGHT = "0";
   // Soft-timeout so a successful streamText mock does not hang on probe.wait().

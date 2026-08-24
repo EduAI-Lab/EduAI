@@ -1,3 +1,4 @@
+import "./load-core-env";
 import { PrismaClient } from "@prisma/client";
 import { execSync } from "child_process";
 import { SEED_IDS } from "./seed";

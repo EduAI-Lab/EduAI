@@ -1,6 +1,6 @@
 import type { Alignment, Side } from "driver.js";
 
-export type AppTourId = "student-journey" | "student-lesson-help";
+export type AppTourId = "student-journey" | "student-lesson-help" | "unit-admin-orientation";
 
 export type TourMemoryKey = "selectedCourseRoute" | "selectedModuleRoute" | "selectedLessonRoute";
 

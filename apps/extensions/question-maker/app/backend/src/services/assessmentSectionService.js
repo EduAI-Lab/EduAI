@@ -412,7 +412,9 @@ export const removeQuestionFromAllSections = async (questionId, userId, courseId
       id: questionId,
       course: {
         userId,
-        ...(courseId != null ? { id: Number(courseId) } : {}),
+        // Without a course the ownership check spans every course the user
+        // owns; `undefined` is Prisma's "no constraint".
+        id: courseId != null ? Number(courseId) : undefined,
       },
     },
   });

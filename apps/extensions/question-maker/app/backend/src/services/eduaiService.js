@@ -271,8 +271,10 @@ class EduAIService {
           jobType: "background",
           ...params.routingContext,
         },
-        ...(params.temperature != null ? { temperature: params.temperature } : {}),
-        ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
+        // Unset sampling controls leave Core on its own defaults; a null must
+        // not reach it, and JSON.stringify drops the undefined.
+        temperature: params.temperature ?? undefined,
+        maxTokens: params.maxTokens ?? undefined,
       };
       if (params.courseId) {
         requestPayload.courseId = params.courseId;
@@ -777,12 +779,26 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     }
   }
 
-  /** Lists EduAI-managed courses for onboarding flows. Excludes courses in config.eduaiIgnoredCourseCodes. */
-  async listCourses() {
-    if (!this.isConfigured() || !this.hasApiKey()) {
-      throw new Error(
-        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable.",
-      );
+  /**
+   * Lists the EduAI-managed courses the CALLER can see. Excludes courses in
+   * config.eduaiIgnoredCourseCodes.
+   *
+   * Scoped by the caller's session cookie (#1569): Core's `GET /api/courses`
+   * returns only the caller's own enrollments/owned courses when authenticated
+   * by cookie. The privileged service key is deliberately NOT attached — doing
+   * so returns the entire platform catalog unscoped (BOLA). A cookie is
+   * therefore required; without one Core answers 401 and this throws.
+   */
+  async listCourses({ cookie } = {}) {
+    if (!this.isConfigured()) {
+      throw new Error("EduAI service is not configured. Please set the EDUAI base URL.");
+    }
+    if (!cookie) {
+      // No Core session to scope by — this is an auth failure, not a service
+      // fault. Tag it so the route answers 401 instead of a misleading 500.
+      const err = new Error("A caller session cookie is required to list courses.");
+      err.statusCode = 401;
+      throw err;
     }
 
     // #1041: Core requires paging and answers `{ data, total, page, pageSize }`.
@@ -793,7 +809,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       const response = await axios.get(url, {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
+          // Cookie-scoped, NOT service-key: Core restricts the catalog to the
+          // caller's courses (#1569). Never send the Bearer service key here.
+          Cookie: cookie,
         },
         timeout: 60000, // 60 second timeout
       });
@@ -914,7 +932,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   } = {}) {
     const admission = validateTestApiKeyAdmission({
       apiKeys: clientApiKeys,
-      ...(forceProvider != null ? { provider: forceProvider } : {}),
+      // No forced provider means admission picks one from the supplied keys.
+      provider: forceProvider ?? undefined,
     });
     if (admission.status) {
       const error = new Error(admission.message);
