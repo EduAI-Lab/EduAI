@@ -62,7 +62,7 @@ test.describe("Core course lifecycle (ADMIN)", () => {
       expect(res.status()).toBe(201);
 
       const course = await res.json();
-      expect(typeof course.id).toBe("string");
+      expect(course.id).toEqual(expect.any(String));
       expect(course.name).toBe("Create Test");
       expect(course.isPublished).toBe(false);
     } finally {

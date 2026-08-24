@@ -9,6 +9,7 @@ import {
 import { getQuestionById, updateQuestionTestable } from "~/lib/questions/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { asBoolean } from "~/lib/json-value";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -94,7 +95,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const body = await request.json();
   const { testable } = body;
 
-  if (typeof testable !== "boolean") {
+  if (asBoolean(testable) === null) {
     return json(422, {
       error: "VALIDATION_ERROR",
       fields: { testable: "required boolean" },

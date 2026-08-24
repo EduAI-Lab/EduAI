@@ -48,8 +48,7 @@ function uniqueEmail(prefix: string): string {
 const verificationIdentifiers: string[] = [];
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies =
-    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  const setCookies = res.headers.getSetCookie instanceof Function ? res.headers.getSetCookie() : [];
   return setCookies
     .map((c) => c.split(";")[0])
     .filter(Boolean)

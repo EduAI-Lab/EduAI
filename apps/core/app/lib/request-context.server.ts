@@ -55,7 +55,7 @@ export function getRequestContext(request: Request): RequestContext {
   try {
     routePath = new URL(request.url).pathname;
   } catch {
-    routePath = typeof request.url === "string" ? request.url : "";
+    routePath = request.url;
   }
 
   const requestId = request.headers.get("x-request-id")?.trim() || buildRequestId();

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import type { JsonObject } from "~/lib/json-value";
+import { asJsonObject } from "~/lib/json-value";
+import { jsonObjectSchema } from "~/lib/json-value";
 
 /**
  * The server-owned fields this module reads and writes.
@@ -44,12 +46,9 @@ function readMetadata(message: MessageWithMetadata): ChatMessageMetadata {
  */
 function existingMetadata<T extends object>(message: T): JsonObject {
   const existing = "metadata" in message ? message.metadata : undefined;
-  // SAFETY: the caller's metadata is either a stored row's parsed JSON or a
-  // live message's own slot; this only claims it is an object, which the three
-  // checks establish, and every key is carried through untouched.
-  return existing !== null && typeof existing === "object" && !Array.isArray(existing)
-    ? (existing as JsonObject)
-    : {};
+  // Either a stored row's parsed JSON or a live message's own slot. Decoding it
+  // returns the object itself, so every key carries through untouched.
+  return jsonObjectSchema.safeParse(existing).data ?? {};
 }
 
 /**

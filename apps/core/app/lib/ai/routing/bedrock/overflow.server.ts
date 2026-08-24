@@ -43,7 +43,7 @@ export function getBedrockRegion(): string {
 }
 
 export function isClientRequestedBedrockModel(model: string | undefined): boolean {
-  return typeof model === "string" && model.toLowerCase().startsWith("bedrock:");
+  return (model ?? "").toLowerCase().startsWith("bedrock:");
 }
 
 export function isBedrockTokenConfigured(): boolean {

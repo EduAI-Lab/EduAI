@@ -26,7 +26,7 @@ export type ReportedTokenUsage = {
 };
 
 function asTokenCount(value: number | null | undefined): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) {
     return null;
   }
   return value;

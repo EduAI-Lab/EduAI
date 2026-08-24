@@ -6,6 +6,8 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asPresentText } from "~/lib/json-value";
+import { z } from "zod";
 
 async function readIdempotencyKey(request: Request): Promise<string | undefined> {
   const headerKey = request.headers.get("Idempotency-Key")?.trim();
@@ -16,8 +18,9 @@ async function readIdempotencyKey(request: Request): Promise<string | undefined>
 
   try {
     const body = (await request.json()) as { idempotencyKey?: unknown };
-    if (typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()) {
-      return body.idempotencyKey.trim();
+    const idempotencyKey = z.string().trim().min(1).safeParse(body.idempotencyKey);
+    if (idempotencyKey.success) {
+      return idempotencyKey.data;
     }
   } catch {
     // Empty / non-JSON body is fine — re-embed historically accepted no body.

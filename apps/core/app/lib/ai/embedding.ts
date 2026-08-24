@@ -251,7 +251,7 @@ function isEmbeddingTimeoutError(cause: unknown): boolean {
   while (current && !seen.has(current)) {
     seen.add(current);
     if (current instanceof EmbeddingRequestTimeoutError) return true;
-    if (typeof current !== "object") return false;
+    if (!(current instanceof Object)) return false;
 
     const candidate = current as {
       name?: unknown;

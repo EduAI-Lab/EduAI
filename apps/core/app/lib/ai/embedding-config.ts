@@ -2,6 +2,7 @@
 
 import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonValue } from "~/lib/json-value";
+import { asText } from "~/lib/json-value";
 
 export type EmbeddingProviderSetting = "local" | "ollama" | "cloud";
 
@@ -137,15 +138,15 @@ export function parseEmbeddingSettingsUpdate(
     const raw = record.data.embeddingProvider;
     if (raw === null || raw === "") {
       value.embeddingProvider = null;
-    } else if (typeof raw === "string") {
-      if (normalizeEmbeddingProvider(raw) == null) {
+    } else if (asText(raw) !== null) {
+      if (normalizeEmbeddingProvider(String(raw)) == null) {
         return {
           ok: false,
           error: "embeddingProvider must be local, ollama, cloud, or null",
         };
       }
-      value.embeddingProvider =
-        raw.trim().toLowerCase() === "ollama" ? "local" : raw.trim().toLowerCase();
+      const provider = String(raw).trim().toLowerCase();
+      value.embeddingProvider = provider === "ollama" ? "local" : provider;
     } else {
       return { ok: false, error: "embeddingProvider must be a string or null" };
     }
@@ -155,8 +156,8 @@ export function parseEmbeddingSettingsUpdate(
     const raw = record.data.embeddingModel;
     if (raw === null || raw === "") {
       value.embeddingModel = null;
-    } else if (typeof raw === "string") {
-      value.embeddingModel = raw.trim();
+    } else if (asText(raw) !== null) {
+      value.embeddingModel = String(raw).trim();
     } else {
       return { ok: false, error: "embeddingModel must be a string or null" };
     }

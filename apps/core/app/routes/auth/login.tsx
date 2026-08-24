@@ -157,7 +157,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // from the freshly-issued cookies so a successful login is never logged as
     // anonymous if better-auth's response shape changes.
     if (!signedInUser) {
-      const setCookies = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+      const setCookies = headers.getSetCookie instanceof Function ? headers.getSetCookie() : [];
       const cookieHeader = setCookies
         .map((cookie) => cookie.split(";")[0])
         .filter(Boolean)
