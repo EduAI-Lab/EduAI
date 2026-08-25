@@ -2927,7 +2927,11 @@ ${buildEmptyCourseRagBlock()}`;
       if (liveStreamData) {
         dataStreamOptions.data = liveStreamData;
       }
-      return withAdmissionRelease(result.toDataStreamResponse(dataStreamOptions), release);
+      return withAdmissionRelease(
+        result.toDataStreamResponse(dataStreamOptions),
+        release,
+        request.signal,
+      );
     } else {
       let providerResultResolved = false;
       try {
