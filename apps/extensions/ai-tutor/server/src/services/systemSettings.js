@@ -91,6 +91,27 @@ export async function getEffectiveEduAiApiKey() {
   return process.env.EDUAI_API_KEY || null;
 }
 
+/**
+ * Build the service-to-service Authorization header for a Core call, using the
+ * *effective* EduAI service key (DB-stored admin override first, env fallback —
+ * see `getEffectiveEduAiApiKey`). Returns `{ Authorization: "Bearer <key>" }`
+ * when a key is configured, or `{}` when none is — callers spread/assign the
+ * result and decide how to treat the unset case (Core's mutation guard rejects
+ * a keyless cross-origin call, so a split-origin deploy with no key configured
+ * still 403s; the caller logs a breadcrumb for that path).
+ *
+ * TODO(#1647-followup): the ~5 inline `Bearer ${process.env.EDUAI_API_KEY}`
+ * reads in `eduaiClient.js` predate this helper and throw synchronously on an
+ * unset key. Migrating them here would (a) switch them to the effective key and
+ * (b) change their unset contract from "throw" to "omit". That is a behavior
+ * change per call site, so it is intentionally left for a focused follow-up
+ * rather than folded into this fix.
+ */
+export async function serviceAuthHeader() {
+  const key = await getEffectiveEduAiApiKey();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
 export async function getEduAiApiKeyStatus() {
   const override = await getSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY);
   const envKey = process.env.EDUAI_API_KEY || null;

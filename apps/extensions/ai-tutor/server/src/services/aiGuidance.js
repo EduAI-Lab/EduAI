@@ -37,6 +37,7 @@ import { randomUUID } from "crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { prisma } from "../config/database.js";
 import { getEduAiCompletionUrl } from "./eduaiClient.js";
+import { serviceAuthHeader } from "./systemSettings.js";
 import { trimNonEmpty } from "../utils/coreCourseId.js";
 import { DEFAULT_TUTOR_MODEL } from "./aiModelPolicy.js";
 
@@ -121,6 +122,7 @@ const SAFE_AI_LOG_EVENTS = new Set([
   "custom_response_failed",
   "guidance_route_failed",
   "custom_route_failed",
+  "service_key_unset",
 ]);
 const SAFE_AI_LOG_NUMBER_KEYS = ["status", "attempt", "maxAttempts", "durationMs", "timeoutMs"];
 const SAFE_AI_LOG_IDENTIFIER_KEYS = ["requestId", "correlationId", "traceId"];
@@ -388,7 +390,18 @@ async function callEduAI({
   // Send the service-key Bearer like the other `eduaiClient` reads do; keep the
   // cookie for user identity / rate-limiting. Omit the header when the key is
   // unset so same-origin dev stacks are unaffected.
-  const serviceKey = process.env.EDUAI_API_KEY;
+  //
+  // Resolve the *effective* key (DB-stored admin override first, env fallback)
+  // so a deploy keyed only via the encrypted system-setting — env unset — still
+  // sends the Bearer instead of silently omitting it and 403-ing (#1647).
+  const authHeader = await serviceAuthHeader();
+  if (!authHeader.Authorization) {
+    // No effective service key. Same-origin dev stacks are fine (the guard
+    // never triggers), but a split-origin deploy that reaches here will 403 at
+    // Core's mutation guard — leave a breadcrumb so that misconfig is
+    // diagnosable. The key itself is never logged.
+    logAiGuidanceEvent("warn", "service_key_unset");
+  }
 
   const callStartedAt = Date.now();
 
@@ -426,9 +439,9 @@ async function callEduAI({
         "Content-Type": "application/json",
         cookie,
       };
-      if (serviceKey) {
-        headers.Authorization = `Bearer ${serviceKey}`;
-      }
+      // `Object.assign` (not spread) keeps the `no-conditional-empty-object-spread`
+      // lint rule happy while still adding the Bearer only when a key exists.
+      Object.assign(headers, authHeader);
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
