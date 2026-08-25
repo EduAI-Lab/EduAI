@@ -428,11 +428,22 @@ export function resolveCompletionPrompt(
 export const DEFAULT_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
 
 /**
- * Pick the first fallback model whose BYOK provider key the caller actually
- * supplied. Returns the `provider:model` id, or null when the caller holds no
- * usable BYOK key — in which case the fleet outage stays a hard failure.
+ * Pick the first fallback model, in configured preference order, that is usable
+ * right now: its BYOK provider must be keyed AND enabled AND its `provider:model`
+ * id must resolve to an active Core catalog row (`resolveCompletionModelPolicy`).
+ * Returns that model's policy result so the caller reuses the parsed model, or
+ * null when no candidate qualifies — in which case the fleet outage stays a hard
+ * failure.
+ *
+ * Skipping earlier candidates that fail these checks is deliberate (#1645
+ * review): an earlier keyed-but-policy-failing (or disabled) candidate must not
+ * abandon a usable later one. A candidate that is keyed+enabled but whose
+ * catalog row is missing/inactive is logged as a warn breadcrumb (no secrets)
+ * so the otherwise-silent dead-on-arrival case is visible in logs.
  */
-export function resolveFleetFallbackModel(userSettings: UserProviderSettings): string | null {
+export async function resolveFleetFallbackModel(
+  userSettings: UserProviderSettings,
+): Promise<Extract<CompletionModelPolicyResult, { ok: true }> | null> {
   const configured = process.env.COMPLETION_FLEET_FALLBACK_MODELS?.trim();
   const candidates = (configured || DEFAULT_FLEET_FALLBACK_MODELS)
     .split(",")
@@ -445,7 +456,19 @@ export function resolveFleetFallbackModel(userSettings: UserProviderSettings): s
     // Local/UBC-hosted providers are exactly what just failed — skip them.
     if (parsed.providerId === "vllm" || parsed.providerId === "ollama") continue;
     const settings = userSettings[parsed.providerId];
-    if (settings?.apiKey && settings.apiKey.trim()) return candidate;
+    // Require a held key AND an enabled provider. A disabled-but-keyed provider
+    // would otherwise be chosen here and then rejected downstream with a
+    // misleading INVALID_PROVIDER_CONFIG (#1645 review nit).
+    if (!settings?.apiKey || !settings.apiKey.trim() || !settings.isEnabled) continue;
+    const policy = await resolveCompletionModelPolicy(candidate);
+    if (policy.ok) return policy;
+    // Keyed + enabled but the catalog has no active row for it: this fallback is
+    // dead on arrival. Surface it (no secrets) and try the next ordered candidate.
+    console.warn("[completion] fleet fallback candidate unavailable in catalog", {
+      candidate,
+      providerId: parsed.providerId,
+      status: policy.status,
+    });
   }
   return null;
 }
@@ -519,14 +542,11 @@ export async function runCompletion(request: CompletionRequest) {
       fleetServerId = fleetPick?.serverId;
     } catch (error) {
       if (!(error instanceof FleetUnavailableError)) throw error;
-      // #1645: the UBC fleet is down. Before hard-failing, fall back to a BYOK
-      // provider the caller supplied a key for. If none, or the fallback model
-      // is not in the Core catalog, keep the original MODEL_UNAVAILABLE result.
-      const fallbackModelId = resolveFleetFallbackModel(userProviderSettings);
-      const fallbackPolicy = fallbackModelId
-        ? await resolveCompletionModelPolicy(fallbackModelId)
-        : null;
-      if (!fallbackPolicy || !fallbackPolicy.ok) {
+      // #1645: the UBC fleet is down. Before hard-failing, fall back to the first
+      // BYOK provider (in configured order) the caller keyed+enabled AND that has
+      // an active Core catalog row. If none qualifies, keep MODEL_UNAVAILABLE.
+      const fallbackPolicy = await resolveFleetFallbackModel(userProviderSettings);
+      if (!fallbackPolicy) {
         return createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE");
       }
       parsedModel = fallbackPolicy.parsedModel;
