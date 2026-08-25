@@ -107,6 +107,7 @@ import {
   importExternalCourseForUser,
 } from "../services/importTaughtCoursesService.js";
 import { listAdminBugReports } from "../services/bugReports.js";
+import { listBankQuestions } from "../services/bankQuestions.js";
 import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
 import {
@@ -656,6 +657,53 @@ router.post(
     } catch (error) {
       logSafeError("[eduai] Failed to sync enrollments", error);
       return respondEduAiUpstreamError(res, error, "Unable to sync enrollments");
+    }
+  },
+);
+
+/**
+ * `GET /courses/:courseId/bank-questions` — the shared question bank for the
+ * activity picker.
+ *
+ * Auth: course admin (LEAD instructor / unit-admin / admin), same gate as the
+ * other authoring routes.
+ * Only EduAI-imported courses have a bank; a native course returns 400 rather
+ * than a misleading empty list.
+ */
+router.get(
+  "/courses/:courseId/bank-questions",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
+      if (!course.coreOfferingId) {
+        return res.status(400).json({ error: "Course was not imported from EduAI" });
+      }
+
+      const limit = Number(req.query.limit) || 20;
+      const offset = Number(req.query.offset) || 0;
+      const questions = await listBankQuestions(course.coreOfferingId, {
+        topicId: req.query.topicId || undefined,
+        limit,
+        offset,
+      });
+      res.json({ questions });
+    } catch (error) {
+      logSafeError("[eduai] Failed to list bank questions", error);
+      return respondEduAiUpstreamError(res, error, "Unable to load the question bank");
     }
   },
 );
