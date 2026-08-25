@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/ai/providers.server", () => ({
   resolveActiveChatModel: vi.fn(),
@@ -8,6 +8,7 @@ vi.mock("~/lib/ai/providers.server", () => ({
 import {
   resolveCompletionModelPolicy,
   resolveCompletionPrompt,
+  resolveFleetFallbackModel,
   validateCompletionRequest,
 } from "~/lib/ai/completion.server";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
@@ -203,5 +204,49 @@ describe("resolveCompletionModelPolicy", () => {
       error: "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
     });
     expect(resolveActiveChatModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveFleetFallbackModel (#1645)", () => {
+  const ORIGINAL_ENV = process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    else process.env.COMPLETION_FLEET_FALLBACK_MODELS = ORIGINAL_ENV;
+  });
+
+  it("returns null when the caller holds no BYOK key", () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    expect(resolveFleetFallbackModel({})).toBeNull();
+    expect(resolveFleetFallbackModel({ openai: { isEnabled: true } })).toBeNull();
+  });
+
+  it("picks the first default candidate whose key the caller supplied", () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    // Default order prefers openai over google.
+    expect(
+      resolveFleetFallbackModel({
+        openai: { isEnabled: true, apiKey: "sk-openai" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).toBe("openai:gpt-4o-mini");
+  });
+
+  it("skips a candidate with no key and falls to the next", () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    expect(resolveFleetFallbackModel({ google: { isEnabled: true, apiKey: "g-key" } })).toBe(
+      "google:gemini-2.5-flash",
+    );
+  });
+
+  it("honors COMPLETION_FLEET_FALLBACK_MODELS ordering and never returns a local provider", () => {
+    process.env.COMPLETION_FLEET_FALLBACK_MODELS = "vllm:llama-3, google:gemini-2.5-pro";
+    // vllm is skipped even though it leads the list; the local fleet is exactly
+    // what failed.
+    expect(
+      resolveFleetFallbackModel({
+        vllm: { isEnabled: true, apiKey: "should-not-matter" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).toBe("google:gemini-2.5-pro");
   });
 });

@@ -21,6 +21,7 @@ import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 
 const DEFAULT_TEMPERATURE = 0.2;
@@ -417,6 +418,38 @@ export function resolveCompletionPrompt(
   };
 }
 
+/**
+ * Ordered BYOK fallback models used when the UBC vLLM fleet is unavailable
+ * (#1645). Only BYOK providers belong here — the point is to use the caller's
+ * own key when server-hosted inference cannot serve the request. Override with
+ * `COMPLETION_FLEET_FALLBACK_MODELS` (comma-separated `provider:model` in
+ * preference order).
+ */
+export const DEFAULT_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
+
+/**
+ * Pick the first fallback model whose BYOK provider key the caller actually
+ * supplied. Returns the `provider:model` id, or null when the caller holds no
+ * usable BYOK key — in which case the fleet outage stays a hard failure.
+ */
+export function resolveFleetFallbackModel(userSettings: UserProviderSettings): string | null {
+  const configured = process.env.COMPLETION_FLEET_FALLBACK_MODELS?.trim();
+  const candidates = (configured || DEFAULT_FLEET_FALLBACK_MODELS)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const parsed = parseModelIdentifier(candidate);
+    if (!parsed) continue;
+    // Local/UBC-hosted providers are exactly what just failed — skip them.
+    if (parsed.providerId === "vllm" || parsed.providerId === "ollama") continue;
+    const settings = userSettings[parsed.providerId];
+    if (settings?.apiKey && settings.apiKey.trim()) return candidate;
+  }
+  return null;
+}
+
 export async function runCompletion(request: CompletionRequest) {
   // The abort signal is the one field that is not JSON; the bounds checks below
   // only look at the payload, so validate the request without it.
@@ -467,8 +500,12 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
-  const parsedModel = modelPolicy.parsedModel;
-  const validatedModelId =
+  // Built before fleet resolution so a fleet outage can consult the caller's
+  // BYOK keys for a fallback provider (#1645).
+  const userProviderSettings = toUserProviderSettings(apiKeysParsed.data);
+
+  let parsedModel = modelPolicy.parsedModel;
+  let validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
   let fleetBaseUrl: string | undefined;
   let fleetServerId: string | undefined;
@@ -481,15 +518,26 @@ export async function runCompletion(request: CompletionRequest) {
       fleetBaseUrl = fleetPick?.baseUrl;
       fleetServerId = fleetPick?.serverId;
     } catch (error) {
-      if (error instanceof FleetUnavailableError) {
+      if (!(error instanceof FleetUnavailableError)) throw error;
+      // #1645: the UBC fleet is down. Before hard-failing, fall back to a BYOK
+      // provider the caller supplied a key for. If none, or the fallback model
+      // is not in the Core catalog, keep the original MODEL_UNAVAILABLE result.
+      const fallbackModelId = resolveFleetFallbackModel(userProviderSettings);
+      const fallbackPolicy = fallbackModelId
+        ? await resolveCompletionModelPolicy(fallbackModelId)
+        : null;
+      if (!fallbackPolicy || !fallbackPolicy.ok) {
         return createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE");
       }
-      throw error;
+      parsedModel = fallbackPolicy.parsedModel;
+      validatedModelId =
+        `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
+      // A BYOK provider needs no fleet host; leave fleetBaseUrl/fleetServerId unset.
     }
   }
 
   const validatedApiKeys = mergeLocalInferenceFromEnv(
-    toUserProviderSettings(apiKeysParsed.data),
+    userProviderSettings,
     validatedModelId,
     fleetBaseUrl,
   );
