@@ -36,5 +36,6 @@ describe("root Layout", () => {
     expect(markup).toContain("<html");
     expect(markup).toContain("<main>Settings</main>");
     expect(markup).toContain('data-testid="links-nonce" content="request-nonce"');
+    expect(markup).toContain('rel="icon" href="/eduai-graduation.svg"');
   });
 });
