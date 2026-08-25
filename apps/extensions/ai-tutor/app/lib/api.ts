@@ -831,7 +831,7 @@ export const api = {
       topicId?: string | number;
       message: string;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },
@@ -850,7 +850,7 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },
@@ -870,7 +870,7 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },

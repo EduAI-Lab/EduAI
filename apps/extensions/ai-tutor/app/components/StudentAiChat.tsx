@@ -56,7 +56,13 @@ import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
 import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import { useApiKeys } from "~/hooks/use-api-keys";
-import { getProviderFromModelId, getProviderLabel, maskApiKey } from "~/lib/provider-keys";
+import {
+  byokModelsForHeldKeys,
+  getProviderFromModelId,
+  getProviderLabel,
+  maskApiKey,
+  providerRequiresByokKey,
+} from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
 import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
@@ -217,7 +223,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
 
   // BYOK provider keys are owned by the shared hook (also drives Settings → Providers).
-  const { loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
+  const { keys: providerKeys, loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const [tempApiKey, setTempApiKey] = useState("");
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
@@ -261,6 +267,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const currentProvider = getProviderFromModelId(selectedModelId);
   const currentApiKey = getKey(currentProvider);
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
+
+  // #1645: a BYOK key is a fallback, not a precondition. The selected model is
+  // usable when it is UBC-hosted (server key covers it) OR the student holds a
+  // key for its BYOK provider. Only a BYOK model with no key blocks the
+  // composer and shows the "connect a provider" empty state.
+  const selectedModelRequiresKey = providerRequiresByokKey(currentProvider);
+  const modelUsable = !selectedModelRequiresKey || hasApiKey;
 
   const clearActiveTabChat = useCallback(() => {
     restoreSeqRef.current += 1;
@@ -357,6 +370,40 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     };
   }, []);
 
+  // #1645 facet 2: the server catalogue only lists admin-allowed EduAI/vLLM
+  // models, so a BYOK key alone could never populate the picker. Merge the
+  // student's BYOK-capable models in (deduped by model id — an admin-allowed
+  // entry always wins) so holding a key is enough to unlock chat.
+  const heldByokProviders = useMemo(
+    () => Object.keys(providerKeys).filter((provider) => Boolean(providerKeys[provider])),
+    [providerKeys],
+  );
+
+  const pickerModels = useMemo<StudentSelectableModel[]>(() => {
+    const catalogIds = new Set(availableModels.map((model) => model.modelId));
+    const byok = byokModelsForHeldKeys(heldByokProviders)
+      .filter((model) => !catalogIds.has(model.modelId))
+      .map((model) => ({
+        id: `byok:${model.modelId}`,
+        modelId: model.modelId,
+        modelName: model.modelName,
+        provider: model.provider,
+      }));
+    return [...availableModels, ...byok];
+  }, [availableModels, heldByokProviders]);
+
+  // Keep the selection valid once BYOK models arrive: if the current pick isn't
+  // in the merged list (e.g. the catalogue is empty and the student only holds
+  // an OpenAI key), fall to the default tutor or the first usable model.
+  useEffect(() => {
+    if (!pickerModels.length) return;
+    setSelectedModelId((current) => {
+      if (pickerModels.some((model) => model.modelId === current)) return current;
+      const defaultModel = pickerModels.find((model) => model.isDefaultTutor);
+      return defaultModel?.modelId ?? pickerModels[0].modelId;
+    });
+  }, [pickerModels]);
+
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
       setChatState((prev) => ({
@@ -437,14 +484,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       const message = (overrideMessage ?? chatState[tab].input).trim();
       if (!message) return;
 
-      // Provider key is the only hard requirement; a missing knowledge level
-      // is filled with a sensible default (and remembered) rather than blocking.
+      // #1645: a BYOK key is required only when the selected model is served by
+      // a BYOK provider. UBC-hosted models (vllm/ollama) are covered by the
+      // server key, so they send with no personal key. A missing knowledge
+      // level is filled with a sensible default rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
       const apiKey = getKey(provider);
-      if (!apiKey) {
+      if (providerRequiresByokKey(provider) && !apiKey) {
         setActiveTab(tab);
         return;
       }
+      const forwardedApiKey = apiKey || undefined;
 
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
@@ -480,7 +530,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               topicId,
               message,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -494,7 +544,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               message,
               studentAnswer: normalizedStudentAnswer,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -508,7 +558,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               topicId,
               message,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -582,7 +632,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (!activity || !activity.enableGuideMode) return;
         setActiveTab("guide");
         const provider = getProviderFromModelId(selectedModelId);
-        if (!getKey(provider)) return; // notice is already visible in the Guide view
+        // Only a BYOK model with no key blocks here; UBC-hosted models send
+        // with the server key. When it does block, the "add a key" notice is
+        // already visible in the Guide view (#1645).
+        if (providerRequiresByokKey(provider) && !getKey(provider)) return;
         const fallback = guideInput.trim() || "I would like guidance on this question.";
         void sendChat("guide", fallback);
       },
@@ -590,7 +643,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     [activity, getKey, guideInput, selectedModelId, sendChat],
   );
 
-  const chatDisabled = !activity || !hasApiKey || !isUserReady || studyBuddyWithheld;
+  const chatDisabled = !activity || !modelUsable || !isUserReady || studyBuddyWithheld;
   const activeChat = chatState[activeTab];
   const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
@@ -713,7 +766,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="font-semibold text-foreground">AI study buddy</div>
             <div className="text-xs text-muted-foreground">Hints, not answers</div>
           </div>
-          {activity && hasApiKey && !studyBuddyWithheld && (
+          {activity && modelUsable && !studyBuddyWithheld && (
             <TooltipProvider delayDuration={300}>
               <div className="flex shrink-0 items-center gap-1">
                 <Tooltip>
@@ -751,7 +804,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
         {/* Compact control row: mode + knowledge level (progressive disclosure) */}
         {activity &&
-          hasApiKey &&
+          modelUsable &&
           !studyBuddyWithheld &&
           (availableTabs.length > 0 || knowledgeLevel) && (
             <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
@@ -784,12 +837,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             </div>
           )}
 
-        {activeTabInfo && activity && hasApiKey && !studyBuddyWithheld && (
+        {activeTabInfo && activity && modelUsable && !studyBuddyWithheld && (
           <p className="px-5 pb-3 text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
         )}
 
         {/* Topic focus (teach / topic-templated custom) */}
-        {activity && hasApiKey && !studyBuddyWithheld && showTopicSelect && (
+        {activity && modelUsable && !studyBuddyWithheld && showTopicSelect && (
           <div className="space-y-1.5 px-5 pb-4">
             <label
               className="block text-xs font-semibold text-muted-foreground"
@@ -867,7 +920,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                     : "The AI study buddy is available to students enrolled in this course."}
               </p>
             </div>
-          ) : !hasApiKey ? (
+          ) : !modelUsable ? (
             apiKeysLoaded ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
@@ -983,7 +1036,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               <Select
                 value={selectedModelId}
                 onValueChange={setSelectedModelId}
-                disabled={!availableModels.length}
+                disabled={!pickerModels.length}
               >
                 <SelectTrigger
                   className="h-8 w-auto gap-1 border-border/60 text-xs"
@@ -992,7 +1045,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   <SelectValue placeholder="Model" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableModels.map((model) => (
+                  {pickerModels.map((model) => (
                     <SelectItem key={model.id} value={model.modelId}>
                       {model.modelName}
                     </SelectItem>
@@ -1032,13 +1085,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               Unable to load AI models.
             </div>
           )}
-          {modelsFetched && !modelLoadError && !availableModels.length && (
+          {modelsFetched && !modelLoadError && !pickerModels.length && (
             <div className="text-xs text-muted-foreground">No AI models configured.</div>
           )}
           {modelsFetched &&
             !modelLoadError &&
             studentModelPolicyActive &&
-            availableModels.length > 0 && (
+            pickerModels.length > 0 && (
               <div className="text-xs text-muted-foreground">
                 Tutor model choices are limited by your course configuration.
               </div>

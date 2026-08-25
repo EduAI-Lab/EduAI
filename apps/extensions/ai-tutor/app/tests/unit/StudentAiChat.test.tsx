@@ -29,14 +29,26 @@ import type { Activity } from "~/lib/types";
 import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
-const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
-  mockGetKey: vi.fn((): string => "test-provider-key"),
-  mockSetKey: vi.fn(),
-  mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
-}));
+// #1645: the composer reads the held-keys map to merge BYOK models into the
+// picker. Named so the mutable ref has an owning contract, not an inline type.
+type HeldKeysRef = { current: Record<string, string> };
+
+const { mockGetKey, mockSetKey, mockValidateKey, mockKeysRef } = vi.hoisted(() => {
+  // Kept as a stable ref so its identity survives re-renders.
+  const keysRef: HeldKeysRef = {
+    current: { google: "test-provider-key" },
+  };
+  return {
+    mockGetKey: vi.fn((): string => "test-provider-key"),
+    mockSetKey: vi.fn(),
+    mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
+    mockKeysRef: keysRef,
+  };
+});
 
 vi.mock("~/hooks/use-api-keys", () => ({
   useApiKeys: () => ({
+    keys: mockKeysRef.current,
     loaded: true,
     getKey: mockGetKey,
     setKey: mockSetKey,
@@ -202,6 +214,7 @@ async function typeAndSend(text: string, placeholder = "Describe where you need 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetKey.mockReturnValue("test-provider-key");
+  mockKeysRef.current = { google: "test-provider-key" };
   mockValidateKey.mockResolvedValue({ valid: true });
   listSuggestedPrompts.mockResolvedValue([]);
   listAiModels.mockResolvedValue([
@@ -237,6 +250,68 @@ describe("StudentAiChat — default model selection from isDefaultTutor (#1004)"
     expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
       modelId: "google:gemini-2.5-pro",
     });
+  });
+});
+
+// ── #1645 — BYOK is a fallback, not a precondition ─────────────────────────
+
+describe("StudentAiChat — BYOK as fallback (#1645)", () => {
+  it("enables the composer and sends with no key for a UBC-hosted model", async () => {
+    // No BYOK key held at all, but the catalogue offers a UBC-hosted vLLM model.
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue([{ id: "v1", modelId: "vllm:llama-3", modelName: "Llama 3" }]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    // Composer is usable — the "connect a provider" gate must NOT be shown.
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    const params = sendGuideMessage.mock.calls[0][1];
+    expect(params).toMatchObject({ modelId: "vllm:llama-3" });
+    // A UBC-hosted model forwards no personal key.
+    expect(params.apiKey).toBeUndefined();
+  });
+
+  it("blocks the composer for a BYOK model when no key is held", async () => {
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    // Catalogue offers only a BYOK (google) model, and the student has no key.
+    listAiModels.mockResolvedValue([
+      { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+    ]);
+    renderChat();
+
+    await waitFor(() =>
+      expect(screen.getByText("Connect an AI provider to start")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByPlaceholderText("Describe where you need guidance…"),
+    ).not.toBeInTheDocument();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("merges BYOK models into the picker when the catalogue is empty", async () => {
+    // Admin allow-list is empty, but the student holds an OpenAI key.
+    mockKeysRef.current = { openai: "sk-openai" };
+    mockGetKey.mockReturnValue("sk-openai");
+    listAiModels.mockResolvedValue([]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    // The picker is populated from the BYOK key alone, so chat unlocks and the
+    // "No AI models configured" notice is not shown.
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    const params = sendGuideMessage.mock.calls[0][1];
+    expect(params.modelId).toBe("openai:gpt-4o-mini");
+    expect(params.apiKey).toBe("sk-openai");
   });
 });
 
