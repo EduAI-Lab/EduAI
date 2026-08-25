@@ -173,6 +173,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
+  const promptSubmitInFlightRef = useRef(false);
   const pendingNavigateChatId = useRef<string | null>(null);
   // ChatScreen creates the CurrentUserIdProvider below this hook, inside
   // CoreAppShell. Pass the loader-owned user id explicitly so this instance
@@ -692,23 +693,47 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     }
   };
 
-  const handlePromptSelect = (prompt: string) => {
-    const inputEvent = {
-      target: { value: prompt },
-      currentTarget: { value: prompt },
-    } as React.ChangeEvent<HTMLInputElement>;
+  const handlePromptSelect = useCallback(
+    (prompt: string) => {
+      const text = prompt.trim();
+      if (!text) return;
+      // Re-entrancy guard: without it, clicking a chip twice (or a second chip)
+      // before the request settles fires a second submit. The old rAF round-trip
+      // through handleInputChange resolved each deferred submit against whatever
+      // `input` held when its callback ran, so a chip click could submit the
+      // user's already-typed text. Submit the known prompt string directly via
+      // `append` instead, gated on in-flight state.
+      if (isLoading || promptSubmitInFlightRef.current) return;
+      promptSubmitInFlightRef.current = true;
 
-    handleInputChange(inputEvent);
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-    requestAnimationFrame(() => {
-      const formEvent = {
-        preventDefault: () => {},
-        currentTarget: {} as HTMLFormElement,
-      } as React.FormEvent<HTMLFormElement>;
-
-      onSubmit(formEvent);
-    });
-  };
+      void append({ role: "user", content: text }).finally(() => {
+        promptSubmitInFlightRef.current = false;
+      });
+    },
+    [adhdAssist, append, chatId, isLoading],
+  );
 
   const sharedViewProps = {
     chatModels,
