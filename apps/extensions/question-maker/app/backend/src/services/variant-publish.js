@@ -1,0 +1,133 @@
+/**
+ * Publishing an approved variant to Core: push, link, and roll the approval
+ * back when the push fails. Shared by both routes that can produce an approved
+ * variant — approving an existing one (PUT) and creating one already reviewed
+ * (POST) — so the two cannot drift. A variant left approved with no
+ * `coreQuestionId` is `approvalInFlight` and can never be reverted, which is
+ * exactly the stranding this centralisation exists to prevent.
+ *
+ * Returns a result the route turns into a response; it never touches `res`.
+ */
+import { prisma } from "../config/database.js";
+import { logger } from "../utils/logger.js";
+import { pushVariantToCore } from "./coreWiringService.js";
+import { linkVariantToCore, rollbackVariantApproval } from "./questionService.js";
+import { shouldPushApprovedVariantToCore } from "./variant-push-gate.js";
+
+/**
+ * @returns {Promise<{ outcome: string, coreQuestionId?: string, deletedTopicIds?: string[] }>}
+ *   `skipped`  — nothing to publish (still a draft, already linked, or no Core course)
+ *   `linked`   — pushed and linked; `coreQuestionId` is set
+ *   `conflict` — another writer moved the row first
+ *   `invalid-topics` / `duplicate-topic` — Core rejected the topic set
+ *   `rollback-failed` — push failed AND the approval could not be undone
+ *   `push-failed` — push failed, approval rolled back to draft
+ */
+export async function publishApprovedVariant({ variant, ownerId, cookie }) {
+  if (!shouldPushApprovedVariantToCore(variant)) return { outcome: "skipped" };
+
+  const course = variant.questionMetadata?.course;
+  if (!course?.coreCourseId) return { outcome: "skipped" };
+
+  try {
+    const pushResult = await pushVariantToCore(variant, course, cookie);
+    const linkResult = await linkVariantToCore(
+      variant.id,
+      ownerId,
+      variant,
+      pushResult.coreQuestionId,
+    );
+    if (!linkResult.applied) return { outcome: "conflict" };
+    return { outcome: "linked", coreQuestionId: linkResult.variant.coreQuestionId };
+  } catch (coreErr) {
+    // Roll approval back to draft before reporting an error. The approval is
+    // already persisted; leaving it approved would trip VARIANT_LOCKED on the
+    // next attempt and block the retry this promises.
+    let rollbackFailed = false;
+    try {
+      const rollbackResult = await rollbackVariantApproval(variant.id, ownerId, variant);
+      // A concurrent retry may have moved the row to another state; only a
+      // demonstrably draft row makes the error response truthful.
+      if (rollbackResult?.variant?.isDraft !== true) rollbackFailed = true;
+    } catch (rollbackErr) {
+      rollbackFailed = true;
+      logger.error(
+        { err: rollbackErr, variantId: variant.id },
+        "Failed to roll variant back after Core push failure",
+      );
+    }
+
+    if (rollbackFailed) return { outcome: "rollback-failed" };
+
+    if (coreErr.status === 422) {
+      const errBody = coreErr.body ?? {};
+      if (
+        errBody.error === "INVALID_TOPIC_IDS" &&
+        Array.isArray(errBody.deletedTopicIds) &&
+        errBody.deletedTopicIds.length > 0
+      ) {
+        await prisma.topics.updateMany({
+          where: { coreTopicId: { in: errBody.deletedTopicIds } },
+          data: { coreTopicId: null },
+        });
+        return { outcome: "invalid-topics", deletedTopicIds: errBody.deletedTopicIds };
+      }
+      if (errBody.error === "DUPLICATE_TOPIC") return { outcome: "duplicate-topic" };
+    }
+
+    // #225 SEAM-03 / #1197: any other push failure (Core down, 5xx, network
+    // error) must not report success — a 200 would let the UI show a question
+    // as published when it isn't.
+    logger.warn({ err: coreErr }, "Core question push failed; rolled variant back to draft");
+    return { outcome: "push-failed" };
+  }
+}
+
+/**
+ * Writes the failure response for a publish result. Returns false when the
+ * result is not a failure, so the caller carries on with its success response.
+ */
+export function respondToPublishFailure(res, result) {
+  switch (result.outcome) {
+    case "conflict":
+      res.status(409).json({
+        success: false,
+        code: "VARIANT_LOCKED",
+        error: "Someone else changed this question at the same time. Reload and try again.",
+      });
+      return true;
+    case "rollback-failed":
+      res.status(500).json({
+        success: false,
+        error: "VARIANT_ROLLBACK_FAILED",
+        message: "Core publish failed and the local approval rollback could not be confirmed.",
+      });
+      return true;
+    case "invalid-topics":
+      res.status(422).json({
+        success: false,
+        error: "INVALID_TOPIC_IDS",
+        message:
+          "Some topics have been deleted in Core. Please update topic assignments and re-approve.",
+        deletedTopicIds: result.deletedTopicIds,
+      });
+      return true;
+    case "duplicate-topic":
+      res.status(422).json({
+        success: false,
+        error: "DUPLICATE_TOPIC",
+        message:
+          "The primary topic also appears in secondary topics. Fix the topic list and re-approve.",
+      });
+      return true;
+    case "push-failed":
+      res.status(502).json({
+        success: false,
+        error: "CORE_PUSH_FAILED",
+        message: "Could not publish to Core. Variant left as draft — please retry.",
+      });
+      return true;
+    default:
+      return false;
+  }
+}

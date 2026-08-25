@@ -182,6 +182,8 @@ export function QuestionComposerPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [markAsReviewed, setMarkAsReviewed] = useState(false);
+  // #1555: sharing with other extensions is the author's call, and opt-in.
+  const [shareWithExtensions, setShareWithExtensions] = useState(false);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
@@ -769,6 +771,7 @@ export function QuestionComposerPage() {
           referenceId: referenceId != null ? Number(referenceId) : undefined,
           isAiGenerated,
           isDraft: !markAsReviewed,
+          shareWithExtensions,
         });
         toast("Variant added", { description: "The new variant has been saved." });
         navigateBackToQuestions();
@@ -795,6 +798,7 @@ export function QuestionComposerPage() {
         secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
         isAiGenerated,
         isDraft: !markAsReviewed,
+        shareWithExtensions,
       });
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
@@ -1100,19 +1104,52 @@ export function QuestionComposerPage() {
 
       {/* Mark-as-reviewed control lives near the save area for parity with the dialog. */}
       <Separator className="my-6" />
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="composer-mark-reviewed"
-          checked={markAsReviewed}
-          onChange={(e) => setMarkAsReviewed(e.target.checked)}
-          disabled={isSubmitting}
-          className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
-        />
-        <Label htmlFor="composer-mark-reviewed" className="cursor-pointer text-sm text-foreground">
-          Mark as reviewed{" "}
-          <span className="text-muted-foreground">(otherwise saved as a draft)</span>
-        </Label>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-mark-reviewed"
+            checked={markAsReviewed}
+            onChange={(e) => {
+              const reviewed = e.target.checked;
+              setMarkAsReviewed(reviewed);
+              // Sharing only takes effect on approval, so a question that stops
+              // being reviewed stops being shared with it (#1555).
+              if (!reviewed) setShareWithExtensions(false);
+            }}
+            disabled={isSubmitting}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-mark-reviewed"
+            className="cursor-pointer text-sm text-foreground"
+          >
+            Mark as reviewed{" "}
+            <span className="text-muted-foreground">(otherwise saved as a draft)</span>
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-share-with-extensions"
+            data-testid="share-with-extensions"
+            checked={shareWithExtensions}
+            onChange={(e) => setShareWithExtensions(e.target.checked)}
+            disabled={isSubmitting || !markAsReviewed}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-share-with-extensions"
+            className={`cursor-pointer text-sm ${
+              markAsReviewed ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            Usable by other EduAI extensions{" "}
+            <span className="text-muted-foreground">
+              {markAsReviewed ? "(available to AI Tutor once synced)" : "(mark as reviewed first)"}
+            </span>
+          </Label>
+        </div>
       </div>
 
       {/* AI error details */}

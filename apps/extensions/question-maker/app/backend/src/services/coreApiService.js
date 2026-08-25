@@ -245,14 +245,27 @@ export async function pushTopicToCore(coreCourseId, name) {
  * POST /api/questions — session-only endpoint on Core.
  * Forwards the caller's session cookie so Core can authenticate the user
  * and derive createdBy from the session.
+ *
+ * The service key rides along for the same reason the Canvas mutations carry
+ * it: Core's cross-origin guard fails closed on a cookie-bearing unsafe method
+ * with no Origin/Referer/Sec-Fetch-Site — the shape of every server-to-server
+ * call — and takes a valid key as its only non-browser bypass. Without it this
+ * push has answered 403 CROSS_ORIGIN_MUTATION since the guard landed, leaving
+ * approved variants stranded with no Core question. The cookie remains the
+ * identity; the key only proves the caller is trusted.
  */
 export async function pushQuestionToCore(payload, cookieHeader) {
+  const headers = {
+    "Content-Type": "application/json",
+    cookie: cookieHeader ?? "",
+  };
+  if (config.eduaiApiKey) {
+    headers.Authorization = `Bearer ${config.eduaiApiKey}`;
+  }
+
   const res = await fetch(`${config.coreUrl}/api/questions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      cookie: cookieHeader ?? "",
-    },
+    headers,
     body: JSON.stringify(payload),
   });
   if (!res.ok) {

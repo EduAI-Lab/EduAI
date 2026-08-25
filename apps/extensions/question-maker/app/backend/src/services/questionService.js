@@ -623,7 +623,10 @@ export const updateQuestion = async (questionId, userId, updateData) => {
         where: { questionMetadataId: question.id, isDraft: false },
       });
       if (reviewedVariant) {
-        throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+        throw variantLocked(
+          "SIBLING_REVIEWED",
+          "Another version of this question is already reviewed, so its type and topic are locked. Move the reviewed versions back to draft first.",
+        );
       }
     }
 
@@ -1145,6 +1148,21 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
 };
 
 // Variant Management Functions
+/**
+ * A 409 lock, told in the instructor's terms. `code` stays VARIANT_LOCKED
+ * because callers branch on it (the generated-variants dialog, the composer);
+ * `reason` distinguishes the three situations that used to be indistinguishable,
+ * and `message` is what the UI shows.
+ */
+function variantLocked(reason, message) {
+  return Object.assign(new Error(message), {
+    status: 409,
+    isPublic: true,
+    code: "VARIANT_LOCKED",
+    reason,
+  });
+}
+
 /** Creates a variant for a question while validating course ownership and metadata. */
 export const createVariant = async (questionId, variantData, userId) => {
   questionId = Number(questionId);
@@ -1223,6 +1241,12 @@ export const createVariant = async (questionId, variantData, userId) => {
       isAiGenerated:
         variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
       isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+      // Sharing with other extensions is opt-in (#1555); the flag reaches Core
+      // as the Question's `testable` when the variant is approved and pushed.
+      // A draft is never shareable — sharing rides on review, so the two cannot
+      // disagree even when the request comes from outside the authoring UI.
+      shareWithExtensions:
+        Boolean(variantData.shareWithExtensions) && variantData.isDraft === false,
       createdBy: variantData.createdBy ?? null,
     },
   });
@@ -1309,7 +1333,10 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     // isDraft:false retry is the one safe exception: the content-derived
     // Core idempotency key lets it resume a crashed/late push.
     if (approvalInFlight && !approvalRetry) {
-      throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+      throw variantLocked(
+        "PUBLISH_IN_FLIGHT",
+        "This question is still being published to EduAI, so it cannot be changed yet. Try again in a moment.",
+      );
     }
 
     // §19 approved-variant lock: once approved, content edits are blocked
@@ -1319,7 +1346,10 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     if (variant.isDraft === false) {
       if (!reverting && !aiTagOnly) {
         if (!approvalRetry) {
-          throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+          throw variantLocked(
+            "APPROVED",
+            "This question is reviewed, so its content is locked. Move it back to draft to reopen it for editing.",
+          );
         }
       }
     } else {
@@ -1462,8 +1492,15 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
       ...(normalizedCorrectAnswers !== undefined && {
         correctAnswers: normalizedCorrectAnswers,
       }),
+      ...(variantData.shareWithExtensions !== undefined && {
+        shareWithExtensions: Boolean(variantData.shareWithExtensions),
+      }),
       ...(unreviewing && {
         coreQuestionId: null,
+        // Withdrawing review withdraws sharing with it (#1555): the variant is
+        // detached from Core here, so leaving the flag set would claim a
+        // question is usable by other extensions when nothing can reach it.
+        shareWithExtensions: false,
       }),
     };
 

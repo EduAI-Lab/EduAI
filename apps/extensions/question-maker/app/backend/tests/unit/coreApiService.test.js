@@ -145,6 +145,18 @@ describe("pushQuestionToCore", () => {
     expect(opts.headers["Content-Type"]).toBe("application/json");
   });
 
+  it("pairs the service key with the cookie so Core's cross-origin guard lets the push through", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ id: "cuid-question" }, 201)));
+
+    await pushQuestionToCore(payload, "session=abc");
+
+    const [, opts] = fetch.mock.calls[0];
+    // The cookie stays the identity Core derives createdBy from; the key only
+    // proves this is a trusted server-to-server call (#1555 follow-up).
+    expect(opts.headers.cookie).toBe("session=abc");
+    expect(opts.headers.Authorization).toBe("Bearer test-service-key");
+  });
+
   it("throws with status + body on INVALID_TOPIC_IDS", async () => {
     const errBody = {
       error: "INVALID_TOPIC_IDS",

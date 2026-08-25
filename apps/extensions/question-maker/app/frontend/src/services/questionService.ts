@@ -272,6 +272,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Author's choice to let other EduAI extensions use this question (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.post(`/api/questions/${questionId}/variants`, payload);
