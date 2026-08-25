@@ -666,7 +666,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       questionCount={activitiesTotal}
       accentColor={accentColor}
       mcq={mcq}
-      onSelectMcq={setMcq}
+      onSelectMcq={(i) => {
+        setMcq(i);
+        // #1644: clear a prior wrong grade when the student re-picks an option,
+        // so the new choice doesn't render already red before they resubmit.
+        // (A correct grade disables the options, so this never clears one.)
+        setResult(null);
+        setWasCorrect(false);
+      }}
       text={text}
       onTextChange={setText}
       submitting={submitting}
