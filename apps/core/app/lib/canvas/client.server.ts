@@ -92,11 +92,14 @@ export type CanvasFileApi = {
   unlock_at?: string | null;
 };
 
+/** Whether a Canvas file is visible to students right now. */
+export type CanvasFilePublishState = { isPublished: boolean };
+
 /** Computes whether a Canvas file is currently visible to students (not hidden/locked/outside its unlock-lock window). */
 export function computeCanvasFilePublishState(
   file: Pick<CanvasFileApi, "hidden" | "locked" | "lock_at" | "unlock_at">,
   now: Date = new Date(),
-): { isPublished: boolean } {
+): CanvasFilePublishState {
   if (file.hidden || file.locked) {
     return { isPublished: false };
   }
@@ -146,48 +149,60 @@ const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
   },
 ];
 
-const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
-  1: [
-    { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "10000001" },
-    { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "10000002" },
+// Keyed by course id with `Map` rather than an object: the lookups below take a
+// course id the caller chose, so "this key may not be here" is part of the
+// contract, and `get` says that where an index signature would not.
+const MOCK_CANVAS_ROSTER = new Map<number, CanvasCourseUserApi[]>([
+  [
+    1,
+    [
+      { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "10000001" },
+      { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "10000002" },
+    ],
   ],
-  2: [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "10000003" }],
-  3: [],
-};
+  [2, [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "10000003" }]],
+  [3, []],
+]);
 
-const MOCK_CANVAS_FILES: Record<number, CanvasFileApi[]> = {
-  1: [
-    {
-      id: 1001,
-      display_name: "Lecture 1 - Intro.txt",
-      filename: "lecture1.txt",
-      "content-type": "text/plain",
-      size: 2048,
-      updated_at: "2025-01-10T12:00:00.000Z",
-      url: "mock://canvas/files/1001",
-    },
-    {
-      id: 1002,
-      display_name: "Week 1 Notes.txt",
-      filename: "week1.txt",
-      "content-type": "text/plain",
-      size: 512,
-      updated_at: "2025-01-12T09:00:00.000Z",
-      url: "mock://canvas/files/1002",
-    },
+const MOCK_CANVAS_FILES = new Map<number, CanvasFileApi[]>([
+  [
+    1,
+    [
+      {
+        id: 1001,
+        display_name: "Lecture 1 - Intro.txt",
+        filename: "lecture1.txt",
+        "content-type": "text/plain",
+        size: 2048,
+        updated_at: "2025-01-10T12:00:00.000Z",
+        url: "mock://canvas/files/1001",
+      },
+      {
+        id: 1002,
+        display_name: "Week 1 Notes.txt",
+        filename: "week1.txt",
+        "content-type": "text/plain",
+        size: 512,
+        updated_at: "2025-01-12T09:00:00.000Z",
+        url: "mock://canvas/files/1002",
+      },
+    ],
   ],
-  2: [
-    {
-      id: 2001,
-      display_name: "Algorithms Overview.pptx",
-      filename: "algorithms.pptx",
-      "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      size: 4096,
-      updated_at: "2025-02-01T10:00:00.000Z",
-      url: "mock://canvas/files/2001",
-    },
+  [
+    2,
+    [
+      {
+        id: 2001,
+        display_name: "Algorithms Overview.pptx",
+        filename: "algorithms.pptx",
+        "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        size: 4096,
+        updated_at: "2025-02-01T10:00:00.000Z",
+        url: "mock://canvas/files/2001",
+      },
+    ],
   ],
-};
+]);
 
 export class CanvasApiError extends Error {
   readonly statusCode: number;
@@ -756,7 +771,7 @@ function getMockPaginatedResponse<T>(path: string): T[] {
     const courseMatch = path.match(/\/courses\/(\d+)\/files/);
     if (courseMatch) {
       const courseId = Number(courseMatch[1]);
-      return (MOCK_CANVAS_FILES[courseId] ?? []) as T[];
+      return (MOCK_CANVAS_FILES.get(courseId) ?? []) as T[];
     }
   }
 
@@ -771,7 +786,7 @@ function getMockPaginatedResponse<T>(path: string): T[] {
   const courseMatch = path.match(/\/courses\/(\d+)\/users/);
   if (courseMatch) {
     const courseId = Number(courseMatch[1]);
-    return (MOCK_CANVAS_ROSTER[courseId] ?? []) as T[];
+    return (MOCK_CANVAS_ROSTER.get(courseId) ?? []) as T[];
   }
 
   return [];
@@ -905,13 +920,13 @@ type CanvasFileDownloadBody = {
   release(): void;
 };
 
-const SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION: Record<string, string> = {
+const SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION = {
   ".pdf": "application/pdf",
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-};
+} satisfies Record<string, string>;
 
 const SUPPORTED_CANVAS_FILE_MIME_TYPES = new Set(
   Object.values(SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION),
@@ -1070,7 +1085,7 @@ function createWebDownloadBody(
 }
 
 function createUndiciDownloadBody(
-  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): unknown },
+  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): void },
 ): CanvasFileDownloadBody {
   const iterator = stream[Symbol.asyncIterator]();
   return {

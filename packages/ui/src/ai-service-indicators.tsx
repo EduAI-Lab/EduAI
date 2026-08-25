@@ -1,8 +1,15 @@
 /**
  * Dual AI-service status chips, shared across Core, QuestionMaker, and AI Tutor
- * (issue #764). Two independent chips — UBC-hosted and Cloud — each reporting its
- * OWN state; neither depends on the other. A chip reads online / offline / loading
- * / unknown from its own probe. Clicking either chip re-checks (optional).
+ * (issues #764, #1551). Two independent chips — UBC-hosted and Cloud — each
+ * reporting its OWN state; neither depends on the other. A chip reads
+ * operational / degraded / outage / checking / unknown from its own probe:
+ *   - operational — up and healthy.
+ *   - degraded    — up but strained (e.g. the UBC vLLM fleet is under heavy
+ *                   load, or only some fleet hosts are reachable). Still usable.
+ *   - outage      — down / unreachable.
+ *   - loading     — first probe in flight ("Checking…").
+ *   - unknown     — status could not be determined.
+ * Clicking either chip re-checks (optional).
  *
  * Presentational only: each app fetches status from its own endpoint and maps it
  * onto the `cloud` / `ubc` props, so the look and behaviour are identical
@@ -14,7 +21,15 @@ import { IconCloud } from "@tabler/icons-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { cn } from "./utils";
 
-export type ServiceState = "online" | "offline" | "loading" | "unknown";
+export type ServiceState = "operational" | "degraded" | "outage" | "loading" | "unknown";
+
+/** States where the service is up and usable (chip renders in the active/foreground style). */
+const ACTIVE_STATES: ReadonlySet<ServiceState> = new Set<ServiceState>(["operational", "degraded"]);
+
+/** True when the service is up and usable (operational or degraded). */
+export function isServiceActive(state: ServiceState): boolean {
+  return ACTIVE_STATES.has(state);
+}
 
 export interface ServiceStatus {
   state: ServiceState;
@@ -30,19 +45,22 @@ export interface AIServiceIndicatorsProps {
   className?: string;
 }
 
-const DOT_CLASS: Record<ServiceState, string> = {
-  online: "bg-emerald-500",
-  offline: "bg-red-500",
+const DOT_CLASS = {
+  operational: "bg-emerald-500",
+  // Steady amber, distinct from the pulsing amber `loading` dot below.
+  degraded: "bg-amber-500",
+  outage: "bg-red-500",
   loading: "bg-amber-400 animate-pulse",
   unknown: "bg-muted-foreground/40",
-};
+} satisfies Record<ServiceState, string>;
 
-const STATE_WORD: Record<ServiceState, string> = {
-  online: "Online",
-  offline: "Offline",
+const STATE_WORD = {
+  operational: "Operational",
+  degraded: "Degraded",
+  outage: "Outage",
   loading: "Checking…",
   unknown: "Unknown",
-};
+} satisfies Record<ServiceState, string>;
 
 function Chip({
   label,
@@ -93,10 +111,20 @@ export function AIServiceIndicators({
 }: AIServiceIndicatorsProps) {
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
-      <Chip label="UBC-hosted AI" status={ubc} active={ubc.state === "online"} onClick={onRefresh}>
+      <Chip
+        label="UBC-hosted AI"
+        status={ubc}
+        active={isServiceActive(ubc.state)}
+        onClick={onRefresh}
+      >
         <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
       </Chip>
-      <Chip label="Cloud AI" status={cloud} active={cloud.state === "online"} onClick={onRefresh}>
+      <Chip
+        label="Cloud AI"
+        status={cloud}
+        active={isServiceActive(cloud.state)}
+        onClick={onRefresh}
+      >
         <IconCloud className="size-3.5" strokeWidth={1.75} />
       </Chip>
     </div>

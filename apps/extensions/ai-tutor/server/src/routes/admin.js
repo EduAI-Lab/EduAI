@@ -35,6 +35,7 @@ import {
   getEduAiApiKeyStatus,
   setSystemSetting,
 } from "../services/systemSettings.js";
+import { SecretEncryptionUnavailableError } from "../utils/encryption.js";
 import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPolicy.js";
 import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
 import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
@@ -72,8 +73,10 @@ router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
     const envelope = await listCoreAdminUsers(cookie, {
       page,
       pageSize,
-      ...(req.query.search ? { search: String(req.query.search) } : {}),
-      ...(req.query.role ? { role: String(req.query.role) } : {}),
+      // An absent filter stays undefined; the client only appends the ones it
+      // actually received.
+      search: req.query.search ? String(req.query.search) : undefined,
+      role: req.query.role ? String(req.query.role) : undefined,
     });
     const rows = Array.isArray(envelope?.data) ? envelope.data : [];
     res.json({
@@ -350,6 +353,10 @@ router.post(
         return res.status(403).json({ error: "Not authorized for this course" });
       }
 
+      // Write through to Core first, mirroring DELETE below (#812). A local-only
+      // row would grant course access Core's audit trail never recorded — and
+      // PATCH .../role refuses to manage an enrolment Core has never heard of,
+      // so the admin could create something they then could not change.
       if (course.coreOfferingId) {
         await createCoreEnrollment(
           course.coreOfferingId,
@@ -376,7 +383,11 @@ router.post(
 
       res.status(201).json({ ok: true });
     } catch (e) {
-      sendSafeError(res, e, "Internal server error");
+      // Core's refusal is the useful signal (e.g. it rejects an unknown user), so
+      // pass its status through — same as the DELETE path below. The body stays
+      // generic; `sendSafeError` never serializes the thrown value.
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
@@ -559,6 +570,13 @@ router.put("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, re
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
+    if (e instanceof SecretEncryptionUnavailableError) {
+      // Fail closed: the deployment refuses to persist the key in plaintext.
+      logSafeError("eduai-api-key write refused (no ENCRYPTION_KEY)", e);
+      return res.status(503).json({
+        error: "Secret storage is not configured. Set ENCRYPTION_KEY to store the EduAI API key.",
+      });
+    }
     sendSafeError(res, e, "Internal server error");
   }
 });

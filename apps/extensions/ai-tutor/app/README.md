@@ -38,7 +38,7 @@ app/
   components/
     Nav.tsx                         # Global navigation bar
     ProgressBar.tsx                 # Progress bar with percentage label
-    PublishStatusButton.tsx         # Publish/unpublish toggle with tooltip
+    PublishMenu.tsx                 # Module/lesson publish kebab (state badge and action kept separate)
     StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs, session restore)
     StudentChatHistoryPanel.tsx     # Chat history sheet (list/restore sessions, retryable load errors)
     StudentActivityFeedbackCard.tsx # Post-submission difficulty rating form
@@ -46,7 +46,7 @@ app/
     AddActivityPanel.tsx            # New activity creation form
     EditActivityPanel.tsx           # Activity editing form
     AddCourseTopicsButton.tsx       # Inline topic creation
-    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA; hidden for instructors/admins)
+    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA on learner routes; UNIT_ADMIN on /dashboard + /instructor; hidden for instructors/admins)
     TourProvider.tsx                # Guided tour state manager (driver.js)
     ai-elements/                    # AI chat UI primitives
       conversation.tsx              #   Chat scroll container (use-stick-to-bottom)
@@ -101,7 +101,7 @@ Public routes render standalone; authenticated routes share the `_app.tsx` layou
 | `/`                 | `home.tsx`             | Public sign-in                          |
 | `/unsupported-role` | `unsupported-role.tsx` | Legacy redirect helper → `routeForRole` |
 | `/dashboard`        | `dashboard.tsx`        | Role landing (layout)                   |
-| `/admin`            | `admin.tsx`            | ADMIN / UNIT_ADMIN as gated             |
+| `/admin`            | `admin.tsx`            | ADMIN only (404 for every other role)   |
 | `/settings`         | `settings.tsx`         | Authenticated                           |
 | `/help`             | `help.tsx`             | Authenticated                           |
 | `/student` …        | `student*.tsx`         | STUDENT / TA                            |

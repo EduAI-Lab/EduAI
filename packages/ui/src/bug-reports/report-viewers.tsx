@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import type { AdminBugReportRow } from "./types";
 import {
   CONSOLE_LEVELS,
-  CONSOLE_LEVEL_BADGE_VARIANT,
+  consoleLevelBadgeVariant,
   CONSOLE_LEVEL_OPTIONS,
   NETWORK_TABS,
   NETWORK_TAB_OPTIONS,
@@ -82,11 +82,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                 className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge
-                    variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? "muted"}
-                    size="sm"
-                    className="uppercase"
-                  >
+                  <Badge variant={consoleLevelBadgeVariant(level)} size="sm" className="uppercase">
                     {entry.level ?? "log"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{entry.timestamp ?? "-"}</span>
@@ -228,10 +224,28 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
   );
 }
 
+/**
+ * A screenshot is only ever a base64 raster image data URL or an https image
+ * URL. Guarding the "Open in new tab" `href` to those schemes prevents a
+ * user-authored `javascript:` (or other) value from becoming an
+ * admin-clickable link-injection sink (#1570). The raster allowlist mirrors the
+ * Core write guard (`SCREENSHOT_DATA_URL_RE`) so a `data:image/svg+xml` payload
+ * — which can carry an inline `<script>` that executes when opened top-level at
+ * a null origin — is rejected here too. Server-side ingest also rejects
+ * non-image screenshots; this is the defense-in-depth render guard.
+ */
+function isSafeScreenshotHref(value: string): boolean {
+  return (
+    /^data:image\/(png|jpe?g|webp|gif|avif);base64,/i.test(value) || /^https:\/\//i.test(value)
+  );
+}
+
 function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
   if (!report.screenshot) {
     return <p className="text-sm text-muted-foreground">No screenshot captured.</p>;
   }
+
+  const canOpenInNewTab = isSafeScreenshotHref(report.screenshot);
 
   return (
     <div className="space-y-3">
@@ -242,14 +256,16 @@ function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
           className="w-full rounded-md border"
         />
       </div>
-      <a
-        href={report.screenshot}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex text-sm text-primary-text underline underline-offset-2"
-      >
-        Open in new tab
-      </a>
+      {canOpenInNewTab ? (
+        <a
+          href={report.screenshot}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-sm text-primary-text underline underline-offset-2"
+        >
+          Open in new tab
+        </a>
+      ) : null}
     </div>
   );
 }

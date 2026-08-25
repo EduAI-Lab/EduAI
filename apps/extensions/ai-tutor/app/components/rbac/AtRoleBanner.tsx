@@ -10,7 +10,7 @@ type AtRoleBannerProps = {
   variant?: AtRoleView;
 };
 
-const COPY: Record<AtRoleView, { title: string; description: string; icon: typeof IconShield }> = {
+const COPY = {
   admin: {
     title: "Administrator view",
     description:
@@ -39,7 +39,7 @@ const COPY: Record<AtRoleView, { title: string; description: string; icon: typeo
     description: "Work through published activities and AI tutoring in your enrolled courses.",
     icon: IconSchool,
   },
-};
+} satisfies Record<AtRoleView, { title: string; description: string; icon: typeof IconShield }>;
 
 function roleToView(role: Role): AtRoleView {
   if (role === "ADMIN") return "admin";

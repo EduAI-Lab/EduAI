@@ -16,12 +16,13 @@ vi.mock("~/lib/prisma.server", () => ({
 import { action } from "~/routes/api/assistive-events";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 // Matches zod's `.cuid()` so chatId reaches the ownership check rather than
 // failing schema validation.
 const VALID_CUID = "cjld2cjxh0000qzrmn831i7rn";
 
-function makeArgs(method = "POST", body?: unknown, opts?: { raw?: string }) {
+function makeArgs(method = "POST", body?: RouteRequestBody, opts?: { raw?: string }) {
   const init: RequestInit = {
     method,
     headers: { "Content-Type": "application/json" },

@@ -17,6 +17,18 @@
 
 import type { Activity } from "./types";
 
+/**
+ * Refusal shown when the last enabled AI mode would be turned off. Every
+ * activity must offer students at least one way to ask for help, and the
+ * server enforces the same rule.
+ *
+ * Shared so the add-activity dialog and the per-activity editor say the same
+ * thing; both render it under their "AI study buddy" box rather than in a
+ * native `alert()`, which was modal, unstyled, and detached from the control
+ * that triggered it.
+ */
+export const AI_MODE_REQUIRED = "At least one AI mode must be enabled.";
+
 export type ActivityFormValues = {
   title: string;
   instructionsMd: string;
@@ -87,6 +99,15 @@ export function parseHintsInput(value: string) {
 }
 
 /**
+ * Either a submittable payload or the reason the form is not submittable —
+ * one arm or the other, never both. Spelling the two arms out lets a caller
+ * that has checked `error` read `payload` without re-checking it.
+ */
+export type ActivityUpdateResult =
+  | { payload: ActivityUpdatePayload; error?: undefined }
+  | { payload?: undefined; error: string };
+
+/**
  * Validates the editor state and produces the canonical update payload, or
  * an error string describing why the form is not yet submittable.
  *
@@ -95,10 +116,7 @@ export function parseHintsInput(value: string) {
  * this remap, the previously selected answer would point at the wrong (or
  * non-existent) choice once gaps are removed.
  */
-export function buildUpdatePayload(values: ActivityFormValues): {
-  payload?: ActivityUpdatePayload;
-  error?: string;
-} {
+export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateResult {
   const question = values.question.trim();
   if (!question) {
     return { error: "Question is required." };

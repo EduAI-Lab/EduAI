@@ -11,6 +11,36 @@ const positiveInt = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/**
+ * Parse CORS_ORIGINS into an explicit allowlist, rejecting a wildcard ("*")
+ * outside development/test (#1569 review). The cors() middleware (app.js) and
+ * the CSRF origin guard (middleware/csrfOrigin.js) both derive their trust set
+ * from this list, so a production `CORS_ORIGINS=*` would let any Origin through
+ * and defeat the independent CSRF backstop. Mirrors AI Tutor's config/cors.js,
+ * which refuses the wildcard rather than relying on a comment that it is
+ * dev-only. (`csrfOrigin.normalizeOrigin` also drops "*", so the CSRF guard is
+ * never trust-listed on a wildcard; this fails the misconfig loudly at boot
+ * instead of silently widening CORS.)
+ */
+export const parseCorsOrigins = (
+  raw = process.env.CORS_ORIGINS,
+  nodeEnv = process.env.NODE_ENV,
+) => {
+  if (!raw) return ["http://localhost:5173"];
+  const entries = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const env = nodeEnv?.trim();
+  const devOrTest = !env || env === "development" || env === "test";
+  if (!devOrTest && entries.some((entry) => entry.includes("*"))) {
+    throw new Error(
+      "CORS_ORIGINS must not contain a wildcard (*) outside development/test. Use explicit origins only.",
+    );
+  }
+  return entries.length ? entries : ["http://localhost:5173"];
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../../../");
@@ -49,7 +79,7 @@ export const config = {
     })(),
 
   // CORS
-  corsOrigins: process.env.CORS_ORIGINS?.split(",") || ["http://localhost:5173"],
+  corsOrigins: parseCorsOrigins(),
 
   // API Keys
   groqApiKey: process.env.GROQ_API_KEY || "",

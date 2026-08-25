@@ -36,6 +36,7 @@ import { DashboardInstructorView } from "~/components/dashboard/DashboardInstruc
 import { DashboardUnitAdminView } from "~/components/dashboard/DashboardUnitAdminView";
 import { DashboardAdminView } from "~/components/dashboard/DashboardAdminView";
 import { firstNameOf, timeOfDayGreeting } from "~/components/dashboard/dashboard-helpers";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 const SUPPORTED_ROLES: Role[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"];
 
@@ -88,7 +89,10 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   } satisfies DashboardLoaderData;
 }
 
-function heroCopy(role: Role, firstName: string | null): { heading: string; subheading: string } {
+/** The two lines of the dashboard hero, chosen per role. */
+type HeroCopy = { heading: string; subheading: string };
+
+function heroCopy(role: Role, firstName: string | null): HeroCopy {
   switch (role) {
     case "ADMIN":
       return {
@@ -189,3 +193,9 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

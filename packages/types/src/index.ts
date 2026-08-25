@@ -1,3 +1,9 @@
+// Shared typed-error hierarchy (#1279). The `.js` specifier is required: the
+// emitted `dist/index.js` is loaded directly by Node ESM consumers
+// (ai-tutor/server, question-maker backend), which do not resolve extensionless
+// relative imports even though `moduleResolution: bundler` accepts them here.
+export * from "./errors.js";
+
 // Prisma dropped UserRole.TA in Core (the unify migration) — a course TA is a
 // STUDENT-platform user with an EnrollmentRole.TA enrollment. Platform UserRole
 // no longer includes TA (#225 AUTH-12); course-level TA stays on EnrollmentRole.
@@ -73,3 +79,27 @@ export function modelSizeRankFromText(text: string | null | undefined): number {
   }
   return 0;
 }
+
+/**
+ * A JSON value, as it exists after `JSON.parse` and before anything gives it a
+ * domain meaning.
+ *
+ * Use this only where a payload is genuinely open-ended — a `Json` column read
+ * back verbatim, a request body a layer forwards without owning, arguments an
+ * external caller chose. Where the shape *is* known, name it or derive it from
+ * the schema that parses it; reaching for `JsonValue` there just relabels
+ * `unknown` and loses the same contract.
+ *
+ * It lives here rather than in one app because every surface that renders or
+ * forwards a stored blob needs the same word for it. Core's `~/lib/json-value`
+ * re-exports these two and adds the zod decoders, which need a zod dependency
+ * this package deliberately does not have.
+ */
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
+/**
+ * A JSON object. Values admit `undefined` so a TypeScript object with optional
+ * properties satisfies it — that is how an absent key is spelled on this side
+ * of the boundary, and `JSON.stringify` drops it either way.
+ */
+export type JsonObject = { [key: string]: JsonValue | undefined };

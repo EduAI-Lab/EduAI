@@ -64,7 +64,7 @@ describe("admin.invitations loader", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "ua-1", role: "UNIT_ADMIN" },
     } as never);
-    const result = (await loader(makeArgs())) as unknown as { invitableRoles: readonly string[] };
+    const result = (await loader(makeArgs())) as { invitableRoles: readonly string[] };
     expect(result.invitableRoles).not.toContain("ADMIN");
   });
 });

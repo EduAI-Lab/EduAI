@@ -83,7 +83,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // `take: limit + 1` lookahead so a final raw batch of exactly `limit` rows
     // marks the stream exhausted instead of handing back a nextCursor that
     // yields an empty page on the next click.
-    const fetched = await prisma.chat.findMany({
+    const batchArgs = {
       where: { course: { department, deletedAt: null } },
       select: {
         id: true,
@@ -93,10 +93,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         user: { select: { id: true, name: true } },
         course: { select: { id: true, code: true, name: true } },
       },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ updatedAt: "desc" as const }, { id: "desc" as const }],
       take: limit + 1,
-      ...(rawCursor ? { cursor: { id: rawCursor }, skip: 1 } : {}),
-    });
+    };
+    // A cursor page resumes past the cursor row itself; the first page sends
+    // neither key, so Prisma never sees a half-specified pair.
+    const fetched = rawCursor
+      ? await prisma.chat.findMany({ ...batchArgs, cursor: { id: rawCursor }, skip: 1 })
+      : await prisma.chat.findMany(batchArgs);
 
     if (fetched.length === 0) {
       exhausted = true;

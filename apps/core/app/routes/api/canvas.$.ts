@@ -29,6 +29,7 @@ import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.s
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return handleCanvasRequest(request);
@@ -36,13 +37,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   return handleCanvasRequest(request);
-}
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 }
 
 function canvasSubpath(pathname: string): string {
@@ -73,7 +67,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         entityType: "Canvas",
         entityId: userId,
         entityLabel: session.user.email ?? null,
-        ...(session.user.email ? { details: { email: session.user.email } } : {}),
+        details: session.user.email ? { email: session.user.email } : undefined,
       }),
     );
     return json({ success: false, error: "FORBIDDEN" }, 403);
@@ -178,7 +172,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                 entityType: "Canvas",
                 entityId: userId,
                 entityLabel: session.user.email ?? null,
-                ...(session.user.email ? { details: { email: session.user.email } } : {}),
+                details: session.user.email ? { email: session.user.email } : undefined,
               }),
             );
             return json(
@@ -235,9 +229,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
             entityType: "CanvasIntegration",
             entityId: userId,
             entityLabel: existingIntegration?.canvasUrl ?? null,
-            ...(existingIntegration?.canvasUrl
-              ? { details: { canvasUrl: existingIntegration.canvasUrl } }
-              : {}),
+            details: existingIntegration?.canvasUrl
+              ? { canvasUrl: existingIntegration.canvasUrl }
+              : undefined,
           }),
         );
 

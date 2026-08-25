@@ -4,7 +4,15 @@
  */
 import { termLabelLong } from "@eduai/ui";
 import api from "./api";
-import { apiKeyStorage, type AIProvider, type CampusProvider } from "./apiKeyStorage";
+import {
+  apiKeyStorage,
+  type AIProvider,
+  type CampusProvider,
+  type ProviderApiKeys,
+} from "./apiKeyStorage";
+
+/** Body of `POST /api/eduai/test-api-key`: the keys to probe, and which provider to force. */
+type TestApiKeyBody = { apiKeys: ProviderApiKeys; provider?: CampusProvider };
 
 export interface EduAIMessage {
   role: "user" | "assistant" | "system";
@@ -14,7 +22,7 @@ export interface EduAIMessage {
 export interface EduAIChatRequest {
   messages: EduAIMessage[];
   model?: string;
-  apiKeys?: Record<string, any>;
+  apiKeys?: ProviderApiKeys;
   /** QM numeric course id — preferred access path (#1362). */
   courseId?: number | string;
   courseCode?: string;
@@ -37,7 +45,7 @@ export interface EduAIQuestionGenerationRequest {
   courseId?: number | string;
   courseCode?: string;
   model?: string;
-  apiKeys?: Record<string, any>;
+  apiKeys?: ProviderApiKeys;
   numQuestions?: number;
   difficultyDistribution?: {
     easy: number;
@@ -115,16 +123,24 @@ const FALLBACK_COURSE_OPTIONS: EduAICourseOption[] = [
 ];
 
 /** Legacy mock topics — only used when Core topic fetch fails. */
-const FALLBACK_TOPICS_BY_CODE: Record<string, EduAITopicOption[]> = {
-  COSC211: [
-    { id: "fallback-1", name: "Instruction Set Architectures" },
-    { id: "fallback-2", name: "Pipeline Design" },
+// A `Map` because the key is a course code off the request: a course with no
+// mock topics answers with `undefined`, which the caller turns into an empty list.
+const FALLBACK_TOPICS_BY_CODE = new Map<string, EduAITopicOption[]>([
+  [
+    "COSC211",
+    [
+      { id: "fallback-1", name: "Instruction Set Architectures" },
+      { id: "fallback-2", name: "Pipeline Design" },
+    ],
   ],
-  COSC121: [
-    { id: "fallback-1", name: "Object-Oriented Design" },
-    { id: "fallback-2", name: "Data Structures Fundamentals" },
+  [
+    "COSC121",
+    [
+      { id: "fallback-1", name: "Object-Oriented Design" },
+      { id: "fallback-2", name: "Data Structures Fundamentals" },
+    ],
   ],
-};
+]);
 
 export interface EduAITestResponse {
   success: boolean;
@@ -164,12 +180,12 @@ class EduAIService {
    * for the status chips.
    */
   async testApiKey(
-    overrideApiKeys?: Record<string, any>,
-    opts?: { forceProvider?: CampusProvider },
+    overrideApiKeys?: ProviderApiKeys,
+    opts?: { forceProvider?: CampusProvider; signal?: AbortSignal },
   ): Promise<EduAITestResponse> {
     // Build the apiKeys payload the backend expects from any locally-stored keys,
     // unless the caller supplied an explicit override.
-    let apiKeys: Record<string, any> = {};
+    let apiKeys: ProviderApiKeys = {};
     if (overrideApiKeys) {
       apiKeys = overrideApiKeys;
     } else {
@@ -186,11 +202,13 @@ class EduAIService {
       }
     }
 
-    const body: Record<string, any> = { apiKeys };
+    const body: TestApiKeyBody = { apiKeys };
     if (opts?.forceProvider) body.provider = opts.forceProvider;
 
     try {
-      const response = await api.post("/api/eduai/test-api-key", body);
+      // Forward the caller's AbortSignal so a status-chip poll can cancel a
+      // wedged probe on refresh / unmount / timeout (issue #1551).
+      const response = await api.post("/api/eduai/test-api-key", body, { signal: opts?.signal });
       return { ...response.data, configured: response.data.configured ?? true };
     } catch (err: any) {
       if (err.response?.status === 400 && err.response?.data) {
@@ -269,7 +287,7 @@ class EduAIService {
     }
     const codeToMatch = courseCode || courseIdOrCode;
     const normalizedCode = codeToMatch.replace(/\s+/g, "").toUpperCase();
-    return FALLBACK_TOPICS_BY_CODE[normalizedCode] ?? [];
+    return FALLBACK_TOPICS_BY_CODE.get(normalizedCode) ?? [];
   }
 
   /**

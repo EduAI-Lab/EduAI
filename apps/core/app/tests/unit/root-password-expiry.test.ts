@@ -20,12 +20,15 @@ import { middleware } from "~/root";
 import { auth } from "~/lib/auth/server";
 import { isPasswordExpiredForUser } from "~/lib/auth/password-expiry.server";
 
+/** The single field the password-expiry middleware reads off its args. */
+type MiddlewareArgs = { request: Request };
+
 const passwordExpiryMiddleware = middleware[1] as (
-  args: { request: Request },
+  args: MiddlewareArgs,
   next: () => Promise<Response>,
 ) => Promise<Response>;
 
-function makeArgs(path: string): { request: Request } {
+function makeArgs(path: string): MiddlewareArgs {
   return { request: new Request(`http://localhost${path}`) };
 }
 

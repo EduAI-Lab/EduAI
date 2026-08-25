@@ -25,12 +25,32 @@ export type VllmModel = {
   created?: number;
 };
 
+/**
+ * What the model form submits — the create body for a new AI model, and the
+ * patch body for an existing one. `maxTokens` and the two prices are optional
+ * because the form leaves them blank to mean "unset", not zero.
+ */
+export type ModelFormData = {
+  modelId: string;
+  name: string;
+  description: string;
+  type: "CHAT" | "COMPLETION" | "EMBEDDING" | "IMAGE" | "AUDIO" | "VIDEO";
+  maxTokens?: number;
+  supportsImages: boolean;
+  supportsTools: boolean;
+  supportsStreaming: boolean;
+  inputPricing?: number;
+  outputPricing?: number;
+  isActive: boolean;
+  providerId: string;
+};
+
 export interface ModelFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   model?: AIModel | null;
   providers: AIProvider[];
-  onSubmit: (data: any) => void;
+  onSubmit: (data: ModelFormData) => void;
   ollamaModels?: OllamaModel[];
   fetchingOllamaModels?: boolean;
   ollamaError?: string | null;

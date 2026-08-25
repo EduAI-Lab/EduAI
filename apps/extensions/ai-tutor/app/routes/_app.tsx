@@ -37,7 +37,7 @@ import {
 } from "~/components/layout/ShellBreadcrumbContext";
 import TourButton from "~/components/TourButton";
 
-const NAV_ICONS: Record<AtNavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   "my-courses": IconBooks,
   teaching: IconBooks,
@@ -45,7 +45,7 @@ const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   "admin-bug-reports": IconShieldLock,
   enrollments: IconBooks,
   analytics: IconBooks,
-};
+} satisfies Record<AtNavItemKey, Icon>;
 
 /**
  * AI Tutor brand mark — canonical shape shared with Core (`app-sidebar.tsx`)
@@ -78,7 +78,7 @@ function AppLayoutInner() {
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
-  const aiStatus = useAiServiceStatus({ fetcher: () => api.aiStatus() });
+  const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
   const [bugReportOpen, setBugReportOpen] = useState(false);
 
   // All hooks above run unconditionally (rules of hooks) — everything below

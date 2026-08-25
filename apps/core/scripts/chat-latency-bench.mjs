@@ -160,8 +160,9 @@ async function main() {
       apiKeys,
       messages: [{ id: messageId, role: "user", content: prompt }],
       streaming,
-      ...(chatId ? { chatId } : {}),
-      ...(courseCode ? { courseCode } : {}),
+      // JSON.stringify drops undefined, so an uncoursed run posts neither key.
+      chatId: chatId || undefined,
+      courseCode: courseCode || undefined,
     };
 
     const t0 = performance.now();
@@ -197,7 +198,11 @@ async function main() {
       /* ignore */
     }
 
-    if (!chatId) {
+    // Only pin to a chat that actually got a real response — X-Chat-Id is
+    // now present on provider-failure responses too (#1561), so a failed
+    // warmup/first request would otherwise pin every later timed request to
+    // a chat whose first turn never completed, skewing the numbers.
+    if (!chatId && res.ok) {
       chatId = responseChatId(res, json);
     }
 

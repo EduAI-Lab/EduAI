@@ -10,7 +10,7 @@
  * button that deep-links to /chat/<id> — only pass this when the
  * current user is the owner of the chat (canEdit === true).
  */
-import { type Message } from "ai";
+import type { StoredChatMessage } from "~/lib/chat/revive-message.server";
 import { Spinner } from "@eduai/ui";
 import { IconEye, IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { Link } from "react-router";
@@ -18,7 +18,7 @@ import { Button } from "@eduai/ui";
 import { ChatMessage } from "~/components/chat/chat-message";
 
 interface ChatTranscriptViewerProps {
-  messages: Array<Record<string, unknown>>;
+  messages: StoredChatMessage[];
   /** Owner display name — shown in the read-only banner. */
   ownerName?: string | null;
   courseCode?: string | null;
@@ -81,10 +81,7 @@ export function ChatTranscriptViewer({
       ) : (
         <div className="space-y-5">
           {messages.map((message, index) => (
-            <ChatMessage
-              key={typeof message.id === "string" && message.id ? message.id : `msg-${index}`}
-              message={message as unknown as Message}
-            />
+            <ChatMessage key={message.id || `msg-${index}`} message={message} />
           ))}
         </div>
       )}

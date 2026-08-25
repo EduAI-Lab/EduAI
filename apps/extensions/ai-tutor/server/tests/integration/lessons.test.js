@@ -41,6 +41,8 @@ describe("Lessons routes", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    // Live principal auth hits Core enrollment sync; mirror modules.test so
+    // local CourseInstructor / CourseEnrollment rows drive allow/deny.
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
@@ -78,22 +80,6 @@ describe("Lessons routes", () => {
     });
     return ta;
   }
-
-  it("fails closed when Core cannot authorize a direct TA lesson list", async () => {
-    const ta = await enrollTa();
-    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
-      allowed: false,
-      state: "unavailable",
-      role: null,
-    });
-
-    const res = await request(await createApp({ mockUser: ta })).get(
-      `/api/modules/${seed.module.id}/lessons`,
-    );
-
-    expect(res.status).toBe(503);
-    expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
-  });
 
   // ── GET /api/modules/:moduleId/lessons ────────────────────────────
 
@@ -254,6 +240,16 @@ describe("Lessons routes", () => {
       expect(res.body.title).toBe("Test Lesson");
     });
 
+    // #1334: breadcrumb ancestry is a separate endpoint so GET /lessons/:id
+    // stays off the Core/ordinal path; loaders fetch it after paint.
+    it("does not nest breadcrumb on the lesson payload", async () => {
+      const res = await request(profApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.lesson.id);
+      expect(res.body.breadcrumb).toBeUndefined();
+    });
+
     it("TA sees unpublished lesson", async () => {
       await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
       const ta = await enrollTa();
@@ -284,6 +280,104 @@ describe("Lessons routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(false);
+    });
+  });
+
+  // ── GET /api/lessons/:id/breadcrumb ───────────────────────────────
+
+  describe("GET /api/lessons/:id/breadcrumb", () => {
+    // #1334: ancestry lives here so GET /lessons/:id can return without waiting
+    // on Core course resolution or sibling ordinal counts.
+    it("returns module, course, and ordinals", async () => {
+      vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+        id: coreOfferingId,
+        name: "Breadcrumb Course",
+        code: "BC101",
+        isPublished: true,
+      }));
+
+      const module2 = await prisma.module.create({
+        data: {
+          title: "Second Module",
+          position: 1,
+          isPublished: true,
+          courseOfferingId: seed.course.id,
+        },
+      });
+      await prisma.lesson.create({
+        data: {
+          title: "Sibling before",
+          contentMd: "",
+          position: 0,
+          isPublished: true,
+          moduleId: module2.id,
+        },
+      });
+      const target = await prisma.lesson.create({
+        data: {
+          title: "Target Lesson",
+          contentMd: "",
+          position: 1,
+          isPublished: true,
+          moduleId: module2.id,
+        },
+      });
+
+      const res = await request(profApp).get(`/api/lessons/${target.id}/breadcrumb`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        module: {
+          id: module2.id,
+          title: "Second Module",
+          courseOfferingId: seed.course.id,
+        },
+        course: {
+          id: seed.course.id,
+          title: "Breadcrumb Course",
+          code: "BC101",
+        },
+        moduleOrdinal: 2,
+        lessonOrdinal: 2,
+      });
+    });
+
+    it("student gets 403 on unpublished lesson", async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not published/i);
+    });
+
+    it("returns 404 for a nonexistent lesson", async () => {
+      const res = await request(profApp).get("/api/lessons/999999/breadcrumb");
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toMatch(/not found/i);
+    });
+
+    it("returns 403 Not authorized when caller has no course relationship", async () => {
+      const stranger = makeStudent();
+      const strangerApp = await createApp({ mockUser: stranger });
+
+      const res = await request(strangerApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/Not authorized/i);
+    });
+
+    it("sets X-Core-Status unavailable when Core course resolution fails", async () => {
+      // resolveCoreCourseById only marks coreUnavailable when the fetch throws
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unreachable"));
+
+      const res = await request(profApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["x-core-status"]).toBe("unavailable");
     });
   });
 

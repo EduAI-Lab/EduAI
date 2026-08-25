@@ -25,7 +25,7 @@ import handleRequestImport, { streamTimeout } from "~/entry.server";
 // pin the return type without fighting that param's conditional type.
 const handleRequest = handleRequestImport as unknown as HandleDocumentRequestFunction;
 
-const fakeRouterContext = { isSpaMode: false } as unknown as EntryContext;
+const fakeRouterContext = { isSpaMode: false } as EntryContext;
 
 function request(headers?: HeadersInit, method = "GET") {
   return new Request("http://core.test/dashboard", { method, headers });
@@ -108,7 +108,7 @@ describe("handleRequest — ready-event selection", () => {
       request({ "user-agent": "Mozilla/5.0" }),
       200,
       new Headers(),
-      { isSpaMode: true } as unknown as EntryContext,
+      { isSpaMode: true } as EntryContext,
       {} as never,
     );
 

@@ -1,7 +1,9 @@
 // @vitest-environment node
 // Pre-MVP regression coverage: legacy queue inputs must stay on authenticated
 // direct chat even when old deployment configuration still sets the flag.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,8 +11,8 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(() => new Response("", { status: 200 })),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -93,7 +95,7 @@ import { enqueueQuestionGeneration } from "~/lib/queue/chat-producer.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -105,7 +107,7 @@ function makeRequest(body: object) {
   } as never;
 }
 
-function enqueueBody(overrides: Record<string, unknown> = {}) {
+function enqueueBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Write 5 questions on recursion." }],
     model: "vllm:test-model",

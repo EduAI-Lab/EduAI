@@ -13,6 +13,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
+import { BUG_TYPE_LABELS } from "./bug-reports/bug-reports-utils";
 
 export type BugReportType =
   | "UI_DISPLAY"
@@ -33,14 +34,11 @@ export type BugReportSubmitData = {
   userAgent?: string;
 };
 
-const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
-  { value: "UI_DISPLAY", label: "UI / display issue" },
-  { value: "FEATURE_NOT_WORKING", label: "Feature not working" },
-  { value: "PERFORMANCE", label: "Performance issue" },
-  { value: "CONTENT_ERROR", label: "Content error" },
-  { value: "ACCESS_PERMISSION", label: "Access / permission issue" },
-  { value: "OTHER", label: "Other" },
-];
+// Labels come from the same map the admin triage table renders, so a reporter
+// and a triager read the same words for the same type.
+const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = (
+  Object.keys(BUG_TYPE_LABELS) as BugReportType[]
+).map((value) => ({ value, label: BUG_TYPE_LABELS[value] }));
 
 const MIN_DESC = 10;
 const MAX_DESC = 2000;

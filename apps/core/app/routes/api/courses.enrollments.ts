@@ -20,6 +20,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { requireServiceKey } from "~/lib/auth/guards.server";
+import { jsonObjectSchema } from "~/lib/json-value";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { resolvePolicyGate } from "~/lib/rbac/permissions";
@@ -192,10 +193,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     .clone()
     .json()
     .catch(() => null);
-  const bodyPreview =
-    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
-      ? (peekedBody as Record<string, unknown>)
-      : null;
+  const peeked = jsonObjectSchema.safeParse(peekedBody);
+  const bodyPreview = peeked.success ? peeked.data : null;
   // Rank authority lives in enrollments.server; route defers to the same helper.
   const requiredRank = requiredRankForEnrollmentRole(bodyPreview?.role);
   if (!access || access.rank < requiredRank) {

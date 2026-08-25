@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Markdown } from "../ui/markdown";
 import { MarkdownStylesProvider, type MarkdownStyles } from "../ui/markdown-styles";
+import type { StyleModule } from "../ui/lazy-streamdown";
 
 /**
  * #1342 — the KaTeX stylesheet must be fetched only for content that renders
@@ -26,7 +27,7 @@ afterEach(() => {
 
 describe("KaTeX stylesheet loading", () => {
   it("does not load the stylesheet for math-free content", async () => {
-    const loadKatexStyles = vi.fn(() => Promise.resolve());
+    const loadKatexStyles = vi.fn(() => Promise.resolve({ default: undefined }));
     const styles: MarkdownStyles = { loadKatexStyles };
 
     render(
@@ -40,7 +41,7 @@ describe("KaTeX stylesheet loading", () => {
   });
 
   it("loads the stylesheet for content that renders math", async () => {
-    const loadKatexStyles = vi.fn(() => Promise.resolve());
+    const loadKatexStyles = vi.fn(() => Promise.resolve({ default: undefined }));
     const styles: MarkdownStyles = { loadKatexStyles };
 
     render(
@@ -54,8 +55,8 @@ describe("KaTeX stylesheet loading", () => {
   });
 
   it("resolves the stylesheet before the math block paints", async () => {
-    let releaseStylesheet!: () => void;
-    const stylesheet = new Promise<void>((resolve) => {
+    let releaseStylesheet!: (value: StyleModule) => void;
+    const stylesheet = new Promise<StyleModule>((resolve) => {
       releaseStylesheet = resolve;
     });
     const styles: MarkdownStyles = { loadKatexStyles: () => stylesheet };
@@ -80,7 +81,7 @@ describe("KaTeX stylesheet loading", () => {
     // ahead of its CSS.
     expect(screen.getAllByTestId("streamdown")).toHaveLength(1);
 
-    releaseStylesheet();
+    releaseStylesheet({ default: undefined });
     await waitFor(() => {
       expect(screen.getAllByTestId("streamdown")).toHaveLength(2);
     });

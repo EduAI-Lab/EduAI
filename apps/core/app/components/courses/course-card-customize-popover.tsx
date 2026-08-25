@@ -50,9 +50,13 @@ export function CourseCardCustomizePopover({
     if (!color && !nickname) {
       onApply(null);
     } else {
+      // Both drafts are seeded from the stored preference when the popover
+      // opens, so an empty half here means the user cleared it. `undefined`
+      // wins over the stored value in `mergeCourseCardPreference`'s spread,
+      // which is what makes clearing one half actually stick.
       onApply({
-        ...(color ? { color } : {}),
-        ...(nickname ? { nickname } : {}),
+        color: color || undefined,
+        nickname: nickname || undefined,
       });
     }
     setOpen(false);

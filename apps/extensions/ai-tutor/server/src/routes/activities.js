@@ -37,6 +37,7 @@ import {
   PaginationError,
 } from "../utils/pagination.js";
 import { evaluateQuestion } from "../services/activityEvaluation.js";
+import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
 import {
   ActivityMutationError,
   createActivityForLesson,
@@ -50,6 +51,7 @@ import {
   recordActivityFeedback,
   recordAiHelpRequest,
   recordSubmissionMetrics,
+  resyncSubmissionMetrics,
 } from "../services/activityAnalytics.js";
 import {
   resolveSupervisorSettings,
@@ -459,10 +461,12 @@ async function handleAiInteraction({
         ? "The AI study buddy took too long to respond. Please try again."
         : "Unable to generate an AI tutoring response",
       code: timedOut ? "AI_TUTOR_TIMEOUT" : "AI_TUTOR_GUIDANCE_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   } finally {
     res.removeListener("close", onClientClose);
@@ -631,7 +635,9 @@ router.post(
       res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -675,7 +681,9 @@ router.patch(
       res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -1041,8 +1049,10 @@ router.get(
 
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
-        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      if (excludeLessonId !== null) {
+        importableScope.lessonId = { not: excludeLessonId };
+      }
       // #1207: this scope spans EVERY course the caller manages, so a bounded
       // page over it is an instructor's whole activity corpus — server-side
       // search is the only way to reach a candidate past the first page. The
@@ -1091,9 +1101,8 @@ router.get(
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
  *
- * Why: `attemptNumber` is computed server-side from the latest existing
- * submission rather than trusted from the client, so retries can't collide
- * or be spoofed.
+ * Why: `attemptNumber` is allocated transactionally and guarded by a database
+ * uniqueness constraint rather than trusted from the client.
  */
 router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
@@ -1157,29 +1166,17 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
-    // Get the latest attempt number for this activity and user
-    const latestSubmission = await prisma.submission.findFirst({
-      where: { userId: authUser.id, activityId },
-      orderBy: { attemptNumber: "desc" },
-      select: { attemptNumber: true },
-    });
-
-    const nextAttemptNumber = latestSubmission ? latestSubmission.attemptNumber + 1 : 1;
-
-    const submission = await prisma.submission.create({
-      data: {
-        userId: authUser.id,
-        activityId,
-        attemptNumber: nextAttemptNumber,
-        response: {
-          answerText: typeof answerText === "string" ? answerText : null,
-          answerOption: typeof answerOption === "number" ? answerOption : null,
-        },
-        aiFeedback: isCorrect
-          ? { message: "Nice! That looks right." }
-          : { message: "Not quite. Try another angle." },
-        isCorrect,
+    const submission = await createSubmissionWithNextAttempt({
+      userId: authUser.id,
+      activityId,
+      response: {
+        answerText: typeof answerText === "string" ? answerText : null,
+        answerOption: typeof answerOption === "number" ? answerOption : null,
       },
+      aiFeedback: isCorrect
+        ? { message: "Nice! That looks right." }
+        : { message: "Not quite. Try another angle." },
+      isCorrect,
     });
 
     if (authUser.role === "STUDENT") {
@@ -1455,10 +1452,12 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     const body = {
       error: "Unable to generate a custom tutoring response",
       code: "AI_TUTOR_CUSTOM_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   }
 });
@@ -1639,6 +1638,13 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       where: { id: submissionId },
       data: updateData,
     });
+
+    // The student metrics behind Analytics are written once, at submit time —
+    // without this re-derive an override left the Analytics tab contradicting
+    // the Submissions tab for the same course.
+    if (typeof isCorrect !== "undefined") {
+      await resyncSubmissionMetrics({ userId: updated.userId, activityId });
+    }
 
     res.json(updated);
   } catch (e) {
@@ -1974,9 +1980,9 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
 
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
-    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
-      headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },
-    });
+    const headers = { "Content-Type": "application/json" };
+    if (cookie) headers.cookie = cookie;
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }

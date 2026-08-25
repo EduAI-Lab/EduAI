@@ -15,6 +15,7 @@ vi.mock("~/hooks/api/config", () => ({
 }));
 
 import { apiFetch } from "~/hooks/api/config";
+import type { ModelFormData } from "~/components/admin/model-form-dialog";
 import type { AIModel } from "~/hooks/api/types";
 import { fetchModelsByProvider, useAiModels } from "~/hooks/api/use-ai-models";
 
@@ -24,7 +25,7 @@ const model = {
   name: "Test Model",
   isActive: true,
   providerId: "prov-1",
-} as unknown as AIModel;
+} as AIModel;
 
 function mockPage(data: AIModel[] = [model], total = data.length) {
   vi.mocked(apiFetch).mockResolvedValue({ data, total, page: 1, pageSize: 25 } as never);
@@ -113,6 +114,20 @@ describe("useAiModels", () => {
     expect(result.current.models).toEqual([]);
   });
 
+  /** A complete create body; the hook now takes the form's payload, not a bag. */
+  const modelFormData = (overrides: Partial<ModelFormData> = {}): ModelFormData => ({
+    modelId: "model-1",
+    name: "Model 1",
+    description: "",
+    type: "CHAT",
+    supportsImages: false,
+    supportsTools: false,
+    supportsStreaming: true,
+    isActive: true,
+    providerId: "provider-1",
+    ...overrides,
+  });
+
   it("createModel POSTs then refreshes from the server", async () => {
     mockPage();
     const { result } = renderHook(() => useAiModels());
@@ -120,7 +135,7 @@ describe("useAiModels", () => {
     const before = listUrls().length;
 
     await act(async () => {
-      await result.current.createModel({ modelId: "new" });
+      await result.current.createModel(modelFormData({ modelId: "new" }));
     });
 
     expect(

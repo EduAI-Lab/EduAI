@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Client abort / stop-button support for /api/chat (#267).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -17,8 +19,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -96,7 +98,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object, signal?: AbortSignal) {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -109,7 +111,7 @@ function makeRequest(body: object, signal?: AbortSignal) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -160,9 +162,7 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
-    data?: Record<string, unknown>;
-  }) => ({
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
     id: CHAT_ID,
     userId: "user-1",
     courseId: COURSE_ID,

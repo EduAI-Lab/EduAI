@@ -1122,14 +1122,15 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
     throw relationNotFound("Assessment not found for this course");
   }
 
-  // Get current questionOrder or initialize empty object
-  const currentOrder = {
-    ...(question.questionOrder &&
+  // Legacy rows can hold a null or an array here; only a real object carries
+  // an order worth copying forward.
+  const storedOrder =
+    question.questionOrder &&
     typeof question.questionOrder === "object" &&
     !Array.isArray(question.questionOrder)
       ? question.questionOrder
-      : {}),
-  };
+      : undefined;
+  const currentOrder = { ...storedOrder };
 
   // Remove the assessment from the order
   delete currentOrder[String(parsedAssessmentId)];

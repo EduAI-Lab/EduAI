@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatApiReject } from "~/lib/chat-api-log";
 import { REDACTED_VALUE } from "~/lib/redact.server";
@@ -21,8 +22,8 @@ describe("chatApiReject", () => {
       apiKey: "sk-live-abcdef",
     });
 
-    const [, logged] = errorSpy.mock.calls[0] as [string, Record<string, unknown>];
-    const trace = logged.trace as Record<string, unknown>;
+    const [, logged] = errorSpy.mock.calls[0] as [string, JsonObject];
+    const trace = logged.trace as JsonObject;
     expect(trace.apiKey).toBe(REDACTED_VALUE);
     expect(trace.upstreamUrl).toBe(`https://provider.test/v1/chat?api_key=${REDACTED_VALUE}`);
     expect(JSON.stringify(logged)).not.toContain("sk-live-abcdef");
@@ -35,7 +36,7 @@ describe("chatApiReject", () => {
   it("logs the status and a trace-less rejection without throwing", () => {
     chatApiReject(400, { error: "bad request" });
 
-    const [, logged] = errorSpy.mock.calls[0] as [string, Record<string, unknown>];
+    const [, logged] = errorSpy.mock.calls[0] as [string, JsonObject];
     expect(logged.status).toBe(400);
     expect(logged.trace).toBeUndefined();
   });

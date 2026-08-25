@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
@@ -515,7 +516,7 @@ const VALID_COURSE_FIELDS = {
   instructorUserIds: "user-1",
 };
 
-function makeJsonPostRequest(body: Record<string, unknown>) {
+function makeJsonPostRequest(body: JsonObject) {
   return new Request("http://localhost/api/courses", {
     method: "POST",
     body: JSON.stringify(body),
@@ -529,7 +530,7 @@ describe("createCourse", () => {
     // Default the instructor-create policy OFF; tests that exercise it opt in.
     vi.mocked(getPolicy).mockResolvedValue(false);
     prismaMock.$transaction.mockImplementation(
-      async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
+      async <T>(fn: (tx: typeof prismaMock) => Promise<T>) => fn(prismaMock),
     );
   });
 
@@ -726,7 +727,7 @@ describe("createCourse", () => {
 // updateCourse
 // ---------------------------------------------------------------------------
 
-function makePatchRequest(body: Record<string, unknown>) {
+function makePatchRequest(body: JsonObject) {
   return new Request("http://localhost/api/courses/c1", {
     method: "PATCH",
     body: JSON.stringify(body),

@@ -62,14 +62,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       role: "STUDENT",
       isActive: true,
       enrollments: { none: enrollmentNone },
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { email: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      // Without a search term the candidate list is unfiltered; `undefined` is
+      // Prisma's "no constraint".
+      OR: q
+        ? [
+            { name: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+          ]
+        : undefined,
     },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },

@@ -36,6 +36,7 @@ vi.mock("~/lib/request-context.server", () => ({
 
 import { action, loader } from "~/routes/api/admin.bedrock-settings";
 import { defaultBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const settings = {
   ...defaultBedrockOverflowSettings(),
@@ -43,13 +44,16 @@ const settings = {
   resourceLimit: 4,
 };
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
+  // A GET carries no body at all, so neither the body nor its content type is
+  // set unless the caller passed one.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/admin/bedrock-settings", {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/admin/bedrock-settings", init),
     params: {},
     context: {} as never,
   } as never;

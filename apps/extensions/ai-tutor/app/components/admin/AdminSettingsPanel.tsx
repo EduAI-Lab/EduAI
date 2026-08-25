@@ -22,7 +22,6 @@ import {
   clampIterations,
   formatApiKeyUpdatedTime,
   formatCostTier,
-  getAdminSettingsApi,
   inferProvider,
   normalizePolicy,
   type AdminAiModelOption,
@@ -45,11 +44,20 @@ function costTierBadgeVariant(
 
 type AdminSettingsPanelProps = {
   loaderData: AdminSettingsLoaderData;
+  /**
+   * Notified whenever the key status changes, so a caller rendering the
+   * key-source badge from the loader can follow a save/clear instead of
+   * showing a stale source until the route reloads.
+   */
+  onStatusChange?: (status: EduAiApiKeyStatus) => void;
 };
 
-export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
-  const settingsApi = getAdminSettingsApi();
-  const [status, setStatus] = useState<EduAiApiKeyStatus>(loaderData.status);
+export function AdminSettingsPanel({ loaderData, onStatusChange }: AdminSettingsPanelProps) {
+  const [status, setStatusState] = useState<EduAiApiKeyStatus>(loaderData.status);
+  const setStatus = (next: EduAiApiKeyStatus) => {
+    setStatusState(next);
+    onStatusChange?.(next);
+  };
   const [aiPolicy, setAiPolicy] = useState<AdminAiModelPolicy>(
     normalizePolicy(loaderData.aiPolicy ?? DEFAULT_POLICY, loaderData.aiModels),
   );
@@ -122,14 +130,14 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
   };
 
   const saveAiPolicy = async () => {
-    if (!aiPolicyAvailable || typeof settingsApi.setAdminAiModelPolicy !== "function") {
+    if (!aiPolicyAvailable) {
       toast.error("AI model settings cannot be saved right now. Please try again later.");
       return;
     }
 
     setSavingAiPolicy(true);
     try {
-      const saved = await settingsApi.setAdminAiModelPolicy(aiPolicy);
+      const saved = await api.setAdminAiModelPolicy(aiPolicy);
       const normalized = normalizePolicy(saved, aiModels);
       setAiPolicy(normalized);
       setInitialAiPolicy(normalized);

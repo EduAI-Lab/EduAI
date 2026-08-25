@@ -59,7 +59,7 @@ export interface CourseTopicsHeroActionProps {
   /** Called after a successful create (dialog is already closed/reset). */
   onCreateSuccess?: (name: string) => void;
   /** Called after a failed create, in addition to any inline error text. */
-  onCreateError?: (error: unknown) => void;
+  onCreateError?: (cause: unknown) => void;
   /**
    * Called when the user submits an empty topic name, in addition to any
    * inline error text. Message is "Topic name cannot be empty."

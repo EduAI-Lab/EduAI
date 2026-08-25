@@ -40,20 +40,23 @@ import { CommandPalette } from "@/components/command/CommandPalette";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { toast } from "sonner";
 
-const ROUTE_TITLES: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/courses": "Courses",
-  "/library": "Question Library",
-  "/settings": "Settings",
-  "/help": "Help",
-  "/admin/bug-reports": "Bug reports",
-};
+// A `Map` because the key is whatever path the router is on: an unlisted
+// route falls back to the app name rather than reading `undefined` off a
+// dictionary that claimed to have every string.
+const ROUTE_TITLES = new Map<string, string>([
+  ["/dashboard", "Dashboard"],
+  ["/courses", "Courses"],
+  ["/library", "Question Library"],
+  ["/settings", "Settings"],
+  ["/help", "Help"],
+  ["/admin/bug-reports", "Bug reports"],
+]);
 
 function resolveTitle(pathname: string): string {
   if (pathname.startsWith("/courses/") && pathname !== "/courses") {
     return "Course workspace";
   }
-  return ROUTE_TITLES[pathname] ?? "Question Maker";
+  return ROUTE_TITLES.get(pathname) ?? "Question Maker";
 }
 
 /**
@@ -112,14 +115,14 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   );
 }
 
-const NAV_ICONS: Record<QmNavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
   "bug-reports": IconBug,
   "back-to-eduai": IconBooks,
-};
+} satisfies Record<QmNavItemKey, Icon>;
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
 const qmLogo = (

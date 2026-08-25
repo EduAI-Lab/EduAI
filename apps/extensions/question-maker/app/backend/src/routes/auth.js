@@ -20,13 +20,13 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
       authorizedUnits = Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
     }
 
-    res.json({
-      user: {
-        ...req.user,
-        isBugReportAdmin,
-        ...(authorizedUnits !== undefined ? { authorizedUnits } : {}),
-      },
-    });
+    // Core's session payload already carries `authorizedUnits`, so the freshly
+    // fetched list is layered on by statement, since an explicit `undefined` here
+    // would erase the spread's value for every non-UNIT_ADMIN caller.
+    const user = { ...req.user, isBugReportAdmin };
+    if (authorizedUnits !== undefined) user.authorizedUnits = authorizedUnits;
+
+    res.json({ user });
   } catch (error) {
     next(error);
   }

@@ -2,6 +2,8 @@
  * Client for assessment CRUD, section management, and variant linkage calls to the backend API.
  * Shapes payloads (e.g., blueprintConfig) and returns typed responses for UI consumers.
  */
+import type { JsonObject, JsonValue } from "@eduai/types";
+
 import api from "./api";
 import { fetchAllPages } from "./pagination";
 import {
@@ -31,7 +33,7 @@ const SERVER_MAX_LIST_LIMIT = 200;
 const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
-function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
+function unwrapPaginatedList<T>(data: JsonValue): PaginatedList<T> {
   if (Array.isArray(data)) {
     return {
       items: data as T[],
@@ -253,7 +255,7 @@ export const assessmentService = {
   async addVariantToSection(
     assessmentId: number,
     sectionId: number,
-    payload: { variantId: number; displayOrder?: number; metadata?: Record<string, unknown> },
+    payload: { variantId: number; displayOrder?: number; metadata?: JsonObject },
   ): Promise<SectionVariantLink> {
     const response = await api.post(
       `/api/assessments/${assessmentId}/sections/${sectionId}/variants`,

@@ -30,10 +30,10 @@ function actualAllowed(row: RbacCapabilitiesRow): boolean {
   const published = row.IsPublished === "yes";
   const policyOn = row.PolicyOn === "yes";
   const uploadedBy = row.MaterialOwn === "yes" ? OWN : OTHER;
-  const policies: Partial<Record<PolicyKey, boolean>> = {
+  const policies = {
     "instructors.canViewCourseChats": policyOn,
     "unitAdmins.canViewUnitChats": policyOn,
-  };
+  } satisfies { [K in PolicyKey]?: boolean };
 
   switch (row.Capability) {
     case "view-material":

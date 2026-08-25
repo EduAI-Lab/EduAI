@@ -1,4 +1,5 @@
 import { hashRequestBody } from "~/lib/idempotency.server";
+import type { ToolInput } from "./tool-input";
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000;
 
@@ -15,7 +16,7 @@ function previewKey(actorId: string, toolName: string, payloadHash: string): str
   return `${actorId}|${toolName}|${payloadHash}`;
 }
 
-export function hashWritePayload(payload: Record<string, unknown>): string {
+export function hashWritePayload(payload: ToolInput): string {
   return hashRequestBody(payload);
 }
 
@@ -29,7 +30,7 @@ function pruneExpiredWritePreviews(now = Date.now()): void {
 export function registerWritePreview(
   actorId: string,
   toolName: string,
-  payload: Record<string, unknown>,
+  payload: ToolInput,
   ttlMs = DEFAULT_TTL_MS,
   turnId: string | null = null,
 ): void {
@@ -50,7 +51,7 @@ export type ConsumeWritePreviewResult = "ok" | "missing" | "same_turn";
 export function consumeWritePreview(
   actorId: string,
   toolName: string,
-  payload: Record<string, unknown>,
+  payload: ToolInput,
   turnId: string | null = null,
 ): ConsumeWritePreviewResult {
   const key = previewKey(actorId, toolName, hashWritePayload(payload));

@@ -104,7 +104,7 @@ const modules = [
   { id: 12, title: "Module C", description: "", position: 2, isPublished: true },
 ];
 
-function wrap(overrides: Record<string, unknown> = {}) {
+function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
   const props = {
     loaderData: {
       course,
@@ -115,7 +115,7 @@ function wrap(overrides: Record<string, unknown> = {}) {
       search: "",
       ...overrides,
     },
-  } as unknown as Route.ComponentProps;
+  } as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorCourseModules {...props} />

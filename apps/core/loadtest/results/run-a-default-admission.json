@@ -1,0 +1,203 @@
+{
+    "metrics": {
+        "http_req_failed": {
+            "passes": 48884,
+            "fails": 98287,
+            "thresholds": {
+                "rate<0.05": true
+            },
+            "value": 0.33215783000727045
+        },
+        "vus_max": {
+            "value": 501,
+            "min": 501,
+            "max": 501
+        },
+        "checks": {
+            "passes": 98789,
+            "fails": 48563,
+            "value": 0.6704286334763017
+        },
+        "eduai_rate_limit_429s": {
+            "count": 20,
+            "rate": 0.04137234646587249
+        },
+        "eduai_rate_limit_isolation_ok": {
+            "count": 1,
+            "rate": 0.0020686173232936245
+        },
+        "eduai_chat_success": {
+            "passes": 387,
+            "fails": 48563,
+            "thresholds": {
+                "rate>0.95": true
+            },
+            "value": 0.007906026557711951
+        },
+        "http_req_duration": {
+            "med": 3.401,
+            "max": 3226.684,
+            "p(90)": 43.744,
+            "p(95)": 100.54449999999996,
+            "avg": 23.819527617533367,
+            "min": 0.465
+        },
+        "iteration_duration": {
+            "min": 952.7075,
+            "med": 3314.204083,
+            "max": 7654.733083,
+            "p(90)": 4327.614417,
+            "p(95)": 4565.7150415,
+            "avg": 3325.3520313180315
+        },
+        "vus": {
+            "value": 1,
+            "min": 1,
+            "max": 500
+        },
+        "http_req_receiving": {
+            "avg": 2.6442741980413476,
+            "min": 0.007,
+            "med": 0.02,
+            "max": 1980.877,
+            "p(90)": 0.079,
+            "p(95)": 0.112
+        },
+        "http_req_sending": {
+            "p(95)": 0.036,
+            "avg": 0.02547143798710797,
+            "min": 0.001,
+            "med": 0.006,
+            "max": 74.99,
+            "p(90)": 0.02
+        },
+        "http_req_tls_handshaking": {
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0,
+            "min": 0
+        },
+        "iterations": {
+            "count": 48951,
+            "rate": 101.26088659254621
+        },
+        "http_req_blocked": {
+            "max": 52.409,
+            "p(90)": 0.01,
+            "p(95)": 0.019,
+            "avg": 0.019567530287945386,
+            "min": 0,
+            "med": 0.002
+        },
+        "eduai_chat_stream_duration": {
+            "avg": 21.715771195097037,
+            "min": 0,
+            "med": 2,
+            "max": 3227,
+            "p(90)": 29,
+            "p(95)": 70,
+            "thresholds": {
+                "p(95)<8000": false
+            }
+        },
+        "eduai_page_load_duration": {
+            "min": 2,
+            "med": 8,
+            "max": 1740,
+            "p(90)": 97,
+            "p(95)": 245,
+            "avg": 48.87297242083759,
+            "thresholds": {
+                "p(95)<3000": false
+            }
+        },
+        "http_req_waiting": {
+            "avg": 21.149781981504756,
+            "min": 0.455,
+            "med": 3.35,
+            "max": 2245.034,
+            "p(90)": 42.775,
+            "p(95)": 96.55549999999991
+        },
+        "data_received": {
+            "count": 1066490163,
+            "rate": 2206160.0263040415
+        },
+        "http_reqs": {
+            "count": 147171,
+            "rate": 304.44048008644603
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 3226.684,
+            "p(90)": 55.55220000000002,
+            "p(95)": 129.16729999999995,
+            "avg": 29.372300558568206,
+            "min": 0.593,
+            "med": 4.423
+        },
+        "http_req_connecting": {
+            "avg": 0.006702652017041401,
+            "min": 0,
+            "med": 0,
+            "max": 21.757,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "data_sent": {
+            "count": 26612084,
+            "rate": 55050.2179713451
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "login succeeded": {
+                    "name": "login succeeded",
+                    "path": "::login succeeded",
+                    "id": "904b20f978ea9858883ce098334e6bab",
+                    "passes": 500,
+                    "fails": 0
+                },
+                "dashboard loaded": {
+                    "id": "05ac5474aef65cce4bd5c2ef7208d6ed",
+                    "passes": 48950,
+                    "fails": 0,
+                    "name": "dashboard loaded",
+                    "path": "::dashboard loaded"
+                },
+                "chat responded 200": {
+                    "fails": 48563,
+                    "name": "chat responded 200",
+                    "path": "::chat responded 200",
+                    "id": "a778c369ca124654932e73c9bf0f03f7",
+                    "passes": 387
+                },
+                "chat body non-empty": {
+                    "id": "c8ae4b5255b1837ed6b694c3a90d3b5f",
+                    "passes": 48950,
+                    "fails": 0,
+                    "name": "chat body non-empty",
+                    "path": "::chat body non-empty"
+                },
+                "rate limit engaged within 320 requests (limit=300)": {
+                    "id": "13be8017755b8cf242a56f72e840ad8f",
+                    "passes": 1,
+                    "fails": 0,
+                    "name": "rate limit engaged within 320 requests (limit=300)",
+                    "path": "::rate limit engaged within 320 requests (limit=300)"
+                },
+                "other IPs unaffected by one client hitting the limit": {
+                    "name": "other IPs unaffected by one client hitting the limit",
+                    "path": "::other IPs unaffected by one client hitting the limit",
+                    "id": "8b26702e7f14d503f7ec0a14ed2beee2",
+                    "passes": 1,
+                    "fails": 0
+                }
+            }
+    }
+}

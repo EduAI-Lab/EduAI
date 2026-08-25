@@ -11,6 +11,11 @@
 // listEnabledRegistryProviders).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ProviderV1 } from "@ai-sdk/provider";
+import type { GoogleGenerativeAIProviderSettings } from "@ai-sdk/google";
+import type { OpenAIProviderSettings } from "@ai-sdk/openai";
+import type { OllamaProviderSettings } from "ollama-ai-provider";
+import type { BedrockProviderConfig } from "~/lib/ai/routing/bedrock/bedrock-provider.server";
 
 const {
   createOllamaMock,
@@ -19,31 +24,38 @@ const {
   createBedrockMock,
   resolveOllamaMock,
 } = vi.hoisted(() => ({
-  createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createBedrockMock: vi.fn((opts: Record<string, unknown>) => ({ __bedrock: opts })),
+  createOllamaMock: vi.fn((_opts: OllamaProviderSettings) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: OpenAIProviderSettings) => vi.fn()),
+  createGoogleMock: vi.fn((_opts: GoogleGenerativeAIProviderSettings) => vi.fn()),
+  createBedrockMock: vi.fn((opts: BedrockProviderConfig) => ({ __bedrock: opts })),
   resolveOllamaMock: vi.fn(),
 }));
 
 vi.mock("ollama-ai-provider", () => ({
-  createOllama: (opts: Record<string, unknown>) => createOllamaMock(opts),
+  createOllama: (opts: OllamaProviderSettings) => createOllamaMock(opts),
 }));
 
 vi.mock("@ai-sdk/openai", () => ({
-  createOpenAI: (opts: Record<string, unknown>) => createOpenAIMock(opts),
+  createOpenAI: (opts: OpenAIProviderSettings) => createOpenAIMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
-  createGoogleGenerativeAI: (opts: Record<string, unknown>) => createGoogleMock(opts),
+  createGoogleGenerativeAI: (opts: GoogleGenerativeAIProviderSettings) => createGoogleMock(opts),
 }));
 
+/**
+ * The registry mock echoes the providers map back under `__providers` so each
+ * test can assert which providers `createAIProviderRegistry` actually built,
+ * which the real `ProviderRegistryProvider` does not expose.
+ */
+type MockedRegistry = { __providers: Partial<Record<SupportedProvider, ProviderV1>> };
+
 vi.mock("ai", () => ({
-  createProviderRegistry: (providers: Record<string, unknown>) => ({ __providers: providers }),
+  createProviderRegistry: (providers: Record<string, ProviderV1>) => ({ __providers: providers }),
 }));
 
 vi.mock("~/lib/ai/routing/bedrock/bedrock-provider.server", () => ({
-  createBedrockProvider: (opts: Record<string, unknown>) => createBedrockMock(opts),
+  createBedrockProvider: (opts: BedrockProviderConfig) => createBedrockMock(opts),
 }));
 
 // Defaults to the real implementation; the "resolution fully fails" test below
@@ -66,6 +78,17 @@ import {
   validateProviderConfig,
 } from "~/lib/ai/providers";
 import type { SupportedProvider, UserProviderSettings } from "~/lib/ai/providers";
+
+/**
+ * Builds a registry and reads it back as the mock's echo shape.
+ *
+ * SAFETY: the `ai` mock above replaces `createProviderRegistry` with one
+ * returning `{ __providers }`, so this value is a `MockedRegistry` rather than
+ * the opaque `ProviderRegistryProvider` the real signature promises.
+ */
+function buildRegistry(settings: UserProviderSettings): MockedRegistry {
+  return createAIProviderRegistry(settings) as unknown as MockedRegistry;
+}
 
 const ENV_KEYS = [
   "OLLAMA_BASE_URL",
@@ -100,18 +123,18 @@ describe("createAIProviderRegistry", () => {
   });
 
   it("creates an OpenAI client when enabled with an API key", () => {
-    const registry = createAIProviderRegistry({
+    const registry = buildRegistry({
       openai: { isEnabled: true, apiKey: "sk-abc" },
-    }) as unknown as { __providers: Record<string, unknown> };
+    });
 
     expect(createOpenAIMock).toHaveBeenCalledWith({ apiKey: "sk-abc" });
     expect(registry.__providers.openai).toBeDefined();
   });
 
   it("does not create an OpenAI client when enabled but missing an API key", () => {
-    const registry = createAIProviderRegistry({
+    const registry = buildRegistry({
       openai: { isEnabled: true },
-    }) as unknown as { __providers: Record<string, unknown> };
+    });
 
     expect(createOpenAIMock).not.toHaveBeenCalled();
     expect(registry.__providers.openai).toBeUndefined();
@@ -123,9 +146,9 @@ describe("createAIProviderRegistry", () => {
   });
 
   it("creates a Google client when enabled with an API key", () => {
-    const registry = createAIProviderRegistry({
+    const registry = buildRegistry({
       google: { isEnabled: true, apiKey: "goog-key" },
-    }) as unknown as { __providers: Record<string, unknown> };
+    });
 
     expect(createGoogleMock).toHaveBeenCalledWith({ apiKey: "goog-key" });
     expect(registry.__providers.google).toBeDefined();
@@ -189,9 +212,7 @@ describe("createAIProviderRegistry", () => {
   });
 
   it("registers nothing when no provider settings are enabled", () => {
-    const registry = createAIProviderRegistry({}) as unknown as {
-      __providers: Record<string, unknown>;
-    };
+    const registry = buildRegistry({});
 
     expect(createOpenAIMock).not.toHaveBeenCalled();
     expect(createGoogleMock).not.toHaveBeenCalled();
@@ -203,9 +224,9 @@ describe("createAIProviderRegistry", () => {
     process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
     process.env.BEDROCK_REGION = "us-west-2";
 
-    const registry = createAIProviderRegistry({
+    const registry = buildRegistry({
       bedrock: { isEnabled: true, apiKey: "client-key", baseUrl: "https://evil.example" },
-    }) as unknown as { __providers: Record<string, unknown> };
+    });
 
     expect(createBedrockMock).toHaveBeenCalledWith({
       apiKey: "env-token",
@@ -241,9 +262,7 @@ describe("createAIProviderRegistry — resolution fully fails", () => {
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const registry = createAIProviderRegistry({ ollama: { isEnabled: true } }) as unknown as {
-      __providers: Record<string, unknown>;
-    };
+    const registry = buildRegistry({ ollama: { isEnabled: true } });
 
     expect(createOllamaMock).not.toHaveBeenCalled();
     expect(registry.__providers.ollama).toBeUndefined();
