@@ -138,10 +138,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
-  const tabs = getCourseDetailTabs(
-    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
-  );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
   const {
     course,
     modules: initialModules,
@@ -150,6 +146,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     pageSize,
     search,
   } = loaderData;
+  // #1644: gate staff tabs on the viewer's role *on this course* (from the
+  // loader), not the global effective role — a global-effective TA who is only a
+  // STUDENT here must not see staff tabs whose content the server 403s.
+  const tabs = getCourseDetailTabs(
+    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
+    course.viewerRole ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);

@@ -68,4 +68,21 @@ describe("getCourseDetailTabs", () => {
     const tabs = getCourseDetailTabs(u("INSTRUCTOR")).map((tab) => tab.id);
     expect(tabs).toEqual(["content", "submissions", "feedback", "analytics"]);
   });
+
+  it("gates staff tabs on the per-course role, not the global effective role (#1644)", () => {
+    // A global-effective TA who is only a STUDENT on this course: no staff tabs.
+    const asStudentHere = getCourseDetailTabs(u("TA"), "STUDENT").map((tab) => tab.id);
+    expect(asStudentHere).toEqual(["content"]);
+
+    // Same account on a course where they're actually the TA: staff tabs return.
+    const asTaHere = getCourseDetailTabs(u("TA"), "TA").map((tab) => tab.id);
+    expect(asTaHere).toContain("submissions");
+    expect(asTaHere).toContain("feedback");
+    expect(asTaHere).toContain("analytics");
+  });
+
+  it("falls back to the global role when no per-course role is given (#1644)", () => {
+    const tabs = getCourseDetailTabs(u("TA")).map((tab) => tab.id);
+    expect(tabs).toContain("feedback");
+  });
 });
