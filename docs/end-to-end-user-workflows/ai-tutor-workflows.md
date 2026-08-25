@@ -26,9 +26,7 @@ Walked the AI Tutor **TA** and **Student** slices as a real user against the liv
 3. **Mixed-role submit (#1626).** On course B (enrolled as STUDENT) Submit is enabled and records an attempt, while course A stays withheld — the capability is per-course, not the global effective role.
 4. **TA dashboard, grading, Settings, and the Student lesson player / dashboard / course list / chat surfaces** render and behave as the tables describe.
 
-**Not exercised (still open):** a real streamed tutoring answer and the Core course chat need a live model provider the e2e stack lacks (it runs a placeholder key), so the live-provider chat leg is still human-pass-only. #1625's dead-control fixes are human-confirmed, but that chat leg should be walked against a real provider before the TA/Student chat rows count as fully done.
-
-**Bugs found:** small self-contained ones are filed in [#1644](https://github.com/EduAI-Lab/EduAI/issues/1644) (Core chip re-entrant submit; TA staff tabs on a student-only course; TA dashboard "Assigned courses" mixing; MCQ option stays red on retry; Submit not disabled after a correct answer). The bigger findings from the same walk were split out: [#1645](https://github.com/EduAI-Lab/EduAI/issues/1645) — student BYOK is the only route to chat, not a fallback; [#1646](https://github.com/EduAI-Lab/EduAI/issues/1646) — study buddy chat history is never persisted; [#1647](https://github.com/EduAI-Lab/EduAI/issues/1647) — AI Tutor → Core `/api/completion` blocked cross-origin.
+**Not exercised (still open):** a real streamed tutoring answer and the Core course chat need a live model provider the e2e stack lacks (it runs a placeholder key), so the live-provider chat leg is still human-pass-only. #1625's dead-control fixes are human-confirmed, but that chat leg should be walked against a real provider before the TA/Student chat rows count as fully done. Bugs found on the walk are recorded in each row's **Bugs** column.
 
 ---
 
