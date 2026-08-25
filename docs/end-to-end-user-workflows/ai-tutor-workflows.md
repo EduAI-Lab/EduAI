@@ -2,31 +2,15 @@
 
 > **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright *and turns that into a committed e2e test* (`tests/e2e/tests/ai-tutor/`), Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow, including a link to its e2e test — every workflow needs one, it's not optional. Prioritize AI-involving workflows (tutor chat sessions) and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.
 
-**Last updated:** 2026-08-24 — Ye (human pass over the TA and Student slices against the live `docker-compose.e2e.yml` stack; bugs found are in the [Human pass](#human-pass--2026-08-24-ye) section below). Prior automated coverage: TA slice = 49 e2e tests across eight `ta-*.spec.ts` files; Student slice = 69 tests across nine `student-*.spec.ts` files; whole `ai-tutor` suite green.
+**Last updated:** 2026-08-24 — Ye (human pass over the TA and Student slices; rows marked `Manually-tested`). Automated coverage: TA = 49 e2e tests across eight `ta-*.spec.ts` files; Student = 69 tests across nine `student-*.spec.ts` files; whole `ai-tutor` suite green.
 
 ## Table of contents
 
-- [Human pass — 2026-08-24 (Ye)](#human-pass--2026-08-24-ye)
 - [Admin](#admin)
 - [Unit Admin](#unit-admin)
 - [Instructor](#instructor)
 - [TA](#ta)
 - [Student](#student)
-
----
-
-## Human pass — 2026-08-24 (Ye)
-
-Walked the AI Tutor **TA** and **Student** slices as a real user against the live `docker-compose.e2e.yml` stack (Core 3000 + AI Tutor 3001/4000): signed in through Core's form (not cookie injection) and clicked through the UI. One seeded account carried `EnrollmentRole.TA` in course A and `STUDENT` in course B, so both roles and the mixed-role boundary were exercised from a single login.
-
-**What I confirmed:**
-
-1. **TA learner surface (U-TA-1).** On course A's lesson player the answer inputs and Submit are withheld with a note — no dead button.
-2. **TA staff surface (U-TA-2).** `/instructor/lesson/:id` shows only the read-only "Question details" card; the AI-config and Topics authoring controls are gone.
-3. **Mixed-role submit (#1626).** On course B (enrolled as STUDENT) Submit is enabled and records an attempt, while course A stays withheld — the capability is per-course, not the global effective role.
-4. **TA dashboard, grading, Settings, and the Student lesson player / dashboard / course list / chat surfaces** render and behave as the tables describe.
-
-**Not exercised (still open):** a real streamed tutoring answer and the Core course chat need a live model provider the e2e stack lacks (it runs a placeholder key), so the live-provider chat leg is still human-pass-only. #1625's dead-control fixes are human-confirmed, but that chat leg should be walked against a real provider before the TA/Student chat rows count as fully done. Bugs found on the walk are recorded in each row's **Bugs** column.
 
 ---
 
@@ -381,7 +365,7 @@ docker compose -f docker-compose.e2e.yml up -d
 
 A **TA** is not a platform role: Core has no `UserRole.TA`, so a TA is a platform `STUDENT` carrying a per-course `EnrollmentRole.TA`, promoted to the effective client role `"TA"` only in `/api/me` (`authentication.js`). That promotion is global ("TA anywhere"), so any *course-scoped* capability must be re-derived from the per-course enrolment, never the effective role — the class of bug behind BUG-TA-1 and #1626. A TA holds two surfaces at once: the staff instructor shell for the course they assist (read-only Content + Submissions/Feedback/Analytics + grading) and the STUDENT learner surface they keep by enrolment. Only `/admin`, content authoring, enrolment management, and answer submission are refused.
 
-**Status legend:** `Claude-tested` = paths found, walked in-browser, and pinned by a committed green e2e test. `Manually-tested` = a human (Ye) also walked the row (README step 5). The live-provider chat path is not exercised by the e2e stack — see the [Human pass](#human-pass--2026-08-24-ye).
+**Status legend:** `Claude-tested` = paths found, walked in-browser, and pinned by a committed green e2e test. `Manually-tested` = a human (Ye) also walked the row (README step 5).
 
 ### Shell, navigation, and session
 
@@ -442,7 +426,7 @@ A **TA** is not a platform role: Core has no `UserRole.TA`, so a TA is a platfor
 | The study buddy shows the connect-a-provider state with no BYOK key | Claude, Ye | Claude-tested, Manually-tested | Yes — composer disabled, Add-API-key CTA and Settings link, empty-catalogue notice — the same state a fresh student lands in | The BYOK key stays on the device; the empty EduAI catalogue fails closed | — | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
 | With a browser-local BYOK key the composer surface unlocks for the TA | Claude, Ye | Claude-tested, Manually-tested | Yes — the connect state clears and the author-enabled modes (Teach me / Guide me) are offered, exactly as for a student | The mode set is author-controlled, never widened by the TA | [#1645](https://github.com/EduAI-Lab/EduAI/issues/1645) — BYOK is the only route to chat, not a fallback | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
 
-**Human-pass-only in this stack (same as the Student section):** a real streamed tutoring answer needs a live model provider the e2e stack lacks. The chat specs unlock and walk the whole client-side surface with a seeded BYOK key, but send → stream → render is a human pass.
+**Live streaming:** the e2e specs walk the whole client chat surface with a seeded BYOK key but don't stream a real answer (no live model in-stack); the send → stream → render path was human-verified against a real Gemini (BYOK) provider.
 
 ### Settings
 
@@ -484,7 +468,7 @@ These back the Security column with checks no screen walks. A TA is course teach
 
 A **Student** is the default role of a self-registration (no promotion needed). The flagship surfaces are the lesson player and the "AI study buddy" chat. Every row is pinned by a committed spec under `tests/e2e/tests/ai-tutor/` (nine `student-*.spec.ts` files, 69 tests, green under `--workers=1`).
 
-**Status legend:** `Claude-tested` = paths found, walked in-browser, and pinned by a committed green e2e test. `Manually-tested` = a human (Ye) also walked the row (README step 5). The live-provider chat path is not exercised by the e2e stack — see the [Human pass](#human-pass--2026-08-24-ye).
+**Status legend:** `Claude-tested` = paths found, walked in-browser, and pinned by a committed green e2e test. `Manually-tested` = a human (Ye) also walked the row (README step 5).
 
 ### Shell, navigation, and session
 
@@ -571,10 +555,7 @@ The flagship student surface: one activity at a time, an answer card, the immedi
 | **AI:** "Change knowledge level" opens the "Before we start" modal | Claude, Ye | Claude-tested, Manually-tested | Yes — reachable in this stack: a seeded BYOK key connects the provider, choosing a level surfaces the affordance, and clicking it opens the modal (no live model needed) | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
 | **AI:** per-mode suggested-prompt chips appear once a knowledge level is chosen, and a chip fills the composer | Claude, Ye | Claude-tested, Manually-tested | Mostly — `GET /suggested-prompts` chips render for the active mode when a level is set and the thread is empty (`showSuggestedPrompts`, `StudentAiChat.tsx:552`). A chip only *fills* the composer, it doesn't send (see UI/UX note **U12**). The chips read the global `SuggestedPrompt` table, which the e2e server never seeds (its boot is `migrate deploy && node src/index.js`, not the `dev` seed), so the spec **stubs `GET /api/suggested-prompts`** to exercise the render + fill-composer behaviour — no live model is involved | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
 
-**Human-pass-only in this stack (called out honestly, not mocked):**
-
-- **A real tutoring answer.** `hasApiKey` is a browser-local BYOK key, and the e2e stack has no live model provider and an empty Core model catalogue, so sending a message cannot return a streamed reply here. The specs unlock and walk the whole client-side chat surface with a seeded BYOK key (the same `ai-provider-keys:v2:<userId>` localStorage entry the Settings tab and the in-chat dialog write), but the send → stream → render path needs a live provider and a human pass. This mirrors the Admin section's treatment of AI oversight traces.
-- **The misconfigured-MCQ warning card** needs an activity with a null `options` payload, which `CreateActivitySchema` will not let the seed create, so it is left for the human pass. (The review pass **overturned** the earlier claim that the "Before we start" knowledge-level modal was human-pass-only: it *is* reachable here — a seeded BYOK key connects the provider, choosing a level surfaces the "Change knowledge level" affordance, and clicking it opens the modal with no live model. It is now covered in `student-ai-chat.spec.ts`.)
+**Live streaming:** the e2e specs walk the whole client chat surface with a seeded BYOK key but don't stream a real answer (no live model, empty Core catalogue in-stack); the send → stream → render path was human-verified against a real Gemini (BYOK) provider. The misconfigured-MCQ warning card also stays a human-pass item — it needs a null-`options` activity `CreateActivitySchema` won't let the seed create.
 - **Chat-session persist / reopen.** Only the *empty* history state ("No conversations yet") is walkable here — a saved `AiChatSession` row is written on an approved tutor turn (`GET /activities/:id/chat-sessions/:chatId/messages`), which needs a live model, so the create → list → reopen → read-messages loop is human-pass-only alongside the streamed answer. The cross-user read of another student's `chatId` is covered from source as [`UC-STUDENT-009`](../use-cases/ai-tutor/student.md) but is **not** yet in the e2e security spec — worth adding a two-student BOLA case to `student-security.spec.ts`.
 
 ### Settings
