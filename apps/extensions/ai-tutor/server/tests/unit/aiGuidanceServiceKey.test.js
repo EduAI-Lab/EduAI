@@ -4,12 +4,21 @@
  * (`root.tsx`) rejects a cookie-bearing unsafe-method request that cannot prove
  * same-origin unless it presents the service key, so in a split-origin topology
  * the call was refused with CROSS_ORIGIN_MUTATION (403) before any model ran.
- * `callEduAI` must send `Authorization: Bearer <EDUAI_API_KEY>` like the other
- * eduaiClient reads, while keeping the cookie for user identity / rate-limiting.
+ * `callEduAI` must send `Authorization: Bearer <effective service key>` like the
+ * other eduaiClient reads, while keeping the cookie for user identity.
+ *
+ * Provenance (adversarial-review follow-up): the key must be the *effective*
+ * one — `getEffectiveEduAiApiKey`, which prefers the DB-stored (encrypted)
+ * admin override and falls back to env. A deploy keyed via the DB setting with
+ * env unset previously omitted the Bearer entirely and 403'd. These tests drive
+ * `callEduAI` through the real `serviceAuthHeader`/`getEffectiveEduAiApiKey`
+ * path by controlling the mocked `systemSetting` row + `process.env`.
  *
  * Fetch is mocked in-process, so these tests never contact the real endpoint.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { findSystemSetting } = vi.hoisted(() => ({ findSystemSetting: vi.fn() }));
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
@@ -17,6 +26,11 @@ vi.mock("../../src/config/database.js", () => ({
       findUnique: vi.fn().mockResolvedValue({
         systemPrompt: "Be a helpful tutor.",
       }),
+    },
+    // `getEffectiveEduAiApiKey` reads the admin override from here; default is
+    // "no override" so tests fall through to `process.env.EDUAI_API_KEY`.
+    systemSetting: {
+      findUnique: findSystemSetting,
     },
   },
 }));
@@ -27,6 +41,11 @@ vi.mock("../../src/services/eduaiClient.js", () => ({
 
 const originalFetch = global.fetch;
 const originalServiceKey = process.env.EDUAI_API_KEY;
+
+beforeEach(() => {
+  // No DB-stored override unless a test opts in.
+  findSystemSetting.mockResolvedValue(null);
+});
 
 afterEach(() => {
   global.fetch = originalFetch;
@@ -63,7 +82,7 @@ async function generateResponse() {
 }
 
 describe("callEduAI cross-origin mutation guard (#1647)", () => {
-  it("sends Authorization: Bearer <EDUAI_API_KEY> on the completion call", async () => {
+  it("sends the env EDUAI_API_KEY as a Bearer when no DB override is set", async () => {
     process.env.EDUAI_API_KEY = "svc-secret-123";
     global.fetch = vi.fn().mockResolvedValue(successfulResponse());
 
@@ -75,8 +94,24 @@ describe("callEduAI cross-origin mutation guard (#1647)", () => {
     expect(requestInit.headers.cookie).toBe("session=service-key-test");
   });
 
-  it("omits the Authorization header when no service key is configured", async () => {
+  it("prefers the DB-stored effective key over env (env unset)", async () => {
+    // Deploy keyed only via the encrypted admin setting; env has no key. The
+    // stored value is legacy-plaintext, which `decrypt` passes through as-is.
     delete process.env.EDUAI_API_KEY;
+    findSystemSetting.mockResolvedValue({ key: "EDUAI_API_KEY", value: "db-effective-key" });
+    global.fetch = vi.fn().mockResolvedValue(successfulResponse());
+
+    await generateResponse();
+
+    const [, requestInit] = global.fetch.mock.calls[0];
+    expect(requestInit.headers.Authorization).toBe("Bearer db-effective-key");
+    expect(requestInit.headers.cookie).toBe("session=service-key-test");
+  });
+
+  it("omits the Authorization header and logs a breadcrumb when no key is configured", async () => {
+    delete process.env.EDUAI_API_KEY;
+    findSystemSetting.mockResolvedValue(null);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     global.fetch = vi.fn().mockResolvedValue(successfulResponse());
 
     await generateResponse();
@@ -84,5 +119,11 @@ describe("callEduAI cross-origin mutation guard (#1647)", () => {
     const [, requestInit] = global.fetch.mock.calls[0];
     expect(requestInit.headers.Authorization).toBeUndefined();
     expect(requestInit.headers.cookie).toBe("session=service-key-test");
+    // A diagnostic breadcrumb is emitted so the split-origin 403 misconfig is
+    // traceable; the key itself is never logged.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("service_key_unset"),
+      expect.anything(),
+    );
   });
 });
