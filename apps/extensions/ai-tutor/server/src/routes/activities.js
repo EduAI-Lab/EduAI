@@ -28,6 +28,7 @@ import express from "express";
 import { prisma } from "../config/database.js";
 import { requireRole, isCourseAdmin } from "../middleware/auth.js";
 import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
+import { resolveNextChatId } from "../utils/chatSession.js";
 import {
   parsePaginationParams,
   paginated,
@@ -406,8 +407,14 @@ async function handleAiInteraction({
       signal: abortController.signal,
     });
 
-    // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
-    const nextChatId = aiResult.chatId || chatId || null;
+    // Session identity is owned by AI Tutor, not Core. Core's `/api/completion`
+    // is deliberately stateless and returns no chatId, so on a first turn both
+    // `aiResult.chatId` and the client-supplied `chatId` are null. Mint one here
+    // (rather than leaving it null) so `upsertChatSession` persists an
+    // `AiChatSession` row and the student's history panel is non-empty; the
+    // response threads it back to the client for subsequent turns (#1646).
+    // Tutor content stays out of Core's Chat/ChatMessage store by design.
+    const nextChatId = resolveNextChatId(aiResult.chatId, chatId);
     const session = await upsertChatSession({
       userId: authUser.id,
       activityId,
