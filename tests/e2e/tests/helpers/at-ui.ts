@@ -28,6 +28,21 @@ export async function loginAsAdmin(
 }
 
 /**
+ * Sign in as a fresh STUDENT and land on AI Tutor's dashboard.
+ *
+ * STUDENT is the default role of a self-registration, so no promotion or
+ * re-authentication is needed — the sign-up session already carries it.
+ */
+export async function loginAsStudent(
+  page: Page,
+  prefix = "at-ui-student",
+): Promise<{ email: string; password: string; name: string }> {
+  const student = await registerUser(page.request, { prefix, name: "E2E AT Student" });
+  await gotoAiTutor(page, "/dashboard");
+  return student;
+}
+
+/**
  * Sign in as a fresh user with a platform role (no navigation).
  *
  * TA is deliberately absent: Core dropped `UserRole.TA` (a course TA is a

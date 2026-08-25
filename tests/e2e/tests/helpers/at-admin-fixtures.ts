@@ -266,6 +266,7 @@ export async function seedCourseWithActivity(
     topics?: string[];
     publish?: boolean;
     question?: string;
+    term?: string;
   } = {},
 ): Promise<
   SeededCourse & {
@@ -282,6 +283,7 @@ export async function seedCourseWithActivity(
     codePrefix: opts.codePrefix ?? "SPIN",
     topics,
   };
+  if (opts.term) seedOpts.term = opts.term;
   if (opts.publish) seedOpts.publish = true;
   const seeded = await seedAtCourse(playwright, seedOpts);
 
