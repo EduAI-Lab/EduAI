@@ -705,7 +705,10 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = 
  * Returns the `questions` array from Core's paginated response.
  * Throws an Error with `status` set on HTTP failure.
  */
-export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
+export async function listCourseTestableQuestions(
+  coreOfferingId,
+  { limit = 20, offset = 0, topicId } = {},
+) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error("EDUAI_API_KEY not configured");
@@ -717,6 +720,7 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
     limit: String(limit),
     offset: String(offset),
   });
+  if (topicId) params.set("topicId", topicId);
 
   const data = await requestEduAi(`/questions?${params}`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
