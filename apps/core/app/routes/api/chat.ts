@@ -2932,6 +2932,7 @@ ${buildEmptyCourseRagBlock()}`;
             ),
         }),
         release,
+        request.signal,
       );
     } else {
       let providerResultResolved = false;
