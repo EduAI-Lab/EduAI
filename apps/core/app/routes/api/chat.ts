@@ -84,6 +84,7 @@ import {
 } from "~/lib/ai/course-scope-guardrail";
 import { buildChatToolRegistry, buildToolCallingSystemPrompt } from "~/lib/ai/chat-tools";
 import {
+  appendCustomInstructions,
   composeSecurityPrompt,
   filterIncomingClientMessages,
   sanitizeSystemPrompt,
@@ -1063,6 +1064,25 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
+    // §19 (#1606): a custom system prompt no longer REPLACES the EduAI base
+    // prompt for browser callers — it is appended as a subordinate block, so a
+    // learner can express a preference without deleting the assistant's
+    // identity, the instructor's configured response style, or the
+    // course-scope guardrail.
+    //
+    // Replace stays on the sessionless service-key path only
+    // (`isServiceKeyCaller`). Those callers are already ephemeral and skip
+    // course-scope, so replace and the rest of that contract stay aligned.
+    // An admin API-key session is a real persisted chat — it layers, same as
+    // a browser. A Bearer header on a real user session does NOT flip this
+    // either; that hybrid used to replace the base while still persisting
+    // to the learner chat.
+    //
+    // AI Tutor and Question Maker do not use this route. They POST to
+    // /api/completion, which has no EduAI course default and uses the
+    // supplied systemPrompt as-is.
+    const replacesBasePrompt = isServiceKeyCaller;
+
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
     // return a durable job id instead of streaming. Placed after the same course
@@ -1996,9 +2016,17 @@ ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the use
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
       const defaultCourseSystemPrompt = [
-        appendCourseStyleToSystemPrompt(
-          resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
-          courseStyleBlock,
+        appendCustomInstructions(
+          appendCourseStyleToSystemPrompt(
+            // Sessionless service-key prompts still REPLACE the base:
+            // structured JSON generation cannot carry a tutor persona
+            // above it. Admin API-key and browser sessions layer (#1606).
+            replacesBasePrompt
+              ? (resolvedSystemPrompt ?? eduAiCourseDefaultPrompt)
+              : eduAiCourseDefaultPrompt,
+            courseStyleBlock,
+          ),
+          replacesBasePrompt ? null : resolvedSystemPrompt,
         ),
         courseScopePolicyBlock,
       ]
@@ -2074,15 +2102,21 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = [
-          appendCourseStyleToSystemPrompt(
-            resolvedSystemPrompt ??
-              `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const eduAiToolBasePrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`,
-            courseStyleBlock,
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
+
+        const baseSystemPrompt = [
+          appendCustomInstructions(
+            appendCourseStyleToSystemPrompt(
+              replacesBasePrompt
+                ? (resolvedSystemPrompt ?? eduAiToolBasePrompt)
+                : eduAiToolBasePrompt,
+              courseStyleBlock,
+            ),
+            replacesBasePrompt ? null : resolvedSystemPrompt,
           ),
           courseScopePolicyBlock,
         ]
