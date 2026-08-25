@@ -43,14 +43,22 @@ vi.mock("~/lib/auth/course-access.server", () => ({
     access: { level: "student" },
   }),
 }));
-vi.mock("~/lib/ai/providers.server", () => ({
-  getChatModelCapabilities: vi.fn().mockResolvedValue({
-    supportsTools: false,
-    maxTokens: null,
-    name: null,
-  }),
-  modelSupportsTools: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
+  // Keep the real pure budget helpers (resolveModelContextWindow,
+  // resolveSessionCharBudgetForModel, capMaxOutputTokensForPrompt, …) that the
+  // token-based history budget path now calls (#1639); only stub the two
+  // capability lookups that would otherwise hit Prisma.
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  return {
+    ...actual,
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: false,
+      maxTokens: null,
+      name: null,
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(false),
+  };
+});
 vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
 }));
