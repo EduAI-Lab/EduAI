@@ -27,6 +27,8 @@ const {
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
   searchCoursesFromCore,
+  proxyCoreCreateQuiz,
+  proxyCoreListQuizzes,
 } = await import("../../src/services/coreApiService.js");
 
 const ok = (data, status = 200) => ({
@@ -549,5 +551,33 @@ describe("removeQuestionBankMembershipOnCore", () => {
       "http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42?source=question-maker",
     );
     expect(opts.method).toBe("DELETE");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Canvas proxies — Core's cross-origin mutation guard (#1556)
+// ---------------------------------------------------------------------------
+describe("Canvas cookie-forwarding proxies", () => {
+  it("pairs the service key with the cookie on a mutation, to clear Core's cross-origin guard", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(ok({ data: { id: 7 } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await proxyCoreCreateQuiz("session=abc", 1, { title: "Midterm" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("POST");
+    expect(init.headers.cookie).toBe("session=abc");
+    expect(init.headers.Authorization).toBe("Bearer test-service-key");
+  });
+
+  it("keeps a cookie-scoped read on the cookie alone", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(ok({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await proxyCoreListQuizzes("session=abc", 1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.cookie).toBe("session=abc");
+    expect(init.headers.Authorization).toBeUndefined();
   });
 });

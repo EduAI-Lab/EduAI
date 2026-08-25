@@ -190,6 +190,15 @@ describe("canvas_course_mappings + export are instructor-only (§18)", () => {
       .set("Cookie", "session=v")
       .send({ canvasCourseId: "c1" });
     expect(res.status).toBe(200);
-    expect(canvas.exportAssessmentToCanvas).toHaveBeenCalledWith("5", "c1", "owner-1", "session=v");
+    // A request that says nothing about publishing gets the published default (#1556).
+    expect(canvas.exportAssessmentToCanvas).toHaveBeenCalledWith(
+      "5",
+      "c1",
+      "owner-1",
+      "session=v",
+      {
+        published: true,
+      },
+    );
   });
 });

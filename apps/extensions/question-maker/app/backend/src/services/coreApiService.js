@@ -126,6 +126,14 @@ async function fetchCoursePages(
  * When both are available, retries with the alternate auth mode on auth failures
  * so a stale EDUAI_API_KEY does not block user-session reads — unless `cookieOnly`
  * is set (user-scoped reads must not fall back to the unscoped service key).
+ *
+ * A `cookieOnly` MUTATION still sends the service key alongside the cookie.
+ * Core's cross-origin guard fails closed on any cookie-bearing unsafe method
+ * with no Origin/Referer/Sec-Fetch-Site — the exact shape of a server-to-server
+ * call — and takes a valid service key as its only non-browser bypass, so the
+ * cookie alone earns a 403 CROSS_ORIGIN_MUTATION (#1556). This is not a
+ * fallback: the cookie is still the identity Core resolves the caller from, and
+ * there is still no key-only variant to degrade to.
  */
 async function fetchFromCore(
   path,
@@ -135,7 +143,11 @@ async function fetchFromCore(
   const url = `${config.coreUrl}${path}`;
   let variants = authHeaderVariants({ cookie, preferCookie });
   if (cookieOnly) {
-    variants = cookie ? [{ cookie }] : [];
+    const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+    const serviceKey = isMutation && config.eduaiApiKey ? config.eduaiApiKey : null;
+    variants = cookie
+      ? [serviceKey ? { cookie, Authorization: `Bearer ${serviceKey}` } : { cookie }]
+      : [];
   }
 
   if (variants.length === 0) {

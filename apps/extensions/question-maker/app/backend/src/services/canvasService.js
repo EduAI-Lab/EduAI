@@ -37,24 +37,46 @@ export function parseCanvasNumericId(value, label = "id") {
   }
   return n;
 }
+/**
+ * A Canvas failure the caller can act on. `isPublic` lets `errorHandler` keep
+ * the message, and `status` keeps a user error (no questions, not connected)
+ * from being reported as a 500 — every failure here used to collapse into an
+ * indistinguishable "Request failed".
+ */
+function canvasError(message, status = 400, body) {
+  const err = new Error(message);
+  err.status = status;
+  err.isPublic = true;
+  if (body) err.body = body;
+  return err;
+}
+
 /** Loads the caller's Core Canvas integration or throws when disconnected. */
 async function loadCoreCanvasIntegration(cookie) {
   const result = await proxyCoreCanvasGetIntegration(cookie);
   if (!result?.data) {
-    throw new Error(NOT_CONNECTED_MESSAGE);
+    throw canvasError(NOT_CONNECTED_MESSAGE, 400);
   }
   return result.data;
 }
 
-/** Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message. */
+/**
+ * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message and keeps
+ * every other failure's own status: Core proxy errors carry the upstream
+ * status/body, and the errors raised above already carry the status that
+ * describes them. Only a genuinely unexpected error (no status) stays a 500.
+ */
 function rethrowCoreCanvasError(error, action) {
   if (
     error?.status === 400 &&
     (error.body?.error === "CANVAS_NOT_CONNECTED" || error.message === "CANVAS_NOT_CONNECTED")
   ) {
-    throw new Error(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`);
+    throw canvasError(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`, 400);
   }
-  throw new Error(`Failed to ${action}: ${error.message}`);
+  if (Number.isInteger(error?.status)) {
+    throw canvasError(`Failed to ${action}: ${error.message}`, error.status, error.body);
+  }
+  throw error;
 }
 
 /**
@@ -65,7 +87,13 @@ function rethrowCoreCanvasError(error, action) {
  * stored course mapping, so a non-owner instructor/UNIT_ADMIN can export into a
  * course they have access to without their identity being used as the mapping key.
  */
-export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, ownerId, cookie) => {
+export const exportAssessmentToCanvas = async (
+  assessmentId,
+  canvasCourseId,
+  ownerId,
+  cookie,
+  options = {},
+) => {
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
@@ -73,7 +101,7 @@ export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, own
     const assessment = await getAssessmentById(assessmentId, ownerId);
 
     if (!assessment) {
-      throw new Error("Assessment not found");
+      throw canvasError("Assessment not found", 404);
     }
 
     // Get all questions from sections
@@ -96,14 +124,19 @@ export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, own
     }
 
     if (questions.length === 0) {
-      throw new Error("Assessment has no questions to export");
+      throw canvasError("Assessment has no questions to export", 400);
     }
 
     const quizPayload = {
       title: assessment.name,
       description: assessment.description || `Exported from Question Maker - ${assessment.type}`,
+      // A graded quiz (`quiz_type: "assignment"`) is listed by Canvas under both
+      // Quizzes and Assignments — but only once published, so export publishes
+      // by default rather than leaving an invisible draft behind (#1556). A
+      // published quiz is visible to students immediately, so the caller can
+      // opt out and publish from Canvas when they are ready.
       quiz_type: "assignment",
-      published: false, // Don't publish automatically
+      published: options.published !== false,
       show_correct_answers: true,
       allowed_attempts: 1,
     };

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@eduai/ui";
-import { Button, Label, Input } from "@eduai/ui";
+import { Button, Checkbox, Label, Input } from "@eduai/ui";
 import { PermissionGate } from "@eduai/ui";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
 import canvasService, { CanvasCourse, CanvasIntegration } from "../../services/canvasService";
@@ -43,6 +43,9 @@ export const CanvasExportDialog = ({
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  // A published quiz is live to students the moment it lands, so the choice is
+  // surfaced rather than assumed — defaulting to published (#1556).
+  const [publishInCanvas, setPublishInCanvas] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -132,7 +135,13 @@ export const CanvasExportDialog = ({
 
     setIsLoading(true);
     try {
-      const result = await canvasService.exportAssessment(assessmentId, parseInt(selectedCourseId));
+      const result = await canvasService.exportAssessment(
+        assessmentId,
+        parseInt(selectedCourseId),
+        {
+          published: publishInCanvas,
+        },
+      );
 
       toast("Export successful!", {
         description: `Assessment exported to Canvas. ${result.questionsCreated} questions created.`,
@@ -233,19 +242,26 @@ export const CanvasExportDialog = ({
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowConnectForm(true);
-                  setSelectedCourseId("");
-                }}
-              >
-                Change Connection
-              </Button>
+            <label className="flex cursor-pointer items-start gap-2 pt-1">
+              <Checkbox
+                data-testid="export-publish-toggle"
+                checked={publishInCanvas}
+                onCheckedChange={(checked) => setPublishInCanvas(checked === true)}
+              />
+              <span className="text-sm">
+                Publish in Canvas
+                <span className="block text-xs text-muted-foreground">
+                  Published quizzes are visible to students right away. Leave this off to export a
+                  draft and publish it from Canvas yourself.
+                </span>
+              </span>
+            </label>
+
+            <div className="flex items-center justify-end pt-2">
               <Button
                 onClick={handleExport}
                 disabled={isLoading || !selectedCourseId || courses.length === 0}
+                data-testid="canvas-export-submit"
               >
                 {isLoading ? "Exporting..." : "Export to Canvas"}
               </Button>

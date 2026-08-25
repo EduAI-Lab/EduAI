@@ -154,12 +154,19 @@ export const canvasService = {
   },
 
   /** Exports an assessment to a Canvas course, returning quiz details. */
+  /**
+   * Exports an assessment to Canvas. `published` defaults to true so the quiz is
+   * visible in Canvas (a graded quiz is listed under Quizzes and Assignments
+   * only once published, #1556); pass false to leave it as a draft.
+   */
   async exportAssessment(
     assessmentId: number,
     canvasCourseId: number,
+    options: { published?: boolean } = {},
   ): Promise<CanvasExportResult> {
     const response = await api.post(`/api/canvas/export/${assessmentId}`, {
       canvasCourseId,
+      published: options.published !== false,
     });
     return response.data.data;
   },
