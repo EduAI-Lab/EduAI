@@ -1995,11 +1995,26 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
       return res.status(403).json({ error: "Activity is not available" });
     }
 
+    // AI-Tutor owns its session identity: on a first turn Core's stateless
+    // `/api/completion` returns no chatId, so the route mints one locally
+    // (`resolveNextChatId`) and Core never creates a matching `Chat`. Restoring
+    // such a session therefore proxies to a Core chat that cannot exist and
+    // gets a 404 — which used to dead-end every restored history entry in an
+    // error (#1646). Transcript CONTENT is not persisted anywhere yet (deferred
+    // follow-up), so a locally-minted session simply has no messages to show:
+    // return a benign empty transcript that the client renders as its normal
+    // empty state instead of surfacing an error.
+    const emptyTranscript = { chat: { id: chatId, title: null }, messages: [] };
+
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
     const headers = { "Content-Type": "application/json" };
     if (cookie) headers.cookie = cookie;
     const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
+    if (upstream.status === 404) {
+      // Not a Core-backed chat (the common, locally-minted case) — empty state.
+      return res.json(emptyTranscript);
+    }
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }
