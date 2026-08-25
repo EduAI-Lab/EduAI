@@ -18,7 +18,11 @@ import {
   proxyCoreListQuestionBanks,
   proxyCoreListQuizQuestions,
   proxyCoreListQuizzes,
+  getCourseFromCore,
 } from "./coreApiService.js";
+
+/** `Course.externalSource` Core stamps on courses it synced from Canvas. */
+const CANVAS_EXTERNAL_SOURCE = "canvas";
 
 const NOT_CONNECTED_MESSAGE =
   "Canvas integration not configured. Please connect your Canvas account first.";
@@ -269,18 +273,61 @@ const parseMCQOptions = (questionText, answerText) => {
  * is 1:1 with the course, not scoped per-user, so any authorized caller sees
  * the same mapping a co-instructor created.
  */
-export const getCanvasCourseMapping = async (userId, localCourseId) => {
+/**
+ * Resolves the Canvas course a local course is linked to, or null when it has
+ * no link. Two sources, in order:
+ *   1. `canvas_course_mappings` — written only as a side effect of quiz import
+ *      and assessment export, so it exists for courses QM itself touched.
+ *   2. The Core course record — courses synced from Canvas carry the Canvas
+ *      course id as `externalId` under `externalSource: "canvas"`. This is the
+ *      only source for a course synced from Canvas but never quiz-imported.
+ */
+export const getCanvasCourseMapping = async (userId, localCourseId, cookie) => {
+  const parsedLocalCourseId = Number(localCourseId);
   try {
     const mapping = await prisma.canvasCourseMapping.findUnique({
       where: {
-        localCourseId,
+        localCourseId: parsedLocalCourseId,
       },
     });
 
-    return mapping;
+    if (mapping) {
+      return {
+        localCourseId: parsedLocalCourseId,
+        canvasCourseId: Number(mapping.canvasCourseId),
+        canvasCourseName: mapping.canvasCourseName ?? null,
+        source: "local",
+      };
+    }
   } catch (error) {
     throw new Error(`Failed to get Canvas course mapping: ${error.message}`);
   }
+
+  const course = await prisma.course.findUnique({
+    where: { id: parsedLocalCourseId },
+    select: { coreCourseId: true },
+  });
+  if (!course?.coreCourseId) return null;
+
+  let coreCourse = null;
+  try {
+    // FIELD read of the course's Canvas identity — service key first, so it
+    // does not depend on the caller's own Core enrollment (#1072 contract).
+    coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
+  } catch {
+    return null; // Core unreachable — treat as unlinked rather than hard-failing.
+  }
+  if (coreCourse?.externalSource !== CANVAS_EXTERNAL_SOURCE) return null;
+
+  const canvasCourseId = Number(coreCourse.externalId);
+  if (!Number.isInteger(canvasCourseId) || canvasCourseId <= 0) return null;
+
+  return {
+    localCourseId: parsedLocalCourseId,
+    canvasCourseId,
+    canvasCourseName: coreCourse.name ?? null,
+    source: "core",
+  };
 };
 
 /** Lists quizzes from a Canvas course, filtering to assignment-style quizzes. */
@@ -869,10 +916,7 @@ export const importQuestionBankFromCanvas = async (
     }
 
     // Banks may only sync into the local course that was linked from Canvas.
-    const courseCanvasMapping = await prisma.canvasCourseMapping.findUnique({
-      where: { localCourseId: parsedLocalCourseId },
-      select: { canvasCourseId: true, localCourseId: true },
-    });
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, parsedLocalCourseId, cookie);
     if (!courseCanvasMapping) {
       const err = new Error(
         "Course is not linked to Canvas. Sync the course from Canvas before importing question banks.",

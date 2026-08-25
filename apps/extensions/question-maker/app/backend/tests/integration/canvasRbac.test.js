@@ -179,7 +179,7 @@ describe("canvas_course_mappings + export are instructor-only (§18)", () => {
     canvas.getCanvasCourseMapping.mockResolvedValue({ canvasCourseId: "c1" });
     const res = await request(app).get("/api/canvas/mapping/1").set("Cookie", "session=v");
     expect(res.status).toBe(200);
-    expect(canvas.getCanvasCourseMapping).toHaveBeenCalledWith("owner-1", 1);
+    expect(canvas.getCanvasCourseMapping).toHaveBeenCalledWith("owner-1", 1, "session=v");
   });
 
   it("INSTRUCTOR exports an assessment → uses caller creds + owner mapping", async () => {

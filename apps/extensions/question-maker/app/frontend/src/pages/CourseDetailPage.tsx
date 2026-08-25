@@ -47,6 +47,7 @@ import { DEFAULT_LIST_PAGE_SIZE, ListPaginationBar } from "../components/shared/
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseOverviewTab } from "./course-detail/CourseOverviewTab";
 import { CourseBanksTab } from "./course-detail/CourseBanksTab";
+import { resolveCourseTab, type ActiveTab } from "./course-detail/courseTabs";
 import { CourseTopicsHeroAction } from "./course-detail/CourseTopicsHeroAction";
 import { CourseCanvasTab } from "./course-detail/CourseCanvasTab";
 import type { QuestionAnalyticsProps } from "@eduai/ui";
@@ -65,6 +66,7 @@ import {
   QuestionUploadDialog,
   mapExtractedToDraftQuestions,
 } from "../components/question-bank/QuestionUploadDialog";
+import canvasService from "../services/canvasService";
 import { CanvasExportDialog } from "../components/canvas/CanvasExportDialog";
 import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
 import { CanvasBankSyncDialog } from "../components/canvas/CanvasBankSyncDialog";
@@ -76,11 +78,8 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 
-type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
 type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
 type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
-
-const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
 const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
@@ -108,10 +107,12 @@ export const CourseDetailPage = () => {
     activeTourId,
   } = useGuidedTour();
 
+  // Canvas actions are offered only for courses that were synced from Canvas;
+  // null until the course's Canvas link has been resolved.
+  const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
+
   const tabParam = searchParams.get("tab");
-  const activeTab: ActiveTab = VALID_TABS.includes(tabParam as ActiveTab)
-    ? (tabParam as ActiveTab)
-    : "overview";
+  const activeTab: ActiveTab = resolveCourseTab(tabParam, isCanvasLinked);
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
       setSearchParams(
@@ -267,6 +268,23 @@ export const CourseDetailPage = () => {
       }
     };
     void fetchBanks();
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
+  // Canvas link for this course, resolved from its Canvas course mapping.
+  useEffect(() => {
+    if (!courseId) {
+      setIsCanvasLinked(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCanvasLinked(null);
+    void (async () => {
+      const mapping = await canvasService.getCourseMapping(courseId);
+      if (!cancelled) setIsCanvasLinked(Boolean(mapping?.canvasCourseId));
+    })();
     return () => {
       cancelled = true;
     };
@@ -1002,7 +1020,7 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
+          {isCanvasLinked !== false && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
         </PageTabsList>
 
         <PageTabsContent value="overview" className="space-y-6">
@@ -1053,6 +1071,7 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             isLoading={isBanksLoading}
             loadError={banksError}
+            isCanvasLinked={isCanvasLinked === true}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}
@@ -1088,7 +1107,7 @@ export const CourseDetailPage = () => {
         </PageTabsContent>
 
         <PageTabsContent value="canvas" className="space-y-6">
-          {courseId && (
+          {courseId && isCanvasLinked !== false && (
             <CourseCanvasTab
               courseId={courseId}
               canWrite={!writesDisabled}

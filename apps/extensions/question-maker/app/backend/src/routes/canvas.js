@@ -188,7 +188,11 @@ router.get(
   requireCourseAccess({ min: "instructor", getCourseId: (req) => req.params.courseId }),
   async (req, res, next) => {
     try {
-      const mapping = await getCanvasCourseMapping(req.qmCourse.userId, req.qmCourse.id);
+      const mapping = await getCanvasCourseMapping(
+        req.qmCourse.userId,
+        req.qmCourse.id,
+        req.headers.cookie,
+      );
 
       res.json({
         success: true,
