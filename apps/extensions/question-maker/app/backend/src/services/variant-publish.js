@@ -99,32 +99,33 @@ export function respondToPublishFailure(res, result) {
     case "rollback-failed":
       res.status(500).json({
         success: false,
-        error: "VARIANT_ROLLBACK_FAILED",
-        message: "Core publish failed and the local approval rollback could not be confirmed.",
+        code: "VARIANT_ROLLBACK_FAILED",
+        error:
+          "Publishing to EduAI failed and this question was left in an unclear state. Reload before trying again.",
       });
       return true;
     case "invalid-topics":
       res.status(422).json({
         success: false,
-        error: "INVALID_TOPIC_IDS",
-        message:
-          "Some topics have been deleted in Core. Please update topic assignments and re-approve.",
+        code: "INVALID_TOPIC_IDS",
+        error:
+          "Some topics have been deleted in EduAI. Update this question's topics and mark it reviewed again.",
         deletedTopicIds: result.deletedTopicIds,
       });
       return true;
     case "duplicate-topic":
       res.status(422).json({
         success: false,
-        error: "DUPLICATE_TOPIC",
-        message:
-          "The primary topic also appears in secondary topics. Fix the topic list and re-approve.",
+        code: "DUPLICATE_TOPIC",
+        error:
+          "The primary topic also appears in the secondary topics. Fix the topic list and mark it reviewed again.",
       });
       return true;
     case "push-failed":
       res.status(502).json({
         success: false,
-        error: "CORE_PUSH_FAILED",
-        message: "Could not publish to Core. Variant left as draft — please retry.",
+        code: "CORE_PUSH_FAILED",
+        error: "Could not publish this question to EduAI. It stays a draft — please retry.",
       });
       return true;
     default:

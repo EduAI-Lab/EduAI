@@ -5,6 +5,19 @@
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
+### Added
+
+- [question-maker] feat: An author decides while writing a question whether other EduAI extensions may use it. The choice rides on review — the checkbox is unavailable until the question is marked reviewed, and withdrawing review clears it — and reaches Core as the Question's `testable` when the variant is approved. Two bugs surfaced building it: `pushQuestionToCore` POSTed to Core with only a cookie, which Core's cross-origin guard has rejected with 403 CROSS_ORIGIN_MUTATION since it landed (no question had reached Core in over two weeks, and approved variants were stranded in the unrevertable `approvalInFlight` state), and a variant created already-reviewed never pushed at all because the push lived only on the approve path. Closes #1555. Closes #844. (@GlowyBlack, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Fixed
+
+- [question-maker] fix: Exporting an assessment to Canvas failed with an opaque 500. The cause was the same cross-origin guard rejecting cookie-only mutations; every Canvas write 403'd while the reads (all GETs) went through. Export failures now carry the status that describes them instead of collapsing into "Request failed", and the exported quiz is published — a graded quiz is listed by Canvas under both Quizzes and Assignments, but only once published — with a "Publish in Canvas" checkbox for authors who would rather land a draft. Closes #1556. (@GlowyBlack, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Changed
+
+- [question-maker] refactor: Canvas bank sync and quiz import no longer ask which Canvas course to pull from, or which local course to import into. Both resolve the Canvas course from the open course's link and import into it, so no unusable choices are offered. The link now resolves from the Core course's `externalId` when QM has no local mapping row, which is why a course genuinely synced from Canvas used to report itself unlinked. Courses with no Canvas link lose the Canvas tab and the "Sync from Canvas" button, both dialogs point at EduAI settings instead of carrying their own connect form, and breadcrumb switcher rows carry the term so two offerings of one course are distinguishable. (@GlowyBlack, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+## [Week 17 — August 17–23, 2026]
 
 ### Tests
 
