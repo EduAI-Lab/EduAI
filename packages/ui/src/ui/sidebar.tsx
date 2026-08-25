@@ -32,9 +32,10 @@ function subscribeToSidebarState(listener: () => void) {
 }
 
 function readSidebarStateCookie(defaultOpen: boolean) {
-  if (typeof document === "undefined") return defaultOpen;
+  const ownerDocument = globalThis.document;
+  if (!ownerDocument) return defaultOpen;
 
-  const cookie = document.cookie
+  const cookie = ownerDocument.cookie
     .split("; ")
     .find((entry) => entry.startsWith(`${SIDEBAR_COOKIE_NAME}=`));
   const value = cookie?.slice(`${SIDEBAR_COOKIE_NAME}=`.length);
@@ -45,9 +46,10 @@ function readSidebarStateCookie(defaultOpen: boolean) {
 }
 
 function writeSidebarStateCookie(open: boolean) {
-  if (typeof document === "undefined") return;
+  const ownerDocument = globalThis.document;
+  if (!ownerDocument) return;
 
-  document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+  ownerDocument.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
   for (const listener of sidebarStateListeners) listener();
 }
 
