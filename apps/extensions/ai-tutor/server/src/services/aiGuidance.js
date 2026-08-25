@@ -380,6 +380,16 @@ async function callEduAI({
     courseCode: trimmedCourseCode ?? undefined,
   };
 
+  // Core's mutation guard (`apps/core/app/root.tsx`) fails an unsafe-method
+  // request that carries a cookie closed with CROSS_ORIGIN_MUTATION unless it
+  // proves same-origin (Origin/Referer/Sec-Fetch-Site) or presents the service
+  // key. A server-to-server `fetch` adds no Origin/Referer, so in a split-origin
+  // topology the completion call is rejected before any model runs (#1647).
+  // Send the service-key Bearer like the other `eduaiClient` reads do; keep the
+  // cookie for user identity / rate-limiting. Omit the header when the key is
+  // unset so same-origin dev stacks are unaffected.
+  const serviceKey = process.env.EDUAI_API_KEY;
+
   const callStartedAt = Date.now();
 
   try {
@@ -412,6 +422,13 @@ async function callEduAI({
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const attemptStartedAt = Date.now();
+      const headers = {
+        "Content-Type": "application/json",
+        cookie,
+      };
+      if (serviceKey) {
+        headers.Authorization = `Bearer ${serviceKey}`;
+      }
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
