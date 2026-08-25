@@ -73,13 +73,32 @@ export const BYOK_PROVIDER_MODELS: ReadonlyArray<{
   { modelId: "opencode:deepseek-v4-flash", modelName: "DeepSeek V4 Flash", provider: "opencode" },
 ];
 
+/**
+ * A BYOK model entry ready to merge into the student model picker. Carries
+ * explicit, conservative capability defaults so downstream consumers
+ * (`isStudentSelectableModel`, default-tutor reconciliation) read real booleans
+ * rather than `undefined` (#1645 review nit). `studentSelectable` defaults to
+ * `true` (permissive), but the picker overrides it with the admin's catalog
+ * verdict when a student model policy is active, so a policy-forbidden model is
+ * still kept out.
+ */
+export type ByokPickerModel = {
+  modelId: string;
+  modelName: string;
+  provider: ProviderId;
+  studentSelectable: boolean;
+  isDefaultTutor: boolean;
+};
+
 /** BYOK models a student can pick given the provider keys they currently hold. */
 export function byokModelsForHeldKeys(
   heldProviders: ReadonlyArray<string> | ReadonlySet<string>,
-): Array<{ modelId: string; modelName: string; provider: ProviderId }> {
+): ByokPickerModel[] {
   const held = heldProviders instanceof Set ? heldProviders : new Set(heldProviders);
   return BYOK_PROVIDER_MODELS.filter((model) => held.has(model.provider)).map((model) => ({
     ...model,
+    studentSelectable: true,
+    isDefaultTutor: false,
   }));
 }
 

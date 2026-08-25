@@ -217,6 +217,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
+  // Full, pre-policy-filter catalog. Kept so a BYOK entry can inherit any
+  // student-policy verdict the admin set for that model id (#1645 review).
+  const [catalogModels, setCatalogModels] = useState<StudentSelectableModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(false);
@@ -348,6 +351,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (!isMounted) return;
         const policyActive = models.some(modelHasStudentPolicy);
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
+        setCatalogModels(models);
         setAvailableModels(selectableModels);
         setStudentModelPolicyActive(policyActive);
         setSelectedModelId((current) => {
@@ -381,16 +385,32 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
   const pickerModels = useMemo<StudentSelectableModel[]>(() => {
     const catalogIds = new Set(availableModels.map((model) => model.modelId));
+    // Consult the full catalog so a BYOK entry inherits the admin's student
+    // policy for that model id: a personal key must not let a student pick a
+    // model a course policy forbids (#1645 review). Any policy representation
+    // (studentSelectable / availability / …) collapses to one boolean here.
+    const catalogById = new Map(catalogModels.map((model) => [model.modelId, model]));
     const byok = byokModelsForHeldKeys(heldByokProviders)
       .filter((model) => !catalogIds.has(model.modelId))
-      .map((model) => ({
-        id: `byok:${model.modelId}`,
-        modelId: model.modelId,
-        modelName: model.modelName,
-        provider: model.provider,
-      }));
+      .map<StudentSelectableModel>((model) => {
+        const policyMatch = catalogById.get(model.modelId);
+        return {
+          id: `byok:${model.modelId}`,
+          // `model` already carries conservative capability defaults
+          // (studentSelectable/isDefaultTutor) from byokModelsForHeldKeys.
+          ...model,
+          // A catalog verdict, when the model is known to the policy, overrides
+          // the permissive default so a forbidden model can't slip in.
+          studentSelectable: policyMatch
+            ? isStudentSelectableModel(policyMatch)
+            : model.studentSelectable,
+        };
+      })
+      // When a student model policy is active, hold BYOK entries to the same
+      // predicate as catalog entries so a forbidden model can't slip in.
+      .filter((model) => !studentModelPolicyActive || isStudentSelectableModel(model));
     return [...availableModels, ...byok];
-  }, [availableModels, heldByokProviders]);
+  }, [availableModels, catalogModels, heldByokProviders, studentModelPolicyActive]);
 
   // Keep the selection valid once BYOK models arrive: if the current pick isn't
   // in the merged list (e.g. the catalogue is empty and the student only holds

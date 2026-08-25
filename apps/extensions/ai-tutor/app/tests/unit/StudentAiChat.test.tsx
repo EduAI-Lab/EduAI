@@ -313,6 +313,61 @@ describe("StudentAiChat — BYOK as fallback (#1645)", () => {
     expect(params.modelId).toBe("openai:gpt-4o-mini");
     expect(params.apiKey).toBe("sk-openai");
   });
+
+  it("keeps a policy-forbidden BYOK model out of the picker (review: no policy bypass)", async () => {
+    // A student model policy is active and the catalogue forbids the student's
+    // held-key models (studentSelectable:false). A personal key must NOT let the
+    // student pick a model the course policy meant to forbid: with every held
+    // BYOK model excluded the picker is empty and the composer stays blocked.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "g1",
+        modelId: "google:gemini-2.5-flash",
+        modelName: "Gemini 2.5 Flash",
+        studentSelectable: false,
+      },
+      {
+        id: "g2",
+        modelId: "google:gemini-2.5-pro",
+        modelName: "Gemini 2.5 Pro",
+        studentSelectable: false,
+      },
+    ]);
+    renderChat();
+
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("still surfaces a policy-allowed BYOK model when a policy is active", async () => {
+    // Policy is active (an allowed UBC model carries a policy flag) but the
+    // catalogue says nothing about the student's held BYOK models, so those stay
+    // permissible and the composer unlocks rather than being wrongly stripped.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "v1",
+        modelId: "vllm:llama-3",
+        modelName: "Llama 3",
+        studentSelectable: true,
+        isDefaultTutor: true,
+      },
+    ]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
+    // The policy-limited notice appears because a policy is active but the picker
+    // still has usable models (the allowed UBC default plus permissible BYOK).
+    expect(
+      screen.getByText("Tutor model choices are limited by your course configuration."),
+    ).toBeInTheDocument();
+  });
 });
 
 // ── #998 ──────────────────────────────────────────────────────────────────
