@@ -296,12 +296,16 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   // Answer submission is a STUDENT-only capability scoped to THIS course, not a
   // global role check. A course TA keeps the learner surface but is not a
-  // submitter — the answer route is 403 for them. Fast path: a globally-STUDENT
-  // effective role is never promoted, so the user is a STUDENT in every enrolled
-  // course. Otherwise (promoted to "TA" globally because they TA elsewhere),
-  // fall back to the per-course enrollment role the breadcrumb resolves, so a
-  // TA-here-but-STUDENT-there account submits there and is withheld here (#1626).
-  const canSubmitAnswers = user?.role === "STUDENT" || viewerEnrollmentRole === "STUDENT";
+  // submitter — the answer route is 403 for them. Once the breadcrumb resolves
+  // the caller's per-course enrollment role, that role is authoritative: a
+  // TA-here-but-STUDENT-there account submits where it is STUDENT and is
+  // withheld where it is TA (#1626). Before it resolves, a globally-STUDENT
+  // effective role is an optimistic yes — it is never promoted, so the user is
+  // a STUDENT in every enrolled course — while a promoted "TA" (or any
+  // unresolved role) shows no control until the course role lands, so a stale
+  // global read can never leave a dead Submit on screen.
+  const canSubmitAnswers =
+    viewerEnrollmentRole !== null ? viewerEnrollmentRole === "STUDENT" : user?.role === "STUDENT";
 
   const submit = async () => {
     // Withhold Submit (U-TA-1); also guards the path even if the button is ever
