@@ -409,29 +409,9 @@ async function callEduAI({
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
-    // Attach the shared service key when it is configured. callEduAI posts to
-    // /api/completion (not /api/chat): a learner session is enough to auth, and
-    // that route already uses the supplied systemPrompt as-is. The bearer is
-    // therefore optional here — it matches other Core calls and covers the
-    // no-session fallback. A missing key is an operator misconfiguration;
-    // throwing would turn it into an opaque tutoring outage, so we log
-    // missing_service_key and proceed.
-    const serviceKey = process.env.EDUAI_API_KEY;
-    if (!serviceKey) {
-      logAiGuidanceEvent("error", "missing_service_key");
-    }
-
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
-
-    const headers = {
-      "Content-Type": "application/json",
-      cookie,
-    };
-    if (serviceKey) {
-      headers.Authorization = `Bearer ${serviceKey}`;
-    }
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const attemptStartedAt = Date.now();
