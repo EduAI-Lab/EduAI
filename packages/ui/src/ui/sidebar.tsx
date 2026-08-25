@@ -22,6 +22,35 @@ const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 const SIDEBAR_CONTENT_ID = "app-sidebar-content";
 
+const sidebarStateListeners = new Set<() => void>();
+
+function subscribeToSidebarState(listener: () => void) {
+  sidebarStateListeners.add(listener);
+  return () => {
+    sidebarStateListeners.delete(listener);
+  };
+}
+
+function readSidebarStateCookie(defaultOpen: boolean) {
+  if (typeof document === "undefined") return defaultOpen;
+
+  const cookie = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${SIDEBAR_COOKIE_NAME}=`));
+  const value = cookie?.slice(`${SIDEBAR_COOKIE_NAME}=`.length);
+
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return defaultOpen;
+}
+
+function writeSidebarStateCookie(open: boolean) {
+  if (typeof document === "undefined") return;
+
+  document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+  for (const listener of sidebarStateListeners) listener();
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
   open: boolean;
@@ -59,21 +88,31 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen);
-  const open = openProp ?? _open;
+  // The cookie is the source of truth for uncontrolled desktop state. The
+  // server snapshot intentionally uses defaultOpen so SSR markup matches the
+  // first hydration render; client-only mounts (including route remounts)
+  // read the cookie immediately.
+  const getOpenSnapshot = React.useCallback(
+    () => readSidebarStateCookie(defaultOpen),
+    [defaultOpen],
+  );
+  const getServerOpenSnapshot = React.useCallback(() => defaultOpen, [defaultOpen]);
+  const storedOpen = React.useSyncExternalStore(
+    subscribeToSidebarState,
+    getOpenSnapshot,
+    getServerOpenSnapshot,
+  );
+  const open = openProp ?? storedOpen;
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value;
       if (setOpenProp) {
         setOpenProp(openState);
-      } else {
-        _setOpen(openState);
       }
 
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      // Persisting here keeps the state when React Router remounts a route's
+      // shell, while the keyed chat screen can still reset its own state.
+      writeSidebarStateCookie(openState);
     },
     [setOpenProp, open],
   );
