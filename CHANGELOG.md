@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Fixed
+
+- [core] fix: The Admin Chatbot silently did nothing on a rejected turn — `onError` only `console.error`'d, so a fresh admin account with no provider key configured yet (the common case: BYOK, no global fallback) saw no reply and no error. Now surfaces the route's structured rejection as a banner, with a settings-icon hint for provider-setup failures and a friendly retry-time message for rate limiting. Closes #1656. (@Ayyhab, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
