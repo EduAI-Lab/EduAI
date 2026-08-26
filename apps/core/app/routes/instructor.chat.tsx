@@ -92,6 +92,7 @@ const chatRejectionBodySchema = z
   .object({
     error: z.string().trim().min(1).optional().catch(undefined),
     code: z.string().optional().catch(undefined),
+    retryAfter: z.number().optional().catch(undefined),
   })
   .catch({});
 
@@ -109,6 +110,17 @@ function describeInstructorChatError(error: Error): string {
 
   const body = chatRejectionBodySchema.parse(parsed);
   if (!body.error) return fallback;
+  if (body.error === "RATE_LIMITED") {
+    // Rate limiting on /api/chat is keyed on the acting user, not on
+    // chatMode, so an instructor hitting /instructor/chat too fast gets the
+    // same { error: "RATE_LIMITED", retryAfter } rejection an admin would
+    // (see admin.chat.tsx's describeAdminChatError, #1656). The schema
+    // already parses retryAfter as number | undefined (or drops it via
+    // .catch on a malformed value) — no further narrowing needed.
+    return body.retryAfter !== undefined
+      ? `You're sending messages too quickly. Try again in ${body.retryAfter}s.`
+      : "You're sending messages too quickly. Wait a moment and try again.";
+  }
   if (body.code && NEEDS_PROVIDER_SETUP_CODES.has(body.code)) {
     return `${body.error} Open the settings (gear) icon next to the message box to add or fix a provider API key.`;
   }

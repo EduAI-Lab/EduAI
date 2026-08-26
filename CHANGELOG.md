@@ -10,6 +10,10 @@
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
 
+### Fixed
+
+- [core] fix: `instructor.chat.tsx`'s error-banner decoder (#1659) was copied from `admin.chat.tsx`'s (#1656) but missing the `RATE_LIMITED` branch, so an instructor hitting `/instructor/chat` too fast saw the bare `"RATE_LIMITED"` enum string instead of a friendly retry message — the exact bug #1656 fixed on the sibling route. Caught in review on #1664 (ariqmuldi); synced the copy with a `retryAfter`-aware branch and new `InstructorChatPage.error-banner.test.tsx` coverage. (@Ayyhab, 2026-08-26) — [#1666](https://github.com/EduAI-Lab/EduAI/pull/1666)
+
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
