@@ -288,14 +288,11 @@ export async function seedInstructorSpine(
   const moduleTitle = `Instructor Spine Module ${RUN}-${Math.floor(Math.random() * 1e4)}`;
   const lessonTitle = `Instructor Spine Lesson ${RUN}-${Math.floor(Math.random() * 1e4)}`;
 
-  const module = await seedModule(instrCtx, atCourseId, {
-    title: moduleTitle,
-    ...(opts.publish ? { publish: true } : {}),
-  });
-  const lesson = await seedLesson(instrCtx, module.id, {
-    title: lessonTitle,
-    ...(opts.publish ? { publish: true } : {}),
-  });
+  // `publish` is read as a plain boolean by both seeders, so `false` and
+  // "absent" already mean the same thing — no conditional spread needed.
+  const publish = opts.publish ?? false;
+  const module = await seedModule(instrCtx, atCourseId, { title: moduleTitle, publish });
+  const lesson = await seedLesson(instrCtx, module.id, { title: lessonTitle, publish });
 
   // Reading topics is also what triggers AI Tutor's sync-on-read pull from
   // Core, so this is the call that makes `seedTopic` visible to the activity

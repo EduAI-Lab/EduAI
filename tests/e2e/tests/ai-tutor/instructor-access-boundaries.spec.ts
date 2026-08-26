@@ -17,8 +17,9 @@
  *     caller is not a reader being let down gently.
  */
 import { test, expect } from "@playwright/test";
-import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
+import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
+import { atCourseTopicIds } from "../helpers/at-admin-fixtures";
 import {
   createTeachingInstructor,
   seedInstructorSpine,
@@ -33,7 +34,8 @@ function unique(prefix: string): string {
 
 let fx: InstructorFixture;
 /** A module + lesson inside the course taught by the *other* instructor. */
-let foreignSpine: { moduleId: number; lessonId: number };
+type ForeignSpine = { moduleId: number; lessonId: number };
+let foreignSpine: ForeignSpine;
 /** A published module → lesson → activity inside this instructor's own course. */
 let spine: Awaited<ReturnType<typeof seedInstructorSpine>>;
 
@@ -44,17 +46,30 @@ test.beforeAll(async ({ playwright }) => {
 
     // Built through the other instructor's own context — content this fixture's
     // instructor has never been able to touch.
-    const moduleRow = await (
-      await fx.otherCtx.post(`${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/modules`, {
-        data: { title: "Foreign Module" },
-      })
-    ).json();
-    const lesson = await (
-      await fx.otherCtx.post(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons`, {
-        data: { title: "Foreign Lesson" },
-      })
-    ).json();
+    //
+    // Both writes are asserted before their ids are used. An unchecked create
+    // leaves `undefined` in the id, and `/instructor/module/undefined` satisfies
+    // the generic-404 assertions below just as well as a real foreign id does —
+    // the whole suite would go green while proving nothing.
+    const moduleRes = await fx.otherCtx.post(
+      `${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/modules`,
+      { data: { title: "Foreign Module" } },
+    );
+    expect(moduleRes.status(), `foreign module create: ${await moduleRes.text()}`).toBe(201);
+    const moduleRow = await moduleRes.json();
+
+    const lessonRes = await fx.otherCtx.post(
+      `${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons`,
+      { data: { title: "Foreign Lesson" } },
+    );
+    expect(lessonRes.status(), `foreign lesson create: ${await lessonRes.text()}`).toBe(201);
+    const lesson = await lessonRes.json();
+
     foreignSpine = { moduleId: moduleRow.id, lessonId: lesson.id };
+    expect(
+      Number.isFinite(foreignSpine.moduleId) && Number.isFinite(foreignSpine.lessonId),
+      `foreign spine ids: ${JSON.stringify(foreignSpine)}`,
+    ).toBe(true);
 
     // The instructor's *own* activity — the control for the chat and
     // tutor-invocation refusals below, which must be about the caller's role
@@ -236,16 +251,27 @@ test.describe("INSTRUCTOR access boundaries", () => {
     );
     expect(sessions.status()).toBe(403);
 
-    // The messages route refuses one step earlier and more strongly: it looks
-    // the session up scoped to `userId: authUser.id`, so a caller cannot even
-    // address someone else's chat — the answer is 404 "Session not found"
-    // rather than 403, and the role gate sits behind that as a second line.
-    // Asserting 404 here pins the ownership scoping; weakening it to 403 would
-    // pass just as well if that scoping were dropped.
+    // The messages route refuses one step earlier: it looks the session up
+    // scoped to `userId: authUser.id`, so a caller cannot even address someone
+    // else's chat — the answer is 404 "Session not found" rather than 403, and
+    // the role gate sits behind that as a second line.
+    //
+    // What this call can and cannot prove (PR #1623 review): no session exists
+    // in this fixture, so the 404 shows only that the route names nothing it
+    // has not been asked for. It is *not* evidence of the ownership scoping —
+    // dropping `userId` from that lookup would return 404 here just the same.
+    // A session cannot be minted over HTTP either: `upsertChatSession` runs
+    // only after a successful tutor response and the e2e stack ships no model.
+    // The scoping is therefore proved where a session can be seeded directly —
+    // "keeps a student's transcript from the instructor who owns the course" in
+    // `server/tests/integration/activities.auth-hardening.test.js`, where the
+    // owner reads the transcript and this course's instructor is refused the
+    // same chatId. Kept here as the shape of the refusal a browser sees.
     const messages = await page.request.get(
       `${AI_TUTOR_API_URL}/api/activities/${spine.activityId}/chat-sessions/1/messages`,
     );
     expect(messages.status()).toBe(404);
+    expect((await messages.json()).error).toBe("Session not found");
   });
 
   test("an instructor cannot invoke the tutor they configure", async ({ page }) => {
@@ -308,14 +334,53 @@ test.describe("INSTRUCTOR access boundaries", () => {
     // `app/`. Covered so the contract is pinned while the decision about
     // whether they should exist at all is still open (recorded in the workflow
     // doc alongside the unit-admin pass's note on the same pair).
+    // A second Core topic to remap *from*. `remap` refuses a mapping whose
+    // source and target are the same (`TopicMappingSchema`), so the course
+    // needs two, and Core owns the topic list — AI Tutor refuses manual topic
+    // creation on an imported course outright.
+    const coreTopic = await fx.adminCtx.post(
+      `${CORE_URL}/api/courses/${fx.course.coreCourseId}/topics`,
+      { data: { name: unique("E2E Remap Source") } },
+    );
+    expect(coreTopic.status(), `Core topic create: ${await coreTopic.text()}`).toBe(201);
+
     const sync = await page.request.post(
       `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics/sync`,
       { data: {} },
     );
     expect(sync.status()).toBe(200);
+    // The manual sync is the unthrottled path — `GET /topics` pulls at most
+    // once per `AUTO_SYNC_TTL_MS` and the import already spent that window, so
+    // the topic just written to Core is here *because* this call worked.
+    const synced = (await sync.json()).topics as { id: string; name: string }[];
+    const source = synced.find((t) => t.name.startsWith("E2E Remap Source"));
+    const target = synced.find((t) => t.id !== source?.id);
+    expect(
+      source,
+      `remap source missing from ${JSON.stringify(synced.map((t) => t.name))}`,
+    ).toBeTruthy();
+    expect(target, "remap needs a second topic to move activities onto").toBeTruthy();
 
-    // And they are refused on a course this instructor does not teach — the
-    // same enrollment gate as every other write.
+    // The own-course success case. Without it, an implementation that refused
+    // remap for *everyone* would satisfy the denial below and this test would
+    // still be green. `mappings` is the real wire contract (`TopicRemapSchema`);
+    // the flat `{ from, to }` this test used to send is a 400, which the
+    // foreign call's 403 hid because `gateCourseById` runs before the body is
+    // parsed.
+    const remap = await page.request.post(
+      `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics/remap`,
+      { data: { mappings: [{ fromTopicId: source!.id, toTopicId: target!.id }] } },
+    );
+    expect(remap.status(), `own-course remap: ${await remap.text()}`).toBe(200);
+
+    // It really moved: the source topic carried no activities, so consolidating
+    // it deletes it.
+    const after = await atCourseTopicIds(page.request, fx.course.atCourseId);
+    expect(after).not.toContain(source!.id);
+    expect(after).toContain(target!.id);
+
+    // And both writes are refused on a course this instructor does not teach —
+    // the same enrollment gate as every other write.
     const foreignSync = await page.request.post(
       `${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/topics/sync`,
       { data: {} },
@@ -324,7 +389,7 @@ test.describe("INSTRUCTOR access boundaries", () => {
 
     const foreignRemap = await page.request.post(
       `${AI_TUTOR_API_URL}/api/courses/${fx.foreign.atCourseId}/topics/remap`,
-      { data: { from: 1, to: 2 } },
+      { data: { mappings: [{ fromTopicId: source!.id, toTopicId: target!.id }] } },
     );
     expect(foreignRemap.status()).toBe(403);
   });

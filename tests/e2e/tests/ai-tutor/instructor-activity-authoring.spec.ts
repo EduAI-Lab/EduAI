@@ -114,9 +114,10 @@ test.describe("INSTRUCTOR activity authoring", () => {
     await dialog.getByLabel(/Question prompt/).fill(question);
     await dialog.getByRole("textbox", { name: "Option A" }).fill("The base case");
     await dialog.getByRole("textbox", { name: "Option B" }).fill("The recursive case");
-    // The form ships four choice slots and saves every one of them, blank
-    // included — so an unused slot has to be removed rather than left empty, or
-    // the activity reaches students with two blank options to pick from.
+    // The form ships four choice slots. Blanks are dropped on submit now
+    // (`buildMcqSubmission`), so removing the unused two is no longer load
+    // bearing — it is kept because it is what an author actually does, and it
+    // exercises the removal path alongside the compaction that backs it up.
     await dialog.getByRole("button", { name: "Remove option D" }).click();
     await dialog.getByRole("button", { name: "Remove option C" }).click();
     // The correct answer is chosen by clicking the letter, and the form says so

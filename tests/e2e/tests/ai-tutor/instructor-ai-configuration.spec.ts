@@ -53,12 +53,26 @@ async function freshActivity(
   return { lessonId: spine.lessonId, activityId: spine.activityId, question: spine.question };
 }
 
+/**
+ * The slice of an activity this file asserts on: the three AI-mode flags and
+ * the custom prompt they gate. Named rather than a bare dictionary so a typo in
+ * a field name is a compile error instead of a silently `undefined` poll that
+ * times out thirty seconds later.
+ */
+type ActivityAiModes = {
+  enableTeachMode?: boolean;
+  enableGuideMode?: boolean;
+  enableCustomMode?: boolean;
+  customPromptTitle?: string | null;
+  customPrompt?: string | null;
+};
+
 /** The current AI-mode flags, read from the API the page writes through. */
 async function modes(
   page: import("@playwright/test").Page,
   lessonId: number,
   activityId: number,
-): Promise<Record<string, unknown>> {
+): Promise<ActivityAiModes> {
   const res = await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`);
   const body = await res.json();
   const rows = Array.isArray(body) ? body : (body.data ?? []);
@@ -220,21 +234,22 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
     await expect(ubc).toBeVisible();
     await expect(cloud).toBeVisible();
 
-    // Pinning current behaviour, not endorsing it (Findings #5): the state word
-    // in the accessible name renders as the literal string "undefined" on this
-    // stack. `STATE_WORD` in `@eduai/ui`'s `ai-service-indicators.tsx` maps
-    // exactly `operational | degraded | outage | loading | unknown`, so any
-    // `state` outside that set — or a payload that omits it — reads back as
-    // `undefined` to a screen reader rather than falling back to "Unknown".
+    // The state word comes from `STATE_WORD` in `@eduai/ui`'s
+    // `ai-service-indicators.tsx`, and the chip can only ever say one of those
+    // five words: `aiStatusSchema` (`app/lib/api-schemas.ts`) parses `state`
+    // against exactly the same set, so an out-of-set value never reaches the
+    // component — a payload the schema rejects leaves the chips on their
+    // initial `loading` state, which reads as "Checking…". Asserting the
+    // alternation pins that contract without pinning whichever backend happens
+    // to be up in the stack under test.
     //
-    // The previous assertion here alleged the words were `Online`/`Offline`,
-    // which the component never emits for any state; it passed only because it
-    // was never reached on a stack where the chips resolved. Asserting the real
-    // name keeps the defect visible. Flip to the `STATE_WORD` alternation once
-    // the payload and the map are reconciled — this is a shared-header issue
-    // (Core, AI Tutor and Question Maker all render these chips), not an
-    // instructor-workflow one, so it is recorded rather than fixed here.
-    await expect(ubc).toHaveAccessibleName("UBC-hosted AI: undefined");
-    await expect(cloud).toHaveAccessibleName("Cloud AI: undefined");
+    // Two earlier versions of this assertion were wrong (PR #1623 review):
+    // `Online`/`Offline`, words the component emits for no state at all, and
+    // then the literal `undefined`, which was read off a prebuilt e2e image
+    // predating the schema and cannot occur on this code. Findings #5 was
+    // withdrawn with them.
+    const STATE_WORD = "(?:Operational|Degraded|Outage|Checking…|Unknown)";
+    await expect(ubc).toHaveAccessibleName(new RegExp(`^UBC-hosted AI: ${STATE_WORD}$`));
+    await expect(cloud).toHaveAccessibleName(new RegExp(`^Cloud AI: ${STATE_WORD}$`));
   });
 });
