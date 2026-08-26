@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [core] feat: Instructors get a course-scoped chatbot at `/instructor/chat` for their own published course(s) — a new `chatMode: "instructor"`, gated by `access.level === "instructor"` on the exact course (reusing the same shared RBAC decision every course-scoped route already reads, not a bespoke check) plus `course.isPublished`. Its tool registry is a small, read-only, hard-course-pinned slice (`getCourse`, `listCourseEnrollments`, `listCourseTopics`, `getCourseTopic`) — no platform-wide reads/writes, no other courses. An ADMIN or UNIT_ADMIN without a real INSTRUCTOR enrollment on that course is denied (they have `/admin/chat` for platform-wide ops); one who also happens to hold such an enrollment is allowed, since that already falls out of the shared course-access helper rather than anything instructor-specific. Closes #1659. (@Ayyhab, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
