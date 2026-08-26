@@ -307,6 +307,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
   };
+  const activeRequestIdRef = useRef<string | null>(null);
+  const chatFetch = useCallback<typeof fetch>((input, init) => {
+    const requestId = crypto.randomUUID();
+    activeRequestIdRef.current = requestId;
+    const headers = new Headers(init?.headers);
+    headers.set("X-EduAI-Request-Id", requestId);
+    return fetch(input, { ...init, headers });
+  }, []);
 
   const {
     messages,
@@ -320,6 +328,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     setInput,
   } = useChat({
     api: "/api/chat",
+    fetch: chatFetch,
     // Seed the composer from the route loader's transcript (DB is the source of
     // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
     initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
@@ -361,6 +370,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onFinish: (message) => {
+      activeRequestIdRef.current = null;
       // Server-owned source of truth for the Continue button.
       const hitLongOutputCap =
         message.role === "assistant" &&
@@ -409,6 +419,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onError: (error) => {
+      activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
@@ -569,6 +580,22 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
+    const requestId = activeRequestIdRef.current;
+    activeRequestIdRef.current = null;
+    if (requestId) {
+      const body = JSON.stringify({ requestId });
+      if (typeof navigator.sendBeacon === "function") {
+        navigator.sendBeacon("/api/chat/cancel", new Blob([body], { type: "application/json" }));
+      } else {
+        void fetch("/api/chat/cancel", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        });
+      }
+    }
     pendingRoutedRegistryIdRef.current = null;
     setStreamingRoutedRegistryId(null);
     stop();
