@@ -1,4 +1,5 @@
 import { request as undiciRequest } from "undici";
+import type { JsonValue } from "~/lib/json-value";
 import { getPinnedDispatcher } from "~/lib/net/pinned-dispatcher.server";
 import { assertPublicHostname, assertPublicIpLiteral } from "~/lib/net/ssrf-guard.server";
 
@@ -613,6 +614,8 @@ async function canvasFetchJson<T>(
   apiKey: string,
   fetchImpl: typeof fetch,
   options: {
+    method?: string;
+    body?: JsonValue;
     signal?: AbortSignal;
     deadlineSignal?: AbortSignal;
     cancellationSignal?: AbortSignal;
@@ -623,13 +626,22 @@ async function canvasFetchJson<T>(
     "Canvas request timed out",
   );
   const requestSignal = composeAbortSignals([options.signal, requestDeadline.signal]);
+  // A write carries its own content type; a read must not advertise one at all,
+  // so the two header sets are built as whole literals rather than mutated.
+  const requestBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  const headers =
+    requestBody === undefined
+      ? { Authorization: `Bearer ${apiKey}` }
+      : { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
 
   try {
     await raceWithAbort(assertSafeCanvasRequestHost(url, canvasUrl), requestSignal.signal);
 
     const response = await raceWithAbort(
       fetchImpl(url, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        method: options.method,
+        headers,
+        body: requestBody,
         signal: requestSignal.signal,
         redirect: "manual",
         dispatcher: canvasRequestDispatcher(url, canvasUrl),
@@ -666,6 +678,128 @@ async function canvasFetchJson<T>(
     requestSignal.cancel();
     requestDeadline.cancel();
   }
+}
+
+export type CanvasRequestJsonOptions = {
+  method?: string;
+  body?: JsonValue;
+};
+
+/** Performs a single Canvas API request (GET/POST/etc.) and returns parsed JSON. */
+export async function canvasRequestJson<T>(
+  credentials: CanvasIntegrationCredentials,
+  path: string,
+  options: CanvasRequestJsonOptions = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  const method = options.method ?? "GET";
+  const body = options.body;
+
+  if (credentials.isTestMode) {
+    return getMockCanvasRequestResponse<T>(path, method, body);
+  }
+
+  const url = buildCanvasApiUrl(credentials.canvasUrl, path);
+  const { data } = await canvasFetchJson<T>(
+    url,
+    credentials.canvasUrl,
+    credentials.apiKey,
+    fetchImpl,
+    { method, body },
+  );
+  return data;
+}
+
+function getMockCanvasRequestResponse<T>(path: string, method: string, body?: JsonValue): T {
+  if (path.includes("/question_banks") && method === "GET") {
+    const bankQuestionsMatch = path.match(/\/question_banks\/(\d+)\/questions/);
+    if (bankQuestionsMatch) {
+      return [
+        {
+          id: 1,
+          question_name: "1. Bank Question",
+          question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+          question_type: "multiple_choice_question",
+          position: 1,
+          answers: [
+            { id: 1, answer_text: "3", answer_weight: 0 },
+            { id: 2, answer_text: "4", answer_weight: 100 },
+            { id: 3, answer_text: "5", answer_weight: 0 },
+            { id: 4, answer_text: "6", answer_weight: 0 },
+          ],
+        },
+      ] as T;
+    }
+
+    const singleBankMatch = path.match(/\/question_banks\/(\d+)/);
+    if (singleBankMatch) {
+      return {
+        id: Number(singleBankMatch[1]),
+        title: "Test Question Bank",
+        question_count: 1,
+      } as T;
+    }
+
+    return [
+      { id: 1, title: "Test Question Bank 1", question_count: 1 },
+      { id: 2, title: "Test Question Bank 2", question_count: 0 },
+    ] as T;
+  }
+
+  if (path.includes("/quizzes") && method === "POST") {
+    const quizBody = body as { quiz?: { title?: string } } | undefined;
+    return {
+      id: Math.floor(Math.random() * 1000),
+      title: quizBody?.quiz?.title ?? "Test Quiz",
+    } as T;
+  }
+
+  if (path.includes("/quizzes") && method === "GET" && !path.includes("/questions")) {
+    const singleQuizMatch = path.match(/\/quizzes\/(\d+)$/);
+    if (singleQuizMatch) {
+      const quizId = Number(singleQuizMatch[1]);
+      return {
+        id: quizId,
+        title: "Test Quiz",
+        quiz_type: "assignment",
+        published: false,
+      } as T;
+    }
+    return [
+      { id: 1, title: "Test Quiz 1", quiz_type: "assignment", published: false },
+      { id: 2, title: "Test Quiz 2", quiz_type: "assignment", published: true },
+    ] as T;
+  }
+
+  if (path.includes("/questions") && method === "POST") {
+    return { id: Math.floor(Math.random() * 1000) } as T;
+  }
+
+  if (path.includes("/questions") && method === "GET") {
+    const singleQuestionMatch = path.match(/\/questions\/(\d+)$/);
+    const singleQuestion = {
+      id: 1,
+      question_name: "1. Test Question",
+      question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+      question_type: "multiple_choice_question",
+      position: 1,
+      answers: [
+        { id: 1, answer_text: "3", answer_weight: 0 },
+        { id: 2, answer_text: "4", answer_weight: 100 },
+        { id: 3, answer_text: "5", answer_weight: 0 },
+        { id: 4, answer_text: "6", answer_weight: 0 },
+      ],
+    };
+    if (singleQuestionMatch) {
+      return {
+        ...singleQuestion,
+        id: Number(singleQuestionMatch[1]),
+      } as T;
+    }
+    return [singleQuestion] as T;
+  }
+
+  return { success: true } as T;
 }
 
 /** Fetches all pages from a Canvas list endpoint. */

@@ -450,6 +450,114 @@ export async function searchCoursesFromCore(
   return Array.isArray(data?.data) ? data.data : [];
 }
 
+function canvasCourseQuery(canvasCourseId) {
+  return `canvasCourseId=${encodeURIComponent(canvasCourseId)}`;
+}
+
+function canvasCookieFetch(path, cookie, { method = "GET", body } = {}) {
+  return fetchFromCore(path, { method, body, cookie, cookieOnly: true });
+}
+
+/** GET /api/canvas/integration — caller's Core Canvas integration (session-only). */
+export async function proxyCoreCanvasGetIntegration(cookie) {
+  return canvasCookieFetch("/api/canvas/integration", cookie);
+}
+
+/** POST /api/canvas/connect — save the caller's Canvas credentials on Core. */
+export async function proxyCoreCanvasConnect(cookie, body) {
+  return canvasCookieFetch("/api/canvas/connect", cookie, { method: "POST", body });
+}
+
+/** DELETE /api/canvas/disconnect — remove the caller's Core Canvas integration. */
+export async function proxyCoreCanvasDisconnect(cookie) {
+  return canvasCookieFetch("/api/canvas/disconnect", cookie, { method: "DELETE" });
+}
+
+/** GET /api/canvas/courses — list Canvas courses via the caller's Core integration. */
+export async function proxyCoreCanvasListCourses(cookie) {
+  return canvasCookieFetch("/api/canvas/courses", cookie);
+}
+
+/** GET /api/canvas/quizzes?canvasCourseId= — list quizzes in a Canvas course. */
+export async function proxyCoreListQuizzes(cookie, canvasCourseId) {
+  return canvasCookieFetch(`/api/canvas/quizzes?${canvasCourseQuery(canvasCourseId)}`, cookie);
+}
+
+/** GET /api/canvas/quizzes/:quizId?canvasCourseId= — fetch one Canvas quiz. */
+export async function proxyCoreGetQuiz(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/quizzes/:quizId/questions?canvasCourseId= — list quiz questions. */
+export async function proxyCoreListQuizQuestions(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/quizzes/:quizId/questions/:questionId?canvasCourseId= — fetch one question. */
+export async function proxyCoreGetQuizQuestion(cookie, canvasCourseId, quizId, questionId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions/${encodeURIComponent(questionId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** POST /api/canvas/quizzes — create a Canvas quiz. */
+export async function proxyCoreCreateQuiz(cookie, canvasCourseId, quiz) {
+  return canvasCookieFetch("/api/canvas/quizzes", cookie, {
+    method: "POST",
+    body: { canvasCourseId, quiz },
+  });
+}
+
+/** POST /api/canvas/quizzes/:quizId/questions — create a Canvas quiz question. */
+export async function proxyCoreCreateQuizQuestion(cookie, canvasCourseId, quizId, question) {
+  return canvasCookieFetch(`/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions`, cookie, {
+    method: "POST",
+    body: { canvasCourseId, question },
+  });
+}
+
+/** GET /api/canvas/question-banks?canvasCourseId= — list Classic Canvas question banks. */
+export async function proxyCoreListQuestionBanks(cookie, canvasCourseId) {
+  return canvasCookieFetch(
+    `/api/canvas/question-banks?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/question-banks/:bankId — fetch one Canvas question bank. */
+export async function proxyCoreGetQuestionBank(cookie, canvasBankId) {
+  return canvasCookieFetch(
+    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}`,
+    cookie,
+  );
+}
+
+/**
+ * GET /api/canvas/question-banks/:bankId/questions — list bank questions (one page).
+ * Optional query: page, perPage.
+ */
+export async function proxyCoreListQuestionBankQuestions(
+  cookie,
+  canvasBankId,
+  { page = 1, perPage = 100 } = {},
+) {
+  const qs = new URLSearchParams({
+    page: String(page),
+    perPage: String(perPage),
+  });
+  return canvasCookieFetch(
+    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}/questions?${qs}`,
+    cookie,
+  );
+}
+
 /** GET /api/courses/:courseId/banks */
 export async function listQuestionBanksFromCore(coreCourseId, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks`, opts);
