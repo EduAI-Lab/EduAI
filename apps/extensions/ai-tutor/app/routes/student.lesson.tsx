@@ -658,7 +658,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           chat split, which assumes it gets whatever space the header leaves. */}
       {previewRole && (
         <div className="shrink-0">
-          <StudentPreviewBanner role={previewRole} />
+          <StudentPreviewBanner role={previewRole} exitHref={`/instructor/lesson/${lesson.id}`} />
         </div>
       )}
       <div className="flex shrink-0 flex-col gap-4" data-tour="student-lesson-progress">

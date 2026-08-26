@@ -163,3 +163,18 @@ describe.each([
     expect(screen.getByTestId("student-preview-banner")).toBeInTheDocument();
   });
 });
+
+// Follow-up: instructors previewing the learner experience need a way back
+// to their own view without re-navigating by hand. Each route resolves the
+// exit link to its matching /instructor/* counterpart for the same record.
+describe.each([
+  ["student.course", renderCourse, "/instructor/courses/1"],
+  ["student.module", renderModule, "/instructor/module/10"],
+  ["student.lesson", renderLesson, "/instructor/lesson/3"],
+] as const)("%s — StudentPreviewBanner exit link (#1660 follow-up)", (_name, renderRoute, href) => {
+  it("links back to the matching instructor view", () => {
+    setRole("ADMIN");
+    renderRoute();
+    expect(screen.getByTestId("student-preview-exit")).toHaveAttribute("href", href);
+  });
+});

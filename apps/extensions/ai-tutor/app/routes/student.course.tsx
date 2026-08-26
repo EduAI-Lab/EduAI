@@ -101,7 +101,14 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   return (
     <DetailPageScaffold
       padding="app"
-      beforeHero={previewRole ? <StudentPreviewBanner role={previewRole} /> : null}
+      beforeHero={
+        previewRole ? (
+          <StudentPreviewBanner
+            role={previewRole}
+            exitHref={course?.id != null ? `/instructor/courses/${course.id}` : "/instructor"}
+          />
+        ) : null
+      }
       hero={
         <CourseHeroCard
           code={courseCode(course)}

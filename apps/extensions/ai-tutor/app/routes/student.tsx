@@ -171,7 +171,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      {previewRole && <StudentPreviewBanner role={previewRole} />}
+      {previewRole && <StudentPreviewBanner role={previewRole} exitHref="/instructor" />}
       <div data-tour="student-dashboard-header">
         <PageHeading heading={heading} subheading={subheading} />
       </div>
