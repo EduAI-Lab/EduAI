@@ -28,7 +28,7 @@ import {
   buildDepartmentFilterGroup,
   defaultColorIndexForCourse,
 } from "@eduai/ui";
-import { TERM_CODES, termName, termFromDate, termInfoFromDate } from "@eduai/ui";
+import { termInfoFromDateInput, termLabelLong } from "@eduai/ui";
 import type { CourseListSection } from "@eduai/ui";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import { DepartmentCombobox } from "~/components/courses/department-combobox";
@@ -214,7 +214,9 @@ function AdminCoursesBody({
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   const [createDept, setCreateDept] = useState<string>("");
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const [startDate, setStartDate] = useState<string>("");
+  // Sep–Dec W1, Jan–Apr W2, May–Jun S1, Jul–Aug S2 — null until a date is picked.
+  const termInfo = termInfoFromDateInput(startDate);
   const [selectedInstructor, setSelectedInstructor] = useState<string>("");
   const [editDept, setEditDept] = useState<string>("");
   const {
@@ -243,6 +245,7 @@ function AdminCoursesBody({
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!termInfo) return;
     const fd = new FormData(e.currentTarget);
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
     const code = `${createDept} ${codeSuffix}`;
@@ -250,15 +253,15 @@ function AdminCoursesBody({
       name: fd.get("name") as string,
       code,
       section: fd.get("section") as string,
-      term: selectedTerm,
-      year: parseInt(fd.get("year") as string),
-      startDate: fd.get("startDate") as string,
+      term: termInfo.term,
+      year: termInfo.year,
+      startDate,
       department: createDept,
       aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     });
     setCreateDept("");
-    setSelectedTerm(termFromDate(new Date()));
+    setStartDate("");
     setSelectedInstructor("");
     setCreateOpen(false);
   };
@@ -292,7 +295,7 @@ function AdminCoursesBody({
             <DialogHeader>
               <DialogTitle>Create new course</DialogTitle>
               <DialogDescription>
-                Create a new course for the current academic term.
+                The term is set automatically from the course's start date.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
@@ -341,35 +344,22 @@ function AdminCoursesBody({
                 </div>
                 <div className="grid gap-2">
                   <Label>Start date</Label>
-                  <Input name="startDate" type="date" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Term</Label>
-                  <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TERM_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>
-                          {termName(code)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Year</Label>
-                  {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
                   <Input
-                    name="year"
-                    type="number"
-                    defaultValue={termInfoFromDate(new Date()).year}
+                    name="startDate"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
                     required
                   />
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Term</Label>
+                {/* Derived from the start date, not picked: term and its academic-year
+                    label are two halves of one fact and must not disagree (#1088). */}
+                <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  {termInfo ? termLabelLong(termInfo.term, termInfo.year) : "Pick a start date"}
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Instructor</Label>
@@ -587,7 +577,9 @@ function UnitAdminCoursesBody({
     ? isEnabled(config.cardActions.deletePolicyFlag)
     : true;
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? "");
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const [startDate, setStartDate] = useState<string>("");
+  // Sep–Dec W1, Jan–Apr W2, May–Jun S1, Jul–Aug S2 — null until a date is picked.
+  const termInfo = termInfoFromDateInput(startDate);
   const [selectedInstructor, setSelectedInstructor] = useState<string>("");
   const [editDept, setEditDept] = useState<string>("");
 
@@ -619,6 +611,7 @@ function UnitAdminCoursesBody({
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!termInfo) return;
     const fd = new FormData(e.currentTarget);
     const dept = selectedDept;
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
@@ -627,14 +620,14 @@ function UnitAdminCoursesBody({
       name: fd.get("name") as string,
       code,
       section: fd.get("section") as string,
-      term: selectedTerm,
-      year: parseInt(fd.get("year") as string),
-      startDate: fd.get("startDate") as string,
+      term: termInfo.term,
+      year: termInfo.year,
+      startDate,
       department: dept || undefined,
       aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     });
-    setSelectedTerm(termFromDate(new Date()));
+    setStartDate("");
     setSelectedInstructor("");
     setCreateOpen(false);
   };
@@ -742,35 +735,22 @@ function UnitAdminCoursesBody({
                 </div>
                 <div className="grid gap-2">
                   <Label>Start date</Label>
-                  <Input name="startDate" type="date" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Term</Label>
-                  <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TERM_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>
-                          {termName(code)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Year</Label>
-                  {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
                   <Input
-                    name="year"
-                    type="number"
-                    defaultValue={termInfoFromDate(new Date()).year}
+                    name="startDate"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
                     required
                   />
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Term</Label>
+                {/* Derived from the start date, not picked: term and its academic-year
+                    label are two halves of one fact and must not disagree (#1088). */}
+                <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  {termInfo ? termLabelLong(termInfo.term, termInfo.year) : "Pick a start date"}
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Instructor</Label>
@@ -974,7 +954,9 @@ function InstructorCoursesBody({
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   const [selectedDept, setSelectedDept] = useState<string>("");
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const [startDate, setStartDate] = useState<string>("");
+  // Sep–Dec W1, Jan–Apr W2, May–Jun S1, Jul–Aug S2 — null until a date is picked.
+  const termInfo = termInfoFromDateInput(startDate);
   const { options: departmentOptions, loading: deptLoading } = useDisciplines();
 
   const { isEnabled } = usePolicyGate();
@@ -1000,6 +982,7 @@ function InstructorCoursesBody({
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!termInfo) return;
     const fd = new FormData(e.currentTarget);
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
     const code = selectedDept ? `${selectedDept} ${codeSuffix}` : codeSuffix;
@@ -1007,9 +990,9 @@ function InstructorCoursesBody({
       name: fd.get("name") as string,
       code,
       section: fd.get("section") as string,
-      term: selectedTerm,
-      year: parseInt(fd.get("year") as string),
-      startDate: fd.get("startDate") as string,
+      term: termInfo.term,
+      year: termInfo.year,
+      startDate,
       department: selectedDept || undefined,
       aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       // The server auto-enrolls the requesting instructor as the course
@@ -1017,7 +1000,7 @@ function InstructorCoursesBody({
       instructorUserIds: [],
     });
     setSelectedDept("");
-    setSelectedTerm(termFromDate(new Date()));
+    setStartDate("");
     setCreateOpen(false);
   };
 
@@ -1101,35 +1084,22 @@ function InstructorCoursesBody({
                   </div>
                   <div className="grid gap-2">
                     <Label>Start date</Label>
-                    <Input name="startDate" type="date" required />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Term</Label>
-                    <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TERM_CODES.map((code) => (
-                          <SelectItem key={code} value={code}>
-                            {termName(code)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Year</Label>
-                    {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
                     <Input
-                      name="year"
-                      type="number"
-                      defaultValue={termInfoFromDate(new Date()).year}
+                      name="startDate"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
                       required
                     />
                   </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Term</Label>
+                  {/* Derived from the start date, not picked: term and its academic-year
+                      label are two halves of one fact and must not disagree (#1088). */}
+                  <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                    {termInfo ? termLabelLong(termInfo.term, termInfo.year) : "Pick a start date"}
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <Label>AI instructions</Label>

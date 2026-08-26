@@ -198,7 +198,7 @@ export async function enrichRowWithCourse(row) {
 
 /**
  * Legacy-shaped "semester" display string derived from a Core-projected term/year,
- * e.g. "Winter Term 1 2026" (#1072 §4 step 8 / #1077). QM's `Assessments.semester`
+ * e.g. "2026 Winter Term 1" (#1072 §4 step 8 / #1077). QM's `Assessments.semester`
  * column is derive-only now — nothing persists free-form semester text anymore.
  * Mirrors `termLabelLong` in packages/ui/src/lib/term.ts; duplicated here in plain
  * JS because QM's backend has no dependency on the frontend-only @eduai/ui package.
@@ -220,7 +220,7 @@ const SEMESTER_TERM_NAMES = {
 
 export function formatSemesterDisplay(term, year) {
   const name = term ? SEMESTER_TERM_NAMES[term] : null;
-  if (name && year != null) return `${name} ${year}`;
+  if (name && year != null) return `${year} ${name}`;
   if (name) return name;
   if (year != null) return String(year);
   return "Unscheduled";

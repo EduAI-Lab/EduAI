@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
+import { termLabelLong } from "@eduai/ui";
 import { CoursesView, type CoursesViewProps } from "~/components/courses/courses-view";
 import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 import type { Course } from "~/hooks/api/use-courses";
@@ -233,7 +234,7 @@ describe("CoursesAdminView — mutation flows", () => {
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "250" } });
     fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
 
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
 
@@ -247,6 +248,58 @@ describe("CoursesAdminView — mutation flows", () => {
         instructorUserIds: ["i1"],
       }),
     );
+  });
+
+  it.each([
+    ["2025-09-01", "W1", 2025],
+    ["2026-01-15", "W2", 2025],
+    ["2026-05-04", "S1", 2026],
+    ["2026-07-20", "S2", 2026],
+  ])("derives term and academic year from a %s start date", async (startDate, term, year) => {
+    const onCreateCourse = vi.fn().mockResolvedValue(undefined);
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+    fireEvent.change(screen.getByLabelText("Course name"), { target: { value: "New Course" } });
+    chooseDepartmentCombobox(screen.getAllByRole("combobox")[0], "Computer Science");
+    fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "250" } });
+    fireEvent.change(startDateInput(), { target: { value: startDate } });
+
+    // The derived term is shown read-only before submit, so the user can see
+    // what the date resolved to.
+    expect(screen.getByText(termLabelLong(term, year))).toBeInTheDocument();
+
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
+    fireEvent.click(submitButtonFor(/create course/i));
+
+    await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));
+    expect(onCreateCourse).toHaveBeenCalledWith(expect.objectContaining({ term, year, startDate }));
+  });
+
+  it("offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    // Only the department combobox and the instructor select remain.
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    expect(document.querySelector('input[name="year"]')).toBeNull();
   });
 
   it("disables the create submit button until department and instructor are chosen", async () => {
@@ -267,7 +320,7 @@ describe("CoursesAdminView — mutation flows", () => {
     chooseDepartmentCombobox(combos[0], "Computer Science");
     expect(submitButtonFor(/create course/i)).toBeDisabled();
 
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
     expect(submitButtonFor(/create course/i)).not.toBeDisabled();
   });
 
@@ -577,7 +630,7 @@ describe("CoursesUnitAdminView — mutation flows", () => {
 
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "200" } });
     fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
     await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));
@@ -603,7 +656,9 @@ describe("CoursesUnitAdminView — mutation flows", () => {
     fireEvent.change(screen.getByLabelText("Course name"), { target: { value: "Intro CS" } });
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "110" } });
     fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
-    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
+    // Single authorized department renders no department combobox, and the term
+    // is derived rather than picked, so the instructor select is the only one.
+    await chooseSelectOption(screen.getAllByRole("combobox")[0], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
     await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));

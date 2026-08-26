@@ -465,7 +465,7 @@ export function CourseListView<T>({
                     <div className="min-w-0">
                       {/* We lead with the compact UBC code (e.g. "2026W2") and use the
                           relative word as the subtitle — the long form
-                          ("Winter Term 2 2026") reads oddly as a heading. */}
+                          ("2026 Winter Term 2") reads oddly as a heading. */}
                       <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
                         {section.title}
                       </h3>

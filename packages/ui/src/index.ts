@@ -188,6 +188,7 @@ export {
   termFromMonth,
   termFromDate,
   termInfoFromDate,
+  termInfoFromDateInput,
   normalizeTerm,
   termName,
   courseSwitcherSublabel,

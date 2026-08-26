@@ -8,6 +8,7 @@ import {
   termFromDate,
   termFromMonth,
   termInfoFromDate,
+  termInfoFromDateInput,
   termLabel,
   termLabelLong,
   termName,
@@ -119,10 +120,17 @@ describe("labels", () => {
     expect(termLabel(null, null)).toBe("No term scheduled");
   });
 
-  it("long label reads as a heading", () => {
-    expect(termLabelLong("W1", 2026)).toBe("Winter Term 1 2026");
-    expect(termLabelLong("S2", 2025)).toBe("Summer Term 2 2025");
+  it("long label reads as a heading, year first", () => {
+    // UBC names a session year-first ("2026W1" => "2026 Winter Term 1").
+    expect(termLabelLong("W1", 2026)).toBe("2026 Winter Term 1");
+    expect(termLabelLong("S2", 2025)).toBe("2025 Summer Term 2");
     expect(termName("W2")).toBe("Winter Term 2");
+  });
+
+  it("long label falls back to whichever half it has", () => {
+    expect(termLabelLong("W1", null)).toBe("Winter Term 1");
+    expect(termLabelLong(null, 2026)).toBe("2026");
+    expect(termLabelLong(null, null)).toBe("No term scheduled");
   });
 });
 
@@ -202,7 +210,7 @@ describe("groupCoursesByTerm", () => {
     ];
     const groups = groupCoursesByTerm(courses);
     expect(groups.map((g) => g.label)).toEqual(["2026W1", "2025W1"]);
-    expect(groups[0].labelLong).toBe("Winter Term 1 2026");
+    expect(groups[0].labelLong).toBe("2026 Winter Term 1");
     expect(groups[0].items).toHaveLength(2);
     expect(groups[1].items).toHaveLength(1);
   });
@@ -220,5 +228,37 @@ describe("groupCoursesByTerm", () => {
     ];
     const groups = groupCoursesByTerm(courses);
     expect(groups.map((g) => g.label)).toEqual(["2025W2", "2025W1"]);
+  });
+});
+
+describe("termInfoFromDateInput", () => {
+  it.each([
+    ["2026-09-01", "W1", 2026],
+    ["2026-12-31", "W1", 2026],
+    ["2026-01-01", "W2", 2025],
+    ["2026-04-30", "W2", 2025],
+    ["2026-05-01", "S1", 2026],
+    ["2026-06-30", "S1", 2026],
+    ["2026-07-01", "S2", 2026],
+    ["2026-08-31", "S2", 2026],
+  ])("maps %s to %s %d", (value, term, year) => {
+    expect(termInfoFromDateInput(value)).toEqual({ term, year });
+  });
+
+  it("reads the picked calendar day, not the UTC instant", () => {
+    // `new Date("2026-09-01")` is UTC midnight — Aug 31 in Vancouver — which
+    // would derive S2 instead of W1 if the string were parsed as an instant.
+    expect(termInfoFromDateInput("2026-09-01")).toEqual({ term: "W1", year: 2026 });
+  });
+
+  it("returns null for empty or malformed input", () => {
+    expect(termInfoFromDateInput("")).toBeNull();
+    expect(termInfoFromDateInput("   ")).toBeNull();
+    expect(termInfoFromDateInput(null)).toBeNull();
+    expect(termInfoFromDateInput(undefined)).toBeNull();
+    expect(termInfoFromDateInput("2026-09")).toBeNull();
+    expect(termInfoFromDateInput("not-a-date")).toBeNull();
+    expect(termInfoFromDateInput("2026-13-01")).toBeNull();
+    expect(termInfoFromDateInput("2026-02-30")).toBeNull();
   });
 });

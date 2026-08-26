@@ -120,6 +120,30 @@ export function termInfoFromDate(date: Date): AcademicTerm {
 }
 
 /**
+ * Derive term and academic year from an `<input type="date">` value
+ * (`YYYY-MM-DD`), returning null when the field is empty or unparseable.
+ */
+export function termInfoFromDateInput(value: string | null | undefined): AcademicTerm | null {
+  const match = value?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  // Rejects overflow dates the regex cannot catch ("2026-02-30" rolls forward
+  // to Mar 2), so a malformed day is null rather than a silently shifted term.
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return termInfoFromDate(date);
+}
+
+/**
  * Best-effort normalization of a legacy free-form term value to a canonical
  * `TermCode`. When a start date is available it is authoritative (unambiguous);
  * otherwise a season/label string is parsed. Returns null when nothing matches.
@@ -205,10 +229,11 @@ export function courseSwitcherSublabel(course: {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** Long label for headings, e.g. "Winter Term 1 2026" (`year` is the academic-year label, as in `termLabel`). */
+/** Long label for headings, e.g. "2026 Winter Term 1" — year first, the way UBC
+ * names a session (`year` is the academic-year label, as in `termLabel`). */
 export function termLabelLong(term?: string | null, year?: number | string | null): string {
   const code = isTermCode(term) ? term : normalizeTerm(term);
-  if (code && year != null) return `${termName(code)} ${year}`;
+  if (code && year != null) return `${year} ${termName(code)}`;
   if (code) return termName(code);
   if (year != null) return String(year);
   const raw = typeof term === "string" ? term.trim() : "";
@@ -277,7 +302,7 @@ export function compareByTerm(a: TermInfo, b: TermInfo): number {
 export type CourseTermGroup<T> = {
   /** Canonical compact label, e.g. "2026W1" or "No term scheduled". */
   label: string;
-  /** Long label suitable for section headings, e.g. "Winter Term 1 2026". */
+  /** Long label suitable for section headings, e.g. "2026 Winter Term 1". */
   labelLong: string;
   items: T[];
 };

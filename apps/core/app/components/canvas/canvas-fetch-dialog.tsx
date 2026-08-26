@@ -93,6 +93,19 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     }
   };
 
+  // A fetch writes courses, rosters and enrollments; closing mid-flight would
+  // leave the dialog unable to report what actually landed, so every dismissal
+  // path is sealed until it settles. The corner X is hidden rather than
+  // disabled to match the footer Close button, which is already disabled here.
+  const preventWhileSyncing = (event: Event) => {
+    if (syncing) event.preventDefault();
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    if (syncing && !next) return;
+    onOpenChange(next);
+  };
+
   const resultSummary = result
     ? [
         result.synced.length > 0 ? `${result.synced.length} synced` : null,
@@ -104,8 +117,14 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     : null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg"
+        showCloseButton={!syncing}
+        onEscapeKeyDown={preventWhileSyncing}
+        onPointerDownOutside={preventWhileSyncing}
+        onInteractOutside={preventWhileSyncing}
+      >
         <DialogHeader>
           <DialogTitle>Fetch from Canvas</DialogTitle>
           <DialogDescription>
