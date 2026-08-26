@@ -68,7 +68,7 @@ describe("CourseSwitcher — course term on each row", () => {
     await settle();
     openMenu();
 
-    expect(screen.getByText("Intro · 2026W1")).toBeInTheDocument();
+    expect(screen.getByText("Intro · 2026-27W1")).toBeInTheDocument();
     expect(screen.getByText("Intro · 2026S1")).toBeInTheDocument();
   });
 });

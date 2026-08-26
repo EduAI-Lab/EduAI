@@ -59,6 +59,7 @@ const {
   resetCourseAccessSyncForTests,
   enrichCourseDetail,
   findCoursesByProjectedCode,
+  formatSemesterDisplay,
 } = await import("../../src/services/courseListService.js");
 
 describe("listCoursesForUser", () => {
@@ -690,5 +691,31 @@ describe("findCoursesByProjectedCode (#1362)", () => {
     expect(mockSearchCoursesFromCore.mock.calls.map((c) => c[0])).toEqual(
       expect.arrayContaining(["COSC121", "COSC 121"]),
     );
+  });
+});
+
+describe("formatSemesterDisplay", () => {
+  // This function is a hand-maintained twin of `termLabelLong` in
+  // packages/ui/src/lib/term.ts (QM's backend cannot import the frontend-only
+  // package). These cases mirror that file's tests so the two cannot drift
+  // apart silently.
+  it("spans both calendar years of a Winter session", () => {
+    expect(formatSemesterDisplay("W1", 2026)).toBe("2026-27 Winter Term 1");
+    expect(formatSemesterDisplay("W2", 2026)).toBe("2026-27 Winter Term 2");
+  });
+
+  it("leaves a Summer session on its single calendar year", () => {
+    expect(formatSemesterDisplay("S1", 2027)).toBe("2027 Summer Term 1");
+    expect(formatSemesterDisplay("S2", 2027)).toBe("2027 Summer Term 2");
+  });
+
+  it("rolls the span across a century boundary", () => {
+    expect(formatSemesterDisplay("W1", 2099)).toBe("2099-00 Winter Term 1");
+  });
+
+  it("falls back to whichever half it has", () => {
+    expect(formatSemesterDisplay("W1", null)).toBe("Winter Term 1");
+    expect(formatSemesterDisplay(null, 2026)).toBe("2026");
+    expect(formatSemesterDisplay(null, null)).toBe("Unscheduled");
   });
 });

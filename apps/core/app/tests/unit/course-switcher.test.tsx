@@ -113,7 +113,7 @@ describe("CourseSwitcher", () => {
     // component's own test in packages/ui).
     fireEvent.keyDown(screen.getByLabelText("Switch course"), { key: "Enter" });
 
-    await waitFor(() => expect(screen.getByText("Intro to CS · 2026W1")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Intro to CS · 2026-27W1")).toBeInTheDocument());
     expect(screen.getByText("Intro to CS · 2026S1")).toBeInTheDocument();
   });
 

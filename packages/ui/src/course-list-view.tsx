@@ -463,7 +463,7 @@ export function CourseListView<T>({
                       <IconCalendarEvent size={18} />
                     </span>
                     <div className="min-w-0">
-                      {/* We lead with the compact UBC code (e.g. "2026W2") and use the
+                      {/* We lead with the compact code (e.g. "2026-27W2") and use the
                           relative word as the subtitle — the long form
                           ("2026 Winter Term 2") reads oddly as a heading. */}
                       <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
@@ -523,7 +523,7 @@ export function buildStatusFilterGroup<T>(
 
 /**
  * Term dimension built from the same `getTermInfo` used for grouping. Options
- * are the terms actually present, labelled with the compact UBC code ("2026W2")
+ * are the terms actually present, labelled with the compact code ("2026-27W2")
  * to match the section headings, ordered most-recent-first.
  */
 export function buildTermFilterGroup<T>(

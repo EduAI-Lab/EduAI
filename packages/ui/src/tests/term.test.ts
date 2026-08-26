@@ -114,17 +114,41 @@ describe("normalizeTerm", () => {
 
 describe("labels", () => {
   it("compact label is UBC-native", () => {
-    expect(termLabel("W1", 2026)).toBe("2026W1");
-    expect(termLabel("Fall", 2026)).toBe("2026W1"); // normalized
+    expect(termLabel("W1", 2026)).toBe("2026-27W1");
+    expect(termLabel("Fall", 2026)).toBe("2026-27W1"); // normalized
     expect(termLabel(null, 2026)).toBe("2026");
     expect(termLabel(null, null)).toBe("No term scheduled");
   });
 
   it("long label reads as a heading, year first", () => {
-    // UBC names a session year-first ("2026W1" => "2026 Winter Term 1").
-    expect(termLabelLong("W1", 2026)).toBe("2026 Winter Term 1");
+    expect(termLabelLong("W1", 2026)).toBe("2026-27 Winter Term 1");
     expect(termLabelLong("S2", 2025)).toBe("2025 Summer Term 2");
     expect(termName("W2")).toBe("Winter Term 2");
+  });
+
+  it("spans both calendar years of a Winter session, the way a transcript does", () => {
+    // A transcript groups under "2023-24 Winter Session": Term 1 runs Sep-Dec
+    // of the first year, Term 2 Jan-Apr of the second. Spelling the span out is
+    // what lets the label be read without already knowing the convention.
+    expect(termLabelLong("W1", 2026)).toBe("2026-27 Winter Term 1");
+    expect(termLabelLong("W2", 2026)).toBe("2026-27 Winter Term 2");
+  });
+
+  it("leaves a Summer session on its single calendar year", () => {
+    expect(termLabelLong("S1", 2027)).toBe("2027 Summer Term 1");
+    expect(termLabelLong("S2", 2027)).toBe("2027 Summer Term 2");
+  });
+
+  it("rolls the span across a century boundary", () => {
+    expect(termLabelLong("W1", 2099)).toBe("2099-00 Winter Term 1");
+  });
+
+  it("spans the compact code the same way", () => {
+    // The two forms must agree about which years a session covers.
+    expect(termLabel("W2", 2026)).toBe("2026-27W2");
+    expect(termLabel("W1", 2026)).toBe("2026-27W1");
+    // A Summer session still takes no span.
+    expect(termLabel("S1", 2027)).toBe("2027S1");
   });
 
   it("long label falls back to whichever half it has", () => {
@@ -209,8 +233,8 @@ describe("groupCoursesByTerm", () => {
       { id: 3, term: "Fall", year: 2026, startDate: "2026-09-02" }, // same group as #2
     ];
     const groups = groupCoursesByTerm(courses);
-    expect(groups.map((g) => g.label)).toEqual(["2026W1", "2025W1"]);
-    expect(groups[0].labelLong).toBe("2026 Winter Term 1");
+    expect(groups.map((g) => g.label)).toEqual(["2026-27W1", "2025-26W1"]);
+    expect(groups[0].labelLong).toBe("2026-27 Winter Term 1");
     expect(groups[0].items).toHaveLength(2);
     expect(groups[1].items).toHaveLength(1);
   });
@@ -227,7 +251,7 @@ describe("groupCoursesByTerm", () => {
       { id: 2, term: "W2", year: 2025, startDate: "2026-01-05" }, // 2025W2, follows 2025W1
     ];
     const groups = groupCoursesByTerm(courses);
-    expect(groups.map((g) => g.label)).toEqual(["2025W2", "2025W1"]);
+    expect(groups.map((g) => g.label)).toEqual(["2025-26W2", "2025-26W1"]);
   });
 });
 
