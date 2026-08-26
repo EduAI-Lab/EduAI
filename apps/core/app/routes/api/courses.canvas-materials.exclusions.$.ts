@@ -13,6 +13,7 @@ import { ExcludeCanvasMaterialSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -51,47 +52,56 @@ async function resolveInstructorAccess(
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json(400, { success: false, error: "Course ID is required" });
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json(400, { success: false, error: "Course ID is required" });
+      }
 
-  if (request.method !== "POST" && request.method !== "DELETE") {
-    return json(405, { success: false, error: "Method not allowed" });
-  }
+      if (request.method !== "POST" && request.method !== "DELETE") {
+        return json(405, { success: false, error: "Method not allowed" });
+      }
 
-  const resolved = await resolveInstructorAccess(request, courseId);
-  if (resolved.response) return resolved.response;
+      const resolved = await resolveInstructorAccess(request, courseId);
+      if (resolved.response) return resolved.response;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return json(400, { success: false, error: "Invalid JSON body" });
-  }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json(400, { success: false, error: "Invalid JSON body" });
+      }
 
-  const parsed = ExcludeCanvasMaterialSchema.safeParse(body);
-  if (!parsed.success) {
-    return json(400, { success: false, error: "Invalid input", details: parsed.error.flatten() });
-  }
+      const parsed = ExcludeCanvasMaterialSchema.safeParse(body);
+      if (!parsed.success) {
+        return json(400, {
+          success: false,
+          error: "Invalid input",
+          details: parsed.error.flatten(),
+        });
+      }
 
-  try {
-    if (request.method === "POST") {
-      await excludeCanvasMaterial(resolved.user.id, courseId, parsed.data.canvasFileId);
-      return json(200, { success: true });
-    }
+      try {
+        if (request.method === "POST") {
+          await excludeCanvasMaterial(resolved.user.id, courseId, parsed.data.canvasFileId);
+          return json(200, { success: true });
+        }
 
-    await unexcludeCanvasMaterial(resolved.user.id, courseId, parsed.data.canvasFileId);
-    return new Response(null, { status: 204 });
-  } catch (error) {
-    if (error instanceof CanvasMaterialSyncError) {
-      return json(error.statusCode, { success: false, error: error.message });
-    }
-    if (process.env.NODE_ENV === "production") {
-      console.error("Canvas material exclusion failed:", error);
-      return json(500, { success: false, error: "Canvas material exclusion failed" });
-    }
-    const message = error instanceof Error ? error.message : "Canvas material exclusion failed";
-    return json(500, { success: false, error: message });
-  }
+        await unexcludeCanvasMaterial(resolved.user.id, courseId, parsed.data.canvasFileId);
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        if (error instanceof CanvasMaterialSyncError) {
+          return json(error.statusCode, { success: false, error: error.message });
+        }
+        if (process.env.NODE_ENV === "production") {
+          console.error("Canvas material exclusion failed:", error);
+          return json(500, { success: false, error: "Canvas material exclusion failed" });
+        }
+        const message = error instanceof Error ? error.message : "Canvas material exclusion failed";
+        return json(500, { success: false, error: message });
+      }
+    },
+    { request },
+  );
 }
