@@ -54,12 +54,16 @@ import { contentExcerpt } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
-import api from "../lib/api";
-import type { Activity, Course, Lesson, ModuleDetail, Role } from "../lib/types";
+import api, { ApiHttpError } from "../lib/api";
+import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
-import { StudentPreviewBanner, isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
+import {
+  StudentPreviewBanner,
+  isStudentPreviewRole,
+  STUDENT_PREVIEW_ROLES,
+} from "~/components/rbac/StudentPreviewBanner";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
@@ -120,9 +124,6 @@ function createFeedbackState(): StudentFeedbackState {
  * ancestry is intentionally NOT awaited here — the component fetches it after
  * paint so header crumbs leave the LCP / lesson-body path.
  */
-// #1660: see the matching comment in student.course.tsx.
-const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
-
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -346,7 +347,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      setResult("There was a problem submitting.");
+      // #1660 review: the server already 403s answer submission for every
+      // non-STUDENT caller (server/src/routes/activities.js) — surface that
+      // plainly for a previewer instead of the generic message, which read
+      // as a bug rather than the read-only preview the banner promises.
+      setResult(
+        e instanceof ApiHttpError && e.status === 403
+          ? "Only enrolled students can submit answers — this is a read-only preview."
+          : "There was a problem submitting.",
+      );
       setWasCorrect(false);
     } finally {
       setSubmitting(false);

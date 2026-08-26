@@ -59,7 +59,7 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import { getProviderFromModelId, getProviderLabel, maskApiKey } from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
-import api, { ApiTimeoutError } from "../lib/api";
+import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
@@ -496,10 +496,16 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
         } else {
           console.error("AI chat failed:", error);
+          // #1660 review: the server 403s AI tutoring for every non-STUDENT
+          // caller — surface that plainly for a previewer instead of the
+          // generic message, which read as a bug rather than the read-only
+          // preview the banner promises.
           appendMessage(
             tab,
             "assistant",
-            "AI study buddy not available right now. Please try again later.",
+            error instanceof ApiHttpError && error.status === 403
+              ? "AI tutoring is only available to enrolled students — this is a read-only preview."
+              : "AI study buddy not available right now. Please try again later.",
           );
         }
       } finally {

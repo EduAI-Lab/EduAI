@@ -66,11 +66,23 @@ const {
   listSuggestedPrompts,
   listAiModels,
   ApiTimeoutError,
+  ApiHttpError,
 } = vi.hoisted(() => {
   class ApiTimeoutError extends Error {
     constructor(message = "Request timed out") {
       super(message);
       this.name = "ApiTimeoutError";
+    }
+  }
+  // #1660 review: StudentAiChat special-cases a 403 (preview role hitting
+  // the student-only AI tutoring gate) — the real class shape, mirrored here
+  // the same way ApiTimeoutError already is above.
+  class ApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiHttpError";
+      this.status = status;
     }
   }
   return {
@@ -84,11 +96,13 @@ const {
         { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
       ]),
     ApiTimeoutError,
+    ApiHttpError,
   };
 });
 
 vi.mock("~/lib/api", () => ({
   ApiTimeoutError,
+  ApiHttpError,
   default: {
     listSuggestedPrompts,
     listAiModels,
