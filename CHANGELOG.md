@@ -8,6 +8,7 @@
 ### Added
 
 - [question-maker] feat: An author decides while writing a question whether other EduAI extensions may use it. The choice rides on review — the checkbox is unavailable until the question is marked reviewed, and withdrawing review clears it — and reaches Core as the Question's `testable` when the variant is approved. Two bugs surfaced building it: `pushQuestionToCore` POSTed to Core with only a cookie, which Core's cross-origin guard has rejected with 403 CROSS_ORIGIN_MUTATION since it landed (no question had reached Core in over two weeks, and approved variants were stranded in the unrevertable `approvalInFlight` state), and a variant created already-reviewed never pushed at all because the push lived only on the approve path. Closes #1555. Closes #844. (@GlowyBlack, 2026-08-25) — [#1652](https://github.com/EduAI-Lab/EduAI/pull/1652)
+- [ai-tutor] feat: An instructor can build an activity from a question already in their Question Maker bank instead of retyping it. Add Activity gains a "Start from" choice between writing the question and picking one from the course's shared bank, and picking one prefills the type, prompt, choices, correct answer and topic, which stay editable. Only questions marked usable by other EduAI extensions are offered, and the activity keeps its own copy, so editing the question later in Question Maker does not rewrite a lesson already running. (@GlowyBlack, 2026-08-25) — [#1652](https://github.com/EduAI-Lab/EduAI/pull/1652)
 
 ### Fixed
 
