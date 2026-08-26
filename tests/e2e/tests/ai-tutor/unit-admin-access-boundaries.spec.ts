@@ -291,7 +291,11 @@ test.describe("UNIT_ADMIN access boundaries", () => {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("In-unit module for student-shell check")).toBeVisible();
+    // The title also appears in the breadcrumb, so scope to the hero heading —
+    // getByText would otherwise match both and violate Playwright's strict mode.
+    await expect(
+      page.getByRole("heading", { name: "In-unit module for student-shell check" }),
+    ).toBeVisible();
   });
 
   test("an unsupported-role landing sends a supported role back to their dashboard", async ({
