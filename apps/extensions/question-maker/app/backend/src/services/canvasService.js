@@ -51,19 +51,40 @@ function canvasError(message, status = 400, body) {
   return err;
 }
 
+/**
+ * Relays the remaining sanitized metadata `fetchFromCore` attaches to a Core
+ * error. `canvasError` already carries status/body/isPublic; this adds Core's
+ * machine-readable `code`, and only when Core marked the error public, because
+ * `coreApiService` sets `isPublic` exactly when `code` is a real Core code —
+ * transport failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT`) also carry a
+ * `code` and must not be relayed as a semantic one (#1509).
+ */
+function withCoreErrorMetadata(wrapped, error) {
+  if (error?.isPublic === true && typeof error.code === "string") wrapped.code = error.code;
+  if (error?.isSanitizedUpstreamError === true) wrapped.isSanitizedUpstreamError = true;
+  return wrapped;
+}
+
+/** The QM-facing "connect Canvas first" failure, carrying Core's own status/code. */
+function notConnectedError(message = NOT_CONNECTED_MESSAGE) {
+  const err = canvasError(message, 400, { error: "CANVAS_NOT_CONNECTED" });
+  err.code = "CANVAS_NOT_CONNECTED";
+  return err;
+}
+
 /** Loads the caller's Core Canvas integration or throws when disconnected. */
 async function loadCoreCanvasIntegration(cookie) {
   const result = await proxyCoreCanvasGetIntegration(cookie);
   if (!result?.data) {
-    throw canvasError(NOT_CONNECTED_MESSAGE, 400);
+    throw notConnectedError();
   }
   return result.data;
 }
 
 /**
  * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message and keeps
- * every other failure's own status: Core proxy errors carry the upstream
- * status/body, and the errors raised above already carry the status that
+ * every other failure's own status/code: Core proxy errors carry the upstream
+ * status/body/code, and the errors raised above already carry the status that
  * describes them. Only a genuinely unexpected error (no status) stays a 500.
  */
 function rethrowCoreCanvasError(error, action) {
@@ -71,10 +92,13 @@ function rethrowCoreCanvasError(error, action) {
     error?.status === 400 &&
     (error.body?.error === "CANVAS_NOT_CONNECTED" || error.message === "CANVAS_NOT_CONNECTED")
   ) {
-    throw canvasError(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`, 400);
+    throw notConnectedError(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`);
   }
   if (Number.isInteger(error?.status)) {
-    throw canvasError(`Failed to ${action}: ${error.message}`, error.status, error.body);
+    throw withCoreErrorMetadata(
+      canvasError(`Failed to ${action}: ${error.message}`, error.status, error.body),
+      error,
+    );
   }
   throw error;
 }
