@@ -38,22 +38,30 @@ function formBodyErrorResponse(cause: unknown): Response | null {
 }
 
 /**
- * Remove a legacy host-only session cookie after issuing the configured
- * cross-subdomain cookie. Cookies with the same name but different Domain
- * attributes coexist, and browsers send the host-only one first; an old
- * token could therefore mask the newly-created shared session on /dashboard.
+ * Remove legacy session cookies after issuing the configured cross-subdomain
+ * cookie. Cookies with the same name but different Domain attributes coexist,
+ * and browsers can send an older, more-specific cookie first; that token can
+ * therefore mask the newly-created shared session on /dashboard.
  */
-function appendHostOnlySessionCookieDeletion(headers: Headers): void {
+function appendLegacySessionCookieDeletions(headers: Headers): void {
   if (!process.env.COOKIE_DOMAIN?.trim()) return;
 
   const cookieName = authBaseURL.startsWith("https://")
     ? "__Secure-better-auth.session_token"
     : "better-auth.session_token";
   const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
-  headers.append(
-    "Set-Cookie",
-    `${cookieName}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`,
-  );
+  const attributes = `Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`;
+
+  // The original deployment created a host-only cookie. Expire that exact
+  // scope first.
+  headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
+
+  // Also handle a previous deployment that may have configured the exact
+  // hostname as a Domain cookie. It is distinct from both the host-only
+  // cookie above and the new shared-domain cookie, so expiring it cannot
+  // remove the newly issued cross-subdomain session.
+  const legacyHostDomain = new URL(authBaseURL).hostname;
+  headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${legacyHostDomain}`);
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -161,7 +169,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
-    appendHostOnlySessionCookieDeletion(headers);
+    appendLegacySessionCookieDeletions(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
