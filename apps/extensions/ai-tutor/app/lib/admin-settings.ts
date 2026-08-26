@@ -50,7 +50,25 @@ export const DEFAULT_POLICY: AdminAiModelPolicy = {
 const MIN_SUPERVISOR_ITERATIONS = 1;
 const MAX_SUPERVISOR_ITERATIONS = 5;
 
+export function getAdminSettingsApi() {
+  return api;
+}
+
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
+  const hasPolicyApi = typeof api.getAdminAiModelPolicy === "function";
+  const hasModelsApi = typeof api.listAiModels === "function";
+
+  if (!hasPolicyApi && !hasModelsApi) {
+    const status = await api.getEduAiApiKeyStatus();
+    return {
+      status,
+      aiModels: [],
+      aiPolicy: null,
+      aiPolicyError: null,
+      aiPolicyAvailable: false,
+    };
+  }
+
   const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
     api.getEduAiApiKeyStatus(),
     loadAdminAiModels(),
@@ -73,24 +91,38 @@ export function normalizePolicy(
   const policy = raw ?? adminAiModelPolicySchema.parse({});
   const fallbackTutor = models[0]?.modelId ?? null;
 
-  const allowedTutorModelIds =
-    policy.allowedTutorModelIds ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+  const rawAllowed = Array.isArray(policy.allowedTutorModelIds)
+    ? policy.allowedTutorModelIds.filter((id): id is string => typeof id === "string")
+    : undefined;
 
-  const requestedTutor = policy.defaultTutorModelId ?? allowedTutorModelIds[0] ?? null;
+  const allowedTutorModelIds =
+    rawAllowed ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+
+  const requestedTutor = typeof policy.defaultTutorModelId === "string"
+    ? policy.defaultTutorModelId
+    : (allowedTutorModelIds[0] ?? null);
   const defaultTutorModelId =
     requestedTutor !== null && allowedTutorModelIds.includes(requestedTutor)
       ? requestedTutor
       : (allowedTutorModelIds[0] ?? null);
 
+  const rawIterations = typeof policy.maxSupervisorIterations === "number"
+    ? policy.maxSupervisorIterations
+    : Number(policy.maxSupervisorIterations);
+
   return {
     allowedTutorModelIds,
     defaultTutorModelId,
-    defaultSupervisorModelId: policy.defaultSupervisorModelId ?? models[0]?.modelId ?? null,
-    dualLoopEnabled: policy.dualLoopEnabled ?? DEFAULT_POLICY.dualLoopEnabled,
+    defaultSupervisorModelId: typeof policy.defaultSupervisorModelId === "string"
+      ? policy.defaultSupervisorModelId
+      : (models[0]?.modelId ?? null),
+    dualLoopEnabled: typeof policy.dualLoopEnabled === "boolean"
+      ? policy.dualLoopEnabled
+      : DEFAULT_POLICY.dualLoopEnabled,
     maxSupervisorIterations:
-      policy.maxSupervisorIterations === undefined
-        ? DEFAULT_POLICY.maxSupervisorIterations
-        : clampSupervisorIterations(policy.maxSupervisorIterations),
+      Number.isFinite(rawIterations)
+        ? clampSupervisorIterations(rawIterations)
+        : DEFAULT_POLICY.maxSupervisorIterations,
   };
 }
 
@@ -100,6 +132,7 @@ function clampSupervisorIterations(value: number): number {
 
 async function loadAdminAiPolicy() {
   try {
+    if (typeof api.getAdminAiModelPolicy !== "function") return { policy: null, error: null };
     const policy = await api.getAdminAiModelPolicy();
     return { policy, error: null };
   } catch {
@@ -113,10 +146,14 @@ async function loadAdminAiPolicy() {
 
 async function loadAdminAiModels() {
   try {
-    const models = await api.listAiModels();
-    return {
-      models: models.map((model, index) => toModelOption(model, index)),
-    };
+    if (typeof api.listAiModels !== "function") return { models: [] };
+    const rawModels = await api.listAiModels();
+    const models = Array.isArray(rawModels)
+      ? rawModels
+          .filter((m): m is any => m != null && typeof m === "object" && typeof m.modelId === "string")
+          .map((model, index) => toModelOption(model, index))
+      : [];
+    return { models };
   } catch {
     const models: AdminAiModelOption[] = [];
     return { models };

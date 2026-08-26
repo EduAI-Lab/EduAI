@@ -27,15 +27,18 @@ vi.mock("@/services/apiKeyStorage", () => ({
 // Capture the fetcher QM injects so we can drive one probe cycle deterministically
 // instead of leaning on the real polling loop's timers.
 let capturedFetcher: ((signal: AbortSignal) => Promise<AiServiceStatusPair>) | undefined;
+let capturedIntervalMs: number | undefined;
 vi.mock("@eduai/ui", () => ({
   useAiServiceStatus: (opts: {
     fetcher: (signal: AbortSignal) => Promise<AiServiceStatusPair>;
+    intervalMs?: number;
   }) => {
     capturedFetcher = opts.fetcher;
+    capturedIntervalMs = opts.intervalMs;
     return {
       cloud: { state: "loading" as const },
       ubc: { state: "loading" as const },
-      refresh: () => {},
+      refresh: vi.fn(),
     };
   },
 }));
@@ -56,15 +59,32 @@ describe("useAiServicesStatus probes", () => {
     isCloudProvider.mockReset().mockReturnValue(false);
     isCampusProvider.mockReset().mockReturnValue(false);
     capturedFetcher = undefined;
+    capturedIntervalMs = undefined;
   });
 
   afterEach(() => {
     cleanup();
   });
 
+  it("registers a 5-minute poll interval with the shared hook", () => {
+    renderHook(() => useAiServicesStatus());
+    expect(capturedIntervalMs).toBe(300_000);
+  });
+
   it("reports cloud outage when no provider key is saved", async () => {
     getAllApiKeys.mockResolvedValue({});
     // UBC: server has no vLLM configured.
+    testApiKey.mockResolvedValue({ configured: false });
+    const fetcher = mountAndGetFetcher();
+
+    const { cloud } = await fetcher(new AbortController().signal);
+
+    expect(cloud.state).toBe("outage");
+    expect(cloud.detail).toMatch(/not configured/i);
+  });
+
+  it("treats unreadable apiKeyStorage as no key configured", async () => {
+    getAllApiKeys.mockRejectedValue(new Error("storage broken"));
     testApiKey.mockResolvedValue({ configured: false });
     const fetcher = mountAndGetFetcher();
 
