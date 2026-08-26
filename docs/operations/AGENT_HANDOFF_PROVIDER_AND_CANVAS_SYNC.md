@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-26  
 **Repository:** `EduAICoreLearning`  
-**Status:** Implementation is present in the working tree; no commit was created.
+**Status:** Committed on `codex/issue-1589-performance` as `05501ec8d` and pushed to `origin` (`https://github.com/mostafama/EduAICoreLearning.git`). **Not yet pushed to the org remotes** (`eduai` → `EduAI-Lab/EduAI`, `eduaicore` → `EduAI-Lab/EduAICore`) — push there too before any deploy/PR that assumes the org repo has it.
 
 ## User requirements
 
@@ -84,15 +84,58 @@ The browser inspection was read-only. The Canvas “Fetch from Canvas” action 
 
 1. ~~Review the working-tree diff and preserve unrelated existing changes.~~ Done 2026-08-26: reviewed the full diff for the sentinel/merge logic described above; no unrelated changes were touched.
 2. ~~Run the app-specific test commands...~~ Done 2026-08-26 for Core's unit suite (see Validation above); QM/AI Tutor have no existing tests covering the new provider-settings proxy routes, so there was nothing to run there for this change specifically.
-3. Manually verify with one test account:
+3. ~~Before committing, check that no `.env`, deployment secret, unrelated infrastructure, generated distribution, or user data files were modified.~~ Done 2026-08-26: the working tree also had **unrelated, unreviewed** uncommitted changes left over from the earlier fleet-router/ops work — `infra/cmps01/*`, `packages/types/dist/*` — plus stray untracked ops docs (`OPERATIONAL_HANDOFF_2026-08-24.md`, `docs/rag-ai/latency/eduai-summer-2026/*`) and a `.worktrees/` directory of other worktrees. **None of these were committed** — only the 34 files in the "Primary files" lists above (plus `TESTS.md` and this doc) went into `05501ec8d`. If those infra/dist changes are still needed, they must be reviewed and committed separately by whoever owns that work.
+4. Manually verify with one test account:
    - Save Google key in Core; confirm QM and AI Tutor show “connected”.
    - Save OpenAI key in QM; confirm Core and AI Tutor show the same status.
    - Confirm raw keys never appear in GET responses or browser UI after save.
    - Delete the key in AI Tutor; confirm it disappears from Core and QM.
-4. With the Canvas-access account, run one Core Canvas sync and verify the sandbox appears in Core chat, QM, and AI Tutor without a second refresh/request.
-5. Verify the sandbox’s Core default question bank exists and that QM questions marked/testable are visible to AI Tutor’s Core question lookup.
-6. Do not remove backend `EDUAI_API_KEY` support unless all unscoped/background Core calls are redesigned to use another authenticated mechanism.
-7. Before committing, check that no `.env`, deployment secret, unrelated infrastructure, generated distribution, or user data files were modified.
+5. With the Canvas-access account, run one Core Canvas sync and verify the sandbox appears in Core chat, QM, and AI Tutor without a second refresh/request.
+6. Verify the sandbox’s Core default question bank exists and that QM questions marked/testable are visible to AI Tutor’s Core question lookup.
+7. Do not remove backend `EDUAI_API_KEY` support unless all unscoped/background Core calls are redesigned to use another authenticated mechanism.
+
+## Deploy-for-testing status (2026-08-26, same session)
+
+The user asked to deploy this temporarily to `s378.ok.ubc.ca` (dev host) for testing.
+
+- **This agent has no working SSH credential to `s378`** — the host is reachable (banner responds) but `SyedS@s378` gets `Permission denied (publickey,password)`. Per the ops handoff's own rule, don't try to work around this; a new key must be added through an already-authenticated human session on that box.
+- HTTPS to `https://dev.eduai.ok.ubc.ca` **is** reachable from this agent's sandbox (`/api/health` returns 200), but no valid login credential was available to actually sign in and verify pages as an authenticated user.
+- **Runbook for a human to deploy commit `05501ec8d` to s378:**
+  ```bash
+  # push to the org remote first if s378's checkout doesn't already have your fork as a remote
+  git push eduai codex/issue-1589-performance   # from a machine with org push access
+
+  # on s378
+  cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+  git fetch <remote-with-the-branch> codex/issue-1589-performance
+  git checkout codex/issue-1589-performance && git pull
+  cd apps/core && npm install && npm run build
+  cd ../extensions/ai-tutor && npm install && npm run build
+  cd ../question-maker && npm install && npm run build
+  sudo systemctl restart eduai-core
+  sleep 3 && curl -fsS http://127.0.0.1:3000/api/health
+  ```
+  Then run the manual-verification checklist above.
+
+## Open issue reported by the user (unresolved, needs a human with dev access)
+
+The user reported: **Settings and AI Management pages redirect back to Dashboard/Courses**, while Dashboard/Courses themselves load fine, on `dev.eduai.ok.ubc.ca` under their signed-in account (`saadtab01@gmail.com`).
+
+- Root cause is almost certainly the server-side role gate in both routes — neither was touched by this task's diff, so it's unrelated to the provider-key/canvas-sync work:
+  - [`apps/core/app/routes/admin.settings.tsx:79`](../../apps/core/app/routes/admin.settings.tsx) — `if (session.user.role !== 'ADMIN') redirect('/dashboard')`
+  - [`apps/core/app/routes/admin.ai-models.tsx:27-28`](../../apps/core/app/routes/admin.ai-models.tsx) — same pattern
+  - Both redirects are silent (no toast/error), which matches the user's description exactly.
+- **Not yet confirmed**: whether the account's DB role is actually non-`ADMIN`, or whether the role is `ADMIN` in the DB but a stale session cookie (issued before a role change) is still carrying an old role. This agent could not check either — no local dev DB running (`127.0.0.1:54320` refused connections when tested), and no s378 SSH/dev-login credential available.
+- **Next agent / human should run, on s378:**
+  ```bash
+  cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
+  npx prisma db execute --schema=prisma/schema.prisma --stdin <<'EOF'
+  SELECT id, email, role, "isActive" FROM "User" WHERE email = 'saadtab01@gmail.com';
+  EOF
+  ```
+  or simpler, in-browser while signed in: hit `https://dev.eduai.ok.ubc.ca/api/me` and read `role` from the JSON.
+  - If `role` isn't `ADMIN`: `UPDATE "User" SET role = 'ADMIN' WHERE email = 'saadtab01@gmail.com';` then have the user re-sign-in.
+  - If `role` already is `ADMIN`: have the user fully sign out and back in (stale cookie theory) before looking further at `getRequestSession` (`apps/core/app/lib/auth/request-session.server.ts`) for whether it caches role in the session token instead of re-reading current DB state per request.
 
 ## Important design constraints
 
