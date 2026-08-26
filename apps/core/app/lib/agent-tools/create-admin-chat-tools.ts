@@ -3,8 +3,7 @@ import { z } from "zod";
 
 import type { ChatToolContext } from "./chat-mode";
 import { runIdempotentAdminMutation } from "./idempotent-admin-mutation.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
-import { capRagHitsForTool, HYBRID_RAG_MAX_CHUNKS } from "~/lib/chat-rag";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -243,25 +242,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         if ("error" in resolved) {
           return resolved;
         }
-        try {
-          const hits = await findRelevantContent(
-            question,
-            resolved.courseId,
-            HYBRID_RAG_MAX_CHUNKS,
-            undefined,
-            ctx.restrictToStudentVisible ?? false,
-          );
-          const capped = capRagHitsForTool(hits);
-          return {
-            courseId: resolved.courseId,
-            courseCode: resolved.courseCode,
-            relevantContent: capped,
-            count: capped.length,
-          };
-        } catch (error) {
-          console.error("Error searching course materials (admin):", error);
-          return { error: "Failed to search course materials" };
+        const result = await runCourseMaterialSearchTool(
+          question,
+          resolved.courseId,
+          ctx.restrictToStudentVisible ?? false,
+        );
+        if ("error" in result) {
+          return result;
         }
+        return { courseId: resolved.courseId, courseCode: resolved.courseCode, ...result };
       },
     }),
 
