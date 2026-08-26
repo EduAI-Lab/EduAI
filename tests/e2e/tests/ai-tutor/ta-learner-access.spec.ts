@@ -96,9 +96,14 @@ test.describe("AI Tutor TA — learner surface", () => {
       // of dead-but-enabled buttons.
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
       await expect(page.getByRole("button", { name: /guide me/i })).toBeDisabled();
-      await expect(page.getByRole("note")).toContainText(
-        /only students of this course can interact with quizzes/i,
-      );
+      // Scope to the answer-card gate note: the withheld study buddy renders a
+      // second `role="note"` on this page (#1626), so an un-scoped match is
+      // ambiguous in strict mode.
+      await expect(
+        page
+          .getByRole("note")
+          .filter({ hasText: /only students of this course can interact with quizzes/i }),
+      ).toBeVisible();
     } finally {
       await seeded.dispose();
     }
@@ -119,9 +124,14 @@ test.describe("AI Tutor TA — learner surface", () => {
       // rather than dead-but-enabled buttons (U-TA-1 / #1626).
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
       await expect(page.getByRole("button", { name: /guide me/i })).toBeDisabled();
-      await expect(page.getByRole("note")).toContainText(
-        /only students of this course can interact with quizzes/i,
-      );
+      // Scope to the answer-card gate note: the withheld study buddy renders a
+      // second `role="note"` on this page (#1626), so an un-scoped match is
+      // ambiguous in strict mode.
+      await expect(
+        page
+          .getByRole("note")
+          .filter({ hasText: /only students of this course can interact with quizzes/i }),
+      ).toBeVisible();
       // The MCQ options are disabled — a TA cannot even stage an attempt.
       await expect(page.getByRole("radio", { name: "Option A" })).toBeDisabled();
       // The quiz cards render visually disabled, but Prev/Next stay usable so a
@@ -174,9 +184,14 @@ test.describe("AI Tutor TA — learner surface", () => {
       await gotoAiTutor(page, `/student/lesson/${taCourse.lessonId}`);
       await expect(page.getByText(taCourse.question)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
-      await expect(page.getByRole("note")).toContainText(
-        /only students of this course can interact with quizzes/i,
-      );
+      // Scope to the answer-card gate note: the withheld study buddy renders a
+      // second `role="note"` on this page (#1626), so an un-scoped match is
+      // ambiguous in strict mode.
+      await expect(
+        page
+          .getByRole("note")
+          .filter({ hasText: /only students of this course can interact with quizzes/i }),
+      ).toBeVisible();
       await expect(page.getByRole("radio", { name: "Option A" })).toBeDisabled();
     } finally {
       await Promise.all([taCourse.dispose(), studentCourse.dispose()]);
@@ -285,7 +300,12 @@ test.describe("AI Tutor TA — learner surface", () => {
       );
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByRole("note")).toContainText(/couldn.t verify your access/i);
+      // Scope to the answer-card note: the withheld study buddy renders a
+      // second `role="note"` on this page (#1626), so an un-scoped match is
+      // ambiguous in strict mode.
+      await expect(
+        page.getByRole("note").filter({ hasText: /couldn.t verify your access/i }),
+      ).toBeVisible();
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
     } finally {
       await page.unroute("**/api/lessons/*/breadcrumb");
