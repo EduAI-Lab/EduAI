@@ -18,10 +18,12 @@ vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   resolveAdminUserId: vi.fn(),
 }));
 
-// #1658: searchCourseMaterials' only real dependency — capRagHitsForTool and
-// HYBRID_RAG_MAX_CHUNKS (~/lib/chat-rag) are cheap pure helpers, left real.
-vi.mock("~/lib/ai/embedding", () => ({
-  findRelevantContent: vi.fn(),
+// #1658: searchCourseMaterials delegates its retrieval body to the shared
+// runCourseMaterialSearchTool (#1658 review — that logic was duplicated
+// across three call sites); its own tests live in chat-rag.search-tool.test.ts,
+// so this file only verifies the course-resolution wiring around it.
+vi.mock("~/lib/chat-rag", () => ({
+  runCourseMaterialSearchTool: vi.fn(),
 }));
 
 vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
@@ -110,7 +112,7 @@ vi.mock("~/lib/idempotency.server", async (importOriginal) => {
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
 import { agentReadyEndpoints } from "~/lib/agent-readiness/manifest";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -254,14 +256,16 @@ describe("createAdminChatTools read execute", () => {
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
   });
 
-  it("searchCourseMaterials resolves course then searches its RAG index (#1658)", async () => {
+  it("searchCourseMaterials resolves course then delegates to the shared search tool (#1658)", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({
       courseId: "course-1",
       courseCode: "COSC 111",
     });
-    vi.mocked(findRelevantContent).mockResolvedValue([
-      { content: "Late assignments lose 10% per day.", similarity: 0.9 },
-    ] as never);
+    const hit = { content: "Late assignments lose 10% per day.", similarity: 0.9 };
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({
+      relevantContent: [hit] as never,
+      count: 1,
+    });
 
     const tools = createAdminChatTools(ctx);
     const result = await tools.searchCourseMaterials.execute(
@@ -270,26 +274,21 @@ describe("createAdminChatTools read execute", () => {
     );
 
     expect(resolveAdminCourseId).toHaveBeenCalled();
-    expect(findRelevantContent).toHaveBeenCalledWith(
+    // restrictToStudentVisible: ctx doesn't set it, so the tool's `?? false` applies.
+    expect(runCourseMaterialSearchTool).toHaveBeenCalledWith(
       "What is the late penalty?",
       "course-1",
-      expect.any(Number),
-      undefined,
       false,
     );
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       courseId: "course-1",
       courseCode: "COSC 111",
+      relevantContent: [hit],
       count: 1,
-      relevantContent: [
-        expect.objectContaining({
-          content: expect.stringContaining("Late assignments lose 10% per day."),
-        }),
-      ],
     });
   });
 
-  it("searchCourseMaterials returns the course-resolution error without calling findRelevantContent", async () => {
+  it("searchCourseMaterials returns the course-resolution error without calling the search tool", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "courseId or courseCode required" });
 
     const tools = createAdminChatTools(ctx);
@@ -299,15 +298,17 @@ describe("createAdminChatTools read execute", () => {
     );
 
     expect(result).toEqual({ error: "courseId or courseCode required" });
-    expect(findRelevantContent).not.toHaveBeenCalled();
+    expect(runCourseMaterialSearchTool).not.toHaveBeenCalled();
   });
 
-  it("searchCourseMaterials fails closed (not a crash) when retrieval throws", async () => {
+  it("searchCourseMaterials passes the search tool's error result straight through", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({
       courseId: "course-1",
       courseCode: "COSC 111",
     });
-    vi.mocked(findRelevantContent).mockRejectedValue(new Error("embedding provider down"));
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({
+      error: "Failed to search course materials",
+    });
 
     const tools = createAdminChatTools(ctx);
     const result = await tools.searchCourseMaterials.execute(
