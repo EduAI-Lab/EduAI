@@ -160,6 +160,17 @@ export default function AddActivityPanel({
   const topicsRef = useRef(topics);
   topicsRef.current = topics;
 
+  // Guards the async `refreshTopics()` continuation in `applyBankQuestion`
+  // below, mirroring the `cancelled` pattern the bank-fetch effect uses —
+  // without it, closing the dialog while a refresh is in flight would call
+  // setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (source !== "bank" || courseOfferingId == null) return;
     let cancelled = false;
@@ -196,7 +207,9 @@ export default function AddActivityPanel({
     } else if (draft.unresolvedTopicName) {
       // The topics list may just be stale (Core sync runs on the GET
       // /courses/:id/topics read) — refresh once and re-check before giving up.
+      setUnresolvedTopic(null);
       void refreshTopics().then(() => {
+        if (!mountedRef.current) return;
         const rematch = topicsRef.current.find((topic) => topic.name === draft.unresolvedTopicName);
         if (rematch) {
           setSelectedMainTopicId(String(rematch.id));
@@ -205,6 +218,12 @@ export default function AddActivityPanel({
           setUnresolvedTopic(draft.unresolvedTopicName);
         }
       });
+    } else {
+      // Untagged bank question: neither a match nor an unresolved name.
+      // Clear any previously selected topic rather than silently keeping a
+      // stale one the instructor never chose for this question.
+      setSelectedMainTopicId("");
+      setUnresolvedTopic(null);
     }
     setBankSource({ id: bankQuestion.id, label: bankQuestion.content });
   };
