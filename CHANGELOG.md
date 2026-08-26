@@ -17,6 +17,7 @@
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
+- [core] test: Two non-blocking coverage gaps flagged in review on #1666 (ariqmuldi). `createChatTools`' real mode dispatch (`agent-tools/index.ts`) was never exercised by anything in the suite — every route test mocks `~/lib/agent-tools` wholesale, and `create-instructor-chat-tools.test.ts` calls `createInstructorChatTools` directly, bypassing the dispatcher. A plausible copy/paste slip on the adjacent, structurally-identical admin/instructor branches would hand an instructor the entire admin tool registry with nothing to catch it; new `create-chat-tools-dispatcher.test.ts` pins `createChatTools(ctx, "instructor")`'s manifest against the real factory's own. `buildInstructorSystemPrompt`'s actual output (scope note, custom/default prompt branches) was also never asserted anywhere (every route test mocks it away); added coverage to `chat-mode.admin-prompt.test.ts` mirroring `buildAdminSystemPrompt`'s existing tests. (@Ayyhab, 2026-08-26) — [#1666](https://github.com/EduAI-Lab/EduAI/pull/1666)
 
 ## [Week 17 — August 17–23, 2026]
 
