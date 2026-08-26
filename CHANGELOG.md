@@ -9,6 +9,7 @@
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
+- [core] test: Add e2e coverage for Core's Admin, Unit Admin, and Instructor roles — the last gap in Epic #1429's Core RBAC/scope matrix (Unit Admin previously had zero coverage; Admin/Instructor only had course-scope-guardrail rows). Two new Playwright specs cover policy-registry gating, cross-user bug-report triage, Unit Admin's department-scoped access with zero enrollment, rank-based authority boundaries, and Instructor's single-course ownership, plus a real-browser walkthrough of all three consoles. No product bugs found. Closes #1669. (@evanbones, 2026-08-26) — #PR
 
 ## [Week 17 — August 17–23, 2026]
 
