@@ -457,4 +457,58 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
       expect(getAiAdmissionStats().inflight).toBe(0);
     });
   });
+
+  it("releases admission after a streaming response completes", async () => {
+    process.env.AI_MAX_INFLIGHT = "1";
+
+    vi.mocked(streamText).mockImplementation((args) => {
+      const upstream = new ReadableStream<{ type: string; text: string }>({
+        start(controller) {
+          const part = { type: "text-delta", text: "Hi" };
+          args.onChunk?.({ chunk: part } as never);
+          controller.enqueue(part);
+          controller.close();
+        },
+      });
+      let responseBranch = upstream;
+
+      return {
+        get fullStream() {
+          const [probeBranch, downstreamBranch] = responseBranch.tee();
+          responseBranch = downstreamBranch;
+          return probeBranch;
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        toDataStreamResponse: vi.fn(({ headers }: { headers?: Record<string, string> }) => {
+          const encoder = new TextEncoder();
+          return new Response(
+            responseBranch.pipeThrough(
+              new TransformStream<{ type: string; text: string }, Uint8Array>({
+                transform(part, controller) {
+                  controller.enqueue(encoder.encode(part.text));
+                },
+              }),
+            ),
+            { status: 200, headers },
+          );
+        }),
+        text: Promise.resolve("Hi"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 1 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi" }],
+        }),
+      } as never;
+    });
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+    expect(res.status).toBe(200);
+    expect(getAiAdmissionStats().inflight).toBe(1);
+
+    await res.text();
+    await vi.waitFor(() => expect(getAiAdmissionStats().inflight).toBe(0));
+  });
 });
