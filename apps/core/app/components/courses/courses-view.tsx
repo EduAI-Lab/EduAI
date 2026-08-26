@@ -28,7 +28,7 @@ import {
   buildDepartmentFilterGroup,
   defaultColorIndexForCourse,
 } from "@eduai/ui";
-import { termInfoFromDateInput, termLabelLong } from "@eduai/ui";
+import { DatePickerField, termInfoFromDateInput, termLabelLong } from "@eduai/ui";
 import type { CourseListSection } from "@eduai/ui";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import { DepartmentCombobox } from "~/components/courses/department-combobox";
@@ -344,13 +344,7 @@ function AdminCoursesBody({
                 </div>
                 <div className="grid gap-2">
                   <Label>Start date</Label>
-                  <Input
-                    name="startDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                  />
+                  <DatePickerField label="Start date" value={startDate} onChange={setStartDate} />
                 </div>
               </div>
               <div className="grid gap-2">
@@ -384,7 +378,7 @@ function AdminCoursesBody({
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={!selectedInstructor || !createDept}>
+                <Button type="submit" disabled={!selectedInstructor || !createDept || !startDate}>
                   Create course
                 </Button>
               </div>
@@ -735,13 +729,7 @@ function UnitAdminCoursesBody({
                 </div>
                 <div className="grid gap-2">
                   <Label>Start date</Label>
-                  <Input
-                    name="startDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                  />
+                  <DatePickerField label="Start date" value={startDate} onChange={setStartDate} />
                 </div>
               </div>
               <div className="grid gap-2">
@@ -777,7 +765,11 @@ function UnitAdminCoursesBody({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!selectedInstructor || (authorizedDepts.length > 1 && !selectedDept)}
+                  disabled={
+                    !selectedInstructor ||
+                    (authorizedDepts.length > 1 && !selectedDept) ||
+                    !startDate
+                  }
                 >
                   Create course
                 </Button>
@@ -1084,13 +1076,7 @@ function InstructorCoursesBody({
                   </div>
                   <div className="grid gap-2">
                     <Label>Start date</Label>
-                    <Input
-                      name="startDate"
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      required
-                    />
+                    <DatePickerField label="Start date" value={startDate} onChange={setStartDate} />
                   </div>
                 </div>
                 <div className="grid gap-2">
@@ -1109,7 +1095,9 @@ function InstructorCoursesBody({
                   <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit">Create course</Button>
+                  <Button type="submit" disabled={!startDate}>
+                    Create course
+                  </Button>
                 </div>
               </form>
             </DialogContent>

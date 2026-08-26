@@ -199,6 +199,7 @@ export {
   groupCoursesByTerm,
 } from "./lib/term";
 export type { AcademicTerm, TermCode, TermInfo, CourseTermGroup } from "./lib/term";
+export { parseDateInputValue, formatDateInputValue } from "./lib/date-input";
 
 // ── Analytics charts ───────────────────────────────────────────────────────
 export { DonutChart } from "./charts/donut-chart";
@@ -237,6 +238,7 @@ export { AvatarImage, AvatarFallback } from "./ui/avatar";
 export * from "./ui/breadcrumb";
 export * from "./ui/button-group";
 export * from "./ui/calendar";
+export * from "./ui/date-picker-field";
 export * from "./ui/carousel";
 export * from "./ui/chat-container";
 export * from "./ui/checkbox";

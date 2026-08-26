@@ -15,6 +15,8 @@
 // (#1088). `termInfoFromDate` is the one place that does this attribution —
 // use it instead of pairing `termFromMonth` with `date.getFullYear()`.
 
+import { parseDateInputValue } from "./date-input";
+
 export const TERM_CODES = ["W1", "W2", "S1", "S2"] as const;
 
 export type TermCode = (typeof TERM_CODES)[number];
@@ -122,25 +124,14 @@ export function termInfoFromDate(date: Date): AcademicTerm {
 /**
  * Derive term and academic year from an `<input type="date">` value
  * (`YYYY-MM-DD`), returning null when the field is empty or unparseable.
+ *
+ * The parse lives in `date-input.ts` because the timezone trap it avoids is
+ * not term-specific: `new Date("2026-09-01")` is UTC midnight, which is Aug 31
+ * in Vancouver, so it would derive S2 instead of W1.
  */
 export function termInfoFromDateInput(value: string | null | undefined): AcademicTerm | null {
-  const match = value?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    return null;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-
-  // Rejects overflow dates the regex cannot catch ("2026-02-30" rolls forward
-  // to Mar 2), so a malformed day is null rather than a silently shifted term.
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null;
-  }
-
-  return termInfoFromDate(date);
+  const date = parseDateInputValue(value);
+  return date ? termInfoFromDate(date) : null;
 }
 
 /**
