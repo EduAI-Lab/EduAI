@@ -465,6 +465,52 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
+
+  // #1495: the dedupe pre-check and the finalize write are not atomic, so a
+  // concurrent import of a file with identical extracted text can win the
+  // content hash between them. The DB unique constraint is the real guard.
+  it("resolves a lost content-hash race (P2002 on the finalize update) as a skip, not a raw error", async () => {
+    // create (provisional) resolves; finalize update loses the race with P2002.
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    expect(result.failed).toHaveLength(0);
+    // Loser's provisional row is dropped; the winner's content is untouched.
+    expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495 window 2: two concurrent syncs of the same canvasFileId both pass the
+  // `existing === null` check and both create with `canvas-pending:<id>`.
+  it("resolves a provisional-checksum create race (P2002 on create) as a skip", async () => {
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    expect(result.failed).toHaveLength(0);
+    // The loser backs off before doing any extraction work.
+    expect(processUploadedFile).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: a non-duplicate failure on the finalize write must mark the row
+  // FAILED, never leave it stranded in PROCESSING.
+  it("marks the row FAILED when the finalize update throws a non-duplicate error", async () => {
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce(new Error("db unavailable"));
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "mat-1" }, data: { status: "FAILED" } }),
+    );
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
 });
 
 describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {

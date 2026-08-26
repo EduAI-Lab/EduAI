@@ -73,14 +73,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } catch (error: any) {
     console.error("Error fetching Ollama models:", error);
 
-    // Handle different error types
+    // Map known transport failures to safe, hardcoded messages. Never surface a
+    // raw `error.message` — a Prisma or upstream error would stringify its
+    // internals into the response (mirrors the #1515 disclosure fix).
     let errorMessage = "Failed to connect to Ollama server";
     if (error.name === "AbortError") {
       errorMessage = "Request timeout - Ollama server did not respond";
     } else if (error.code === "ECONNREFUSED") {
       errorMessage = "Connection refused - Ollama server is not running or not accessible";
-    } else if (error.message) {
-      errorMessage = error.message;
     }
 
     return new Response(

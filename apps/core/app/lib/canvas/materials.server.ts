@@ -12,6 +12,7 @@ import {
   requireCanvasCredentials,
   validateInstructorCanvasCourseIds,
 } from "~/lib/canvas/courses.server";
+import { isChecksumConflict } from "~/lib/materials/extraction-job.server";
 import type {
   CanvasMaterialDiscoverItem,
   CanvasMaterialImportStatus,
@@ -315,23 +316,34 @@ export async function importSingleCanvasFile(
     });
     materialId = existing.id;
   } else {
-    const created = await prisma.courseMaterial.create({
-      data: {
-        courseId,
-        title: provisionalTitle,
-        mimeType,
-        fileSize: bytes.length,
-        // Stable provisional checksum until extraction supplies the content hash.
-        checksum: `canvas-pending:${canvasFileId}`,
-        rawText: null,
-        status: "PROCESSING",
-        uploadedBy: userId,
-        externalSource: CANVAS_EXTERNAL_SOURCE,
-        externalId: canvasFileId,
-        canvasUpdatedAt,
-      },
-    });
-    materialId = created.id;
+    try {
+      const created = await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: provisionalTitle,
+          mimeType,
+          fileSize: bytes.length,
+          // Stable provisional checksum until extraction supplies the content hash.
+          checksum: `canvas-pending:${canvasFileId}`,
+          rawText: null,
+          status: "PROCESSING",
+          uploadedBy: userId,
+          externalSource: CANVAS_EXTERNAL_SOURCE,
+          externalId: canvasFileId,
+          canvasUpdatedAt,
+        },
+      });
+      materialId = created.id;
+    } catch (error) {
+      // A concurrent sync of the same Canvas file already claimed the
+      // provisional `canvas-pending:<id>` checksum. The pre-check saw no row
+      // because both raced past it — the unique constraint is the real guard.
+      // Let the winner finish and skip this loser rather than surface a raw P2002.
+      if (isChecksumConflict(error)) {
+        return "skipped-not-modified";
+      }
+      throw error;
+    }
   }
 
   let fileInfo;
@@ -345,15 +357,13 @@ export async function importSingleCanvasFile(
     throw error;
   }
 
-  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
-    where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
-  });
-
-  if (duplicateByChecksum) {
+  // Resolve a lost content-hash race: drop the loser's provisional row (new
+  // import) or revert the pre-extraction PROCESSING flip (re-import), leaving
+  // the winning material's content untouched.
+  const resolveAsDuplicate = async (): Promise<"skipped-not-modified"> => {
     if (!existing) {
       await prisma.courseMaterial.delete({ where: { id: materialId } });
     } else {
-      // Revert the pre-extraction PROCESSING flip; leave prior content untouched.
       await prisma.courseMaterial.update({
         where: { id: materialId },
         data: {
@@ -363,21 +373,44 @@ export async function importSingleCanvasFile(
       });
     }
     return "skipped-not-modified";
+  };
+
+  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+  });
+
+  if (duplicateByChecksum) {
+    return resolveAsDuplicate();
   }
 
-  await prisma.courseMaterial.update({
-    where: { id: materialId },
-    data: {
-      title: fileInfo.title,
-      mimeType: fileInfo.mimeType,
-      fileSize: fileInfo.fileSize,
-      checksum: fileInfo.checksum,
-      rawText: fileInfo.content,
-      status: "PROCESSING",
-      uploadedBy: userId,
-      canvasUpdatedAt,
-    },
-  });
+  try {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: {
+        title: fileInfo.title,
+        mimeType: fileInfo.mimeType,
+        fileSize: fileInfo.fileSize,
+        checksum: fileInfo.checksum,
+        rawText: fileInfo.content,
+        status: "PROCESSING",
+        uploadedBy: userId,
+        canvasUpdatedAt,
+      },
+    });
+  } catch (error) {
+    // The pre-check and this write are not atomic: a concurrent import of a
+    // file with identical extracted text can win the content hash between them.
+    // The unique constraint is the real guard — take the duplicate branch
+    // instead of leaking a raw P2002 and stranding the row in PROCESSING.
+    if (isChecksumConflict(error)) {
+      return resolveAsDuplicate();
+    }
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: "FAILED" },
+    });
+    throw error;
+  }
 
   try {
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: Boolean(existing) });
