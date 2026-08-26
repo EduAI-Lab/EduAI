@@ -5,20 +5,20 @@ import { Card, DetailPageScaffold, EmptyState } from "@eduai/ui";
 import { LessonCard } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "../lib/course-display";
-import type { Course, Lesson, Module, ModuleDetail, Role } from "../lib/types";
+import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.module";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
-import { StudentPreviewBanner, isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
+import {
+  StudentPreviewBanner,
+  isStudentPreviewRole,
+  STUDENT_PREVIEW_ROLES,
+} from "~/components/rbac/StudentPreviewBanner";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { splitTitle } from "~/lib/course-title";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
-
-// #1660: see the matching comment in student.course.tsx — the backend
-// already authorizes staff reads here; only the client gate was blocking them.
-const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   await requireClientUser(STUDENT_PREVIEW_ROLES);

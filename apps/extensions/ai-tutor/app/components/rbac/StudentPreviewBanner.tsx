@@ -42,3 +42,11 @@ export function StudentPreviewBanner({ role }: { role: Role }) {
 export function isStudentPreviewRole(role: Role | null | undefined): boolean {
   return role === "ADMIN" || role === "UNIT_ADMIN" || role === "INSTRUCTOR";
 }
+
+/**
+ * #1660 review: the single source of truth for requireClientUser's allow-list
+ * on every /student/* content route (list, course, module, lesson) — was
+ * duplicated verbatim across four files, risking one getting missed on a
+ * future change.
+ */
+export const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];

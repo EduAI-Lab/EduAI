@@ -67,6 +67,7 @@ import type { Course, Module } from "../lib/types";
 import type { Route } from "./+types/instructor.course";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "../hooks/useLocalUser";
+import { isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
 import { useAtPermissions } from "../hooks/useAtPermissions";
 import { CourseAnalyticsPanel } from "../components/courses/CourseAnalyticsPanel";
 import { CourseTopicsHeroAction } from "../components/courses/CourseTopicsHeroAction";
@@ -563,7 +564,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               {/* #1660: TA excluded — a TA already has a real (non-preview)
                   view of this course via /student, not a preview of someone
                   else's. */}
-              {user?.role !== "TA" && numericCourseId != null ? (
+              {isStudentPreviewRole(user?.role) && numericCourseId != null ? (
                 <Button
                   type="button"
                   variant="outline"
