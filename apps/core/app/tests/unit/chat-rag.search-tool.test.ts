@@ -45,6 +45,20 @@ describe("runCourseMaterialSearchTool", () => {
     }
   });
 
+  it("defaults restrictToStudentVisible to false when the caller omits it", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+
+    await runCourseMaterialSearchTool("q", "course-1");
+
+    expect(findRelevantContent).toHaveBeenCalledWith(
+      "q",
+      "course-1",
+      HYBRID_RAG_MAX_CHUNKS,
+      undefined,
+      false,
+    );
+  });
+
   it("passes restrictToStudentVisible through unchanged", async () => {
     vi.mocked(findRelevantContent).mockResolvedValue([]);
 

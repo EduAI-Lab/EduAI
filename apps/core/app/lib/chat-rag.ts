@@ -648,7 +648,7 @@ export type CourseMaterialSearchResult =
 export async function runCourseMaterialSearchTool(
   question: string,
   courseId: string,
-  restrictToStudentVisible: boolean,
+  restrictToStudentVisible: boolean = false,
 ): Promise<CourseMaterialSearchResult> {
   try {
     const hits = await findRelevantContent(

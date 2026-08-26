@@ -274,11 +274,11 @@ describe("createAdminChatTools read execute", () => {
     );
 
     expect(resolveAdminCourseId).toHaveBeenCalled();
-    // restrictToStudentVisible: ctx doesn't set it, so the tool's `?? false` applies.
+    // ctx doesn't set restrictToStudentVisible; the shared search tool defaults it to false.
     expect(runCourseMaterialSearchTool).toHaveBeenCalledWith(
       "What is the late penalty?",
       "course-1",
-      false,
+      undefined,
     );
     expect(result).toEqual({
       courseId: "course-1",

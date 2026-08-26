@@ -94,7 +94,7 @@ describe("createLearningChatTools", () => {
       expect(result).toEqual({ relevantContent: hits, count: 2 });
     });
 
-    it("defaults restrictToStudentVisible to false when not provided", async () => {
+    it("passes an unset restrictToStudentVisible through as-is — the shared search tool defaults it to false", async () => {
       vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ relevantContent: [], count: 0 });
 
       const tools = createLearningChatTools({
@@ -103,7 +103,7 @@ describe("createLearningChatTools", () => {
       });
       await tools.getInformation.execute({ question: "what is a loop?" }, {} as never);
 
-      expect(runCourseMaterialSearchTool).toHaveBeenCalledWith("what is a loop?", "c1", false);
+      expect(runCourseMaterialSearchTool).toHaveBeenCalledWith("what is a loop?", "c1", undefined);
     });
 
     it("passes the search tool's error result straight through", async () => {

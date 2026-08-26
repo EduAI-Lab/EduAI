@@ -24,7 +24,7 @@ export function buildChatToolRegistry(options: {
         return runCourseMaterialSearchTool(
           question,
           options.effectiveCourseId,
-          options.restrictToStudentVisible ?? false,
+          options.restrictToStudentVisible,
         );
       },
     }),

@@ -222,14 +222,10 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       },
     }),
 
-    // #1658: admin chat's own RAG gate is different from a student's — the
-    // route's `findRelevantContent` prefetch/tool wiring only ever ran for
-    // chatMode "learning" (createLearningChatTools). This is the ADMIN-scoped
-    // counterpart: same retrieval call, gated by the same requireCourse
-    // resolution every other admin course tool uses, and never restricted to
-    // student-visible-only material (an admin previewing a syllabus needs to
-    // see hidden/scheduled uploads too — restrictToStudentVisible is always
-    // false for the ADMIN access level; see course-access.server.ts).
+    // #1658: the ADMIN-scoped counterpart to learning chat's RAG tool (see
+    // runCourseMaterialSearchTool's doc for the shared retrieval body) —
+    // course resolution goes through the same resolveCourse() every other
+    // admin course tool uses here.
     searchCourseMaterials: tool({
       description:
         "Search a course's uploaded materials (syllabus, lecture notes, assignments, etc.) for grounded facts — dates, policies, assignment details. Requires courseId or courseCode plus a question. Use this instead of guessing when the admin asks about a specific course's content.",
@@ -245,12 +241,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         const result = await runCourseMaterialSearchTool(
           question,
           resolved.courseId,
-          ctx.restrictToStudentVisible ?? false,
+          ctx.restrictToStudentVisible,
         );
         if ("error" in result) {
           return result;
         }
-        return { courseId: resolved.courseId, courseCode: resolved.courseCode, ...result };
+        return { ...resolved, ...result };
       },
     }),
 

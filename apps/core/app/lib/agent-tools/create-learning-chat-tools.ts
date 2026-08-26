@@ -21,11 +21,7 @@ export function createLearningChatTools(ctx: ChatToolContext) {
           return { error: "No course selected for RAG search" };
         }
 
-        return runCourseMaterialSearchTool(
-          question,
-          effectiveCourseId,
-          restrictToStudentVisible ?? false,
-        );
+        return runCourseMaterialSearchTool(question, effectiveCourseId, restrictToStudentVisible);
       },
     }),
     webSearch,
