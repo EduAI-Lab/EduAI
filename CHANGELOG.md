@@ -4,7 +4,7 @@
 
 ### Added
 
-- [core] feat: The Admin Chatbot can now ground an answer in a course's uploaded materials — `searchCourseMaterials`, the ADMIN-scoped counterpart to learning chat's `getInformation`, resolves `courseId`/`courseCode` the same way every other admin course tool does and searches that course's syllabus/materials for dates, policies, and assignment details instead of only platform-ops data. Closes #1658. (@Ayyhab, 2026-08-25) — [#1665](https://github.com/EduAI-Lab/EduAI/pull/1665)
+- [core] feat: The Admin Chatbot can now ground an answer in a course's uploaded materials — `searchCourseMaterials`, the ADMIN-scoped counterpart to learning chat's `getInformation`, resolves `courseId`/`courseCode` the same way every other admin course tool does and searches that course's syllabus/materials for dates, policies, and assignment details instead of only platform-ops data. Refs #1658 — code contribution is complete and unit-tested, but the issue's own "Done when" criteria require a repeatable live demo (upload → ask → grounded reply) that hasn't been run in this environment (no working embedding provider), so the issue stays open until that manual pass happens. (@Ayyhab, 2026-08-25) — [#1665](https://github.com/EduAI-Lab/EduAI/pull/1665)
 
 ### Changed
 
@@ -13,6 +13,7 @@
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
+- [core] test: `chat-tools.test.ts` only asserted `getInformation`'s registration, never its `execute` — a pre-existing gap the patch-coverage bot flagged as new because the touched line's text shifted during #1665's `runCourseMaterialSearchTool` extraction. Added execute-level coverage (no-course error, delegation args, unset-restriction passthrough, retrieval-error passthrough), matching the coverage its sibling `create-learning-chat-tools.ts` copy already had. Caught in review on #1665 (ariqmuldi). (@Ayyhab, 2026-08-26) — [#1665](https://github.com/EduAI-Lab/EduAI/pull/1665)
 
 ## [Week 17 — August 17–23, 2026]
 
