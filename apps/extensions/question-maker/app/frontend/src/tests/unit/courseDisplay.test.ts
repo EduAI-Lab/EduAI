@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { courseSwitcherSublabel, dedupeCoursesByCoreId } from "@/utils/courseDisplay";
+import { dedupeCoursesByCoreId } from "@/utils/courseDisplay";
 import { Course } from "@/types/question";
 
 function course(partial: Partial<Course> & Pick<Course, "id" | "name">): Course {
@@ -12,52 +12,6 @@ function course(partial: Partial<Course> & Pick<Course, "id" | "name">): Course 
     ...partial,
   };
 }
-
-describe("courseSwitcherSublabel", () => {
-  it("pairs the name with the term so same-code courses are distinguishable", () => {
-    expect(
-      courseSwitcherSublabel(
-        course({
-          id: 1,
-          code: "CPSC110",
-          name: "Systematic Program Design",
-          term: "W1",
-          year: 2026,
-        }),
-      ),
-    ).toBe("Systematic Program Design · 2026W1");
-  });
-
-  it("distinguishes two terms of the same course", () => {
-    const winter = courseSwitcherSublabel(
-      course({ id: 1, code: "CPSC110", name: "Systematic Program Design", term: "W1", year: 2026 }),
-    );
-    const summer = courseSwitcherSublabel(
-      course({ id: 2, code: "CPSC110", name: "Systematic Program Design", term: "S1", year: 2026 }),
-    );
-    expect(winter).not.toBe(summer);
-  });
-
-  it("falls back to the name alone when the term is unknown", () => {
-    expect(
-      courseSwitcherSublabel(course({ id: 1, code: "CPSC110", name: "Systematic Program Design" })),
-    ).toBe("Systematic Program Design");
-  });
-
-  it("shows the term alone when the course has no code (the name is already the label)", () => {
-    expect(
-      courseSwitcherSublabel(
-        course({ id: 1, code: null, name: "Ad-hoc course", term: "W1", year: 2026 }),
-      ),
-    ).toBe("2026W1");
-  });
-
-  it("returns undefined when there is neither a code nor a term", () => {
-    expect(
-      courseSwitcherSublabel(course({ id: 1, code: null, name: "Ad-hoc course" })),
-    ).toBeUndefined();
-  });
-});
 
 describe("dedupeCoursesByCoreId", () => {
   it("collapses rows sharing the same coreCourseId to the newest id", () => {

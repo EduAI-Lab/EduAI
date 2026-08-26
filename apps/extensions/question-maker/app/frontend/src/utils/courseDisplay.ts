@@ -23,19 +23,6 @@ export function formatCourseTermYear(course: Pick<Course, "term" | "year">): str
   return termLabel(term, year);
 }
 
-/**
- * Secondary line for a course switcher row. The row's primary label is the
- * course code (or the name when there is no code), which repeats verbatim
- * across every offering of a course — so the term goes here, next to the name,
- * to tell this term's course apart from last term's.
- */
-export function courseSwitcherSublabel(
-  course: Pick<Course, "code" | "name" | "term" | "year">,
-): string | undefined {
-  const parts = [course.code ? course.name : null, formatCourseTermYear(course)].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
 export function formatCourseNavLabel(
   course: Pick<Course, "code" | "name" | "term" | "year">,
 ): string {

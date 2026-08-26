@@ -4,9 +4,12 @@
  * share one switcher. Carries the active workspace tab across the switch.
  */
 import { useLocation, useNavigate, useSearchParams } from "react-router";
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
+import {
+  CourseSwitcher as SharedCourseSwitcher,
+  courseSwitcherSublabel,
+  type CourseSwitcherOption,
+} from "@eduai/ui";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
-import { courseSwitcherSublabel } from "@/utils/courseDisplay";
 
 const TAB_SAFE = new Set(["overview", "questions", "banks", "assessments", "topics", "canvas"]);
 
