@@ -153,6 +153,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   // who is a TA elsewhere is promoted to "TA" globally but may still be a
   // STUDENT here, and answer submission is scoped to this course (#1626).
   const [viewerEnrollmentRole, setViewerEnrollmentRole] = useState<EnrollmentRole | null>(null);
+  // Whether the breadcrumb fetch that resolves `viewerEnrollmentRole` has
+  // settled — true on both success and a non-fatal failure. Until it does, the
+  // per-course learner capabilities (answer submission, the study buddy) fail
+  // closed rather than trusting the global role (#1626). `breadcrumbFailed`
+  // separates a resolved non-STUDENT role (a real TA) from a failed lookup, so
+  // the withheld note can say the right thing.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  const [breadcrumbFailed, setBreadcrumbFailed] = useState(false);
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
@@ -212,6 +220,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     lessonIdRef.current = lesson.id;
     loadingMoreRef.current = false;
     setActivitiesLoadFailed(false);
+    // Reset the per-course capability gate: the new lesson may belong to a
+    // different course, so withhold answer submission and the study buddy until
+    // this lesson's breadcrumb re-resolves the caller's enrollment role. Done
+    // during render — not in the breadcrumb effect, which runs post-paint — so
+    // the new lesson never renders a Submit control derived from the previous
+    // course's role (#1626).
+    setViewerEnrollmentRole(null);
+    setCrumbsReady(false);
+    setBreadcrumbFailed(false);
   }
 
   const ensureActivitiesLoaded = async (targetIdx: number) => {
@@ -296,16 +313,33 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   // Answer submission is a STUDENT-only capability scoped to THIS course, not a
   // global role check. A course TA keeps the learner surface but is not a
-  // submitter — the answer route is 403 for them. Once the breadcrumb resolves
-  // the caller's per-course enrollment role, that role is authoritative: a
-  // TA-here-but-STUDENT-there account submits where it is STUDENT and is
-  // withheld where it is TA (#1626). Before it resolves, a globally-STUDENT
-  // effective role is an optimistic yes — it is never promoted, so the user is
-  // a STUDENT in every enrolled course — while a promoted "TA" (or any
-  // unresolved role) shows no control until the course role lands, so a stale
-  // global read can never leave a dead Submit on screen.
-  const canSubmitAnswers =
-    viewerEnrollmentRole !== null ? viewerEnrollmentRole === "STUDENT" : user?.role === "STUDENT";
+  // submitter — the answer route is 403 for them. The gate is the caller's
+  // per-course enrollment role, resolved by the breadcrumb, and it FAILS CLOSED:
+  // Submit is offered only once that role resolves to STUDENT for this course.
+  //
+  // We deliberately do NOT fall back to the global `/api/me` role while the
+  // breadcrumb is unresolved. `/api/me` promotes to "TA" only when Core course
+  // discovery succeeds AND finds a TA enrollment; when discovery *fails* it
+  // returns the base STUDENT role instead (see server `authentication.js`), so a
+  // real TA can read as a global STUDENT. A separately-delayed-or-failed
+  // breadcrumb combined with that fallback would leave a dead Submit the server
+  // then 403s. Failing closed keeps the control withheld — with a "checking
+  // access" note while pending, a "couldn't verify" note if the breadcrumb
+  // failed, and the TA note once a non-STUDENT role resolves (#1626).
+  const canSubmitAnswers = viewerEnrollmentRole === "STUDENT";
+  const submitState: "allowed" | "pending" | "unverified" | "withheld" = canSubmitAnswers
+    ? "allowed"
+    : !crumbsReady
+      ? "pending"
+      : breadcrumbFailed
+        ? "unverified"
+        : "withheld";
+  // The study buddy is likewise a STUDENT-in-this-course capability: the
+  // tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session listing
+  // 403 any non-STUDENT enrollment, so a TA's composer would be a dead control.
+  // Withhold it once a non-STUDENT course role resolves (fail closed on the same
+  // signal as Submit) (#1626).
+  const studyBuddyWithheld = crumbsReady && viewerEnrollmentRole !== "STUDENT";
 
   const submit = async () => {
     // Withhold Submit (U-TA-1); also guards the path even if the button is ever
@@ -552,10 +586,13 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   ];
 
   // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
-  const [crumbsReady, setCrumbsReady] = useState(false);
+  // The `crumbsReady` / `breadcrumbFailed` / `viewerEnrollmentRole` states are
+  // declared with the other player state above so the render-time lesson-change
+  // reset (and the capability gate) can read them before this effect runs.
   useEffect(() => {
     let cancelled = false;
     setCrumbsReady(false);
+    setBreadcrumbFailed(false);
     setCourse(null);
     setModule(null);
     setViewerEnrollmentRole(null);
@@ -573,8 +610,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           setCrumbsReady(true);
         })
         .catch(() => {
-          // Non-fatal: keep skeleton placeholders rather than blocking the player.
-          if (!cancelled) setCrumbsReady(true);
+          // Non-fatal: keep skeleton placeholders rather than blocking the
+          // player. The capability gate treats a failed breadcrumb as
+          // unresolved and fails closed — Submit is withheld with a "couldn't
+          // verify your access" note rather than trusting the global role.
+          if (!cancelled) {
+            setBreadcrumbFailed(true);
+            setCrumbsReady(true);
+          }
         });
     });
 
@@ -622,7 +665,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSubmit={submit}
       result={result}
       wasCorrect={wasCorrect}
-      canSubmitAnswers={canSubmitAnswers}
+      submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
       canPrev={canPrev}
@@ -650,6 +693,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       currentTopicId={currentTopicId}
       onSelectTopic={handleTopicSelect}
       studentAnswer={studentAnswer}
+      studyBuddyWithheld={studyBuddyWithheld}
       className="h-full"
     />
   );

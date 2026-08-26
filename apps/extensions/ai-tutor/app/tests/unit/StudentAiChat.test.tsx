@@ -657,3 +657,52 @@ describe("StudentAiChat — cuid topic ids reach the tutor", () => {
     await waitFor(() => expect(onSelectTopic).toHaveBeenCalledWith(SECONDARY_TOPIC_ID));
   });
 });
+
+// #1626: a course TA holds the learner surface but the tutoring routes 403 a
+// non-STUDENT enrollment, so the composer must be withheld rather than left as a
+// dead control — even with a BYOK key present (`mockGetKey` returns one here).
+describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () => {
+  function renderWithheld() {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={[]}
+          currentTopicId={null}
+          onSelectTopic={vi.fn()}
+          studentAnswer={null}
+          studyBuddyWithheld
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("shows the withheld notice and no composer or connect state", async () => {
+    renderWithheld();
+
+    // The panel title still renders so the TA sees the study buddy exists…
+    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
+    // …but the withheld notice replaces the conversation, and neither the
+    // connect-a-provider prompt nor a live composer is offered.
+    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Connect an AI provider to start/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/where you need guidance|Ask about the topic|Ask a question/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not fetch AI models or offer chat controls when withheld", async () => {
+    renderWithheld();
+
+    // No new-chat / history controls, no mode toggle — the whole chat surface is
+    // withheld, not merely disabled.
+    expect(screen.queryByRole("button", { name: /new chat/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /chat history/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  });
+});

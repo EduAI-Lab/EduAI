@@ -68,12 +68,18 @@ type LessonActivityViewProps = {
   result: string | null;
   wasCorrect: boolean;
   /**
+   * The caller's answer-submission capability for this course (#1626).
    * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
    * the learner surface but is not a submitter (`POST /questions/:id/answer` is
-   * 403 for them). When false, the answer inputs and Submit are withheld and a
-   * short note explains why, rather than leaving a dead button (U-TA-1).
+   * 403 for them). Answer inputs and Submit are offered only in `"allowed"`;
+   * otherwise they are withheld and a short note explains why, rather than
+   * leaving a dead button (U-TA-1). The gate fails closed while the caller's
+   * per-course role is unresolved:
+   * - `"pending"`   — the breadcrumb that resolves the course role is in flight.
+   * - `"unverified"`— that lookup failed; the role could not be confirmed.
+   * - `"withheld"`  — a resolved non-STUDENT role (a course TA).
    */
-  canSubmitAnswers: boolean;
+  submitState: "allowed" | "pending" | "unverified" | "withheld";
 
   isUserReady: boolean;
   onGuideMe: () => void;
@@ -109,7 +115,7 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
-  canSubmitAnswers,
+  submitState,
   isUserReady,
   onGuideMe,
   canPrev,
@@ -124,6 +130,16 @@ export function LessonActivityView({
 }: LessonActivityViewProps) {
   const accent = accentColor ?? "var(--primary)";
   const orderLabel = String(questionNumber).padStart(2, "0");
+  const canSubmitAnswers = submitState === "allowed";
+  // Message shown in place of Submit when the capability is withheld. Pending
+  // and unverified are the fail-closed states for an unresolved course role; a
+  // resolved TA gets the definitive note.
+  const withheldNote =
+    submitState === "pending"
+      ? "Checking your access…"
+      : submitState === "unverified"
+        ? "Couldn't verify your access. Reload to try again."
+        : "Teaching assistants don't submit answers.";
 
   return (
     <div className="flex flex-col gap-5">
@@ -287,7 +303,7 @@ export function LessonActivityView({
                 role="note"
                 className="rounded-[var(--radius-lg)] bg-muted/60 px-3 py-2 text-sm text-muted-foreground"
               >
-                Teaching assistants don&apos;t submit answers.
+                {withheldNote}
               </p>
             )}
 

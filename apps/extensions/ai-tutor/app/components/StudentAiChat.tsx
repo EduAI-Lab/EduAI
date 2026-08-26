@@ -126,6 +126,16 @@ type StudentAiChatProps = {
   currentTopicId: string | number | null;
   onSelectTopic: (topicId: string | number) => void;
   studentAnswer: number | string | null;
+  /**
+   * Withhold the study buddy because the caller is not a STUDENT in this course
+   * (#1626). The tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session
+   * listing 403 any non-STUDENT enrollment, so a course TA's composer would be a
+   * dead control. When true the panel shows a short notice in place of the
+   * connect state / conversation and the composer is disabled — matching the
+   * withheld-Submit treatment on the answer card. Fails closed on the same
+   * resolved-course-role signal, so it is never set until that role is known.
+   */
+  studyBuddyWithheld?: boolean;
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */
   className?: string;
@@ -177,6 +187,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     currentTopicId,
     onSelectTopic,
     studentAnswer,
+    studyBuddyWithheld = false,
     className,
   },
   ref,
@@ -540,7 +551,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     [activity, getKey, guideInput, selectedModelId, sendChat],
   );
 
-  const chatDisabled = !activity || !hasApiKey || !isUserReady;
+  const chatDisabled = !activity || !hasApiKey || !isUserReady || studyBuddyWithheld;
   const activeChat = chatState[activeTab];
   const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
@@ -663,7 +674,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="font-semibold text-foreground">AI study buddy</div>
             <div className="text-xs text-muted-foreground">Hints, not answers</div>
           </div>
-          {activity && hasApiKey && (
+          {activity && hasApiKey && !studyBuddyWithheld && (
             <TooltipProvider delayDuration={300}>
               <div className="flex shrink-0 items-center gap-1">
                 <Tooltip>
@@ -700,43 +711,46 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         </div>
 
         {/* Compact control row: mode + knowledge level (progressive disclosure) */}
-        {activity && hasApiKey && (availableTabs.length > 0 || knowledgeLevel) && (
-          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
-            {showTabToggle ? (
-              <SegmentedControl
-                ariaLabel="Chat mode"
-                value={activeTab}
-                onValueChange={(value) => setActiveTab(value as ChatTab)}
-                size="sm"
-                options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
-              />
-            ) : availableTabs.length === 1 ? (
-              <Badge variant="outline" size="lg">
-                {availableTabs[0].label}
-              </Badge>
-            ) : null}
+        {activity &&
+          hasApiKey &&
+          !studyBuddyWithheld &&
+          (availableTabs.length > 0 || knowledgeLevel) && (
+            <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+              {showTabToggle ? (
+                <SegmentedControl
+                  ariaLabel="Chat mode"
+                  value={activeTab}
+                  onValueChange={(value) => setActiveTab(value as ChatTab)}
+                  size="sm"
+                  options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+                />
+              ) : availableTabs.length === 1 ? (
+                <Badge variant="outline" size="lg">
+                  {availableTabs[0].label}
+                </Badge>
+              ) : null}
 
-            {knowledgeLevel && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="ml-auto rounded-full"
-                onClick={onAdjustKnowledgeLevel}
-                aria-label="Change knowledge level"
-              >
-                {knowledgeLevelLabel(knowledgeLevel)}
-              </Button>
-            )}
-          </div>
-        )}
+              {knowledgeLevel && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto rounded-full"
+                  onClick={onAdjustKnowledgeLevel}
+                  aria-label="Change knowledge level"
+                >
+                  {knowledgeLevelLabel(knowledgeLevel)}
+                </Button>
+              )}
+            </div>
+          )}
 
-        {activeTabInfo && activity && hasApiKey && (
+        {activeTabInfo && activity && hasApiKey && !studyBuddyWithheld && (
           <p className="px-5 pb-3 text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
         )}
 
         {/* Topic focus (teach / topic-templated custom) */}
-        {activity && hasApiKey && showTopicSelect && (
+        {activity && hasApiKey && !studyBuddyWithheld && showTopicSelect && (
           <div className="space-y-1.5 px-5 pb-4">
             <label
               className="block text-xs font-semibold text-muted-foreground"
@@ -790,6 +804,22 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 <IconMessageCircle className="h-6 w-6" />
               </div>
               <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
+            </div>
+          ) : studyBuddyWithheld ? (
+            // #1626: a course TA holds the learner surface but the tutoring routes
+            // 403 a non-STUDENT enrollment, so the composer would be a dead
+            // control. Show why instead — mirroring the withheld-Submit note on
+            // the answer card — rather than the connect state or a live composer.
+            <div
+              role="note"
+              className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-3 py-10 text-center"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+                <IconSparkles className="h-6 w-6" aria-hidden />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                The AI study buddy is available to students enrolled in this course.
+              </p>
             </div>
           ) : !hasApiKey ? (
             apiKeysLoaded ? (
@@ -876,96 +906,99 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         <ScrollButton className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-[var(--shadow-sm)]" />
       </ChatContainerRoot>
 
-      {/* Composer */}
-      <div className="space-y-2 border-t border-border p-4">
-        <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
-          <PromptInput
-            value={chatState[activeTab].input}
-            onValueChange={handleValueChange}
-            onSubmit={submitInput}
-            isLoading={activeChat.loading}
-            className="border-none bg-transparent p-0 shadow-none"
-          >
-            <PromptInputTextarea
-              placeholder={
-                chatDisabled
-                  ? "Connect a provider to start chatting"
-                  : activeTab === "teach"
-                    ? "Ask about the topic…"
-                    : activeTab === "guide"
-                      ? "Describe where you need guidance…"
-                      : "Ask a question…"
-              }
-              disabled={chatDisabled || activeChat.loading}
-              className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
-            />
-          </PromptInput>
-
-          <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
-            <Select
-              value={selectedModelId}
-              onValueChange={setSelectedModelId}
-              disabled={!availableModels.length}
+      {/* Composer — withheld entirely for a non-STUDENT course role (#1626); the
+          body shows the withheld notice instead of a dead, disabled input. */}
+      {!studyBuddyWithheld && (
+        <div className="space-y-2 border-t border-border p-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
+            <PromptInput
+              value={chatState[activeTab].input}
+              onValueChange={handleValueChange}
+              onSubmit={submitInput}
+              isLoading={activeChat.loading}
+              className="border-none bg-transparent p-0 shadow-none"
             >
-              <SelectTrigger
-                className="h-8 w-auto gap-1 border-border/60 text-xs"
-                aria-label="Model"
-              >
-                <SelectValue placeholder="Model" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableModels.map((model) => (
-                  <SelectItem key={model.id} value={model.modelId}>
-                    {model.modelName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <PromptInputTextarea
+                placeholder={
+                  chatDisabled
+                    ? "Connect a provider to start chatting"
+                    : activeTab === "teach"
+                      ? "Ask about the topic…"
+                      : activeTab === "guide"
+                        ? "Describe where you need guidance…"
+                        : "Ask a question…"
+                }
+                disabled={chatDisabled || activeChat.loading}
+                className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
+              />
+            </PromptInput>
 
-            <div className="flex-1" />
+            <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
+              <Select
+                value={selectedModelId}
+                onValueChange={setSelectedModelId}
+                disabled={!availableModels.length}
+              >
+                <SelectTrigger
+                  className="h-8 w-auto gap-1 border-border/60 text-xs"
+                  aria-label="Model"
+                >
+                  <SelectValue placeholder="Model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableModels.map((model) => (
+                    <SelectItem key={model.id} value={model.modelId}>
+                      {model.modelName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            {activeChat.loading ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleStop}
-                aria-label="Stop generating"
-              >
-                <IconPlayerStop className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="icon"
-                onClick={submitInput}
-                disabled={!canSend}
-                aria-label="Send message"
-              >
-                <IconSend className="h-4 w-4" />
-              </Button>
-            )}
+              <div className="flex-1" />
+
+              {activeChat.loading ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleStop}
+                  aria-label="Stop generating"
+                >
+                  <IconPlayerStop className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={submitInput}
+                  disabled={!canSend}
+                  aria-label="Send message"
+                >
+                  <IconSend className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {modelsFetched && modelLoadError && (
-          <div className="flex items-center gap-1.5 text-xs text-destructive">
-            <IconAlertCircle className="h-3.5 w-3.5" />
-            Unable to load AI models.
-          </div>
-        )}
-        {modelsFetched && !modelLoadError && !availableModels.length && (
-          <div className="text-xs text-muted-foreground">No AI models configured.</div>
-        )}
-        {modelsFetched &&
-          !modelLoadError &&
-          studentModelPolicyActive &&
-          availableModels.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Tutor model choices are limited by your course configuration.
+          {modelsFetched && modelLoadError && (
+            <div className="flex items-center gap-1.5 text-xs text-destructive">
+              <IconAlertCircle className="h-3.5 w-3.5" />
+              Unable to load AI models.
             </div>
           )}
-      </div>
+          {modelsFetched && !modelLoadError && !availableModels.length && (
+            <div className="text-xs text-muted-foreground">No AI models configured.</div>
+          )}
+          {modelsFetched &&
+            !modelLoadError &&
+            studentModelPolicyActive &&
+            availableModels.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Tutor model choices are limited by your course configuration.
+              </div>
+            )}
+        </div>
+      )}
 
       {/* Add / change provider key */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>

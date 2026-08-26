@@ -4,10 +4,14 @@
  * A TA is enrolment-mirrored (`enrollmentSync.js` `MIRRORED_ROLES` includes TA),
  * so besides the staff oversight shell they keep the full `/student/*` learner
  * experience: the enrolled-course list (reached by direct URL — a TA's sidebar
- * "Courses" points at `/instructor`), the lesson player, MCQ answering, and the
- * AI study buddy in its connect state. `student-ta-access.spec.ts` covers the
- * bare "a TA can open the lesson player" case; this spec walks the learner
- * surface the way a student uses it.
+ * "Courses" points at `/instructor`) and the lesson player. Two learner
+ * capabilities are STUDENT-only and scoped to the course, so a course TA gets
+ * them withheld (not merely disabled): MCQ answer submission (the answer route
+ * 403s a TA — U-TA-1) and the AI study buddy (the tutoring routes 403 a
+ * non-STUDENT enrollment — #1626). `student-ta-access.spec.ts` covers the bare
+ * "a TA can open the lesson player" case; this spec walks the learner surface
+ * the way a student uses it, and pins the fail-closed course-role gate that
+ * keeps those controls off screen (mixed-role, delayed, and failed-breadcrumb).
  *
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
  */
@@ -164,39 +168,112 @@ test.describe("AI Tutor TA — learner surface", () => {
     }
   });
 
-  test("the study buddy shows the connect-a-provider state with no BYOK key", async ({
+  test("the study buddy is withheld for a TA with no BYOK key (#1626)", async ({
     page,
     playwright,
   }) => {
     const { seeded } = await seedTaLearner(page, playwright, "TL4");
     try {
+      // The study buddy is a STUDENT-in-this-course capability, so a TA is
+      // withheld before the BYOK question even arises — no connect-a-provider
+      // state, no Add-API-key CTA, just the withheld note.
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
       await expect(chat.getByText("AI study buddy")).toBeVisible({ timeout: 20_000 });
+      await expect(chat.getByText(/study buddy is available to students enrolled/i)).toBeVisible();
       await expect(
         chat.getByRole("heading", { name: /Connect an AI provider to start/i }),
-      ).toBeVisible();
-      await expect(chat.getByRole("button", { name: /Add API key/i })).toBeVisible();
-      await expect(chat.getByPlaceholder(/Connect a provider to start chatting/i)).toBeDisabled();
+      ).toHaveCount(0);
+      await expect(chat.getByRole("button", { name: /Add API key/i })).toHaveCount(0);
     } finally {
       await seeded.dispose();
     }
   });
 
-  test("with a browser-local BYOK key the composer surface unlocks for the TA", async ({
+  test("the study buddy is withheld for a TA even with a BYOK key (#1626)", async ({
     page,
     playwright,
   }) => {
     const { studentId, seeded } = await seedTaLearner(page, playwright, "TL5");
     try {
+      // A BYOK key flips `hasApiKey`, but the tutoring routes (`/teach`,
+      // `/guide`, `/custom`) and chat-session listing 403 a TA's non-STUDENT
+      // enrollment — so an unlocked composer would be a dead control. The panel
+      // withholds it: the title stays, but a note explains the study buddy is
+      // for enrolled students, with no connect state and no composer.
       await seedByokKey(page, studentId);
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
       await expect(chat.getByText("AI study buddy")).toBeVisible({ timeout: 20_000 });
-      // The seeded key flips `hasApiKey`, so the connect state is gone and the
-      // author-enabled modes (Teach me / Guide me) are offered.
+      await expect(chat.getByText(/study buddy is available to students enrolled/i)).toBeVisible();
       await expect(chat.getByText(/Connect an AI provider to start/i)).toHaveCount(0);
+      await expect(chat.getByRole("button", { name: /send message/i })).toHaveCount(0);
+      await expect(chat.getByPlaceholder(/Connect a provider to start chatting/i)).toHaveCount(0);
     } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("a delayed breadcrumb withholds Submit until the course role resolves (#1626)", async ({
+    page,
+    playwright,
+  }) => {
+    // The submit gate reads the per-course enrollment role the breadcrumb
+    // resolves, and fails closed while it is in flight — it must NOT fall back
+    // to the global `/api/me` role, which returns the base STUDENT role when
+    // Core course discovery fails. A STUDENT here sees a "checking access" note
+    // during the delay, and Submit only once the role lands.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Delayed Breadcrumb Course",
+      codePrefix: "TLD",
+      role: "STUDENT",
+    });
+    try {
+      await page.route("**/api/lessons/*/breadcrumb", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      });
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
+      // Pre-resolution: withheld with the pending note, no dead Submit.
+      await expect(page.getByRole("note")).toContainText(/checking your access/i);
+      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
+      // Once the delayed breadcrumb resolves the STUDENT role, Submit appears.
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByRole("note")).toHaveCount(0);
+    } finally {
+      await page.unroute("**/api/lessons/*/breadcrumb");
+      await seeded.dispose();
+    }
+  });
+
+  test("a failed breadcrumb fails closed — no dead Submit, an explicit note (#1626)", async ({
+    page,
+    playwright,
+  }) => {
+    // If the breadcrumb lookup fails the course role cannot be confirmed, so the
+    // gate stays closed rather than trusting the global role — a TA whose
+    // `/api/me` fell back to STUDENT must never get a Submit the answer route
+    // then 403s. The learner sees a "couldn't verify" note instead.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Failed Breadcrumb Course",
+      codePrefix: "TLF",
+      role: "STUDENT",
+    });
+    try {
+      await page.route("**/api/lessons/*/breadcrumb", (route) =>
+        route.fulfill({ status: 500, contentType: "application/json", body: "{}" }),
+      );
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("note")).toContainText(/couldn.t verify your access/i);
+      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
+    } finally {
+      await page.unroute("**/api/lessons/*/breadcrumb");
       await seeded.dispose();
     }
   });
