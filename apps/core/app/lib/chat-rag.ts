@@ -287,10 +287,24 @@ function digestLineOverhead(role: string): number {
   return `- **${role}**: …\n`.length;
 }
 
+/** The "N earlier turns omitted for length" disclosure line shared by every digest path. */
+function omittedTurnsLine(count: number): string {
+  return `- _(${count} earlier turn${count === 1 ? "" : "s"} omitted for length)_`;
+}
+
+/** A digest block that only discloses an omission count, with no per-turn previews. */
+function omissionOnlyDigest(count: number): string {
+  return `## Session digest (earlier turns — context only)\n\n${omittedTurnsLine(count)}`;
+}
+
 function buildSessionDigest<T extends ChatSessionMessage>(
   messages: T[],
   previewText: (message?: T) => string,
   maxDigestChars: number,
+  // Older turns dropped *before* this call — never loaded from the DB or cut by
+  // the route's message-count ceiling — so the omission marker counts them too
+  // and they are marked rather than silently lost (#1643).
+  priorOmittedCount = 0,
 ): string {
   const entries: { role: string; text: string }[] = [];
   for (const message of messages) {
@@ -302,6 +316,11 @@ function buildSessionDigest<T extends ChatSessionMessage>(
   }
 
   if (entries.length === 0) {
+    // No previewable older text, but earlier turns may still have been dropped
+    // before this call — disclose the count rather than return an empty digest.
+    if (priorOmittedCount > 0) {
+      return omissionOnlyDigest(priorOmittedCount);
+    }
     return "";
   }
 
@@ -331,7 +350,7 @@ function buildSessionDigest<T extends ChatSessionMessage>(
   }
   kept = Math.max(1, kept);
 
-  const dropped = entries.length - kept;
+  const dropped = entries.length - kept + priorOmittedCount;
   const keptEntries = entries.slice(entries.length - kept);
 
   // Distribute the remaining room evenly so every kept turn gets a fair preview,
@@ -346,7 +365,7 @@ function buildSessionDigest<T extends ChatSessionMessage>(
 
   const lines: string[] = [];
   if (dropped > 0) {
-    lines.push(`- _(${dropped} earlier turn${dropped === 1 ? "" : "s"} omitted for length)_`);
+    lines.push(omittedTurnsLine(dropped));
   }
   for (const entry of keptEntries) {
     const preview =
@@ -516,6 +535,13 @@ export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
     estimateChars?: (message?: T | SessionDigestMessage) => number;
     /** Override digest preview text (defaults to the internal text extractor). */
     previewText?: (message?: T) => string;
+    /**
+     * Older turns the caller already dropped before this call — never loaded
+     * from the DB, or cut by the route's message-count ceiling. They are folded
+     * into the digest's omission marker so a long thread never loses earlier
+     * turns silently, even when the loaded slice fits the budget (#1643).
+     */
+    priorOmittedCount?: number;
   },
 ): (T | SessionDigestMessage)[] {
   if (messages.length === 0) {
@@ -527,9 +553,21 @@ export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
   const digestMaxChars = opts?.digestMaxChars ?? resolveSessionDigestMaxChars();
   const estimate = opts?.estimateChars ?? estimateMessageCharsForModel;
   const previewText = opts?.previewText ?? extractMessageText;
+  const priorOmittedCount = Math.max(0, opts?.priorOmittedCount ?? 0);
 
   if (totalMessageChars(messages, estimate) <= charBudget) {
-    return messages;
+    if (priorOmittedCount === 0) {
+      return messages;
+    }
+    // The loaded slice fits, but earlier turns were dropped before this call.
+    // Keep the loaded turns verbatim and prepend a small marker so the omission
+    // is disclosed to the model rather than lost silently (#1643).
+    const markerMessage: SessionDigestMessage = {
+      id: DIGEST_MESSAGE_ID,
+      role: "user",
+      content: omissionOnlyDigest(priorOmittedCount),
+    };
+    return [markerMessage, ...messages];
   }
 
   const recent = messages.slice(-recentCount);
@@ -537,10 +575,20 @@ export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
 
   if (older.length === 0) {
     // Everything is in the recent tail; drop oldest / truncate to fit the budget.
-    return enforceSessionCharBudget(recent, estimate, charBudget, false);
+    // Prior omissions (if any) still surface via a marker prepended below.
+    const bounded = enforceSessionCharBudget(recent, estimate, charBudget, false);
+    if (priorOmittedCount === 0) {
+      return bounded;
+    }
+    const markerMessage: SessionDigestMessage = {
+      id: DIGEST_MESSAGE_ID,
+      role: "user",
+      content: omissionOnlyDigest(priorOmittedCount),
+    };
+    return [markerMessage, ...bounded];
   }
 
-  const digest = buildSessionDigest(older, previewText, digestMaxChars);
+  const digest = buildSessionDigest(older, previewText, digestMaxChars, priorOmittedCount);
   const digestMessage: SessionDigestMessage = {
     id: DIGEST_MESSAGE_ID,
     role: "user",

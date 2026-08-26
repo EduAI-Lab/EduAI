@@ -1260,14 +1260,21 @@ export async function action({ request }: ActionFunctionArgs) {
     // Fetch only the slice of history we plan to send back to the LLM. Stateless
     // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords =
+    // The load ceiling is a memory-safety bound, not the real context cap (the
+    // token budget is — #1639). Count the full stored history so any turns older
+    // than the loaded slice are disclosed in the digest marker rather than
+    // silently dropped before the digest ever sees them (#1643).
+    const [totalStoredCount, recentMessageRecords] =
       ephemeral || !chat.id
-        ? []
-        : await prisma.chatMessage.findMany({
-            where: { chatId: chat.id },
-            orderBy: { position: "desc" },
-            take: maxContextMessages,
-          });
+        ? [0, []]
+        : await Promise.all([
+            prisma.chatMessage.count({ where: { chatId: chat.id } }),
+            prisma.chatMessage.findMany({
+              where: { chatId: chat.id },
+              orderBy: { position: "desc" },
+              take: maxContextMessages,
+            }),
+          ]);
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -1289,15 +1296,28 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
+    // Older turns cut before the digest sees them: those never loaded from the DB
+    // (beyond the load ceiling) plus those the tail-slice above dropped. The
+    // digest folds this into its omission marker so nothing is lost silently
+    // (#1643). storedMessages omits the current incoming turn(s), so the loaded
+    // count can never exceed the stored total.
+    const priorOmittedCount =
+      Math.max(0, totalStoredCount - storedMessages.length) +
+      (mergedMessages.length - trimmedMessages.length);
+
     chatApiDebug("chat history merged", {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
       maxContextMessages,
+      totalStoredCount,
+      priorOmittedCount,
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages));
+    let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages), {
+      priorOmittedCount,
+    });
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -2238,6 +2258,7 @@ ${buildEmptyCourseRagBlock()}`;
           charBudget: historyCharBudget,
           recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
           digestMaxChars: budgetToolResultCap,
+          priorOmittedCount,
         },
       );
       streamConfig.messages = modelMessages;
@@ -2308,8 +2329,13 @@ ${buildEmptyCourseRagBlock()}`;
         messageChars,
       });
 
+      // Final fit check for EVERY mode: history has already been digested toward
+      // the budget and the completion capped into the remaining space, so if the
+      // prompt still does not fit, the fixed prompt itself (system + RAG + tool
+      // schemas + the irreducible current turn) exceeds the window. Fail closed
+      // with a clear 400 rather than send an over-context request the provider
+      // would reject with a raw ContextWindowExceededError (#1643).
       if (
-        chatMode === "admin" &&
         !promptFitsContextWindow({
           contextWindow: budgetContextWindow,
           estimatedInputTokens,
@@ -2317,14 +2343,26 @@ ${buildEmptyCourseRagBlock()}`;
           safetyBuffer: 256,
         })
       ) {
+        if (chatMode === "admin") {
+          return chatApiReject(
+            400,
+            {
+              error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+              code: "ADMIN_CONTEXT_TOO_LARGE",
+              estimatedInputTokens,
+              contextWindow: budgetContextWindow,
+              toolCount,
+            },
+            { model, chatId: chat?.id ?? null },
+          );
+        }
         return chatApiReject(
           400,
           {
-            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
-            code: "ADMIN_CONTEXT_TOO_LARGE",
+            error: `This conversation is too long for the selected model's ${budgetContextWindow}-token context window. Start a new chat or pick a model with a larger context window.`,
+            code: "CONTEXT_TOO_LARGE",
             estimatedInputTokens,
             contextWindow: budgetContextWindow,
-            toolCount,
           },
           { model, chatId: chat?.id ?? null },
         );

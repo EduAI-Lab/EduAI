@@ -133,8 +133,6 @@ export function estimateAdminToolStepReserve(contextWindow: number): number {
 export const DEFAULT_CONTEXT_FILL_RATIO = 0.9;
 const CONTEXT_FILL_RATIO_MIN = 0.5;
 const CONTEXT_FILL_RATIO_MAX = 0.98;
-/** Floor so the history budget never collapses below the recent tail. */
-const MIN_HISTORY_TOKENS = 512;
 
 /**
  * Fraction of the model context window the assembled prompt (history + system +
@@ -161,8 +159,10 @@ export function resolveContextFillRatio(perModelRatio?: number | null): number {
  * leaving the remaining `(1 - ratio)` of the window for the completion (the
  * caller caps output into that space separately via {@link capMaxOutputTokensForPrompt}).
  * Everything else sharing the input allowance is reserved first; the remainder
- * (never below {@link MIN_HISTORY_TOKENS}) is what history may occupy, returned
- * in characters for the char-budgeted digest path.
+ * is what history may occupy. It is never inflated past what the window leaves:
+ * once the reservations already fill the input budget, history yields to zero so
+ * the caller's fit-check can fail closed instead of forcing an over-context
+ * request (#1643). Returned in characters for the char-budgeted digest path.
  */
 export function resolveSessionCharBudgetForModel(params: {
   contextWindow: number;
@@ -184,7 +184,11 @@ export function resolveSessionCharBudgetForModel(params: {
     estimateTokensFromChars(params.ragChars ?? 0) +
     (params.safetyBufferTokens ?? 256);
 
-  const historyTokens = Math.max(MIN_HISTORY_TOKENS, inputTokenBudget - reserved);
+  // History gets whatever the input budget leaves after the fixed reservations,
+  // and never more: a large fixed prompt (big system/RAG block + tool schemas)
+  // must be able to squeeze history to zero so the caller's fit-check can fail
+  // closed instead of forcing an over-context request (#1643).
+  const historyTokens = Math.max(0, inputTokenBudget - reserved);
   return historyTokens * ESTIMATED_CHARS_PER_TOKEN;
 }
 

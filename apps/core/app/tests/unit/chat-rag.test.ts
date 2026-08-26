@@ -414,6 +414,66 @@ describe("prepareBoundedSessionContext", () => {
     expect(digest).toMatch(/earlier turns? omitted/);
   });
 
+  it("discloses turns dropped before the digest, even when the loaded slice fits (#1643)", () => {
+    // The loaded slice is small and well under budget, but 240 older turns were
+    // cut before this call (DB load ceiling + tail-slice). They must be marked,
+    // not silently lost.
+    const messages = [
+      { id: "r1", role: "user", content: "recent question" },
+      { id: "r2", role: "assistant", content: "recent answer" },
+    ];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 10_000,
+      priorOmittedCount: 240,
+    });
+
+    expect(bounded).toHaveLength(3);
+    expect(bounded[0].id).toBe("session-digest");
+    expect(String(bounded[0].content)).toMatch(/240 earlier turns omitted/);
+    // The loaded turns are kept verbatim after the marker.
+    expect(bounded[1].content).toBe("recent question");
+    expect(bounded[2].content).toBe("recent answer");
+  });
+
+  it("returns the loaded slice unchanged when nothing was dropped before it", () => {
+    const messages = [
+      { id: "r1", role: "user", content: "hi" },
+      { id: "r2", role: "assistant", content: "hello" },
+    ];
+    expect(
+      prepareBoundedSessionContext(messages, { charBudget: 10_000, priorOmittedCount: 0 }),
+    ).toBe(messages);
+  });
+
+  it("folds pre-digest omissions into the digest's omitted count (#1643)", () => {
+    const older = Array.from({ length: 6 }, (_, i) => ({
+      id: `o${i}`,
+      role: "user",
+      content: `About TOPIC${i} ${"z".repeat(400)}`,
+    }));
+    const messages = [
+      ...older,
+      { id: "r1", role: "user", content: "latest" },
+      { id: "r2", role: "assistant", content: "reply" },
+    ];
+
+    // Over budget so the digest triggers; a tiny digest cap forces some loaded
+    // older turns to drop too. The marker must sum both drop sources.
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 1_500,
+      recentCount: 2,
+      digestMaxChars: 300,
+      priorOmittedCount: 200,
+    });
+
+    const digest = String(bounded[0].content);
+    const match = digest.match(/\((\d+) earlier turns omitted/);
+    expect(match).not.toBeNull();
+    // At least the 200 prior omissions, plus however many loaded turns were cut.
+    expect(Number(match?.[1])).toBeGreaterThanOrEqual(200);
+  });
+
   it("truncates a single string message that alone exceeds the budget", () => {
     const messages = [{ id: "1", role: "user", content: "x".repeat(50_000) }];
 

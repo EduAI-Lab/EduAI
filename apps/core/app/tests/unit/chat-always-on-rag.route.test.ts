@@ -49,18 +49,24 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", async () => ({
-  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+vi.mock("~/lib/ai/providers.server", async () => {
+  const actual = await vi.importActual<typeof import("~/lib/ai/providers.server")>(
     "~/lib/ai/providers.server",
-  )),
-  getChatModelCapabilities: vi.fn().mockResolvedValue({
-    supportsTools: false,
-    supportsImages: false,
-    maxTokens: null,
-    name: null,
-  }),
-  modelSupportsTools: vi.fn().mockResolvedValue(false),
-}));
+  );
+  return {
+    ...actual,
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: false,
+      supportsImages: false,
+      maxTokens: null,
+      name: null,
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(false),
+    // Delegates to the real resolver by default; a test can force a tiny window
+    // (via mockReturnValueOnce) to exercise the fail-closed fit check (#1643).
+    resolveModelContextWindow: vi.fn(actual.resolveModelContextWindow),
+  };
+});
 
 vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
@@ -79,7 +85,7 @@ vi.mock("~/lib/policy.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
@@ -93,7 +99,7 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { EmbeddingRequestTimeoutError, findRelevantContent } from "~/lib/ai/embedding";
-import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import { getChatModelCapabilities, resolveModelContextWindow } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
@@ -442,8 +448,9 @@ describe("Smart course RAG gate (#484)", () => {
       expect(ids[19]).toBe("incoming-19");
     });
 
-    it("drops the oldest turn when 21 merged messages exceed the cap (#225 RAG-11)", async () => {
+    it("drops the oldest turn over the cap but discloses it in a marker (#225 RAG-11, #1643)", async () => {
       vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(20) as never);
+      vi.mocked(prisma.chatMessage.count).mockResolvedValue(20);
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
 
@@ -455,11 +462,17 @@ describe("Smart course RAG gate (#484)", () => {
         ),
       );
 
-      const ids = lastStreamMessages().map((m) => m.id);
-      expect(ids).toHaveLength(20);
-      expect(ids[0]).toBe("stored-1");
+      const messages = lastStreamMessages();
+      const ids = messages.map((m) => m.id);
+      // The oldest turn is still dropped, but the model is told rather than
+      // losing it in silence: a digest marker leads the context (#1643).
+      expect(ids[0]).toBe("session-digest");
       expect(ids).not.toContain("stored-0");
-      expect(ids[19]).toBe("incoming-20");
+      expect(ids[ids.length - 1]).toBe("incoming-20");
+      const marker = messages[0] as { content?: unknown };
+      expect(typeof marker.content === "string" ? marker.content : "").toMatch(
+        /1 earlier turn omitted/,
+      );
     });
 
     it("does not persist incoming turns that were trimmed from the model context", async () => {
@@ -616,5 +629,46 @@ describe("Smart course RAG gate (#484)", () => {
         }),
       );
     });
+  });
+});
+
+describe("token-budget context window — pre-digest omissions and fail-closed fit (#1643)", () => {
+  function firstMessageContent(): string {
+    const first = lastStreamMessages()[0] as { id?: string; content?: unknown };
+    return typeof first?.content === "string" ? first.content : "";
+  }
+
+  it("discloses turns older than the load ceiling in the digest marker, not silently", async () => {
+    // Load ceiling pinned to 20 (beforeEach), but the chat holds 250 stored
+    // turns. The 230+ older turns cut before the digest must be marked so the
+    // model is told history was truncated — never dropped in silence.
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(20) as never);
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+    mockAuditResult("The answer.");
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(200);
+
+    const messages = lastStreamMessages();
+    expect(messages[0]?.id).toBe("session-digest");
+    // 230 never-loaded + 1 cut by the merge tail-slice = 231 disclosed.
+    expect(firstMessageContent()).toMatch(/231 earlier turns omitted/);
+  });
+
+  it("fails closed for a non-admin chat whose prompt cannot fit the window", async () => {
+    // Force a tiny context window: after the security block is composed, the
+    // fixed prompt + minimum completion no longer fit. Non-admin used to send
+    // this over-context request; it now returns a clean 400 instead.
+    vi.mocked(resolveModelContextWindow).mockReturnValueOnce(512);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({ code: "CONTEXT_TOO_LARGE" });
+    expect(streamText).not.toHaveBeenCalled();
   });
 });

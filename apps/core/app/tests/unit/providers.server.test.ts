@@ -221,15 +221,28 @@ describe("resolveSessionCharBudgetForModel (#1639)", () => {
     expect(withReserves).toBeGreaterThan(0);
   });
 
-  it("never returns less than the minimum history floor", () => {
-    // Reservations larger than the whole window must not drive history negative.
+  it("gives history exactly the input budget the reservations leave (#1643)", () => {
+    delete process.env.CHAT_CONTEXT_FILL_RATIO;
+    // History is never inflated past what the window leaves: with only ~200
+    // tokens of the input budget unreserved, history gets those ~200 tokens —
+    // not a fixed floor that would push the assembled prompt over the window.
+    const inputTokens = Math.floor(16_384 * 0.9); // 14745
+    const remainingTokens = 200;
+    const systemChars = (inputTokens - 256 - remainingTokens) * ESTIMATED_CHARS_PER_TOKEN;
+    const budget = resolveSessionCharBudgetForModel({ contextWindow: 16_384, systemChars });
+    expect(budget).toBe(remainingTokens * ESTIMATED_CHARS_PER_TOKEN);
+  });
+
+  it("yields history to zero when reservations exceed the input budget (#1643)", () => {
+    // A fixed prompt larger than the window must drive history to zero rather
+    // than force an over-context request; the route's fit-check then fails closed.
     const budget = resolveSessionCharBudgetForModel({
       contextWindow: 16_384,
       systemChars: 500_000,
       toolCount: 50,
       reserveToolSteps: true,
     });
-    expect(budget).toBe(512 * ESTIMATED_CHARS_PER_TOKEN);
+    expect(budget).toBe(0);
   });
 
   it("honors a per-model ratio override", () => {
