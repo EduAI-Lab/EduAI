@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [ai-tutor] feat: ADMIN, UNIT_ADMIN, and INSTRUCTOR can now preview a course as a student ("Preview as student" on the instructor course page) without switching accounts — matching the existing TA preview pattern (#746). The backend already authorized these roles for course/module/lesson reads (`authorizeLiveCoursePrincipal`); only the client-side route gate was blocking them. A clearly-labeled preview banner shows for the three staff roles (never STUDENT/TA, who have a real, non-preview view already); student-only writes (answer submission, AI tutoring chat) stay server-blocked for every non-STUDENT caller, unchanged — the previewer now gets an honest message explaining that instead of a generic error. Closes #1660. (@Ayyhab, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
