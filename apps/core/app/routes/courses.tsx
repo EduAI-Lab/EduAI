@@ -72,6 +72,8 @@ export default function CoursesPage() {
     total: courseTotal,
     pagination,
     setPagination,
+    search,
+    setSearch,
     loading,
     createCourse,
     updateCourse,
@@ -146,6 +148,9 @@ export default function CoursesPage() {
           <CoursesView
             role="admin"
             courses={courses}
+            searchValue={search}
+            onSearchChange={setSearch}
+            totalCount={courseTotal}
             instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
@@ -160,6 +165,9 @@ export default function CoursesPage() {
             // silently drop rows that belong to the caller but happen to sit on
             // another page, so pass the server's list through unchanged.
             courses={courses}
+            searchValue={search}
+            onSearchChange={setSearch}
+            totalCount={courseTotal}
             authorizedUnits={authorizedUnits}
             instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
@@ -171,6 +179,9 @@ export default function CoursesPage() {
           <CoursesView
             role="instructor"
             courses={courses}
+            searchValue={search}
+            onSearchChange={setSearch}
+            totalCount={courseTotal}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
@@ -180,6 +191,9 @@ export default function CoursesPage() {
           <CoursesView
             role="mixed"
             courses={courses}
+            searchValue={search}
+            onSearchChange={setSearch}
+            totalCount={courseTotal}
             taCourseIds={taCourseIds}
             enrolledCourseIds={enrolledCourseIds}
           />

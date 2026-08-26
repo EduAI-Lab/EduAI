@@ -46,6 +46,10 @@ export type CoursesRole = 'admin' | 'unit-admin' | 'instructor' | 'mixed'
 
 interface MutableRoleProps {
   courses: Course[]
+  /** Search is server-driven because the Core course list is paginated. */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  totalCount?: number
   instructors?: Instructor[]
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
@@ -70,6 +74,10 @@ interface InstructorViewProps extends MutableRoleProps {
 interface MixedViewProps {
   role: 'mixed'
   courses: Course[]
+  /** Search is server-driven because the Core course list is paginated. */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  totalCount?: number
   taCourseIds: string[]
   enrolledCourseIds: string[]
 }
@@ -157,7 +165,7 @@ export function CoursesView(props: CoursesViewProps) {
 // Admin
 // ---------------------------------------------------------------------------
 
-function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: AdminViewProps) {
+function AdminCoursesBody({ courses, searchValue, onSearchChange, totalCount, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: AdminViewProps) {
   const config = COURSES_ROLE_CONFIG.admin
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
@@ -320,6 +328,9 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
 
       <CourseListView<Course>
         courses={courses}
+        searchValue={searchValue}
+        onSearchChange={onSearchChange}
+        totalCount={totalCount}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year })}
@@ -443,6 +454,9 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
 
 function UnitAdminCoursesBody({
   courses,
+  searchValue,
+  onSearchChange,
+  totalCount,
   authorizedUnits,
   instructors = [],
   onCreateCourse,
@@ -661,6 +675,9 @@ function UnitAdminCoursesBody({
 
       <CourseListView<Course>
         courses={courses}
+        searchValue={searchValue}
+        onSearchChange={onSearchChange}
+        totalCount={totalCount}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year })}
@@ -786,7 +803,7 @@ function UnitAdminCoursesBody({
 // Instructor
 // ---------------------------------------------------------------------------
 
-function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: InstructorViewProps) {
+function InstructorCoursesBody({ courses, searchValue, onSearchChange, totalCount, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: InstructorViewProps) {
   const config = COURSES_ROLE_CONFIG.instructor
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
@@ -951,6 +968,9 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
 
       <CourseListView<Course>
         courses={courses}
+        searchValue={searchValue}
+        onSearchChange={onSearchChange}
+        totalCount={totalCount}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
@@ -1070,6 +1090,9 @@ function MixedCourseSection({
   heading,
   subheading,
   courses,
+  searchValue,
+  onSearchChange,
+  totalCount,
   extraBadges,
   getCoursePreference,
   setCoursePreference,
@@ -1077,6 +1100,9 @@ function MixedCourseSection({
   heading: string
   subheading: string
   courses: Course[]
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  totalCount?: number
   extraBadges: string[]
   getCoursePreference: (courseId: string) => CourseCardPreference | undefined
   setCoursePreference: (courseId: string, update: CourseCardPreference | null) => void
@@ -1086,6 +1112,9 @@ function MixedCourseSection({
       <PageHeading heading={heading} subheading={subheading} />
       <CourseListView<Course>
         courses={courses}
+        searchValue={searchValue}
+        onSearchChange={onSearchChange}
+        totalCount={totalCount}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
@@ -1132,7 +1161,7 @@ function MixedCourseSection({
   )
 }
 
-function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedViewProps) {
+function MixedCoursesBody({ courses, searchValue, onSearchChange, totalCount, taCourseIds, enrolledCourseIds }: MixedViewProps) {
   const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
   const assisting = courses.filter((c) => taCourseIds.includes(c.id))
   const enrolled = courses.filter(
@@ -1160,6 +1189,9 @@ function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedView
           heading="Courses You Are Assisting In"
           subheading="Courses where you are a TA"
           courses={assisting}
+          searchValue={searchValue}
+          onSearchChange={onSearchChange}
+          totalCount={totalCount}
           extraBadges={['TA']}
           getCoursePreference={getCoursePreference}
           setCoursePreference={setCoursePreference}
@@ -1170,6 +1202,9 @@ function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedView
           heading="Courses You Are Enrolled In"
           subheading="Courses you are taking as a student"
           courses={enrolled}
+          searchValue={searchValue}
+          onSearchChange={onSearchChange}
+          totalCount={totalCount}
           extraBadges={['Enrolled']}
           getCoursePreference={getCoursePreference}
           setCoursePreference={setCoursePreference}
