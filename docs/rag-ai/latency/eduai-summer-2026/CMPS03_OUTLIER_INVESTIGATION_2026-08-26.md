@@ -15,10 +15,11 @@ on cmps03 vs. 438 ms / 638 ms and 463 ms / 638 ms on cmps01/cmps02). Issue
 #1589 asked for the root cause: hardware metrics, container contention,
 config diffs, and GPU/model assignment.
 
-**Result: the outlier did not reproduce today.** Repeating the same native-vLLM
-load shape (single-turn chat completions, `max_tokens=200`) at concurrency 16,
-32, 64, and 128 against both the 2B and 9B models on cmps01 and cmps03 shows
-matched performance at every step, within normal run-to-run noise.
+**Result: the outlier did not reproduce today, under any load shape tested.**
+Repeating the same native-vLLM load shape (single-turn chat completions,
+`max_tokens=200`) at concurrency 16, 32, 64, and 128 against both the 2B and
+9B models on cmps01 and cmps03, one model at a time, shows matched
+performance at every step, within normal run-to-run noise.
 
 | Concurrency | Model | cmps01 p95 | cmps03 p95 |
 |---:|---|---:|---:|
@@ -31,8 +32,25 @@ matched performance at every step, within normal run-to-run noise.
 
 (128-concurrency 2B run was not repeated here; 16/32/64 already show parity.)
 
+A follow-up pass also tried **combined dual-GPU load** — 128 concurrent
+requests to the 2B model *and* 128 to the 9B model fired simultaneously on the
+same host, saturating both GPUs at once, closer to the original report's
+fleet-wide conditions than the single-model ladder above:
+
+| Model | cmps01 p95 (combined) | cmps03 p95 (combined) |
+|---|---:|---:|
+| 2B | 2.84 s | 2.77 s |
+| 9B | 8.75 s | 8.83 s |
+
+Still no divergence — both GPUs on both hosts hit 100% utilization and
+~300 W during the combined burst, temperatures peaked at 46 °C (cmps03) and
+stayed well under any throttle range, and the two hosts tracked each other
+within noise.
+
 This means the specific outlier PR #1582 measured is not a standing, easily
-reproduced property of the cmps03 host as it is configured and running today.
+reproduced property of the cmps03 host as it is configured and running today
+— it held up under every load shape available without operator/sudo access,
+including the closest approximation to the original dual-model test.
 
 ## What was ruled out (identical on both hosts)
 
@@ -75,7 +93,15 @@ reproduced property of the cmps03 host as it is configured and running today.
   (repo-pinned versions no longer match what's deployed on either host), but
   it does not explain the reported outlier — cmps03 on the *older* vLLM
   version performed identically to cmps01 on the newer one in every test run
-  above.
+  above, including the combined-load pass.
+
+  **Fixed:** `infra/cmps01/migrate.sh` and `README.md` re-pinned to
+  `vllm/vllm-openai:v0.27.1` (matching what's live on cmps01 today) in
+  [PR #1582](https://github.com/EduAI-Lab/EduAI/pull/1582), commit
+  `bb301f950`, so future redeploys are reproducible and don't silently drift
+  again. cmps03's compose file (on the separate, unmerged
+  `codex/883-cmps03-heavy-fleet` branch) still pins `v0.26.0`; that branch
+  was out of scope for this fix and hasn't been touched.
 
 ## Not re-checked / still open
 
@@ -94,31 +120,48 @@ reproduced property of the cmps03 host as it is configured and running today.
   different host in the s378 handoff.
 - **ECC counters:** unsupported/`[N/A]` on both cards — expected for this
   GPU line, not a gap specific to this investigation.
-- **The original report's exact conditions:** the August run used the fleet
-  fully loaded (2B **and** 9B concurrently, plus router/RAG overhead) and ran
-  through the public fleet router across all three servers at once, not one
-  model in isolation via loopback as done here. It's possible the outlier
-  only appears under combined multi-model contention on cmps03's two GPUs,
-  or under sustained (not single-burst) load, or was tied to a transient
-  host condition (e.g., a noisy neighbor process, a since-cleared thermal or
-  memory-fragmentation state) that resolved between August 19 and today.
-  Neither cmps02 nor the full 3-server router path was re-tested here.
+- **The original report's exact conditions:** the August run also went
+  through the public fleet router across all three servers at once (not two,
+  as re-tested here) under an authenticated RAG-aware harness, rather than
+  bare loopback `curl` against one host's two models. cmps02 was not
+  re-tested (it had already been reassigned back to `Qwen2.5-32B-Instruct-AWQ`
+  by the time of this pass), and the router/proxy layer itself was not
+  exercised. It remains possible the outlier requires 3-server contention or
+  router-level behavior to appear, or was tied to a transient host condition
+  (noisy neighbor, thermal or memory-fragmentation state) that had already
+  cleared by August 26.
+- **Kernel/driver change history on cmps03:** without `dmesg`/`sudo`, there's
+  no way to confirm whether anything changed on the host between Aug 19 and
+  Aug 26 (reboot, driver update, BIOS power-profile change) that would
+  explain a transient issue resolving on its own.
 
 ## Recommendation
 
-- Treat the original 7–9x cmps03 outlier as **not currently reproducible**
-  rather than fixed — the underlying cause was never identified, so it could
-  recur under conditions not covered by this pass (combined 2B+9B load,
-  sustained duration, full router path, or a transient host state).
-- Before closing #1589, get operator/sudo access on cmps03 to pull `dmesg`
-  history and confirm nothing changed on the host between Aug 19 and now
-  (reboot, driver update, BIOS power-profile change) that would explain a
-  transient issue self-resolving.
-- Separately, fix the version drift: re-pin and redeploy both hosts to the
-  same explicit vLLM version (not `:latest`) so `docker-compose.yml` in the
-  repo matches what's actually running, and so future comparisons aren't
-  confounded by silent image drift.
-- If the outlier recurs, repeat this same loopback ladder test *during* the
-  event and capture `nvidia-smi dmon` (sub-second sampling) plus vLLM's
-  `/metrics` (queue depth, KV-cache usage) rather than the coarse 1 Hz
-  `nvidia-smi` snapshots used here.
+Two load shapes have now been tried and both came back clean: the
+single-model concurrency ladder (16–128) and combined dual-GPU saturation
+(128+128). Both agree cmps03 currently performs identically to cmps01. That
+is a real result, not an inconclusive one — but it is a "not reproducible,"
+not a "fixed," and the two of us should not report it as resolved.
+
+- **Close #1589 as "not reproducible as of 2026-08-26,"** not as fixed.
+  Record in the issue: two independent load shapes (isolated per-model
+  ladder, and combined dual-model saturation) both showed cmps03 matching
+  cmps01 within noise, so the original 7–9x gap is not a standing property of
+  the host's current hardware/software/config state.
+- **Reopen if it recurs.** If the fleet stress test is rerun (e.g. for a
+  future PR) and cmps03 shows the same outlier again, that would confirm the
+  cause is either the full router/3-server path (untested here) or a
+  transient host condition — both still open possibilities.
+- **Before fully closing the loop**, it would still help to get operator
+  sudo access on cmps03 once, to check `dmesg`/`journalctl` history for any
+  reboot, driver, or power-profile event around Aug 19–26 — that's the one
+  check that could turn "not reproducible" into an actual explanation. This
+  is optional for closing #1589 now, not a blocker.
+- **Done:** the version drift found along the way (`:latest` silently
+  diverging cmps01 to 0.27.1 vs cmps03's 0.26.0) is fixed on cmps01's side in
+  PR #1582 (commit `bb301f950`). cmps03's pin on the separate
+  `codex/883-cmps03-heavy-fleet` branch was left as-is (out of scope).
+- If the outlier recurs, repeat this ladder test *during* the event through
+  the actual fleet router (not loopback) and capture `nvidia-smi dmon`
+  (sub-second sampling) plus vLLM's `/metrics` (queue depth, KV-cache usage)
+  rather than the coarse 1 Hz `nvidia-smi` snapshots used here.
