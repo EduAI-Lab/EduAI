@@ -6,7 +6,7 @@
  *       touch platform-wide config/PII); AI oversight is visible to both, since
  *       unit admins need to audit AI tutoring within their own unit too.
  * Loads: bug reports to triage + admin AI settings (loop policy, model policy,
- *        EduAI API key status) for ADMIN; recent AI interaction traces for both
+ *        AI model policy) for ADMIN; recent AI interaction traces for both
  *        roles.
  * Owns: the single admin surface. User/enrollment management is owned by EduAI
  *       Core (synced from Canvas); it is intentionally not exposed here. AI
@@ -17,7 +17,6 @@
  */
 import { useState } from 'react';
 import {
-  Badge,
   PageHeading,
   PageTabs,
   PageTabsContent,
@@ -29,12 +28,11 @@ import BugReportsTab from '~/components/admin/BugReportsTab';
 import { AdminSettingsPanel } from '~/components/admin/AdminSettingsPanel';
 import { AiOversightPanel } from '~/components/admin/AiOversightPanel';
 import api, { type AiTraceRow } from '~/lib/api';
-import type { AdminBugReportRow, EduAiApiKeyStatus, Role } from '~/lib/types';
+import type { AdminBugReportRow, Role } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import {
-  getApiKeySourceTag,
   loadAdminSettingsData,
   type AdminSettingsLoaderData,
 } from '~/lib/admin-settings';
@@ -47,15 +45,6 @@ type AdminLoaderData = {
   bugReports: AdminBugReportRow[] | null;
   aiTraces: AiTraceRow[];
 };
-
-// Borrow only the source-tag label and render it as a DS Badge (the shared
-// helper still returns a legacy `.tag` className we don't use here).
-function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondary' | 'outline' {
-  if (!status.configured) return 'outline';
-  if (status.source === 'ADMIN') return 'default';
-  if (status.source === 'ENV') return 'secondary';
-  return 'outline';
-}
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   const user = await requireClientUser(ADMIN_ROLES);
@@ -78,7 +67,6 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const { role, adminSettings, bugReports, aiTraces } = loaderData;
   const isAdmin = role === 'ADMIN';
   const [activeTab, setActiveTab] = useState(isAdmin ? 'bug-reports' : 'ai-oversight');
-  const sourceTag = adminSettings ? getApiKeySourceTag(adminSettings.status) : null;
 
   useShellBreadcrumbs([{ label: 'Admin' }]);
 
@@ -116,16 +104,15 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </PageTabsContent>
         ) : null}
 
-        {isAdmin && adminSettings && sourceTag ? (
+        {isAdmin && adminSettings ? (
           <PageTabsContent value="ai-settings" className="space-y-6">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">AI configuration</h2>
                 <p className="text-sm text-muted-foreground">
-                  Configure the AI loop policy and EduAI API integration.
+                  Configure the AI loop policy and model policy.
                 </p>
               </div>
-              <Badge variant={sourceTagBadgeVariant(adminSettings.status)}>{sourceTag.label}</Badge>
             </div>
             <AdminSettingsPanel loaderData={adminSettings} />
           </PageTabsContent>

@@ -139,19 +139,17 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/completion. The service key is the primary
-   * credential for server-to-server proxying — Core's requireServiceKey guard
-   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
-   * completion route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
-   * session cookie only when no service key is configured.
+   * Builds auth headers for Core /api/completion. User-scoped calls must prefer
+   * the forwarded session cookie so Core can resolve that user's encrypted
+   * provider settings. Background calls without a cookie use the service key.
    */
   buildChatAuthHeaders(cookie) {
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
+    }
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }
@@ -170,12 +168,23 @@ class EduAIService {
     }
 
     for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
-      const clientKey = clientApiKeys?.[provider]?.apiKey?.trim?.();
+      const clientSettings = clientApiKeys?.[provider];
+      const clientKey = clientSettings?.apiKey?.trim?.();
       if (clientKey) {
         return {
           provider,
           model: CLOUD_PROBE_MODELS[provider],
           apiKeys: { [provider]: { apiKey: clientKey, isEnabled: true } },
+        };
+      }
+      // A status read from Core deliberately contains only `hasKey`; the
+      // frontend represents that state as `{ isEnabled: true }` so no secret
+      // crosses the browser. Let Core resolve the encrypted key for the probe.
+      if (clientSettings?.isEnabled === true) {
+        return {
+          provider,
+          model: CLOUD_PROBE_MODELS[provider],
+          apiKeys: { [provider]: { isEnabled: true } },
         };
       }
     }

@@ -39,6 +39,29 @@ export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
 }
 
+/** User provider settings are owned by Core and returned without secrets. */
+export async function getUserProviderSettings(cookie) {
+  return requestEduAi('/user-provider-settings', { cookie, signal: AbortSignal.timeout(5000) });
+}
+
+export async function upsertUserProviderSetting(cookie, payload) {
+  return requestEduAi('/user-provider-settings', {
+    method: 'POST',
+    cookie,
+    body: payload,
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
+export async function deleteUserProviderSetting(cookie, providerName) {
+  return requestEduAi('/user-provider-settings', {
+    method: 'DELETE',
+    cookie,
+    body: { providerName },
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
 /**
  * Shared fetch helper. Surfaces upstream HTTP failures as Errors with
  * `status` set so route handlers can pass them through unchanged. Returns

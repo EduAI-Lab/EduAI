@@ -9,11 +9,10 @@ import {
 
 const router = express.Router();
 
-// The Core course mirror is a throttled fire-and-forget background side
-// effect shared by every route that triggers it (`runCoreMirror` in
-// importTaughtCoursesService — the unified contract's single mirror entry
-// point). `/api/me` runs on every client navigation, so it must never await
-// the mirror's Core-fetch + DB-write waterfall.
+// The Core course mirror is shared by every route that triggers it
+// (`runCoreMirror` in importTaughtCoursesService — the unified contract's
+// single mirror entry point). `/api/me` awaits the idempotent mirror so a
+// just-synced course is available on the next extension navigation.
 export { resetCoreMirrorThrottleForTests };
 
 router.get('/me', async (req, res) => {
@@ -33,8 +32,9 @@ router.get('/me', async (req, res) => {
 
   const sharedOptions = coreCourses != null ? { coreCourses } : {};
 
-  // Fire-and-forget, throttled — does not block the /me response.
-  runCoreMirror(authUser, cookie, sharedOptions);
+  // Await the throttled mirror so a newly synced Core course is available
+  // immediately to the extension after this authentication request.
+  await runCoreMirror(authUser, cookie, sharedOptions);
 
   const publicUser = toPublicUser(authUser);
   let effectiveUser = publicUser;

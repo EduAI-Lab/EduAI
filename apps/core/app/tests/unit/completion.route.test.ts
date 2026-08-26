@@ -46,6 +46,10 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
@@ -55,6 +59,7 @@ import {
   FleetUnavailableError,
   resolveFleetHost,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 
 function makeRequest(
   body: object,
@@ -98,6 +103,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(getUserProviderSettings).mockResolvedValue({});
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },

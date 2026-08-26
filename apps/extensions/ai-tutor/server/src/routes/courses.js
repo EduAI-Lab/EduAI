@@ -18,10 +18,10 @@
  *     catalog fetch (`resolveCoreCourseCatalog`) — complete regardless of the
  *     caller's Core enrollment (AT and Core enrollment are independent
  *     tracks, so the cookie-scoped list is not a valid field source). The
- *     cookie-scoped list is only fetched inside the throttled fire-and-forget
- *     auto-import mirror (`runCoreMirror`), which consumes
- *     `callerEnrollmentRole` — authorization context. The list response
- *     itself performs exactly ONE Core call (the catalog).
+ *     cookie-scoped list is only fetched inside the throttled auto-import
+ *     mirror (`runCoreMirror`), which consumes `callerEnrollmentRole` —
+ *     authorization context. The mirror is awaited before returning the list,
+ *     so a newly synced Core course is visible immediately.
  *   - Course-owned fields (title/description/department/dates/isPublished/
  *     term/year/aiInstructions) are read-through from Core via
  *     `services/courseResolver.js` + `mapCourseOffering`; the local
@@ -262,13 +262,12 @@ router.get('/courses', async (req, res) => {
       .map((c) => c.id);
 
     if (authUser.role === 'STUDENT' || authUser.role === 'TA' || authUser.role === 'INSTRUCTOR') {
-      // Unified contract: the mirror is a throttled fire-and-forget side
-      // effect (shared runCoreMirror) — the list response never waits on it.
-      // It fetches its own cookie-scoped list internally (authorization
-      // context / callerEnrollmentRole); a fresh Core enrollment (or a newly
-      // assigned instructor course) shows up on the caller's next request,
-      // same trade-off as QM's list mirror.
-      runCoreMirror(authUser, cookie);
+      // Unified contract: the shared mirror is throttled and idempotent, and
+      // this list waits for the attempted reconciliation. It fetches its own
+      // cookie-scoped list internally (authorization context /
+      // callerEnrollmentRole), so a fresh Core enrollment or newly assigned
+      // instructor course is visible in this response.
+      await runCoreMirror(authUser, cookie);
     }
 
     // #1208: role → visibility lives in services/courseAccess.js so this

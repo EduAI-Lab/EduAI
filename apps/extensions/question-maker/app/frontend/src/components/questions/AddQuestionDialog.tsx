@@ -1505,7 +1505,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             keySaved={providerKeySaved}
             onClearSavedKey={() => {
                 const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-                if (provider) apiKeyStorage.removeApiKey(provider);
+                if (provider) void apiKeyStorage.removeApiKey(provider);
                 setProviderKeySaved(false);
                 setProviderApiKey('');
                 setApiKeySaveState('idle');

@@ -19,7 +19,7 @@ import { MCQChoicesField } from '../questions/MCQChoicesField';
 import { Topic } from '../../types/topic';
 import { questionService } from '../../services/questionService';
 import { eduaiService, EduAIModelOption } from '../../services/eduaiService';
-import { apiKeyStorage } from '../../services/apiKeyStorage';
+import { apiKeyStorage, CORE_STORED_KEY } from '../../services/apiKeyStorage';
 import { useOCRHistory } from '../../hooks/use-ocr-history';
 import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
 import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
@@ -426,7 +426,7 @@ export const QuestionUploadDialog = ({
             const provider = apiKeyStorage.getProviderFromModel(aiModel);
             if (provider) {
                 const savedKey = await apiKeyStorage.getApiKey(provider);
-                setProviderApiKey(savedKey || '');
+                setProviderApiKey(savedKey && savedKey !== CORE_STORED_KEY ? savedKey : '');
             } else {
                 setProviderApiKey('');
             }
@@ -1138,7 +1138,7 @@ export const QuestionUploadDialog = ({
                                                                 onClick={() => {
                                                                     const provider = apiKeyStorage.getProviderFromModel(aiModel);
                                                                     if (provider) {
-                                                                        apiKeyStorage.removeApiKey(provider);
+                                                                        void apiKeyStorage.removeApiKey(provider);
                                                                         setProviderApiKey('');
                                                                     }
                                                                 }}
@@ -1175,7 +1175,7 @@ export const QuestionUploadDialog = ({
                                                         </div>
                                                     )}
                                                     <p className="text-xs text-muted-foreground">
-                                                        Your API key is stored locally in your browser and never sent to our servers.
+                                                        Your API key is stored encrypted in Core and shared across EduAI platforms.
                                                     </p>
                                                 </div>
                                             )}
@@ -1447,7 +1447,7 @@ export const QuestionUploadDialog = ({
                                                 onClick={() => {
                                                     const provider = apiKeyStorage.getProviderFromModel(aiModel);
                                                     if (provider) {
-                                                        apiKeyStorage.removeApiKey(provider);
+                                                        void apiKeyStorage.removeApiKey(provider);
                                                         setProviderApiKey('');
                                                     }
                                                 }}
@@ -1484,7 +1484,7 @@ export const QuestionUploadDialog = ({
                                         </div>
                                     )}
                                     <p className="text-xs text-muted-foreground">
-                                        Your API key is stored locally in your browser and never sent to our servers.
+                                        Your API key is stored encrypted in Core and shared across EduAI platforms.
                                     </p>
                                 </div>
                             )}

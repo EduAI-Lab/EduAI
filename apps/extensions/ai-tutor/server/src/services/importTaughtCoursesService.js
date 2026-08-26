@@ -423,27 +423,22 @@ export async function userHasCoreTaEnrollment(cookie, coreCourses) {
 
 // ---------------------------------------------------------------------------
 // Shared mirror runner — the ONE way any route triggers the Core auto-import
-// mirror (unified extension contract, #1072). The mirror is a background side
-// effect (Core list fetch + local anchor/enrollment writes + per-offering
-// topic/enrollment sub-syncs); no response may depend on or wait for it.
-// Throttled to once per window per user and fired without awaiting, so list
-// and /me responses never pay the serial Core waterfall. A freshly-imported
-// course therefore appears on the caller's NEXT request — the same documented
-// trade-off as Question Maker's runCoreImportMirror.
+// mirror (unified extension contract, #1072). It is throttled and idempotent,
+// and course-list/authentication routes await it so a fresh Core sync is
+// visible immediately in the extension.
 const MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
 
-export function runCoreMirror(authUser, cookie, sharedOptions = {}) {
+export async function runCoreMirror(authUser, cookie, sharedOptions = {}) {
   const now = Date.now();
   const last = lastMirrorAtByUser.get(authUser.id) ?? 0;
-  if (now - last < MIRROR_THROTTLE_MS) return;
+  if (now - last < MIRROR_THROTTLE_MS) return { skipped: true };
   lastMirrorAtByUser.set(authUser.id, now);
 
-  // Invoke both synchronously (so callers/tests can observe the calls) but do
-  // not await — the mirror runs in the background. A user is either an
-  // INSTRUCTOR (taught) or a STUDENT/TA (enrolled), so only one actually does
-  // work; running them in parallel is safe.
-  void Promise.allSettled([
+  // Run both branches in parallel. A user is either an INSTRUCTOR (taught) or
+  // a STUDENT/TA (enrolled), so only one normally does work; both are safe and
+  // idempotent when the role or enrollment view is changing.
+  const results = await Promise.allSettled([
     importTaughtCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
       console.error('[eduai] Auto-import taught courses failed', err),
     ),
@@ -451,6 +446,7 @@ export function runCoreMirror(authUser, cookie, sharedOptions = {}) {
       console.error('[eduai] Student enrollment mirror failed', err),
     ),
   ]);
+  return { skipped: false, results };
 }
 
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */

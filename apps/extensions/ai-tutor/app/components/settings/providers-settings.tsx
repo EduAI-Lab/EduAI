@@ -18,8 +18,8 @@ import { PROVIDERS, maskApiKey, type ProviderId } from '~/lib/provider-keys';
 /**
  * Settings → Providers. BYOK key management, moved out of the chat's old
  * blocking setup wall into Settings where the rest of the platform keeps it
- * (Core's Providers tab). Keys live only in this browser; the chat reads them
- * via the same `useApiKeys` hook.
+ * (Core's Providers tab). Keys are stored encrypted in Core; the chat reads
+ * the shared status via the same `useApiKeys` hook.
  */
 export function ProvidersSettings() {
   const { loaded, getKey, hasKey, setKey, removeKey, validateKey } = useApiKeys();
@@ -38,7 +38,7 @@ export function ProvidersSettings() {
         setErrors((e) => ({ ...e, [provider]: result.error || 'Invalid API key' }));
         return;
       }
-      setKey(provider, draft);
+      await setKey(provider, draft);
       setDrafts((d) => ({ ...d, [provider]: '' }));
     } catch {
       setErrors((e) => ({ ...e, [provider]: 'Could not validate API key' }));
@@ -52,8 +52,8 @@ export function ProvidersSettings() {
       <CardHeader>
         <CardTitle>Model providers</CardTitle>
         <CardDescription>
-          Add your own AI provider key to power the AI Study Buddy. Keys are stored only in this
-          browser and sent directly to the model — never saved on our servers.
+          Add your own AI provider key to power the AI Study Buddy. Keys are stored encrypted in
+          Core and shared with the other EduAI platforms; they are never returned in settings reads.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -87,7 +87,7 @@ export function ProvidersSettings() {
                   <div className="flex-1 rounded-[var(--radius-md)] border border-border bg-muted/40 px-3 py-2 font-mono text-sm text-muted-foreground">
                     {maskApiKey(getKey(p.id))}
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeKey(p.id)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void removeKey(p.id)}>
                     <IconTrash className="h-4 w-4" /> Remove
                   </Button>
                 </div>

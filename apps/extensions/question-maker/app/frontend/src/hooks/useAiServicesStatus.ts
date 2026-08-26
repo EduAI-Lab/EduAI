@@ -14,14 +14,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ServiceStatus } from '@eduai/ui';
 import eduaiService from '../services/eduaiService';
-import { apiKeyStorage, isCloudProvider, isCampusProvider } from '../services/apiKeyStorage';
+import {
+  apiKeyStorage,
+  CORE_STORED_KEY,
+  isCloudProvider,
+  isCampusProvider,
+} from '../services/apiKeyStorage';
 
 async function probeCloud(): Promise<ServiceStatus> {
   let cloudKeys: Record<string, any> = {};
   try {
     const stored = await apiKeyStorage.getAllApiKeys();
     cloudKeys = Object.fromEntries(
-      Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }]),
+      Object.entries(stored).map(([provider, apiKey]) => [
+        provider,
+        apiKey === CORE_STORED_KEY ? { isEnabled: true } : { apiKey, isEnabled: true },
+      ]),
     );
   } catch {
     // treat unreadable storage as no key

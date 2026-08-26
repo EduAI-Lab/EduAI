@@ -1,5 +1,4 @@
 import api from '~/lib/api';
-import type { EduAiApiKeyStatus } from '~/lib/types';
 
 export type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -21,7 +20,6 @@ export type AdminAiModelOption = {
 };
 
 export type AdminSettingsLoaderData = {
-  status: EduAiApiKeyStatus;
   aiPolicy: AdminAiModelPolicy | null;
   aiModels: AdminAiModelOption[];
   aiPolicyAvailable: boolean;
@@ -52,14 +50,12 @@ export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> 
     typeof settingsApi.getAdminAiModelPolicy === 'function' &&
     typeof settingsApi.setAdminAiModelPolicy === 'function';
 
-  const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
-    api.getEduAiApiKeyStatus(),
+  const [aiModelsResult, aiPolicyResult] = await Promise.all([
     loadAdminAiModels(settingsApi),
     loadAdminAiPolicy(settingsApi),
   ]);
 
   return {
-    status,
     aiModels: aiModelsResult.models,
     aiPolicy: aiPolicyResult.policy,
     aiPolicyError: aiPolicyResult.error,
@@ -213,18 +209,4 @@ export function clampIterations(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_POLICY.maxSupervisorIterations;
   return Math.max(1, Math.min(5, Math.round(parsed)));
-}
-
-export function formatApiKeyUpdatedTime(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString();
-}
-
-export function getApiKeySourceTag(status: EduAiApiKeyStatus): { label: string } {
-  if (!status.configured) return { label: 'Not configured' };
-  if (status.source === 'ADMIN') return { label: 'Admin override' };
-  if (status.source === 'ENV') return { label: 'From .env' };
-  return { label: 'Configured' };
 }

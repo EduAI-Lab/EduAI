@@ -25,9 +25,10 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  let rateLimitIdentity = apiKeySession?.user?.id ?? null;
-  if (!apiKeySession?.user) {
-    const session = await getRequestSession(request);
+  let session = apiKeySession;
+  let rateLimitIdentity = session?.user?.id ?? null;
+  if (!session?.user) {
+    session = await getRequestSession(request);
     if (session?.user) {
       rateLimitIdentity = session.user.id;
     } else {
@@ -70,6 +71,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const outcome = await runCompletion({
     model: typeof payload.model === "string" ? payload.model : "",
     apiKeys: payload.apiKeys,
+    userId: session?.user?.id,
     systemPrompt: payload.systemPrompt,
     messages: Array.isArray(payload.messages) ? payload.messages : [],
     streaming: payload.streaming,

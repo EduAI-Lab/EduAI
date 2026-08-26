@@ -25,6 +25,7 @@ import {
   sanitizeSystemPrompt,
 } from "~/lib/ai/prompt-safety";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
@@ -37,7 +38,9 @@ export type CompletionMessage = {
 
 export type CompletionRequest = {
   model: string;
-  apiKeys: unknown;
+  apiKeys?: unknown;
+  /** Session user whose encrypted Core provider settings are the source of truth. */
+  userId?: string;
   systemPrompt?: string | null;
   messages?: CompletionMessage[];
   streaming?: boolean;
@@ -116,7 +119,7 @@ export async function runCompletion(request: CompletionRequest) {
     return { ok: false as const, status: 400, error: "model is required" };
   }
 
-  const apiKeysParsed = clientApiKeysBodySchema.safeParse(request.apiKeys);
+  const apiKeysParsed = clientApiKeysBodySchema.safeParse(request.apiKeys ?? {});
   if (!apiKeysParsed.success) {
     return {
       ok: false as const,
@@ -155,8 +158,34 @@ export async function runCompletion(request: CompletionRequest) {
     }
   }
 
+  const requestApiKeys = toUserProviderSettings(apiKeysParsed.data);
+  const storedApiKeys = request.userId
+    ? await getUserProviderSettings(request.userId)
+    : {};
+  const mergedApiKeys = { ...storedApiKeys };
+  for (const [provider, rawSettings] of Object.entries(apiKeysParsed.data)) {
+    const stored = storedApiKeys[provider];
+    const requestSettings = requestApiKeys[provider];
+    mergedApiKeys[provider] = {
+      ...requestSettings,
+      ...stored,
+      // Extensions send provider enablement without the secret. Preserve the
+      // encrypted Core value instead of making every platform re-enter it.
+      // Core wins even if an older extension still sends a stale browser key.
+      ...(stored?.apiKey
+        ? { apiKey: stored.apiKey }
+        : {}),
+      ...(rawSettings.isEnabled === undefined && stored
+        ? { isEnabled: stored.isEnabled }
+        : {}),
+      ...(rawSettings.baseUrl === undefined && stored?.baseUrl
+        ? { baseUrl: stored.baseUrl }
+        : {}),
+    };
+  }
+
   const validatedApiKeys = mergeLocalInferenceFromEnv(
-    toUserProviderSettings(apiKeysParsed.data),
+    mergedApiKeys,
     validatedModelId,
     fleetBaseUrl,
   );

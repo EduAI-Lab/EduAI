@@ -42,29 +42,28 @@ const courseIdFromParam = (req) => req.params.id;
 /** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
 const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 
-// The Core course mirror (`importTaughtCoursesFromCore`) is a background side
-// effect, not a dependency of the list response: it fetches Core's cookie-
-// scoped course list and writes local Course anchors + topic syncs. It
-// previously ran awaited on every GET /api/course, so every list paid a
-// serial Core-fetch + import waterfall before the caller's own courses were
-// even read. Mirrors ai-tutor's `runCoreMirror` (server/src/routes/
-// authentication.js): throttle to at most once per window per user, and fire
-// without awaiting so the list response never blocks on it. A freshly-
-// imported course therefore may not appear until the NEXT list call, not this
-// one — acceptable per #1072's unified contract.
+// The Core course mirror (`importTaughtCoursesFromCore`) fetches Core's
+// cookie-scoped course list and writes local Course anchors + topic syncs. It
+// is throttled per user and awaited on the list response so a freshly synced
+// Core course is available immediately in QM. Mirrors ai-tutor's
+// `runCoreMirror` (server/src/routes/authentication.js).
 const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
 
-function runCoreImportMirror(userId, role, cookie) {
+async function runCoreImportMirror(userId, role, cookie) {
   const now = Date.now();
   const last = lastMirrorAtByUser.get(userId) ?? 0;
-  if (now - last < CORE_MIRROR_THROTTLE_MS) return;
+  if (now - last < CORE_MIRROR_THROTTLE_MS) return { skipped: true };
   lastMirrorAtByUser.set(userId, now);
 
-  // Fire-and-forget — errors are logged, never surfaced to the list response.
-  void importTaughtCoursesFromCore(userId, role ?? 'STUDENT', cookie ?? '').catch((err) => {
+  // Mirror failures remain fail-soft, but the list waits for the attempted
+  // reconciliation so a fresh Core course can appear immediately.
+  try {
+    await importTaughtCoursesFromCore(userId, role ?? 'STUDENT', cookie ?? '');
+  } catch (err) {
     logger.warn({ err, userId }, 'Core course mirror failed on list');
-  });
+  }
+  return { skipped: false };
 }
 
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */
@@ -168,7 +167,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
   try {
     const pagination = parsePaginationParams(req, { required: true });
 
-    runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
+    await runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 

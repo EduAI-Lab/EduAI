@@ -39,6 +39,7 @@ import type {
   BugReportStatus,
   Course,
   EduAiApiKeyStatus,
+  UserProviderSettingStatus,
   EnrollmentRole,
   Lesson,
   Module,
@@ -678,7 +679,7 @@ export const api = {
       topicId?: number;
       message: string;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },
@@ -697,7 +698,7 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },
@@ -717,7 +718,7 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
       chatId?: string | null;
       messageId?: string;
     },
@@ -744,6 +745,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ provider, apiKey }),
     }) as Promise<{ valid: boolean; error?: string }>,
+  getUserProviderSettings: () =>
+    http('/api/provider-settings') as Promise<UserProviderSettingStatus[]>,
+  saveUserProviderSetting: (payload: {
+    providerName: string;
+    isEnabled: boolean;
+    apiKey?: string;
+    baseUrl?: string;
+  }) =>
+    http('/api/provider-settings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<UserProviderSettingStatus>,
+  deleteUserProviderSetting: (providerName: string) =>
+    http(`/api/provider-settings?providerName=${encodeURIComponent(providerName)}`, {
+      method: 'DELETE',
+    }) as Promise<void>,
   getEduAiApiKeyStatus: () =>
     http('/api/admin/settings/eduai-api-key') as Promise<EduAiApiKeyStatus>,
   getAdminAiModelPolicy: async () => {

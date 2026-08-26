@@ -1,6 +1,7 @@
 /**
- * Browser-side storage helper for encrypting/decrypting AI provider API keys in localStorage.
- * Uses Web Crypto AES-GCM with a derived key so keys stay encrypted at rest in the browser.
+ * Core-backed provider-key helper. Core is the shared encrypted source of
+ * truth; the old browser encryption helpers remain below only to migrate keys
+ * saved by older QM builds when Core is reachable.
  */
 
 const STORAGE_KEY_PREFIX = 'eduai_api_key_';
@@ -13,6 +14,7 @@ export type CampusProvider = 'vllm' | 'ollama';
 
 /** Cloud (key-bearing) providers, as opposed to the UBC-hosted campus path. */
 export const CLOUD_PROVIDERS: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
+export const CORE_STORED_KEY = '__core_stored__';
 
 /** True when a provider id names a cloud provider (any supported one — not just Google). */
 export function isCloudProvider(provider: string | null | undefined): provider is AIProvider {
@@ -108,36 +110,96 @@ async function decrypt(encryptedValue: string): Promise<string> {
 }
 
 export const apiKeyStorage = {
-  /** Stores an API key for a provider after encrypting it. */
+  /** Stores an API key in Core; the browser copy is removed after success. */
   async setApiKey(provider: AIProvider, apiKey: string): Promise<void> {
-    const encrypted = await encrypt(apiKey);
-    localStorage.setItem(`${STORAGE_KEY_PREFIX}${provider}`, encrypted);
-  },
-
-  /** Retrieves and decrypts a stored API key for a provider. */
-  async getApiKey(provider: AIProvider): Promise<string | null> {
-    const encrypted = localStorage.getItem(`${STORAGE_KEY_PREFIX}${provider}`);
-    if (!encrypted) return null;
-    return await decrypt(encrypted);
-  },
-
-  /** Removes a stored API key entry for a provider. */
-  removeApiKey(provider: AIProvider): void {
-    localStorage.removeItem(`${STORAGE_KEY_PREFIX}${provider}`);
-  },
-
-  /** Returns all stored provider keys as a decrypted object. */
-  async getAllApiKeys(): Promise<Record<string, string>> {
-    const keys: Record<string, string> = {};
-
-    for (const provider of CLOUD_PROVIDERS) {
-      const key = await this.getApiKey(provider);
-      if (key) {
-        keys[provider] = key;
-      }
+    try {
+      const response = await fetch('/api/eduai/provider-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerName: provider, isEnabled: true, apiKey }),
+      });
+      if (!response.ok) throw new Error(`Provider setting save failed (${response.status})`);
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}${provider}`);
+    } catch (error) {
+      // Keep local fallback for offline development and older deployments. A
+      // successful production write always removes this fallback immediately.
+      const encrypted = await encrypt(apiKey);
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}${provider}`, encrypted);
+      throw error;
     }
+  },
 
-    return keys;
+  /** Returns the shared stored sentinel, never the Core secret itself. */
+  async getApiKey(provider: AIProvider): Promise<string | null> {
+    try {
+      const response = await fetch('/api/eduai/provider-settings', { credentials: 'include' });
+      if (!response.ok) throw new Error(`Provider setting read failed (${response.status})`);
+      const rows = await response.json();
+      const row = Array.isArray(rows)
+        ? rows.find((entry) => entry?.providerName === provider)
+        : null;
+      return row?.isEnabled && row?.hasKey ? CORE_STORED_KEY : null;
+    } catch {
+      const encrypted = localStorage.getItem(`${STORAGE_KEY_PREFIX}${provider}`);
+      if (!encrypted) return null;
+      return await decrypt(encrypted);
+    }
+  },
+
+  /** Removes the shared Core setting and any legacy browser fallback. */
+  async removeApiKey(provider: AIProvider): Promise<void> {
+    try {
+      const response = await fetch(
+        `/api/eduai/provider-settings?providerName=${encodeURIComponent(provider)}`,
+        { method: 'DELETE', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error(`Provider setting delete failed (${response.status})`);
+    } finally {
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}${provider}`);
+    }
+  },
+
+  /** Returns provider status sentinels and migrates legacy local keys once. */
+  async getAllApiKeys(): Promise<Record<string, string>> {
+    try {
+      const response = await fetch('/api/eduai/provider-settings', { credentials: 'include' });
+      if (!response.ok) throw new Error(`Provider setting read failed (${response.status})`);
+      const rows = await response.json();
+      const keys: Record<string, string> = {};
+      for (const row of Array.isArray(rows) ? rows : []) {
+        if (row?.isEnabled && row?.hasKey && typeof row.providerName === 'string') {
+          keys[row.providerName] = CORE_STORED_KEY;
+        }
+      }
+      for (const provider of CLOUD_PROVIDERS) {
+        const legacy = localStorage.getItem(`${STORAGE_KEY_PREFIX}${provider}`);
+        if (!legacy || keys[provider]) continue;
+        const key = await decrypt(legacy);
+        if (!key) continue;
+        try {
+          const saveResponse = await fetch('/api/eduai/provider-settings', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ providerName: provider, isEnabled: true, apiKey: key }),
+          });
+          if (!saveResponse.ok) throw new Error('legacy migration failed');
+          keys[provider] = CORE_STORED_KEY;
+          localStorage.removeItem(`${STORAGE_KEY_PREFIX}${provider}`);
+        } catch {
+          // Keep the legacy key if migration is temporarily unavailable.
+        }
+      }
+      return keys;
+    } catch {
+      const keys: Record<string, string> = {};
+      for (const provider of CLOUD_PROVIDERS) {
+        const key = await this.getApiKey(provider);
+        if (key) keys[provider] = key;
+      }
+      return keys;
+    }
   },
 
   /** Derives provider name from a model ID prefix (e.g., google:gemini → google). */
@@ -181,12 +243,9 @@ export const apiKeyStorage = {
       return {};
     }
 
-    return {
-      [provider]: {
-        apiKey,
-        isEnabled: true
-      }
-    };
+    return apiKey === CORE_STORED_KEY
+      ? { [provider]: { isEnabled: true } }
+      : { [provider]: { apiKey, isEnabled: true } };
   }
 };
 

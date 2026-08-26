@@ -56,7 +56,7 @@ import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
 import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
 import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
 import { useApiKeys } from '~/hooks/use-api-keys';
-import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
+import { getProviderFromModelId, getProviderLabel, isCoreStoredKey, maskApiKey } from '~/lib/provider-keys';
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
 import api, { ApiTimeoutError } from '../lib/api';
@@ -406,11 +406,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       // Provider key is the only hard requirement; a missing knowledge level
       // is filled with a sensible default (and remembered) rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
-      const apiKey = getKey(provider);
-      if (!apiKey) {
+      const configuredKey = getKey(provider);
+      if (!configuredKey) {
         setActiveTab(tab);
         return;
       }
+      const apiKey = isCoreStoredKey(configuredKey) ? undefined : configuredKey;
 
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
@@ -587,7 +588,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   );
 
   const handleOpenApiKeyDialog = useCallback(() => {
-    setTempApiKey(currentApiKey);
+    setTempApiKey(isCoreStoredKey(currentApiKey) ? '' : currentApiKey);
     setApiKeyError(null);
     setShowApiKeyDialog(true);
   }, [currentApiKey]);
@@ -602,7 +603,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setApiKeyError(result.error || 'Invalid API key');
         return;
       }
-      setKey(currentProvider, tempApiKey.trim());
+      await setKey(currentProvider, tempApiKey.trim());
       setShowApiKeyDialog(false);
       setTempApiKey('');
     } catch {

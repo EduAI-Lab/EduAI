@@ -10,10 +10,9 @@
  *   feature that needs an AI-mediated reply for a student message. Tests
  *   import `_testExports` for unit-level coverage of the pure helpers.
  * Gotchas:
- *   - Per-user provider API keys (apiKeys[provider]) are forwarded to EduAI on
- *     every request and never persisted server-side. The user's Core session
- *     cookie is forwarded as the `Cookie` header — both must be present or
- *     `callEduAI` throws.
+ *   - The user's Core session cookie is forwarded as the `Cookie` header.
+ *     Provider keys are owned by Core; older clients may still provide a raw
+ *     key, but current clients only send provider enablement.
  *   - Prompt templates `learning-prompt`, `exercise-prompt`, and
  *     `supervisor-prompt` MUST exist as `PromptTemplate` rows; missing rows
  *     throw and surface as a user-visible error in the catch blocks.
@@ -110,11 +109,9 @@ function eduAiErrorMessage(status, errorText) {
  * Single logical call to the EduAI chat completion endpoint. Transient 429 or
  * 503 responses receive one bounded retry within the existing timeout.
  *
- * Why both a cookie AND an apiKey: EduAI authenticates the *caller*
- * (this server, on behalf of a logged-in user) via the session cookie, but
- * the actual upstream LLM call is billed against the *user's* personal
- * provider key (OpenAI/Anthropic/Google). The provider key never lands in
- * our DB — it transits straight through to EduAI in the request body.
+ * The cookie authenticates the logged-in user to Core. Core resolves the
+ * encrypted provider key for that user, so an apiKey is optional for current
+ * clients and remains only as a backwards-compatible request override.
  */
 async function callEduAI({
   systemPrompt,
@@ -143,13 +140,6 @@ async function callEduAI({
     throw error;
   }
 
-  if (!userApiKey) {
-    console.error('[aiGuidance] Missing user API key');
-    const error = new Error('API key is required');
-    error.status = 400;
-    throw error;
-  }
-
   // Model IDs are namespaced "provider:model" (e.g. "google:gemini-2.5-flash");
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(':');
@@ -161,8 +151,8 @@ async function callEduAI({
   const userMessageId = messageId || randomUUID();
   const apiKeys = {
     [provider]: {
-      apiKey: userApiKey,
       isEnabled: true,
+      ...(userApiKey ? { apiKey: userApiKey } : {}),
     },
   };
 

@@ -14,13 +14,10 @@ import {
 } from '@eduai/ui';
 import { toast } from 'sonner';
 
-import api from '~/lib/api';
-import type { EduAiApiKeyStatus } from '~/lib/types';
 import {
   DEFAULT_POLICY,
   buildFallbackSummary,
   clampIterations,
-  formatApiKeyUpdatedTime,
   formatCostTier,
   getAdminSettingsApi,
   inferProvider,
@@ -49,7 +46,6 @@ type AdminSettingsPanelProps = {
 
 export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
   const settingsApi = getAdminSettingsApi();
-  const [status, setStatus] = useState<EduAiApiKeyStatus>(loaderData.status);
   const [aiPolicy, setAiPolicy] = useState<AdminAiModelPolicy>(
     normalizePolicy(loaderData.aiPolicy ?? DEFAULT_POLICY, loaderData.aiModels),
   );
@@ -57,12 +53,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     normalizePolicy(loaderData.aiPolicy ?? DEFAULT_POLICY, loaderData.aiModels),
   );
   const [aiModels] = useState<AdminAiModelOption[]>(loaderData.aiModels);
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const [savingAiPolicy, setSavingAiPolicy] = useState(false);
-  const updatedLabel = useMemo(() => formatApiKeyUpdatedTime(status.updatedAt), [status.updatedAt]);
 
   useEffect(() => {
     if (loaderData.aiPolicyError) {
@@ -74,33 +65,6 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
   const aiPolicyDirty = useMemo(() => {
     return JSON.stringify(initialAiPolicy) !== JSON.stringify(aiPolicy);
   }, [aiPolicy, initialAiPolicy]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const next = await api.setEduAiApiKey(apiKey);
-      setStatus(next);
-      setApiKey('');
-      toast.success('Saved. This key will be used instead of the default one.');
-    } catch {
-      toast.error('Could not save key. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const clear = async () => {
-    setClearing(true);
-    try {
-      const next = await api.clearEduAiApiKey();
-      setStatus(next);
-      toast.success('Cleared. The default key will be used instead.');
-    } catch {
-      toast.error('Could not clear the key. Please try again.');
-    } finally {
-      setClearing(false);
-    }
-  };
 
   const toggleTutorModel = (modelId: string) => {
     setAiPolicy((current) => {
@@ -425,58 +389,6 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6">
-          <div className="space-y-2">
-            <h2 className="text-xl font-bold text-foreground">EduAI API Key</h2>
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              {status.envConfigured ? (
-                <>
-                  A default key is already set up for this server. Saving a key here will use it
-                  instead. Clear it to go back to the default key.
-                </>
-              ) : (
-                <>No default key is set up for this server yet. You can set one here.</>
-              )}
-            </p>
-            {updatedLabel && status.hasAdminOverride && (
-              <p className="text-xs text-muted-foreground">
-                Last updated: <span className="font-mono">{updatedLabel}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-foreground">New key</label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Input
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                type={showKey ? 'text' : 'password'}
-                className="flex-1"
-                placeholder="Paste EDUAI API key"
-                autoComplete="off"
-              />
-              <Button type="button" onClick={() => setShowKey((v) => !v)} variant="secondary">
-                {showKey ? 'Hide' : 'Show'}
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button type="button" onClick={save} disabled={saving || !apiKey.trim()} variant="primary">
-              {saving ? 'Saving…' : 'Save key'}
-            </Button>
-            <Button
-              type="button"
-              onClick={clear}
-              disabled={clearing || !status.hasAdminOverride}
-              variant="secondary"
-              title={!status.hasAdminOverride ? 'No key to clear' : undefined}
-            >
-              {clearing ? 'Clearing…' : 'Clear key'}
-            </Button>
-          </div>
-        </div>
       </div>
     </div>
   );

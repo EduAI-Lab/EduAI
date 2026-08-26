@@ -32,7 +32,7 @@ import {
     SelectValue,
     useTheme,
 } from '@eduai/ui';
-import apiKeyStorage, { type AIProvider } from '../services/apiKeyStorage';
+import apiKeyStorage, { CORE_STORED_KEY, type AIProvider } from '../services/apiKeyStorage';
 import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
 import { canvasService, type CanvasIntegration } from '../services/canvasService';
 import { useAuth } from '../contexts/AuthContext';
@@ -75,6 +75,7 @@ const DEFAULT_EXPORT_PREFS: ExportPrefs = {
 
 /** Masks a stored key the way QuestionAIControls does: first 8 chars + bullets. */
 function maskKey(value: string): string {
+    if (value === CORE_STORED_KEY) return 'Stored securely in Core';
     return `${value.substring(0, 8)}${'•'.repeat(Math.max(0, value.length - 8))}`;
 }
 
@@ -168,15 +169,20 @@ export default function SettingsPage() {
         const draft = (drafts[provider] ?? '').trim();
         if (!draft) return;
         setSavingProvider(provider);
-        await apiKeyStorage.setApiKey(provider, draft);
-        await refreshKeys();
-        setDrafts((prev) => ({ ...prev, [provider]: '' }));
-        setSavingProvider(null);
-        toast(`${PROVIDER_LABELS[provider]} API key saved`);
+        try {
+            await apiKeyStorage.setApiKey(provider, draft);
+            await refreshKeys();
+            setDrafts((prev) => ({ ...prev, [provider]: '' }));
+            toast(`${PROVIDER_LABELS[provider]} API key saved`);
+        } catch {
+            toast(`Could not save the ${PROVIDER_LABELS[provider]} API key to Core`);
+        } finally {
+            setSavingProvider(null);
+        }
     };
 
     const handleRemoveKey = async (provider: AIProvider): Promise<void> => {
-        apiKeyStorage.removeApiKey(provider);
+        await apiKeyStorage.removeApiKey(provider);
         await refreshKeys();
         toast(`${PROVIDER_LABELS[provider]} API key removed`);
     };
@@ -289,7 +295,7 @@ export default function SettingsPage() {
                                 <CardHeader>
                                     <CardTitle>Model Providers</CardTitle>
                                     <CardDescription>
-                                        Browser-encrypted API keys used when generating questions with AI.
+                                        API keys are encrypted in Core and shared across EduAI platforms.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-6">

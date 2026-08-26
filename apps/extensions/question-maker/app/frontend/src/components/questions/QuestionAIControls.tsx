@@ -233,7 +233,7 @@ export function QuestionAIControls({
                     )}
                     {/* Compact muted notes — replaces the bulky amber warning box to cut clutter. */}
                     <p className="text-[11px] text-muted-foreground">
-                        Stored locally in your browser, never sent to our servers.
+                        Stored encrypted in Core and shared across EduAI platforms.
                         {isExternal && ' External models receive your prompt and course data.'}
                     </p>
                 </div>

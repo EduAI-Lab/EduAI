@@ -4,7 +4,12 @@
  */
 import { termLabelLong } from '@eduai/ui';
 import api from './api';
-import { apiKeyStorage, type AIProvider, type CampusProvider } from './apiKeyStorage';
+import {
+    apiKeyStorage,
+    CORE_STORED_KEY,
+    type AIProvider,
+    type CampusProvider,
+} from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -170,7 +175,10 @@ class EduAIService {
             try {
                 const stored = await apiKeyStorage.getAllApiKeys();
                 apiKeys = Object.fromEntries(
-                    Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
+                    Object.entries(stored).map(([provider, apiKey]) => [
+                        provider,
+                        apiKey === CORE_STORED_KEY ? { isEnabled: true } : { apiKey, isEnabled: true },
+                    ])
                 );
             } catch {
                 // Ignore key-storage failures — fall back to server-side keys only.

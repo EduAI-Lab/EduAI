@@ -1,9 +1,8 @@
 /**
  * BYOK (bring-your-own-key) provider-key helpers — the platform-standard
- * pattern (Core keeps user provider keys client-side and forwards them per
- * request; AI Tutor does the same). Keys live only in localStorage; the server
- * never persists them. Centralised here so the chat composer and the Settings →
- * Providers tab share one source of truth.
+ * pattern. Core stores the encrypted user provider keys and the extensions
+ * only receive a masked status; the chat composer and Settings → Providers tab
+ * share the same Core-backed source of truth.
  */
 
 export type ProviderId = 'google' | 'openai';
@@ -24,6 +23,11 @@ const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'Ope
 /** localStorage key — unchanged from the original chat implementation so any
  *  keys a student already saved keep working after this refactor. */
 export const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
+export const CORE_STORED_KEY = '__core_stored__';
+
+export function isCoreStoredKey(key: string | undefined): boolean {
+  return key === CORE_STORED_KEY;
+}
 
 export function getProviderLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
@@ -35,6 +39,7 @@ export function getProviderFromModelId(modelId: string): string {
 }
 
 export function maskApiKey(key: string): string {
+  if (isCoreStoredKey(key)) return 'Stored securely in Core';
   if (key.length <= 8) return '••••••••';
   return `••••••${key.slice(-4)}`;
 }

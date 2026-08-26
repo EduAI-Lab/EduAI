@@ -49,11 +49,16 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { APICallError } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 
 function makeRequest(body: object) {
   return {
@@ -113,6 +118,7 @@ beforeEach(() => {
     user: { id: "u1", role: "STUDENT" },
   } as never);
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(getUserProviderSettings).mockResolvedValue({});
 });
 
 afterEach(() => {
