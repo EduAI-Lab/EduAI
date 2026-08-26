@@ -939,6 +939,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 {numericLessonId !== null && (
                   <AddActivityPanel
                     lessonId={numericLessonId}
+                    courseOfferingId={courseOfferingId}
                     onActivityCreated={() => {
                       void revealNewestActivity();
                       setShowAddPanel(false);

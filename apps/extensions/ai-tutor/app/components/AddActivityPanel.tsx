@@ -28,7 +28,7 @@
  */
 
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconPlus,
   IconX,
@@ -60,6 +60,8 @@ import { cn } from "~/lib/utils";
 import api from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
 import { AI_MODE_REQUIRED } from "~/lib/activityForm";
+import { bankQuestionToActivityDraft } from "~/lib/bankQuestionToActivityDraft";
+import type { BankQuestion } from "~/lib/bankQuestionToActivityDraft";
 
 const TYPE_OPTIONS = [
   { value: "MCQ" as const, label: "MCQ" },
@@ -71,12 +73,18 @@ interface AddActivityPanelProps {
   onActivityCreated: () => void;
   /** Dismiss the modal without creating (Cancel / backdrop). */
   onCancel?: () => void;
+  /**
+   * Enables "Start from a bank question" mode when present. Omitted (or
+   * `null`) callers keep the manual-only form — the toggle never renders.
+   */
+  courseOfferingId?: number | null;
 }
 
 export default function AddActivityPanel({
   lessonId,
   onActivityCreated,
   onCancel,
+  courseOfferingId,
 }: AddActivityPanelProps) {
   const {
     topics,
@@ -85,6 +93,7 @@ export default function AddActivityPanel({
     error: topicsError,
     loadMore: loadMoreTopics,
     loadingMore: loadingMoreTopics,
+    refresh: refreshTopics,
   } = useCourseTopicsContext();
   const [type, setType] = useState<"MCQ" | "SHORT_TEXT">("MCQ");
   const [question, setQuestion] = useState("");
@@ -94,6 +103,18 @@ export default function AddActivityPanel({
   const [textAnswer, setTextAnswer] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // "Start from" a shared bank question vs. writing the prompt manually.
+  // Bank mode is offered only when the caller passes `courseOfferingId`.
+  const [source, setSource] = useState<"manual" | "bank">("manual");
+  const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
+  const [bankState, setBankState] = useState<"idle" | "loading" | "error">("idle");
+  // Shown as a chip once a bank question is applied; clearing it empties the
+  // prefilled fields it set.
+  const [bankSource, setBankSource] = useState<{ id: string; label: string } | null>(null);
+  // Set when the bank question's topic name has no match in this course's
+  // topic list. Never creates the topic — topic sync owns that table.
+  const [unresolvedTopic, setUnresolvedTopic] = useState<string | null>(null);
 
   // Topic ids are opaque cuid strings on the wire (server schema is
   // z.array(z.string())), so keep them as strings — never Number() them.
@@ -132,6 +153,71 @@ export default function AddActivityPanel({
     () => topics.filter((topic) => String(topic.id) !== selectedMainTopicId),
     [topics, selectedMainTopicId],
   );
+
+  // Read by `applyBankQuestion`'s async re-match after `refreshTopics()`
+  // resolves — a plain closure over `topics` would see the stale list from
+  // the render the bank question was picked in, not the refreshed one.
+  const topicsRef = useRef(topics);
+  topicsRef.current = topics;
+
+  useEffect(() => {
+    if (source !== "bank" || courseOfferingId == null) return;
+    let cancelled = false;
+    setBankState("loading");
+    api
+      .listBankQuestions(courseOfferingId, { limit: 20 })
+      .then((questions) => {
+        if (cancelled) return;
+        setBankQuestions(questions);
+        setBankState("idle");
+      })
+      .catch(() => {
+        if (!cancelled) setBankState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source, courseOfferingId]);
+
+  const applyBankQuestion = (bankQuestion: BankQuestion) => {
+    const draft = bankQuestionToActivityDraft(
+      bankQuestion,
+      topics.map((topic) => ({ id: String(topic.id), name: topic.name })),
+    );
+    setType(draft.type);
+    setQuestion(draft.question);
+    setChoices(draft.choices.length ? draft.choices : ["", "", "", ""]);
+    setCorrect(draft.correct ?? 0);
+    setHasSelectedCorrect(draft.correct !== null);
+    setTextAnswer(draft.answer);
+    if (draft.mainTopicId) {
+      setSelectedMainTopicId(draft.mainTopicId);
+      setUnresolvedTopic(null);
+    } else if (draft.unresolvedTopicName) {
+      // The topics list may just be stale (Core sync runs on the GET
+      // /courses/:id/topics read) — refresh once and re-check before giving up.
+      void refreshTopics().then(() => {
+        const rematch = topicsRef.current.find((topic) => topic.name === draft.unresolvedTopicName);
+        if (rematch) {
+          setSelectedMainTopicId(String(rematch.id));
+          setUnresolvedTopic(null);
+        } else {
+          setUnresolvedTopic(draft.unresolvedTopicName);
+        }
+      });
+    }
+    setBankSource({ id: bankQuestion.id, label: bankQuestion.content });
+  };
+
+  const clearBankSource = () => {
+    setBankSource(null);
+    setUnresolvedTopic(null);
+    setQuestion("");
+    setChoices(["", "", "", ""]);
+    setCorrect(0);
+    setHasSelectedCorrect(false);
+    setTextAnswer("");
+  };
 
   const addChoice = () => {
     setChoices((prev) => (prev.length < 8 ? [...prev, ""] : prev));
@@ -205,6 +291,8 @@ export default function AddActivityPanel({
       setSelectedSecondaryTopicIds([]);
       setEnableTeachMode(true);
       setEnableGuideMode(true);
+      setBankSource(null);
+      setUnresolvedTopic(null);
       onActivityCreated();
     } catch (error) {
       console.error("Failed to add activity", error);
@@ -220,7 +308,114 @@ export default function AddActivityPanel({
         <DialogDescription>Author a new question for this lesson.</DialogDescription>
       </DialogHeader>
       <form onSubmit={handleAddActivity} className="space-y-6">
-        <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
+        {courseOfferingId != null && (
+          <div className="space-y-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+              Start from
+            </span>
+            <div
+              role="radiogroup"
+              className="inline-flex items-center gap-1 rounded-xl border border-border bg-muted/55 p-1 shadow-sm"
+            >
+              <button
+                type="button"
+                role="radio"
+                data-testid="activity-source-manual"
+                data-state={source === "manual" ? "on" : "off"}
+                aria-checked={source === "manual"}
+                onClick={() => setSource("manual")}
+                className={cn(
+                  "min-w-[6.5rem] rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                  source === "manual"
+                    ? "bg-card text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
+                    : "text-muted-foreground hover:bg-card/75 hover:text-foreground",
+                )}
+              >
+                Write my own
+              </button>
+              <button
+                type="button"
+                role="radio"
+                data-testid="activity-source-bank"
+                data-state={source === "bank" ? "on" : "off"}
+                aria-checked={source === "bank"}
+                onClick={() => setSource("bank")}
+                className={cn(
+                  "min-w-[6.5rem] rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                  source === "bank"
+                    ? "bg-card text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
+                    : "text-muted-foreground hover:bg-card/75 hover:text-foreground",
+                )}
+              >
+                From the question bank
+              </button>
+            </div>
+          </div>
+        )}
+
+        {source === "bank" && !bankSource ? (
+          <div data-testid="bank-question-list" className="space-y-2">
+            {bankState === "loading" && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {bankState === "error" && (
+              <p className="text-sm text-destructive">
+                Could not load the question bank. Write the question yourself, or try again.
+              </p>
+            )}
+            {bankState === "idle" && bankQuestions.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No shared questions in this course yet. In Question Maker, tick "Usable by other
+                EduAI extensions" on a reviewed question.
+              </p>
+            )}
+            {bankQuestions.map((bankQuestion) => (
+              <button
+                key={bankQuestion.id}
+                type="button"
+                data-testid={`bank-question-${bankQuestion.id}`}
+                onClick={() => applyBankQuestion(bankQuestion)}
+                className="w-full rounded-[var(--radius-md)] border border-border p-2 text-left"
+              >
+                <span className="text-sm font-medium">{bankQuestion.content}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {bankQuestion.type === "MCQ" ? "MCQ" : "Short answer"}
+                  {bankQuestion.topicName ? ` · ${bankQuestion.topicName}` : ""}
+                </span>
+              </button>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              Long-answer questions are not shown — an activity is MCQ or short answer.
+            </p>
+          </div>
+        ) : null}
+
+        {bankSource && (
+          <div
+            data-testid="bank-source-chip"
+            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-muted/40 px-3 py-2"
+          >
+            <span className="truncate text-sm">
+              From the question bank: <span className="font-medium">{bankSource.label}</span>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="bank-source-clear"
+              onClick={clearBankSource}
+            >
+              <IconX className="size-4" aria-hidden="true" />
+              Clear
+            </Button>
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "grid gap-x-6 gap-y-5 md:grid-cols-2",
+            source === "bank" && !bankSource && "hidden",
+          )}
+        >
           {/* Left column: what's asked. */}
           <div className="space-y-5">
             <div className="space-y-2">
@@ -388,6 +583,12 @@ export default function AddActivityPanel({
               {topicSelectionError && (
                 <p className="text-xs text-destructive">{topicSelectionError}</p>
               )}
+              {unresolvedTopic ? (
+                <p className="text-xs text-muted-foreground">
+                  "{unresolvedTopic}" is not in this course's topics yet — choose a main topic
+                  below.
+                </p>
+              ) : null}
               {/* #1207: the topic list is paged. Without this the tail of a large
                 course's topics would be unreachable and unmentioned. */}
               {topics.length < topicsTotal && (

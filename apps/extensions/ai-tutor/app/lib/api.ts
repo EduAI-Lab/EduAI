@@ -90,6 +90,7 @@ import type {
   User,
 } from "./types";
 import { getCoreLoginUrl } from "./coreUrl";
+import type { BankQuestion } from "./bankQuestionToActivityDraft";
 
 /**
  * Set by course endpoints (#1072 step 2) when a request degraded gracefully
@@ -797,6 +798,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  /**
+   * Shared bank questions available to build an activity from (Task 2). The
+   * server already excludes long-answer questions, so this must not re-filter.
+   */
+  listBankQuestions: (
+    courseId: number,
+    params: { topicId?: string; limit?: number; offset?: number } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (params.topicId) query.set("topicId", params.topicId);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query}` : "";
+    return http(`/api/courses/${courseId}/bank-questions${suffix}`).then(
+      (data) => data.questions ?? [],
+    ) as Promise<BankQuestion[]>;
+  },
   submitAnswer: (activityId: number, payload: any) =>
     decode(
       http(`/api/questions/${activityId}/answer`, {
