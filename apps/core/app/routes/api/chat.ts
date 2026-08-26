@@ -34,6 +34,7 @@ import {
   acquireAiAdmission,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
@@ -595,6 +596,7 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   const requestStartMs = Date.now();
+  const activeRequestId = request.headers.get("X-EduAI-Request-Id")?.trim() || null;
   try {
     const { response: apiKeyGuard, session: apiKeySession } =
       await enforceAdminIfApiKey(request);
@@ -2402,17 +2404,31 @@ ${buildEmptyCourseRagBlock()}`;
     const needsAdmission =
       parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
+    const streamAbortController = new AbortController();
+    const abortStreamFromRequest = () => streamAbortController.abort();
+    if (request.signal.aborted) abortStreamFromRequest();
+    else request.signal.addEventListener("abort", abortStreamFromRequest, { once: true });
     let admissionWaitedMs = 0;
     if (needsAdmission) {
       try {
-        const slot = await acquireAiAdmission(request.signal);
-        admissionRelease = slot.release;
+        const slot = await acquireAiAdmission(streamAbortController.signal);
+        let unregisterCancellation: (() => void) | undefined;
+        admissionRelease = () => {
+          unregisterCancellation?.();
+          request.signal.removeEventListener("abort", abortStreamFromRequest);
+          slot.release();
+        };
+        if (activeRequestId) {
+          unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
+            streamAbortController.abort();
+          });
+        }
         admissionWaitedMs = slot.waitedMs;
         fleetLoadLease?.markActive();
       } catch (err) {
         fleetLoadLease?.release();
         fleetLoadLease = null;
-        if (isClientAbort(err, request.signal)) {
+        if (isClientAbort(err, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
@@ -2499,7 +2515,7 @@ ${buildEmptyCourseRagBlock()}`;
       const result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
-        abortSignal: request.signal,
+        abortSignal: streamAbortController.signal,
         onChunk: probe
           ? () => {
               probe.hooks.signalReady();
@@ -2613,7 +2629,7 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
-      if (isClientAbort(error, request.signal)) {
+      if (isClientAbort(error, streamAbortController.signal)) {
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -2672,7 +2688,7 @@ ${buildEmptyCourseRagBlock()}`;
           }
         } catch (retryError) {
           releaseAdmission();
-          if (isClientAbort(retryError, request.signal)) {
+          if (isClientAbort(retryError, streamAbortController.signal)) {
             return clientAbortResponse();
           }
           logStreamError(retryError, streamTrace);
@@ -2867,7 +2883,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (oversightStage === "provider") {
@@ -2932,7 +2948,7 @@ ${buildEmptyCourseRagBlock()}`;
             ),
         }),
         release,
-        request.signal,
+        streamAbortController.signal,
       );
     } else {
       let providerResultResolved = false;
@@ -3040,7 +3056,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (!providerResultResolved) {
