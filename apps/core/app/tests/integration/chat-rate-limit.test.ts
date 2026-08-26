@@ -30,6 +30,9 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  // #1659: every chatMode this suite exercises is "learning", never admin or
+  // instructor — see isPrivilegedChatMode's own tests for the privileged case.
+  isPrivilegedChatMode: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }));
