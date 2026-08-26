@@ -56,6 +56,7 @@ import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { JsonObject } from "~/lib/json-value";
 import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
@@ -84,6 +85,10 @@ function makeArgs(body: RouteRequestBody) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  // vi.clearAllMocks() resets call history but NOT implementations, so a test
+  // that stubs an admin api-key session leaks it into every later test. Restore
+  // the default here rather than at each call site.
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
@@ -602,5 +607,72 @@ describe("POST /api/chat — bounded ingress", () => {
     expect(prisma.chat.create).not.toHaveBeenCalled();
     expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
+// §19 chat system prompt layering (#1606): a custom system prompt is APPENDED to
+// the EduAI base prompt rather than replacing it, so no caller can delete the
+// assistant's identity, the instructor's response style, or the course-scope
+// guardrail. The composition itself is asserted in
+// course-response-style.route.test.ts; these cover admission and persistence.
+describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
+  const PROMPT = "Reply in bullet points.";
+
+  const send = (body: JsonObject = {}) =>
+    action(makeArgs({ messages: [], courseId: "c1", systemPrompt: PROMPT, ...body }));
+
+  function mockRole(role: string) {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
+  }
+
+  it.each([
+    ["student", 0],
+    ["ta", 1],
+    ["instructor", 2],
+    ["unit", 3],
+    ["admin", 4],
+  ])("admits %s access — layering makes the prompt safe for every role", async (level, rank) => {
+    mockAccess({ level, rank });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+  });
+
+  it("no longer rejects a student's prompt (the #1606 403 gate was replaced by layering)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+    expect(await res.text()).not.toContain("SYSTEM_PROMPT_FORBIDDEN");
+  });
+
+  it("still enforces the course gate before reaching prompt handling", async () => {
+    // Layering relaxes WHAT a prompt can do, not WHO may open a course chat.
+    mockAccess(null);
+    const res = await send();
+    expect(res.status).toBe(403);
+  });
+
+  it("leaves ordinary messages untouched when no prompt is sent", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("a student cookie plus bearer is still a browser caller, not a sessionless service-key caller", async () => {
+    // isServiceKeyCaller only fires when there is no session. A Bearer header
+    // on a real cookie must not skip COURSE_REQUIRED or switch to replace.
+    const args = makeArgs({ messages: [], systemPrompt: PROMPT });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], systemPrompt: PROMPT }),
+    });
+
+    const res = await action(args);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(requireServiceKey).not.toHaveBeenCalled();
   });
 });

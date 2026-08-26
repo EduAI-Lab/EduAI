@@ -1352,16 +1352,19 @@ function Auth({
     stroke: "white",
     strokeWidth: "1.75",
     strokeLinecap: "round"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "12",
-    cy: "12",
-    r: "9"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "m3 9 9-5 9 5-9 5Z"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3a9 9 0 0 1 0 18"
+    d: "M6 11v4c3 3 9 3 12 0v-4"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M3 12h18"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"
+    d: "M21 10v6",
+    stroke: "var(--gold)"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "21",
+    cy: "18",
+    r: "1",
+    fill: "var(--gold)",
+    stroke: "none"
   }))), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: "20px",
@@ -4080,16 +4083,19 @@ function Onboarding({
     strokeWidth: "1.75",
     strokeLinecap: "round",
     strokeLinejoin: "round"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "12",
-    cy: "12",
-    r: "9"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "m3 9 9-5 9 5-9 5Z"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3a9 9 0 0 1 0 18"
+    d: "M6 11v4c3 3 9 3 12 0v-4"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M3 12h18"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"
+    d: "M21 10v6",
+    stroke: "var(--gold)"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "21",
+    cy: "18",
+    r: "1",
+    fill: "var(--gold)",
+    stroke: "none"
   })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: "15px",
@@ -5035,16 +5041,19 @@ function Sidebar({
     stroke: "white",
     strokeWidth: "1.75",
     strokeLinecap: "round"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "12",
-    cy: "12",
-    r: "9"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "m3 9 9-5 9 5-9 5Z"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3a9 9 0 0 1 0 18"
+    d: "M6 11v4c3 3 9 3 12 0v-4"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M3 12h18"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"
+    d: "M21 10v6",
+    stroke: "var(--gold)"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "21",
+    cy: "18",
+    r: "1",
+    fill: "var(--gold)",
+    stroke: "none"
   }))), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: "15px",
