@@ -60,6 +60,28 @@ describe("useCourses", () => {
     expect(listUrls(mockFetch)[0]).toContain("pageSize=25");
   });
 
+  it("loads every page for callers that need the complete catalog", async () => {
+    const firstPage = [course];
+    const secondCourse = { ...course, id: "course-2", code: "CS102" };
+    mockFetch.mockImplementation((url: string) => {
+      const pageNumber = new URL(`http://localhost${url}`).searchParams.get("page");
+      return Promise.resolve(
+        pageNumber === "2"
+          ? okJson({ data: [secondCourse], total: 2, page: 2, pageSize: 1 })
+          : okJson({ data: firstPage, total: 2, page: 1, pageSize: 1 }),
+      );
+    });
+
+    const { result } = renderHook(() => useCourses({ pageSize: 1, loadAll: true }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.courses).toEqual([course, secondCourse]);
+    expect(listUrls(mockFetch)).toEqual(expect.arrayContaining([
+      expect.stringContaining("page=1"),
+      expect.stringContaining("page=2"),
+    ]));
+  });
+
   it("passes isActive through as a query param when supplied", async () => {
     const { result } = renderHook(() => useCourses({ isActive: false }));
 

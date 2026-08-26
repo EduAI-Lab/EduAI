@@ -57,6 +57,8 @@ export interface UseCoursesOptions {
   pageSize?: number
   /** Restrict to active/inactive courses; omit for both. */
   isActive?: boolean
+  /** Fetch every page; use only for bounded pickers that need the full catalog. */
+  loadAll?: boolean
 }
 
 /**
@@ -67,7 +69,7 @@ export interface UseCoursesOptions {
  * the rows they were handed.
  */
 export function useCourses(options: UseCoursesOptions = {}) {
-  const { pageSize = DEFAULT_PAGE_SIZE, isActive } = options
+  const { pageSize = DEFAULT_PAGE_SIZE, isActive, loadAll = false } = options
 
   const [courses, setCourses] = useState<Course[]>([])
   const [total, setTotal] = useState(0)
@@ -96,21 +98,45 @@ export function useCourses(options: UseCoursesOptions = {}) {
     setLoading(true)
     setError(null)
     try {
-      const query = paginationQuery(pagination, {
+      const extraQuery = {
         search: debouncedSearch,
         isActive: isActive === undefined ? undefined : String(isActive),
-      })
-      const res = await fetch(`/api/courses?${query}`)
+      }
+      const firstQuery = new URLSearchParams(
+        paginationQuery(pagination, extraQuery),
+      )
+      if (loadAll) firstQuery.set('page', '1')
+
+      const res = await fetch(`/api/courses?${firstQuery.toString()}`)
       if (!res.ok) throw new Error(await res.text())
       const body: PaginatedResponse<Course> = await res.json()
-      setCourses(body.data)
+      let rows = body.data
+
+      if (loadAll && body.total > rows.length) {
+        const responsePageSize = body.pageSize || pageSize
+        const pageCount = Math.ceil(body.total / responsePageSize)
+        const remainingPages = await Promise.all(
+          Array.from({ length: pageCount - 1 }, (_, index) => {
+            const query = new URLSearchParams(firstQuery)
+            query.set('page', String(index + 2))
+            return fetch(`/api/courses?${query.toString()}`).then(async (pageRes) => {
+              if (!pageRes.ok) throw new Error(await pageRes.text())
+              const pageBody: PaginatedResponse<Course> = await pageRes.json()
+              return pageBody.data
+            })
+          }),
+        )
+        rows = rows.concat(...remainingPages)
+      }
+
+      setCourses(rows)
       setTotal(body.total)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch courses')
     } finally {
       setLoading(false)
     }
-  }, [pagination, debouncedSearch, isActive])
+  }, [pagination, debouncedSearch, isActive, loadAll, pageSize])
 
   useEffect(() => {
     fetchCourses()
