@@ -20,7 +20,8 @@ export interface BedrockGuardrailsStackProps extends cdk.StackProps {
  * AWS-side backstop for Bedrock overflow (#1619).
  *
  * Owns:
- * - least-privilege IAM managed policy (two Invoke* actions, one model ARN)
+ * - least-privilege IAM managed policy (bearer-token Invoke* on one model ARN,
+ *   plus an explicit deny on every other model)
  * - CloudWatch alarms on AWS/Bedrock Invocations and OutputTokenCount
  * - SNS topic those alarms publish to (exported mailbox; empty until a later subscriber)
  *
@@ -38,14 +39,32 @@ export class BedrockGuardrailsStack extends cdk.Stack {
     this.invokePolicy = new iam.ManagedPolicy(this, "Llama370bInvokePolicy", {
       managedPolicyName: "EduaiBedrockLlama370bInvokeOnly",
       description:
-        "EduAI overflow: InvokeModel(+stream) on Llama 3 70B Instruct only. No other Bedrock actions, models, or regions.",
+        "EduAI overflow: bearer-token InvokeModel(+stream) on Llama 3 70B Instruct only. Explicit deny on every other model.",
       document: new iam.PolicyDocument({
         statements: [
+          // Long-term API keys send Authorization: Bearer. This action is required
+          // once AmazonBedrockLimitedAccess is removed.
+          // https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-modify.html
+          new iam.PolicyStatement({
+            sid: "CallWithBearerToken",
+            effect: iam.Effect.ALLOW,
+            actions: ["bedrock:CallWithBearerToken"],
+            resources: ["*"],
+          }),
           new iam.PolicyStatement({
             sid: "InvokeLlama370bOnly",
             effect: iam.Effect.ALLOW,
             actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
             resources: [modelArn],
+          }),
+          // IAM unions identity-policy allows, so an allow-only statement cannot
+          // constrain AmazonBedrockLimitedAccess. Explicit deny wins.
+          // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html
+          new iam.PolicyStatement({
+            sid: "DenyAllOtherBedrockModels",
+            effect: iam.Effect.DENY,
+            actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+            notResources: [modelArn],
           }),
         ],
       }),
@@ -109,7 +128,8 @@ export class BedrockGuardrailsStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "BedrockInvokePolicyArn", {
       value: this.invokePolicy.managedPolicyArn,
-      description: "Attach this managed policy to the identity that owns AWS_BEARER_TOKEN_BEDROCK.",
+      description:
+        "Replace AmazonBedrockLimitedAccess on the IAM user that owns AWS_BEARER_TOKEN_BEDROCK. Do not stack this on top of a broader Bedrock policy.",
     });
 
     new cdk.CfnOutput(this, "BedrockModelArn", {

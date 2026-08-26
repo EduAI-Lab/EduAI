@@ -13,13 +13,33 @@ token may call* and a fast alarm when Bedrock usage spikes — AWS Budgets lag
 
 | Resource | Purpose |
 | --- | --- |
-| IAM managed policy `EduaiBedrockLlama370bInvokeOnly` | `bedrock:InvokeModel` + `bedrock:InvokeModelWithResponseStream` on **one** model ARN |
+| IAM managed policy `EduaiBedrockLlama370bInvokeOnly` | Bearer-token invoke of **one** model ARN (`CallWithBearerToken` + `InvokeModel` / `InvokeModelWithResponseStream`); explicit deny on every other model |
 | SNS topic `eduai-bedrock-overflow-alarm` | Alarm mailbox. **Exported** as `EduaiBedrockGuardrailSnsTopicArn`. Empty until a later subscriber attaches. |
 | CloudWatch alarm on `AWS/Bedrock` `Invocations` | 5-minute Sum tripwire |
 | CloudWatch alarm on `AWS/Bedrock` `OutputTokenCount` | 5-minute Sum tripwire (spend proxy) |
 
-Attach the managed policy to the IAM identity that owns
-`AWS_BEARER_TOKEN_BEDROCK`. This stack does not mint or rotate that token.
+## Attach the policy (replace, do not stack)
+
+Long-term Bedrock API keys created in the console get
+`AmazonBedrockLimitedAccess` by default. IAM **unions** identity-policy
+allows, so attaching `EduaiBedrockLlama370bInvokeOnly` *on top of* that
+does not lock the key to Llama 3 70B.
+
+1. Detach `AmazonBedrockLimitedAccess` (and any other broad Bedrock
+   policy) from the IAM user that owns `AWS_BEARER_TOKEN_BEDROCK`.
+2. Attach `EduaiBedrockLlama370bInvokeOnly` as the identity policy.
+
+The managed policy itself:
+
+- Allows `bedrock:CallWithBearerToken` on `*` — required for
+  `Authorization: Bearer` / `AWS_BEARER_TOKEN_BEDROCK`
+  ([API-key permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-modify.html)).
+- Allows `InvokeModel` + `InvokeModelWithResponseStream` on the Llama 3
+  70B foundation-model ARN only.
+- **Denies** those Invoke* actions on every other resource, so a leftover
+  broad allow cannot invoke other models (explicit deny wins).
+
+This stack does not mint or rotate that token.
 
 ## Region (confirm before deploy)
 

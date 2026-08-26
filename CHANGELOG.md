@@ -4,7 +4,7 @@
 
 ### Added
 
-- [infra] feat: Add a CDK app at `infra/aws-bedrock-guardrails/` with a least-privilege Bedrock IAM policy (`InvokeModel` + stream on Llama 3 70B only), CloudWatch tripwires on `AWS/Bedrock` `Invocations` / `OutputTokenCount`, and an SNS mailbox exported as `EduaiBedrockGuardrailSnsTopicArn`. No `apps/core` change and no Lambda in this stack (#1620 is post-MVP). `npm run verify` asserts the synthesized template (ARN expected value is read from `cdk.json` context; threshold guards are unit-tested). Refs #1619. (@Ayyhab, 2026-08-24) — [#1630](https://github.com/EduAI-Lab/EduAI/pull/1630)
+- [infra] feat: Add a CDK app at `infra/aws-bedrock-guardrails/` with a least-privilege Bedrock IAM policy (`CallWithBearerToken` plus `InvokeModel` + stream on Llama 3 70B only, with an explicit deny on every other model so a leftover `AmazonBedrockLimitedAccess` cannot widen invoke access), CloudWatch tripwires on `AWS/Bedrock` `Invocations` / `OutputTokenCount`, and an SNS mailbox exported as `EduaiBedrockGuardrailSnsTopicArn`. No `apps/core` change and no Lambda in this stack (#1620 is post-MVP). `npm run verify` asserts the synthesized template (ARN expected value is read from `cdk.json` context; threshold guards are unit-tested). Refs #1619. (@Ayyhab, 2026-08-24) — [#1630](https://github.com/EduAI-Lab/EduAI/pull/1630)
 
 ### Tests
 
