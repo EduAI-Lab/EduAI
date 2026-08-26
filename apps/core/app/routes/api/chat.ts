@@ -2931,7 +2931,17 @@ ${buildEmptyCourseRagBlock()}`;
           fleetPick?.serverId ?? null,
         ),
       );
-      const release = () => releaseAdmission();
+      // `admissionRelease` is cleared below so outer error paths cannot release
+      // a slot after ownership transfers to the response body. Capture the
+      // acquired callback by value first: closing over `releaseAdmission()` here
+      // would read the now-null mutable variable and leak every completed
+      // streaming turn until AI_MAX_INFLIGHT is exhausted.
+      const acquiredAdmissionRelease = admissionRelease;
+      const release = () => {
+        acquiredAdmissionRelease?.();
+        fleetLoadLease?.release();
+        fleetLoadLease = null;
+      };
       admissionRelease = null;
       return withAdmissionRelease(
         result.toDataStreamResponse({
