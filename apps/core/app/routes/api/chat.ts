@@ -2428,8 +2428,6 @@ ${buildEmptyCourseRagBlock()}`;
         }
         admissionWaitedMs = slot.waitedMs;
       } catch (err) {
-        fleetLoadLease?.release();
-        fleetLoadLease = null;
         if (isClientAbort(err, streamAbortController.signal)) {
           return clientAbortResponse();
         }
@@ -2940,8 +2938,6 @@ ${buildEmptyCourseRagBlock()}`;
       const acquiredAdmissionRelease = admissionRelease;
       const release = () => {
         acquiredAdmissionRelease?.();
-        fleetLoadLease?.release();
-        fleetLoadLease = null;
       };
       admissionRelease = null;
       const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {

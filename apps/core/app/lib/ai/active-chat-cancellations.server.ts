@@ -7,6 +7,8 @@
  * for the lifetime of a live response.
  */
 const activeChatCancellations = new Map<string, () => void>();
+const ACTIVE_CHAT_REQUEST_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function registerActiveChatCancellation(requestId: string, cancel: () => void): () => void {
   activeChatCancellations.set(requestId, cancel);
@@ -25,9 +27,6 @@ export function cancelActiveChat(requestId: string): boolean {
   return true;
 }
 
-export function isValidActiveChatRequestId(requestId: unknown): requestId is string {
-  return (
-    typeof requestId === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)
-  );
+export function isValidActiveChatRequestId(requestId: string): boolean {
+  return ACTIVE_CHAT_REQUEST_ID_RE.test(requestId);
 }

@@ -125,8 +125,8 @@ function baseBody(overrides: JsonObject = {}) {
   };
 }
 
-function mockStream() {
-  vi.mocked(streamText).mockResolvedValue({
+function streamResult() {
+  return {
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve("Partial answer."),
     usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -137,7 +137,11 @@ function mockStream() {
       id: "resp-1",
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
-  } as never);
+  } as never;
+}
+
+function mockStream() {
+  vi.mocked(streamText).mockResolvedValue(streamResult());
 }
 
 function lastAbortSignal(): AbortSignal | undefined {
@@ -195,14 +199,26 @@ describe("Chat API client abort (#267)", () => {
     );
   });
 
-  it("passes the request AbortSignal to streamText", async () => {
+  it("forwards a request abort to the active provider stream", async () => {
     const controller = new AbortController();
     const args = makeRequest(baseBody(), controller.signal);
-    mockStream();
+    let resolveStream: ((value: ReturnType<typeof streamResult>) => void) | undefined;
+    vi.mocked(streamText).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+        }) as never,
+    );
 
-    await action(args);
+    const actionPromise = action(args);
+    await vi.waitFor(() => expect(streamText).toHaveBeenCalled());
+    expect(lastAbortSignal()).not.toBe(args.request.signal);
 
-    expect(lastAbortSignal()).toBe(args.request.signal);
+    controller.abort();
+    expect(lastAbortSignal()?.aborted).toBe(true);
+    resolveStream?.(streamResult());
+
+    await actionPromise;
   });
 
   it("returns 499 when streamText throws AbortError", async () => {
