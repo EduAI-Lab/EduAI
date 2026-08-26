@@ -18,6 +18,12 @@ vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   resolveAdminUserId: vi.fn(),
 }));
 
+// #1658: searchCourseMaterials' only real dependency — capRagHitsForTool and
+// HYBRID_RAG_MAX_CHUNKS (~/lib/chat-rag) are cheap pure helpers, left real.
+vi.mock("~/lib/ai/embedding", () => ({
+  findRelevantContent: vi.fn(),
+}));
+
 vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/agent-tools/admin-mutations.server")>();
   return {
@@ -104,6 +110,7 @@ vi.mock("~/lib/idempotency.server", async (importOriginal) => {
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
 import { agentReadyEndpoints } from "~/lib/agent-readiness/manifest";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -245,6 +252,70 @@ describe("createAdminChatTools read execute", () => {
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
+  });
+
+  it("searchCourseMaterials resolves course then searches its RAG index (#1658)", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    vi.mocked(findRelevantContent).mockResolvedValue([
+      { content: "Late assignments lose 10% per day.", similarity: 0.9 },
+    ] as never);
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { courseCode: "COSC 111", question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(resolveAdminCourseId).toHaveBeenCalled();
+    expect(findRelevantContent).toHaveBeenCalledWith(
+      "What is the late penalty?",
+      "course-1",
+      expect.any(Number),
+      undefined,
+      false,
+    );
+    expect(result).toMatchObject({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+      count: 1,
+      relevantContent: [
+        expect.objectContaining({
+          content: expect.stringContaining("Late assignments lose 10% per day."),
+        }),
+      ],
+    });
+  });
+
+  it("searchCourseMaterials returns the course-resolution error without calling findRelevantContent", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "courseId or courseCode required" });
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(result).toEqual({ error: "courseId or courseCode required" });
+    expect(findRelevantContent).not.toHaveBeenCalled();
+  });
+
+  it("searchCourseMaterials fails closed (not a crash) when retrieval throws", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    vi.mocked(findRelevantContent).mockRejectedValue(new Error("embedding provider down"));
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { courseCode: "COSC 111", question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(result).toEqual({ error: "Failed to search course materials" });
   });
 
   it("listCourseEnrollments passes userId/userEmail through for an exact roster lookup", async () => {
