@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import type { ChatToolContext } from "./chat-mode";
 import { runIdempotentAdminMutation } from "./idempotent-admin-mutation.server";
+import { findRelevantContent } from "~/lib/ai/embedding";
+import { capRagHitsForTool, HYBRID_RAG_MAX_CHUNKS } from "~/lib/chat-rag";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -218,6 +220,48 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           return resolved;
         }
         return getAdminCourseTopic(user, resolved.courseId, topicId);
+      },
+    }),
+
+    // #1658: admin chat's own RAG gate is different from a student's — the
+    // route's `findRelevantContent` prefetch/tool wiring only ever ran for
+    // chatMode "learning" (createLearningChatTools). This is the ADMIN-scoped
+    // counterpart: same retrieval call, gated by the same requireCourse
+    // resolution every other admin course tool uses, and never restricted to
+    // student-visible-only material (an admin previewing a syllabus needs to
+    // see hidden/scheduled uploads too — restrictToStudentVisible is always
+    // false for the ADMIN access level; see course-access.server.ts).
+    searchCourseMaterials: tool({
+      description:
+        "Search a course's uploaded materials (syllabus, lecture notes, assignments, etc.) for grounded facts — dates, policies, assignment details. Requires courseId or courseCode plus a question. Use this instead of guessing when the admin asks about a specific course's content.",
+      parameters: z.object({
+        ...courseScope,
+        question: z.string().describe("The question to search this course's materials for"),
+      }),
+      execute: async ({ courseId, courseCode, question }) => {
+        const resolved = await resolveCourse(courseId, courseCode);
+        if ("error" in resolved) {
+          return resolved;
+        }
+        try {
+          const hits = await findRelevantContent(
+            question,
+            resolved.courseId,
+            HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            ctx.restrictToStudentVisible ?? false,
+          );
+          const capped = capRagHitsForTool(hits);
+          return {
+            courseId: resolved.courseId,
+            courseCode: resolved.courseCode,
+            relevantContent: capped,
+            count: capped.length,
+          };
+        } catch (error) {
+          console.error("Error searching course materials (admin):", error);
+          return { error: "Failed to search course materials" };
+        }
       },
     }),
 

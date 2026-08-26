@@ -15,7 +15,7 @@ The machine-readable source of truth is [`apps/core/app/lib/agent-readiness/mani
 | Surface | Ready today | Notes |
 | ------- | ----------- | ----- |
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
-| **Admin chat tools** | 27 tools (10 read, 17 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
+| **Admin chat tools** | 28 tools (11 read, 17 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
 | **REST — manifest `ready`** | 65 / 87 endpoints (~75%) | Full inventory in `manifest.ts`; unit tests enforce coverage |
 | **REST — `partial`** | 0 endpoints | All gaps closed or reclassified |
 | **REST — `excluded`** | 22 endpoints | Auth, streaming chat, uploads, QM, test hooks — by design |
@@ -40,7 +40,7 @@ Entry: `POST /api/chat` with `chatMode: "learning"`. See [`CHAT_RAG_PIPELINE.md`
 
 Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course context is passed per tool call (`courseId` or `courseCode`), not via a UI course selector.
 
-#### Read tools (10)
+#### Read tools (11)
 
 | Tool | REST equivalent | Handler |
 | ---- | --------------- | ------- |
@@ -49,6 +49,7 @@ Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course cont
 | `listCourseEnrollments` | `GET /api/courses/:id/enrollments` | `listAdminCourseEnrollments()` |
 | `listCourseTopics` | `GET /api/courses/:id/topics` | `listAdminCourseTopics()` |
 | `getCourseTopic` | `GET /api/courses/:id/topics/:topicId` | `getAdminCourseTopic()` |
+| `searchCourseMaterials` | *(none — RAG, not REST)* | `findRelevantContent()` (#1658; same backing as learning chat's `getInformation`, never restricted to student-visible-only for ADMIN) |
 | `listUsers` | `GET /api/users` | `listAdminUsers()` |
 | `listBugReports` | `GET /api/admin/bug-reports` | `listAdminBugReportsForChat()` |
 | `listInvitations` | `GET /api/invitations` | `listAdminInvitations()` |
