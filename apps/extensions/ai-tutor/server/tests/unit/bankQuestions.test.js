@@ -56,14 +56,51 @@ describe("listBankQuestions", () => {
   it("drops long-answer questions, which an activity cannot represent", async () => {
     const result = await listBankQuestions("core-course-1", {});
 
-    expect(result.map((q) => q.id)).toEqual(["q1", "q3"]);
+    expect(result.questions.map((q) => q.id)).toEqual(["q1", "q3"]);
+  });
+
+  it("drops select-all-that-apply MCQs, which an activity's single correctIndex cannot represent", async () => {
+    // Core normalizes SATA as answer = first correct letter, correctAnswers =
+    // every correct letter. Reading `answer` alone (as the mapper does) would
+    // silently mark the activity correct on only one of the real answers, so
+    // these are excluded here exactly like LA.
+    listCourseTestableQuestions.mockResolvedValue([
+      {
+        id: "q1",
+        type: "MCQ",
+        content: "What does Big-O measure?",
+        topicId: "core-t1",
+        choices: [{ letter: "A", text: "Time" }],
+        answer: "A",
+        difficulty: "MEDIUM",
+      },
+      {
+        id: "q-sata",
+        type: "MCQ",
+        content: "Which are sorting algorithms?",
+        topicId: "core-t1",
+        choices: [
+          { letter: "A", text: "Quicksort" },
+          { letter: "B", text: "Binary search" },
+          { letter: "C", text: "Mergesort" },
+        ],
+        answer: "A",
+        correctAnswers: ["A", "C"],
+        selectAllThatApply: true,
+        difficulty: "MEDIUM",
+      },
+    ]);
+
+    const result = await listBankQuestions("core-course-1", {});
+
+    expect(result.questions.map((q) => q.id)).toEqual(["q1"]);
   });
 
   it("names each question's topic, so the panel can match it without a per-question fetch", async () => {
     const result = await listBankQuestions("core-course-1", {});
 
-    expect(result[0].topicName).toBe("Complexity");
-    expect(result[1].topicName).toBe("Sorting");
+    expect(result.questions[0].topicName).toBe("Complexity");
+    expect(result.questions[1].topicName).toBe("Sorting");
     expect(listEduAiCourseTopics).toHaveBeenCalledTimes(1);
   });
 
@@ -72,7 +109,7 @@ describe("listBankQuestions", () => {
 
     const result = await listBankQuestions("core-course-1", {});
 
-    expect(result[0].topicName).toBeNull();
+    expect(result.questions[0].topicName).toBeNull();
   });
 
   it("passes paging and the topic filter through to Core", async () => {
@@ -83,5 +120,32 @@ describe("listBankQuestions", () => {
       limit: 5,
       offset: 10,
     });
+  });
+
+  it("drops the unused difficulty field from the mapped payload", async () => {
+    const result = await listBankQuestions("core-course-1", {});
+
+    expect(result.questions[0]).not.toHaveProperty("difficulty");
+  });
+
+  it("reports hasMore when Core returned a full page, before LA/SATA filtering", async () => {
+    listCourseTestableQuestions.mockResolvedValue([
+      { id: "q1", type: "LA", content: "x", topicId: null, choices: null, answer: null },
+      { id: "q2", type: "LA", content: "y", topicId: null, choices: null, answer: null },
+    ]);
+
+    const result = await listBankQuestions("core-course-1", { limit: 2 });
+
+    // Both dropped by the LA filter, but Core returned a full page of 2, so
+    // there could be more beyond this page — hasMore must reflect the raw
+    // page size, not the filtered count (which is 0 here).
+    expect(result.questions).toHaveLength(0);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("reports hasMore false when Core returned fewer than a full page", async () => {
+    const result = await listBankQuestions("core-course-1", { limit: 20 });
+
+    expect(result.hasMore).toBe(false);
   });
 });

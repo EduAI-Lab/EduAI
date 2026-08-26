@@ -28,6 +28,12 @@ vi.mock("../../src/middleware/auth.js", async () => {
 // test has no business exercising a second time — the route under test does
 // its own `isCourseAdmin` check. Neutralize the gate the same way a real
 // request would pass through it.
+//
+// NOTE: because this mock replaces `gateCourseById` with a pure pass-through,
+// nothing in this file proves the bank-questions route actually sits behind
+// that gate in production — only that the route's own `isCourseAdmin` check
+// (mocked and asserted below) works. Coverage for the gate itself belongs to
+// whatever test suite exercises `gateCourseById` directly.
 vi.mock("../../src/middleware/liveCoursePrincipal.js", () => ({
   gateCourseById: () => (_req, _res, next) => next(),
 }));
@@ -59,18 +65,20 @@ beforeEach(() => {
     coreOfferingId: "core-course-1",
     instructors: [{ userId: "instructor-1" }],
   });
-  listBankQuestions.mockResolvedValue([
-    {
-      id: "q1",
-      content: "What does Big-O measure?",
-      type: "MCQ",
-      choices: null,
-      answer: "A",
-      difficulty: "MEDIUM",
-      topicId: "core-t1",
-      topicName: "Complexity",
-    },
-  ]);
+  listBankQuestions.mockResolvedValue({
+    questions: [
+      {
+        id: "q1",
+        content: "What does Big-O measure?",
+        type: "MCQ",
+        choices: null,
+        answer: "A",
+        topicId: "core-t1",
+        topicName: "Complexity",
+      },
+    ],
+    hasMore: false,
+  });
 });
 
 describe("GET /api/courses/:courseId/bank-questions", () => {
@@ -81,6 +89,18 @@ describe("GET /api/courses/:courseId/bank-questions", () => {
     expect(res.status).toBe(200);
     expect(res.body.questions).toHaveLength(1);
     expect(res.body.questions[0].topicName).toBe("Complexity");
+  });
+
+  it("forwards hasMore so the panel can tell the list is truncated", async () => {
+    listBankQuestions.mockResolvedValue({
+      questions: [],
+      hasMore: true,
+    });
+    const app = buildApp();
+
+    const res = await request(app).get("/api/courses/7/bank-questions");
+
+    expect(res.body.hasMore).toBe(true);
   });
 
   it("forwards the topic filter and paging", async () => {
