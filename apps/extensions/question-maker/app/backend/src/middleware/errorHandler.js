@@ -62,7 +62,7 @@ export const errorHandler = (err, req, res, next) => {
     (candidate) =>
       typeof candidate === "string" &&
       /^[A-Z][A-Z0-9_]{1,63}$/.test(candidate) &&
-      /^(?:QM_|PAGINATION_|CORE_|COURSE_|EDUAI_|AUTH_|CSRF_|RESOURCE_|VARIANT_|QUESTION_|ASSESSMENT_|INVALID_|DUPLICATE_|BUG_|PROVIDER_)/.test(
+      /^(?:QM_|PAGINATION_|CORE_|COURSE_|CANVAS_|EDUAI_|AUTH_|CSRF_|RESOURCE_|VARIANT_|QUESTION_|ASSESSMENT_|INVALID_|DUPLICATE_|BUG_|PROVIDER_)/.test(
         candidate,
       ),
   );

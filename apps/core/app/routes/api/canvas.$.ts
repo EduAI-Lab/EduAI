@@ -154,6 +154,74 @@ function parseCanvasCourseIdQuery(request: Request): { canvasCourseId: number } 
   return result.data;
 }
 
+/** Canvas resource identifiers recorded on a read event — ids and paging only. */
+type CanvasReadDetails = Record<string, string | number>;
+
+type CanvasReadResource = {
+  entityType: string;
+  entityId: string;
+  entityLabel?: string | null;
+  details: CanvasReadDetails;
+};
+
+/**
+ * Emits the per-delegated-use security event #1084 requires for Canvas reads.
+ *
+ * These proxies open a socket to Canvas under the *caller's own* Canvas token on
+ * behalf of Question Maker, so each use is recorded with the actor and the Canvas
+ * resource that was read. Writes already log `CANVAS_QUIZ_WRITE`; this is the
+ * read half of that contract. Never records the token, the Canvas response body,
+ * or a raw error message — only the error class and, for Canvas API failures,
+ * the upstream status.
+ */
+async function auditedCanvasRead<T>(
+  actor: ReturnType<typeof getActorContext>,
+  requestContext: ReturnType<typeof getRequestContext>,
+  resource: CanvasReadResource,
+  read: () => Promise<T>,
+): Promise<T> {
+  try {
+    const data = await read();
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: "CANVAS_READ",
+        category: "CANVAS",
+        outcome: "SUCCESS",
+        entityType: resource.entityType,
+        entityId: resource.entityId,
+        entityLabel: resource.entityLabel ?? null,
+        details: resource.details,
+      }),
+    );
+    return data;
+  } catch (error) {
+    // Always present so the field is queryable; null when the failure did not
+    // come back from Canvas itself (a decrypt error, a dispatcher refusal, ...).
+    const canvasStatus = error instanceof CanvasApiError ? error.statusCode : null;
+    const failureDetails = {
+      ...resource.details,
+      errorType: error instanceof Error ? error.constructor.name : "Unknown",
+      canvasStatus,
+    };
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: "CANVAS_READ",
+        category: "CANVAS",
+        outcome: "FAILURE",
+        entityType: resource.entityType,
+        entityId: resource.entityId,
+        entityLabel: resource.entityLabel ?? null,
+        details: failureDetails,
+      }),
+    );
+    throw error;
+  }
+}
+
 async function handleCanvasRequest(request: Request): Promise<Response> {
   const session = await getRequestSession(request);
   if (!session?.user) {
@@ -163,6 +231,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
   const subpath = canvasSubpath(new URL(request.url).pathname);
   const userId = session.user.id;
   const requestContext = getRequestContext(request);
+  const actorContext = getActorContext(session.user);
 
   if (subpath === "link-roster") {
     return handleLinkRosterRequest(request, userId, session.user.role);
@@ -237,31 +306,65 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
 
             switch (quizRoute.kind) {
               case "list": {
-                const data = await listCanvasQuizzes(credentialsOrError, canvasCourseId);
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizList",
+                    entityId: String(canvasCourseId),
+                    details: { canvasCourseId },
+                  },
+                  () => listCanvasQuizzes(credentialsOrError, canvasCourseId),
+                );
                 return json({ success: true, data });
               }
               case "quiz": {
-                const data = await getCanvasQuiz(
-                  credentialsOrError,
-                  canvasCourseId,
-                  quizRoute.quizId,
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuiz",
+                    entityId: String(quizRoute.quizId),
+                    details: { canvasCourseId, quizId: quizRoute.quizId },
+                  },
+                  () => getCanvasQuiz(credentialsOrError, canvasCourseId, quizRoute.quizId),
                 );
                 return json({ success: true, data });
               }
               case "questions": {
-                const data = await listCanvasQuizQuestions(
-                  credentialsOrError,
-                  canvasCourseId,
-                  quizRoute.quizId,
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizQuestionList",
+                    entityId: String(quizRoute.quizId),
+                    details: { canvasCourseId, quizId: quizRoute.quizId },
+                  },
+                  () =>
+                    listCanvasQuizQuestions(credentialsOrError, canvasCourseId, quizRoute.quizId),
                 );
                 return json({ success: true, data });
               }
               case "question": {
-                const data = await getCanvasQuizQuestion(
-                  credentialsOrError,
-                  canvasCourseId,
-                  quizRoute.quizId,
-                  quizRoute.questionId,
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizQuestion",
+                    entityId: String(quizRoute.questionId),
+                    details: {
+                      canvasCourseId,
+                      quizId: quizRoute.quizId,
+                      questionId: quizRoute.questionId,
+                    },
+                  },
+                  () =>
+                    getCanvasQuizQuestion(
+                      credentialsOrError,
+                      canvasCourseId,
+                      quizRoute.quizId,
+                      quizRoute.questionId,
+                    ),
                 );
                 return json({ success: true, data });
               }
@@ -283,14 +386,29 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                 if (queryOrError instanceof Response) {
                   return queryOrError;
                 }
-                const data = await listCanvasQuestionBanks(
-                  credentialsOrError,
-                  queryOrError.canvasCourseId,
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBankList",
+                    entityId: String(queryOrError.canvasCourseId),
+                    details: { canvasCourseId: queryOrError.canvasCourseId },
+                  },
+                  () => listCanvasQuestionBanks(credentialsOrError, queryOrError.canvasCourseId),
                 );
                 return json({ success: true, data });
               }
               case "bank": {
-                const data = await getCanvasQuestionBank(credentialsOrError, bankRoute.bankId);
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBank",
+                    entityId: String(bankRoute.bankId),
+                    details: { bankId: bankRoute.bankId },
+                  },
+                  () => getCanvasQuestionBank(credentialsOrError, bankRoute.bankId),
+                );
                 return json({ success: true, data });
               }
               case "questions": {
@@ -300,10 +418,19 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                   100,
                   Math.max(1, Number(url.searchParams.get("perPage") || 100) || 100),
                 );
-                const data = await listCanvasQuestionBankQuestions(
-                  credentialsOrError,
-                  bankRoute.bankId,
-                  { page, perPage },
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBankQuestionList",
+                    entityId: String(bankRoute.bankId),
+                    details: { bankId: bankRoute.bankId, page, perPage },
+                  },
+                  () =>
+                    listCanvasQuestionBankQuestions(credentialsOrError, bankRoute.bankId, {
+                      page,
+                      perPage,
+                    }),
                 );
                 return json({ success: true, data });
               }
