@@ -86,7 +86,7 @@ function renderAdminChatPage() {
 }
 
 /** The `{ error, code }` shape /api/chat's chatApiReject rejections take. */
-type ChatRejectionBody = { error: string; code?: string };
+type ChatRejectionBody = { error: string; code?: string; retryAfter?: number };
 
 async function fireOnError(body: ChatRejectionBody) {
   const error = new Error(JSON.stringify(body));
@@ -126,6 +126,22 @@ describe("AdminChatPage — error banner (#1656)", () => {
       code: "INVALID_PROVIDER_CONFIG",
     });
     expect(screen.getByText(/settings \(gear\) icon/i)).toBeInTheDocument();
+  });
+
+  it("shows a friendly rate-limit message with the retry time instead of the raw enum", async () => {
+    renderAdminChatPage();
+    await fireOnError({ error: "RATE_LIMITED", retryAfter: 42 });
+
+    expect(screen.queryByText("RATE_LIMITED")).not.toBeInTheDocument();
+    expect(screen.getByText(/try again in 42s/i)).toBeInTheDocument();
+  });
+
+  it("still gives a friendly rate-limit message when retryAfter is missing", async () => {
+    renderAdminChatPage();
+    await fireOnError({ error: "RATE_LIMITED" });
+
+    expect(screen.queryByText("RATE_LIMITED")).not.toBeInTheDocument();
+    expect(screen.getByText(/sending messages too quickly/i)).toBeInTheDocument();
   });
 
   it("falls back to the raw message when the response body isn't JSON", async () => {

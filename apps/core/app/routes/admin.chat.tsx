@@ -62,6 +62,11 @@ const chatRejectionBodySchema = z
   .object({
     error: z.string().trim().min(1).optional().catch(undefined),
     code: z.string().optional().catch(undefined),
+    // #987/#1113's rate-limit rejection carries no `code` (just the raw
+    // `error: "RATE_LIMITED"` enum) but does carry this — without reading it
+    // here, the banner would show the bare enum string with no explanation
+    // and no mention of when to retry.
+    retryAfter: z.number().optional().catch(undefined),
   })
   .catch({});
 
@@ -95,6 +100,13 @@ function describeAdminChatError(error: Error): string {
 
   const body = chatRejectionBodySchema.parse(parsed);
   if (!body.error) return fallback;
+  if (body.error === "RATE_LIMITED") {
+    // The schema already parses retryAfter as number | undefined (or drops
+    // it via .catch on a malformed value) — no further narrowing needed.
+    return body.retryAfter !== undefined
+      ? `You're sending messages too quickly. Try again in ${body.retryAfter}s.`
+      : "You're sending messages too quickly. Wait a moment and try again.";
+  }
   if (body.code && NEEDS_PROVIDER_SETUP_CODES.has(body.code)) {
     return `${body.error} Open the settings (gear) icon next to the message box to add or fix a provider API key.`;
   }
