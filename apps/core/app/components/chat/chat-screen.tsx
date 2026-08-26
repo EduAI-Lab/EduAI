@@ -576,6 +576,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
+      // Share the chip's in-flight guard: a chip's `append` sets the ref
+      // synchronously but `isLoading` only flips on the next render, so an
+      // Enter/Send fired in that window would otherwise submit a second
+      // concurrent request. Bail while a chip submit is still settling.
+      if (promptSubmitInFlightRef.current) {
+        e.preventDefault();
+        return;
+      }
       if (!chatId) {
         postAssistiveClientEvent({
           eventType: "task_initiation",
