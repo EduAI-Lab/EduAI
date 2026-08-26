@@ -2,7 +2,13 @@
  * @file Student lesson player — drives the per-activity flow students see.
  *
  * Route: /student/lesson/:lessonId
- * Auth: STUDENT (enforced by clientLoader via requireClientUser)
+ * Auth: STUDENT or TA (real learners), plus ADMIN/UNIT_ADMIN/INSTRUCTOR
+ *       previewing the learner experience (#1660) — enforced by clientLoader
+ *       via requireClientUser. The backend already authorized staff reads
+ *       here (course/module/lesson membership checks); student-only writes
+ *       (answer submission, AI tutoring chat) are unchanged and still reject
+ *       non-STUDENT callers server-side, so a previewer sees everything but
+ *       cannot submit as if they were the enrolled student.
  * Loads: lesson + activities in one parallel wave alongside the role gate;
  *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
  *        (#1334) so the lesson body is not blocked on Core/ordinal work.
@@ -49,10 +55,11 @@ import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
 import api from "../lib/api";
-import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
+import type { Activity, Course, Lesson, ModuleDetail, Role } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner, isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
@@ -113,6 +120,9 @@ function createFeedbackState(): StudentFeedbackState {
  * ancestry is intentionally NOT awaited here — the component fetches it after
  * paint so header crumbs leave the LCP / lesson-body path.
  */
+// #1660: see the matching comment in student.course.tsx.
+const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -120,7 +130,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
 
   const [, lesson, activitiesPage] = await Promise.all([
-    requireClientUser(["STUDENT", "TA"]),
+    requireClientUser(STUDENT_PREVIEW_ROLES),
     api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
@@ -144,6 +154,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
+  const previewRole = isStudentPreviewRole(user?.role) ? user?.role : undefined;
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
   const { lesson, activities, activitiesTotal } = loaderData;
@@ -633,6 +644,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height)-2.5rem)] min-h-[640px] flex-col gap-4 px-4 pt-6 pb-6 lg:px-6">
+      {/* #1660: shrink-0 like the hero below it — grows this fixed-height
+          layout's header area rather than eating into the flex-1 activity/
+          chat split, which assumes it gets whatever space the header leaves. */}
+      {previewRole && (
+        <div className="shrink-0">
+          <StudentPreviewBanner role={previewRole} />
+        </div>
+      )}
       <div className="flex shrink-0 flex-col gap-4" data-tour="student-lesson-progress">
         <ModuleHero
           orderText={orderText}

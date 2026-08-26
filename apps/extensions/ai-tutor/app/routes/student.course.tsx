@@ -10,19 +10,29 @@ import {
   courseTerm,
   courseYear,
 } from "../lib/course-display";
-import type { Course, Module } from "../lib/types";
+import type { Course, Module, Role } from "../lib/types";
 import type { Route } from "./+types/student.course";
 import { useCourseTopics } from "../hooks/useCourseTopics";
 import api from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner, isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
+// #1660: course/module/lesson reads already authorize ADMIN, UNIT_ADMIN, and
+// INSTRUCTOR server-side (authorizeLiveCoursePrincipal via
+// getExactCourseMembership — see server/src/services/lessonAccess.js) the
+// same way GET /courses/:courseId and GET /modules/:moduleId always have.
+// This client-side gate was the only thing stopping those roles from reaching
+// a page the backend already served — nothing server-side changed.
+const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(["STUDENT", "TA"]);
+  await requireClientUser(STUDENT_PREVIEW_ROLES);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response("Invalid course id", { status: 400 });
@@ -57,6 +67,10 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
+  const { user } = useLocalUser();
+  // #1660: only set when the viewer is previewing (not a real STUDENT/TA of
+  // this course) — see StudentPreviewBanner for why this is purely a label.
+  const previewRole = isStudentPreviewRole(user?.role) ? user?.role : undefined;
   const { course, modules, modulesTotal, page, pageSize } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
 
@@ -91,6 +105,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={previewRole ? <StudentPreviewBanner role={previewRole} /> : null}
       hero={
         <CourseHeroCard
           code={courseCode(course)}

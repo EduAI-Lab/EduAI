@@ -5,17 +5,23 @@ import { Card, DetailPageScaffold, EmptyState } from "@eduai/ui";
 import { LessonCard } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "../lib/course-display";
-import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
+import type { Course, Lesson, Module, ModuleDetail, Role } from "../lib/types";
 import type { Route } from "./+types/student.module";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner, isStudentPreviewRole } from "~/components/rbac/StudentPreviewBanner";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { splitTitle } from "~/lib/course-title";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
+// #1660: see the matching comment in student.course.tsx — the backend
+// already authorizes staff reads here; only the client gate was blocking them.
+const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(["STUDENT", "TA"]);
+  await requireClientUser(STUDENT_PREVIEW_ROLES);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response("Invalid module id", { status: 400 });
@@ -49,6 +55,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
 export default function StudentModuleLessons({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
+  const previewRole = isStudentPreviewRole(user?.role) ? user?.role : undefined;
   const { course, module, lessons, moduleOrder } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const lessonList = useMemo(() => lessons ?? [], [lessons]);
@@ -98,6 +106,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={previewRole ? <StudentPreviewBanner role={previewRole} /> : null}
       hero={
         <ModuleHero
           order={moduleOrder > 0 ? moduleOrder : undefined}
