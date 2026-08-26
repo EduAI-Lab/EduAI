@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [infra] docs: Investigate the cmps03 latency outlier from PR #1582's fleet stress report — repeat the native-vLLM load ladder (16–128 concurrency, single-model and combined dual-GPU) directly against cmps01 and cmps03. The originally reported 7–9x outlier did not reproduce under either load shape; ruled out GPU hardware, driver/CUDA, vLLM launch flags, container limits, and host CPU/NUMA/RAM as causes. Found and documented an unrelated vLLM version drift (cmps01 on 0.27.1, cmps03 on 0.26.0) caused by an unpinned `:latest` image tag. Recommends closing #1589 as "not reproducible as of 2026-08-26" rather than resolved, since the root cause remains unconfirmed. Refs #1589. (@superbolt08, 2026-08-26) — #PR
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
