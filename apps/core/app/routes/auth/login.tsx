@@ -42,9 +42,20 @@ function formBodyErrorResponse(cause: unknown): Response | null {
  * cookie. Cookies with the same name but different Domain attributes coexist,
  * and browsers can send an older, more-specific cookie first; that token can
  * therefore mask the newly-created shared session on /dashboard.
+ *
+ * COOKIE_DOMAIN has widened over successive deployments (e.g.
+ * `.eduai.ok.ubc.ca` -> `.ok.ubc.ca`), and each value a browser has ever seen
+ * left behind its own cookie at that Domain scope. Expiring only the current
+ * value and the exact hostname is not enough — a browser that still holds a
+ * cookie from an intermediate scope (say `.eduai.ok.ubc.ca`) sends it
+ * alongside the fresh one, and the server reads whichever the browser lists
+ * first, not necessarily the newest. Walk every parent-domain suffix between
+ * the exact hostname and the current COOKIE_DOMAIN and expire each one, so no
+ * previously-issued scope can outlive this deployment's cookie policy.
  */
 function appendLegacySessionCookieDeletions(headers: Headers): void {
-  if (!process.env.COOKIE_DOMAIN?.trim()) return;
+  const configuredDomain = process.env.COOKIE_DOMAIN?.trim();
+  if (!configuredDomain) return;
 
   const cookieName = authBaseURL.startsWith("https://")
     ? "__Secure-better-auth.session_token"
@@ -56,12 +67,17 @@ function appendLegacySessionCookieDeletions(headers: Headers): void {
   // scope first.
   headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
 
-  // Also handle a previous deployment that may have configured the exact
-  // hostname as a Domain cookie. It is distinct from both the host-only
-  // cookie above and the new shared-domain cookie, so expiring it cannot
-  // remove the newly issued cross-subdomain session.
-  const legacyHostDomain = new URL(authBaseURL).hostname;
-  headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${legacyHostDomain}`);
+  // Then expire every parent-domain scope from the exact hostname up to (but
+  // not including) the currently configured COOKIE_DOMAIN — each is a
+  // distinct cookie a past deployment could have issued.
+  const hostname = new URL(authBaseURL).hostname;
+  const labels = hostname.split(".");
+  for (let i = 0; i < labels.length - 1; i += 1) {
+    const candidate = labels.slice(i).join(".");
+    if (candidate === configuredDomain.replace(/^\./, "")) break;
+    const domainAttr = i === 0 ? candidate : `.${candidate}`;
+    headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${domainAttr}`);
+  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
