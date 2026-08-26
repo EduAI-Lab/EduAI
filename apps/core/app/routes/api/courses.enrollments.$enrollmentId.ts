@@ -26,6 +26,7 @@ import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -35,123 +36,128 @@ function json(status: number, body: JsonResponseBody) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  if (request.method !== "PATCH" && request.method !== "DELETE") {
-    return json(405, { error: "Method not allowed" });
-  }
+  return withErrorResponse(
+    async () => {
+      if (request.method !== "PATCH" && request.method !== "DELETE") {
+        return json(405, { error: "Method not allowed" });
+      }
 
-  const courseId = params.id;
-  const enrollmentId = params.enrollmentId;
-  if (!courseId || !enrollmentId) {
-    return json(400, { error: "COURSE_ID_AND_ENROLLMENT_ID_REQUIRED" });
-  }
+      const courseId = params.id;
+      const enrollmentId = params.enrollmentId;
+      if (!courseId || !enrollmentId) {
+        return json(400, { error: "COURSE_ID_AND_ENROLLMENT_ID_REQUIRED" });
+      }
 
-  const session = await getRequestSession(request);
-  if (!session?.user) {
-    return json(401, { error: "Unauthorized" });
-  }
+      const session = await getRequestSession(request);
+      if (!session?.user) {
+        return json(401, { error: "Unauthorized" });
+      }
 
-  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
+      const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
-  if (!course) {
-    return json(404, { error: "COURSE_NOT_FOUND" });
-  }
+      if (!course) {
+        return json(404, { error: "COURSE_NOT_FOUND" });
+      }
 
-  // Manage tier: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C).
-  if (!access || access.rank < 2) {
-    return json(403, { error: "Forbidden" });
-  }
+      // Manage tier: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C).
+      if (!access || access.rank < 2) {
+        return json(403, { error: "Forbidden" });
+      }
 
-  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
-  if (
-    enrollmentGate !== "always" &&
-    enrollmentGate !== "never" &&
-    !(await getPolicy(enrollmentGate))
-  ) {
-    return denyByPolicy({
-      request,
-      policyKey: enrollmentGate,
-      user: session.user,
-      action: request.method === "PATCH" ? "enrollment.update" : "enrollment.remove",
-      courseId,
-    });
-  }
-
-  const target = await getEnrollment(courseId, enrollmentId);
-  if (!target) {
-    return json(404, { error: "ENROLLMENT_NOT_FOUND" });
-  }
-
-  const requestContext = getRequestContext(request);
-
-  if (request.method === "PATCH") {
-    const body = await request.json().catch(() => ({}));
-
-    // §6: only ADMIN / UNIT_ADMIN may promote to INSTRUCTOR or change an
-    // existing INSTRUCTOR enrollment — instructors cannot manage peers.
-    const touchesInstructor = body?.role === "INSTRUCTOR" || target.role === "INSTRUCTOR";
-    if (touchesInstructor && access.rank < 3) {
-      return json(403, { error: "Forbidden" });
-    }
-
-    const result = await updateEnrollmentRole(courseId, enrollmentId, body ?? {});
-
-    switch (result.status) {
-      case "200":
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session?.user ?? null),
-            ...requestContext,
-            actionCode: "ENROLLMENT_ROLE_CHANGED",
-            category: "ENROLLMENT",
-            entityType: "Enrollment",
-            entityId: enrollmentId,
-            details: {
-              courseId,
-              previousRole: result.previousRole,
-              newRole: result.enrollment.role,
-            },
-          }),
-        );
-        return json(200, result.enrollment);
-      case "409":
-        return json(409, {
-          error: result.error,
-          currentInstructorCount: result.currentInstructorCount,
+      const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+      if (
+        enrollmentGate !== "always" &&
+        enrollmentGate !== "never" &&
+        !(await getPolicy(enrollmentGate))
+      ) {
+        return denyByPolicy({
+          request,
+          policyKey: enrollmentGate,
+          user: session.user,
+          action: request.method === "PATCH" ? "enrollment.update" : "enrollment.remove",
+          courseId,
         });
-      case "404":
+      }
+
+      const target = await getEnrollment(courseId, enrollmentId);
+      if (!target) {
         return json(404, { error: "ENROLLMENT_NOT_FOUND" });
-      default:
-        return json(400, { error: "Invalid input" });
-    }
-  }
+      }
 
-  // DELETE — §6: an INSTRUCTOR cannot remove a fellow instructor.
-  if (target.role === "INSTRUCTOR" && access.rank < 3) {
-    return json(403, { error: "Forbidden" });
-  }
+      const requestContext = getRequestContext(request);
 
-  const result = await deactivateEnrollment(courseId, enrollmentId);
+      if (request.method === "PATCH") {
+        const body = await request.json().catch(() => ({}));
 
-  switch (result.status) {
-    case "204":
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(session?.user ?? null),
-          ...requestContext,
-          actionCode: "ENROLLMENT_DEACTIVATED",
-          category: "ENROLLMENT",
-          entityType: "Enrollment",
-          entityId: enrollmentId,
-          details: { courseId },
-        }),
-      );
-      return new Response(null, { status: 204 });
-    case "409":
-      return json(409, {
-        error: result.error,
-        currentInstructorCount: result.currentInstructorCount,
-      });
-    default:
-      return json(404, { error: "ENROLLMENT_NOT_FOUND" });
-  }
+        // §6: only ADMIN / UNIT_ADMIN may promote to INSTRUCTOR or change an
+        // existing INSTRUCTOR enrollment — instructors cannot manage peers.
+        const touchesInstructor = body?.role === "INSTRUCTOR" || target.role === "INSTRUCTOR";
+        if (touchesInstructor && access.rank < 3) {
+          return json(403, { error: "Forbidden" });
+        }
+
+        const result = await updateEnrollmentRole(courseId, enrollmentId, body ?? {});
+
+        switch (result.status) {
+          case "200":
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "ENROLLMENT_ROLE_CHANGED",
+                category: "ENROLLMENT",
+                entityType: "Enrollment",
+                entityId: enrollmentId,
+                details: {
+                  courseId,
+                  previousRole: result.previousRole,
+                  newRole: result.enrollment.role,
+                },
+              }),
+            );
+            return json(200, result.enrollment);
+          case "409":
+            return json(409, {
+              error: result.error,
+              currentInstructorCount: result.currentInstructorCount,
+            });
+          case "404":
+            return json(404, { error: "ENROLLMENT_NOT_FOUND" });
+          default:
+            return json(400, { error: "Invalid input" });
+        }
+      }
+
+      // DELETE — §6: an INSTRUCTOR cannot remove a fellow instructor.
+      if (target.role === "INSTRUCTOR" && access.rank < 3) {
+        return json(403, { error: "Forbidden" });
+      }
+
+      const result = await deactivateEnrollment(courseId, enrollmentId);
+
+      switch (result.status) {
+        case "204":
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "ENROLLMENT_DEACTIVATED",
+              category: "ENROLLMENT",
+              entityType: "Enrollment",
+              entityId: enrollmentId,
+              details: { courseId },
+            }),
+          );
+          return new Response(null, { status: 204 });
+        case "409":
+          return json(409, {
+            error: result.error,
+            currentInstructorCount: result.currentInstructorCount,
+          });
+        default:
+          return json(404, { error: "ENROLLMENT_NOT_FOUND" });
+      }
+    },
+    { request },
+  );
 }

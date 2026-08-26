@@ -16,6 +16,7 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 async function requireManageSession(request: Request) {
   const session = await getRequestSession(request);
@@ -27,189 +28,205 @@ async function requireManageSession(request: Request) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  try {
-    const authResult = await requireManageSession(request);
-    if ("error" in authResult && authResult.error) return authResult.error;
+  return withErrorResponse(
+    async () => {
+      try {
+        const authResult = await requireManageSession(request);
+        if ("error" in authResult && authResult.error) return authResult.error;
 
-    const courseId = params.courseId;
-    if (!courseId) {
-      return jsonResponse({ error: "Course ID is required" }, 400);
-    }
+        const courseId = params.courseId;
+        if (!courseId) {
+          return jsonResponse({ error: "Course ID is required" }, 400);
+        }
 
-    const course = await getCourseIfCanManageMaterials(authResult.session!.user, courseId);
-    if (!course) {
-      return jsonResponse({ error: "Course not found or access denied" }, 404);
-    }
+        const course = await getCourseIfCanManageMaterials(authResult.session!.user, courseId);
+        if (!course) {
+          return jsonResponse({ error: "Course not found or access denied" }, 404);
+        }
 
-    const fields = {
-      embeddingProvider: course.embeddingProvider,
-      embeddingModel: course.embeddingModel,
-      embeddedWithProvider: course.embeddedWithProvider,
-      embeddedWithModel: course.embeddedWithModel,
-      lastEmbeddedAt: course.lastEmbeddedAt,
-    };
+        const fields = {
+          embeddingProvider: course.embeddingProvider,
+          embeddingModel: course.embeddingModel,
+          embeddedWithProvider: course.embeddedWithProvider,
+          embeddedWithModel: course.embeddedWithModel,
+          lastEmbeddedAt: course.lastEmbeddedAt,
+        };
 
-    const effective = resolveEffectiveEmbeddingSettings(fields);
+        const effective = resolveEffectiveEmbeddingSettings(fields);
 
-    return jsonResponse({
-      settings: {
-        embeddingProvider: course.embeddingProvider,
-        embeddingModel: course.embeddingModel,
-        embeddedWithProvider: course.embeddedWithProvider,
-        embeddedWithModel: course.embeddedWithModel,
-        lastEmbeddedAt: course.lastEmbeddedAt,
-      },
-      effective,
-      needsReEmbed: isEmbeddingIndexStale(fields, effective),
-      allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
-      allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
-    });
-  } catch (error) {
-    console.error("[embedding-settings] GET failed:", error);
-    return jsonResponse(formatApiError(error), 500);
-  }
+        return jsonResponse({
+          settings: {
+            embeddingProvider: course.embeddingProvider,
+            embeddingModel: course.embeddingModel,
+            embeddedWithProvider: course.embeddedWithProvider,
+            embeddedWithModel: course.embeddedWithModel,
+            lastEmbeddedAt: course.lastEmbeddedAt,
+          },
+          effective,
+          needsReEmbed: isEmbeddingIndexStale(fields, effective),
+          allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
+          allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
+        });
+      } catch (error) {
+        console.error("[embedding-settings] GET failed:", error);
+        return jsonResponse(formatApiError(error), 500);
+      }
+    },
+    { request },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  if (request.method !== "PATCH") {
-    return jsonResponse({ error: "Method not allowed" }, 405);
-  }
-
-  try {
-    const requestContext = getRequestContext(request);
-    const authResult = await requireManageSession(request);
-    if ("error" in authResult && authResult.error) return authResult.error;
-
-    const courseId = params.courseId;
-    if (!courseId) {
-      return jsonResponse({ error: "Course ID is required" }, 400);
-    }
-
-    const course = await getCourseIfCanManageMaterials(authResult.session!.user, courseId);
-    if (!course) {
-      return jsonResponse({ error: "Course not found or access denied" }, 404);
-    }
-
-    const decoded = jsonValueSchema.safeParse(await request.json().catch(() => undefined));
-    if (!decoded.success) {
-      return jsonResponse({ error: "Invalid JSON body" }, 400);
-    }
-    const body = decoded.data;
-
-    const parsed = parseEmbeddingSettingsUpdate(body);
-    if (!parsed.ok) {
-      return jsonResponse({ error: parsed.error }, 400);
-    }
-
-    // `reEmbed` rides along on the same body but is not part of the settings
-    // update, so it is read here rather than in the settings parser.
-    const reEmbedAfterSave =
-      body !== null && typeof body === "object" && !Array.isArray(body) && body.reEmbed === true;
-
-    const current = {
-      embeddingProvider: course.embeddingProvider,
-      embeddingModel: course.embeddingModel,
-      embeddedWithProvider: course.embeddedWithProvider,
-      embeddedWithModel: course.embeddedWithModel,
-      lastEmbeddedAt: course.lastEmbeddedAt,
-    };
-
-    const validated = validateEmbeddingSettingsUpdate(current, parsed.value);
-    if (!validated.ok) {
-      return jsonResponse({ error: validated.error }, 400);
-    }
-
-    const updated = await prisma.course.update({
-      where: { id: courseId },
-      data: {
-        embeddingProvider: validated.value.embeddingProvider,
-        embeddingModel: validated.value.embeddingModel,
-      },
-    });
-
-    clearCourseEmbeddingSettingsCache(courseId);
-
-    const fields = {
-      embeddingProvider: updated.embeddingProvider,
-      embeddingModel: updated.embeddingModel,
-      embeddedWithProvider: updated.embeddedWithProvider,
-      embeddedWithModel: updated.embeddedWithModel,
-      lastEmbeddedAt: updated.lastEmbeddedAt,
-    };
-
-    let reEmbedJob:
-      | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
-      | undefined;
-    if (reEmbedAfterSave) {
-      const { startOrResumeReEmbedJob, serializeReEmbedJob } =
-        await import("~/lib/ai/re-embed-job.server");
-      const { job, created } = await startOrResumeReEmbedJob(courseId);
-      reEmbedJob = serializeReEmbedJob(job);
-
-      // A re-embed started through the settings PATCH must be audited the same way
-      // the dedicated /re-embed route audits it, so this path is not a coverage gap.
-      if (created) {
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(authResult.session?.user ?? null),
-            ...requestContext,
-            actionCode: "RE_EMBED_JOB_CREATED",
-            category: "AI_CONFIG",
-            entityType: "ReEmbedJob",
-            entityId: job.id,
-            details: { courseId },
-          }),
-        );
+  return withErrorResponse(
+    async () => {
+      if (request.method !== "PATCH") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
       }
-    }
 
-    const refreshed = fields;
+      try {
+        const requestContext = getRequestContext(request);
+        const authResult = await requireManageSession(request);
+        if ("error" in authResult && authResult.error) return authResult.error;
 
-    // Only audit a real change: a PATCH that resubmits the existing provider/model is a no-op
-    // and must not produce an EMBEDDING_SETTINGS_CHANGED event that didn't actually change anything.
-    const settingsChanged =
-      current.embeddingProvider !== updated.embeddingProvider ||
-      current.embeddingModel !== updated.embeddingModel;
+        const courseId = params.courseId;
+        if (!courseId) {
+          return jsonResponse({ error: "Course ID is required" }, 400);
+        }
 
-    if (settingsChanged) {
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(authResult.session?.user ?? null),
-          ...requestContext,
-          actionCode: "EMBEDDING_SETTINGS_CHANGED",
-          category: "AI_CONFIG",
-          entityType: "Course",
-          entityId: courseId,
-          details: {
-            previousProvider: current.embeddingProvider,
-            previousModel: current.embeddingModel,
-            embeddingProvider: updated.embeddingProvider,
-            embeddingModel: updated.embeddingModel,
+        const course = await getCourseIfCanManageMaterials(authResult.session!.user, courseId);
+        if (!course) {
+          return jsonResponse({ error: "Course not found or access denied" }, 404);
+        }
+
+        const decoded = jsonValueSchema.safeParse(await request.json().catch(() => undefined));
+        if (!decoded.success) {
+          return jsonResponse({ error: "Invalid JSON body" }, 400);
+        }
+        const body = decoded.data;
+
+        const parsed = parseEmbeddingSettingsUpdate(body);
+        if (!parsed.ok) {
+          return jsonResponse({ error: parsed.error }, 400);
+        }
+
+        // `reEmbed` rides along on the same body but is not part of the settings
+        // update, so it is read here rather than in the settings parser.
+        const reEmbedAfterSave =
+          body !== null &&
+          typeof body === "object" &&
+          !Array.isArray(body) &&
+          body.reEmbed === true;
+
+        const current = {
+          embeddingProvider: course.embeddingProvider,
+          embeddingModel: course.embeddingModel,
+          embeddedWithProvider: course.embeddedWithProvider,
+          embeddedWithModel: course.embeddedWithModel,
+          lastEmbeddedAt: course.lastEmbeddedAt,
+        };
+
+        const validated = validateEmbeddingSettingsUpdate(current, parsed.value);
+        if (!validated.ok) {
+          return jsonResponse({ error: validated.error }, 400);
+        }
+
+        const updated = await prisma.course.update({
+          where: { id: courseId },
+          data: {
+            embeddingProvider: validated.value.embeddingProvider,
+            embeddingModel: validated.value.embeddingModel,
           },
-        }),
-      );
-    }
+        });
 
-    return jsonResponse({
-      success: true,
-      settings: {
-        embeddingProvider: refreshed.embeddingProvider,
-        embeddingModel: refreshed.embeddingModel,
-        embeddedWithProvider: refreshed.embeddedWithProvider,
-        embeddedWithModel: refreshed.embeddedWithModel,
-        lastEmbeddedAt: refreshed.lastEmbeddedAt,
-      },
-      effective: resolveEffectiveEmbeddingSettings(refreshed),
-      needsReEmbed: isEmbeddingIndexStale(refreshed, resolveEffectiveEmbeddingSettings(refreshed)),
-      allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
-      allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
-      reEmbedJob,
-    });
-  } catch (error) {
-    console.error("[embedding-settings] PATCH failed:", error);
-    // startReEmbedJob (reEmbed=true path) can throw QueueUnavailableError on
-    // a DB/queue outage — that must surface as 503, not a generic 500 (#1269
-    // review).
-    return jsonResponse(formatApiError(error), httpStatusForEnqueueError(error));
-  }
+        clearCourseEmbeddingSettingsCache(courseId);
+
+        const fields = {
+          embeddingProvider: updated.embeddingProvider,
+          embeddingModel: updated.embeddingModel,
+          embeddedWithProvider: updated.embeddedWithProvider,
+          embeddedWithModel: updated.embeddedWithModel,
+          lastEmbeddedAt: updated.lastEmbeddedAt,
+        };
+
+        let reEmbedJob:
+          | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
+          | undefined;
+        if (reEmbedAfterSave) {
+          const { startOrResumeReEmbedJob, serializeReEmbedJob } =
+            await import("~/lib/ai/re-embed-job.server");
+          const { job, created } = await startOrResumeReEmbedJob(courseId);
+          reEmbedJob = serializeReEmbedJob(job);
+
+          // A re-embed started through the settings PATCH must be audited the same way
+          // the dedicated /re-embed route audits it, so this path is not a coverage gap.
+          if (created) {
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(authResult.session?.user ?? null),
+                ...requestContext,
+                actionCode: "RE_EMBED_JOB_CREATED",
+                category: "AI_CONFIG",
+                entityType: "ReEmbedJob",
+                entityId: job.id,
+                details: { courseId },
+              }),
+            );
+          }
+        }
+
+        const refreshed = fields;
+
+        // Only audit a real change: a PATCH that resubmits the existing provider/model is a no-op
+        // and must not produce an EMBEDDING_SETTINGS_CHANGED event that didn't actually change anything.
+        const settingsChanged =
+          current.embeddingProvider !== updated.embeddingProvider ||
+          current.embeddingModel !== updated.embeddingModel;
+
+        if (settingsChanged) {
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(authResult.session?.user ?? null),
+              ...requestContext,
+              actionCode: "EMBEDDING_SETTINGS_CHANGED",
+              category: "AI_CONFIG",
+              entityType: "Course",
+              entityId: courseId,
+              details: {
+                previousProvider: current.embeddingProvider,
+                previousModel: current.embeddingModel,
+                embeddingProvider: updated.embeddingProvider,
+                embeddingModel: updated.embeddingModel,
+              },
+            }),
+          );
+        }
+
+        return jsonResponse({
+          success: true,
+          settings: {
+            embeddingProvider: refreshed.embeddingProvider,
+            embeddingModel: refreshed.embeddingModel,
+            embeddedWithProvider: refreshed.embeddedWithProvider,
+            embeddedWithModel: refreshed.embeddedWithModel,
+            lastEmbeddedAt: refreshed.lastEmbeddedAt,
+          },
+          effective: resolveEffectiveEmbeddingSettings(refreshed),
+          needsReEmbed: isEmbeddingIndexStale(
+            refreshed,
+            resolveEffectiveEmbeddingSettings(refreshed),
+          ),
+          allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
+          allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
+          reEmbedJob,
+        });
+      } catch (error) {
+        console.error("[embedding-settings] PATCH failed:", error);
+        // startReEmbedJob (reEmbed=true path) can throw QueueUnavailableError on
+        // a DB/queue outage — that must surface as 503, not a generic 500 (#1269
+        // review).
+        return jsonResponse(formatApiError(error), httpStatusForEnqueueError(error));
+      }
+    },
+    { request },
+  );
 }
