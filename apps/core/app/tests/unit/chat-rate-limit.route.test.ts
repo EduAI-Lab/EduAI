@@ -42,6 +42,7 @@ vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn().mockReturnValue(false),
   parseChatMode: vi.fn().mockReturnValue("learning"),
 }));
 

@@ -346,6 +346,15 @@ describe("POST /api/chat — instructor chatMode gate (#1659)", () => {
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 
+  it("requires a course for instructor mode even for a server-to-server (service-key) caller — unlike learning/admin mode (#1659 review)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null); // valid service key
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
   it("admits an INSTRUCTOR of a published course they teach (allow)", async () => {
     mockAccess({ level: "instructor", rank: 2 });
     const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
