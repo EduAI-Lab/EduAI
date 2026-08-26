@@ -123,6 +123,7 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
+  buildInstructorSystemPrompt,
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
@@ -1040,6 +1041,19 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      // #1659: instructor mode is scoped to ONE published course the caller
+      // actually teaches — reusing the same access decision every other
+      // course-scoped route uses, rather than a bespoke ownership check.
+      // access.level === "instructor" already means "an active INSTRUCTOR
+      // enrollment on courseId" (course-access.server.ts), so an ADMIN or
+      // UNIT_ADMIN without a real enrollment on this course is denied here
+      // too — they have /admin/chat for platform-wide ops instead.
+      if (chatMode === "instructor" && (access.level !== "instructor" || !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       courseAccess = access;
       // Layer A's policy prompt is injected for every course turn (including
       // admin preview), so topics are loaded unconditionally here — gating
@@ -1385,15 +1399,17 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Kick off the course-scope classifier alongside the RAG prefetch below so
     // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
-    // latency. Web-app chat only (#skip for admin preview and service-key
-    // callers — AI Tutor/Question Maker — per design; QM's generation-style
-    // prompts would false-positive against an "off-topic" gate).
+    // latency. Web-app chat only (#skip for admin/instructor preview and
+    // service-key callers — AI Tutor/Question Maker — per design; QM's
+    // generation-style prompts would false-positive against an "off-topic"
+    // gate, and instructor mode is course ops, not student tutoring).
     const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
       courseScopeGuardrailEnabled() &&
       effectiveCourse?.courseScopeGuardrailEnabled &&
       courseScopeContext &&
       !isServiceKeyCaller &&
-      chatMode !== "admin"
+      chatMode !== "admin" &&
+      chatMode !== "instructor"
         ? resolveCourseScopeVerdict({
             message: lastUserMessageTextForRouting,
             context: courseScopeContext,
@@ -1443,15 +1459,18 @@ export async function action({ request }: ActionFunctionArgs) {
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
-      // Admin mode never registers web tools (buildChatToolRegistry /
-      // webToolsEnabled are non-admin-only — see the admin branch below),
-      // so tool-capable web-lookup escalation only makes sense for non-admin
-      // chat. Mirrors `useToolCalling`'s gate later in this function
+      // Admin/instructor mode never registers web tools (buildChatToolRegistry /
+      // webToolsEnabled are learning-only — see the admin/instructor branch
+      // below), so tool-capable web-lookup escalation only makes sense for
+      // learning chat. Mirrors `useToolCalling`'s gate later in this function
       // (`supportsTools && !effectiveForceHybridRag`) without needing to
       // know the picked model yet: vLLM forces the tool-less hybrid path
       // unless `VLLM_CHAT_TOOLS=1`, regardless of which tier gets picked.
       const toolsEffectivelyAvailable =
-        chatMode !== "admin" && (await webToolsEnabledPromise) && isEffectiveToolCallingAvailable();
+        chatMode !== "admin" &&
+        chatMode !== "instructor" &&
+        (await webToolsEnabledPromise) &&
+        isEffectiveToolCallingAvailable();
       const routingContext = {
         courseId: effectiveCourseId,
         courseCode: courseCode ?? null,
@@ -1814,7 +1833,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let adminContextWindow: number | undefined;
     let adminDesiredMaxOutput: number | undefined;
 
-    if (chatMode === "admin") {
+    if (chatMode === "admin" || chatMode === "instructor") {
       const rbacUser = {
         id: actingUser.id,
         role: actingUser.role,
@@ -1831,12 +1850,21 @@ export async function action({ request }: ActionFunctionArgs) {
         chatMode,
       );
 
+      // #1659: instructor mode's route gate above guarantees effectiveCourse
+      // is set (a course is required, and it was just resolved) — the
+      // fallbacks here are defensive only, never expected to be exercised.
       const buildDefaultSystemPrompt = () =>
-        buildAdminSystemPrompt({
-          customPrompt: resolvedSystemPrompt,
-        });
+        chatMode === "instructor"
+          ? buildInstructorSystemPrompt({
+              courseName: effectiveCourse?.name ?? effectiveCourseCode ?? "your course",
+              courseCode: effectiveCourse?.code ?? effectiveCourseCode ?? "",
+              customPrompt: resolvedSystemPrompt,
+            })
+          : buildAdminSystemPrompt({
+              customPrompt: resolvedSystemPrompt,
+            });
 
-      // Admin mode never reads `webToolsEnabled`, but we still must observe
+      // Admin/instructor mode never reads `webToolsEnabled`, but we still must observe
       // the same rejection semantics as the original serial `await getPolicy`
       // — so it is awaited alongside the model lookup rather than left to
       // float as an unhandled rejection. Both promises were already in
@@ -1898,7 +1926,9 @@ export async function action({ request }: ActionFunctionArgs) {
           400,
           {
             error:
-              "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+              chatMode === "instructor"
+                ? "This course assistant requires a tool-capable model, which isn't configured yet. Ask an admin to enable one in Admin → AI Models, or add your own provider key in chat settings."
+                : "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
             code: "ADMIN_TOOLS_REQUIRED",
           },
           { model, chatId: chat?.id ?? null },
@@ -2207,9 +2237,16 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     // Re-cap after composeSecurityPrompt so the security block is included, and
-    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
-    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
-    if (chatMode === "admin" && adminContextWindow != null && adminDesiredMaxOutput != null) {
+    // reserve room for admin/instructor tool JSON schemas (the previous 512
+    // flat allowance under-counted ~17 admin tools and blew 16k windows:
+    // ContextWindowExceededError). toolCount below is read off the actual
+    // registry size, so this scales down correctly for instructor mode's
+    // much smaller tool set too.
+    if (
+      (chatMode === "admin" || chatMode === "instructor") &&
+      adminContextWindow != null &&
+      adminDesiredMaxOutput != null
+    ) {
       const systemChars = z.string().safeParse(streamConfig.system).success
         ? String(streamConfig.system).length
         : 0;
@@ -2264,7 +2301,7 @@ ${buildEmptyCourseRagBlock()}`;
         return chatApiReject(
           400,
           {
-            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            error: `${chatMode === "instructor" ? "Course assistant" : "Admin chat"} prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
             code: "ADMIN_CONTEXT_TOO_LARGE",
             estimatedInputTokens,
             contextWindow: adminContextWindow,
@@ -2283,6 +2320,7 @@ ${buildEmptyCourseRagBlock()}`;
     let adhdToolsUsed = Boolean(courseRagContextText);
     const needsOversight =
       chatMode !== "admin" &&
+      chatMode !== "instructor" &&
       effectiveAdhdAssist &&
       isAdhdOversightEnabled() &&
       (adhdProfileRequirements?.runDean ?? true);

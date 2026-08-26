@@ -700,6 +700,8 @@ model apikey {
 enum ChatbotType {
   LEARNING
   ADMIN
+  /// #1659: instructor's course-scoped ops assistant for their own published course.
+  INSTRUCTOR
 }
 
 model Chat {

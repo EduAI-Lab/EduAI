@@ -1,5 +1,6 @@
 import type { ChatToolContext } from "./chat-mode";
 import { createAdminChatTools } from "./create-admin-chat-tools";
+import { createInstructorChatTools } from "./create-instructor-chat-tools";
 import { createLearningChatTools } from "./create-learning-chat-tools";
 import type { ChatMode } from "./chat-mode";
 
@@ -38,6 +39,7 @@ export {
 export { resolveAdminUserId } from "./admin-context.server";
 export {
   buildAdminSystemPrompt,
+  buildInstructorSystemPrompt,
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
   chatbotTypeFromMode,
@@ -47,5 +49,7 @@ export {
 } from "./chat-mode";
 
 export function createChatTools(ctx: ChatToolContext, mode: ChatMode) {
-  return mode === "admin" ? createAdminChatTools(ctx) : createLearningChatTools(ctx);
+  if (mode === "admin") return createAdminChatTools(ctx);
+  if (mode === "instructor") return createInstructorChatTools(ctx);
+  return createLearningChatTools(ctx);
 }
