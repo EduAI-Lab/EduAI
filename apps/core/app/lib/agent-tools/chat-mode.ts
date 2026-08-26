@@ -33,6 +33,22 @@ export function chatbotTypeFromMode(mode: ChatMode): "LEARNING" | "ADMIN" | "INS
   return "LEARNING";
 }
 
+/**
+ * Both elevated modes (platform-wide admin, course-scoped instructor) share
+ * most of the non-RBAC turn logic in chat.ts — tool-calling setup, budget
+ * caps, skipping the student-tutoring course-scope classifier/web-tools/ADHD
+ * oversight. Centralizing the check here (#1659 review) means a call site
+ * that needs the two modes to diverge — like the COURSE_REQUIRED gate, where
+ * instructor mode always needs a course but admin never does — has to name
+ * that divergence explicitly instead of silently inheriting a boolean that
+ * doesn't fit, rather than a handful of ad-hoc
+ * `chatMode === "admin" || chatMode === "instructor"` expressions each
+ * needing to be found and updated by hand if a third mode is added.
+ */
+export function isPrivilegedChatMode(mode: ChatMode): boolean {
+  return mode === "admin" || mode === "instructor";
+}
+
 type PromptOptions = {
   courseCode?: string | null;
   customPrompt?: string | null;

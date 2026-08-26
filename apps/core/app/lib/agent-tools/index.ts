@@ -43,6 +43,7 @@ export {
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
   chatbotTypeFromMode,
+  isPrivilegedChatMode,
   parseChatMode,
   type ChatMode,
   type ChatToolContext,

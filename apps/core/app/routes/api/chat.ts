@@ -126,6 +126,7 @@ import {
   buildInstructorSystemPrompt,
   chatbotTypeFromMode,
   createChatTools,
+  isPrivilegedChatMode,
   parseChatMode,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
@@ -988,7 +989,16 @@ export async function action({ request }: ActionFunctionArgs) {
     // chat is now course-scoped. Server-to-server callers (admin API key /
     // ai-tutor proxy) and platform admins in admin chatMode may still omit a course.
     const isApiKeyCaller = isServiceKeyCaller;
-    if (!effectiveCourseId && !isApiKeyCaller && chatMode !== "admin") {
+    // #1659 review: instructor mode always needs a course — unlike admin, it
+    // has no meaningful "no course" session — so it does NOT get the
+    // isApiKeyCaller exemption learning mode gets. Without this, a
+    // service-key caller could send chatMode "instructor" with no course and
+    // skip straight past the instructor RBAC check below (which only runs
+    // inside `if (effectiveCourseId)`), landing on the no-course tool stub
+    // instead of ever being denied for lacking a real course relationship.
+    const courseRequired =
+      chatMode === "admin" ? false : chatMode === "instructor" ? true : !isApiKeyCaller;
+    if (!effectiveCourseId && courseRequired) {
       return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -1384,6 +1394,10 @@ export async function action({ request }: ActionFunctionArgs) {
     // image-bearing browser turns explicitly instead of retaining a hidden
     // multimodal path that the supported product cannot produce.
     // Admin/service-key integrations retain the existing multimodal routing.
+    // Instructor mode is deliberately NOT exempted here (unlike the other
+    // admin/instructor checks in this file, #1659 review): its tool registry
+    // and UI have no image affordance, so falling through to the default
+    // course-chat image rejection is the correct behavior, not a gap.
     if (imagesPresent && courseScopeContext && !isServiceKeyCaller && chatMode !== "admin") {
       return new Response(
         JSON.stringify({
@@ -1408,8 +1422,7 @@ export async function action({ request }: ActionFunctionArgs) {
       effectiveCourse?.courseScopeGuardrailEnabled &&
       courseScopeContext &&
       !isServiceKeyCaller &&
-      chatMode !== "admin" &&
-      chatMode !== "instructor"
+      !isPrivilegedChatMode(chatMode)
         ? resolveCourseScopeVerdict({
             message: lastUserMessageTextForRouting,
             context: courseScopeContext,
@@ -1467,8 +1480,7 @@ export async function action({ request }: ActionFunctionArgs) {
       // know the picked model yet: vLLM forces the tool-less hybrid path
       // unless `VLLM_CHAT_TOOLS=1`, regardless of which tier gets picked.
       const toolsEffectivelyAvailable =
-        chatMode !== "admin" &&
-        chatMode !== "instructor" &&
+        !isPrivilegedChatMode(chatMode) &&
         (await webToolsEnabledPromise) &&
         isEffectiveToolCallingAvailable();
       const routingContext = {
@@ -1833,7 +1845,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let adminContextWindow: number | undefined;
     let adminDesiredMaxOutput: number | undefined;
 
-    if (chatMode === "admin" || chatMode === "instructor") {
+    if (isPrivilegedChatMode(chatMode)) {
       const rbacUser = {
         id: actingUser.id,
         role: actingUser.role,
@@ -1887,6 +1899,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
 
       // Leave room for the ~17 admin tool schemas on small context models.
+      // #1659 review: this budget is NOT tool-count-aware (unlike the
+      // post-composeSecurityPrompt re-cap below, which reads the real
+      // toolCount) — instructor mode's much smaller 4-tool registry still
+      // gets admin's ~17-tool-sized reservation here, trimming more message
+      // history than it strictly needs to on a small-context model. Safe
+      // (no ContextWindowExceededError risk either way) but conservative;
+      // left as-is rather than re-tuning these fractions without being able
+      // to validate the new numbers against a real small-context model.
       const adminSessionBudget =
         contextWindow <= 16_384
           ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
@@ -2243,7 +2263,7 @@ ${buildEmptyCourseRagBlock()}`;
     // registry size, so this scales down correctly for instructor mode's
     // much smaller tool set too.
     if (
-      (chatMode === "admin" || chatMode === "instructor") &&
+      isPrivilegedChatMode(chatMode) &&
       adminContextWindow != null &&
       adminDesiredMaxOutput != null
     ) {
@@ -2319,8 +2339,7 @@ ${buildEmptyCourseRagBlock()}`;
     // Either path means a Sources footer should be expected (citation compliance).
     let adhdToolsUsed = Boolean(courseRagContextText);
     const needsOversight =
-      chatMode !== "admin" &&
-      chatMode !== "instructor" &&
+      !isPrivilegedChatMode(chatMode) &&
       effectiveAdhdAssist &&
       isAdhdOversightEnabled() &&
       (adhdProfileRequirements?.runDean ?? true);
