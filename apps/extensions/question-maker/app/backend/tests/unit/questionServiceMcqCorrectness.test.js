@@ -87,6 +87,7 @@ describe("questionService MCQ multi-correct persistence", () => {
           selectAllThatApply: true,
           choices: CHOICES,
         }),
+        include: expect.anything(),
       });
     });
 
@@ -113,6 +114,7 @@ describe("questionService MCQ multi-correct persistence", () => {
           selectAllThatApply: false,
           correctAnswers: null,
         }),
+        include: expect.anything(),
       });
     });
 
@@ -138,6 +140,7 @@ describe("questionService MCQ multi-correct persistence", () => {
           correctAnswers: null,
           choices: null,
         }),
+        include: expect.anything(),
       });
     });
   });

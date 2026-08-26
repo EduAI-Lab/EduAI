@@ -1249,6 +1249,20 @@ export const createVariant = async (questionId, variantData, userId) => {
         Boolean(variantData.shareWithExtensions) && variantData.isDraft === false,
       createdBy: variantData.createdBy ?? null,
     },
+    // The create route publishes a variant that is born reviewed, and
+    // `publishApprovedVariant` resolves the Core course through this relation.
+    // Without it the push is silently skipped and the variant is stranded
+    // approved-but-unpushed, which is the one state that cannot be reverted.
+    include: {
+      questionMetadata: {
+        select: {
+          id: true,
+          type: true,
+          primaryTopicId: true,
+          course: { select: { id: true, coreCourseId: true } },
+        },
+      },
+    },
   });
 
   return variant;

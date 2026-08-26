@@ -60,6 +60,16 @@ beforeEach(() => {
 });
 
 describe("createVariant share-with-extensions", () => {
+  it("returns the course relation the publish step needs to reach Core", async () => {
+    // publishApprovedVariant reads `variant.questionMetadata.course.coreCourseId`.
+    // Without the include, that is undefined and the push is silently skipped —
+    // creating an already-reviewed variant that can never be pushed or reverted.
+    await createVariant(3, { ...BASE, isDraft: false }, "u1");
+
+    const include = variantsCreate.mock.calls[0][0].include;
+    expect(include?.questionMetadata?.select?.course).toBeTruthy();
+  });
+
   it("persists an opted-in share choice on a reviewed question", async () => {
     await createVariant(3, { ...BASE, shareWithExtensions: true, isDraft: false }, "u1");
 
