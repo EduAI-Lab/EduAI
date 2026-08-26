@@ -117,6 +117,17 @@ export type ActivityUpdateResult =
   | { payload?: undefined; error: string };
 
 /**
+ * Either a compacted MCQ payload or the reason the question is not
+ * submittable — one arm or the other, never both, the same shape contract as
+ * `ActivityUpdateResult` above. Named rather than spelled inline at each
+ * `return` so a caller that has checked `error` reads `options` and
+ * `correctIndex` without re-checking them.
+ */
+export type McqSubmissionResult =
+  | { options: string[]; correctIndex: number; error?: undefined }
+  | { options?: undefined; correctIndex?: undefined; error: string };
+
+/**
  * Compacts an MCQ's choice list and remaps its answer key, or explains why the
  * question is not submittable.
  *
@@ -128,10 +139,7 @@ export type ActivityUpdateResult =
  * form did not, so a two-option question reached students as four options with
  * two empty, and a key that had never been remapped.
  */
-export function buildMcqSubmission(
-  choices: string[],
-  correctIndex: number,
-): { options?: string[]; correctIndex?: number; error?: string } {
+export function buildMcqSubmission(choices: string[], correctIndex: number): McqSubmissionResult {
   const trimmedChoices = choices.map((choice) => choice.trim());
   const options: string[] = [];
   let nextCorrectIndex = -1;

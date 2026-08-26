@@ -169,3 +169,75 @@ describe("AddActivityPanel — blank choice slots are not persisted", () => {
     expect(createActivity).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Removing a choice used to leave the answer key behind (PR #1623 review).
+ * `removeChoice` shifted `correct` down but never cleared `hasSelectedCorrect`,
+ * so deleting the option the author had marked silently promoted its neighbour
+ * to "correct" — the guard above saw a selection that no longer referred to
+ * anything the author had chosen, and saved the wrong key.
+ */
+describe("AddActivityPanel — removing a choice keeps the answer key honest", () => {
+  function fillThree() {
+    fillQuestion();
+    fillChoice("A", "Paris");
+    fillChoice("B", "Rome");
+    fillChoice("C", "Madrid");
+  }
+
+  function removeOption(letter: string) {
+    fireEvent.click(screen.getByRole("button", { name: `Remove option ${letter}` }));
+  }
+
+  it("clears the selection when the marked choice is the one removed", () => {
+    renderPanel();
+    pickMainTopic();
+    fillThree();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark option B correct" }));
+    removeOption("B");
+
+    // Nothing is marked any more — and the panel says so rather than letting
+    // the reader believe the key survived the deletion.
+    expect(screen.getByText("No correct answer selected yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\(correct answer\)$/ })).toBeNull();
+
+    submit();
+
+    expect(screen.getByText(ANSWER_REQUIRED)).toBeInTheDocument();
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("follows the marked choice when an earlier choice is removed", () => {
+    renderPanel();
+    pickMainTopic();
+    fillThree();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark option C correct" }));
+    removeOption("A");
+    submit();
+
+    expect(createActivity).toHaveBeenCalledTimes(1);
+    expect(createActivity.mock.calls[0][1]).toMatchObject({
+      options: { choices: ["Rome", "Madrid"] },
+      // Still Madrid, now at index 1.
+      answer: { correctIndex: 1 },
+    });
+  });
+
+  it("leaves the marked choice alone when a later choice is removed", () => {
+    renderPanel();
+    pickMainTopic();
+    fillThree();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark option A correct" }));
+    removeOption("B");
+    submit();
+
+    expect(createActivity).toHaveBeenCalledTimes(1);
+    expect(createActivity.mock.calls[0][1]).toMatchObject({
+      options: { choices: ["Paris", "Madrid"] },
+      answer: { correctIndex: 0 },
+    });
+  });
+});

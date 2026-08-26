@@ -140,17 +140,35 @@ export default function AddActivityPanel({
     setChoices((prev) => (prev.length < 8 ? [...prev, ""] : prev));
   };
 
+  /**
+   * Drop a choice, keeping the answer key pointed at the option the author
+   * actually marked.
+   *
+   * Three pieces of state have to agree: the list, the key index, and whether
+   * a key was ever chosen. Removing the *marked* option leaves no marked
+   * option, so the selection is cleared rather than sliding onto its
+   * neighbour — the old code shifted `correct` down and left
+   * `hasSelectedCorrect` true, so `handleAddActivity`'s guard passed and the
+   * question saved keyed to a choice the author never picked (the same defect
+   * as the unchecked guard it sits next to). Removing an option *before* the
+   * marked one shifts the key down; removing one after it leaves the key alone.
+   */
   const removeChoice = (index: number) => {
-    setChoices((prev) => {
-      if (prev.length <= 2) return prev;
-      return prev.filter((_, i) => i !== index);
-    });
-    setCorrect((prevCorrect) => {
-      if (index <= prevCorrect) {
-        return Math.max(0, prevCorrect - 1);
-      }
-      return prevCorrect;
-    });
+    // The remove control only renders above two choices, so this is defensive —
+    // but the key must not move when nothing was actually removed.
+    if (choices.length <= 2) return;
+
+    setChoices((prev) => prev.filter((_, i) => i !== index));
+
+    if (index === correct) {
+      setCorrect(0);
+      setHasSelectedCorrect(false);
+      setAnswerError(null);
+      return;
+    }
+    if (index < correct) {
+      setCorrect((prevCorrect) => Math.max(0, prevCorrect - 1));
+    }
   };
 
   const handleAddActivity = async (event: FormEvent) => {

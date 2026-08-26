@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NeedsAttentionPanel } from "~/components/dashboard/NeedsAttentionPanel";
+import type { AuthUser } from "~/hooks/useLocalUser";
 import type { Course } from "~/lib/types";
 
 /**
@@ -18,7 +19,7 @@ const mockRevalidate = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
-let mockUser: { id: string; name: string; role: string; authorizedUnits: string[] } = {
+let mockUser: AuthUser = {
   id: "u1",
   name: "Unit Admin",
   role: "UNIT_ADMIN",
