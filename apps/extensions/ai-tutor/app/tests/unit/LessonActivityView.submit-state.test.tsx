@@ -55,7 +55,7 @@ function renderView(submitState: "allowed" | "pending" | "unverified" | "withhel
         isUserReady
         onGuideMe={vi.fn()}
         canPrev={false}
-        canNext={false}
+        canNext
         onPrev={vi.fn()}
         onNext={vi.fn()}
         feedback={{
@@ -78,33 +78,60 @@ function renderView(submitState: "allowed" | "pending" | "unverified" | "withhel
 }
 
 describe("LessonActivityView — submitState gate (#1626)", () => {
-  it("offers Submit only when the course role has resolved to STUDENT", () => {
+  it("enables Guide me and clears the withheld note when the course role resolves to STUDENT", () => {
     renderView("allowed");
+    // Guide me is gated only by the course role here (no answer selected yet),
+    // so it is enabled; Submit is present (its own disabled rule waits on an
+    // answer selection, not the gate). No withheld label.
+    expect(screen.getByRole("button", { name: /guide me/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /submit answer/i })).toBeInTheDocument();
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
     // The MCQ options are interactive for a submitter.
     expect(screen.getByRole("radio", { name: "Option A" })).not.toBeDisabled();
   });
 
-  it("withholds Submit with a 'checking access' note while the role is pending", () => {
-    renderView("pending");
-    expect(screen.queryByRole("button", { name: /submit answer/i })).not.toBeInTheDocument();
+  it("disables both quiz actions with a 'checking access' note while the role is pending", () => {
+    const { container } = renderView("pending");
+    // Both controls stay present but disabled (not a dead enabled button), with
+    // one label — a TA can still see the quiz, just not interact with it.
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /guide me/i })).toBeDisabled();
     expect(screen.getByRole("note")).toHaveTextContent(/checking your access/i);
-    // Inputs are disabled too — a pre-resolution attempt cannot be staged.
     expect(screen.getByRole("radio", { name: "Option A" })).toBeDisabled();
+    // NOT visually muted: a real STUDENT briefly hits pending on every lesson
+    // load and must not see the quiz flash greyed.
+    expect(container.querySelector('[data-tour="student-answer-card"]')).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
-  it("withholds Submit with a 'couldn't verify' note when the breadcrumb failed", () => {
+  it("disables both quiz actions with a 'couldn't verify' note when the breadcrumb failed", () => {
     renderView("unverified");
-    expect(screen.queryByRole("button", { name: /submit answer/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /guide me/i })).toBeDisabled();
     expect(screen.getByRole("note")).toHaveTextContent(/couldn.t verify your access/i);
     expect(screen.getByRole("radio", { name: "Option A" })).toBeDisabled();
   });
 
-  it("withholds Submit with the TA note for a resolved non-STUDENT role", () => {
-    renderView("withheld");
-    expect(screen.queryByRole("button", { name: /submit answer/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent(/don.t submit answers/i);
+  it("disables both quiz actions with the students-only label for a resolved non-STUDENT role", () => {
+    const { container } = renderView("withheld");
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /guide me/i })).toBeDisabled();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      /only students of this course can interact with quizzes/i,
+    );
     expect(screen.getByRole("radio", { name: "Option A" })).toBeDisabled();
+    // The whole quiz (question + answer cards) renders visually disabled…
+    expect(container.querySelector('[data-tour="student-question-card"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(container.querySelector('[data-tour="student-answer-card"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    // …but Prev/Next stay enabled so a TA can review every question.
+    expect(screen.getByRole("button", { name: /next/i })).not.toBeDisabled();
   });
 });

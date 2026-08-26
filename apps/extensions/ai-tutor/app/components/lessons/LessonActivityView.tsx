@@ -131,15 +131,26 @@ export function LessonActivityView({
   const accent = accentColor ?? "var(--primary)";
   const orderLabel = String(questionNumber).padStart(2, "0");
   const canSubmitAnswers = submitState === "allowed";
-  // Message shown in place of Submit when the capability is withheld. Pending
-  // and unverified are the fail-closed states for an unresolved course role; a
-  // resolved TA gets the definitive note.
+  // Label shown under the (disabled) Submit + Guide me actions when the quiz is
+  // withheld. Pending and unverified are the fail-closed states for an
+  // unresolved course role; a resolved non-STUDENT (a course TA) gets the
+  // definitive note. Both quiz actions are STUDENT-in-this-course capabilities —
+  // Submit records an attempt (403 for a TA) and Guide me drives the study buddy
+  // (also withheld for a TA) — so one label covers both.
   const withheldNote =
     submitState === "pending"
       ? "Checking your access…"
       : submitState === "unverified"
         ? "Couldn't verify your access. Reload to try again."
-        : "Teaching assistants don't submit answers.";
+        : "Only students of this course can interact with quizzes.";
+  // Render the whole quiz (question + answer cards) visually disabled once a
+  // resolved non-STUDENT role — or an unconfirmable one — means it is not
+  // interactive (#1626). The Prev/Next footer stays full-strength and enabled so
+  // a TA can still page through and review every question as course content. We
+  // deliberately do NOT mute during "pending": a real STUDENT briefly hits that
+  // state on every lesson load while the breadcrumb resolves, and should not see
+  // the quiz flash greyed.
+  const quizMuted = submitState === "withheld" || submitState === "unverified";
 
   return (
     <div className="flex flex-col gap-5">
@@ -148,7 +159,11 @@ export function LessonActivityView({
           watermark, and a ringed accent chip + uppercase kicker. */}
       <Card
         data-tour="student-question-card"
-        className="group relative overflow-hidden"
+        aria-disabled={quizMuted || undefined}
+        className={cn(
+          "group relative overflow-hidden",
+          quizMuted && "opacity-60 transition-opacity",
+        )}
         style={courseThemeVars(accent)}
       >
         {/* Accent gradient rail */}
@@ -220,7 +235,12 @@ export function LessonActivityView({
       </Card>
 
       {/* Answer card */}
-      <Card data-tour="student-answer-card" style={courseThemeVars(accent)}>
+      <Card
+        data-tour="student-answer-card"
+        aria-disabled={quizMuted || undefined}
+        className={cn(quizMuted && "opacity-60 transition-opacity")}
+        style={courseThemeVars(accent)}
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <span
@@ -275,49 +295,57 @@ export function LessonActivityView({
             />
           )}
 
-          {/* Actions */}
+          {/* Actions — both quiz controls are STUDENT-in-this-course only, so
+              they are disabled together when the quiz is withheld (#1626). */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            {canSubmitAnswers ? (
-              <Button
-                variant="primary"
-                size="lg"
-                onClick={onSubmit}
-                disabled={
-                  submitting || (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
-                }
-              >
-                {submitting ? (
-                  <>
-                    <Spinner className="mr-1" />
-                    Submitting…
-                  </>
-                ) : (
-                  <>
-                    <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
-                    Submit answer
-                  </>
-                )}
-              </Button>
-            ) : (
-              <p
-                role="note"
-                className="rounded-[var(--radius-lg)] bg-muted/60 px-3 py-2 text-sm text-muted-foreground"
-              >
-                {withheldNote}
-              </p>
-            )}
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={onSubmit}
+              disabled={
+                !canSubmitAnswers ||
+                submitting ||
+                (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+              }
+            >
+              {submitting ? (
+                <>
+                  <Spinner className="mr-1" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
+                  Submit answer
+                </>
+              )}
+            </Button>
 
             <Button
               variant="secondary"
               size="lg"
               onClick={onGuideMe}
-              disabled={wasCorrect || !isUserReady}
+              disabled={!canSubmitAnswers || wasCorrect || !isUserReady}
               data-tour="student-guide-button"
             >
               <IconSparkles className="mr-1 h-4 w-4" aria-hidden="true" />
               Guide me
             </Button>
           </div>
+
+          {!canSubmitAnswers && (
+            <p
+              role="note"
+              className={cn(
+                "rounded-[var(--radius-lg)] px-3 py-2 text-sm",
+                // Stronger contrast when the card is muted so the reason stays
+                // legible through the reduced opacity.
+                quizMuted ? "bg-muted text-foreground" : "bg-muted/60 text-muted-foreground",
+              )}
+            >
+              {withheldNote}
+            </p>
+          )}
 
           {/* Result feedback */}
           {result && (

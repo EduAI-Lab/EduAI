@@ -91,16 +91,20 @@ test.describe("AI Tutor TA — learner surface", () => {
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText("Your answer")).toBeVisible();
       await expect(page.getByText("AI study buddy")).toBeVisible();
-      // Submit is NOT offered to a TA — recording an attempt is a STUDENT path
-      // (U-TA-1 fix); the card explains why instead of showing a dead button.
-      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
-      await expect(page.getByRole("note")).toContainText(/don.t submit answers/i);
+      // Both quiz controls are disabled for a TA — recording an attempt and the
+      // study buddy are STUDENT paths (U-TA-1 / #1626) — with one label, instead
+      // of dead-but-enabled buttons.
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /guide me/i })).toBeDisabled();
+      await expect(page.getByRole("note")).toContainText(
+        /only students of this course can interact with quizzes/i,
+      );
     } finally {
       await seeded.dispose();
     }
   });
 
-  test("the player withholds Submit for a TA and explains why (U-TA-1 fixed)", async ({
+  test("the player disables the quiz controls for a TA and explains why (U-TA-1 fixed)", async ({
     page,
     playwright,
   }) => {
@@ -109,14 +113,23 @@ test.describe("AI Tutor TA — learner surface", () => {
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
 
-      // Recording an attempt is a STUDENT-enrolment path (`POST
-      // /questions/:id/answer` is 403 for a TA — see `ta-security.spec.ts`). The
-      // player now withholds Submit and the answer inputs entirely, with a short
-      // note, rather than a dead button that silently no-ops (U-TA-1).
-      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
-      await expect(page.getByRole("note")).toContainText(/don.t submit answers/i);
+      // Both quiz actions are STUDENT-enrolment paths (`POST /questions/:id/answer`
+      // is 403 for a TA — see `ta-security.spec.ts` — and Guide me drives the
+      // withheld study buddy). The whole quiz renders disabled with one label,
+      // rather than dead-but-enabled buttons (U-TA-1 / #1626).
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /guide me/i })).toBeDisabled();
+      await expect(page.getByRole("note")).toContainText(
+        /only students of this course can interact with quizzes/i,
+      );
       // The MCQ options are disabled — a TA cannot even stage an attempt.
       await expect(page.getByRole("radio", { name: "Option A" })).toBeDisabled();
+      // The quiz cards render visually disabled, but Prev/Next stay usable so a
+      // TA can page through and review every question.
+      await expect(page.locator('[data-tour="student-answer-card"]')).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
     } finally {
       await seeded.dispose();
     }
@@ -156,12 +169,14 @@ test.describe("AI Tutor TA — learner surface", () => {
       // proving the STUDENT-in-B path reaches `POST /questions/:id/answer`.
       await expect(page.getByText(/correct/i)).toBeVisible({ timeout: 20_000 });
 
-      // Course A — enrolled as TA: submission is withheld on the same account,
+      // Course A — enrolled as TA: the quiz is disabled on the same account,
       // exactly as the single-course TA cases above.
       await gotoAiTutor(page, `/student/lesson/${taCourse.lessonId}`);
       await expect(page.getByText(taCourse.question)).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
-      await expect(page.getByRole("note")).toContainText(/don.t submit answers/i);
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+      await expect(page.getByRole("note")).toContainText(
+        /only students of this course can interact with quizzes/i,
+      );
       await expect(page.getByRole("radio", { name: "Option A" })).toBeDisabled();
     } finally {
       await Promise.all([taCourse.dispose(), studentCourse.dispose()]);
@@ -236,14 +251,14 @@ test.describe("AI Tutor TA — learner surface", () => {
       });
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
-      // Pre-resolution: withheld with the pending note, no dead Submit.
+      // Pre-resolution: disabled with the pending note, never an enabled Submit.
       await expect(page.getByRole("note")).toContainText(/checking your access/i);
-      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
-      // Once the delayed breadcrumb resolves the STUDENT role, Submit appears.
-      await expect(page.getByRole("button", { name: /submit answer/i })).toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.getByRole("note")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+      // Once the delayed breadcrumb resolves the STUDENT role, the note clears
+      // and the quiz becomes interactive — selecting an option enables Submit.
+      await expect(page.getByRole("note")).toHaveCount(0, { timeout: 20_000 });
+      await page.getByRole("radio", { name: "Option A" }).click();
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeEnabled();
     } finally {
       await page.unroute("**/api/lessons/*/breadcrumb");
       await seeded.dispose();
@@ -271,7 +286,7 @@ test.describe("AI Tutor TA — learner surface", () => {
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByRole("note")).toContainText(/couldn.t verify your access/i);
-      await expect(page.getByRole("button", { name: /submit answer/i })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
     } finally {
       await page.unroute("**/api/lessons/*/breadcrumb");
       await seeded.dispose();
