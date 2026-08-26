@@ -29,6 +29,7 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 import {
   IconPlus,
   IconX,
@@ -57,11 +58,17 @@ import {
   Textarea,
 } from "@eduai/ui";
 import { cn } from "~/lib/utils";
-import api from "../lib/api";
+import api, { ApiHttpError } from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
 import { AI_MODE_REQUIRED } from "~/lib/activityForm";
 import { bankQuestionToActivityDraft } from "~/lib/bankQuestionToActivityDraft";
 import type { BankQuestion } from "~/lib/bankQuestionToActivityDraft";
+
+// Only the shape this component cares about from a JSON error body — parsed
+// at this I/O boundary (the caught error's raw text) rather than trusted via
+// a type assertion, so a body that isn't `{ error: string }` (or isn't even
+// JSON) falls back to the generic message instead of reading garbage.
+const bankErrorBodySchema = z.object({ error: z.string() }).partial();
 
 const TYPE_OPTIONS = [
   { value: "MCQ" as const, label: "MCQ" },
@@ -109,6 +116,13 @@ export default function AddActivityPanel({
   const [source, setSource] = useState<"manual" | "bank">("manual");
   const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
   const [bankState, setBankState] = useState<"idle" | "loading" | "error">("idle");
+  // True when the server's page came back full (see the route docblock) —
+  // never turned into a fake total, just disclosed as-is under the list.
+  const [bankHasMore, setBankHasMore] = useState(false);
+  // Set on a 400 (e.g. "Course was not imported from EduAI") so the panel can
+  // show the server's own reason instead of a generic "try again" that reads
+  // as transient when it isn't.
+  const [bankErrorMessage, setBankErrorMessage] = useState<string | null>(null);
   // Shown as a chip once a bank question is applied; clearing it empties the
   // prefilled fields it set.
   const [bankSource, setBankSource] = useState<{ id: string; label: string } | null>(null);
@@ -139,10 +153,18 @@ export default function AddActivityPanel({
       if (selectedMainTopicId !== "") setSelectedMainTopicId("");
       if (selectedSecondaryTopicIds.length > 0) setSelectedSecondaryTopicIds([]);
     } else {
-      // If current selection is invalid, default to first topic
+      // If current selection is invalid, default to first topic — but never
+      // while an unresolved-bank-topic notice is showing. Without this guard,
+      // a topics-list refresh triggered by an unmatched bank question's
+      // re-match attempt (see applyBankQuestion) would see the deliberately
+      // empty `selectedMainTopicId` here and silently default it to
+      // topics[0], leaving the Select showing an arbitrary topic while the
+      // notice still says "choose a main topic below" (Finding: unmatched
+      // topic silently selects an arbitrary topic).
       if (
-        selectedMainTopicId === "" ||
-        !topics.some((topic) => String(topic.id) === selectedMainTopicId)
+        unresolvedTopic == null &&
+        (selectedMainTopicId === "" ||
+          !topics.some((topic) => String(topic.id) === selectedMainTopicId))
       ) {
         setSelectedMainTopicId(String(topics[0].id));
       }
@@ -171,19 +193,45 @@ export default function AddActivityPanel({
     };
   }, []);
 
+  // Identifies which question pick a pending async continuation (the
+  // `refreshTopics()` re-match below) belongs to. Bumped on every new pick
+  // AND on clear, so a stale continuation from an abandoned question can tell
+  // it no longer owns the current selection and bail instead of overwriting
+  // whatever the instructor picked next (Finding: a late topic refresh from
+  // an abandoned pick writes into the current pick).
+  const selectionTokenRef = useRef(0);
+
   useEffect(() => {
     if (source !== "bank" || courseOfferingId == null) return;
     let cancelled = false;
     setBankState("loading");
+    setBankErrorMessage(null);
     api
       .listBankQuestions(courseOfferingId, { limit: 20 })
-      .then((questions) => {
+      .then(({ questions, hasMore }) => {
         if (cancelled) return;
         setBankQuestions(questions);
+        setBankHasMore(hasMore);
         setBankState("idle");
       })
-      .catch(() => {
-        if (!cancelled) setBankState("error");
+      .catch((error) => {
+        if (cancelled) return;
+        setBankState("error");
+        // A native (non-imported) course 400s with a specific reason
+        // ("Course was not imported from EduAI") — surface it instead of a
+        // generic "try again" that misleadingly reads as transient.
+        if (error instanceof ApiHttpError && error.status === 400) {
+          let serverMessage: string | null = null;
+          try {
+            const parsed = bankErrorBodySchema.safeParse(JSON.parse(error.message));
+            if (parsed.success && parsed.data.error) serverMessage = parsed.data.error;
+          } catch {
+            // Not JSON — fall through to the generic message below.
+          }
+          setBankErrorMessage(serverMessage);
+        } else {
+          setBankErrorMessage(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -191,6 +239,7 @@ export default function AddActivityPanel({
   }, [source, courseOfferingId]);
 
   const applyBankQuestion = (bankQuestion: BankQuestion) => {
+    const token = ++selectionTokenRef.current;
     const draft = bankQuestionToActivityDraft(
       bankQuestion,
       topics.map((topic) => ({ id: String(topic.id), name: topic.name })),
@@ -207,9 +256,15 @@ export default function AddActivityPanel({
     } else if (draft.unresolvedTopicName) {
       // The topics list may just be stale (Core sync runs on the GET
       // /courses/:id/topics read) — refresh once and re-check before giving up.
+      // Clear the main topic now (mirrors the untagged-question branch below)
+      // rather than leaving a stale selection: the derived-state block above
+      // is guarded against re-defaulting while `unresolvedTopic` is set, but
+      // only once it IS set — until the refresh settles there must be no
+      // selection at all for the notice to be honest.
       setUnresolvedTopic(null);
+      setSelectedMainTopicId("");
       void refreshTopics().then(() => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || selectionTokenRef.current !== token) return;
         const rematch = topicsRef.current.find((topic) => topic.name === draft.unresolvedTopicName);
         if (rematch) {
           setSelectedMainTopicId(String(rematch.id));
@@ -229,6 +284,10 @@ export default function AddActivityPanel({
   };
 
   const clearBankSource = () => {
+    // Invalidates any in-flight re-match continuation from the pick being
+    // cleared (Finding: a late topic refresh from an abandoned pick writes
+    // into the current pick).
+    selectionTokenRef.current += 1;
     setBankSource(null);
     setUnresolvedTopic(null);
     setQuestion("");
@@ -236,6 +295,21 @@ export default function AddActivityPanel({
     setCorrect(0);
     setHasSelectedCorrect(false);
     setTextAnswer("");
+    // MINOR 1: TESTS.md documents the prefill and the chip as cleared
+    // together — `type` and the topic tag are part of that prefill too.
+    setType("MCQ");
+    setSelectedMainTopicId("");
+  };
+
+  // "Write my own" drops the bank chip/tag but deliberately keeps whatever
+  // text is already in the form — an instructor who started from a bank
+  // question and then edited it should not lose those edits by switching
+  // source tabs. Contrast with `clearBankSource`, which is an explicit "throw
+  // this away" action.
+  const switchToManual = () => {
+    selectionTokenRef.current += 1;
+    setSource("manual");
+    setBankSource(null);
   };
 
   const addChoice = () => {
@@ -258,6 +332,12 @@ export default function AddActivityPanel({
   const handleAddActivity = async (event: FormEvent) => {
     event.preventDefault();
     if (!question.trim()) return;
+    // A bank question whose `answer` letter matches no choice (or one whose
+    // correct choice was never picked manually) must not silently submit
+    // `correctIndex: 0` — that would mark an arbitrary choice correct while
+    // the form shows none selected. Reuse the existing "no correct answer
+    // selected yet" signal rather than adding a new validation path.
+    if (type === "MCQ" && !hasSelectedCorrect) return;
     if (selectedMainTopicId === "") {
       setTopicSelectionError("Select a main topic to continue.");
       return;
@@ -343,7 +423,7 @@ export default function AddActivityPanel({
                 data-testid="activity-source-manual"
                 data-state={source === "manual" ? "on" : "off"}
                 aria-checked={source === "manual"}
-                onClick={() => setSource("manual")}
+                onClick={switchToManual}
                 className={cn(
                   "min-w-[6.5rem] rounded-lg px-4 py-2 text-sm font-medium transition-all",
                   source === "manual"
@@ -378,7 +458,8 @@ export default function AddActivityPanel({
             {bankState === "loading" && <p className="text-sm text-muted-foreground">Loading…</p>}
             {bankState === "error" && (
               <p className="text-sm text-destructive">
-                Could not load the question bank. Write the question yourself, or try again.
+                {bankErrorMessage ??
+                  "Could not load the question bank. Write the question yourself, or try again."}
               </p>
             )}
             {bankState === "idle" && bankQuestions.length === 0 && (
@@ -402,8 +483,14 @@ export default function AddActivityPanel({
                 </span>
               </button>
             ))}
+            {bankHasMore && (
+              <p className="text-xs text-muted-foreground">
+                Showing the 20 most recent shared questions.
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
-              Long-answer questions are not shown — an activity is MCQ or short answer.
+              Long-answer and multiple-answer questions are not shown — an activity is MCQ (single
+              correct answer) or short answer.
             </p>
           </div>
         ) : null}
@@ -416,16 +503,27 @@ export default function AddActivityPanel({
             <span className="truncate text-sm">
               From the question bank: <span className="font-medium">{bankSource.label}</span>
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="bank-source-clear"
-              onClick={clearBankSource}
-            >
-              <IconX className="size-4" aria-hidden="true" />
-              Clear
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="bank-source-change"
+                onClick={() => setBankSource(null)}
+              >
+                Choose a different question
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="bank-source-clear"
+                onClick={clearBankSource}
+              >
+                <IconX className="size-4" aria-hidden="true" />
+                Clear
+              </Button>
+            </div>
           </div>
         )}
 

@@ -800,7 +800,11 @@ export const api = {
     }),
   /**
    * Shared bank questions available to build an activity from (Task 2). The
-   * server already excludes long-answer questions, so this must not re-filter.
+   * server already excludes long-answer AND select-all-that-apply questions
+   * (an activity's single `correctIndex` cannot represent either), so this
+   * must not re-filter. `hasMore` is true when the server's page came back
+   * full — see the route docblock — and is surfaced as-is, never turned into
+   * a count.
    */
   listBankQuestions: (
     courseId: number,
@@ -811,9 +815,10 @@ export const api = {
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query}` : "";
-    return http(`/api/courses/${courseId}/bank-questions${suffix}`).then(
-      (data) => data.questions ?? [],
-    ) as Promise<BankQuestion[]>;
+    return http(`/api/courses/${courseId}/bank-questions${suffix}`).then((data) => ({
+      questions: (data.questions ?? []) as BankQuestion[],
+      hasMore: data.hasMore === true,
+    }));
   },
   submitAnswer: (activityId: number, payload: any) =>
     decode(
