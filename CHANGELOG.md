@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [core] feat: The Admin Chatbot can now ground an answer in a course's uploaded materials — `searchCourseMaterials`, the ADMIN-scoped counterpart to learning chat's `getInformation`, resolves `courseId`/`courseCode` the same way every other admin course tool does and searches that course's syllabus/materials for dates, policies, and assignment details instead of only platform-ops data. Closes #1658. (@Ayyhab, 2026-08-25) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
