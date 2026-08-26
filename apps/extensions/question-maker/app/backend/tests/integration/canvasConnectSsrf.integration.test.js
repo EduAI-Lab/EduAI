@@ -1,22 +1,24 @@
 /**
- * Route-level SSRF guard tests for POST /api/canvas/connect (#991): a
- * private/link-local/loopback IP or a non-HTTPS scheme must be rejected
- * before the URL is ever persisted. No DB / live Core: canvasService, schema,
- * and RBAC Core reads are mocked (same shape as canvasRbac.test.js).
+ * POST /api/canvas/connect now proxies to Core (#1084): QM no longer runs the
+ * local SSRF guard. These tests assert the body is forwarded and Core errors
+ * are surfaced to the caller.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
-const { canvas, mockCourseFindOne, mockEnrollments } = vi.hoisted(() => ({
+const { canvas, mockCoreCanvas, mockCourseFindOne, mockEnrollments } = vi.hoisted(() => ({
   canvas: {
-    getCanvasIntegration: vi.fn(),
-    saveCanvasIntegration: vi.fn(),
-    getCanvasCourses: vi.fn(),
     exportAssessmentToCanvas: vi.fn(),
     getCanvasCourseMapping: vi.fn(),
     getCanvasQuizzes: vi.fn(),
     getCanvasQuizQuestions: vi.fn(),
     importQuizFromCanvas: vi.fn(),
+  },
+  mockCoreCanvas: {
+    proxyCoreCanvasGetIntegration: vi.fn(),
+    proxyCoreCanvasConnect: vi.fn(),
+    proxyCoreCanvasDisconnect: vi.fn(),
+    proxyCoreCanvasListCourses: vi.fn(),
   },
   mockCourseFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
@@ -40,6 +42,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: vi.fn().mockResolvedValue({ id: "cuid-core-course", department: "COSC" }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
+  ...mockCoreCanvas,
 }));
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
@@ -77,98 +80,45 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
+describe("POST /api/canvas/connect — Core proxy (#1084)", () => {
   it.each([
     ["cloud metadata IP", "https://169.254.169.254/"],
     ["loopback IP", "https://127.0.0.1/"],
     ["private 10/8", "https://10.1.2.3/"],
     ["private 192.168/16", "https://192.168.1.1/"],
     ["non-HTTPS scheme", "http://canvas.example.com/"],
-    ["credentials", "https://user:password@canvas.example.com/"],
-    ["query", "https://canvas.example.com/?tenant=one"],
-    ["fragment", "https://canvas.example.com/#tenant"],
-    ["carrier-grade NAT", "https://100.64.0.1/"],
-    ["benchmark range", "https://198.18.0.1/"],
-  ])("rejects %s (%s) with 400 and never persists it", async (_label, canvasUrl) => {
+  ])("forwards %s (%s) to Core and surfaces Core rejection", async (_label, canvasUrl) => {
+    const coreErr = Object.assign(new Error("Canvas URL is not allowed"), {
+      status: 400,
+      body: { error: "Canvas URL is not allowed" },
+    });
+    mockCoreCanvas.proxyCoreCanvasConnect.mockRejectedValue(coreErr);
+
+    const body = { canvasUrl, isTestMode: true };
     const res = await request(app)
       .post("/api/canvas/connect")
       .set("Cookie", "session=v")
-      .send({ canvasUrl, isTestMode: true });
+      .send(body);
 
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ success: false });
-    expect(canvas.saveCanvasIntegration).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({ success: false, code: "Canvas URL is not allowed" });
+    expect(mockCoreCanvas.proxyCoreCanvasConnect).toHaveBeenCalledWith("session=v", body);
   });
 
-  it("persists the validated canonical Canvas origin", async () => {
-    canvas.saveCanvasIntegration.mockResolvedValue({
-      canvasUrl: "https://canvas.example.com",
-      isTestMode: true,
+  it("accepts a valid https Canvas URL when Core succeeds", async () => {
+    const body = { canvasUrl: "https://canvas.example.com", isTestMode: true };
+    mockCoreCanvas.proxyCoreCanvasConnect.mockResolvedValue({
+      success: true,
+      message: "Canvas test mode enabled. You can test exports without a real Canvas account.",
+      data: { canvasUrl: body.canvasUrl, isTestMode: true, isConnected: true },
     });
 
     const res = await request(app)
       .post("/api/canvas/connect")
       .set("Cookie", "session=v")
-      .send({ canvasUrl: "https://CANVAS.example.com:443/", isTestMode: true });
+      .send(body);
 
     expect(res.status).toBe(200);
-    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
-      INSTRUCTOR.id,
-      expect.objectContaining({ canvasUrl: "https://canvas.example.com" }),
-    );
-  });
-
-  it("accepts a valid https Canvas URL and persists it", async () => {
-    canvas.saveCanvasIntegration.mockResolvedValue({
-      canvasUrl: "https://canvas.example.com",
-      isTestMode: true,
-    });
-
-    const res = await request(app)
-      .post("/api/canvas/connect")
-      .set("Cookie", "session=v")
-      .send({ canvasUrl: "https://canvas.example.com", isTestMode: true });
-
-    expect(res.status).toBe(200);
-    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
-      INSTRUCTOR.id,
-      expect.objectContaining({ canvasUrl: "https://canvas.example.com" }),
-    );
-  });
-
-  it("retains a legitimate explicit HTTPS port in the persisted origin", async () => {
-    canvas.saveCanvasIntegration.mockResolvedValue({
-      canvasUrl: "https://canvas.example.com:8443",
-      isTestMode: true,
-    });
-
-    const res = await request(app)
-      .post("/api/canvas/connect")
-      .set("Cookie", "session=v")
-      .send({ canvasUrl: "https://canvas.example.com:8443/", isTestMode: true });
-
-    expect(res.status).toBe(200);
-    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
-      INSTRUCTOR.id,
-      expect.objectContaining({ canvasUrl: "https://canvas.example.com:8443" }),
-    );
-  });
-
-  it.each([
-    ["https://canvas.example.com/lms", "https://canvas.example.com/lms"],
-    ["https://canvas.example.com/lms/", "https://canvas.example.com/lms"],
-  ])("persists an HTTPS path prefix from %s", async (canvasUrl, canonical) => {
-    canvas.saveCanvasIntegration.mockResolvedValue({ canvasUrl: canonical, isTestMode: true });
-
-    const res = await request(app)
-      .post("/api/canvas/connect")
-      .set("Cookie", "session=v")
-      .send({ canvasUrl, isTestMode: true });
-
-    expect(res.status).toBe(200);
-    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
-      INSTRUCTOR.id,
-      expect.objectContaining({ canvasUrl: canonical }),
-    );
+    expect(mockCoreCanvas.proxyCoreCanvasConnect).toHaveBeenCalledWith("session=v", body);
   });
 });

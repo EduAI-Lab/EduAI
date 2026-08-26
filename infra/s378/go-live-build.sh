@@ -151,8 +151,10 @@ step "migrate"
 # step a branch carrying a schema change deploys as a runtime crash.
 ( cd apps/core                                  && npx prisma migrate deploy )
 ( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
-# Same wrapper reason as the generate step above; db:migrate:deploy also runs the
-# baseline script first.
+# QM db:migrate:deploy runs migrate-canvas-integrations-to-core.mjs BEFORE prisma
+# migrate deploy. That copier decrypts with QM ENCRYPTION_KEY and re-encrypts with
+# Core ENCRYPTION_KEY; the following Prisma migration only renames QM's
+# canvas_integrations table to a backup (it does not DROP). See docs/DEPLOYMENT.md.
 ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
 
 step "seed reference and extension data"

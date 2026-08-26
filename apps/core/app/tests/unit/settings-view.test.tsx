@@ -119,6 +119,13 @@ describe("SettingsView — tab visibility by role", () => {
     expect(screen.getByRole("tab", { name: /canvas/i })).toBeInTheDocument();
   });
 
+  it("shows the Canvas tab for UNIT_ADMIN regardless of the policy gate", () => {
+    vi.mocked(usePolicyGate).mockReturnValue({ isEnabled: () => false } as never);
+    renderView({ role: "UNIT_ADMIN" });
+
+    expect(screen.getByRole("tab", { name: /canvas/i })).toBeInTheDocument();
+  });
+
   it("shows the Canvas tab for INSTRUCTOR only when the policy gate is enabled", () => {
     vi.mocked(usePolicyGate).mockReturnValue({
       isEnabled: (key: string) => key === "instructors.canManageCanvasIntegration",
