@@ -33,24 +33,64 @@ export function parseCanvasNumericId(value, label = "id") {
   }
   return n;
 }
+/**
+ * Copies the sanitized failure metadata `fetchFromCore` attaches to a Core error
+ * onto the QM-facing wrapper. Without this the error handler sees a bare `Error`
+ * and collapses every Core 400/401/502 into a 500 "Request failed" (#1509).
+ *
+ * `code` rides along only when Core marked the error public, because
+ * `coreApiService` sets `isPublic` exactly when `code` is a machine-readable
+ * Core code — transport failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT`)
+ * also carry a `code` and must not be relayed as a semantic one.
+ */
+function withCoreErrorMetadata(wrapped, error) {
+  const status = error?.status ?? error?.statusCode;
+  if (Number.isInteger(status)) wrapped.status = status;
+  if (error?.body !== undefined) wrapped.body = error.body;
+  if (error?.isPublic === true) {
+    wrapped.isPublic = true;
+    if (typeof error.code === "string") wrapped.code = error.code;
+  }
+  if (error?.isSanitizedUpstreamError === true) wrapped.isSanitizedUpstreamError = true;
+  return wrapped;
+}
+
+/** The QM-facing "connect Canvas first" failure, carrying Core's own status/code. */
+function notConnectedError() {
+  return Object.assign(new Error(NOT_CONNECTED_MESSAGE), {
+    status: 400,
+    body: { error: "CANVAS_NOT_CONNECTED" },
+    code: "CANVAS_NOT_CONNECTED",
+    isPublic: true,
+  });
+}
+
 /** Loads the caller's Core Canvas integration or throws when disconnected. */
 async function loadCoreCanvasIntegration(cookie) {
   const result = await proxyCoreCanvasGetIntegration(cookie);
   if (!result?.data) {
-    throw new Error(NOT_CONNECTED_MESSAGE);
+    throw notConnectedError();
   }
   return result.data;
 }
 
-/** Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message. */
+/**
+ * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message, preserving
+ * Core's status/code/isPublic so the caller sees the real contract.
+ */
 function rethrowCoreCanvasError(error, action) {
   if (
     error?.status === 400 &&
     (error.body?.error === "CANVAS_NOT_CONNECTED" || error.message === "CANVAS_NOT_CONNECTED")
   ) {
-    throw new Error(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`);
+    const notConnected = notConnectedError();
+    notConnected.message = `Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`;
+    throw notConnected;
   }
-  throw new Error(`Failed to ${action}: ${error.message}`);
+  throw withCoreErrorMetadata(
+    new Error(`Failed to ${action}: ${error?.message ?? "Core request failed"}`, { cause: error }),
+    error,
+  );
 }
 
 /**
