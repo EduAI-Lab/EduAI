@@ -27,7 +27,17 @@ vi.mock("~/hooks/useLocalUser", () => ({
 }));
 
 vi.mock("~/hooks/useAtPermissions", () => ({
-  useAtPermissions: () => ({ canPublishContent: true, canManageContent: true }),
+  // #1660 review (ariqmuldi, PR #1667): the entry-point button now reads
+  // perms.canPreviewAsStudent (moved out of StudentPreviewBanner.tsx into
+  // permissions.ts, the app's one RBAC source of truth) instead of
+  // re-deriving isStudentPreviewRole(user?.role) inline — derive it here
+  // from the same mockUser each test sets, rather than a static value, so
+  // this mock still exercises the per-role behavior it did before.
+  useAtPermissions: () => ({
+    canPublishContent: true,
+    canManageContent: true,
+    canPreviewAsStudent: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"].includes(mockUser.current.role),
+  }),
 }));
 
 vi.mock("react-router", async (importActual) => {

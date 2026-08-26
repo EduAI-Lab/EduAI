@@ -59,11 +59,8 @@ import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
-import {
-  StudentPreviewBanner,
-  isStudentPreviewRole,
-  STUDENT_PREVIEW_ROLES,
-} from "~/components/rbac/StudentPreviewBanner";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
@@ -131,7 +128,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
 
   const [, lesson, activitiesPage] = await Promise.all([
-    requireClientUser(STUDENT_PREVIEW_ROLES),
+    requireClientUser(STUDENT_ROUTE_ROLES),
     api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
@@ -155,7 +152,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
-  const previewRole = isStudentPreviewRole(user?.role) ? user?.role : undefined;
+  const previewRole = resolvePreviewRole(user);
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
   const { lesson, activities, activitiesTotal } = loaderData;
@@ -347,12 +344,16 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      // #1660 review: the server already 403s answer submission for every
-      // non-STUDENT caller (server/src/routes/activities.js) — surface that
-      // plainly for a previewer instead of the generic message, which read
-      // as a bug rather than the read-only preview the banner promises.
+      // #1660 review (ariqmuldi): the server 403s this endpoint for three
+      // distinct reasons (server/src/routes/activities.js) — non-STUDENT
+      // caller (a previewer, what this message is about), a real student
+      // whose enrollment-sync is lagging, or content that got unpublished
+      // mid-session. Gating on `previewRole` (the client's own, already-
+      // resolved role) instead of the bare status code keeps a genuine
+      // STUDENT/TA from seeing "this is a read-only preview" for one of the
+      // other two, unrelated 403s.
       setResult(
-        e instanceof ApiHttpError && e.status === 403
+        e instanceof ApiHttpError && e.status === 403 && previewRole
           ? "Only enrolled students can submit answers — this is a read-only preview."
           : "There was a problem submitting.",
       );
@@ -648,6 +649,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSelectTopic={handleTopicSelect}
       studentAnswer={studentAnswer}
       className="h-full"
+      isPreview={Boolean(previewRole)}
     />
   );
 

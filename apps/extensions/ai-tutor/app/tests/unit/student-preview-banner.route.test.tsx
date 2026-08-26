@@ -8,20 +8,41 @@
  * shows for the three staff roles but not for a real STUDENT/TA, mirroring
  * student.route.test.tsx's "#746 review: TA preview must stay student-shaped".
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import type { Role } from "~/lib/types";
 
 const mockUser = vi.hoisted(() => ({ current: { id: "u1", name: "Viewer", role: "STUDENT" } }));
 
+const { submitAnswer, ApiHttpError } = vi.hoisted(() => {
+  class ApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiHttpError";
+      this.status = status;
+    }
+  }
+  return { submitAnswer: vi.fn(), ApiHttpError };
+});
+
 vi.mock("~/lib/api", () => ({
+  ApiHttpError,
   default: {
     courseById: vi.fn(),
     modulesForCourse: vi.fn(),
     activitiesForLesson: vi.fn(),
-    lessonBreadcrumb: vi.fn(),
-    submitAnswer: vi.fn(),
+    // Fetched after paint via requestAnimationFrame (#1334) and not awaited
+    // by any test here — must resolve rather than return undefined, or the
+    // real .then() chain in student.lesson.tsx throws once rAF fires.
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 10, title: "Module A" },
+      course: { id: 1, code: "COSC 101", title: "Course 1" },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+    }),
+    submitAnswer,
     mySubmissions: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -105,7 +126,27 @@ function renderModule() {
   );
 }
 
-function renderLesson() {
+const SHORT_TEXT_ACTIVITY = {
+  id: 100,
+  title: "Q1",
+  instructionsMd: "",
+  position: 0,
+  question: "What is a loop?",
+  type: "SHORT_TEXT" as const,
+  options: null,
+  hints: [],
+  mainTopic: null,
+  secondaryTopics: [],
+  enableTeachMode: false,
+  enableGuideMode: false,
+  enableCustomMode: false,
+  customPrompt: null,
+  customPromptTitle: null,
+};
+
+function renderLesson(
+  activities: React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]["activities"] = [],
+) {
   const loaderData: React.ComponentProps<typeof StudentLessonPlayer>["loaderData"] = {
     lesson: {
       id: 3,
@@ -115,8 +156,8 @@ function renderLesson() {
       moduleId: 10,
       isPublished: true,
     },
-    activities: [],
-    activitiesTotal: 0,
+    activities,
+    activitiesTotal: activities.length,
   };
   return render(
     <MemoryRouter>
@@ -176,5 +217,49 @@ describe.each([
     setRole("ADMIN");
     renderRoute();
     expect(screen.getByTestId("student-preview-exit")).toHaveAttribute("href", href);
+  });
+});
+
+// #1660 review (ariqmuldi, PR #1667): student.lesson.tsx's answer-submission
+// 403 handler used to assume any 403 from this endpoint meant "the caller is
+// a previewer" — but a real, enrolled STUDENT can also hit this same 403 for
+// two unrelated, pre-existing reasons (a lagging enrollment sync, or content
+// that got unpublished mid-session). Gated on the resolved `previewRole`
+// instead of the bare status code so only an actual previewer sees the
+// "read-only preview" message.
+describe("student.lesson — answer-submission 403 message (#1660 review)", () => {
+  it('shows "read-only preview" for a previewer (ADMIN) hitting the 403', async () => {
+    setRole("ADMIN");
+    submitAnswer.mockRejectedValueOnce(new ApiHttpError(403, "Only students can submit answers"));
+    renderLesson([SHORT_TEXT_ACTIVITY]);
+
+    fireEvent.change(screen.getByPlaceholderText("Type your answer…"), {
+      target: { value: "an answer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Only enrolled students can submit answers — this is a read-only preview.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("falls back to the generic message for a real STUDENT hitting a 403 for an unrelated reason (e.g. lagging enrollment sync)", async () => {
+    setRole("STUDENT");
+    submitAnswer.mockRejectedValueOnce(new ApiHttpError(403, "Not enrolled in this course"));
+    renderLesson([SHORT_TEXT_ACTIVITY]);
+
+    fireEvent.change(screen.getByPlaceholderText("Type your answer…"), {
+      target: { value: "an answer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText("There was a problem submitting.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
   });
 });

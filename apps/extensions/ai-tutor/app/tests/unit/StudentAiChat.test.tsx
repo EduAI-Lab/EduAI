@@ -161,7 +161,11 @@ function deferredGuideCall() {
   return { resolve, reject };
 }
 
-function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = ACTIVITY) {
+function renderChat(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
   return render(
     <MemoryRouter>
       <StudentAiChat
@@ -175,6 +179,7 @@ function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = A
         currentTopicId={null}
         onSelectTopic={vi.fn()}
         studentAnswer={null}
+        isPreview={isPreview}
       />
     </MemoryRouter>,
   );
@@ -458,6 +463,39 @@ describe("StudentAiChat — send/receive round trip (#1003)", () => {
         screen.getByText("AI study buddy not available right now. Please try again later."),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+// ── #1660 review (ariqmuldi, PR #1667): honest 403 message gated on isPreview ──
+
+describe("StudentAiChat — 403 message only for an actual previewer (#1660 review)", () => {
+  it('shows the "read-only preview" message for a 403 when isPreview is true', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    renderChat(undefined, ACTIVITY, true);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "AI tutoring is only available to enrolled students — this is a read-only preview.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to the generic message for a 403 when isPreview is false — a real STUDENT/TA can also hit this endpoint\'s 403 for unrelated reasons (lagging enrollment sync, content unpublished mid-session), and should never be told they are "previewing"', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Not enrolled in this course"));
+    renderChat(undefined, ACTIVITY, false);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
   });
 });
 

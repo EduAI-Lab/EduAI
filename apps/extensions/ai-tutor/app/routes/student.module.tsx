@@ -10,18 +10,15 @@ import type { Route } from "./+types/student.module";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
-import {
-  StudentPreviewBanner,
-  isStudentPreviewRole,
-  STUDENT_PREVIEW_ROLES,
-} from "~/components/rbac/StudentPreviewBanner";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { splitTitle } from "~/lib/course-title";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(STUDENT_PREVIEW_ROLES);
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response("Invalid module id", { status: 400 });
@@ -56,7 +53,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function StudentModuleLessons({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const { user } = useLocalUser();
-  const previewRole = isStudentPreviewRole(user?.role) ? user?.role : undefined;
+  const previewRole = resolvePreviewRole(user);
   const { course, module, lessons, moduleOrder } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const lessonList = useMemo(() => lessons ?? [], [lessons]);

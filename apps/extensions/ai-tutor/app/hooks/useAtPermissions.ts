@@ -19,6 +19,8 @@ export function useAtPermissions() {
       user: atUser,
       access: permissions.resolvePlatformCourseAccess(atUser),
       canManageContent: permissions.canManageContent(atUser),
+      canPreviewAsStudent: permissions.canPreviewAsStudent(atUser),
+      previewRole: permissions.previewRole(atUser),
       canCreateCourse: permissions.canCreateCourse(atUser),
       canPublishContent: permissions.canPublishContent(atUser),
       canManageTopics: permissions.canManageTopics(atUser),

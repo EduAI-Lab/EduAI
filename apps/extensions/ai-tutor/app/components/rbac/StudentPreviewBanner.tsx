@@ -1,7 +1,7 @@
 import { IconEye } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { Button, RoleBadge } from "@eduai/ui";
-import type { Role } from "~/lib/types";
+import type { PreviewRole } from "~/lib/rbac/permissions";
 
 /**
  * #1660: shown on the /student/* content pages when the viewer isn't a real
@@ -21,7 +21,18 @@ import type { Role } from "~/lib/types";
  * counterpart) can omit it — the banner still works as a label-only preview
  * indicator, just without the return link.
  */
-export function StudentPreviewBanner({ role, exitHref }: { role: Role; exitHref?: string }) {
+export function StudentPreviewBanner({
+  role,
+  exitHref,
+}: {
+  // #1660 review (ariqmuldi, PR #1667): every call site already pre-filters with
+  // permissions.ts's previewRole/canPreviewAsStudent, so a STUDENT/TA role
+  // never reaches here today — narrowed to make that invariant a compile
+  // error instead of a silent nonsensical render (e.g. a "Previewing as a
+  // student [STUDENT badge]") if a future caller ever slipped.
+  role: PreviewRole;
+  exitHref?: string;
+}) {
   return (
     <div
       className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
@@ -52,16 +63,3 @@ export function StudentPreviewBanner({ role, exitHref }: { role: Role; exitHref?
     </div>
   );
 }
-
-/** True when `role` should see the preview banner on a /student/* page. */
-export function isStudentPreviewRole(role: Role | null | undefined): boolean {
-  return role === "ADMIN" || role === "UNIT_ADMIN" || role === "INSTRUCTOR";
-}
-
-/**
- * #1660 review: the single source of truth for requireClientUser's allow-list
- * on every /student/* content route (list, course, module, lesson) — was
- * duplicated verbatim across four files, risking one getting missed on a
- * future change.
- */
-export const STUDENT_PREVIEW_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];

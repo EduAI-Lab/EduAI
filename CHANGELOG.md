@@ -10,9 +10,14 @@
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
 
+### Fixed
+
+- [ai-tutor] fix: The "read-only preview" message on a 403 from answer submission and AI tutoring (#1660) assumed any 403 from those endpoints meant "the caller is a previewer" — but the server returns 403 for two other, unrelated reasons too (a real student's enrollment-sync lag, or content unpublished mid-session), so a genuinely enrolled STUDENT/TA could see a false "this is a read-only preview" message. Both call sites (`student.lesson.tsx`, `StudentAiChat.tsx` via a new `isPreview` prop) now gate on the viewer's already-resolved `previewRole` instead of the bare status code. Also moved the duplicated preview-role predicate/allow-list out of `StudentPreviewBanner.tsx` (a UI component's module) into `permissions.ts`, the app's one RBAC source of truth, exposed via `useAtPermissions()`. Caught in review on #1667 (ariqmuldi). (@Ayyhab, 2026-08-26) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
+
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
+- [ai-tutor] test: Added coverage for the honest-403-message paths the #1667 PR description claimed but didn't actually cover (flagged in review, and independently by the patch-coverage bot on `student.lesson.tsx:354`) — `StudentAiChat.test.tsx` now asserts the preview message only appears when `isPreview` is true, and a new `student.lesson.tsx` answer-submission case in `student-preview-banner.route.test.tsx` covers both an ADMIN previewer and a real STUDENT hitting the same 403. (@Ayyhab, 2026-08-26) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
 
 ## [Week 17 — August 17–23, 2026]
 
