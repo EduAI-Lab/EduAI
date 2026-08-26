@@ -145,10 +145,14 @@ docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
-  --max-model-len 57344 \
+  --max-model-len 32768 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes
 ```
+
+`Qwen2.5-32B-Instruct-AWQ` advertises a 32K native position limit. Keep the
+deployment at that limit; overriding it can produce invalid output or runtime
+errors.
 
 Wait for logs (`docker logs -f eduai-vllm` / `eduai-vllm-t3`) until Uvicorn is ready, then:
 
