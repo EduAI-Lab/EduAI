@@ -90,7 +90,7 @@ test.describe("AI Tutor TA — learner surface", () => {
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText("Your answer")).toBeVisible();
-      await expect(page.getByText("AI study buddy")).toBeVisible();
+      await expect(page.getByText("AI study buddy", { exact: true })).toBeVisible();
       // Both quiz controls are disabled for a TA — recording an attempt and the
       // study buddy are STUDENT paths (U-TA-1 / #1626) — with one label, instead
       // of dead-but-enabled buttons.
@@ -209,7 +209,9 @@ test.describe("AI Tutor TA — learner surface", () => {
       // state, no Add-API-key CTA, just the withheld note.
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
-      await expect(chat.getByText("AI study buddy")).toBeVisible({ timeout: 20_000 });
+      await expect(chat.getByText("AI study buddy", { exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
       await expect(chat.getByText(/study buddy is available to students enrolled/i)).toBeVisible();
       await expect(
         chat.getByRole("heading", { name: /Connect an AI provider to start/i }),
@@ -234,7 +236,9 @@ test.describe("AI Tutor TA — learner surface", () => {
       await seedByokKey(page, studentId);
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
-      await expect(chat.getByText("AI study buddy")).toBeVisible({ timeout: 20_000 });
+      await expect(chat.getByText("AI study buddy", { exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
       await expect(chat.getByText(/study buddy is available to students enrolled/i)).toBeVisible();
       await expect(chat.getByText(/Connect an AI provider to start/i)).toHaveCount(0);
       await expect(chat.getByRole("button", { name: /send message/i })).toHaveCount(0);
