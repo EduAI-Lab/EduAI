@@ -97,7 +97,10 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       // required — the dashboard's admin-console card also has an accessible
       // name starting with "User management" (its description text folds in),
       // which a plain substring match would also hit.
-      const userManagementNavLink = page.getByRole("link", { name: "User Management", exact: true });
+      const userManagementNavLink = page.getByRole("link", {
+        name: "User Management",
+        exact: true,
+      });
       await expect(userManagementNavLink).toBeVisible();
       await userManagementNavLink.click();
       await page.waitForURL(/\/admin\/users/);
@@ -320,7 +323,10 @@ test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI"
       // as the actual clickable element — clicking arbitrary text inside the
       // card (e.g. the code badge) isn't guaranteed to hit it, so target the
       // real anchor by its accessible role instead.
-      await page.getByRole("link", { name: /COSC 101/ }).first().click();
+      await page
+        .getByRole("link", { name: /COSC 101/ })
+        .first()
+        .click();
       await page.waitForLoadState("networkidle");
       await expect(page).not.toHaveURL(/access=denied/);
       await expect(page).not.toHaveURL(/\/courses$/);

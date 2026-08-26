@@ -601,9 +601,12 @@ test.describe("Instructor: single-course ownership", () => {
         await setPolicy(admin, "instructors.canManageEnrollments", false);
         await registerUser(taB, { prefix: "inst-ta-policy-b" });
         const taBId = await getUserId(taB);
-        const blockedRes = await instructor.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
-          data: { userId: taBId, role: "TA" },
-        });
+        const blockedRes = await instructor.post(
+          `${CORE_URL}/api/courses/${courseId}/enrollments`,
+          {
+            data: { userId: taBId, role: "TA" },
+          },
+        );
         expect(blockedRes.status()).toBe(403);
       } finally {
         await setPolicy(admin, "instructors.canManageEnrollments", true);
