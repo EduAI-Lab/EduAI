@@ -161,6 +161,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/chat/cancel",
+    readiness: "excluded",
+    reason: "Browser-only request-specific streaming cancellation; not an agent operation",
+    routeFile: "routes/api/chat.cancel.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/ai-jobs/:jobId",
     readiness: "excluded",
