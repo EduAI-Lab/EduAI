@@ -40,6 +40,7 @@ const baseModel: AIModel = {
   inputPricing: 5,
   outputPricing: 15,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId: "p1",
@@ -304,6 +305,88 @@ describe("ModelFormDialog — vLLM section", () => {
       />,
     );
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto Routing Tier field
+// ---------------------------------------------------------------------------
+
+describe("ModelFormDialog — Auto Routing Tier", () => {
+  it("pre-populates 'Not in Auto pool' when the model has no routerTier", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={baseModel}
+        providers={[baseProvider]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Auto Routing Tier")).toHaveTextContent("Not in Auto pool");
+  });
+
+  it("pre-populates the model's existing routerTier", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={{ ...baseModel, routerTier: "TIER_3" }}
+        providers={[baseProvider]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Auto Routing Tier")).toHaveTextContent(
+      "Tier 3 (escalation/capable)",
+    );
+  });
+
+  it("submits the selected routerTier", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={baseModel}
+        providers={[baseProvider]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Auto Routing Tier"));
+    const tier1Option = await screen.findByRole("option", { name: /Tier 1/ });
+    fireEvent.click(tier1Option);
+
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    fireEvent.submit(submitButton.closest("form")!);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ routerTier: "TIER_1" }));
+    });
+  });
+
+  it("submits routerTier: null when the model is cleared back to 'Not in Auto pool'", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={{ ...baseModel, routerTier: "TIER_1" }}
+        providers={[baseProvider]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Auto Routing Tier"));
+    const noneOption = await screen.findByRole("option", { name: "Not in Auto pool" });
+    fireEvent.click(noneOption);
+
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    fireEvent.submit(submitButton.closest("form")!);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ routerTier: null }));
+    });
   });
 });
 

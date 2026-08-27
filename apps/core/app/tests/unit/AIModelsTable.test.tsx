@@ -26,6 +26,7 @@ const baseModel = {
   inputPricing: 5,
   outputPricing: 15,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId: "p1",
@@ -90,6 +91,31 @@ describe("AIModelsTable — rendering", () => {
     );
     expect(screen.getByText("GPT-4o")).toBeInTheDocument();
     expect(screen.getByText("GPT-3.5")).toBeInTheDocument();
+  });
+
+  it("shows 'Not in pool' when the model has no routerTier", () => {
+    render(
+      <AIModelsTable
+        models={[{ ...baseModel, routerTier: null }]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Not in pool")).toBeInTheDocument();
+  });
+
+  it("shows the tier badge when the model has a routerTier", () => {
+    render(
+      <AIModelsTable
+        models={[{ ...baseModel, routerTier: "TIER_1" as const }]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Tier 1")).toBeInTheDocument();
+    expect(screen.queryByText("Not in pool")).not.toBeInTheDocument();
   });
 });
 
