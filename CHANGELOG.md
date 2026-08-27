@@ -2,6 +2,10 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [core] feat: Add an Auto Routing Tier control to the admin AI model edit dialog (Not in Auto pool / Tier 1 / Tier 2 / Tier 3), with a matching "Auto Tier" column on the models table, so an admin can put a model into Auto's routing pool without a direct database edit. `CreateAIModelSchema`/`UpdateAIModelSchema` and the `AIModel`/`RouterTier` types gained the missing `routerTier` field that made this impossible; the "Sync models" Ollama/vLLM payload builders now set it explicitly to `null` (Sync never guesses a tier). Also refreshes `prisma/seed.ts`'s `ROUTING_TIER_ASSIGNMENTS`, which still targeted a disabled `qwen2.5-7b-instruct` model instead of the `qwen3.5-2b/9b-instruct` pair actually running, and documents in `local-vllm.ts`, `rules.ts`, and `infra/production/README.md` why Auto never routes to Tier 2 locally and why production tiers models by hand rather than via seed. (@saadtab01, 2026-08-26) — #PR
+
 ### Changed
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
