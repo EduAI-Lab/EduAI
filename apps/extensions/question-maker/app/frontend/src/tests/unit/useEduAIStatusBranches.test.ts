@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
+import type { EduAITestResponse } from "@/services/eduaiService";
 
 const testApiKey = vi.fn();
 const getAllApiKeys = vi.fn();
@@ -187,7 +188,7 @@ describe("useEduAIStatus additional branches", () => {
   });
 
   it("a second concurrent refresh() call reuses the in-flight probe", async () => {
-    let resolveProbe: (value: unknown) => void = () => {};
+    let resolveProbe: (value: EduAITestResponse) => void = () => {};
     testApiKey.mockImplementationOnce(
       () =>
         new Promise((resolve) => {

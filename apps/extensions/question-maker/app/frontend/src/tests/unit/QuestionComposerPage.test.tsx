@@ -13,6 +13,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 afterEach(cleanup);
 
+type RouteParams = { courseId?: string; questionId?: string };
+
 const {
   navigateMock,
   toastFn,
@@ -61,7 +63,7 @@ const {
       getProviderFromModel: vi.fn(() => "openai"),
       setApiKey: vi.fn(async () => {}),
     },
-    routeParams: { current: { courseId: "5" } as { courseId?: string; questionId?: string } },
+    routeParams: { current: { courseId: "5" } as RouteParams },
     searchParamsBox: { current: new URLSearchParams() },
   };
 });

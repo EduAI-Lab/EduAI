@@ -198,7 +198,8 @@ describe("useBugReportCapture", () => {
 
     const { result } = renderHook(() => useBugReportCapture(true));
 
-    const circular: Record<string, unknown> = {};
+    type CircularRef = { self?: CircularRef };
+    const circular: CircularRef = {};
     circular.self = circular;
     console.warn("plain warn");
     console.error({ code: 42 }, circular);

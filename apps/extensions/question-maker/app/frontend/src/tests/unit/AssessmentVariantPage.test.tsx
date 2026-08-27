@@ -13,6 +13,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 
 afterEach(cleanup);
 
+type RouteParams = { courseId?: string; assessmentId?: string };
+
 const {
   navigateMock,
   toastFn,
@@ -31,7 +33,7 @@ const {
   return {
     navigateMock: vi.fn(),
     toastFn: toast,
-    routeParams: { current: {} as { courseId?: string; assessmentId?: string } },
+    routeParams: { current: {} as RouteParams },
     searchParamsBox: { current: new URLSearchParams() },
     useCoursesMock: vi.fn(),
     useQmPermissionsForCourseMock: vi.fn(),

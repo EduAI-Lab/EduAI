@@ -5,13 +5,14 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import type { AddQuestionDialogProps } from "@/components/questions/AddQuestionDialog";
 
-const AddQuestionDialogMock = vi.fn((props: Record<string, unknown>) => (
+const AddQuestionDialogMock = vi.fn((props: AddQuestionDialogProps) => (
   <div data-testid="add-question-dialog-mock">{String(props.mode)}</div>
 ));
 
 vi.mock("@/components/questions/AddQuestionDialog", () => ({
-  AddQuestionDialog: (props: Record<string, unknown>) => AddQuestionDialogMock(props),
+  AddQuestionDialog: (props: AddQuestionDialogProps) => AddQuestionDialogMock(props),
 }));
 
 const { QuestionModal } = await import("@/components/questions/QuestionModal");
