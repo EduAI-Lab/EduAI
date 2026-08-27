@@ -6,17 +6,25 @@ import {
 } from "~/lib/ai/eduai-diagram-payload";
 import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 import { userRequestedDiagram, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
+import { jsonObjectSchema, type JsonObject, type JsonValue } from "~/lib/json-value";
 
 /**
  * The model supplies semantics; the application supplies the learner-facing
  * Markdown shape. vLLM applies this schema with constrained decoding, so small
  * models cannot omit the later stages or stop before the visual payload.
  */
-const STAGE_COUNT_WORDS: Record<string, number> = {
+const STAGE_COUNT_WORDS = {
   three: 3,
   four: 4,
   five: 5,
-};
+} as const;
+
+function stageCountWordValue(token: string): number | undefined {
+  if (token === "three" || token === "four" || token === "five") {
+    return STAGE_COUNT_WORDS[token];
+  }
+  return undefined;
+}
 
 /**
  * Honor an explicit learner request such as "exactly five ordered stages".
@@ -30,7 +38,7 @@ export function resolveRequestedAssistStageCount(userText?: string): number | nu
     );
   if (!match) return null;
   const token = match[1].toLowerCase();
-  const count = Number(token) || STAGE_COUNT_WORDS[token];
+  const count = Number(token) || stageCountWordValue(token) || 0;
   return count >= 3 && count <= 5 ? count : null;
 }
 
@@ -99,11 +107,11 @@ export function isStructuredAdhdAssistCandidate(options: {
   );
 }
 
-function asNonEmptyString(value: unknown): string | null {
+function asNonEmptyString(value: JsonValue | undefined): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function parseJsonObject(text: string): Record<string, unknown> | null {
+function parseJsonObject(text: string): JsonObject | null {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return null;
 
@@ -120,9 +128,8 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   for (const candidate of candidates) {
     try {
       const parsed: unknown = JSON.parse(candidate);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
+      const decoded = jsonObjectSchema.safeParse(parsed);
+      if (decoded.success) return decoded.data;
     } catch {
       // The ordinary Markdown path remains available when a provider ignores
       // the response format or truncates before the closing brace.
@@ -145,10 +152,10 @@ export function parseAdhdStructuredResponse(
   const rawStages = Array.isArray(object.stages) ? object.stages : [];
   const stages = rawStages
     .map((stage) => {
-      if (!stage || typeof stage !== "object") return null;
-      const value = stage as Record<string, unknown>;
-      const label = asNonEmptyString(value.label);
-      const detail = asNonEmptyString(value.detail);
+      const decoded = jsonObjectSchema.safeParse(stage);
+      if (!decoded.success) return null;
+      const label = asNonEmptyString(decoded.data.label);
+      const detail = asNonEmptyString(decoded.data.detail);
       return label && detail ? { label, detail } : null;
     })
     .filter((stage): stage is EduaiDiagramStage => stage !== null);

@@ -3025,7 +3025,7 @@ ${buildEmptyCourseRagBlock()}`;
           await appendMessages(messagesToPersist);
         }
 
-        const normalizedUsage = coalesceTokenUsage(usage as Record<string, unknown> | undefined);
+        const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
         await persistTurnTelemetry({
           responseText: normalizedText,
           usage: {
@@ -3042,25 +3042,20 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         if (streaming) {
-          const headers: Record<string, string> = {
+          const headers = {
             "Content-Encoding": "none",
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
-          };
-          if (chat?.id) {
-            headers["X-Chat-Id"] = chat.id;
-          }
-          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
-          Object.assign(
-            headers,
-            autoRoutingHeaders(
+            "X-Web-Tools-Enabled": webToolsEnabled ? "1" : "0",
+            ...autoRoutingHeaders(
               resolvedModelId,
               routingTier,
               wasAuto,
               resolvedRouterVersion,
               fleetPick?.serverId ?? null,
             ),
-          );
+          } satisfies Record<string, string>;
+          if (chat?.id) Object.assign(headers, { "X-Chat-Id": chat.id });
           void liveStreamData?.close();
           releaseAdmission();
           return createDataStreamResponse({
@@ -3080,13 +3075,12 @@ ${buildEmptyCourseRagBlock()}`;
         }
 
         releaseAdmission();
-        const responseHeaders: Record<string, string> = {
+        const responseHeaders = {
           "Content-Type": "application/json",
           ...admissionHeaders(),
-        };
-        if (fleetPick?.serverId) {
-          responseHeaders["X-Fleet-Server"] = fleetPick.serverId;
-        }
+        } satisfies Record<string, string>;
+        if (fleetPick?.serverId)
+          Object.assign(responseHeaders, { "X-Fleet-Server": fleetPick.serverId });
         return new Response(
           JSON.stringify({
             content: normalizedText,

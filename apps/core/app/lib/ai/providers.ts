@@ -6,7 +6,7 @@
 import type { ValidationResult } from "~/lib/validation-result";
 import type { ProviderV1 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
@@ -184,17 +184,18 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     // createOpenAI provider settings. Without this wrapper the SDK silently
     // downgrades a JSON-schema response format to ordinary Markdown, which
     // lets 2B/9B omit Assist stages or the diagram payload.
+    type VllmChatSettings = Parameters<OpenAIProvider["chat"]>[1];
     providers.vllm = Object.assign(
-      (modelId: string, settings?: Record<string, unknown>) =>
+      (modelId: string, settings?: VllmChatSettings) =>
         vllm(modelId, { ...settings, structuredOutputs: true }),
       vllm,
       {
-        languageModel: (modelId: string, settings?: Record<string, unknown>) =>
+        languageModel: (modelId: string, settings?: VllmChatSettings) =>
           vllm.languageModel(modelId, {
             ...settings,
             structuredOutputs: true,
           }),
-        chat: (modelId: string, settings?: Record<string, unknown>) =>
+        chat: (modelId: string, settings?: VllmChatSettings) =>
           vllm.chat(modelId, { ...settings, structuredOutputs: true }),
       },
     );

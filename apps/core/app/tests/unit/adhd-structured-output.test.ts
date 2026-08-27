@@ -8,7 +8,7 @@ import {
   resolveRequestedAssistStageCount,
 } from "~/lib/ai/adhd-structured-output";
 
-const structured = JSON.stringify({
+const structuredPayload = {
   title: "Gradient descent",
   answer: "The optimizer lowers error by following the slope downhill.",
   stages: [
@@ -19,7 +19,8 @@ const structured = JSON.stringify({
   ],
   tldr: "Follow the slope downhill, one measured step at a time.",
   next: "try one update yourself",
-});
+};
+const structured = JSON.stringify(structuredPayload);
 
 describe("structured Assist output", () => {
   it("accepts complete constrained model output", () => {
@@ -97,13 +98,14 @@ describe("structured Assist output", () => {
 
   it("rejects provider output that ignores an exact stage-count request", () => {
     expect(parseAdhdStructuredResponse(structured, 5)).toBeNull();
-    const parsed = JSON.parse(structured) as Record<string, unknown>;
-    const stages = parsed.stages as Array<Record<string, string>>;
     expect(
       parseAdhdStructuredResponse(
         JSON.stringify({
-          ...parsed,
-          stages: [...stages, { label: "Verify result", detail: "Check the final loss." }],
+          ...structuredPayload,
+          stages: [
+            ...structuredPayload.stages,
+            { label: "Verify result", detail: "Check the final loss." },
+          ],
         }),
         5,
       )?.stages,
