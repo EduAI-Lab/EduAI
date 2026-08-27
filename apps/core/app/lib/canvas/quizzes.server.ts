@@ -1,5 +1,5 @@
 import type { CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import { canvasRequestJson } from "~/lib/canvas/client.server";
+import { canvasGetPaginated, canvasRequestJson } from "~/lib/canvas/client.server";
 import type { JsonObject } from "~/lib/json-value";
 
 export type CanvasQuizApi = {
@@ -24,15 +24,19 @@ export type CanvasQuizQuestionApi = {
   }>;
 };
 
+/**
+ * Quiz collections are page-walked. Canvas caps a list response at `per_page`
+ * and advertises the rest through `Link: rel="next"`, so a single request would
+ * silently truncate a large course and produce incomplete imports downstream.
+ */
 export async function listCanvasQuizzes(
   credentials: CanvasIntegrationCredentials,
   canvasCourseId: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CanvasQuizApi[]> {
-  return canvasRequestJson<CanvasQuizApi[]>(
+  return canvasGetPaginated<CanvasQuizApi>(
     credentials,
     `/courses/${canvasCourseId}/quizzes`,
-    {},
     fetchImpl,
   );
 }
@@ -51,16 +55,16 @@ export async function getCanvasQuiz(
   );
 }
 
+/** Page-walked for the same reason as `listCanvasQuizzes`. */
 export async function listCanvasQuizQuestions(
   credentials: CanvasIntegrationCredentials,
   canvasCourseId: number,
   quizId: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CanvasQuizQuestionApi[]> {
-  return canvasRequestJson<CanvasQuizQuestionApi[]>(
+  return canvasGetPaginated<CanvasQuizQuestionApi>(
     credentials,
     `/courses/${canvasCourseId}/quizzes/${quizId}/questions`,
-    {},
     fetchImpl,
   );
 }

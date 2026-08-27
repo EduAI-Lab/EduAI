@@ -8,11 +8,18 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     canvasIntegration: {
       findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
   },
 }));
 
 vi.mock("~/lib/policy.server", () => ({ getPolicy: vi.fn() }));
+
+// Save-time host validation resolves DNS; the IP-literal checks stay real.
+vi.mock("~/lib/net/ssrf-guard.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/net/ssrf-guard.server")>()),
+  assertPublicHostname: vi.fn(async () => {}),
+}));
 
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
@@ -108,5 +115,53 @@ describe("getDashboardCanvasIntegration", () => {
 
     const getDashboardCanvasIntegration = await load();
     await expect(getDashboardCanvasIntegration({ id: "u1", role: "ADMIN" })).resolves.toBeNull();
+  });
+});
+
+/**
+ * `saveCanvasIntegration` is the write half of the Canvas boundary QM now
+ * proxies through (#1084). A base URL that is not a bare origin plus an
+ * optional deployment sub-path must never be persisted — otherwise userinfo,
+ * a query, or a fragment rides along into every derived request URL and into
+ * the audit trail (#1509 review).
+ */
+describe("saveCanvasIntegration — canonical base URL", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ["embedded credentials", "https://user:pass@canvas.example.edu"],
+    ["a query string", "https://canvas.example.edu/?redirect=http://169.254.169.254"],
+    ["a fragment", "https://canvas.example.edu/#frag"],
+  ])("rejects a base URL with %s without writing a row", async (_label, canvasUrl) => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const { saveCanvasIntegration } = await import("~/lib/canvas/integration.server");
+    const { CanvasVerificationError } = await import("~/lib/canvas/client.server");
+
+    await expect(
+      saveCanvasIntegration("user-1", { canvasUrl, apiKey: "k", isTestMode: true }),
+    ).rejects.toBeInstanceOf(CanvasVerificationError);
+    expect(prisma.canvasIntegration.upsert).not.toHaveBeenCalled();
+  });
+
+  it("persists the canonical origin + sub-path rather than the raw input", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    vi.mocked(prisma.canvasIntegration.upsert).mockResolvedValue({
+      canvasUrl: "https://lms.example.edu/ubc",
+      isTestMode: true,
+    } as never);
+    const { saveCanvasIntegration } = await import("~/lib/canvas/integration.server");
+
+    await saveCanvasIntegration("user-1", {
+      canvasUrl: "https://lms.example.edu/ubc/",
+      apiKey: "k",
+      isTestMode: true,
+    });
+
+    const [args] = vi.mocked(prisma.canvasIntegration.upsert).mock.calls[0];
+    expect(args.create).toMatchObject({ canvasUrl: "https://lms.example.edu/ubc" });
+    expect(args.update).toMatchObject({ canvasUrl: "https://lms.example.edu/ubc" });
   });
 });
