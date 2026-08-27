@@ -169,11 +169,9 @@ describe("canvasService.connectCanvasWithFallback", () => {
   it("falls back to test mode in DEV when the live connect fails", async () => {
     vi.stubEnv("DEV", true);
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    post
-      .mockRejectedValueOnce(new Error("live failed"))
-      .mockResolvedValueOnce({
-        data: { data: { canvasUrl: "fallback", isTestMode: true, isConnected: true } },
-      });
+    post.mockRejectedValueOnce(new Error("live failed")).mockResolvedValueOnce({
+      data: { data: { canvasUrl: "fallback", isTestMode: true, isConnected: true } },
+    });
 
     const result = await canvasService.connectCanvasWithFallback("live-url", "live-key");
     expect(result.usedTestMode).toBe(true);
