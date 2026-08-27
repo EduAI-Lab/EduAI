@@ -105,7 +105,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   const { page, search } = parseListUrlParams(request);
 
   const [course, modulesPage] = await Promise.all([
-    api.courseById(courseId) as Promise<Course>,
+    api.courseById(courseId),
     api.modulesForCourse(courseId, { page, search }),
   ]);
 
@@ -154,6 +154,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     course.viewerRole ?? null,
   );
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  // #1644: the router reuses this instance when CourseSwitcher changes only
+  // `:courseId`, so `activeTab` survives the switch. If the new course's
+  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
+  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
+  // trigger and every tab panel hides — the page renders blank. Clamp back to
+  // `content` during render whenever the active tab is no longer available.
+  if (!tabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab("content");
+  }
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);

@@ -713,6 +713,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       // `append` instead, gated on in-flight state.
       if (isLoading || promptSubmitInFlightRef.current) return;
       promptSubmitInFlightRef.current = true;
+      // AI SDK v4's `append` doesn't clear the composer the way `handleSubmit`
+      // did. Clear any typed-but-unsent draft here — otherwise it lingers, Send
+      // re-enables once the chip request settles, and the next submit fires the
+      // stale draft as an unintended extra turn.
+      setInput("");
 
       if (!chatId) {
         postAssistiveClientEvent({
@@ -740,7 +745,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         promptSubmitInFlightRef.current = false;
       });
     },
-    [adhdAssist, append, chatId, isLoading],
+    [adhdAssist, append, chatId, isLoading, setInput],
   );
 
   const sharedViewProps = {

@@ -344,6 +344,25 @@ describe("ChatScreen — header", () => {
     expect(handleSubmitMock).not.toHaveBeenCalled();
   });
 
+  it("clears a typed composer draft when a suggested prompt is submitted (#1648)", async () => {
+    // AI SDK v4's `append` (unlike the old `handleSubmit` path) does not clear
+    // the composer. A draft the user typed before clicking a chip must be
+    // cleared as part of the chip submission — otherwise it lingers and the
+    // next Send fires the stale draft as an unintended extra turn.
+    renderChatScreen();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Select suggested prompt",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(appendMock).toHaveBeenCalledTimes(1);
+    });
+    expect(setChatInput).toHaveBeenCalledWith("");
+  });
+
   it("ignores a second suggested-prompt click while the first is in flight (#1644)", async () => {
     // append resolves only when we let it, so the guard window stays open.
     let releaseAppend: () => void = () => {};
