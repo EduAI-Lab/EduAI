@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { ThemeProvider } from "@eduai/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "~/hooks/useLocalUser";
+import { UiPreferencesProvider } from "~/components/settings/ui-preferences";
 
 let mockUser: AuthUser | null = {
   id: "u1",
@@ -36,7 +37,9 @@ import { SettingsView } from "~/components/settings/settings-view";
 function renderView() {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <MemoryRouter>
-      <ThemeProvider>{children}</ThemeProvider>
+      <ThemeProvider>
+        <UiPreferencesProvider>{children}</UiPreferencesProvider>
+      </ThemeProvider>
     </MemoryRouter>
   );
   return render(<SettingsView />, { wrapper: Wrapper });

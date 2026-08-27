@@ -18,6 +18,16 @@ const mockSubmitActivityFeedback = vi.fn();
 const mockActivitiesForLesson = vi.fn();
 const mockLessonBreadcrumb = vi.fn();
 
+const { MockApiHttpError } = vi.hoisted(() => ({
+  MockApiHttpError: class MockApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
+}));
+
 vi.mock("~/lib/api", () => ({
   default: {
     lessonById: vi.fn(),
@@ -26,6 +36,7 @@ vi.mock("~/lib/api", () => ({
     submitAnswer: (...args: unknown[]) => mockSubmitAnswer(...args),
     submitActivityFeedback: (...args: unknown[]) => mockSubmitActivityFeedback(...args),
   },
+  ApiHttpError: MockApiHttpError,
 }));
 
 const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }));
@@ -105,6 +116,7 @@ describe("student.lesson — answer submission", () => {
       course: { id: 1, title: "Course 1", code: "C1" },
       moduleOrdinal: 1,
       lessonOrdinal: 1,
+      viewerEnrollmentRole: "STUDENT",
     });
   });
 
@@ -112,6 +124,7 @@ describe("student.lesson — answer submission", () => {
     mockSubmitAnswer.mockResolvedValue({ isCorrect: true });
     wrap();
 
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Option B" })).toBeEnabled());
     fireEvent.click(screen.getByRole("radio", { name: "Option B" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
@@ -125,6 +138,7 @@ describe("student.lesson — answer submission", () => {
     mockSubmitAnswer.mockResolvedValue({ isCorrect: false });
     wrap();
 
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Option A" })).toBeEnabled());
     fireEvent.click(screen.getByRole("radio", { name: "Option A" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
@@ -137,6 +151,7 @@ describe("student.lesson — answer submission", () => {
     mockSubmitAnswer.mockRejectedValue(new Error("network down"));
     wrap();
 
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Option A" })).toBeEnabled());
     fireEvent.click(screen.getByRole("radio", { name: "Option A" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
@@ -156,6 +171,9 @@ describe("student.lesson — answer submission", () => {
     fireEvent.change(screen.getByPlaceholderText(/type your answer/i), {
       target: { value: "4" },
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /submit answer/i })).toBeEnabled(),
+    );
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
     });
@@ -172,12 +190,14 @@ describe("student.lesson — post-submission feedback", () => {
       course: { id: 1, title: "Course 1", code: "C1" },
       moduleOrdinal: 1,
       lessonOrdinal: 1,
+      viewerEnrollmentRole: "STUDENT",
     });
   });
 
   async function submitAndGetFeedbackCard() {
     mockSubmitAnswer.mockResolvedValue({ isCorrect: true, feedbackRequired: true });
     wrap();
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Option B" })).toBeEnabled());
     fireEvent.click(screen.getByRole("radio", { name: "Option B" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
@@ -193,6 +213,7 @@ describe("student.lesson — post-submission feedback", () => {
   it("does not show the feedback prompt when the server says it isn't required", async () => {
     mockSubmitAnswer.mockResolvedValue({ isCorrect: true, feedbackRequired: false });
     wrap();
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Option B" })).toBeEnabled());
     fireEvent.click(screen.getByRole("radio", { name: "Option B" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
@@ -243,6 +264,7 @@ describe("student.lesson — navigation", () => {
       course: { id: 1, title: "Course 1", code: "C1" },
       moduleOrdinal: 1,
       lessonOrdinal: 1,
+      viewerEnrollmentRole: "STUDENT",
     });
   });
 
@@ -304,6 +326,7 @@ describe("student.lesson — pre-chat knowledge-level modal", () => {
       course: { id: 1, title: "Course 1", code: "C1" },
       moduleOrdinal: 1,
       lessonOrdinal: 1,
+      viewerEnrollmentRole: "STUDENT",
     });
   });
 

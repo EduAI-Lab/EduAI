@@ -238,8 +238,12 @@ describe("AddActivityPanel — submit flows", () => {
     renderPanel(topicsState(), { onActivityCreated });
 
     selectMainTopic("Recursion");
+    fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "Will fail" },
+    });
+    fireEvent.change(screen.getByLabelText(/Expected answer/i), {
+      target: { value: "Anything" },
     });
 
     await act(async () => {

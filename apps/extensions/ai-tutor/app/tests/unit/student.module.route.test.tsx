@@ -26,6 +26,10 @@ vi.mock("~/lib/client-auth", () => ({
   requireClientUser: vi.fn().mockResolvedValue({ id: "u1", role: "STUDENT" }),
 }));
 
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "u1", name: "Student", role: "STUDENT" } }),
+}));
+
 vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
   useShellBreadcrumbs: () => {},
   ShellBreadcrumbContext: {},
