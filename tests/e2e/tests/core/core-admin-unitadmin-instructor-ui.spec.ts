@@ -15,6 +15,7 @@
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
+import { uniqueEmail } from "../helpers/auth";
 
 const PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
 
@@ -106,20 +107,33 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await page.waitForURL(/\/admin\/users/);
       await expect(page).not.toHaveURL(/\/auth\/login/);
 
-      const adminPages = [
-        "/admin/ai-models",
-        "/admin/bug-reports",
-        "/admin/invitations",
-        "/admin/settings",
-        "/admin/logs",
-        "/admin/cron-jobs",
+      // Click each remaining Administration link (not page.goto) so the nav
+      // itself is proven wired up, and assert page-specific content (each
+      // route's breadcrumb page title, from rbac/nav.ts + the route files)
+      // rather than just the URL, so a broken page shell wouldn't slip by.
+      const adminLinks: Array<{ path: string; navName: string; pageTitle: string }> = [
+        { path: "/admin/ai-models", navName: "AI Management", pageTitle: "AI Models" },
+        { path: "/admin/bug-reports", navName: "Bug Reports", pageTitle: "Bug Reports" },
+        { path: "/admin/invitations", navName: "Invitations", pageTitle: "Invitations" },
+        { path: "/admin/settings", navName: "Settings", pageTitle: "Settings" },
+        { path: "/admin/logs", navName: "Logs", pageTitle: "Logs" },
+        { path: "/admin/cron-jobs", navName: "Cron Jobs", pageTitle: "Cron Jobs" },
       ];
-      for (const path of adminPages) {
-        await page.goto(`${CORE_URL}${path}`);
+      for (const { path, navName, pageTitle } of adminLinks) {
+        const navLink = page.getByRole("link", { name: navName, exact: true });
+        await expect(navLink).toBeVisible();
+        await navLink.click();
+        await page.waitForURL(new RegExp(path.replace(/\//g, "\\/")));
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(path.replace(/\//g, "\\/")));
         await expect(page).not.toHaveURL(/\/auth\/login/);
         await expect(page).not.toHaveURL(/\/dashboard$/);
+        // BreadcrumbPage renders role="link" (aria-disabled, aria-current="page"),
+        // not a heading — assert on that, the page's own breadcrumb title. Most
+        // titles match their sidebar nav label verbatim (e.g. "Settings"), so
+        // scope to the breadcrumb nav itself to avoid a strict-mode collision
+        // with the still-visible sidebar link of the same name.
+        const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
+        await expect(breadcrumb.getByRole("link", { name: pageTitle, exact: true })).toBeVisible();
       }
       await page.screenshot({
         path: "test-results/admin-unitadmin-instructor/admin-ai-models.png",
@@ -130,7 +144,7 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
     }
   });
 
-  test("AI Management page: toggling a routing/AI Management-adjacent policy round-trips through the UI", async ({
+  test("Settings page: toggling a policy flag round-trips through the UI and persists", async ({
     page,
     playwright,
   }) => {
@@ -140,11 +154,34 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/admin/settings`);
       await page.waitForLoadState("networkidle");
-      // The Settings page renders the policy-flag registry as toggles; assert
-      // the page actually rendered real policy content (not just the shell)
-      // by looking for the well-known flag key text somewhere on the page.
-      await expect(page.getByText(/instructors can create courses/i)).toBeVisible();
+
+      // admin.settings.tsx renders each policy-flags.ts entry as a Radix
+      // Switch with id={key}, labelled via <Label htmlFor={key}>{label}</Label>
+      // — "instructors.canCreateCourses" defaults to true.
+      const policySwitch = page.getByRole("switch", { name: "Instructors can create courses" });
+      await expect(policySwitch).toBeVisible();
+      const wasChecked = (await policySwitch.getAttribute("data-state")) === "checked";
+
+      await policySwitch.click();
+      await expect(policySwitch).toHaveAttribute(
+        "data-state",
+        wasChecked ? "unchecked" : "checked",
+      );
+
+      // Reload to prove the flip round-tripped through PATCH /api/policies
+      // and back, not just local component state.
+      await page.reload();
+      await page.waitForLoadState("networkidle");
+      const reloadedSwitch = page.getByRole("switch", { name: "Instructors can create courses" });
+      await expect(reloadedSwitch).toHaveAttribute(
+        "data-state",
+        wasChecked ? "unchecked" : "checked",
+      );
     } finally {
+      // restore default so this test doesn't leak state into other tests
+      await ctx.patch(`${CORE_URL}/api/policies`, {
+        data: { key: "instructors.canCreateCourses", value: true },
+      });
       await ctx.dispose();
     }
   });
@@ -255,6 +292,14 @@ test.describe("Unit Admin (unitadmin.cosc@eduai.local) — cross-course scope UI
       await expect(page).not.toHaveURL(/\/auth\/login/);
       await expect(page).not.toHaveURL(/\/dashboard$/);
       await expect(page).toHaveURL(/\/unit-admin\/invitations/);
+
+      // Actually submit an invitation through the dialog, not just reach the
+      // route — Core enforces a UBC email domain (ubc-email.ts) on the form.
+      const email = uniqueEmail("unitadmin-invite");
+      await page.getByRole("button", { name: "Invite User" }).click();
+      await page.getByLabel("Email").fill(email);
+      await page.getByRole("button", { name: "Send invite" }).click();
+      await expect(page.getByRole("cell", { name: email })).toBeVisible();
     } finally {
       // restore default so this test doesn't leak state into other tests/rounds
       await adminCtx.patch(`${CORE_URL}/api/policies`, {
@@ -293,7 +338,12 @@ test.describe("Unit Admin (unitadmin.multi@eduai.local) — multi-department sco
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/courses`);
       await page.waitForLoadState("networkidle");
+      // All three authorized departments (prisma/seed.ts: MATH 200, STAT 300,
+      // DATA 310) must be visible in one view — asserting only MATH would let
+      // a regression silently drop STAT or DATA coverage.
       await expect(page.getByText("MATH 200")).toBeVisible();
+      await expect(page.getByText("STAT 300")).toBeVisible();
+      await expect(page.getByText("DATA 310")).toBeVisible();
       // COSC is not in this admin's authorizedUnits — must not leak in.
       await expect(page.getByText("COSC 101")).toHaveCount(0);
     } finally {
@@ -307,10 +357,7 @@ test.describe("Unit Admin (unitadmin.multi@eduai.local) — multi-department sco
 // ===========================================================================
 
 test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI", () => {
-  test("opens own course and sees roster/materials/TA management surfaces", async ({
-    page,
-    playwright,
-  }) => {
+  test("opens own course and sees roster and materials surfaces", async ({ page, playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.instructorCS);
     try {
       await skipDashboardTour(page);
@@ -344,6 +391,17 @@ test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI"
       await expect(page.getByLabel("Overview").getByText("Sam Carter")).toBeVisible({
         timeout: 15_000,
       });
+
+      // Enrollments tab: the student roster surface (TA/instructor assignment
+      // lives on the Staff tab, which is admin/unit_admin-only per
+      // `canManageStaff` — out of scope for an INSTRUCTOR, hence this test's
+      // narrower "roster" claim).
+      await page.getByRole("tab", { name: "Enrollments" }).click();
+      await expect(page.getByText("Enrolled users", { exact: true })).toBeVisible();
+
+      // Materials tab.
+      await page.getByRole("tab", { name: "Materials" }).click();
+      await expect(page.getByRole("button", { name: "Upload material" })).toBeVisible();
 
       await page.screenshot({
         path: "test-results/admin-unitadmin-instructor/instructor-own-course.png",

@@ -44,6 +44,25 @@ async function setPolicy(admin: APIRequestContext, key: string, value: boolean) 
   expect(res.status()).toBe(200);
 }
 
+// Creates a real, persisted Chat row without touching the (unreachable in
+// this dev env) LLM backend: /api/chat creates the Chat as soon as a
+// systemPrompt is present, then short-circuits with a fast 200 when
+// mergedMessages is empty (messages: []) — no model call, no hang. Same
+// pattern as week15-student-ta-exploration-round2.spec.ts's createFastChat.
+async function createFastChat(
+  ctx: APIRequestContext,
+  systemPrompt: string,
+  courseId: string,
+): Promise<string> {
+  const res = await ctx.post(`${CORE_URL}/api/chat`, {
+    data: { messages: [], systemPrompt, courseId },
+  });
+  expect(res.ok(), `createFastChat failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+  const { chatId } = await res.json();
+  expect(chatId, "createFastChat: no chatId in response").toBeTruthy();
+  return chatId as string;
+}
+
 async function setAuthorizedUnits(admin: APIRequestContext, userId: string, units: string[]) {
   const res = await admin.patch(`${CORE_URL}/api/users/${userId}`, {
     data: { authorizedUnits: units },
@@ -200,6 +219,10 @@ test.describe("Admin console: bug-report triage", () => {
       const { reports } = await listRes.json();
       expect(reports.some((r: any) => r.id === reportId)).toBe(true);
 
+      const getRes = await admin.get(`${CORE_URL}/api/admin/bug-reports/${reportId}`);
+      expect(getRes.status()).toBe(200);
+      expect((await getRes.json()).id).toBe(reportId);
+
       const patchRes = await admin.patch(`${CORE_URL}/api/admin/bug-reports/${reportId}`, {
         data: { status: "IN_PROGRESS" },
       });
@@ -228,6 +251,7 @@ test.describe("Admin console: cross-course chat oversight (courseChatViewPolicyK
   }) => {
     const admin = await playwright.request.newContext();
     const instructor = await playwright.request.newContext();
+    const student = await playwright.request.newContext();
     try {
       await createInstructor(instructor, { prefix: "chatoversight-instructor" });
       const instructorId = await getUserId(instructor);
@@ -240,13 +264,32 @@ test.describe("Admin console: cross-course chat oversight (courseChatViewPolicyK
       });
       expect(createRes.status()).toBe(201);
       const courseId = (await createRes.json()).id;
+      // /api/chat 403s a STUDENT caller on an unpublished course.
+      expect((await admin.patch(`${CORE_URL}/api/courses/${courseId}/publish`)).status()).toBe(200);
+
+      await registerUser(student, { prefix: "chatoversight-student" });
+      const studentId = await getUserId(student);
+      const enrollRes = await admin.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
+        data: { userId: studentId, role: "STUDENT" },
+      });
+      expect(enrollRes.status()).toBe(201);
+
+      const chatId = await createFastChat(student, "You are a helpful course tutor.", courseId);
 
       // ADMIN never needs a policy flag to view a course's chat oversight list.
       const res = await admin.get(`${CORE_URL}/api/courses/${courseId}/chats`);
       expect(res.status()).toBe(200);
+      const { chats } = await res.json();
+      const chat = chats.find((c: any) => c.id === chatId);
+      expect(chat, "the just-created student chat must appear in the oversight list").toBeTruthy();
+      expect(chat.ownerId).toBe(studentId);
+      expect(typeof chat.title === "string" || chat.title === null).toBe(true);
+      // Metadata only — never message bodies (route doc comment's contract).
+      expect(chat.messages).toBeUndefined();
     } finally {
       await admin.dispose();
       await instructor.dispose();
+      await student.dispose();
     }
   });
 });
@@ -452,6 +495,7 @@ test.describe("Unit Admin: department scope for course visibility and management
     const admin = await playwright.request.newContext();
     const unitAdmin = await playwright.request.newContext();
     const instructor = await playwright.request.newContext();
+    const student = await playwright.request.newContext();
     try {
       await createAdmin(admin, { prefix: "unit-chat-admin" });
       await createInstructor(instructor, { prefix: "unit-chat-instructor" });
@@ -467,6 +511,16 @@ test.describe("Unit Admin: department scope for course visibility and management
         instructorUserIds: instructorId,
       });
       const courseId = (await createRes.json()).id;
+      // /api/chat 403s a STUDENT caller on an unpublished course.
+      expect((await admin.patch(`${CORE_URL}/api/courses/${courseId}/publish`)).status()).toBe(200);
+
+      await registerUser(student, { prefix: "unit-chat-student" });
+      const studentId = await getUserId(student);
+      const enrollRes = await admin.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
+        data: { userId: studentId, role: "STUDENT" },
+      });
+      expect(enrollRes.status()).toBe(201);
+      const chatId = await createFastChat(student, "You are a helpful course tutor.", courseId);
 
       await setPolicy(admin, "unitAdmins.canViewUnitChats", false);
       const deniedRes = await unitAdmin.get(`${CORE_URL}/api/units/COSC/chats`);
@@ -475,6 +529,16 @@ test.describe("Unit Admin: department scope for course visibility and management
       await setPolicy(admin, "unitAdmins.canViewUnitChats", true);
       const allowedRes = await unitAdmin.get(`${CORE_URL}/api/units/COSC/chats`);
       expect(allowedRes.status()).toBe(200);
+      const { chats } = await allowedRes.json();
+      const chat = chats.find((c: any) => c.id === chatId);
+      expect(
+        chat,
+        "the just-created student chat must appear in the unit oversight list",
+      ).toBeTruthy();
+      expect(chat.ownerId).toBe(studentId);
+      expect(chat.courseId).toBe(courseId);
+      // Metadata only — never message bodies (route doc comment's contract).
+      expect(chat.messages).toBeUndefined();
 
       // restore default
       await setPolicy(admin, "unitAdmins.canViewUnitChats", false);
@@ -482,6 +546,7 @@ test.describe("Unit Admin: department scope for course visibility and management
       await admin.dispose();
       await unitAdmin.dispose();
       await instructor.dispose();
+      await student.dispose();
     }
   });
 
