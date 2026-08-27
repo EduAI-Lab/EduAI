@@ -44,6 +44,44 @@ export function canManageContent(user: AtUser | null | undefined): boolean {
   return access === "admin" || access === "unit" || access === "instructor";
 }
 
+/**
+ * #1660: ADMIN/UNIT_ADMIN/INSTRUCTOR can preview the learner experience
+ * under /student/* without switching accounts — TA and STUDENT already have
+ * their own real view there, so this is deliberately NOT "who can reach
+ * /student/*" (see STUDENT_ROUTE_ROLES for that). Same role set as
+ * canManageContent today; kept as its own named predicate since "can
+ * preview as a student" is a distinct intent from "can manage content" even
+ * though the two booleans currently coincide.
+ *
+ * #1660 review (ariqmuldi, PR #1667): this used to be a fourth independent copy of
+ * the same boolean, defined inside StudentPreviewBanner.tsx (a UI
+ * component's module) and imported into four route loaders plus a sibling
+ * route's button-visibility check — the wrong dependency direction for
+ * authorization logic. Moved here, the app's one RBAC source of truth,
+ * consumed via useAtPermissions().
+ */
+export function canPreviewAsStudent(user: AtUser | null | undefined): boolean {
+  return canManageContent(user);
+}
+
+/** A role that can preview /student/* as staff — never STUDENT/TA, who have their own real view there (#1660). */
+export type PreviewRole = Exclude<Role, "STUDENT" | "TA">;
+
+/** The role to show in the /student/* preview banner, or `undefined` for a real STUDENT/TA view (#1660). */
+export function previewRole(user: AtUser | null | undefined): PreviewRole | undefined {
+  // SAFETY: canPreviewAsStudent (via canManageContent/resolvePlatformCourseAccess)
+  // only returns true for "admin" | "unit" | "instructor" access, i.e. user.role
+  // is ADMIN, UNIT_ADMIN, or INSTRUCTOR — never STUDENT or TA.
+  return canPreviewAsStudent(user) ? (user?.role as PreviewRole) : undefined;
+}
+
+/**
+ * requireClientUser's allow-list for every /student/* content route (list,
+ * course, module, lesson): the two roles with a real student view (STUDENT,
+ * TA) plus the three that can preview it (#1660).
+ */
+export const STUDENT_ROUTE_ROLES: Role[] = ["STUDENT", "TA", "ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+
 export function canViewTeachingContent(user: AtUser | null | undefined): boolean {
   return usesInstructorShell(user);
 }

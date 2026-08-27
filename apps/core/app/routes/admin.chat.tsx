@@ -2,11 +2,15 @@ import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
 import { AdminChatView } from "~/components/chat/admin-chat-view";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -53,6 +57,62 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
+/** The `{ error, code }` shape every /api/chat rejection (chatApiReject) serves. */
+const chatRejectionBodySchema = z
+  .object({
+    error: z.string().trim().min(1).optional().catch(undefined),
+    code: z.string().optional().catch(undefined),
+    // #987/#1113's rate-limit rejection carries no `code` (just the raw
+    // `error: "RATE_LIMITED"` enum) but does carry this — without reading it
+    // here, the banner would show the bare enum string with no explanation
+    // and no mention of when to retry.
+    retryAfter: z.number().optional().catch(undefined),
+  })
+  .catch({});
+
+/** Provider/tool failures a fresh admin account is expected to hit before BYOK setup. */
+const NEEDS_PROVIDER_SETUP_CODES = new Set(["INVALID_PROVIDER_CONFIG", "ADMIN_TOOLS_REQUIRED"]);
+
+/**
+ * Best-effort decode of a failed /api/chat call into a message an ADMIN can
+ * act on. `useChat` (AI SDK v4) throws `new Error(await response.text())` for
+ * any non-2xx response (see @ai-sdk/ui-utils), so the route's structured
+ * `{ error, code }` rejection body round-trips as `error.message` — parsed
+ * back out at this boundary via the schema above. Falls back to the raw
+ * message (or a generic string) for a body that isn't JSON, e.g. a network
+ * failure — `.catch({})` on the schema absorbs anything malformed instead of
+ * throwing, so `JSON.parse` itself is the only thing this still needs to guard.
+ *
+ * #1656: without this, a rejected turn (most commonly ADMIN_TOOLS_REQUIRED or
+ * INVALID_PROVIDER_CONFIG — no tool-capable model has a working provider key
+ * configured yet) rendered as total silence: no reply, no error, nothing an
+ * admin could act on short of opening devtools.
+ */
+function describeAdminChatError(error: Error): string {
+  const fallback = error.message || "The admin chatbot could not respond.";
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(error.message);
+  } catch {
+    return fallback;
+  }
+
+  const body = chatRejectionBodySchema.parse(parsed);
+  if (!body.error) return fallback;
+  if (body.error === "RATE_LIMITED") {
+    // The schema already parses retryAfter as number | undefined (or drops
+    // it via .catch on a malformed value) — no further narrowing needed.
+    return body.retryAfter !== undefined
+      ? `You're sending messages too quickly. Try again in ${body.retryAfter}s.`
+      : "You're sending messages too quickly. Wait a moment and try again.";
+  }
+  if (body.code && NEEDS_PROVIDER_SETUP_CODES.has(body.code)) {
+    return `${body.error} Open the settings (gear) icon next to the message box to add or fix a provider API key.`;
+  }
+  return body.error;
+}
+
 export default function AdminChatPage() {
   const { chatModels, user } = useLoaderData<typeof loader>();
 
@@ -64,6 +124,10 @@ export default function AdminChatPage() {
   const [webToolsEnabled] = useState(false);
   const [routedModelByMessageId, setRoutedModelByMessageId] = useState<Record<string, string>>({});
   const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<string | null>(null);
+  // #1656: the only user-visible signal a rejected turn used to leave behind
+  // was a console.error — from the admin's seat, sending a message did
+  // nothing at all. Surfaced as a banner instead of another silent log line.
+  const [chatError, setChatError] = useState<string | null>(null);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const { assistive, setAssistive } = useAssistiveUi();
 
@@ -129,6 +193,10 @@ export default function AdminChatPage() {
       const routed = routedHeader && routedHeader.length > 0 ? routedHeader : null;
       pendingRoutedRegistryIdRef.current = routed;
       setStreamingRoutedRegistryId(routed);
+      // A response arriving at all — success or a rejection the SDK will
+      // still hand to onError — means this turn is no longer the failure a
+      // stale banner was describing.
+      setChatError(null);
 
       await logChatApiResponse(response, "admin-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
@@ -146,6 +214,7 @@ export default function AdminChatPage() {
     },
     onError: (error) => {
       logChatUseChatError(error, "admin-chat");
+      setChatError(describeAdminChatError(error));
       // Clear routed-model latch on error so the next turn does not skip
       // Routing… or estimate against a dead model. Stop/abort is separate:
       // AI SDK v4 swallows AbortError and skips onError/onFinish.
@@ -161,6 +230,16 @@ export default function AdminChatPage() {
     setStreamingRoutedRegistryId(null);
     stop();
   }, [stop]);
+
+  // Dismiss a stale error banner as soon as the admin tries again, rather
+  // than leaving the previous turn's failure on screen next to a new reply.
+  const handleChatSubmit = useCallback<typeof handleSubmit>(
+    (event) => {
+      setChatError(null);
+      handleSubmit(event);
+    },
+    [handleSubmit],
+  );
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
 
@@ -203,7 +282,7 @@ export default function AdminChatPage() {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
-      handleSubmit(formEvent);
+      handleChatSubmit(formEvent);
     });
   };
 
@@ -227,6 +306,12 @@ export default function AdminChatPage() {
         </Breadcrumb>
       }
     >
+      {chatError && (
+        <Alert variant="destructive" className="mx-4 mt-4 shrink-0 md:mx-6">
+          <AlertTitle>Admin chatbot couldn&apos;t respond</AlertTitle>
+          <AlertDescription>{chatError}</AlertDescription>
+        </Alert>
+      )}
       <AdminChatView
         chatModels={chatModels}
         selectedModel={selectedModel}
@@ -247,7 +332,7 @@ export default function AdminChatPage() {
         systemPrompt={systemPrompt}
         onSystemPromptSave={handleSystemPromptSave}
         onInputChange={handleInputChange}
-        onSubmit={handleSubmit}
+        onSubmit={handleChatSubmit}
         onStop={handleStop}
         onSelectPrompt={handlePromptSelect}
         routedModelByMessageId={routedModelByMessageId}

@@ -10,3 +10,20 @@
 
 /* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
  * Only AI Tutor-specific rules belong below. */
+
+/* Accessibility tab hooks — attributes only when non-default, set by
+ * `UiPreferencesProvider`. Ported from Core's `app.css` so AI Tutor's density
+ * and reduce-motion controls actually change something; before this they were
+ * inert attributes no stylesheet read. Keep the two in sync. */
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] *::before,
+[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-density="compact"] {
+  --spacing: 0.1875rem;
+}
