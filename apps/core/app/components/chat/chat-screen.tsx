@@ -741,9 +741,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         });
       }
 
-      void append({ role: "user", content: text }).finally(() => {
-        promptSubmitInFlightRef.current = false;
-      });
+      void append({ role: "user", content: text })
+        .catch((error) => {
+          // AI SDK surfaces request failures through onError, but handle a
+          // rejected `append` explicitly so it never becomes an unhandled
+          // rejection — and the in-flight guard is still released via finally.
+          console.error("Failed to submit suggested prompt", error);
+        })
+        .finally(() => {
+          promptSubmitInFlightRef.current = false;
+        });
     },
     [adhdAssist, append, chatId, isLoading, setInput],
   );
