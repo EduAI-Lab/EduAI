@@ -48,6 +48,7 @@ export async function resolveLessonAccess(authUser, lesson) {
       hasElevatedAccess: false,
       publishedOnly: false,
       isStudent: false,
+      viewerEnrollmentRole: null,
       authUnavailable: true,
     };
   }
@@ -62,6 +63,11 @@ export async function resolveLessonAccess(authUser, lesson) {
     hasElevatedAccess,
     publishedOnly,
     isStudent,
+    // The caller's per-course enrollment role ("STUDENT" | "TA" | "INSTRUCTOR"),
+    // not the global /api/me effective role. Answer submission is a STUDENT-only
+    // capability scoped to this lesson's course: a user who is TA here but a
+    // STUDENT elsewhere must be withheld here and permitted there (PR #1626).
+    viewerEnrollmentRole: principal.role ?? null,
     authUnavailable: false,
   };
 }
