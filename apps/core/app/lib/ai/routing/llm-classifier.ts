@@ -114,15 +114,14 @@ function buildClassifierUserPrompt(prompt: string, context: LlmClassifierContext
 /**
  * Map classifier output → tier (1 / 2 / 3). Exported for tests.
  *
- * `task` modulates the tier decision rather than short-circuiting it: a
- * medium-complexity coding/analysis prompt no longer escalates on task
- * label alone (see RUN_LOG / PR description for the 2026-08 "auto-llm tier
- * drift" investigation this replaced) — it escalates only when the prompt
- * is also NOT already answerable from strongly-matched retrieved course
- * context, mirroring `rule4_strong_rag_tier_1`/`rule4b_moderate_rag_tier_1`
- * in rules.ts (v3 rule-stack re-tuning, PR #1403). The rule stack already
- * demonstrated that a bare topic/task-word gate over-escalates routine
- * coursework; this function previously used exactly that pattern.
+ * `task` modulates the tier decision rather than short-circuiting it:
+ * medium complexity always maps to the deployment-aware `small` tier,
+ * regardless of the task label or RAG strength. For high complexity, strong
+ * RAG de-escalates non-coding prompts to `small`, while coding prompts remain
+ * on tier 3. This keeps the classifier aligned with the rule stack's
+ * `rule4_strong_rag_tier_1` predicate without reviving the old bare
+ * topic/task-word escalation from the 2026-08 "auto-llm tier drift"
+ * investigation (PR #1403).
  */
 export function tierFromLlmClassification(
   classification: LlmRouteClassification,
@@ -154,12 +153,8 @@ export function tierFromLlmClassification(
   });
 
   if (classification.complexity === "medium") {
-    // Strong course-RAG retrieval means the answer is largely present in
-    // the supplied context, easing an otherwise coding/analysis-flavored
-    // prompt. Task label alone no longer forces escalation here. Both
-    // outcomes route through `small` (not a literal tier) so this stays
-    // deployment-aware, same as the confidence gate above and the
-    // high-complexity branch below.
+    // Medium always uses the deployment-aware small tier. RAG de-escalation
+    // is meaningful only for high-complexity non-coding prompts below.
     return small;
   }
 

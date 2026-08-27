@@ -89,17 +89,24 @@ describe("tierFromLlmClassification", () => {
     ).toBe(3);
   });
 
-  it("does not treat strong similarity with zero chunks as strong RAG (non-vLLM: falls to tier 2, not 1)", () => {
-    // Distinguishing the two "medium" paths requires the non-local-vLLM
-    // small tier (2), since local vLLM's small tier (1) is the same value
-    // both the strong-RAG de-escalation and the generic fallback return.
+  it("does not treat strong similarity with zero chunks as strong RAG (non-vLLM: stays at tier 3)", () => {
     delete process.env.VLLM_BASE_URL;
     expect(
       tierFromLlmClassification(
-        { ...base, task: "analysis", complexity: "medium" },
+        { ...base, task: "analysis", complexity: "high" },
         { ragTopSimilarity: 0.9, ragChunkCount: 0 },
       ),
-    ).toBe(2); // generic small-tier fallback, not the strong-RAG path — no chunks retrieved
+    ).toBe(3); // no chunks means no strong-RAG de-escalation
+  });
+
+  it("uses the non-vLLM small tier for high-complexity non-coding work with strong RAG", () => {
+    delete process.env.VLLM_BASE_URL;
+    expect(
+      tierFromLlmClassification(
+        { ...base, task: "analysis", complexity: "high" },
+        { ragTopSimilarity: 0.9, ragChunkCount: 2 },
+      ),
+    ).toBe(2);
   });
 });
 

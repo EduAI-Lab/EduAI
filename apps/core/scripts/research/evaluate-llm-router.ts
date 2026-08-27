@@ -8,7 +8,8 @@
  * (resolveRoutedModelLlm in router.ts): rules run first, and a rule that
  * escalates to tier 3 wins outright without ever calling the classifier.
  * The classifier is only consulted for prompts rules left un-escalated, and
- * its only reachable error direction in that position is over-serve. Prior
+ * it can still under-route or over-route those prompts relative to the
+ * oracle labels. Prior
  * to this fix the harness called the classifier standalone, bypassing the
  * rules pre-gate entirely — its numbers did not describe deployed behavior
  * (see the 2026-08 "auto-llm tier drift" investigation).
