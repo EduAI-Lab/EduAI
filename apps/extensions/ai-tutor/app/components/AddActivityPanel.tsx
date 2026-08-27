@@ -353,12 +353,6 @@ export default function AddActivityPanel({
   const handleAddActivity = async (event: FormEvent) => {
     event.preventDefault();
     if (!question.trim()) return;
-    // A bank question whose `answer` letter matches no choice (or one whose
-    // correct choice was never picked manually) must not silently submit
-    // `correctIndex: 0` — that would mark an arbitrary choice correct while
-    // the form shows none selected. Reuse the existing "no correct answer
-    // selected yet" signal rather than adding a new validation path.
-    if (type === "MCQ" && !hasSelectedCorrect) return;
     if (selectedMainTopicId === "") {
       setTopicSelectionError("Select a main topic to continue.");
       return;
@@ -370,7 +364,11 @@ export default function AddActivityPanel({
     }
 
     // MCQ answer key: refuse an unmarked question outright, then compact the
-    // blank slots and remap the key the way the edit form already does.
+    // blank slots and remap the key the way the edit form already does. This
+    // also covers a bank question whose `answer` letter matched no choice —
+    // submitting it would key an arbitrary choice correct while the form shows
+    // none selected — so that case reuses this signal rather than returning
+    // silently on its own path.
     let mcq: { options: string[]; correctIndex: number } | null = null;
     if (type === "MCQ") {
       if (!hasSelectedCorrect) {
