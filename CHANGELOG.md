@@ -2,9 +2,14 @@
 
 ## [Week 18 — August 24–30, 2026]
 
+### Added
+
+- [ai-tutor] feat: ADMIN, UNIT_ADMIN, and INSTRUCTOR can now preview a course as a student ("Preview as student" on the instructor course page) without switching accounts — matching the existing TA preview pattern (#746). The backend already authorized these roles for course/module/lesson reads (`authorizeLiveCoursePrincipal`); only the client-side route gate was blocking them. A clearly-labeled preview banner shows for the three staff roles (never STUDENT/TA, who have a real, non-preview view already); student-only writes (answer submission, AI tutoring chat) stay server-blocked for every non-STUDENT caller, unchanged — the previewer now gets an honest message explaining that instead of a generic error. The preview banner also carries an "Exit preview" link back to the matching `/instructor/*` page, so leaving the read-only view doesn't rely on the browser back button. Closes #1660. (@Ayyhab, 2026-08-25) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
+
 ### Fixed
 
 - [core] fix: The Admin Chatbot silently did nothing on a rejected turn — `onError` only `console.error`'d, so a fresh admin account with no provider key configured yet (the common case: BYOK, no global fallback) saw no reply and no error. Now surfaces the route's structured rejection as a banner, with a settings-icon hint for provider-setup failures and a friendly retry-time message for rate limiting. Closes #1656. (@Ayyhab, 2026-08-25) — [#1664](https://github.com/EduAI-Lab/EduAI/pull/1664)
+- [ai-tutor] fix: The "read-only preview" message on a 403 from answer submission and AI tutoring (#1660) assumed any 403 from those endpoints meant "the caller is a previewer" — but the server returns 403 for two other, unrelated reasons too (a real student's enrollment-sync lag, or content unpublished mid-session), so a genuinely enrolled STUDENT/TA could see a false "this is a read-only preview" message. Both call sites (`student.lesson.tsx`, `StudentAiChat.tsx` via a new `isPreview` prop) now gate on the viewer's already-resolved `previewRole` instead of the bare status code. `sendChat`'s `useCallback` lists `isPreview` so an AuthProvider role change on a still-mounted lesson cannot keep a stale closure (Whiteknight07). Also moved the duplicated preview-role predicate/allow-list out of `StudentPreviewBanner.tsx` (a UI component's module) into `permissions.ts`, the app's one RBAC source of truth, exposed via `useAtPermissions()`. Caught in review on #1667 (ariqmuldi). (@Ayyhab, 2026-08-26) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
 
 ### Changed
 
@@ -13,6 +18,8 @@
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
+- [ai-tutor] test: Added coverage for the honest-403-message paths the #1667 PR description claimed but didn't actually cover (flagged in review, and independently by the patch-coverage bot on `student.lesson.tsx:354`) — `StudentAiChat.test.tsx` now asserts the preview message only appears when `isPreview` is true (including after an `isPreview` flip on a still-mounted chat), and a new `student.lesson.tsx` answer-submission case in `student-preview-banner.route.test.tsx` covers both an ADMIN previewer and a real STUDENT hitting the same 403. (@Ayyhab, 2026-08-26) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
+- [ai-tutor] test: `instructor-access-boundaries.spec.ts` (landed on `development` via #1623 after this PR was opened) still asserted the pre-#1660 "INSTRUCTOR is 404'd off `/student/*`" contract; CI failed looking for `404 — Page not found` on `/student`. Split that case the same way the ADMIN/UNIT_ADMIN specs already were: taught-course `/student/*` previews with the banner, a course this instructor does not teach still 404s. (@Ayyhab, 2026-08-27) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
 
 ## [Week 17 — August 17–23, 2026]
 
