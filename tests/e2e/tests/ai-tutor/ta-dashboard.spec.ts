@@ -79,20 +79,29 @@ test.describe("AI Tutor TA — dashboard", () => {
     }
   });
 
-  test("a submission awaiting grading is reflected in the assigned-course activity", async ({
+  test("an ungraded submission is counted in the TA 'To review' stat", async ({
     page,
     playwright,
   }) => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDD");
     try {
       // Seed an ungraded submission so the TA's grading queue is non-empty, then
-      // confirm the dashboard still resolves to the TA variant with the course.
+      // assert the dashboard's "To review" stat actually reflects it — the tile
+      // reads the server's `submissionsToReview` rollup (#1626), so a count of 0
+      // would mean the submission never reached the UI.
       await seedStudentSubmission(playwright, seeded, seeded.activityId, { answerOption: 1 });
       await gotoAiTutor(page, "/dashboard");
       await expect(page.getByRole("heading", { name: "Assigned courses" })).toBeVisible({
         timeout: 20_000,
       });
       await expect(page.getByRole("link", { name: new RegExp(seeded.name) }).first()).toBeVisible();
+
+      // The StatCard renders the label and value as sibling <div>s; assert the
+      // value beside "To review" is non-zero.
+      const reviewLabel = page.getByText("To review", { exact: true });
+      await expect(reviewLabel).toBeVisible({ timeout: 20_000 });
+      const reviewValue = reviewLabel.locator("xpath=following-sibling::div").first();
+      await expect(reviewValue).toHaveText(/^[1-9]\d*$/);
     } finally {
       await seeded.dispose();
     }

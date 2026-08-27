@@ -661,8 +661,10 @@ describe("StudentAiChat — cuid topic ids reach the tutor", () => {
 // #1626: a course TA holds the learner surface but the tutoring routes 403 a
 // non-STUDENT enrollment, so the composer must be withheld rather than left as a
 // dead control — even with a BYOK key present (`mockGetKey` returns one here).
+// The gate fails closed on every non-"allowed" state, so an unresolved role
+// (pending / unverified breadcrumb) withholds the composer just like a TA does.
 describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () => {
-  function renderWithheld() {
+  function renderState(studyBuddyState: "pending" | "unverified" | "withheld") {
     return render(
       <MemoryRouter>
         <StudentAiChat
@@ -675,34 +677,52 @@ describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () 
           currentTopicId={null}
           onSelectTopic={vi.fn()}
           studentAnswer={null}
-          studyBuddyWithheld
+          studyBuddyState={studyBuddyState}
         />
       </MemoryRouter>,
     );
   }
 
-  it("shows the withheld notice and no composer or connect state", async () => {
-    renderWithheld();
-
-    // The panel title still renders so the TA sees the study buddy exists…
-    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
-    // …but the withheld notice replaces the conversation, and neither the
-    // connect-a-provider prompt nor a live composer is offered.
-    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+  function expectNoComposerOrControls() {
+    // Neither the connect-a-provider prompt nor a live composer is offered, and
+    // no model / new-chat / history controls — the whole surface is withheld,
+    // not merely disabled.
     expect(screen.queryByText(/Connect an AI provider to start/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
     expect(
       screen.queryByPlaceholderText(/where you need guidance|Ask about the topic|Ask a question/i),
     ).not.toBeInTheDocument();
-  });
-
-  it("does not fetch AI models or offer chat controls when withheld", async () => {
-    renderWithheld();
-
-    // No new-chat / history controls, no mode toggle — the whole chat surface is
-    // withheld, not merely disabled.
     expect(screen.queryByRole("button", { name: /new chat/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /chat history/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  }
+
+  it("shows the withheld notice and no composer or connect state for a resolved TA", async () => {
+    renderState("withheld");
+
+    // The panel title still renders so the TA sees the study buddy exists…
+    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
+    // …but the withheld notice replaces the conversation.
+    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed while the per-course role is unresolved (pending breadcrumb)", async () => {
+    renderState("pending");
+
+    // A genuine student sees a transient "checking access" — not the TA notice —
+    // but the composer stays withheld so a TA + BYOK key can't chat in the window.
+    expect(screen.getByText(/checking your access/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/study buddy is available to students enrolled/i),
+    ).not.toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed when the breadcrumb failed (unverified)", async () => {
+    renderState("unverified");
+
+    expect(screen.getByText(/couldn't verify your access/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
   });
 });

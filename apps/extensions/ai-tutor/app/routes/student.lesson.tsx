@@ -337,9 +337,17 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   // The study buddy is likewise a STUDENT-in-this-course capability: the
   // tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session listing
   // 403 any non-STUDENT enrollment, so a TA's composer would be a dead control.
-  // Withhold it once a non-STUDENT course role resolves (fail closed on the same
-  // signal as Submit) (#1626).
-  const studyBuddyWithheld = crumbsReady && viewerEnrollmentRole !== "STUDENT";
+  // Fail closed on the exact same signal as Submit — withheld until the
+  // per-course role resolves to STUDENT, so a TA with a BYOK key can't drive a
+  // dead composer during the breadcrumb window either (#1626).
+  const studyBuddyState: "allowed" | "pending" | "unverified" | "withheld" =
+    viewerEnrollmentRole === "STUDENT"
+      ? "allowed"
+      : !crumbsReady
+        ? "pending"
+        : breadcrumbFailed
+          ? "unverified"
+          : "withheld";
 
   const submit = async () => {
     // Withhold Submit (U-TA-1); also guards the path even if the button is ever
@@ -693,7 +701,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       currentTopicId={currentTopicId}
       onSelectTopic={handleTopicSelect}
       studentAnswer={studentAnswer}
-      studyBuddyWithheld={studyBuddyWithheld}
+      studyBuddyState={studyBuddyState}
       className="h-full"
     />
   );

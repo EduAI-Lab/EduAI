@@ -127,15 +127,18 @@ type StudentAiChatProps = {
   onSelectTopic: (topicId: string | number) => void;
   studentAnswer: number | string | null;
   /**
-   * Withhold the study buddy because the caller is not a STUDENT in this course
+   * Study-buddy availability, gated on the caller's resolved per-course role
    * (#1626). The tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session
    * listing 403 any non-STUDENT enrollment, so a course TA's composer would be a
-   * dead control. When true the panel shows a short notice in place of the
-   * connect state / conversation and the composer is disabled — matching the
-   * withheld-Submit treatment on the answer card. Fails closed on the same
-   * resolved-course-role signal, so it is never set until that role is known.
+   * dead control. Fails closed on the same signal as the answer-card Submit:
+   * `"allowed"` only once the per-course role resolves to STUDENT; `"pending"`
+   * while the breadcrumb that carries it is in flight; `"unverified"` if that
+   * breadcrumb failed; `"withheld"` once a non-STUDENT role resolves. For every
+   * non-`"allowed"` state the panel shows a short notice in place of the connect
+   * state / conversation and the composer is withheld entirely — so a TA with a
+   * BYOK key can't drive a dead composer during the unresolved-role window.
    */
-  studyBuddyWithheld?: boolean;
+  studyBuddyState?: "allowed" | "pending" | "unverified" | "withheld";
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */
   className?: string;
@@ -187,11 +190,15 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     currentTopicId,
     onSelectTopic,
     studentAnswer,
-    studyBuddyWithheld = false,
+    studyBuddyState = "allowed",
     className,
   },
   ref,
 ) {
+  // Any non-allowed state withholds the composer entirely (not merely disables
+  // it) and drives the notice below — fails closed on the unresolved-role
+  // window as well as a resolved TA (#1626).
+  const studyBuddyWithheld = studyBuddyState !== "allowed";
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
@@ -395,6 +402,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     async (tab: ChatTab, overrideMessage?: string) => {
       if (!activity || !isUserReady) return;
 
+      // #1626: hard send boundary. The composer is withheld in the UI for any
+      // non-STUDENT / unresolved course role, but the imperative
+      // `sendGuidePrompt` handle exposed to the parent route bypasses the UI —
+      // block it here too so a TA (or an unresolved role) never issues a tutor
+      // turn the server would 403.
+      if (studyBuddyWithheld) return;
+
       // #998: guard against duplicate concurrent requests for this tab. The
       // manual submit path is already gated by `canSend` (which checks
       // `loading`), but the imperative `sendGuidePrompt` handle exposed to
@@ -531,6 +545,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       onSelectKnowledgeLevel,
       selectedModelId,
       studentAnswer,
+      studyBuddyWithheld,
     ],
   );
 
@@ -806,10 +821,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
             </div>
           ) : studyBuddyWithheld ? (
-            // #1626: a course TA holds the learner surface but the tutoring routes
-            // 403 a non-STUDENT enrollment, so the composer would be a dead
-            // control. Show why instead — mirroring the withheld-Submit note on
-            // the answer card — rather than the connect state or a live composer.
+            // #1626: the tutoring routes 403 a non-STUDENT enrollment, so the
+            // composer would be a dead control for a course TA — and equally so
+            // while the per-course role is still unresolved. Show why instead —
+            // mirroring the withheld-Submit note on the answer card — rather than
+            // the connect state or a live composer. The message tracks the gate
+            // state so a genuine student sees a transient "checking access"
+            // rather than the TA notice during the breadcrumb window.
             <div
               role="note"
               className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-3 py-10 text-center"
@@ -818,7 +836,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 <IconSparkles className="h-6 w-6" aria-hidden />
               </div>
               <p className="text-sm text-muted-foreground">
-                The AI study buddy is available to students enrolled in this course.
+                {studyBuddyState === "pending"
+                  ? "Checking your access…"
+                  : studyBuddyState === "unverified"
+                    ? "Couldn't verify your access. Reload to try again."
+                    : "The AI study buddy is available to students enrolled in this course."}
               </p>
             </div>
           ) : !hasApiKey ? (

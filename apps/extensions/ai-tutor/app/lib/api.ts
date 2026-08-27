@@ -370,6 +370,9 @@ export interface DashboardStats {
   openBugReports?: number;
   totalBugReports?: number;
   pendingSubmissions?: number;
+  /** Ungraded submissions across the caller's teaching/assisting courses — the
+   * grading queue depth surfaced on the instructor/TA dashboards (#1626). */
+  submissionsToReview?: number;
 }
 
 export interface AiTraceRow {

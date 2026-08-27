@@ -248,6 +248,46 @@ test.describe("AI Tutor TA — learner surface", () => {
     }
   });
 
+  test("the study buddy stays withheld for a TA + BYOK key while the breadcrumb is in flight (#1626)", async ({
+    page,
+    playwright,
+  }) => {
+    // Fail-closed twin of the Submit gate for the study buddy: while the
+    // per-course breadcrumb is still resolving, a TA holding a BYOK key must not
+    // get a live composer — the tutoring routes 403 the TA enrollment, so it
+    // would be a dead control. The panel shows a "checking access" note during
+    // the delay and settles on the enrolled-students note once the TA role
+    // resolves; a composer never appears in either window.
+    const { studentId, seeded } = await seedTaLearner(page, playwright, "TL6");
+    try {
+      await seedByokKey(page, studentId);
+      await page.route("**/api/lessons/*/breadcrumb", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      });
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      const chat = page.locator('[data-tour="student-ai-chat"]');
+      await expect(chat.getByText("AI study buddy", { exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
+      // Pre-resolution: a "checking access" note, and crucially no composer even
+      // though a BYOK key is present.
+      await expect(
+        chat.getByRole("note").filter({ hasText: /checking your access/i }),
+      ).toBeVisible();
+      await expect(chat.getByRole("button", { name: /send message/i })).toHaveCount(0);
+      // Once the TA role resolves the panel settles on the enrolled-students
+      // note — still withheld, still no composer.
+      await expect(chat.getByText(/study buddy is available to students enrolled/i)).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(chat.getByRole("button", { name: /send message/i })).toHaveCount(0);
+    } finally {
+      await page.unroute("**/api/lessons/*/breadcrumb");
+      await seeded.dispose();
+    }
+  });
+
   test("a delayed breadcrumb withholds Submit until the course role resolves (#1626)", async ({
     page,
     playwright,
