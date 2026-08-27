@@ -90,12 +90,15 @@ export function dailyLimitForRole(
   if (role === undefined) return settings.instructorLimit;
 
   // `role` arrives as a plain string (better-auth's session type does not
-  // carry the Prisma UserRole enum), so cast it to UserRole to get an
-  // exhaustive switch: a new UserRole added to schema.prisma without a case
-  // below is a compile error at `_exhaustive` here, forcing a conscious
+  // carry the Prisma UserRole enum). Casting to UserRole here buys an
+  // exhaustive switch below: a new UserRole added to schema.prisma without a
+  // case below is a compile error at `_exhaustive`, forcing a conscious
   // choice of tier instead of silently defaulting into the instructor cap.
-  // A role string that is not a real UserRole (should not happen in
-  // practice) hits the same `default` branch and throws at runtime.
+  // SAFETY: every caller in this codebase (chat.ts, chat-daily-limits.server.ts)
+  // sources `role` from `actingUser.role`/session data that Prisma populated
+  // from the UserRole column, so the runtime value is always a real member of
+  // the enum; the `default` branch below still throws defensively if that
+  // invariant is ever violated instead of misclassifying the caller's tier.
   const typedRole = role as UserRole;
   switch (typedRole) {
     case UserRole.STUDENT:
