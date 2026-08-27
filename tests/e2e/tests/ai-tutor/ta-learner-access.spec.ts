@@ -310,12 +310,16 @@ test.describe("AI Tutor TA — learner surface", () => {
       });
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
+      // Scope to the answer-card note: while the breadcrumb is in flight the
+      // study buddy also renders a "checking access" `role="note"` (#1626 — it
+      // fails closed on the same signal), so an un-scoped match is ambiguous.
+      const answerNote = page.locator('[data-tour="student-answer-card"]').getByRole("note");
       // Pre-resolution: disabled with the pending note, never an enabled Submit.
-      await expect(page.getByRole("note")).toContainText(/checking your access/i);
+      await expect(answerNote).toContainText(/checking your access/i);
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
       // Once the delayed breadcrumb resolves the STUDENT role, the note clears
       // and the quiz becomes interactive — selecting an option enables Submit.
-      await expect(page.getByRole("note")).toHaveCount(0, { timeout: 20_000 });
+      await expect(answerNote).toHaveCount(0, { timeout: 20_000 });
       await page.getByRole("radio", { name: "Option A" }).click();
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeEnabled();
     } finally {
@@ -344,12 +348,12 @@ test.describe("AI Tutor TA — learner surface", () => {
       );
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
-      // Scope to the answer-card note: the withheld study buddy renders a
-      // second `role="note"` on this page (#1626), so an un-scoped match is
-      // ambiguous in strict mode.
+      // Scope to the answer-card note: on a failed breadcrumb the study buddy
+      // also renders a "couldn't verify" `role="note"` (#1626 — it fails closed
+      // on the same signal), so a text filter alone is ambiguous in strict mode.
       await expect(
-        page.getByRole("note").filter({ hasText: /couldn.t verify your access/i }),
-      ).toBeVisible();
+        page.locator('[data-tour="student-answer-card"]').getByRole("note"),
+      ).toContainText(/couldn.t verify your access/i);
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
     } finally {
       await page.unroute("**/api/lessons/*/breadcrumb");

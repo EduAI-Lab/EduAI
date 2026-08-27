@@ -12,7 +12,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";
 import { registerStudent, seedPublishedCourseAndEnroll } from "../helpers/at-student-fixtures";
-import { seedStudentSubmission } from "../helpers/at-admin-fixtures";
+import { seedStudentSubmission, seedShortTextActivity } from "../helpers/at-admin-fixtures";
 
 type Pw = { request: { newContext: () => Promise<import("@playwright/test").APIRequestContext> } };
 
@@ -85,11 +85,21 @@ test.describe("AI Tutor TA — dashboard", () => {
   }) => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDD");
     try {
-      // Seed an ungraded submission so the TA's grading queue is non-empty, then
-      // assert the dashboard's "To review" stat actually reflects it — the tile
-      // reads the server's `submissionsToReview` rollup (#1626), so a count of 0
-      // would mean the submission never reached the UI.
-      await seedStudentSubmission(playwright, seeded, seeded.activityId, { answerOption: 1 });
+      // Seed a genuinely *ungraded* submission so the TA's grading queue is
+      // non-empty. MCQ (and answer-keyed short-text) auto-grade on submit, so
+      // they never enter the `isCorrect: null` queue — an open-ended SHORT_TEXT
+      // activity is the realistic source. A student submits a text answer to it,
+      // which stays ungraded, then we assert the dashboard's "To review" stat
+      // actually reflects it (it reads the server's `submissionsToReview`
+      // rollup, #1626), so a count of 0 would mean it never reached the UI.
+      const openEnded = await seedShortTextActivity(
+        seeded.admin,
+        seeded.lessonId,
+        seeded.topicIds[0],
+      );
+      await seedStudentSubmission(playwright, seeded, openEnded.id, {
+        answerText: "The base case returns without recursing, so the stack unwinds.",
+      });
       await gotoAiTutor(page, "/dashboard");
       await expect(page.getByRole("heading", { name: "Assigned courses" })).toBeVisible({
         timeout: 20_000,
