@@ -56,18 +56,19 @@ async function createCourse(
   ctx: APIRequestContext,
   opts: { prefix: string; department: string; instructorUserIds?: string },
 ) {
-  const res = await ctx.post(`${CORE_URL}/api/courses`, {
-    form: {
-      name: `Boundary workflow ${opts.prefix}`,
-      code: uniqueCourseCode(opts.prefix),
-      section: "001",
-      term: "W1",
-      year: "2026",
-      startDate: "2026-09-08",
-      department: opts.department,
-      ...(opts.instructorUserIds ? { instructorUserIds: opts.instructorUserIds } : {}),
-    },
-  });
+  const form: Record<string, string> = {
+    name: `Boundary workflow ${opts.prefix}`,
+    code: uniqueCourseCode(opts.prefix),
+    section: "001",
+    term: "W1",
+    year: "2026",
+    startDate: "2026-09-08",
+    department: opts.department,
+  };
+  if (opts.instructorUserIds) {
+    form.instructorUserIds = opts.instructorUserIds;
+  }
+  const res = await ctx.post(`${CORE_URL}/api/courses`, { form });
   return res;
 }
 
