@@ -172,3 +172,68 @@ describe("canvas quiz schemas", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("canvas quiz collection pagination (#1509 review)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * A Canvas list response: `Link: rel="next"` on every page but the last, so
+   * the helper under test has to walk it the way Canvas expects.
+   */
+  function page(items: unknown[], nextUrl?: string): Response {
+    return new Response(JSON.stringify(items), {
+      status: 200,
+      headers: nextUrl ? { link: `<${nextUrl}>; rel="next"` } : {},
+    });
+  }
+
+  it("listCanvasQuizzes follows Link: rel=next across pages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        page([{ id: 1, title: "Q1" }], "http://localhost:8080/api/v1/courses/7/quizzes?page=2"),
+      )
+      .mockResolvedValueOnce(
+        page([{ id: 2, title: "Q2" }], "http://localhost:8080/api/v1/courses/7/quizzes?page=3"),
+      )
+      .mockResolvedValueOnce(page([{ id: 3, title: "Q3" }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const quizzes = await listCanvasQuizzes(NON_TEST_CREDENTIALS, 7, fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(quizzes.map((quiz) => quiz.id)).toEqual([1, 2, 3]);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/v1/courses/7/quizzes?per_page=100",
+    );
+  });
+
+  it("listCanvasQuizQuestions follows Link: rel=next across pages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        page([{ id: 10 }], "http://localhost:8080/api/v1/courses/7/quizzes/3/questions?page=2"),
+      )
+      .mockResolvedValueOnce(page([{ id: 11 }, { id: 12 }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const questions = await listCanvasQuizQuestions(NON_TEST_CREDENTIALS, 7, 3, fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(questions.map((question) => question.id)).toEqual([10, 11, 12]);
+  });
+
+  it("refuses a pagination link that leaves the configured Canvas origin", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: 1, title: "Q1" }], "http://169.254.169.254/api/v1/x"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listCanvasQuizzes(NON_TEST_CREDENTIALS, 7, fetchMock)).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

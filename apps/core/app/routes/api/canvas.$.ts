@@ -698,7 +698,18 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       return json({ success: false, error: error.message }, error.statusCode);
     }
     if (error instanceof CanvasApiError) {
-      const status = error.statusCode === 401 ? 400 : error.statusCode >= 500 ? 502 : 400;
+      // A Canvas 403 keeps its status and machine-readable code so the caller
+      // can recognize a per-resource permission failure, and an over-budget
+      // payload keeps its 413; everything else stays on the existing 400/502
+      // contract (a 401 is reported as a 400 "invalid token" to the caller).
+      const status =
+        error.statusCode === 403 || error.statusCode === 413
+          ? error.statusCode
+          : error.statusCode === 401
+            ? 400
+            : error.statusCode >= 500
+              ? 502
+              : 400;
       return json({ success: false, error: error.message }, status);
     }
     if (process.env.NODE_ENV === "production") {

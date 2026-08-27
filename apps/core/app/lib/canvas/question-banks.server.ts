@@ -1,5 +1,5 @@
 import type { CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import { canvasRequestJson } from "~/lib/canvas/client.server";
+import { canvasGetPaginated, canvasRequestJson } from "~/lib/canvas/client.server";
 
 export type CanvasQuestionBankApi = {
   id: number;
@@ -27,13 +27,12 @@ export async function listCanvasQuestionBanks(
   canvasCourseId: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CanvasQuestionBankApi[]> {
-  const data = await canvasRequestJson<CanvasQuestionBankApi[] | CanvasQuestionBankApi>(
+  // Page-walked: a course can hold more banks than one Canvas page returns.
+  const banks = await canvasGetPaginated<CanvasQuestionBankApi>(
     credentials,
     `/question_banks?context_type=Course&context_id=${encodeURIComponent(String(canvasCourseId))}&include_question_count=true`,
-    {},
     fetchImpl,
   );
-  const banks = Array.isArray(data) ? data : [data];
   return banks.filter(Boolean);
 }
 
