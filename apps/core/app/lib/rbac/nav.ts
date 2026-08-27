@@ -21,6 +21,14 @@ const ADMIN_SECONDARY_NAV: NavItem[] = [
   { key: "admin-chat", title: "Admin Chatbot", url: "/admin/chat" },
 ];
 
+// #1659 review: additive alongside "Course Chat" (/chat), the same pattern
+// ADMIN gets its own "Admin Chatbot" entry in addition to the shared one — an
+// instructor still wants the learning-mode assistant for their own studying,
+// plus this course-scoped ops assistant for running their course.
+const INSTRUCTOR_SECONDARY_NAV: NavItem[] = [
+  { key: "instructor-chat", title: "Course Assistant", url: "/instructor/chat" },
+];
+
 /**
  * Unit-admin invitations link. Always shown to UNIT_ADMINs, but greyed-out and
  * non-navigating when the `unitAdmins.canInvite` policy flag is off (passed via
@@ -76,6 +84,10 @@ export function getNavSecondaryForUser(user: NavUser): NavItem[] {
 
   if (role === "ADMIN") {
     items.push(...ADMIN_SECONDARY_NAV);
+  }
+
+  if (role === "INSTRUCTOR") {
+    items.push(...INSTRUCTOR_SECONDARY_NAV);
   }
 
   // In-app user guide — available to everyone (issue #764).

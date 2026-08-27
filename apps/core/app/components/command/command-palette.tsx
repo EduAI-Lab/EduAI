@@ -59,6 +59,7 @@ const NAV_ICONS = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-chat": IconRobot,
+  "instructor-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,

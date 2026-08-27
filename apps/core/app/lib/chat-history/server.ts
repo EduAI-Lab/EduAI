@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { ChatbotType, Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
@@ -106,6 +106,7 @@ export type ChatReadAccess = {
     adhdAssist: boolean;
     createdAt: Date;
     updatedAt: Date;
+    chatbotType: ChatbotType;
     course: { id: string; code: string; name: string } | null;
     user: { id: string; name: string | null; email: string };
   };
@@ -128,7 +129,16 @@ export type ChatReadAccess = {
  * with no policy-flag check and no student-owner restriction.
  *
  * Returns null when the chat is missing OR the viewer may not read it; callers
- * answer 404 either way so there is no existence leak. EDIT is owner-only.
+ * answer 404 either way so there is no existence leak. EDIT is owner-only —
+ * AND (#1659 review) restricted to LEARNING-mode chats. `/chat/:chatId`
+ * (ChatScreen) only ever sends `chatMode: "learning"`, and `/api/chat` 410s
+ * any turn whose persisted `chatbotType` doesn't match the mode a caller
+ * sends — a saved ADMIN or INSTRUCTOR-mode chat can never be resumed there,
+ * only viewed. Restoring the live composer (canEdit) for one would let the
+ * owner type a message that immediately 410s, and the dashboard / admin
+ * "Continue in chat" affordance (gated on this same `canEdit`) would deep-link
+ * straight into that dead end. Those rows still render — read-only, same as
+ * any chat this viewer doesn't own.
  */
 export async function resolveChatReadAccess(
   viewer: ChatHistoryViewer,
@@ -145,6 +155,7 @@ export async function resolveChatReadAccess(
       adhdAssist: true,
       createdAt: true,
       updatedAt: true,
+      chatbotType: true,
       course: { select: { id: true, code: true, name: true } },
       user: { select: { id: true, name: true, email: true } },
     },
@@ -175,7 +186,7 @@ export async function resolveChatReadAccess(
 
   if (!authorized) return null;
 
-  return { chat, isOwner, canEdit: isOwner };
+  return { chat, isOwner, canEdit: isOwner && chat.chatbotType === "LEARNING" };
 }
 
 /**

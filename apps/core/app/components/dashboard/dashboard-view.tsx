@@ -72,6 +72,14 @@ export type DashboardViewProps = {
   recentChatsLoading?: boolean;
   /** Optional analytics row (charts) rendered full-width below the stat cards. */
   analytics?: React.ReactNode;
+  /**
+   * #1659 review: where "New chat" and each course card's "Chat" button
+   * navigate — defaults to the shared learning assistant (`/chat`,
+   * `?courseCode=`-keyed). INSTRUCTOR's config points this at
+   * `/instructor/chat` (id-keyed) instead, so instructors land on the
+   * course-scoped ops assistant, not the learning one.
+   */
+  chatHref?: string;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -97,10 +105,12 @@ function CourseListPanel({
   courses,
   loading,
   title,
+  chatHref = "/chat",
 }: {
   courses: DashboardCourse[];
   loading: boolean;
   title: string;
+  chatHref?: string;
 }) {
   const navigate = useNavigate();
   if (loading) {
@@ -165,7 +175,14 @@ function CourseListPanel({
               // and hydration-mismatches, so navigate imperatively instead.
               e.preventDefault();
               e.stopPropagation();
-              navigate(`/chat?courseCode=${encodeURIComponent(course.code)}`);
+              // #1659 review: /instructor/chat keys its selector by course id
+              // (Course.code isn't globally unique); every other chat surface
+              // still keys by ?courseCode=.
+              const param =
+                chatHref === "/instructor/chat"
+                  ? `courseId=${encodeURIComponent(course.id)}`
+                  : `courseCode=${encodeURIComponent(course.code)}`;
+              navigate(`${chatHref}?${param}`);
             }}
             className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
             style={{ background: "var(--primary)" }}
@@ -327,6 +344,7 @@ export function DashboardView({
   recentChats,
   recentChatsLoading = false,
   analytics,
+  chatHref = "/chat",
 }: DashboardViewProps) {
   const showQuickActions = Boolean(quickActions && quickActions.length > 0);
   const panelTitle = leftPanelTitle ?? (showQuickActions ? "Quick actions" : "Your courses");
@@ -372,6 +390,7 @@ export function DashboardView({
                 courses={courses ?? []}
                 loading={coursesLoading}
                 title={panelTitle}
+                chatHref={chatHref}
               />
             )}
           </div>
@@ -383,7 +402,7 @@ export function DashboardView({
             <div className="flex items-center justify-between mb-3.5">
               <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
               <Link
-                to="/chat"
+                to={chatHref}
                 className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
               >
                 New chat <IconChevronRight size={13} />

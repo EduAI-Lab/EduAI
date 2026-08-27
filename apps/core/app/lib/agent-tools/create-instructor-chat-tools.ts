@@ -74,13 +74,26 @@ export function createInstructorChatTools(ctx: ChatToolContext) {
 
     listCourseEnrollments: tool({
       description:
-        "List the roster (students/TAs/instructors) enrolled in your current course. Filter by isActive when asked about active vs. dropped enrollments.",
+        "List the roster (students/TAs/instructors) enrolled in your current course. Filter by isActive when asked about active vs. dropped enrollments, or by enrolledSince/enrolledBefore for time-range questions (e.g. 'who enrolled in the last 7 days').",
       parameters: z.object({
         limit: z.number().int().min(1).max(50).optional(),
         isActive: z.boolean().optional().describe("Filter by active enrollment status"),
+        enrolledSince: z
+          .string()
+          .optional()
+          .describe("ISO date — include enrollments on or after this time"),
+        enrolledBefore: z
+          .string()
+          .optional()
+          .describe("ISO date — include enrollments on or before this time"),
       }),
-      execute: async ({ limit, isActive }) =>
-        listAdminCourseEnrollments(user, courseId, { limit, isActive }),
+      execute: async ({ limit, isActive, enrolledSince, enrolledBefore }) =>
+        listAdminCourseEnrollments(user, courseId, {
+          limit,
+          isActive,
+          enrolledSince,
+          enrolledBefore,
+        }),
     }),
 
     listCourseTopics: tool({

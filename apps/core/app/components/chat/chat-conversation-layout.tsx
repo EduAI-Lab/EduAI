@@ -39,6 +39,7 @@ export function ChatConversationLayout({
   selectedCourseCode,
   setSelectedCourseCode,
   availableCourses,
+  courseSelectionKey = "code",
   messages,
   input,
   isLoading,
@@ -217,6 +218,7 @@ export function ChatConversationLayout({
         selectedCourseId={selectedCourseCode}
         setSelectedCourseId={setSelectedCourseCode}
         availableCourses={availableCourses}
+        courseSelectionKey={courseSelectionKey}
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         chatModels={chatModels}

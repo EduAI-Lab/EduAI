@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
@@ -23,24 +23,86 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.server";
 
 /**
- * #1659: the only authority for "which courses can this instructor open a
- * chat for" — an active INSTRUCTOR enrollment on a published course. This is
- * intentionally the same fact `/api/chat`'s instructor-mode gate re-checks on
- * every turn (course-access.server.ts's shared RBAC contract), so a course
- * never appears in this dropdown that the API would then reject.
+ * #1659 review: the only authority for "which courses can this instructor
+ * open a chat for" is an active INSTRUCTOR enrollment on a published course
+ * — but that alone isn't enough to match `/api/chat`'s instructor-mode gate,
+ * which reuses `resolveCourseAccessWithCourse` (course-access.server.ts).
+ * That resolver decides access by PLATFORM role FIRST: every ADMIN gets
+ * `admin`-level access and every in-unit UNIT_ADMIN gets `unit`-level access
+ * — regardless of whether they *also* hold a real INSTRUCTOR enrollment on
+ * the course, since enrollment is only consulted once neither short-circuit
+ * applies. A raw enrollment lookup would therefore list a course here for a
+ * dual-role caller (ADMIN, or in-unit UNIT_ADMIN, who happens to teach it)
+ * that the API guard then always 403s on every turn — the exact drift this
+ * function exists to prevent. Those callers have /admin/chat for
+ * platform-wide ops instead, so we exclude them here rather than special-case
+ * the guard, keeping this loader and the guard provably in lockstep.
  */
-async function listMyPublishedInstructorCourses(userId: string) {
-  return prisma.course.findMany({
+async function listMyPublishedInstructorCourses(user: RbacUser) {
+  // Every ADMIN resolves to `admin`-level access on every course
+  // (resolveAccess's first branch) — never `instructor`, no matter their
+  // enrollment. Nothing they teach can ever pass the guard.
+  if (user.role === "ADMIN") return [];
+
+  const authorizedUnits = user.role === "UNIT_ADMIN" ? await getAuthorizedUnits(user) : null;
+
+  const courses = await prisma.course.findMany({
     where: {
       isPublished: true,
       deletedAt: null,
-      enrollments: { some: { userId, isActive: true, role: "INSTRUCTOR" } },
+      enrollments: { some: { userId: user.id, isActive: true, role: "INSTRUCTOR" } },
     },
-    select: { id: true, code: true, name: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      startDate: true,
+      section: true,
+      department: true,
+    },
     orderBy: { code: "asc" },
   });
+
+  if (!authorizedUnits) return courses;
+
+  // §19 unit lock (course-access.server.ts): a UNIT_ADMIN whose authorized
+  // units include the course's department resolves to `unit`-level access
+  // there — never `instructor` — regardless of their real enrollment. A
+  // null department is never a unit match, so those courses fall through to
+  // the (allowed) enrollment check same as the guard.
+  return courses.filter((c) => c.department === null || !authorizedUnits.includes(c.department));
+}
+
+/**
+ * #1659 review: Course.code is NOT globally unique — only
+ * (code, startDate, section) is (schema.prisma's @@unique) — so two offerings
+ * an instructor teaches can share a code (e.g. re-running COSC 121 next
+ * term, or co-teaching two sections). The selector is keyed by `id` (see
+ * `courseSelectionKey="id"` on InstructorChatView) so that ambiguity can
+ * never mis-route a request, but the human-facing label still needs enough
+ * context — term + section — to tell duplicate-code rows apart at a glance.
+ * Courses whose code is unique within this instructor's own list keep the
+ * plain code as their label.
+ */
+function labelInstructorCourses(
+  courses: Array<{ id: string; code: string; name: string; startDate: Date; section: string }>,
+): ChatCourseOption[] {
+  const codeCounts = new Map<string, number>();
+  for (const c of courses) {
+    codeCounts.set(c.code, (codeCounts.get(c.code) ?? 0) + 1);
+  }
+  return courses.map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    label:
+      (codeCounts.get(c.code) ?? 0) > 1
+        ? `${c.code} — ${c.startDate.getUTCFullYear()} Sec ${c.section}`
+        : undefined,
+  }));
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -50,7 +112,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
-  const courses = await listMyPublishedInstructorCourses(session.user.id);
+  const courses = await listMyPublishedInstructorCourses(session.user);
   if (courses.length === 0) {
     // Not an instructor of any published course — nothing for this page to
     // show. Redirect rather than render an empty/broken chat shell.
@@ -75,7 +137,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return {
     chatModels,
-    courses: courses.map((c): ChatCourseOption => ({ id: c.id, code: c.code, name: c.name })),
+    courses: labelInstructorCourses(courses),
     user: session.user,
   };
 }
@@ -131,7 +193,18 @@ export default function InstructorChatPage() {
   const { chatModels, courses, user } = useLoaderData<typeof loader>();
 
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : "");
-  const [selectedCourseCode, setSelectedCourseCodeState] = useState<string>(courses[0].code);
+  const [searchParams] = useSearchParams();
+  // #1659 review: keyed by course ID, not code — Course.code is not globally
+  // unique (only (code, startDate, section) is), so a code-keyed selector
+  // could collide across two offerings this instructor teaches. The API is
+  // sent `courseId` to match (see requestMetadata below). A `?courseId=`
+  // param (dashboard course-card "Chat" button) preselects that course when
+  // it's one this instructor actually teaches; otherwise falls back to the
+  // first course, same as before #1659's dashboard wiring.
+  const [selectedCourseId, setSelectedCourseIdState] = useState<string>(() => {
+    const requested = searchParams.get("courseId");
+    return requested && courses.some((c) => c.id === requested) ? requested : courses[0].id;
+  });
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
@@ -182,7 +255,7 @@ export default function InstructorChatPage() {
   const requestMetadata = {
     chatMode: "instructor" as const,
     model: selectedModel,
-    courseCode: selectedCourseCode,
+    courseId: selectedCourseId,
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
@@ -204,7 +277,7 @@ export default function InstructorChatPage() {
     experimental_prepareRequestBody: ({ messages: chatMessages, requestBody }) => ({
       ...(requestBody ?? requestMetadata),
       chatMode: "instructor",
-      courseCode: selectedCourseCode,
+      courseId: selectedCourseId,
       messages: chatMessages.slice(-1),
     }),
     onResponse: async (response) => {
@@ -251,11 +324,11 @@ export default function InstructorChatPage() {
   );
 
   // A persisted chat is pinned to one course (chat.ts rejects a mismatched
-  // courseCode on a follow-up turn) — switching course mid-chat starts a new
+  // courseId on a follow-up turn) — switching course mid-chat starts a new
   // one instead of resending the old chatId under a different course.
   const handleCourseChange = useCallback(
-    (code: string | null) => {
-      if (!code || code === selectedCourseCode) return;
+    (id: string | null) => {
+      if (!id || id === selectedCourseId) return;
       if (chatId) {
         stop();
         setChatId(null);
@@ -266,9 +339,9 @@ export default function InstructorChatPage() {
         setStreamingRoutedRegistryId(null);
         setChatError(null);
       }
-      setSelectedCourseCodeState(code);
+      setSelectedCourseIdState(id);
     },
-    [chatId, selectedCourseCode, setInput, setMessages, stop],
+    [chatId, selectedCourseId, setInput, setMessages, stop],
   );
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
@@ -282,7 +355,7 @@ export default function InstructorChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chatMode: "instructor",
-          courseCode: selectedCourseCode,
+          courseId: selectedCourseId,
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
@@ -348,7 +421,7 @@ export default function InstructorChatPage() {
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         selectedModelInfo={selectedModelInfo}
-        selectedCourseCode={selectedCourseCode}
+        selectedCourseCode={selectedCourseId}
         setSelectedCourseCode={handleCourseChange}
         availableCourses={courses}
         messages={messages}

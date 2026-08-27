@@ -14,6 +14,10 @@ export function InstructorChatView(props: ChatViewSharedProps) {
     <ChatConversationLayout
       {...props}
       showCourseSelector
+      // #1659 review: Course.code is not globally unique (only
+      // (code, startDate, section) is) — key/submit by course id instead so
+      // two duplicate-code offerings this instructor teaches can't collide.
+      courseSelectionKey="id"
       WelcomeComponent={InstructorChatWelcome}
       bannerTitle="Course Assistant"
       bannerDescription="Read-only ops assistant for this course's roster and topics. Cannot see other courses, platform users, or bug reports."

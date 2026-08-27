@@ -58,6 +58,7 @@ const BASE_CHAT_ROW = {
   adhdAssist: false,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-02T00:00:00Z"),
+  chatbotType: "LEARNING" as const,
   course: null,
   user: { id: "owner-1", name: "Alex Patel", email: "student1@eduai.local" },
 };
@@ -79,6 +80,36 @@ describe("resolveChatReadAccess", () => {
 
     expect(result).toEqual({ chat: BASE_CHAT_ROW, isOwner: true, canEdit: true });
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();
+  });
+
+  it("#1659 review: an owned INSTRUCTOR-mode chat is readable but not editable — /chat/:chatId only ever resumes as chatMode 'learning', which /api/chat 410s for a persisted non-LEARNING row", async () => {
+    prismaMock.chat.findFirst.mockResolvedValue({
+      ...BASE_CHAT_ROW,
+      chatbotType: "INSTRUCTOR",
+    });
+
+    const result = await resolveChatReadAccess({ id: "owner-1", role: "INSTRUCTOR" }, "chat-1");
+
+    expect(result).toEqual({
+      chat: { ...BASE_CHAT_ROW, chatbotType: "INSTRUCTOR" },
+      isOwner: true,
+      canEdit: false,
+    });
+  });
+
+  it("#1659 review: an owned ADMIN-mode chat is likewise readable but not editable", async () => {
+    prismaMock.chat.findFirst.mockResolvedValue({
+      ...BASE_CHAT_ROW,
+      chatbotType: "ADMIN",
+    });
+
+    const result = await resolveChatReadAccess({ id: "owner-1", role: "ADMIN" }, "chat-1");
+
+    expect(result).toEqual({
+      chat: { ...BASE_CHAT_ROW, chatbotType: "ADMIN" },
+      isOwner: true,
+      canEdit: false,
+    });
   });
 
   it("grants ADMIN access without consulting course access", async () => {

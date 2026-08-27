@@ -71,6 +71,28 @@ describe("createInstructorChatTools read execute — pinned to ctx.effectiveCour
     expect(listAdminCourseEnrollments).toHaveBeenCalledWith(rbacUser, "course-1", {
       limit: 10,
       isActive: true,
+      enrolledSince: undefined,
+      enrolledBefore: undefined,
+    });
+  });
+
+  // #1659 review: the welcome card's "Who enrolled in my course in the last 7
+  // days?" quick-start prompt is only answerable if this schema exposes the
+  // date filters listAdminCourseEnrollments already supports.
+  it("listCourseEnrollments passes enrolledSince/enrolledBefore through to the date-filtered path", async () => {
+    vi.mocked(listAdminCourseEnrollments).mockResolvedValue({ enrollments: [] } as never);
+    const tools = createInstructorChatTools(makeCtx());
+
+    await tools.listCourseEnrollments.execute(
+      { enrolledSince: "2026-08-20T00:00:00.000Z", enrolledBefore: "2026-08-27T00:00:00.000Z" },
+      { messages: [], toolCallId: "t2b" },
+    );
+
+    expect(listAdminCourseEnrollments).toHaveBeenCalledWith(rbacUser, "course-1", {
+      limit: undefined,
+      isActive: undefined,
+      enrolledSince: "2026-08-20T00:00:00.000Z",
+      enrolledBefore: "2026-08-27T00:00:00.000Z",
     });
   });
 
