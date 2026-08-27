@@ -1,5 +1,5 @@
 import type { Message } from "@ai-sdk/react";
-import { IconBooksOff } from "@tabler/icons-react";
+import { IconArrowDown, IconBooksOff } from "@tabler/icons-react";
 
 import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
 import { ChatInput } from "~/components/chat/chat-input";
@@ -16,6 +16,7 @@ import {
 } from "~/components/assistive/active-highlight";
 import { cn } from "~/lib/utils";
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
+import { useStickToBottom } from "~/components/chat/use-stick-to-bottom";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle?: string;
@@ -83,6 +84,11 @@ export function ChatConversationLayout({
     streamingRoutedRegistryId,
   });
 
+  const { paneRef, contentRef, pinned, scrollToBottom } = useStickToBottom<
+    HTMLDivElement,
+    HTMLDivElement
+  >(messages);
+
   return (
     <div
       className={cn(
@@ -110,8 +116,9 @@ export function ChatConversationLayout({
             eduai-diagram widget wider than its intended max-w-3xl column)
             silently opened a horizontal scroll region here instead of
             wrapping/shrinking, effectively rendering it off-screen. */}
-        <div className={CHAT_SCROLL_PANE_CLASS}>
+        <div ref={paneRef} className={CHAT_SCROLL_PANE_CLASS}>
           <div
+            ref={contentRef}
             className={cn(
               "px-4 md:px-6",
               messages.length === 0 ? "flex min-h-full flex-col" : "py-4 md:py-6",
@@ -206,6 +213,20 @@ export function ChatConversationLayout({
             </div>
           </div>
         </div>
+
+        {/* Only offered once the reader has scrolled away from a non-empty
+            transcript — while pinned there is nothing to jump to. */}
+        {!pinned && messages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom("smooth")}
+            aria-label="Jump to latest message"
+            className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <IconArrowDown className="h-3.5 w-3.5" />
+            Jump to latest
+          </button>
+        )}
       </div>
 
       <ChatInput

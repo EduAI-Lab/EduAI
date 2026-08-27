@@ -5,6 +5,7 @@
 ### Fixed
 
 - [core] fix: The Admin Chatbot silently did nothing on a rejected turn — `onError` only `console.error`'d, so a fresh admin account with no provider key configured yet (the common case: BYOK, no global fallback) saw no reply and no error. Now surfaces the route's structured rejection as a banner, with a settings-icon hint for provider-setup failures and a friendly retry-time message for rate limiting. Closes #1656. (@Ayyhab, 2026-08-25) — [#1664](https://github.com/EduAI-Lab/EduAI/pull/1664)
+- [core] fix: Keep the chat transcript stuck to the bottom while a reply streams. The pane had no auto-scroll at all, so every answer arrived below the fold; it now follows new content while the reader is at the bottom, releases the moment they scroll up to re-read something, and offers a "Jump to latest" button instead of yanking them back mid-sentence (`scroll-smooth` is dropped from the pane class so CSS no longer animates each token). Also stops "You're not enrolled in any courses" flashing over a streaming reply: answering the first message replaces `/chat` with `/chat/:id`, which remounts the screen and restarts `useCourses` at an empty list, so an empty list now only means "not enrolled" once that fetch has actually resolved. Closes #1517. (@GlowyBlack, 2026-08-26)
 
 ### Changed
 
