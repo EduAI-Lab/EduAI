@@ -135,7 +135,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `DATABASE_URL` | Points at the `eduai_test` database instead of the dev DB |
 | `BETTER_AUTH_SECRET` | Fixed test value, not a real secret |
 | `BETTER_AUTH_URL` | Test server URL |
-| `COOKIE_DOMAIN` | `localhost` |
+| `COOKIE_DOMAIN` | `localhost` — Core treats loopback values as unset, so `crossSubDomainCookies` stays off locally (#1517) |
 | `PORT` | Test server port (4001) |
 | `EDUAI_API_KEY` | Fixed test value, not a real secret |
 
