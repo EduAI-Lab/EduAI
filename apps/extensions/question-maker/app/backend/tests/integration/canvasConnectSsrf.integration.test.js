@@ -87,6 +87,11 @@ describe("POST /api/canvas/connect — Core proxy (#1084)", () => {
     ["private 10/8", "https://10.1.2.3/"],
     ["private 192.168/16", "https://192.168.1.1/"],
     ["non-HTTPS scheme", "http://canvas.example.com/"],
+    // Non-canonical bases: QM's own guard used to reject these before the
+    // proxy existed, and Core's parseAndValidateCanvasUrl does now (#1509).
+    ["embedded credentials", "https://user:pass@canvas.example.com/"],
+    ["query string", "https://canvas.example.com/?redirect=http://169.254.169.254"],
+    ["fragment", "https://canvas.example.com/#frag"],
   ])("forwards %s (%s) to Core and surfaces Core rejection", async (_label, canvasUrl) => {
     const coreErr = Object.assign(new Error("Canvas URL is not allowed"), {
       status: 400,
