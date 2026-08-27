@@ -7,6 +7,7 @@ import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth, authBaseURL } from "~/lib/auth/server";
+import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
@@ -44,7 +45,9 @@ function formBodyErrorResponse(cause: unknown): Response | null {
  * token could therefore mask the newly-created shared session on /dashboard.
  */
 function appendHostOnlySessionCookieDeletion(headers: Headers): void {
-  if (!process.env.COOKIE_DOMAIN?.trim()) return;
+  // Loopback COOKIE_DOMAIN is treated as unset: Domain=localhost plus this
+  // host-only expiry would delete the session that was just issued.
+  if (!resolveAuthCookieDomain()) return;
 
   const cookieName = authBaseURL.startsWith("https://")
     ? "__Secure-better-auth.session_token"
