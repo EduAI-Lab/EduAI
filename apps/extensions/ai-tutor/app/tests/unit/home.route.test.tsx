@@ -35,7 +35,7 @@ describe("home route", () => {
     mockIsInitializing = true;
     // @ts-expect-error jsdom navigation stub
     delete window.location;
-    window.location = { href: "" } as Location;
+    (window as unknown as { location: Location }).location = { href: "" } as Location;
   });
 
   it("does nothing while still initializing and no user yet", () => {

@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement } from "react";
+import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent } from "@eduai/ui";
@@ -20,10 +20,12 @@ vi.mock("~/lib/api", () => ({
 // changes, not on an already-populated initial mount).
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
-  const injectHandler = (children: unknown, onValueChange: unknown): unknown =>
-    Children.map(children as never, (child) => {
+  const injectHandler = (children: ReactNode, onValueChange: (value: string) => void): ReactNode =>
+    Children.map(children, (child) => {
       if (!isValidElement(child)) return child;
-      return cloneElement(child as never, { __onValueChange: onValueChange } as never);
+      return cloneElement(child as ReactElement<{ __onValueChange?: (value: string) => void }>, {
+        __onValueChange: onValueChange,
+      });
     });
 
   const Select = ({ value, onValueChange, disabled, children }: any) => (

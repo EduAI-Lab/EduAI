@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
 import type { Route } from "../../routes/+types/instructor.lesson";
+import type { Activity } from "~/lib/types";
 
 const mockUpdateActivity = vi.fn();
 const mockDuplicateActivity = vi.fn();
@@ -97,7 +98,7 @@ const module_ = {
 };
 const lesson = { id: 1, title: "Lesson 1", moduleId: 1, isPublished: true, contentMd: "" };
 
-function makeActivity(overrides: Record<string, unknown> = {}) {
+function makeActivity(overrides: Partial<Activity> = {}) {
   return {
     id: 99,
     title: "Activity 1",

@@ -2,9 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { CourseTopicsState } from "~/hooks/useCourseTopics";
 import type { Course } from "~/lib/types";
+import type { CourseTopicsHeroActionProps } from "@eduai/ui";
 
 const { mockSharedComponent } = vi.hoisted(() => ({
-  mockSharedComponent: vi.fn((props: Record<string, unknown>) => (
+  mockSharedComponent: vi.fn((props: CourseTopicsHeroActionProps) => (
     <div data-testid="shared-hero-action">
       canManage={String(props.canManage)}, isLinked={String(props.isLinked)}
     </div>
@@ -15,7 +16,8 @@ vi.mock("@eduai/ui", () => ({
   CourseTopicsHeroAction: mockSharedComponent,
 }));
 
-let mockPerms: { canManageTopics: boolean } = { canManageTopics: true };
+type MockPerms = { canManageTopics: boolean };
+let mockPerms: MockPerms = { canManageTopics: true };
 vi.mock("~/hooks/useAtPermissions", () => ({
   useAtPermissions: () => mockPerms,
 }));
@@ -103,7 +105,7 @@ describe("CourseTopicsHeroAction (ai-tutor adapter)", () => {
 
     const props = mockSharedComponent.mock.calls.at(-1)![0];
     const err = new Error("boom");
-    props.onCreateError(err);
+    props.onCreateError?.(err);
     expect(errorSpy).toHaveBeenCalledWith("Failed to create topic", err);
     errorSpy.mockRestore();
   });

@@ -14,7 +14,7 @@ const now = Date.now();
 
 function trace(overrides: Partial<AiTraceRow> = {}): AiTraceRow {
   return {
-    id: "trace-1",
+    id: 1,
     courseId: 1,
     courseTitle: "Math 101",
     activity: { id: 1, title: "Solve for x" },
@@ -55,7 +55,7 @@ describe("AiOversightPanel", () => {
       <AiOversightPanel
         initialTraces={[
           {
-            id: "trace-2",
+            id: 2,
             courseId: null,
             courseTitle: null,
             activity: null,
@@ -78,8 +78,8 @@ describe("AiOversightPanel", () => {
     render(
       <AiOversightPanel
         initialTraces={[
-          trace({ id: "t-ok", finalOutcome: "completed" }),
-          trace({ id: "t-err", finalOutcome: "error_timeout" }),
+          trace({ id: 10, finalOutcome: "completed" }),
+          trace({ id: 11, finalOutcome: "error_timeout" }),
         ]}
       />,
     );
@@ -88,11 +88,9 @@ describe("AiOversightPanel", () => {
   });
 
   it("refetches with the selected course filter", async () => {
-    mockAdminAiTraces.mockResolvedValue([trace({ id: "trace-refetched" })]);
+    mockAdminAiTraces.mockResolvedValue([trace({ id: 20 })]);
     render(
-      <AiOversightPanel
-        initialTraces={[trace({ id: "trace-1", courseId: 1, courseTitle: "Math 101" })]}
-      />,
+      <AiOversightPanel initialTraces={[trace({ id: 1, courseId: 1, courseTitle: "Math 101" })]} />,
     );
 
     fireEvent.click(screen.getByLabelText("Filter by course"));

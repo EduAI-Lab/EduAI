@@ -14,7 +14,8 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
-let mockPerms: { user: { role: string } | null; access: string | null } = {
+type MockPerms = { user: { role: string } | null; access: string | null };
+let mockPerms: MockPerms = {
   user: { role: "INSTRUCTOR" },
   access: "instructor",
 };

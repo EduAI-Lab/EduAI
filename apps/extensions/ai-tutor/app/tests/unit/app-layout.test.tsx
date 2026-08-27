@@ -7,6 +7,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
+import type { BugReportSubmitData } from "@eduai/ui";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router", async (importActual) => {
@@ -69,7 +70,7 @@ vi.mock("@eduai/ui", async (importOriginal) => {
       onSubmit,
     }: {
       open: boolean;
-      onSubmit: (data: Record<string, unknown>) => void;
+      onSubmit: (data: BugReportSubmitData) => void;
       onOpenChange: (open: boolean) => void;
     }) =>
       open ? (
@@ -79,7 +80,7 @@ vi.mock("@eduai/ui", async (importOriginal) => {
             onClick={() =>
               onSubmit({
                 description: "Something broke",
-                bugType: "BUG",
+                bugType: "FEATURE_NOT_WORKING",
                 isAnonymous: false,
               })
             }
@@ -164,7 +165,7 @@ describe("_app layout — authenticated shell", () => {
       expect(mockSubmitBugReport).toHaveBeenCalledWith(
         expect.objectContaining({
           description: "Something broke",
-          bugType: "BUG",
+          bugType: "FEATURE_NOT_WORKING",
           isAnonymous: false,
           context: { activityId: null },
         }),

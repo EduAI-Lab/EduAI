@@ -42,7 +42,8 @@ vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
 // (same pattern used by CourseDetailPage.test.tsx in question-maker).
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
-  const tabsBox: { value: string; onValueChange: (v: string) => void } = {
+  type TabsBox = { value: string; onValueChange: (v: string) => void };
+  const tabsBox: TabsBox = {
     value: "",
     onValueChange: () => {},
   };
@@ -177,7 +178,13 @@ describe("admin route — rendering", () => {
   it("hides the AI settings tab content when the key status is not configured (no source tag)", async () => {
     wrap({
       adminSettings: {
-        status: { configured: false },
+        status: {
+          configured: false,
+          source: "NONE",
+          hasAdminOverride: false,
+          envConfigured: false,
+          updatedAt: null,
+        },
         aiPolicy: null,
         aiModels: [],
         aiPolicyAvailable: true,
@@ -195,7 +202,13 @@ describe("admin route — rendering", () => {
   it('shows a "From .env" badge for an ENV-sourced key', async () => {
     wrap({
       adminSettings: {
-        status: { configured: true, source: "ENV" },
+        status: {
+          configured: true,
+          source: "ENV",
+          hasAdminOverride: false,
+          envConfigured: true,
+          updatedAt: null,
+        },
         aiPolicy: null,
         aiModels: [],
         aiPolicyAvailable: true,

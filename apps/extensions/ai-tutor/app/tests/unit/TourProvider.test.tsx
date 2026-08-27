@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "~/hooks/useLocalUser";
+import type { Config as DriverConfig } from "driver.js";
 
 const { mockMarkTourCompleted, mockResolveSuggestedTourId, mockWaitForElement } = vi.hoisted(
   () => ({
@@ -82,8 +83,8 @@ vi.mock("~/lib/tours/tour-definitions", () => ({
 const mockHighlight = vi.fn();
 const mockDestroy = vi.fn();
 const mockGetActiveElement = vi.fn(() => null);
-let lastDriverConfig: Record<string, unknown> | null = null;
-const mockDriverFactory = vi.fn((config: Record<string, unknown>) => {
+let lastDriverConfig: DriverConfig | null = null;
+const mockDriverFactory = vi.fn((config: DriverConfig) => {
   lastDriverConfig = config;
   return {
     highlight: mockHighlight,

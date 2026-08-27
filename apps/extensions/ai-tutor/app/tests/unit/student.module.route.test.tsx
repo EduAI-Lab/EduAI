@@ -37,7 +37,7 @@ import StudentModuleLessons, { clientLoader } from "~/routes/student.module";
 const course = { id: 1, title: "Intro Course", code: "CS 101", isPublished: true };
 const module_ = { id: 5, title: "Module 1", description: "About the module", courseOfferingId: 1 };
 
-function wrap(overrides: Record<string, unknown> = {}) {
+function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
   const props = {
     loaderData: {
       course,
@@ -110,8 +110,8 @@ describe("student.module — rendering", () => {
   it("renders a card for each lesson with an order text", () => {
     wrap({
       lessons: [
-        { id: 1, title: "Lesson A", contentMd: "", isPublished: true },
-        { id: 2, title: "Lesson B", contentMd: "", isPublished: true },
+        { id: 1, title: "Lesson A", contentMd: "", position: 0, isPublished: true },
+        { id: 2, title: "Lesson B", contentMd: "", position: 1, isPublished: true },
       ],
       moduleOrder: 3,
     });
@@ -131,22 +131,25 @@ describe("student.module — rendering", () => {
           id: 1,
           title: "Lesson A",
           contentMd: "",
+          position: 0,
           isPublished: true,
-          progress: { completed: 2, total: 4 },
+          progress: { completed: 2, total: 4, percentage: 50 },
         },
         {
           id: 2,
           title: "Lesson B",
           contentMd: "",
+          position: 1,
           isPublished: true,
-          progress: { completed: 1, total: 2 },
+          progress: { completed: 1, total: 2, percentage: 50 },
         },
         {
           id: 3,
           title: "Lesson C",
           contentMd: "",
+          position: 2,
           isPublished: true,
-          progress: { completed: 0, total: 0 },
+          progress: { completed: 0, total: 0, percentage: 0 },
         },
       ],
     });
@@ -157,7 +160,16 @@ describe("student.module — rendering", () => {
   });
 
   it("falls back to a generic module title and description when unset", () => {
-    wrap({ module: { id: 5, title: "", description: undefined, courseOfferingId: 1 } });
+    wrap({
+      module: {
+        id: 5,
+        title: "",
+        description: undefined,
+        position: 0,
+        isPublished: true,
+        courseOfferingId: 1,
+      },
+    });
     expect(screen.getByRole("heading", { name: "Module" })).toBeInTheDocument();
   });
 });

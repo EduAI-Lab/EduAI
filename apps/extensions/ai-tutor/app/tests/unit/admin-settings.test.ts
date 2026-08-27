@@ -12,6 +12,7 @@ import {
   loadAdminSettingsData,
   normalizePolicy,
   type AdminAiModelOption,
+  type RawAdminAiModelPolicy,
 } from "~/lib/admin-settings";
 
 const {
@@ -193,8 +194,13 @@ describe("normalizePolicy", () => {
   });
 
   it("filters non-string entries from allowedTutorModelIds", () => {
+    // SAFETY: simulating a malformed wire payload the zod schema's `.catch`
+    // wouldn't have let through in practice, to exercise normalizePolicy's
+    // own defensive filtering of non-string entries.
     const result = normalizePolicy(
-      { allowedTutorModelIds: ["google:flash", 42, null, "openai:gpt"] },
+      {
+        allowedTutorModelIds: ["google:flash", 42, null, "openai:gpt"],
+      } as unknown as RawAdminAiModelPolicy,
       models,
     );
     expect(result.allowedTutorModelIds).toEqual(["google:flash", "openai:gpt"]);
@@ -221,14 +227,24 @@ describe("normalizePolicy", () => {
       5,
     );
     expect(normalizePolicy({ maxSupervisorIterations: 0 }, models).maxSupervisorIterations).toBe(1);
+    // SAFETY: simulating a malformed wire payload to exercise the
+    // Number.isFinite fallback below normalizePolicy's own Number() coercion.
     expect(
-      normalizePolicy({ maxSupervisorIterations: "nope" }, models).maxSupervisorIterations,
+      normalizePolicy(
+        { maxSupervisorIterations: "nope" } as unknown as RawAdminAiModelPolicy,
+        models,
+      ).maxSupervisorIterations,
     ).toBe(DEFAULT_POLICY.maxSupervisorIterations);
   });
 
   it("reads dualLoopEnabled when boolean, defaults true otherwise", () => {
     expect(normalizePolicy({ dualLoopEnabled: false }, models).dualLoopEnabled).toBe(false);
-    expect(normalizePolicy({ dualLoopEnabled: "false" }, models).dualLoopEnabled).toBe(true);
+    // SAFETY: simulating a malformed wire payload to exercise the
+    // typeof-boolean fallback to the default.
+    expect(
+      normalizePolicy({ dualLoopEnabled: "false" } as unknown as RawAdminAiModelPolicy, models)
+        .dualLoopEnabled,
+    ).toBe(true);
   });
 });
 

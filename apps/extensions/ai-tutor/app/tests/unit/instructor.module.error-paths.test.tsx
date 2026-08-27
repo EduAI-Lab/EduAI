@@ -4,7 +4,7 @@
  * create/edit/delete/import/publish-toggle, and the cross-course import
  * dialog's lazy course-list load (guarded re-fetch + error branch).
  */
-import { Children, cloneElement, isValidElement } from "react";
+import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
@@ -74,10 +74,12 @@ vi.mock("~/components/layout/CourseSwitcher", () => ({ CourseSwitcher: () => nul
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
-  const injectHandler = (children: unknown, onValueChange: unknown): unknown =>
-    Children.map(children as never, (child) => {
+  const injectHandler = (children: ReactNode, onValueChange: (value: string) => void): ReactNode =>
+    Children.map(children, (child) => {
       if (!isValidElement(child)) return child;
-      return cloneElement(child as never, { __onValueChange: onValueChange } as never);
+      return cloneElement(child as ReactElement<{ __onValueChange?: (value: string) => void }>, {
+        __onValueChange: onValueChange,
+      });
     });
 
   const Select = ({ value, onValueChange, disabled, children }: any) => (

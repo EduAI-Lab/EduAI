@@ -51,7 +51,6 @@ describe("CourseAnalyticsPanel", () => {
         averageRating: 4,
         feedbackCount: 2,
         difficultyLabel: "Easy",
-        difficultyScore: "Easy",
         activity: { id: 1, title: "Q1" },
       },
       {
@@ -59,7 +58,6 @@ describe("CourseAnalyticsPanel", () => {
         averageRating: 2,
         feedbackCount: 1,
         difficultyLabel: "Hard",
-        difficultyScore: "Hard",
         activity: { id: 2, title: "Q2" },
       },
     ];

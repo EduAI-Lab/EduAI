@@ -11,6 +11,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
 import type { Route } from "../../routes/+types/student.lesson";
+import type { Activity } from "~/lib/types";
 
 const mockSubmitAnswer = vi.fn();
 const mockSubmitActivityFeedback = vi.fn();
@@ -55,7 +56,7 @@ vi.mock("~/components/StudentAiChat", () => ({
 
 import StudentLessonPlayer from "~/routes/student.lesson";
 
-function makeActivity(overrides: Record<string, unknown> = {}) {
+function makeActivity(overrides: Partial<Activity> = {}) {
   return {
     id: 1,
     title: null,
