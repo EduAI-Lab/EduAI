@@ -93,22 +93,27 @@ export async function getEffectiveEduAiApiKey() {
 
 /**
  * Build the service-to-service Authorization header for a Core call, using the
- * *effective* EduAI service key (DB-stored admin override first, env fallback —
- * see `getEffectiveEduAiApiKey`). Returns `{ Authorization: "Bearer <key>" }`
- * when a key is configured, or `{}` when none is — callers spread/assign the
- * result and decide how to treat the unset case (Core's mutation guard rejects
- * a keyless cross-origin call, so a split-origin deploy with no key configured
- * still 403s; the caller logs a breadcrumb for that path).
+ * env `EDUAI_API_KEY`. This MUST be the same source Core validates against:
+ * Core's mutation guard checks the Bearer with `hasValidServiceKey`
+ * (`apps/core/app/lib/auth/service-key.server.ts`), which only ever compares it
+ * to Core's own `process.env.EDUAI_API_KEY` — it has no access to this service's
+ * DB. So the shared, agreeable source between the two deployments is the env
+ * key; presenting the DB-stored admin override here would 403 at Core whenever
+ * that override differs from Core's env (the mismatch #1647 review flagged).
+ * The env key is also what the ~15 inline `Bearer ${process.env.EDUAI_API_KEY}`
+ * reads in `eduaiClient.js` already send, so this keeps one rule for Core auth.
  *
- * TODO(#1647-followup): the ~5 inline `Bearer ${process.env.EDUAI_API_KEY}`
- * reads in `eduaiClient.js` predate this helper and throw synchronously on an
- * unset key. Migrating them here would (a) switch them to the effective key and
- * (b) change their unset contract from "throw" to "omit". That is a behavior
- * change per call site, so it is intentionally left for a focused follow-up
- * rather than folded into this fix.
+ * The DB override (`getEffectiveEduAiApiKey`) still governs this service's own
+ * key surfacing (status/model listing); it is deliberately NOT used for
+ * authenticating *to* Core, which no runtime override can rotate on its own.
+ *
+ * Returns `{ Authorization: "Bearer <key>" }` when the env key is set, or `{}`
+ * when it is not — callers spread/assign the result and decide how to treat the
+ * unset case (Core's mutation guard rejects a keyless cross-origin call, so a
+ * split-origin deploy with no key still 403s; the caller logs a breadcrumb).
  */
-export async function serviceAuthHeader() {
-  const key = await getEffectiveEduAiApiKey();
+export function serviceAuthHeader() {
+  const key = process.env.EDUAI_API_KEY || null;
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 

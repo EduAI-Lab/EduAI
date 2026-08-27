@@ -107,7 +107,6 @@ const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try
 const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
 const SAFE_AI_LOG_EVENTS = new Set([
   "missing_session_cookie",
-  "missing_service_key",
   "missing_user_api_key",
   "invalid_model_id",
   "upstream_retry",
@@ -391,12 +390,13 @@ async function callEduAI({
   // cookie for user identity / rate-limiting. Omit the header when the key is
   // unset so same-origin dev stacks are unaffected.
   //
-  // Resolve the *effective* key (DB-stored admin override first, env fallback)
-  // so a deploy keyed only via the encrypted system-setting — env unset — still
-  // sends the Bearer instead of silently omitting it and 403-ing (#1647).
-  const authHeader = await serviceAuthHeader();
+  // The Bearer is the env `EDUAI_API_KEY` — the only source Core's guard
+  // validates against (`hasValidServiceKey` compares Core's own env key). A DB
+  // admin override can't authenticate here because Core never sees it, so
+  // `serviceAuthHeader` deliberately sends the shared env key (#1647 review).
+  const authHeader = serviceAuthHeader();
   if (!authHeader.Authorization) {
-    // No effective service key. Same-origin dev stacks are fine (the guard
+    // No env service key. Same-origin dev stacks are fine (the guard
     // never triggers), but a split-origin deploy that reaches here will 403 at
     // Core's mutation guard — leave a breadcrumb so that misconfig is
     // diagnosable. The key itself is never logged.
