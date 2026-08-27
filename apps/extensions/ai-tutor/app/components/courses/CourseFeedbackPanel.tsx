@@ -61,6 +61,10 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   };
 
   const clearFilters = () => {
+    // Clearing the inputs must clear their validation message too: with no
+    // applied filter to change, no reload follows to reset it, and the panel
+    // was left describing a malformed Activity ID the reader can see is gone.
+    setError(null);
     setActivityIdFilter("");
     setStudentIdFilter("");
     setAppliedActivityId(undefined);
