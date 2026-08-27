@@ -516,6 +516,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       }
       const forwardedApiKey = apiKey || undefined;
 
+      // #1645: forward every BYOK key the student holds — not only the selected
+      // model's — so Core can fall back to another keyed provider when the UBC
+      // fleet is down. A keyless UBC send still validates (the map is optional).
+      const heldApiKeys = Object.fromEntries(
+        Object.entries(providerKeys).filter(([, value]) => Boolean(value)),
+      );
+      const forwardedApiKeys = Object.keys(heldApiKeys).length ? heldApiKeys : undefined;
+
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
@@ -551,6 +559,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               message,
               modelId,
               apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -565,6 +574,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               studentAnswer: normalizedStudentAnswer,
               modelId,
               apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -579,6 +589,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               message,
               modelId,
               apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },

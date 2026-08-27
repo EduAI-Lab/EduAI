@@ -327,6 +327,85 @@ describe("resolveTutorModelSelection", () => {
       status: 403,
     });
   });
+
+  // #1645: the picker merges BYOK models a held key unlocks. The route must
+  // authorize exactly those, so a picked BYOK model isn't 403'd at send time.
+  it("admits a keyed BYOK model the catalog never lists (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+    ]);
+
+    await expect(
+      resolveTutorModelSelection("openai:gpt-4o-mini", new Set(["openai"])),
+    ).resolves.toBe("openai:gpt-4o-mini");
+  });
+
+  it("rejects a BYOK model when the student holds no key for its provider (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+    ]);
+
+    await expect(resolveTutorModelSelection("openai:gpt-4o-mini", new Set())).rejects.toMatchObject(
+      { status: 403 },
+    );
+  });
+
+  it("still rejects a catalog model left admin-only even when its provider is keyed (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    // openai:gpt-4o is in the catalog but NOT allow-listed → admin-only. A
+    // personal key must not reopen a model the policy named and closed.
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+      catalogModel({ id: "2", modelId: "gpt-4o", name: "GPT-4o", provider: "openai" }),
+    ]);
+
+    await expect(
+      resolveTutorModelSelection("openai:gpt-4o", new Set(["openai"])),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("never admits a UBC-hosted model through the BYOK path (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+    ]);
+
+    // vllm is server-hosted: it routes through the allow-list, never the
+    // key-gated BYOK path, so a spurious "vllm key" can't admit it.
+    await expect(
+      resolveTutorModelSelection("vllm:llama-3", new Set(["vllm"])),
+    ).rejects.toMatchObject({ status: 403 });
+  });
 });
 
 describe("resolveSupervisorSettings", () => {

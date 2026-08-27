@@ -106,6 +106,10 @@ function resolveProviderApiKeys({
     supervisorApiKey: supervisorProvider ? keys[supervisorProvider] || null : null,
     tutorProvider,
     supervisorProvider,
+    // #1645: the complete provider -> secret map. Forwarded verbatim to Core so
+    // its fleet-down fallback can pick ANY keyed BYOK provider, not just the one
+    // backing the selected model.
+    allKeys: keys,
   };
 }
 
@@ -330,6 +334,10 @@ async function callEduAI({
   modelId = null,
   cookie,
   userApiKey,
+  // #1645: every BYOK secret the student holds (provider -> key), so Core can
+  // fall back to another keyed provider when the UBC fleet is down. Falls back
+  // to just the selected provider's `userApiKey` when omitted.
+  providerApiKeys = null,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -370,17 +378,24 @@ async function callEduAI({
   }
 
   const userMessageId = messageId || randomUUID();
-  // Only forward a per-provider key when the student actually holds one; for
-  // UBC-hosted providers Core supplies the key from env, so an empty map lets
-  // it fall through to its own deployment settings.
-  const apiKeys = userApiKey
-    ? {
-        [provider]: {
-          apiKey: userApiKey,
-          isEnabled: true,
-        },
-      }
-    : {};
+  // Forward EVERY held BYOK key, not only the selected provider's, so Core's
+  // fleet-down fallback can switch to another keyed provider (#1645). The
+  // selected provider's `userApiKey` is still included even if it wasn't in the
+  // map. For UBC-hosted providers with no keys held at all this stays empty, so
+  // Core falls through to its own deployment settings.
+  const heldKeys = {};
+  if (providerApiKeys && typeof providerApiKeys === "object" && !Array.isArray(providerApiKeys)) {
+    for (const [providerId, secret] of Object.entries(providerApiKeys)) {
+      if (typeof secret === "string" && secret.trim()) heldKeys[providerId] = secret;
+    }
+  }
+  if (typeof userApiKey === "string" && userApiKey.trim() && !heldKeys[provider]) {
+    heldKeys[provider] = userApiKey;
+  }
+  const apiKeys = {};
+  for (const [providerId, secret] of Object.entries(heldKeys)) {
+    apiKeys[providerId] = { apiKey: secret, isEnabled: true };
+  }
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
   const trimmedCourseId = trimNonEmpty(courseId);
@@ -580,6 +595,7 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  providerApiKeys = null,
   courseCode = null,
   courseId = null,
   signal,
@@ -617,6 +633,7 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      providerApiKeys,
       courseCode,
       courseId,
       signal,
@@ -881,6 +898,7 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.supervisorApiKey,
+        providerApiKeys: context.providerApiKeys,
         courseCode: context.courseCode,
         courseId: context.courseId,
         signal: context.signal,
@@ -987,6 +1005,7 @@ async function generateWithSupervisor({
     cookie,
     userApiKey: resolvedKeys.tutorApiKey,
     supervisorApiKey: resolvedKeys.supervisorApiKey,
+    providerApiKeys: resolvedKeys.allKeys,
     chatId,
     dualLoopEnabled: dualLoopEnabled && supervisionAvailable,
     maxSupervisorIterations,
@@ -1011,6 +1030,7 @@ async function generateWithSupervisor({
       modelId: effectiveTutorModelId,
       cookie,
       userApiKey: resolvedKeys.tutorApiKey,
+      providerApiKeys: resolvedKeys.allKeys,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
       // the same turn; only the original turn reuses the caller's messageId.

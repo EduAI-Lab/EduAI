@@ -306,6 +306,32 @@ async function loadActivityForChat(activityId) {
   });
 }
 
+/**
+ * The set of providers a chat request actually holds a key for: every provider
+ * in the `apiKeys` map plus the selected model's provider when a legacy single
+ * `apiKey` is present. Used to gate BYOK model admission (#1645) — a keyless
+ * request admits no BYOK model, so the check fails closed.
+ */
+export function collectKeyedProviders(payload) {
+  const providers = new Set();
+  const map = payload?.apiKeys;
+  if (map && typeof map === "object" && !Array.isArray(map)) {
+    for (const [provider, value] of Object.entries(map)) {
+      const secret = typeof value === "string" ? value : value?.apiKey;
+      if (typeof secret === "string" && secret.trim()) providers.add(provider);
+    }
+  }
+  if (
+    typeof payload?.apiKey === "string" &&
+    payload.apiKey.trim() &&
+    typeof payload?.modelId === "string"
+  ) {
+    const provider = payload.modelId.split(":")[0];
+    if (provider) providers.add(provider);
+  }
+  return providers;
+}
+
 async function handleAiInteraction({
   req,
   res,
@@ -378,7 +404,12 @@ async function handleAiInteraction({
     // when policy allows, otherwise falls back to the policy default.
     const { dualLoopEnabled, maxSupervisorIterations, supervisorModelId } =
       await resolveSupervisorSettings();
-    const tutorModelId = await resolveTutorModelSelection(payload.modelId);
+    // #1645: the providers the student actually holds a key for. A BYOK model
+    // the admin allow-list omits is admitted only when its provider is keyed,
+    // so picker admission (which merges keyed BYOK models) and route
+    // authorization agree instead of the route 403ing a picked model.
+    const keyedProviders = collectKeyedProviders(payload);
+    const tutorModelId = await resolveTutorModelSelection(payload.modelId, keyedProviders);
     const cookie = getEduAiCookieForRequest(req);
     const messageId = payload.messageId || randomUUID();
 

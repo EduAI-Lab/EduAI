@@ -88,6 +88,35 @@ describe("UBC-hosted models need no BYOK key (#1645)", () => {
     expect(bodies.every((body) => JSON.stringify(body.apiKeys) === "{}")).toBe(true);
   });
 
+  it("forwards every held BYOK key to Core so a UBC-hosted request can fall back (#1645)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ content: "Try isolating x." }) }),
+    );
+
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
+    const result = await generateGuideResponse({
+      activity: activity(),
+      knowledgeLevel: "beginner",
+      message: "Give me a hint",
+      studentAnswer: null,
+      tutorModelId: "vllm:llama-3",
+      dualLoopEnabled: false,
+      cookie: "session=canary",
+      // The student selected a UBC-hosted model but holds an OpenAI key. The key
+      // must still reach Core so its fleet-down fallback can switch to it — the
+      // selected provider (vllm) needs none of its own.
+      apiKeys: { openai: "sk-openai-canary" },
+    });
+
+    expect(result.message).toBe("Try isolating x.");
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.model).toBe("vllm:llama-3");
+    expect(body.apiKeys).toEqual({ openai: { apiKey: "sk-openai-canary", isEnabled: true } });
+  });
+
   it("still fails closed for a BYOK tutor model with no key", async () => {
     vi.stubGlobal("fetch", vi.fn());
 
