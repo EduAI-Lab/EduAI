@@ -2816,7 +2816,11 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
             })
           : null;
-        if (structuredAssistOutput && requestedAssistStageCount != null && !structuredDraft) {
+        // A structured Assist candidate must never fall back to raw JSON or
+        // provider Markdown before Dean sees the draft. If constrained
+        // decoding was ignored or malformed, fail closed rather than letting
+        // the oversight model audit a response outside the canonical shape.
+        if (structuredAssistOutput && !structuredDraft) {
           throw new Error("Provider returned invalid structured Assist output");
         }
         draft = structuredDraft ?? providerDraft;

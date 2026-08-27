@@ -300,6 +300,100 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(await res.text()).toContain("Want to continue?");
   });
 
+  it("normalizes valid structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("**Top summary**"),
+      }),
+    );
+    expect(auditAndMaybeRewrite.mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("normalizes valid structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("### Step ladder"),
+      }),
+    );
+    expect(auditAndMaybeRewrite.mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("rejects malformed structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
+  it("rejects malformed structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
   it("returns 500 when overseen persistence fails instead of showing unsaved text", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
