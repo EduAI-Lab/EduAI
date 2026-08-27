@@ -168,7 +168,9 @@ describe("Canvas delegated-read audit events (#1084)", () => {
 
     const res = await loader(loaderArgs("http://localhost/api/canvas/quizzes?canvasCourseId=1234"));
 
-    expect(res.status).toBe(400);
+    // A Canvas 403 keeps its status so a caller can tell a per-resource
+    // permission failure apart from a bad token (#1509 review).
+    expect(res.status).toBe(403);
     const event = readEvent();
     expect(event).toMatchObject({
       outcome: "FAILURE",
@@ -176,6 +178,22 @@ describe("Canvas delegated-read audit events (#1084)", () => {
       entityId: "1234",
     });
     expect(event.details).toMatchObject({ canvasStatus: 403, errorType: "CanvasApiErrorMock" });
+  });
+
+  it.each([
+    ["a permission denial", 403, 403],
+    ["an over-budget payload", 413, 413],
+    ["an invalid token", 401, 400],
+    ["an unreachable Canvas", 502, 502],
+    ["any other Canvas rejection", 404, 400],
+  ])("maps %s (Canvas %i) to HTTP %i on the response", async (_label, canvasStatus, expected) => {
+    vi.mocked(listCanvasQuizzes).mockRejectedValue(
+      new CanvasApiErrorMock("Canvas said no", canvasStatus),
+    );
+
+    const res = await loader(loaderArgs("http://localhost/api/canvas/quizzes?canvasCourseId=1234"));
+
+    expect(res.status).toBe(expected);
   });
 
   it("never records the Canvas token or the Canvas response payload", async () => {

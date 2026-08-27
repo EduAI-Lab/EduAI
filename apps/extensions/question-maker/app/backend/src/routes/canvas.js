@@ -32,9 +32,16 @@ import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { CANVAS_ROLES } from "../middleware/roles.js";
 import { requireCourseAccess } from "../middleware/courseAccess.js";
 import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
+import { canvasRequestContext } from "../middleware/canvasRequestContext.js";
 import { prisma } from "../config/database.js";
 
 const router = express.Router();
+
+// Core proxy calls inherit this signal, so a browser disconnect cancels the
+// in-flight QM→Core request (and with it Core's Canvas egress) instead of
+// letting a long import run on for a caller that has gone away. Mounted as
+// middleware to keep the service functions' argument contracts unchanged.
+router.use(canvasRequestContext);
 
 function respondCoreError(res, err) {
   const status = Number.isInteger(err?.status) ? err.status : 502;

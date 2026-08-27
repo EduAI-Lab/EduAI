@@ -82,6 +82,18 @@ async function loadCoreCanvasIntegration(cookie) {
 }
 
 /**
+ * True only for Core's explicit per-resource Canvas permission failure. A
+ * bare 403 without the code, a 401, a 502, or a transport error are all
+ * different problems and must not be treated as a recoverable one.
+ */
+function isCanvasPermissionDenied(error) {
+  return (
+    error?.status === 403 &&
+    (error.code === "CANVAS_PERMISSION_DENIED" || error.body?.error === "CANVAS_PERMISSION_DENIED")
+  );
+}
+
+/**
  * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message and keeps
  * every other failure's own status/code: Core proxy errors carry the upstream
  * status/body/code, and the errors raised above already carry the status that
@@ -741,32 +753,37 @@ export const importQuizFromCanvas = async (
       // Declared outside the try so the catch can still describe the question it skipped.
       let canvasQuestion = listItem;
 
-      try {
-        // Fetch full question by ID so we get the answers array (list endpoint often returns answers: null)
-        if (questionId != null) {
-          try {
-            canvasQuestion = await getCanvasQuizQuestionById(
-              cookie,
-              canvasCourseId,
-              quizId,
-              questionId,
-            );
-            // Preserve position from list if full question doesn't have it
-            if (canvasQuestion.position == null && listItem.position != null) {
-              canvasQuestion = { ...canvasQuestion, position: listItem.position };
-            }
-            console.log(
-              `${DEBUG_PREFIX} importQuizFromCanvas: after getById question ${i + 1}: answers length=${canvasQuestion?.answers?.length ?? "N/A"}`,
-            );
-          } catch (fetchErr) {
-            console.log(
-              `${DEBUG_PREFIX} importQuizFromCanvas: getCanvasQuizQuestionById failed for id=${questionId}: ${fetchErr.message}; using list item`,
-            );
-            // Fall back to list item if per-question fetch fails (e.g. permissions)
-            canvasQuestion = listItem;
+      // Fetch full question by ID so we get the answers array (list endpoint
+      // often returns answers: null). Deliberately outside the conversion
+      // try/catch below: a question the caller may not read is recoverable and
+      // falls back to the list item, but a 401, a 502, or a transport failure
+      // means the import cannot be trusted and must abort with its Core
+      // metadata intact — not be filed away as one "skipped question".
+      if (questionId != null) {
+        try {
+          canvasQuestion = await getCanvasQuizQuestionById(
+            cookie,
+            canvasCourseId,
+            quizId,
+            questionId,
+          );
+          // Preserve position from list if full question doesn't have it
+          if (canvasQuestion.position == null && listItem.position != null) {
+            canvasQuestion = { ...canvasQuestion, position: listItem.position };
           }
+          console.log(
+            `${DEBUG_PREFIX} importQuizFromCanvas: after getById question ${i + 1}: answers length=${canvasQuestion?.answers?.length ?? "N/A"}`,
+          );
+        } catch (fetchErr) {
+          if (!isCanvasPermissionDenied(fetchErr)) throw fetchErr;
+          console.log(
+            `${DEBUG_PREFIX} importQuizFromCanvas: getCanvasQuizQuestionById denied for id=${questionId}: ${fetchErr.message}; using list item`,
+          );
+          canvasQuestion = listItem;
         }
+      }
 
+      try {
         // Try to convert the question - this will throw if unsupported
         const converted = convertCanvasQuestionToVariant(canvasQuestion);
         console.log(
@@ -864,10 +881,7 @@ export const importQuizFromCanvas = async (
       sectionId: section.id,
     };
   } catch (error) {
-    if (error.message === NOT_CONNECTED_MESSAGE) {
-      throw new Error(`Failed to import quiz from Canvas: ${NOT_CONNECTED_MESSAGE}`);
-    }
-    throw new Error(`Failed to import quiz from Canvas: ${error.message}`);
+    rethrowCoreCanvasError(error, "import quiz from Canvas");
   }
 };
 

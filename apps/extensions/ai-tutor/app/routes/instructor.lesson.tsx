@@ -1170,265 +1170,269 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               <ActivityDetailsCard activity={activity} />
                             )}
 
-                            <div className="grid items-start gap-4 lg:grid-cols-2">
-                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
-                                    <IconTag className="size-3.5" aria-hidden="true" />
-                                  </span>
-                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Topics
-                                  </span>
-                                </div>
-                                {topics.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    Define course topics to tag this activity.
-                                  </p>
-                                ) : (
-                                  <div className="space-y-3">
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-main-topic`}
-                                        className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
-                                      >
-                                        Main topic
-                                      </Label>
-                                      <Select
-                                        value={mainTopicId !== "" ? String(mainTopicId) : undefined}
-                                        onValueChange={(value) =>
-                                          handleActivityMainTopicChange(activity.id, value)
-                                        }
-                                        disabled={loadingTopics || isUpdatingTopics}
-                                      >
-                                        <SelectTrigger
-                                          id={`activity-${activity.id}-main-topic`}
-                                          className="w-full"
-                                        >
-                                          <SelectValue placeholder="Select a topic…" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {topics.map((topic) => (
-                                            <SelectItem key={topic.id} value={String(topic.id)}>
-                                              {topic.name}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                      <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                                        Secondary topics
-                                      </span>
-                                      <MultiSelect
-                                        options={topics
-                                          .filter((topic) => topic.id !== mainTopicId)
-                                          .map((topic) => ({
-                                            value: String(topic.id),
-                                            label: topic.name,
-                                          }))}
-                                        value={activity.secondaryTopics.map((topic) =>
-                                          String(topic.id),
-                                        )}
-                                        onValueChange={(nextValues) =>
-                                          handleActivitySecondaryChange(activity.id, nextValues)
-                                        }
-                                        disabled={loadingTopics}
-                                        placeholder="Add secondary topics…"
-                                        searchPlaceholder="Search topics…"
-                                        emptyText="No other topics."
-                                        className="w-full"
-                                      />
-                                    </div>
+                            <PermissionGate allow={perms.canManageContent}>
+                              <div className="grid items-start gap-4 lg:grid-cols-2">
+                                <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
+                                      <IconTag className="size-3.5" aria-hidden="true" />
+                                    </span>
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                      Topics
+                                    </span>
                                   </div>
-                                )}
-                                {showTopicSaving && isUpdatingTopics && (
-                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                    <Spinner size="xs" />
-                                    Saving…
-                                  </span>
-                                )}
-                              </section>
+                                  {topics.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      Define course topics to tag this activity.
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-main-topic`}
+                                          className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
+                                        >
+                                          Main topic
+                                        </Label>
+                                        <Select
+                                          value={
+                                            mainTopicId !== "" ? String(mainTopicId) : undefined
+                                          }
+                                          onValueChange={(value) =>
+                                            handleActivityMainTopicChange(activity.id, value)
+                                          }
+                                          disabled={loadingTopics || isUpdatingTopics}
+                                        >
+                                          <SelectTrigger
+                                            id={`activity-${activity.id}-main-topic`}
+                                            className="w-full"
+                                          >
+                                            <SelectValue placeholder="Select a topic…" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {topics.map((topic) => (
+                                              <SelectItem key={topic.id} value={String(topic.id)}>
+                                                {topic.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                                          Secondary topics
+                                        </span>
+                                        <MultiSelect
+                                          options={topics
+                                            .filter((topic) => topic.id !== mainTopicId)
+                                            .map((topic) => ({
+                                              value: String(topic.id),
+                                              label: topic.name,
+                                            }))}
+                                          value={activity.secondaryTopics.map((topic) =>
+                                            String(topic.id),
+                                          )}
+                                          onValueChange={(nextValues) =>
+                                            handleActivitySecondaryChange(activity.id, nextValues)
+                                          }
+                                          disabled={loadingTopics}
+                                          placeholder="Add secondary topics…"
+                                          searchPlaceholder="Search topics…"
+                                          emptyText="No other topics."
+                                          className="w-full"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {showTopicSaving && isUpdatingTopics && (
+                                    <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                      <Spinner size="xs" />
+                                      Saving…
+                                    </span>
+                                  )}
+                                </section>
 
-                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-                                    <IconSparkles className="size-3.5" aria-hidden="true" />
-                                  </span>
-                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    AI study buddy
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {(
-                                    [
-                                      {
-                                        key: "teach",
-                                        label: "Teach me",
-                                        icon: IconSchool,
-                                        enabled: activity.enableTeachMode,
-                                      },
-                                      {
-                                        key: "guide",
-                                        label: "Guide me",
-                                        icon: IconRoute,
-                                        enabled: activity.enableGuideMode,
-                                      },
-                                      {
-                                        key: "custom",
-                                        label: "Custom prompt",
-                                        icon: IconWand,
-                                        enabled: activity.enableCustomMode,
-                                      },
-                                    ] as const
-                                  ).map((mode) => {
-                                    const ModeIcon = mode.icon;
-                                    return (
-                                      <button
-                                        key={mode.key}
-                                        type="button"
-                                        disabled={isUpdatingModes}
-                                        aria-pressed={mode.enabled}
-                                        onClick={() =>
-                                          handleActivityModeChange(
-                                            activity.id,
-                                            mode.key,
-                                            !mode.enabled,
-                                          )
-                                        }
-                                        className={cn(
-                                          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                                          mode.enabled
-                                            ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
-                                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                                          isUpdatingModes && "opacity-60",
-                                        )}
-                                      >
-                                        <ModeIcon className="size-3.5" aria-hidden="true" />
-                                        {mode.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {modeError && (
-                                  <p role="alert" className="text-[0.75rem] text-destructive">
-                                    {modeError}
-                                  </p>
-                                )}
-                                {showModeSaving && isUpdatingModes && (
-                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
-                                    <Spinner size="xs" />
-                                    Saving…
-                                  </span>
-                                )}
-                                {isCustomEnabled && (
-                                  <div className="mt-3 space-y-3">
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-custom-title`}
-                                        className="text-xs font-semibold text-foreground"
-                                      >
-                                        Button title (shown to students, max 20 chars)
-                                      </Label>
-                                      <Input
-                                        id={`activity-${activity.id}-custom-title`}
-                                        type="text"
-                                        value={
-                                          titleDrafts[activity.id] ??
-                                          activity.customPromptTitle ??
-                                          ""
-                                        }
-                                        onChange={(event) => {
-                                          const value = event.target.value.slice(0, 20);
-                                          setTitleDrafts((prev) => ({
-                                            ...prev,
-                                            [activity.id]: value,
-                                          }));
-                                          setPromptSaved((saved) => ({
-                                            ...saved,
-                                            [activity.id]: false,
-                                          }));
-                                        }}
-                                        placeholder="e.g., Explain simply"
-                                        maxLength={20}
-                                        disabled={isSavingPrompt}
-                                      />
-                                      <div className="text-[0.65rem] text-muted-foreground">
+                                <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                                      <IconSparkles className="size-3.5" aria-hidden="true" />
+                                    </span>
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                      AI study buddy
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(
+                                      [
                                         {
-                                          (
+                                          key: "teach",
+                                          label: "Teach me",
+                                          icon: IconSchool,
+                                          enabled: activity.enableTeachMode,
+                                        },
+                                        {
+                                          key: "guide",
+                                          label: "Guide me",
+                                          icon: IconRoute,
+                                          enabled: activity.enableGuideMode,
+                                        },
+                                        {
+                                          key: "custom",
+                                          label: "Custom prompt",
+                                          icon: IconWand,
+                                          enabled: activity.enableCustomMode,
+                                        },
+                                      ] as const
+                                    ).map((mode) => {
+                                      const ModeIcon = mode.icon;
+                                      return (
+                                        <button
+                                          key={mode.key}
+                                          type="button"
+                                          disabled={isUpdatingModes}
+                                          aria-pressed={mode.enabled}
+                                          onClick={() =>
+                                            handleActivityModeChange(
+                                              activity.id,
+                                              mode.key,
+                                              !mode.enabled,
+                                            )
+                                          }
+                                          className={cn(
+                                            "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                                            mode.enabled
+                                              ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                                              : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                            isUpdatingModes && "opacity-60",
+                                          )}
+                                        >
+                                          <ModeIcon className="size-3.5" aria-hidden="true" />
+                                          {mode.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {modeError && (
+                                    <p role="alert" className="text-[0.75rem] text-destructive">
+                                      {modeError}
+                                    </p>
+                                  )}
+                                  {showModeSaving && isUpdatingModes && (
+                                    <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
+                                      <Spinner size="xs" />
+                                      Saving…
+                                    </span>
+                                  )}
+                                  {isCustomEnabled && (
+                                    <div className="mt-3 space-y-3">
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-custom-title`}
+                                          className="text-xs font-semibold text-foreground"
+                                        >
+                                          Button title (shown to students, max 20 chars)
+                                        </Label>
+                                        <Input
+                                          id={`activity-${activity.id}-custom-title`}
+                                          type="text"
+                                          value={
                                             titleDrafts[activity.id] ??
                                             activity.customPromptTitle ??
                                             ""
-                                          ).length
-                                        }
-                                        /20 characters
-                                      </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-custom-prompt`}
-                                        className="text-xs font-semibold text-foreground"
-                                      >
-                                        Custom AI prompt
-                                      </Label>
-                                      <Textarea
-                                        id={`activity-${activity.id}-custom-prompt`}
-                                        value={promptDraft}
-                                        onChange={(event) =>
-                                          setPromptDrafts((prev) => {
+                                          }
+                                          onChange={(event) => {
+                                            const value = event.target.value.slice(0, 20);
+                                            setTitleDrafts((prev) => ({
+                                              ...prev,
+                                              [activity.id]: value,
+                                            }));
                                             setPromptSaved((saved) => ({
                                               ...saved,
                                               [activity.id]: false,
                                             }));
-                                            return {
-                                              ...prev,
-                                              [activity.id]: event.target.value,
-                                            };
-                                          })
-                                        }
-                                        placeholder="Write a custom prompt the AI should follow for this activity…"
-                                        rows={3}
-                                        disabled={isSavingPrompt}
-                                      />
-                                      <div className="text-[0.65rem] text-muted-foreground">
-                                        Tip: Use{" "}
-                                        <code className="rounded bg-muted px-1 text-foreground">
-                                          [INSERT TOPIC HERE]
-                                        </code>{" "}
-                                        and{" "}
-                                        <code className="rounded bg-muted px-1 text-foreground">
-                                          [ENTER KNOWLEDGE LEVEL]
-                                        </code>{" "}
-                                        as placeholders.
+                                          }}
+                                          placeholder="e.g., Explain simply"
+                                          maxLength={20}
+                                          disabled={isSavingPrompt}
+                                        />
+                                        <div className="text-[0.65rem] text-muted-foreground">
+                                          {
+                                            (
+                                              titleDrafts[activity.id] ??
+                                              activity.customPromptTitle ??
+                                              ""
+                                            ).length
+                                          }
+                                          /20 characters
+                                        </div>
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-custom-prompt`}
+                                          className="text-xs font-semibold text-foreground"
+                                        >
+                                          Custom AI prompt
+                                        </Label>
+                                        <Textarea
+                                          id={`activity-${activity.id}-custom-prompt`}
+                                          value={promptDraft}
+                                          onChange={(event) =>
+                                            setPromptDrafts((prev) => {
+                                              setPromptSaved((saved) => ({
+                                                ...saved,
+                                                [activity.id]: false,
+                                              }));
+                                              return {
+                                                ...prev,
+                                                [activity.id]: event.target.value,
+                                              };
+                                            })
+                                          }
+                                          placeholder="Write a custom prompt the AI should follow for this activity…"
+                                          rows={3}
+                                          disabled={isSavingPrompt}
+                                        />
+                                        <div className="text-[0.65rem] text-muted-foreground">
+                                          Tip: Use{" "}
+                                          <code className="rounded bg-muted px-1 text-foreground">
+                                            [INSERT TOPIC HERE]
+                                          </code>{" "}
+                                          and{" "}
+                                          <code className="rounded bg-muted px-1 text-foreground">
+                                            [ENTER KNOWLEDGE LEVEL]
+                                          </code>{" "}
+                                          as placeholders.
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          onClick={() => handleCustomPromptSave(activity)}
+                                          disabled={isSavingPrompt}
+                                        >
+                                          {isSavingPrompt
+                                            ? "Saving…"
+                                            : isPromptSaved
+                                              ? "Saved"
+                                              : "Save prompt"}
+                                        </Button>
+                                        {promptError && (
+                                          <span className="text-[0.75rem] text-destructive">
+                                            {promptError}
+                                          </span>
+                                        )}
+                                        {!promptError && isSavingPrompt && (
+                                          <span className="text-[0.75rem] text-primary-text">
+                                            Saving prompt…
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={() => handleCustomPromptSave(activity)}
-                                        disabled={isSavingPrompt}
-                                      >
-                                        {isSavingPrompt
-                                          ? "Saving…"
-                                          : isPromptSaved
-                                            ? "Saved"
-                                            : "Save prompt"}
-                                      </Button>
-                                      {promptError && (
-                                        <span className="text-[0.75rem] text-destructive">
-                                          {promptError}
-                                        </span>
-                                      )}
-                                      {!promptError && isSavingPrompt && (
-                                        <span className="text-[0.75rem] text-primary-text">
-                                          Saving prompt…
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </section>
-                            </div>
+                                  )}
+                                </section>
+                              </div>
+                            </PermissionGate>
                           </div>
                         </Card>
                       )}

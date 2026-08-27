@@ -2,7 +2,10 @@
  * Unit tests for Core Canvas proxy helpers in coreApiService.
  * Mocks global fetch — no live Core required.
  */
+import { EventEmitter } from "node:events";
 import { vi, describe, it, expect, afterEach } from "vitest";
+
+import { canvasRequestContext } from "../../src/middleware/canvasRequestContext.js";
 
 vi.mock("../../src/config/settings.js", () => {
   const cfg = {
@@ -212,5 +215,86 @@ describe("Canvas proxy auth failures", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+});
+
+describe("Canvas proxy cancellation (#1509 review)", () => {
+  /**
+   * Runs `fn` inside the real `canvasRequestContext`, so the proxy sees the
+   * same caller-disconnect signal it would in the Express canvas router.
+   */
+  function runInCanvasRequest(fn) {
+    const req = Object.assign(new EventEmitter(), { complete: true, aborted: false });
+    const res = Object.assign(new EventEmitter(), { writableEnded: false });
+    let promise;
+    canvasRequestContext(req, res, () => {
+      promise = fn(req);
+    });
+    return { req, promise };
+  }
+
+  /** Simulates the browser going away mid-request. */
+  function disconnect(req) {
+    req.aborted = true;
+    req.emit("aborted");
+  }
+
+  it("hands the caller-disconnect signal to the Core fetch and aborts it on disconnect", async () => {
+    let resolveFetch;
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { req, promise } = runInCanvasRequest(() => proxyCoreListQuizzes(COOKIE, 42));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const { signal } = fetchMock.mock.calls[0][1];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
+
+    disconnect(req);
+    expect(signal.aborted).toBe(true);
+
+    resolveFetch(ok({ success: true, data: [] }));
+    await promise.catch(() => {});
+  });
+
+  it("reports a disconnect as CANVAS_REQUEST_CANCELLED instead of a Core failure", async () => {
+    let onFetch;
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          onFetch = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          init.signal.addEventListener("abort", () => onFetch(), { once: true });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { req, promise } = runInCanvasRequest(() => proxyCoreListQuizzes(COOKIE, 42));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    disconnect(req);
+
+    await expect(promise).rejects.toMatchObject({
+      status: 499,
+      code: "CANVAS_REQUEST_CANCELLED",
+      body: { error: "CANVAS_REQUEST_CANCELLED" },
+    });
+  });
+
+  it("does not open a Core socket when the caller has already gone away", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { promise } = runInCanvasRequest((req) => {
+      disconnect(req);
+      return proxyCoreListQuizzes(COOKIE, 42);
+    });
+
+    await expect(promise).rejects.toMatchObject({ code: "CANVAS_REQUEST_CANCELLED" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

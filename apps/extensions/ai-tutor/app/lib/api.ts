@@ -202,6 +202,14 @@ export interface LessonContext {
 export interface LessonBreadcrumb extends LessonContext {
   module: ModuleDetail;
   course: Course;
+  /**
+   * The caller's enrollment role for THIS lesson's course, or `null` when they
+   * have no learner enrollment (elevated/instructor access, or unresolved). Use
+   * this — never the global `/api/me` effective role — to gate course-scoped
+   * capabilities such as answer submission: a user who is a TA here but a
+   * STUDENT in another course must be withheld here yet permitted there (#1626).
+   */
+  viewerEnrollmentRole: EnrollmentRole | null;
 }
 
 /**
@@ -363,6 +371,9 @@ export interface DashboardStats {
   openBugReports?: number;
   totalBugReports?: number;
   pendingSubmissions?: number;
+  /** Ungraded submissions across the caller's teaching/assisting courses — the
+   * grading queue depth surfaced on the instructor/TA dashboards (#1626). */
+  submissionsToReview?: number;
 }
 
 export interface AiTraceRow {

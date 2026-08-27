@@ -5,6 +5,7 @@
  */
 import { config } from "../config/settings.js";
 import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
+import { currentCanvasRequestSignal } from "../middleware/canvasRequestContext.js";
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -479,8 +480,33 @@ function canvasCourseQuery(canvasCourseId) {
   return `canvasCourseId=${encodeURIComponent(canvasCourseId)}`;
 }
 
-function canvasCookieFetch(path, cookie, { method = "GET", body } = {}) {
-  return fetchFromCore(path, { method, body, cookie, cookieOnly: true });
+/** The caller-disconnect failure, distinct from any upstream Core error. */
+function canvasRequestCancelledError() {
+  return Object.assign(new Error("Canvas request cancelled by the caller"), {
+    status: 499,
+    code: "CANVAS_REQUEST_CANCELLED",
+    body: { error: "CANVAS_REQUEST_CANCELLED" },
+    isPublic: true,
+  });
+}
+
+/**
+ * Every Canvas proxy call inherits the caller-disconnect signal published by
+ * `canvasRequestContext`, so abandoning the browser request aborts the QM→Core
+ * fetch — and with it Core's Canvas egress — rather than leaving it running for
+ * nobody. The abort is reported as its own cancellation error so it is never
+ * mistaken for a Core or Canvas failure.
+ */
+async function canvasCookieFetch(path, cookie, { method = "GET", body } = {}) {
+  const signal = currentCanvasRequestSignal();
+  if (signal?.aborted) throw canvasRequestCancelledError();
+
+  try {
+    return await fetchFromCore(path, { method, body, cookie, cookieOnly: true, signal });
+  } catch (error) {
+    if (signal?.aborted) throw canvasRequestCancelledError();
+    throw error;
+  }
 }
 
 /** GET /api/canvas/integration — caller's Core Canvas integration (session-only). */
