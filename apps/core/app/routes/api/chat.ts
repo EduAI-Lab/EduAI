@@ -147,6 +147,7 @@ import {
   LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  resolveMaxDigestSourceMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
@@ -1284,9 +1285,44 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
+    // Turns older than the verbatim window still carry content a "summarize
+    // everything" request needs. Load that older span (bounded, memory-safe) and
+    // pass its extracted text to the digest so its old/middle topics are
+    // summarized rather than disclosed only as a count (#1643). Only the turns
+    // beyond even this span stay a bare count.
+    const olderTurnsBeyondWindow = Math.max(0, totalStoredCount - storedMessages.length);
+    let priorOlderEntries: { role: string; text: string }[] = [];
+    let loadedOlderCount = 0;
+    if (olderTurnsBeyondWindow > 0 && chat.id && !ephemeral) {
+      const olderRecords = await prisma.chatMessage.findMany({
+        where: { chatId: chat.id },
+        orderBy: { position: "desc" },
+        skip: storedMessages.length,
+        take: resolveMaxDigestSourceMessages(),
+        select: { messageId: true, role: true, content: true },
+      });
+      loadedOlderCount = olderRecords.length;
+      priorOlderEntries = olderRecords
+        .reverse()
+        .map((record) => ({
+          role: record.role,
+          text: extractMessageText(
+            reviveStoredMessage({
+              messageId: record.messageId,
+              role: record.role,
+              content: record.content,
+            }),
+          )
+            .replace(/\s+/g, " ")
+            .trim(),
+        }))
+        .filter((entry) => entry.text.length > 0);
+    }
+
     chatApiDebug("chat history loaded", {
       chatId: chat.id,
       storedCount: storedMessages.length,
+      priorOlderLoaded: priorOlderEntries.length,
       incomingCount: normalizedIncomingMessages.length,
     });
 
@@ -1296,13 +1332,14 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
-    // Older turns cut before the digest sees them: those never loaded from the DB
-    // (beyond the load ceiling) plus those the tail-slice above dropped. The
-    // digest folds this into its omission marker so nothing is lost silently
-    // (#1643). storedMessages omits the current incoming turn(s), so the loaded
-    // count can never exceed the stored total.
+    // Older turns cut before the digest sees them as *content*: those beyond the
+    // digest-source span (loaded above into priorOlderEntries) plus those the
+    // tail-slice dropped. The digest folds this into its omission marker so
+    // nothing is lost silently (#1643); the span it loaded is summarized, not
+    // merely counted. storedMessages omits the current incoming turn(s), so the
+    // loaded count can never exceed the stored total.
     const priorOmittedCount =
-      Math.max(0, totalStoredCount - storedMessages.length) +
+      Math.max(0, olderTurnsBeyondWindow - loadedOlderCount) +
       (mergedMessages.length - trimmedMessages.length);
 
     chatApiDebug("chat history merged", {
@@ -1317,6 +1354,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
     let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages), {
       priorOmittedCount,
+      priorOlderEntries,
     });
 
     if (mergedMessages.length === 0) {
@@ -2259,6 +2297,7 @@ ${buildEmptyCourseRagBlock()}`;
           recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
           digestMaxChars: budgetToolResultCap,
           priorOmittedCount,
+          priorOlderEntries,
         },
       );
       streamConfig.messages = modelMessages;

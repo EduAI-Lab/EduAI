@@ -638,11 +638,22 @@ describe("token-budget context window — pre-digest omissions and fail-closed f
     return typeof first?.content === "string" ? first.content : "";
   }
 
-  it("discloses turns older than the load ceiling in the digest marker, not silently", async () => {
+  it("summarizes older turns beyond the load window as content, not just a count (#1643)", async () => {
     // Load ceiling pinned to 20 (beforeEach), but the chat holds 250 stored
-    // turns. The 230+ older turns cut before the digest must be marked so the
-    // model is told history was truncated — never dropped in silence.
-    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(20) as never);
+    // turns. The route loads the 230 older turns beyond the verbatim window into
+    // the digest source, so their CONTENT (old + middle topics) reaches the
+    // digest — the prior fix only disclosed a count, losing the old topics.
+    const recentDesc = Array.from({ length: 20 }, (_, i) => {
+      const idx = 19 - i; // DB desc: newest first
+      return storedRecord(`recent-${idx}`, idx % 2 === 0 ? "user" : "assistant", `RECENT-${idx}`);
+    });
+    const olderDesc = Array.from({ length: 230 }, (_, i) => {
+      const idx = 229 - i; // DB desc: newest first; idx 0 is the oldest turn
+      return storedRecord(`old-${idx}`, idx % 2 === 0 ? "user" : "assistant", `OLD-${idx}`);
+    });
+    vi.mocked(prisma.chatMessage.findMany)
+      .mockResolvedValueOnce(recentDesc as never) // recent verbatim window
+      .mockResolvedValueOnce(olderDesc as never); // older span for the digest
     vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
     vi.mocked(findRelevantContent).mockResolvedValue([]);
     mockStream();
@@ -653,8 +664,17 @@ describe("token-budget context window — pre-digest omissions and fail-closed f
 
     const messages = lastStreamMessages();
     expect(messages[0]?.id).toBe("session-digest");
-    // 230 never-loaded + 1 cut by the merge tail-slice = 231 disclosed.
-    expect(firstMessageContent()).toMatch(/231 earlier turns omitted/);
+    const digest = firstMessageContent();
+    // The OLDEST older turn reached the digest as content — the exact regression
+    // the reviewer flagged (turns beyond the window were previously count-only).
+    expect(digest).toContain("OLD-0");
+    // ...and the newest older turn is anchored too (even-spaced sampling).
+    expect(digest).toContain("OLD-229");
+    // Broad coverage across the span, not just the two endpoints.
+    const coveredOlderTopics = new Set(digest.match(/OLD-\d+/g) ?? []).size;
+    expect(coveredOlderTopics).toBeGreaterThan(5);
+    // Turns the sampling/tail-slice still drop are disclosed as a count.
+    expect(digest).toMatch(/\d+ earlier turns? omitted/);
   });
 
   it("fails closed for a non-admin chat whose prompt cannot fit the window", async () => {

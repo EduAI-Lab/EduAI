@@ -99,6 +99,15 @@ const DEFAULT_SESSION_DIGEST_MAX_CHARS = 14_000;
 const MIN_SESSION_MESSAGES = 2;
 
 const MAX_CONTEXT_MESSAGES_CEILING = 200;
+// The verbatim recent tail keeps its own, tighter ceiling than the DB load
+// window: turns kept verbatim past the digest all consume the char/token budget
+// directly, so an oversized tail defeats the digest instead of bounding it.
+const SESSION_RECENT_MESSAGES_CEILING = 50;
+// How many older turns beyond the verbatim window are scanned to build the
+// digest. Larger than the verbatim ceiling so a long thread's old/middle topics
+// reach the digest's content, but still bounded so the row load stays memory-safe.
+const DEFAULT_DIGEST_SOURCE_MESSAGES = 600;
+const DIGEST_SOURCE_MESSAGES_CEILING = 2_000;
 const SESSION_CHAR_BUDGET_CEILING = 100_000;
 const SESSION_DIGEST_MAX_CEILING = 50_000;
 
@@ -120,6 +129,20 @@ export function resolveMaxContextMessages(): number {
   );
 }
 
+/**
+ * Max older turns (beyond the verbatim window) whose content is loaded to build
+ * the session digest, so a long thread's old/middle topics reach the digest
+ * rather than being disclosed only as a count (env: CHAT_DIGEST_MAX_SOURCE_MESSAGES).
+ */
+export function resolveMaxDigestSourceMessages(): number {
+  return readBoundedEnvInt(
+    "CHAT_DIGEST_MAX_SOURCE_MESSAGES",
+    DEFAULT_DIGEST_SOURCE_MESSAGES,
+    MAX_CONTEXT_MESSAGES_CEILING,
+    DIGEST_SOURCE_MESSAGES_CEILING,
+  );
+}
+
 /** Total char budget for `messages[]` sent to the model (env: CHAT_SESSION_MAX_CHARS). */
 export function resolveSessionCharBudget(): number {
   return readBoundedEnvInt(
@@ -136,7 +159,7 @@ export function resolveSessionRecentMessages(): number {
     "CHAT_SESSION_RECENT_MESSAGES",
     DEFAULT_SESSION_RECENT_MESSAGES,
     MIN_SESSION_MESSAGES,
-    MAX_CONTEXT_MESSAGES_CEILING,
+    SESSION_RECENT_MESSAGES_CEILING,
   );
 }
 
@@ -297,6 +320,32 @@ function omissionOnlyDigest(count: number): string {
   return `## Session digest (earlier turns — context only)\n\n${omittedTurnsLine(count)}`;
 }
 
+/**
+ * Pick `keep` indices spread evenly across `0..length-1`, always including the
+ * first (oldest) and last (newest). Used when the digest cannot fit every older
+ * turn: sampling across the whole span keeps old/middle/new topics represented
+ * instead of retaining only the newest older turns and dropping the rest (#1643).
+ */
+function evenlySpacedIndices(length: number, keep: number): number[] {
+  if (keep >= length) {
+    return Array.from({ length }, (_, i) => i);
+  }
+  if (keep <= 1) {
+    return length > 0 ? [length - 1] : [];
+  }
+  const picked = new Set<number>();
+  for (let i = 0; i < keep; i++) {
+    picked.add(Math.round((i * (length - 1)) / (keep - 1)));
+  }
+  // Rounding collisions can yield fewer than `keep` slots; backfill from the
+  // newest end so the digest still uses its full budget.
+  for (let i = length - 1; i >= 0 && picked.size < keep; i--) {
+    picked.add(i);
+  }
+  // Fresh copy already, so sorting in place is safe (oxlint no-array-sort n/a).
+  return [...picked].sort((a, b) => a - b);
+}
+
 function buildSessionDigest<T extends ChatSessionMessage>(
   messages: T[],
   previewText: (message?: T) => string,
@@ -305,8 +354,12 @@ function buildSessionDigest<T extends ChatSessionMessage>(
   // the route's message-count ceiling — so the omission marker counts them too
   // and they are marked rather than silently lost (#1643).
   priorOmittedCount = 0,
+  // Pre-extracted older turns that precede `messages` (oldest first). The route
+  // loads the full older span beyond the verbatim window and passes it here so
+  // its *content*, not just a count, reaches the digest (#1643).
+  priorEntries: { role: string; text: string }[] = [],
 ): string {
-  const entries: { role: string; text: string }[] = [];
+  const entries: { role: string; text: string }[] = [...priorEntries];
   for (const message of messages) {
     const normalized = previewText(message).replace(/\s+/g, " ").trim();
     if (!normalized) {
@@ -332,12 +385,12 @@ function buildSessionDigest<T extends ChatSessionMessage>(
   const MARKER_RESERVE = 48;
   const lineBudget = Math.max(0, maxDigestChars - header.length - MARKER_RESERVE);
 
-  // Keep the NEWEST older turns that fit — they are nearest the current
-  // question. When everything fits (the common case) every turn is kept, so no
-  // topic is dropped. Only under extreme overflow do we drop turns, and we drop
-  // the OLDEST rather than the middle. This reverses the previous behavior,
-  // where a tail `hardTruncate` cut the most-recent older turns and left only
-  // the earliest — the "keeps first, drops middle" content loss (#chat-digest).
+  // Compute how many turns fit the budget, then — when everything fits (the
+  // common case) — keep them all so no topic is dropped. Under overflow, sample
+  // the kept turns EVENLY across the whole span (oldest…newest) rather than
+  // keeping only the newest: a "summarize everything" request over a long thread
+  // must still surface its old and middle topics, not just the recent tail
+  // (#1643). Both the always-included endpoints anchor the span.
   let kept = 0;
   let used = 0;
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -351,7 +404,7 @@ function buildSessionDigest<T extends ChatSessionMessage>(
   kept = Math.max(1, kept);
 
   const dropped = entries.length - kept + priorOmittedCount;
-  const keptEntries = entries.slice(entries.length - kept);
+  const keptEntries = evenlySpacedIndices(entries.length, kept).map((i) => entries[i]);
 
   // Distribute the remaining room evenly so every kept turn gets a fair preview,
   // bounded so a single verbose turn cannot crowd the others out.
@@ -542,6 +595,14 @@ export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
      * turns silently, even when the loaded slice fits the budget (#1643).
      */
     priorOmittedCount?: number;
+    /**
+     * Pre-extracted text of older turns preceding `messages` (oldest first) that
+     * the caller loaded beyond the verbatim window. Their *content* — not just a
+     * count — is folded into the digest so a "summarize everything" request over
+     * a long thread still surfaces its old and middle topics (#1643). Turns
+     * beyond even this span are counted via {@link priorOmittedCount}.
+     */
+    priorOlderEntries?: { role: string; text: string }[];
   },
 ): (T | SessionDigestMessage)[] {
   if (messages.length === 0) {
@@ -554,47 +615,69 @@ export function prepareBoundedSessionContext<T extends ChatSessionMessage>(
   const estimate = opts?.estimateChars ?? estimateMessageCharsForModel;
   const previewText = opts?.previewText ?? extractMessageText;
   const priorOmittedCount = Math.max(0, opts?.priorOmittedCount ?? 0);
+  const priorOlderEntries = opts?.priorOlderEntries ?? [];
+  const hasPriorContent = priorOlderEntries.length > 0;
 
-  if (totalMessageChars(messages, estimate) <= charBudget) {
+  const makeDigestMessage = (content: string): SessionDigestMessage => ({
+    id: DIGEST_MESSAGE_ID,
+    role: "user",
+    content,
+  });
+
+  if (totalMessageChars(messages, estimate) <= charBudget && !hasPriorContent) {
     if (priorOmittedCount === 0) {
       return messages;
     }
-    // The loaded slice fits, but earlier turns were dropped before this call.
-    // Keep the loaded turns verbatim and prepend a small marker so the omission
-    // is disclosed to the model rather than lost silently (#1643).
-    const markerMessage: SessionDigestMessage = {
-      id: DIGEST_MESSAGE_ID,
-      role: "user",
-      content: omissionOnlyDigest(priorOmittedCount),
-    };
-    return [markerMessage, ...messages];
+    // The loaded slice fits and there is no older content to summarize, but a
+    // count of earlier turns was dropped before this call. Disclose the count so
+    // the omission is visible to the model rather than lost silently (#1643).
+    return [makeDigestMessage(omissionOnlyDigest(priorOmittedCount)), ...messages];
+  }
+
+  if (totalMessageChars(messages, estimate) <= charBudget) {
+    // The loaded slice fits verbatim, but older turns beyond it carry content
+    // (priorOlderEntries). Summarize that older span and keep every loaded turn
+    // verbatim, then enforce the budget so the prepended digest cannot overflow.
+    const digest = buildSessionDigest(
+      [],
+      previewText,
+      digestMaxChars,
+      priorOmittedCount,
+      priorOlderEntries,
+    );
+    return enforceSessionCharBudget<T | SessionDigestMessage>(
+      [makeDigestMessage(digest), ...messages],
+      estimate,
+      charBudget,
+      true,
+    );
   }
 
   const recent = messages.slice(-recentCount);
   const older = messages.slice(0, messages.length - recent.length);
 
-  if (older.length === 0) {
+  if (older.length === 0 && !hasPriorContent) {
     // Everything is in the recent tail; drop oldest / truncate to fit the budget.
     // Prior omissions (if any) still surface via a marker prepended below.
     const bounded = enforceSessionCharBudget(recent, estimate, charBudget, false);
     if (priorOmittedCount === 0) {
       return bounded;
     }
-    const markerMessage: SessionDigestMessage = {
-      id: DIGEST_MESSAGE_ID,
-      role: "user",
-      content: omissionOnlyDigest(priorOmittedCount),
-    };
-    return [markerMessage, ...bounded];
+    return [makeDigestMessage(omissionOnlyDigest(priorOmittedCount)), ...bounded];
   }
 
-  const digest = buildSessionDigest(older, previewText, digestMaxChars, priorOmittedCount);
-  const digestMessage: SessionDigestMessage = {
-    id: DIGEST_MESSAGE_ID,
-    role: "user",
-    content:
-      digest || "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
-  };
+  // Digest the older span: the loaded older turns plus any pre-extracted older
+  // content the caller loaded beyond the verbatim window (#1643).
+  const digest = buildSessionDigest(
+    older,
+    previewText,
+    digestMaxChars,
+    priorOmittedCount,
+    priorOlderEntries,
+  );
+  const digestMessage = makeDigestMessage(
+    digest || "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
+  );
 
   return enforceSessionCharBudget<T | SessionDigestMessage>(
     [digestMessage, ...recent],

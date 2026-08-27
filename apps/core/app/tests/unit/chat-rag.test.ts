@@ -11,6 +11,8 @@ import {
   messageHasImageParts,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  resolveMaxDigestSourceMessages,
+  resolveSessionRecentMessages,
   resolveSessionCharBudget,
   resolveToolResultMaxChars,
   truncateToMaxChars,
@@ -384,7 +386,7 @@ describe("prepareBoundedSessionContext", () => {
     }
   });
 
-  it("under a tiny digest cap keeps the newest older turns and marks the omitted oldest (#1639)", () => {
+  it("under a tiny digest cap samples across the span, anchoring oldest + newest (#1643)", () => {
     const topics = Array.from({ length: 10 }, (_, i) => `TOPIC${i}`);
     const older = topics.map((topic, i) => ({
       id: `o${i}`,
@@ -406,12 +408,46 @@ describe("prepareBoundedSessionContext", () => {
     });
 
     const digest = String(bounded[0].content);
-    // The most-recent older topic is retained (nearest the current question)...
+    // The newest older topic is retained (nearest the current question)...
     expect(digest).toContain("TOPIC9");
-    // ...the earliest is dropped, reversing the old tail-truncation bug...
-    expect(digest).not.toContain("TOPIC0");
+    // ...the OLDEST is retained too — representative sampling anchors both ends
+    // so a "summarize everything" request never loses the thread's origin (#1643)...
+    expect(digest).toContain("TOPIC0");
+    // ...a middle turn survives while adjacent ones are dropped (even spacing)...
+    expect(digest).toContain("TOPIC5");
+    expect(digest).not.toContain("TOPIC1");
     // ...and the omission is disclosed rather than silent.
     expect(digest).toMatch(/earlier turns? omitted/);
+  });
+
+  it("summarizes pre-extracted older content (priorOlderEntries), not just a count (#1643)", () => {
+    // The loaded verbatim slice fits the budget, but 3 older turns beyond the
+    // window were loaded as content. Their topics must appear in the digest.
+    const messages = [
+      { id: "r1", role: "user", content: "latest question" },
+      { id: "r2", role: "assistant", content: "latest answer" },
+    ];
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 10_000,
+      digestMaxChars: 14_000,
+      priorOlderEntries: [
+        { role: "user", text: "Earlier we discussed OLDTOPIC_ALPHA in depth" },
+        { role: "assistant", text: "Then we covered OLDTOPIC_BETA" },
+        { role: "user", text: "And finally OLDTOPIC_GAMMA" },
+      ],
+      priorOmittedCount: 40,
+    });
+
+    expect(bounded[0].id).toBe("session-digest");
+    const digest = String(bounded[0].content);
+    expect(digest).toContain("OLDTOPIC_ALPHA");
+    expect(digest).toContain("OLDTOPIC_BETA");
+    expect(digest).toContain("OLDTOPIC_GAMMA");
+    // Turns beyond the loaded span are still disclosed as a count.
+    expect(digest).toMatch(/40 earlier turns omitted/);
+    // The loaded turns stay verbatim after the digest.
+    expect(bounded.at(-2)?.content).toBe("latest question");
+    expect(bounded.at(-1)?.content).toBe("latest answer");
   });
 
   it("discloses turns dropped before the digest, even when the loaded slice fits (#1643)", () => {
@@ -614,5 +650,51 @@ describe("resolveMaxContextMessages", () => {
 describe("resolveSessionCharBudget", () => {
   it("defaults to 28_000 when env is unset", () => {
     expect(resolveSessionCharBudget()).toBe(28_000);
+  });
+});
+
+describe("resolveSessionRecentMessages", () => {
+  const original = process.env.CHAT_SESSION_RECENT_MESSAGES;
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CHAT_SESSION_RECENT_MESSAGES;
+    } else {
+      process.env.CHAT_SESSION_RECENT_MESSAGES = original;
+    }
+  });
+
+  it("defaults to 6 when env is unset", () => {
+    delete process.env.CHAT_SESSION_RECENT_MESSAGES;
+    expect(resolveSessionRecentMessages()).toBe(6);
+  });
+
+  it("clamps the verbatim tail to its own 50 ceiling, not the 200 load ceiling (#1643)", () => {
+    // .env.example documents the clamp as 2–50; the tail is bounded separately
+    // from the DB load window so an oversized tail cannot defeat the digest.
+    process.env.CHAT_SESSION_RECENT_MESSAGES = "200";
+    expect(resolveSessionRecentMessages()).toBe(50);
+  });
+});
+
+describe("resolveMaxDigestSourceMessages", () => {
+  const original = process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES;
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES;
+    } else {
+      process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES = original;
+    }
+  });
+
+  it("defaults to 600 when env is unset (#1643)", () => {
+    delete process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES;
+    expect(resolveMaxDigestSourceMessages()).toBe(600);
+  });
+
+  it("clamps within [200, 2000] (#1643)", () => {
+    process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES = "50";
+    expect(resolveMaxDigestSourceMessages()).toBe(200);
+    process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES = "9999";
+    expect(resolveMaxDigestSourceMessages()).toBe(2_000);
   });
 });
