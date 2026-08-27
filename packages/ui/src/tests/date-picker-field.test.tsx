@@ -67,4 +67,71 @@ describe("DatePickerField", () => {
 
     expect(screen.getByRole("button", { name: /start date/i })).toBeDisabled();
   });
+
+  /**
+   * `aria-label` wins over a button's text content, so a static label left the
+   * accessible name stuck on "Start date" no matter which date was showing —
+   * a screen-reader user had no way to hear the current value (#1681 review).
+   */
+  describe("accessible name", () => {
+    it("is just the label while nothing is chosen", () => {
+      render(<DatePickerField value="" onChange={vi.fn()} label="Start date" />);
+
+      expect(screen.getByRole("button", { name: "Start date" })).toBeInTheDocument();
+    });
+
+    it("carries the chosen date once one is set", () => {
+      render(<DatePickerField value="2026-09-01" onChange={vi.fn()} label="Start date" />);
+
+      expect(screen.getByRole("button", { name: "Start date: Sep 1, 2026" })).toBeInTheDocument();
+    });
+
+    it("follows the value when it changes", () => {
+      const view = render(
+        <DatePickerField value="2026-09-01" onChange={vi.fn()} label="Start date" />,
+      );
+
+      view.rerender(<DatePickerField value="2027-01-07" onChange={vi.fn()} label="Start date" />);
+
+      expect(screen.getByRole("button", { name: "Start date: Jan 7, 2027" })).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * react-day-picker treats the dropdown span as its navigation bound: months
+   * outside it are hidden and keyboard focus is clamped to it. The old ±5-year
+   * default therefore made any older or further-out date unpickable, even
+   * though `CreateCourseSchema.startDate` accepts one (#1681 review).
+   */
+  describe("reachable range", () => {
+    it("reaches a start date well outside a few sessions from now", () => {
+      const onChange = vi.fn();
+      render(<DatePickerField value="2005-06-15" onChange={onChange} label="Start date" />);
+      openCalendar();
+
+      pickDay(/June 1st, 2005/);
+
+      expect(onChange).toHaveBeenCalledWith("2005-06-01");
+    });
+
+    it("keeps a value from outside the default window reachable", () => {
+      // Far enough out that the ±yearRange window around today cannot contain
+      // it; the range has to stretch to the value rather than hide it.
+      const onChange = vi.fn();
+      render(<DatePickerField value="1912-04-15" onChange={onChange} label="Start date" />);
+      openCalendar();
+
+      pickDay(/April 1st, 1912/);
+
+      expect(onChange).toHaveBeenCalledWith("1912-04-01");
+    });
+
+    it("still honours an explicitly narrowed range from the caller", () => {
+      render(<DatePickerField value="" onChange={vi.fn()} label="Start date" yearRange={0} />);
+      openCalendar();
+
+      const thisYear = new Date().getFullYear();
+      expect(screen.queryByRole("button", { name: new RegExp(`, ${thisYear - 3}$`) })).toBeNull();
+    });
+  });
 });

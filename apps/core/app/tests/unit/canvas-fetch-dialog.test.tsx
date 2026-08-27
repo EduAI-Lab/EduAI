@@ -180,12 +180,49 @@ describe("CanvasFetchDialog", () => {
       expect(screen.getByRole("button", { name: /fetching/i })).toBeInTheDocument();
     });
 
+    // The synced-course link is a dismissal path too: following it unmounts
+    // the dialog, so a mid-fetch click navigated away and lost the result the
+    // rest of this guard exists to report (#1681 review).
+    it("does not follow an already-fetched course link", async () => {
+      const onOpenChange = vi.fn();
+      await startPendingFetch(onOpenChange);
+
+      const link = screen.getByRole("link", { name: /Intro to CS/ });
+      expect(link).toHaveAttribute("aria-disabled", "true");
+
+      fireEvent.click(link);
+
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(screen.queryByText("Course page")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /fetching/i })).toBeInTheDocument();
+    });
+
+    it("takes the course link out of the tab order while it is inert", async () => {
+      await startPendingFetch();
+
+      expect(screen.getByRole("link", { name: /Intro to CS/ })).toHaveAttribute("tabindex", "-1");
+    });
+
     it("hides the corner close button so every dismiss path is consistent", async () => {
       const { baseElement } = await startPendingFetch();
 
       // The footer also renders a "Close" button, so target the corner X by slot.
       expect(baseElement.querySelector('[data-slot="dialog-close"]')).toBeNull();
     });
+  });
+
+  it("still follows an already-fetched course link when no fetch is running", async () => {
+    const { onOpenChange } = renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Intro to CS/ })).toBeInTheDocument();
+    });
+    const link = screen.getByRole("link", { name: /Intro to CS/ });
+    expect(link).not.toHaveAttribute("aria-disabled");
+
+    fireEvent.click(link);
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("still closes on Escape when no fetch is running", async () => {

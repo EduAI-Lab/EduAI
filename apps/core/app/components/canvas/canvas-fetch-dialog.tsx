@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
+import { cn } from "~/lib/utils";
 import {} from "@tabler/icons-react";
 
 import { Button } from "@eduai/ui";
@@ -148,8 +149,25 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
                 <Link
                   key={course.canvasId}
                   to={`/courses/${course.coreCourseId}`}
-                  onClick={() => onOpenChange(false)}
-                  className="flex items-start gap-3 rounded-md border p-3 hover:bg-accent transition-colors"
+                  // Navigating away unmounts the dialog, which is a dismissal
+                  // like any other — so it goes through the same guard rather
+                  // than calling `onOpenChange` directly. `aria-disabled` plus
+                  // a swallowed click is how a link is disabled; `Link` has no
+                  // `disabled`, and dropping the anchor entirely would move
+                  // focus out from under the reader mid-fetch.
+                  aria-disabled={syncing || undefined}
+                  tabIndex={syncing ? -1 : undefined}
+                  onClick={(event) => {
+                    if (syncing) {
+                      event.preventDefault();
+                      return;
+                    }
+                    handleOpenChange(false);
+                  }}
+                  className={cn(
+                    "flex items-start gap-3 rounded-md border p-3 transition-colors",
+                    syncing ? "pointer-events-none opacity-60" : "hover:bg-accent",
+                  )}
                 >
                   <div className="min-w-0 space-y-1">
                     <p className="font-medium leading-snug">{course.name}</p>

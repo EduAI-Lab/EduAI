@@ -861,6 +861,97 @@ describe("CoursesUnitAdminView — mutation flows", () => {
   });
 });
 
+/**
+ * The derived-term change is identical in all three create dialogs, but only
+ * the admin one was covered — a regression confined to the unit-admin or
+ * instructor variant would have gone unnoticed (#1681 review). These pin the
+ * two properties that matter on the other two: no hand-entered term or year,
+ * and submit gated on the start date now that the `required` input is gone.
+ */
+describe("create-course term derivation — unit-admin and instructor variants", () => {
+  const INSTRUCTORS = [{ id: "i1", name: "Prof X", email: "x@example.edu" }];
+
+  it("CoursesUnitAdminView offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={["COSC"]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    expect(screen.queryByLabelText(/^term$/i)).toBeNull();
+    expect(document.querySelector('input[name="year"]')).toBeNull();
+  });
+
+  it("CoursesUnitAdminView keeps create disabled until a start date is picked", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={["COSC"]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    await chooseSelectOption(screen.getAllByRole("combobox")[0], /prof x/i);
+    expect(submitButtonFor(/create course/i)).toBeDisabled();
+
+    chooseStartDate(/September 1st, 2025/);
+
+    expect(submitButtonFor(/create course/i)).not.toBeDisabled();
+    vi.useRealTimers();
+  });
+
+  it("CoursesInstructorView offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    expect(screen.queryByLabelText(/^term$/i)).toBeNull();
+    expect(document.querySelector('input[name="year"]')).toBeNull();
+  });
+
+  it("CoursesInstructorView keeps create disabled until a start date is picked", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
+    wrap(
+      <CoursesInstructorView
+        courses={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+    expect(submitButtonFor(/create course/i)).toBeDisabled();
+
+    chooseStartDate(/September 1st, 2025/);
+
+    expect(submitButtonFor(/create course/i)).not.toBeDisabled();
+    vi.useRealTimers();
+  });
+});
+
 // CoursesInstructorView
 describe("CoursesInstructorView", () => {
   it('shows "Create Course" button when the policy default is on', () => {
