@@ -221,6 +221,28 @@ describe("auth/login action", () => {
     );
   });
 
+  it("does not expire the session cookie when COOKIE_DOMAIN is loopback", async () => {
+    process.env.COOKIE_DOMAIN = "localhost";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session_token=abc; Path=/" },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain("better-auth.session_token=abc");
+    expect(res.headers.get("Set-Cookie")).not.toMatch(/(?:^|,\s)better-auth\.session_token=;/);
+  });
+
   it("expires the HTTP host-only session cookie when COOKIE_DOMAIN is configured", async () => {
     process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
     authServerMocks.authBaseURL = "http://localhost:3000";
