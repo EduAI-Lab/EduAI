@@ -111,6 +111,65 @@ const instructorRef = {
   instructorEmail: z.string().email().optional().describe("Instructor email when id is unknown"),
 };
 
+/**
+ * #1665 review (context budget): the full registry below has grown to 63
+ * tool() entries — sending every schema on every request costs
+ * `estimateToolDefinitionTokens(63)` ≈ 26.7k tokens, which alone blows past
+ * the seeded tool-capable vLLM model's 16k context window before system
+ * prompt/history/output are even counted. This is the same set already
+ * named in {@link formatAdminCourseContext} / the default admin system
+ * prompt's "Read tools" and write-safety lists (chat-mode.ts) — the tools a
+ * default-prompt admin session actually tells the model it has. Keep this
+ * list and those prompt strings in sync.
+ *
+ * `createAdminChatTools` still returns the full registry (large-context
+ * models — e.g. the seeded OpenAI/Gemini rows — get every tool); the admin
+ * route (`routes/api/chat.ts`) calls {@link pickCoreAdminChatTools} to trim
+ * to this set only when the resolved model's context window is too small
+ * to fit the full registry.
+ */
+export const ADMIN_CORE_TOOL_NAMES = [
+  "listCourses",
+  "getCourse",
+  "listCourseEnrollments",
+  "listCourseTopics",
+  "getCourseTopic",
+  "searchCourseMaterials",
+  "listUsers",
+  "listBugReports",
+  "createUser",
+  "updateUser",
+  "deleteUser",
+  "createCourseEnrollment",
+  "updateCourseEnrollment",
+  "deactivateCourseEnrollment",
+  "createCourseTopic",
+  "updateCourseTopic",
+  "deleteCourseTopic",
+  "updateBugReportStatus",
+] as const;
+
+export type AdminChatToolRegistry = ReturnType<typeof createAdminChatTools>;
+
+/**
+ * Trim the full admin tool registry down to {@link ADMIN_CORE_TOOL_NAMES}
+ * for small-context models. See the comment above that constant — this is
+ * the real fix for the #1665 review's context-budget finding: rather than
+ * silently blow the budget (or just raise it without understanding why),
+ * a small-context request gets the subset the default system prompt already
+ * documents to the model, which comfortably fits a 16k window.
+ */
+export function pickCoreAdminChatTools(
+  tools: AdminChatToolRegistry,
+): Partial<AdminChatToolRegistry> {
+  const entries = ADMIN_CORE_TOOL_NAMES.map((name) => [name, tools[name]] as const);
+  // SAFETY: `entries` is built by reading each key in ADMIN_CORE_TOOL_NAMES
+  // straight off `tools: AdminChatToolRegistry`, so the object below is a
+  // genuine (partial) AdminChatToolRegistry — TS just can't verify the
+  // Object.fromEntries round-trip distributes over the union of tool types.
+  return Object.fromEntries(entries) as Partial<AdminChatToolRegistry>;
+}
+
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
   const { user, effectiveCourseId, effectiveCourseCode } = ctx;
