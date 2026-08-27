@@ -10,6 +10,7 @@ import {
 import { Button, Card, CardContent, PageHeading } from "@eduai/ui";
 import { SiteFooter } from "~/components/site-footer";
 import { ProjectGoals } from "~/components/project-goals";
+import { ProductsSection } from "~/components/products-section";
 import { TeamSection } from "~/components/team-section";
 import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
@@ -155,6 +156,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <ProductsSection />
 
       <ProjectGoals />
 

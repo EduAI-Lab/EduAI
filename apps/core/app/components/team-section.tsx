@@ -23,10 +23,28 @@ export function TeamSection() {
           }
         />
 
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {teamMembers.map((member) => (
-            <TeamMemberCard key={member.id} member={member} />
-          ))}
+        <div className="space-y-12">
+          <div>
+            <h3 className="mb-5 text-xl font-semibold text-foreground">Faculty</h3>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {teamMembers
+                .filter((member) => member.role === "professor")
+                .map((member) => (
+                  <TeamMemberCard key={member.id} member={member} />
+                ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-5 text-xl font-semibold text-foreground">Students</h3>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {teamMembers
+                .filter((member) => member.role === "student")
+                .map((member) => (
+                  <TeamMemberCard key={member.id} member={member} />
+                ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>
