@@ -41,6 +41,11 @@ vi.mock("~/lib/api", () => ({
       course: { id: 1, code: "COSC 101", title: "Course 1" },
       moduleOrdinal: 1,
       lessonOrdinal: 1,
+      // #1626: Submit is withheld until the per-course enrollment role
+      // resolves to STUDENT. The 403-message cases below still click
+      // Submit, so the breadcrumb has to open that gate; ADMIN + a
+      // STUDENT enrollment is the mixed-role path the catch still handles.
+      viewerEnrollmentRole: "STUDENT",
     }),
     submitAnswer,
     mySubmissions: vi.fn().mockResolvedValue([]),
@@ -236,7 +241,12 @@ describe("student.lesson — answer-submission 403 message (#1660 review)", () =
     fireEvent.change(screen.getByPlaceholderText("Type your answer…"), {
       target: { value: "an answer" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+    const submit = await waitFor(() => {
+      const btn = screen.getByRole("button", { name: /submit answer/i });
+      expect(btn).toBeEnabled();
+      return btn;
+    });
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(
@@ -255,7 +265,12 @@ describe("student.lesson — answer-submission 403 message (#1660 review)", () =
     fireEvent.change(screen.getByPlaceholderText("Type your answer…"), {
       target: { value: "an answer" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+    const submit = await waitFor(() => {
+      const btn = screen.getByRole("button", { name: /submit answer/i });
+      expect(btn).toBeEnabled();
+      return btn;
+    });
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(screen.getByText("There was a problem submitting.")).toBeInTheDocument(),

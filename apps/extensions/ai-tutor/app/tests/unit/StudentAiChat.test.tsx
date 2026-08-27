@@ -161,12 +161,12 @@ function deferredGuideCall() {
   return { resolve, reject };
 }
 
-function renderChat(
+function chatTree(
   ref?: React.Ref<StudentAiChatHandle>,
   activity: Activity = ACTIVITY,
   isPreview?: boolean,
 ) {
-  return render(
+  return (
     <MemoryRouter>
       <StudentAiChat
         ref={ref}
@@ -181,8 +181,16 @@ function renderChat(
         studentAnswer={null}
         isPreview={isPreview}
       />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderChat(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return render(chatTree(ref, activity, isPreview));
 }
 
 async function typeAndSend(text: string, placeholder = "Describe where you need guidance…") {
@@ -497,6 +505,21 @@ describe("StudentAiChat — 403 message only for an actual previewer (#1660 revi
     );
     expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
   });
+
+  it("rebuilds sendChat when isPreview flips on a still-mounted chat (AuthProvider role transition)", async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    const { rerender } = renderChat(undefined, ACTIVITY, true);
+
+    rerender(chatTree(undefined, ACTIVITY, false));
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
 });
 
 // ── #1003: chatId threading ───────────────────────────────────────────────
@@ -707,5 +730,74 @@ describe("StudentAiChat — cuid topic ids reach the tutor", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Base cases" }));
 
     await waitFor(() => expect(onSelectTopic).toHaveBeenCalledWith(SECONDARY_TOPIC_ID));
+  });
+});
+
+// #1626: a course TA holds the learner surface but the tutoring routes 403 a
+// non-STUDENT enrollment, so the composer must be withheld rather than left as a
+// dead control — even with a BYOK key present (`mockGetKey` returns one here).
+// The gate fails closed on every non-"allowed" state, so an unresolved role
+// (pending / unverified breadcrumb) withholds the composer just like a TA does.
+describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () => {
+  function renderState(studyBuddyState: "pending" | "unverified" | "withheld") {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={[]}
+          currentTopicId={null}
+          onSelectTopic={vi.fn()}
+          studentAnswer={null}
+          studyBuddyState={studyBuddyState}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  function expectNoComposerOrControls() {
+    // Neither the connect-a-provider prompt nor a live composer is offered, and
+    // no model / new-chat / history controls — the whole surface is withheld,
+    // not merely disabled.
+    expect(screen.queryByText(/Connect an AI provider to start/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/where you need guidance|Ask about the topic|Ask a question/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new chat/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /chat history/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  }
+
+  it("shows the withheld notice and no composer or connect state for a resolved TA", async () => {
+    renderState("withheld");
+
+    // The panel title still renders so the TA sees the study buddy exists…
+    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
+    // …but the withheld notice replaces the conversation.
+    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed while the per-course role is unresolved (pending breadcrumb)", async () => {
+    renderState("pending");
+
+    // A genuine student sees a transient "checking access" — not the TA notice —
+    // but the composer stays withheld so a TA + BYOK key can't chat in the window.
+    expect(screen.getByText(/checking your access/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/study buddy is available to students enrolled/i),
+    ).not.toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed when the breadcrumb failed (unverified)", async () => {
+    renderState("unverified");
+
+    expect(screen.getByText(/couldn't verify your access/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
   });
 });
