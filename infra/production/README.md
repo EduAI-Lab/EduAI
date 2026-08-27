@@ -167,7 +167,7 @@ Keep the previous release symlink target until public smoke tests pass. If the n
 
 ```bash
 sudo systemctl stop eduai-core
-ln -sfn "/srv/www/eduai-production/releases/<previous-commit>" /srv/www/eduai-production/current
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <previous-commit>
 sudo systemctl start eduai-core
 ```
 
