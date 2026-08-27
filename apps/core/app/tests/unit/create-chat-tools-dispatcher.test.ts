@@ -37,12 +37,12 @@ describe("createChatTools — instructor dispatch (#1659 review)", () => {
     const dispatched = createChatTools(ctx, "instructor");
     const direct = createInstructorChatTools(ctx);
 
-    expect(Object.keys(dispatched).toSorted()).toEqual(Object.keys(direct).toSorted());
+    expect(Object.keys(dispatched).slice().sort()).toEqual(Object.keys(direct).slice().sort());
     // The severe failure mode this guards against isn't just "wrong key
     // count" — it's "the whole admin registry leaked in", which a bare
     // key-count check could miss if the two manifests happened to be the
     // same size. Naming the exact 4 tools makes that failure mode loud.
-    expect(Object.keys(dispatched).toSorted()).toEqual([
+    expect(Object.keys(dispatched).slice().sort()).toEqual([
       "getCourse",
       "getCourseTopic",
       "listCourseEnrollments",
