@@ -321,7 +321,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
         draft: expect.stringContaining("**Top summary**"),
       }),
     );
-    expect(auditAndMaybeRewrite.mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
   });
 
   it("normalizes valid structured Assist output before streaming oversight", async () => {
@@ -345,7 +345,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
         draft: expect.stringContaining("### Step ladder"),
       }),
     );
-    expect(auditAndMaybeRewrite.mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
   });
 
   it("rejects malformed structured Assist output before non-streaming oversight", async () => {

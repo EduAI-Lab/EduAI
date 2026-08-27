@@ -3109,10 +3109,11 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (!providerResultResolved) {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
-            ...streamTrace,
-            stage: "structured-provider",
-          });
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, error),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "structured-provider" },
+          );
         }
         console.error("Error rendering structured Assist response:", error);
         return new Response(
