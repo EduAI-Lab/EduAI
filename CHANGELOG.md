@@ -10,6 +10,10 @@
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
 
+### Fixed
+
+- [core] fix: Toggling the Assist switch mid-conversation was retroactively reformatting every earlier assistant message in the transcript (Step-ladder/diagram/TLDR reorder), not just new ones — `ChatConversationLayout` rendered every message with the live toggle instead of the mode it was actually sent under. Each assistant message now records the Assist mode in effect when it was generated (mirroring the #829 `wasAutoRouted` per-message pattern), and the layout reads that per-message value instead of the live toggle, falling back to it only for legacy messages with no recorded value. Closes #1671. (@Ayyhab, 2026-08-26) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 17 — August 17–23, 2026]
 
 ### Added
