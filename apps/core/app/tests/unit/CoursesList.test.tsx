@@ -105,6 +105,12 @@ const MATH_COURSE: Course = {
   department: "MATH",
 };
 
+// Each create-course test renders the whole view, then opens a Radix popover
+// and a full react-day-picker calendar to choose the start date. That is
+// comfortably under a second alone but can pass 5s when the file runs
+// alongside the rest of the suite, so this file gets a wider timeout.
+vi.setConfig({ testTimeout: 15_000 });
+
 const NOOP = async () => {};
 
 function wrap(ui: React.ReactElement, policies: PolicyValues = {}) {
@@ -220,7 +226,10 @@ describe("CoursesAdminView — mutation flows", () => {
 
   it("submits the create form and calls onCreateCourse with the assembled data", async () => {
     // The calendar opens on the current month; pin it to the one being picked.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
@@ -266,7 +275,10 @@ describe("CoursesAdminView — mutation flows", () => {
     ["2026-05-04", /May 4th, 2026/, "S1", 2026],
     ["2026-07-20", /July 20th, 2026/, "S2", 2026],
   ])("derives term and academic year from a %s start date", async (startDate, day, term, year) => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(`${startDate}T12:00:00`));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
@@ -315,7 +327,10 @@ describe("CoursesAdminView — mutation flows", () => {
   });
 
   it("disables the create submit button until department, instructor and start date are set", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     wrap(
       <CoursesAdminView
@@ -630,7 +645,10 @@ describe("CoursesUnitAdminView — mutation flows", () => {
 
   it("submits the create form using the selected department when multiple are authorized", async () => {
     // The calendar opens on the current month; pin it to the one being picked.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
@@ -663,7 +681,10 @@ describe("CoursesUnitAdminView — mutation flows", () => {
 
   it("submits the create form using the single authorized department automatically", async () => {
     // The calendar opens on the current month; pin it to the one being picked.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
