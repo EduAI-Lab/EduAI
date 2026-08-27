@@ -78,6 +78,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";

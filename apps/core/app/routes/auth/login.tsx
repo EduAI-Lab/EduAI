@@ -6,7 +6,7 @@ import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
-import { auth } from "~/lib/auth/server";
+import { auth, authBaseURL } from "~/lib/auth/server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
@@ -35,6 +35,25 @@ function formBodyErrorResponse(cause: unknown): Response | null {
     });
   }
   return null;
+}
+
+/**
+ * Remove a legacy host-only session cookie after issuing the configured
+ * cross-subdomain cookie. Cookies with the same name but different Domain
+ * attributes coexist, and browsers send the host-only one first; an old
+ * token could therefore mask the newly-created shared session on /dashboard.
+ */
+function appendHostOnlySessionCookieDeletion(headers: Headers): void {
+  if (!process.env.COOKIE_DOMAIN?.trim()) return;
+
+  const cookieName = authBaseURL.startsWith("https://")
+    ? "__Secure-better-auth.session_token"
+    : "better-auth.session_token";
+  const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
+  headers.append(
+    "Set-Cookie",
+    `${cookieName}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`,
+  );
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -142,6 +161,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
+    appendHostOnlySessionCookieDeletion(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
@@ -248,10 +268,10 @@ export default function LoginPage() {
             strokeWidth="1.75"
             strokeLinecap="round"
           >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 3a9 9 0 0 1 0 18" />
-            <path d="M3 12h18" />
-            <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
         <span className="text-xl font-bold text-primary-text">EduAI</span>

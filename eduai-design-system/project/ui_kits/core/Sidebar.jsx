@@ -108,7 +108,7 @@ function Sidebar({ currentScreen, onNavigate, user }) {
       <div style={{ height:"56px", display:"flex", alignItems:"center", padding:"0 16px", gap:"9px", borderBottom:`1px solid ${_SB.border}`, flexShrink:0 }}>
         <div style={{ width:"28px", height:"28px", borderRadius:"7px", background:"oklch(0.42 0.14 232)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+            <path d="m3 9 9-5 9 5-9 5Z"/><path d="M6 11v4c3 3 9 3 12 0v-4"/><path d="M21 10v6" stroke="var(--gold)"/><circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none"/>
           </svg>
         </div>
         <span style={{ fontSize:"15px", fontWeight:700, color:"#fff", letterSpacing:"-0.01em" }}>EduAI</span>

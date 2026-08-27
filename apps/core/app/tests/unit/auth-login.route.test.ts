@@ -3,10 +3,20 @@
 // this covers the redirect-when-signed-in gate, forceReauth bypass,
 // allowRegistration policy passthrough, field validation, and the
 // success/failure branches of the sign-in action.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
+
+const authServerMocks = vi.hoisted(() => ({
+  auth: { api: { getSession: vi.fn() }, handler: vi.fn() },
+  authBaseURL: "http://localhost:3000",
+}));
 
 vi.mock("~/lib/auth/server", () => ({
-  auth: { api: { getSession: vi.fn() }, handler: vi.fn() },
+  get auth() {
+    return authServerMocks.auth;
+  },
+  get authBaseURL() {
+    return authServerMocks.authBaseURL;
+  },
 }));
 
 vi.mock("~/lib/policy.server", () => ({
@@ -26,6 +36,8 @@ import { loader, action } from "~/routes/auth/login";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
+
+const originalCookieDomain = process.env.COOKIE_DOMAIN;
 
 function makeLoaderArgs(url = "http://localhost/auth/login") {
   return {
@@ -51,6 +63,13 @@ function makeActionArgs(form: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getPolicy).mockResolvedValue(true);
+  delete process.env.COOKIE_DOMAIN;
+  authServerMocks.authBaseURL = "http://localhost:3000";
+});
+
+afterEach(() => {
+  if (originalCookieDomain === undefined) delete process.env.COOKIE_DOMAIN;
+  else process.env.COOKIE_DOMAIN = originalCookieDomain;
 });
 
 describe("auth/login loader", () => {
@@ -189,6 +208,10 @@ describe("auth/login action", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
     expect(res.headers.get("Set-Cookie")).toContain("better-auth.session=abc");
+    expect(res.headers.get("Set-Cookie")).not.toMatch(/(?:^|,\s)better-auth\.session_token=;/);
+    expect(res.headers.get("Set-Cookie")).not.toMatch(
+      /(?:^|,\s)__Secure-better-auth\.session_token=;/,
+    );
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         actionCode: "LOGIN_SUCCESS",
@@ -196,6 +219,58 @@ describe("auth/login action", () => {
         entityId: "u1",
       }),
     );
+  });
+
+  it("expires the HTTP host-only session cookie when COOKIE_DOMAIN is configured", async () => {
+    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+    authServerMocks.authBaseURL = "http://localhost:3000";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain(
+      "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+    );
+    expect(res.headers.get("Set-Cookie")).not.toMatch(
+      /(?:^|,\s)__Secure-better-auth\.session_token=;/,
+    );
+  });
+
+  it("expires the HTTPS host-only session cookie when COOKIE_DOMAIN is configured", async () => {
+    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+    authServerMocks.authBaseURL = "https://app.eduai.ok.ubc.ca";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: { "Set-Cookie": "__Secure-better-auth.session_token=abc; Path=/; Secure" },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(res.headers.get("Set-Cookie")).not.toMatch(/(?:^|,\s)better-auth\.session_token=;/);
   });
 
   it("catches a thrown error from the handler and returns a formError", async () => {
