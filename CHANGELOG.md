@@ -8,8 +8,8 @@
 
 ### Tests
 
-- [ai-tutor] test: Add unit test coverage for route modules, components, hooks, and lib helpers (admin settings, activity/module CRUD panels, course analytics/submissions, tour system, RBAC permissions, chat history, and more), closing the largest zero/low-coverage gaps identified in the Week 16 coverage audit. Closes #1542, #1543. (@evanbones, 2026-08-27) — #PR
-- [question-maker] test: Add unit test coverage for page components, content-authoring components (question bank, questions, assessments, Canvas integration), and remaining hooks/services/contexts (profile, layout, OCR, dashboard, composer, AuthContext, App shell), closing the largest zero/low-coverage gaps identified in the Week 16 coverage audit. Closes #1544, #1545, #1546. (@evanbones, 2026-08-27) — #PR
+- [ai-tutor] test: Add unit test coverage for route modules, components, hooks, and lib helpers (admin settings, activity/module CRUD panels, course analytics/submissions, tour system, RBAC permissions, chat history, and more), closing the largest zero/low-coverage gaps identified in the Week 16 coverage audit. Closes #1542, #1543. (@evanbones, 2026-08-27) — [#1685](https://github.com/EduAI-Lab/EduAI/pull/1685)
+- [question-maker] test: Add unit test coverage for page components, content-authoring components (question bank, questions, assessments, Canvas integration), and remaining hooks/services/contexts (profile, layout, OCR, dashboard, composer, AuthContext, App shell), closing the largest zero/low-coverage gaps identified in the Week 16 coverage audit. Closes #1544, #1545, #1546. (@evanbones, 2026-08-27) — [#1685](https://github.com/EduAI-Lab/EduAI/pull/1685)
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
 
 ## [Week 17 — August 17–23, 2026]
