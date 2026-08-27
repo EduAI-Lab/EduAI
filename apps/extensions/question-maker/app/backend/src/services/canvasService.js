@@ -691,6 +691,8 @@ export const importQuizFromCanvas = async (
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
+    const parsedCanvasCourseId = parseCanvasNumericId(canvasCourseId, "canvasCourseId");
+
     // Verify local course exists and is accessible (owner-scoped). Existence
     // check only — `Course` has no local name to select anymore (#1072 §4 step 10).
     const course = await prisma.course.findFirst({
@@ -699,16 +701,35 @@ export const importQuizFromCanvas = async (
     });
 
     if (!course) {
-      throw new Error("Local course not found");
+      throw canvasError("Local course not found", 404);
     }
 
-    const quizResponse = await proxyCoreGetQuiz(cookie, canvasCourseId, quizId);
+    // A quiz may only be imported from the Canvas course this local course is
+    // linked to. The dialog already restricts the picker, but that is a client
+    // choice — without this a direct request could import another Canvas
+    // course's quiz and mint the mapping row for it on the way in (#1652
+    // review). Mirrors the guard question-bank import already applies.
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, localCourseId, cookie);
+    if (!courseCanvasMapping) {
+      throw canvasError(
+        "Course is not linked to Canvas. Sync the course from Canvas before importing a quiz.",
+        400,
+      );
+    }
+    if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
+      throw canvasError(
+        "canvasCourseId does not match the Canvas course linked to this local course",
+        400,
+      );
+    }
+
+    const quizResponse = await proxyCoreGetQuiz(cookie, parsedCanvasCourseId, quizId);
     const quiz = quizResponse.data;
 
-    const canvasQuestions = await getCanvasQuizQuestions(cookie, canvasCourseId, quizId);
+    const canvasQuestions = await getCanvasQuizQuestions(cookie, parsedCanvasCourseId, quizId);
 
     if (canvasQuestions.length === 0) {
-      throw new Error("Quiz has no questions to import");
+      throw canvasError("Quiz has no questions to import", 400);
     }
 
     // Determine assessment type from options or default
@@ -737,8 +758,9 @@ export const importQuizFromCanvas = async (
     const primaryTopicId = options.primaryTopicId || null;
 
     if (!primaryTopicId) {
-      throw new Error(
+      throw canvasError(
         "Primary topic ID is required for importing questions. Please select a topic.",
+        400,
       );
     }
 
@@ -763,7 +785,7 @@ export const importQuizFromCanvas = async (
         try {
           canvasQuestion = await getCanvasQuizQuestionById(
             cookie,
-            canvasCourseId,
+            parsedCanvasCourseId,
             quizId,
             questionId,
           );
@@ -851,7 +873,10 @@ export const importQuizFromCanvas = async (
 
     // If no questions were imported at all, throw an error
     if (importedQuestions.length === 0) {
-      throw new Error("No questions could be imported. All question types may be unsupported.");
+      throw canvasError(
+        "No questions could be imported. All question types may be unsupported.",
+        400,
+      );
     }
 
     // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
@@ -866,7 +891,7 @@ export const importQuizFromCanvas = async (
         data: {
           userId: ownerId,
           localCourseId: localCourseId,
-          canvasCourseId: canvasCourseId,
+          canvasCourseId: parsedCanvasCourseId,
           canvasCourseName: integration.isTestMode ? "Test Course" : undefined,
         },
       });

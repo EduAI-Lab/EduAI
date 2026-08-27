@@ -22,33 +22,79 @@
  */
 import { listCourseTestableQuestions, listEduAiCourseTopics } from "./eduaiClient.js";
 
+/**
+ * How many Core pages one call may read while filling a window. A course whose
+ * newest questions are all long-answer or select-all-that-apply would
+ * otherwise page forever; the cap turns that into "here is what we found,
+ * there may be more" instead of an unbounded scan.
+ */
+const MAX_CORE_PAGES_PER_CALL = 10;
+
+/** An activity stores one `correctIndex`, so neither of these has a faithful form here. */
+function isUsableBankQuestion(question) {
+  return question.type !== "LA" && question.selectAllThatApply !== true;
+}
+
+/**
+ * Fills a page of *usable* questions.
+ *
+ * Core pages before this filter runs, so asking it for 20 rows and filtering
+ * afterwards used to return an empty picker whenever the newest 20 questions
+ * happened to be long-answer or select-all-that-apply — even with plenty of
+ * usable questions one page further on (#1652 review). Core pages are read
+ * until the window is full, Core runs out, or the page cap is reached.
+ *
+ * `nextOffset` is the Core offset of the first row this call did not return,
+ * so a caller resuming from it neither skips nor repeats a question. It is not
+ * `offset + limit`: this call consumes rows the filter discarded.
+ */
 export async function listBankQuestions(coreOfferingId, { topicId, limit = 20, offset = 0 } = {}) {
-  const [questions, topics] = await Promise.all([
-    listCourseTestableQuestions(coreOfferingId, { topicId, limit, offset }),
-    listEduAiCourseTopics(coreOfferingId),
-  ]);
+  const topicsPromise = listEduAiCourseTopics(coreOfferingId);
 
-  const rawQuestions = questions || [];
-  // Core paged BEFORE this filter runs, so a full page here means there may
-  // be more on the next page — this can never be turned into an exact count
-  // (see bank-questions route docblock), only a "there's more" signal.
-  const hasMore = rawQuestions.length === limit;
+  const rawQuestions = [];
+  let nextOffset = offset;
+  let pagesRead = 0;
+  let coreHasMorePages = true;
+  let stoppedMidPage = false;
 
+  while (rawQuestions.length < limit && pagesRead < MAX_CORE_PAGES_PER_CALL && coreHasMorePages) {
+    const page =
+      (await listCourseTestableQuestions(coreOfferingId, { topicId, limit, offset: nextOffset })) ??
+      [];
+    pagesRead += 1;
+    // A short page is Core's own end-of-list signal.
+    coreHasMorePages = page.length === limit;
+
+    for (const question of page) {
+      if (rawQuestions.length === limit) {
+        stoppedMidPage = true;
+        break;
+      }
+      nextOffset += 1;
+      if (isUsableBankQuestion(question)) rawQuestions.push(question);
+    }
+
+    if (stoppedMidPage) break;
+  }
+
+  // Still only ever a "there may be more" signal, never an exact remaining
+  // count — the filter runs after Core has already paged.
+  const hasMore = stoppedMidPage || coreHasMorePages;
+
+  const topics = await topicsPromise;
   const nameByTopicId = new Map(
     (topics || []).map((topic) => [String(topic.id), topic.name ?? null]),
   );
 
-  const mapped = rawQuestions
-    .filter((question) => question.type !== "LA" && question.selectAllThatApply !== true)
-    .map((question) => ({
-      id: question.id,
-      content: question.content,
-      type: question.type,
-      choices: question.choices ?? null,
-      answer: question.answer ?? null,
-      topicId: question.topicId ?? null,
-      topicName: nameByTopicId.get(String(question.topicId)) ?? null,
-    }));
+  const mapped = rawQuestions.map((question) => ({
+    id: question.id,
+    content: question.content,
+    type: question.type,
+    choices: question.choices ?? null,
+    answer: question.answer ?? null,
+    topicId: question.topicId ?? null,
+    topicName: nameByTopicId.get(String(question.topicId)) ?? null,
+  }));
 
-  return { questions: mapped, hasMore };
+  return { questions: mapped, hasMore, nextOffset };
 }

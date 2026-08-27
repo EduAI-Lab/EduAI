@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CanvasImportDialog } from "./CanvasImportDialog";
 
 const { toast } = vi.hoisted(() => {
@@ -38,6 +38,22 @@ vi.mock("../../services/courseService", () => ({
 
 import canvasService from "../../services/canvasService";
 import { courseService } from "../../services/courseService";
+
+// Radix Select measures and scrolls its listbox; jsdom implements neither.
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn(() => false);
+  Element.prototype.releasePointerCapture = vi.fn();
+});
+
+/** Opens the Radix select with the given trigger id and takes its first option. */
+async function selectFirstOption(triggerId: string) {
+  const trigger = document.getElementById(triggerId);
+  if (!trigger) throw new Error(`No select trigger #${triggerId}`);
+  // Radix opens on Enter; a pointer click needs capture APIs jsdom lacks.
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  fireEvent.click(await screen.findByRole("option"));
+}
 
 describe("CanvasImportDialog", () => {
   afterEach(() => {
@@ -107,6 +123,39 @@ describe("CanvasImportDialog", () => {
     expect(screen.queryByLabelText("Canvas Instance URL")).not.toBeInTheDocument();
     expect(screen.queryByText("Change Connection")).not.toBeInTheDocument();
     expect(screen.getByTestId("canvas-import-submit")).toBeDisabled();
+  });
+
+  // #1652 review: local topic ids are CUIDs. `parseInt("topic_cuid_3")` is NaN,
+  // which Axios serializes as null, so the route rejected every import as
+  // missing a primary topic.
+  it("submits the selected topic id unchanged instead of coercing it to a number", async () => {
+    vi.mocked(canvasService.importQuiz).mockResolvedValue({
+      assessmentId: 7,
+      assessmentName: "Midterm quiz",
+      questionsImported: 3,
+      questionsSkipped: 0,
+      skippedQuestions: [],
+      sectionId: 1,
+    });
+
+    render(<CanvasImportDialog open onClose={vi.fn()} courseId={9} />);
+
+    await waitFor(() => expect(canvasService.getQuizzes).toHaveBeenCalledWith(1));
+    // The topic select auto-picks the only topic; the quiz has to be chosen,
+    // and choosing it fills the assessment name.
+    await selectFirstOption("quiz");
+
+    const submit = await screen.findByTestId("canvas-import-submit");
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(canvasService.importQuiz).toHaveBeenCalled());
+    const [canvasCourseId, quizId, localCourseId, options] = vi.mocked(canvasService.importQuiz)
+      .mock.calls[0];
+    expect(canvasCourseId).toBe(1);
+    expect(quizId).toBe(20);
+    expect(localCourseId).toBe(9);
+    expect(options.primaryTopicId).toBe("topic_cuid_3");
   });
 
   it("blocks import when opened without a course in context", async () => {

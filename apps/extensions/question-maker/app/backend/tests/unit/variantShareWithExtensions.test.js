@@ -35,7 +35,8 @@ vi.mock("../../src/utils/logger.js", () => ({
 }));
 
 const { prisma } = await import("../../src/config/database.js");
-const { createVariant, updateVariant } = await import("../../src/services/questionService.js");
+const { createVariant, rollbackVariantApproval, updateVariant } =
+  await import("../../src/services/questionService.js");
 
 const BASE = { questionText: "What is 2+2?", difficulty: "easy" };
 
@@ -90,14 +91,51 @@ describe("createVariant share-with-extensions", () => {
 });
 
 describe("updateVariant share-with-extensions", () => {
-  it("persists a change to the share choice", async () => {
-    await updateVariant(11, { shareWithExtensions: true }, "u1", {
+  it("persists a change to the share choice on the write that approves", async () => {
+    await updateVariant(11, { shareWithExtensions: true, isDraft: false }, "u1", {
       isInstructorPlus: true,
       accessLevel: "instructor",
       requestUserId: "u1",
     });
 
     expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(true);
+  });
+
+  // #1652 review: sharing is an approval-time opt-in. A direct PUT setting it
+  // on a draft would otherwise be published by the next approval, which never
+  // asked the author anything.
+  it("refuses to share a variant the write leaves as a draft", async () => {
+    await updateVariant(11, { shareWithExtensions: true }, "u1", {
+      isInstructorPlus: true,
+      accessLevel: "instructor",
+      requestUserId: "u1",
+    });
+
+    expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(false);
+  });
+
+  it("refuses to share a variant the write explicitly reverts to draft", async () => {
+    variantsFindFirst.mockResolvedValue({
+      id: 11,
+      questionMetadataId: 3,
+      isDraft: false,
+      coreQuestionId: "cuid-q1",
+      createdBy: "u1",
+      choices: null,
+      answer: null,
+      selectAllThatApply: false,
+      correctAnswers: null,
+      shareWithExtensions: false,
+      questionMetadata: { id: 3, type: "SA", course: { id: 9, coreCourseId: "core_1" } },
+    });
+
+    await updateVariant(11, { shareWithExtensions: true, isDraft: true }, "u1", {
+      isInstructorPlus: true,
+      accessLevel: "instructor",
+      requestUserId: "u1",
+    });
+
+    expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(false);
   });
 
   it("leaves the share choice alone when the update does not mention it", async () => {
@@ -134,5 +172,34 @@ describe("unreviewing withdraws the share choice (#1555)", () => {
     });
 
     expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(false);
+  });
+});
+
+describe("rollbackVariantApproval clears the share choice (#1652 review)", () => {
+  it("restores draft state and unshares in the same write", async () => {
+    const snapshot = {
+      id: 11,
+      questionMetadataId: 3,
+      isDraft: false,
+      coreQuestionId: null,
+      createdBy: "u1",
+      choices: null,
+      answer: null,
+      selectAllThatApply: false,
+      correctAnswers: null,
+      shareWithExtensions: true,
+      updatedAt: new Date("2026-08-27T00:00:00.000Z"),
+      questionMetadata: { id: 3, type: "SA", course: { id: 9, coreCourseId: "core_1" } },
+    };
+    variantsFindFirst.mockResolvedValue(snapshot);
+
+    await rollbackVariantApproval(11, "u1", snapshot);
+
+    // A failed publish must not leave a draft still flagged as shared — the
+    // next approval would otherwise republish it with no fresh opt-in.
+    expect(variantsUpdate.mock.calls[0][0].data).toMatchObject({
+      isDraft: true,
+      shareWithExtensions: false,
+    });
   });
 });

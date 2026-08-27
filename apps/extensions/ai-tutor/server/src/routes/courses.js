@@ -669,10 +669,13 @@ router.post(
  * other authoring routes.
  * Only EduAI-imported courses have a bank; a native course returns 400 rather
  * than a misleading empty list.
- * Returns `{ questions, hasMore }`. `hasMore` is true when Core returned a
- * full page of `limit` rows BEFORE this route's LA/SATA filtering, so it can
- * only ever say "there may be more" — never an exact remaining count, since
- * the filter runs after Core already paged. No total is invented.
+ * Returns `{ questions, hasMore, nextOffset }`. The service reads as many Core
+ * pages as it needs to fill `limit` *usable* rows, so a run of long-answer or
+ * select-all-that-apply questions no longer returns an empty picker (#1652
+ * review). `hasMore` can only ever say "there may be more" — never an exact
+ * remaining count, since the filter runs after Core already paged, and no
+ * total is invented. `nextOffset` is the Core offset to resume from; it is not
+ * `offset + limit`, because the filtered-out rows were consumed too.
  */
 router.get(
   "/courses/:courseId/bank-questions",
@@ -699,12 +702,12 @@ router.get(
 
       const limit = Number(req.query.limit) || 20;
       const offset = Number(req.query.offset) || 0;
-      const { questions, hasMore } = await listBankQuestions(course.coreOfferingId, {
+      const { questions, hasMore, nextOffset } = await listBankQuestions(course.coreOfferingId, {
         topicId: req.query.topicId || undefined,
         limit,
         offset,
       });
-      res.json({ questions, hasMore });
+      res.json({ questions, hasMore, nextOffset });
     } catch (error) {
       logSafeError("[eduai] Failed to list bank questions", error);
       return respondEduAiUpstreamError(res, error, "Unable to load the question bank");

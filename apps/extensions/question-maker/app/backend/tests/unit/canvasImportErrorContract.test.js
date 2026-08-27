@@ -36,6 +36,9 @@ vi.mock("../../src/services/assessmentSectionService.js", () => ({
 }));
 
 vi.mock("../../src/services/coreApiService.js", () => ({
+  // Unused here — the local mapping row resolves the Canvas link — but the
+  // whole module is replaced, so `getCanvasCourseMapping`'s fallback needs it.
+  getCourseFromCore: vi.fn(),
   proxyCoreCanvasGetIntegration,
   proxyCoreGetQuiz,
   proxyCoreListQuizQuestions,
@@ -106,7 +109,8 @@ beforeEach(() => {
   questionMetadataCreate.mockResolvedValue({ id: 33 });
   variantsCreate.mockResolvedValue({ id: 44 });
   sectionVariantsCreate.mockResolvedValue({});
-  mappingFindUnique.mockResolvedValue({ id: 1 });
+  // Course 9 is linked to Canvas course 123 — the id every import here uses.
+  mappingFindUnique.mockResolvedValue({ id: 1, canvasCourseId: 123, canvasCourseName: null });
 });
 
 describe("importQuizFromCanvas — Core error contract", () => {

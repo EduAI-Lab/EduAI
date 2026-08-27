@@ -1033,7 +1033,13 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab("assessments")}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            // Canvas import is scoped to the linked Canvas course, so the action
+            // is withheld — not just the tab — when there is no link (#1652
+            // review). `null` means "not resolved yet", which keeps the action
+            // in place rather than flickering it out on every load.
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
         </PageTabsContent>
 
@@ -1095,7 +1101,9 @@ export const CourseDetailPage = () => {
             onExportToTxt={handleExportAssessmentToTxt}
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
           <ListPaginationBar
             total={assessmentsTotal}

@@ -128,24 +128,69 @@ describe("listBankQuestions", () => {
     expect(result.questions[0]).not.toHaveProperty("difficulty");
   });
 
-  it("reports hasMore when Core returned a full page, before LA/SATA filtering", async () => {
-    listCourseTestableQuestions.mockResolvedValue([
-      { id: "q1", type: "LA", content: "x", topicId: null, choices: null, answer: null },
-      { id: "q2", type: "LA", content: "y", topicId: null, choices: null, answer: null },
-    ]);
-
-    const result = await listBankQuestions("core-course-1", { limit: 2 });
-
-    // Both dropped by the LA filter, but Core returned a full page of 2, so
-    // there could be more beyond this page — hasMore must reflect the raw
-    // page size, not the filtered count (which is 0 here).
-    expect(result.questions).toHaveLength(0);
-    expect(result.hasMore).toBe(true);
-  });
-
   it("reports hasMore false when Core returned fewer than a full page", async () => {
     const result = await listBankQuestions("core-course-1", { limit: 20 });
 
     expect(result.hasMore).toBe(false);
+  });
+});
+
+/**
+ * Core pages before the LA/SATA filter runs, so asking it for one page and
+ * filtering afterwards returned an empty picker whenever the newest questions
+ * happened to be unusable — even with plenty of usable ones a page further on
+ * (#1652 review). These pin that the window is filled across Core pages.
+ */
+describe("listBankQuestions page filling", () => {
+  const la = (id) => ({ id, type: "LA", content: id, topicId: null, choices: null, answer: null });
+  const sa = (id) => ({ id, type: "SA", content: id, topicId: null, choices: null, answer: "x" });
+
+  it("reads past a full page of unusable questions instead of returning empty", async () => {
+    listCourseTestableQuestions
+      .mockResolvedValueOnce([la("l1"), la("l2")])
+      .mockResolvedValueOnce([sa("s1"), sa("s2")]);
+
+    const result = await listBankQuestions("core-course-1", { limit: 2 });
+
+    expect(result.questions.map((q) => q.id)).toEqual(["s1", "s2"]);
+    expect(listCourseTestableQuestions).toHaveBeenCalledTimes(2);
+    // The second call resumes after the two rows the filter discarded.
+    expect(listCourseTestableQuestions.mock.calls[1][1]).toMatchObject({ offset: 2 });
+  });
+
+  it("stops at the first short page rather than paging forever", async () => {
+    listCourseTestableQuestions
+      .mockResolvedValueOnce([la("l1"), la("l2")])
+      .mockResolvedValueOnce([sa("s1")]);
+
+    const result = await listBankQuestions("core-course-1", { limit: 2 });
+
+    expect(result.questions.map((q) => q.id)).toEqual(["s1"]);
+    expect(result.hasMore).toBe(false);
+    expect(listCourseTestableQuestions).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds the scan when every page is unusable", async () => {
+    listCourseTestableQuestions.mockResolvedValue([la("l1"), la("l2")]);
+
+    const result = await listBankQuestions("core-course-1", { limit: 2 });
+
+    expect(result.questions).toHaveLength(0);
+    // Core never ran out, so the caller is told there may be more rather than
+    // being handed a false "that is all there is".
+    expect(result.hasMore).toBe(true);
+    expect(listCourseTestableQuestions.mock.calls.length).toBeLessThanOrEqual(10);
+  });
+
+  it("resumes from the rows it consumed, not from offset + limit", async () => {
+    // One usable row sits between two discarded ones, so a naive
+    // `offset + limit` resume would skip the row after it.
+    listCourseTestableQuestions.mockResolvedValueOnce([la("l1"), sa("s1"), la("l2")]);
+
+    const result = await listBankQuestions("core-course-1", { limit: 1, offset: 4 });
+
+    expect(result.questions.map((q) => q.id)).toEqual(["s1"]);
+    expect(result.nextOffset).toBe(6);
+    expect(result.hasMore).toBe(true);
   });
 });

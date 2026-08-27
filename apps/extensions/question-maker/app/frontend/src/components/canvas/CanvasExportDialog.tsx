@@ -58,6 +58,10 @@ export const CanvasExportDialog = ({
   // Load integration status and courses
   useEffect(() => {
     if (open) {
+      // `AssessmentBuilderPage` keeps this dialog mounted between exports, so
+      // the publish choice is re-defaulted on every open rather than carrying
+      // one opt-out forward into unrelated later exports (#1556).
+      setPublishInCanvas(true);
       loadIntegration();
     }
   }, [open]);

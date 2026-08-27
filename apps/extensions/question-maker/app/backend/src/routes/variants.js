@@ -28,7 +28,11 @@ import {
 import { prisma } from "../config/database.js";
 import { patchQuestionTestableOnCore } from "../services/coreApiService.js";
 import { VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from "../services/coreWiringService.js";
-import { publishApprovedVariant, respondToPublishFailure } from "../services/variant-publish.js";
+import {
+  publishApprovedVariant,
+  respondToPublishFailure,
+  withdrawVariantFromCore,
+} from "../services/variant-publish.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { QM_AUTHORIZED } from "../middleware/roles.js";
 import { requireQuestionAccess, requireVariantAccess } from "../middleware/resourceAccess.js";
@@ -257,6 +261,25 @@ router.put(
           return res
             .status(403)
             .json({ success: false, error: "TAs can only edit their own variants" });
+        }
+      }
+
+      // Un-reviewing a published variant withdraws its Core question first.
+      // `updateVariant` drops `coreQuestionId` inside the fence, so once that
+      // has run there is nothing left to point at the Core row — and a Core
+      // question left `testable` would keep being served to other extensions
+      // for a question that is no longer reviewed (#1652 review). Disabling it
+      // is idempotent, so a stale snapshot at worst repeats a withdrawal that
+      // already happened.
+      if (isDraft === true && current.isDraft === false && current.coreQuestionId) {
+        const withdrawal = await withdrawVariantFromCore(current.coreQuestionId);
+        if (withdrawal.outcome === "failed") {
+          return res.status(502).json({
+            success: false,
+            code: "CORE_WITHDRAW_FAILED",
+            error:
+              "Could not withdraw this question from EduAI, so it was left reviewed. Please retry.",
+          });
         }
       }
 

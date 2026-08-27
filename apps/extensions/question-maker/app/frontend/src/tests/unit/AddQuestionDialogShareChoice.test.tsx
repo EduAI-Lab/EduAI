@@ -39,7 +39,12 @@ vi.mock("@/hooks/useQmPermissions", () => ({
 }));
 
 vi.mock("../../hooks/useEduAIStatus", () => ({
-  useEduAIStatus: () => ({ isConnected: true, isLoading: false }),
+  useEduAIStatus: () => ({
+    isConnected: true,
+    isLoading: false,
+    // The dialog's close effect calls this; without it the reopen path throws.
+    setQuestionGenerationPhase: vi.fn(),
+  }),
 }));
 
 vi.mock("../../services/questionService", () => ({
@@ -71,6 +76,21 @@ vi.mock("../../services/apiKeyStorage", () => ({
     getKey: vi.fn().mockReturnValue(null),
   },
 }));
+
+function renderDialog(open: boolean) {
+  return render(
+    <MemoryRouter>
+      <AddQuestionDialog
+        mode="new"
+        open={open}
+        courseId={9}
+        variants={[]}
+        onClose={vi.fn()}
+        onQuestionCreated={vi.fn()}
+      />
+    </MemoryRouter>,
+  );
+}
 
 describe("AddQuestionDialog share-with-extensions choice", () => {
   afterEach(() => {
@@ -123,5 +143,57 @@ describe("AddQuestionDialog share-with-extensions choice", () => {
 
     expect(box).not.toBeChecked();
     expect(box).toBeDisabled();
+  });
+});
+
+/**
+ * `AssessmentBuilderPage` keeps this dialog mounted and only toggles `open`,
+ * so a checked box would carry one author's decision into the next question
+ * they write (#1652 review).
+ */
+describe("AddQuestionDialog share choice across reopens", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("starts the next question unshared after one was shared", async () => {
+    const view = renderDialog(true);
+
+    fireEvent.click(await screen.findByLabelText("Mark as reviewed"));
+    const box = screen.getByTestId("share-with-extensions");
+    fireEvent.click(box);
+    expect(box).toBeChecked();
+
+    // Close and reopen the same mounted dialog.
+    view.rerender(
+      <MemoryRouter>
+        <AddQuestionDialog
+          mode="new"
+          open={false}
+          courseId={9}
+          variants={[]}
+          onClose={vi.fn()}
+          onQuestionCreated={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    view.rerender(
+      <MemoryRouter>
+        <AddQuestionDialog
+          mode="new"
+          open
+          courseId={9}
+          variants={[]}
+          onClose={vi.fn()}
+          onQuestionCreated={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const reopened = await screen.findByTestId("share-with-extensions");
+    expect(reopened).not.toBeChecked();
+    // And it is unavailable again, because the review box was reset too.
+    expect(reopened).toBeDisabled();
   });
 });

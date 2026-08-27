@@ -813,14 +813,15 @@ export const api = {
    * Shared bank questions available to build an activity from (Task 2). The
    * server already excludes long-answer AND select-all-that-apply questions
    * (an activity's single `correctIndex` cannot represent either), so this
-   * must not re-filter. `hasMore` is true when the server's page came back
-   * full — see the route docblock — and is surfaced as-is, never turned into
-   * a count.
+   * must not re-filter. The server fills the page across as many Core pages as
+   * it needs, so a full run of unusable questions no longer yields an empty
+   * result. `hasMore` is surfaced as-is, never turned into a count, and
+   * `nextOffset` is the offset to resume from — see the route docblock.
    */
   listBankQuestions: (
     courseId: number,
     params: { topicId?: string; limit?: number; offset?: number } = {},
-  ) => {
+  ): Promise<{ questions: BankQuestion[]; hasMore: boolean; nextOffset?: number }> => {
     const query = new URLSearchParams();
     if (params.topicId) query.set("topicId", params.topicId);
     if (params.limit) query.set("limit", String(params.limit));
@@ -829,6 +830,7 @@ export const api = {
     return http(`/api/courses/${courseId}/bank-questions${suffix}`).then((data) => ({
       questions: (data.questions ?? []) as BankQuestion[],
       hasMore: data.hasMore === true,
+      nextOffset: typeof data.nextOffset === "number" ? data.nextOffset : undefined,
     }));
   },
   submitAnswer: (activityId: number, payload: any) =>

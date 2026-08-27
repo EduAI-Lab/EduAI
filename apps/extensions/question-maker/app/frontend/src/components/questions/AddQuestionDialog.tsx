@@ -656,6 +656,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       setIsGenerating(false);
       setIsAiGenerated(false);
       setMarkAsReviewed(false);
+      // Sharing is a per-question opt-in. `AssessmentBuilderPage` keeps this
+      // dialog mounted and only toggles `open`, so leaving the box checked
+      // would carry one author's decision into the next question they write.
+      setShareWithExtensions(false);
       setModalTourOpen(false);
       setModalTourStepIndex(0);
       setQuestionGenerationPhase(null);

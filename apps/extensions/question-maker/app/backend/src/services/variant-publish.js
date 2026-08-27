@@ -10,6 +10,7 @@
  */
 import { prisma } from "../config/database.js";
 import { logger } from "../utils/logger.js";
+import { patchQuestionTestableOnCore } from "./coreApiService.js";
 import { pushVariantToCore } from "./coreWiringService.js";
 import { linkVariantToCore, rollbackVariantApproval } from "./questionService.js";
 import { shouldPushApprovedVariantToCore } from "./variant-push-gate.js";
@@ -130,5 +131,29 @@ export function respondToPublishFailure(res, result) {
       return true;
     default:
       return false;
+  }
+}
+
+/**
+ * Withdraws a published Core question before its local variant is un-reviewed.
+ *
+ * Clearing `coreQuestionId` locally only forgets the link — the Core question
+ * keeps whatever `testable` it was pushed with, so AI Tutor would go on
+ * serving an un-reviewed question from the `testable=true` bank, and the next
+ * approval would mint a second Core row beside it (#1652 review). Disabling it
+ * first makes the withdrawal visible everywhere the question can be read.
+ *
+ * Idempotent: a Core question that no longer exists (404 → null) is already
+ * withdrawn, and re-approval re-asserts the author's current share choice.
+ *
+ * @returns {Promise<{ outcome: "withdrawn" | "gone" | "failed" }>}
+ */
+export async function withdrawVariantFromCore(coreQuestionId) {
+  try {
+    const result = await patchQuestionTestableOnCore(coreQuestionId, false);
+    return { outcome: result === null ? "gone" : "withdrawn" };
+  } catch (err) {
+    logger.warn({ err, coreQuestionId }, "Failed to withdraw Core question before un-review");
+    return { outcome: "failed" };
   }
 }

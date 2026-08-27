@@ -729,6 +729,12 @@ export function QuestionComposerPage() {
           correctAnswers,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           isDraft: nextIsDraft,
+          // The sharing choice only travels with a write that approves. On the
+          // `wasApproved` path this write reverts to draft, where sharing does
+          // not apply and the author re-decides when they mark it reviewed
+          // again; omitting it there keeps the edit branch from silently
+          // dropping a checked box on the approval path (#1652 review).
+          ...(nextIsDraft === false && { shareWithExtensions }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
         // Only send type/primaryTopicId when they actually changed: a question can have

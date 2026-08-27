@@ -209,7 +209,8 @@ export const canvasService = {
     options: {
       assessmentType?: string;
       assessmentName?: string;
-      primaryTopicId: number;
+      /** Local topic CUID — never coerced to a number (#1652 review). */
+      primaryTopicId: string;
     },
   ): Promise<CanvasImportResult> {
     const response = await api.post(`/api/canvas/import/${canvasCourseId}/quizzes/${quizId}`, {

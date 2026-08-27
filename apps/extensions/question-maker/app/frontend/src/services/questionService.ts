@@ -49,7 +49,10 @@ const mapVariant = (variant: any): QuestionVariant => ({
   isAiGenerated: variant.isAiGenerated ?? variant.is_ai_generated ?? false,
   isDraft: variant.isDraft ?? variant.is_draft ?? false,
   coreQuestionId: variant.coreQuestionId ?? variant.core_question_id ?? null,
-  testable: variant.testable ?? undefined,
+  // `shareWithExtensions` is QM's mirror of Core's `testable` — the toggle
+  // writes both — so list and detail rows, which carry only the local column,
+  // still render the author's real current choice (#1652 review).
+  testable: variant.testable ?? variant.shareWithExtensions ?? undefined,
   createdAt: variant.createdAt ?? variant.created_at,
   updatedAt: variant.updatedAt ?? variant.updated_at,
   assessment: variant.assessment
@@ -296,6 +299,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Approval-time opt-in; the server forces it false on a draft (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.put(`/api/questions/variants/${variantId}`, payload);

@@ -447,6 +447,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
             referenceId: true,
             isAiGenerated: true,
             isDraft: true,
+            // The sharing panel is opened straight from this list, so it needs
+            // the Core link and the author's current share choice — without
+            // them every approved variant rendered as "not yet published" and
+            // the toggle was unreachable (#1652 review).
+            coreQuestionId: true,
+            shareWithExtensions: true,
             createdAt: true,
             updatedAt: true,
             assessment: { select: { id: true, name: true, type: true } },
@@ -493,6 +499,9 @@ export const getQuestionById = async (questionId, userId) => {
           referenceId: true,
           isAiGenerated: true,
           isDraft: true,
+          // Same projection as the list path — see the note there.
+          coreQuestionId: true,
+          shareWithExtensions: true,
           createdAt: true,
           updatedAt: true,
           assessment: { select: { id: true, name: true, type: true } },
@@ -1460,6 +1469,9 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     // #1080 un-review: reopening a reviewed variant back to draft must clear
     // its Core link so the next approval re-pushes a fresh copy.
     const unreviewing = variant.isDraft === false && nextIsDraft === true;
+    // The draft state this write lands in — the caller's when it supplies one,
+    // otherwise the state the row is already in.
+    const resultingIsDraft = nextIsDraft !== undefined ? nextIsDraft : variant.isDraft === true;
     const ALLOWED_VARIANT_UPDATE_FIELDS = [
       "questionText",
       "difficulty",
@@ -1506,8 +1518,12 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
       ...(normalizedCorrectAnswers !== undefined && {
         correctAnswers: normalizedCorrectAnswers,
       }),
+      // Sharing is an approval-time opt-in, so it is bound to the state the
+      // write actually lands in, not to what the caller asked for. A direct PUT
+      // could otherwise set it on a draft, and the next `isDraft: false`
+      // approval would publish it with no opt-in of its own (#1652 review).
       ...(variantData.shareWithExtensions !== undefined && {
-        shareWithExtensions: Boolean(variantData.shareWithExtensions),
+        shareWithExtensions: resultingIsDraft ? false : Boolean(variantData.shareWithExtensions),
       }),
       ...(unreviewing && {
         coreQuestionId: null,
@@ -1660,7 +1676,10 @@ export const rollbackVariantApproval = async (variantId, userId, snapshot) => {
 
     const variant = await db.variants.update({
       where: { id: current.id },
-      data: { isDraft: true },
+      // Sharing rides on approval, so undoing the approval undoes it too —
+      // otherwise a failed publish leaves a draft flagged as shared, and the
+      // next approval republishes without a fresh opt-in (#1652 review).
+      data: { isDraft: true, shareWithExtensions: false },
       include: variantSnapshotInclude,
     });
     return { applied: true, variant };

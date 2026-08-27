@@ -199,7 +199,9 @@ export const CanvasImportDialog = ({
         {
           assessmentType,
           assessmentName: assessmentName.trim(),
-          primaryTopicId: parseInt(selectedTopicId),
+          // Local topic ids are CUIDs; `parseInt` turned every one into NaN,
+          // which serialized to null and failed the route's topic check.
+          primaryTopicId: selectedTopicId,
         },
       );
 
