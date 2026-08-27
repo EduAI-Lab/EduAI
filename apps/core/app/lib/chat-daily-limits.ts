@@ -5,6 +5,8 @@
  * A cap of 0 means that role is not daily-capped.
  */
 
+import { UserRole } from "@prisma/client";
+
 import { LOCAL_INFERENCE_PROVIDERS, parseModelIdentifier } from "~/lib/ai/provider-types";
 
 export const CHAT_DAILY_LIMIT_PREFIX = "chat.daily.";
@@ -83,17 +85,29 @@ export function dailyLimitForRole(
   role: string | undefined,
   settings: ChatDailyLimitSettings,
 ): number {
-  switch (role) {
-    case "STUDENT":
+  // No resolved role (service-key/stateless callers) follows the staff cap
+  // rather than the tighter student one.
+  if (role === undefined) return settings.instructorLimit;
+
+  // `role` arrives as a plain string (better-auth's session type does not
+  // carry the Prisma UserRole enum), so cast it to UserRole to get an
+  // exhaustive switch: a new UserRole added to schema.prisma without a case
+  // below is a compile error at `_exhaustive` here, forcing a conscious
+  // choice of tier instead of silently defaulting into the instructor cap.
+  // A role string that is not a real UserRole (should not happen in
+  // practice) hits the same `default` branch and throws at runtime.
+  const typedRole = role as UserRole;
+  switch (typedRole) {
+    case UserRole.STUDENT:
       return settings.studentLimit;
-    case "INSTRUCTOR":
-    case "ADMIN":
-    case "UNIT_ADMIN":
+    case UserRole.INSTRUCTOR:
+    case UserRole.ADMIN:
+    case UserRole.UNIT_ADMIN:
       return settings.instructorLimit;
-    default:
-      // A new UserRole should pick a case above. Until then, unknown/missing
-      // roles follow the staff cap rather than the tighter student one.
-      return settings.instructorLimit;
+    default: {
+      const _exhaustive: never = typedRole;
+      throw new Error(`dailyLimitForRole: unhandled role "${String(_exhaustive)}"`);
+    }
   }
 }
 

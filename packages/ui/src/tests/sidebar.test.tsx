@@ -3,6 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Sidebar, SidebarContent, SidebarProvider, SidebarTrigger } from "../ui/sidebar";
 
+function clearSidebarCookie() {
+  document.cookie = "sidebar_state=; path=/; max-age=0";
+}
+
+beforeEach(clearSidebarCookie);
+afterEach(clearSidebarCookie);
+
 describe("SidebarTrigger", () => {
   it("exposes aria-expanded reflecting the open state", () => {
     render(
@@ -44,6 +51,40 @@ describe("SidebarTrigger", () => {
     const controlsId = trigger.getAttribute("aria-controls");
     expect(controlsId).toBeTruthy();
     expect(document.getElementById(controlsId as string)).not.toBeNull();
+  });
+});
+
+describe("SidebarProvider state persistence", () => {
+  it("restores the collapsed desktop state after the provider remounts", () => {
+    const firstRender = render(
+      <SidebarProvider defaultOpen>
+        <Sidebar>
+          <SidebarContent>content</SidebarContent>
+        </Sidebar>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /toggle sidebar/i }));
+    expect(screen.getByRole("button", { name: /toggle sidebar/i })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    firstRender.unmount();
+    render(
+      <SidebarProvider defaultOpen>
+        <Sidebar>
+          <SidebarContent>content</SidebarContent>
+        </Sidebar>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /toggle sidebar/i })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 });
 

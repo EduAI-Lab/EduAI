@@ -304,6 +304,54 @@ describe("activity auth hardening", () => {
     expect(messages.status).toBe(403);
   });
 
+  it("keeps a student's transcript from the instructor who owns the course", async () => {
+    // The e2e instructor sweep (PR #1623) asserted this over HTTP with a chatId
+    // that matched no session at all, so the 404 proved only that nothing by
+    // that name existed — dropping `userId` from the lookup would have passed
+    // just as well. The session has to be real for the boundary to mean
+    // anything, and only this suite can mint one: `upsertChatSession` runs
+    // after a successful tutor response, and the e2e stack has no model.
+    const activity = await createActivity();
+    const student = makeStudent();
+    await enroll(student, "STUDENT");
+    await prisma.aiChatSession.create({
+      data: {
+        userId: student.id,
+        activityId: activity.id,
+        mode: "teach",
+        chatId: "student-owned-chat",
+      },
+    });
+
+    const transcript = [{ role: "user", content: "I still do not get recursion" }];
+    const upstream = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => transcript,
+    });
+    vi.stubGlobal("fetch", upstream);
+
+    // The owner reads their own transcript — the control, without which the
+    // refusal below could just be a broken route.
+    const owner = await request(await createApp({ mockUser: student })).get(
+      `/api/activities/${activity.id}/chat-sessions/student-owned-chat/messages`,
+    );
+    expect(owner.status).toBe(200);
+    expect(owner.body).toEqual(transcript);
+    expect(upstream).toHaveBeenCalledTimes(1);
+
+    // The instructor of this very course asks for the same session by id and is
+    // refused — and refused at the lookup, so Core is never asked for the
+    // messages at all. 404 rather than 403 is the point: the session is scoped
+    // to its owner, so to anyone else it does not exist.
+    const instructor = await request(await createApp({ mockUser: professor })).get(
+      `/api/activities/${activity.id}/chat-sessions/student-owned-chat/messages`,
+    );
+    expect(instructor.status).toBe(404);
+    expect(instructor.body.error).toBe("Session not found");
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
   it("allows a published STUDENT to list chat sessions", async () => {
     const activity = await createActivity();
     const student = makeStudent();

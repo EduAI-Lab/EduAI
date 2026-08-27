@@ -1,0 +1,424 @@
+/**
+ * AI Tutor INSTRUCTOR — activity authoring workflows (browser-driven).
+ *
+ * Activities are the leaves of the content tree and the only place a student
+ * ever meets the AI, so this is the screen where an instructor's authoring and
+ * the tutor's behaviour actually meet. The form is gated on `canManageContent`,
+ * which admits `instructor`.
+ *
+ * A course with no topics disables the main-topic picker for *everyone*
+ * (`AddActivityPanel` disables on `topics.length === 0`), so the fixture seeds a
+ * topic in Core before the import — otherwise "the picker is disabled" would be
+ * evidence of nothing.
+ */
+import { test, expect } from "@playwright/test";
+import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
+import { signInThroughPage } from "../helpers/auth";
+import {
+  createTeachingInstructor,
+  seedInstructorSpine,
+  type InstructorFixture,
+} from "../helpers/at-instructor";
+import { gotoAiTutor } from "../helpers/at-ui";
+
+let fx: InstructorFixture;
+let spine: Awaited<ReturnType<typeof seedInstructorSpine>>;
+
+test.beforeAll(async ({ playwright }) => {
+  const ctx = await playwright.request.newContext();
+  try {
+    fx = await createTeachingInstructor(playwright, ctx, {
+      publishCourse: true,
+      seedTopic: true,
+    });
+    spine = await seedInstructorSpine(ctx, fx);
+  } finally {
+    await ctx.dispose();
+  }
+});
+
+test.afterAll(async () => {
+  await fx?.dispose();
+});
+
+function unique(prefix: string): string {
+  return `${prefix} ${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1e4)}`;
+}
+
+/**
+ * A lesson of this instructor's own, created fresh for one test.
+ *
+ * Activity tests mutate the lesson they run against (add, duplicate, remove),
+ * so sharing one lesson across them would make each test's starting state
+ * depend on the order the others ran in.
+ */
+async function freshLesson(page: import("@playwright/test").Page, label: string): Promise<number> {
+  const moduleRow = await (
+    await page.request.post(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/modules`, {
+      data: { title: unique(`${label} Module`) },
+    })
+  ).json();
+  const lesson = await (
+    await page.request.post(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}/lessons`, {
+      data: { title: unique(`${label} Lesson`) },
+    })
+  ).json();
+  return lesson.id;
+}
+
+/**
+ * Drag a row's grip onto another row and drop it there.
+ *
+ * `SortableProvider` arms a `PointerSensor` with a 6px activation distance (so
+ * the grip still supports plain clicks) and resolves the drop with
+ * `closestCenter`. Driving the pointer rather than the KeyboardSensor keeps the
+ * assertion independent of layout: arrow keys mean different things under the
+ * grid strategy (modules, lessons) and the list strategy (activities), and the
+ * grid's own row breaks move with the viewport.
+ *
+ * Takes the grip as a locator rather than a name: the activity list labels every
+ * grip "Drag to reorder activity" when the activities have no title, so the
+ * caller is the only one that can say which row it means.
+ */
+async function dragOnto(
+  page: import("@playwright/test").Page,
+  handle: import("@playwright/test").Locator,
+  target: import("@playwright/test").Locator,
+) {
+  const from = await handle.boundingBox();
+  const to = await target.boundingBox();
+  if (!from || !to) throw new Error("drag handle or target is not on screen");
+
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Clear the 6px activation constraint first, then travel in steps — dnd-kit
+  // tracks movement, so a single jump can be missed entirely.
+  await page.mouse.move(startX + 12, startY, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 20 });
+  await page.mouse.up();
+}
+
+test.describe("INSTRUCTOR activity authoring", () => {
+  test("authors an MCQ activity end to end", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "MCQ");
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    const question = unique("Which base case ends the recursion?");
+
+    await page.getByRole("button", { name: "Add activity" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Author a new question for this lesson.");
+
+    await dialog.getByLabel(/Question prompt/).fill(question);
+    await dialog.getByRole("textbox", { name: "Option A" }).fill("The base case");
+    await dialog.getByRole("textbox", { name: "Option B" }).fill("The recursive case");
+    // The form ships four choice slots. Blanks are dropped on submit now
+    // (`buildMcqSubmission`), so removing the unused two is no longer load
+    // bearing — it is kept because it is what an author actually does, and it
+    // exercises the removal path alongside the compaction that backs it up.
+    await dialog.getByRole("button", { name: "Remove option D" }).click();
+    await dialog.getByRole("button", { name: "Remove option C" }).click();
+    // The correct answer is chosen by clicking the letter, and the form says so
+    // rather than defaulting silently.
+    await dialog.getByRole("button", { name: "Mark option A correct" }).click();
+
+    // The main topic comes from the course's Core-synced topics.
+    await dialog.getByRole("combobox").first().click();
+    await page.getByRole("option", { name: fx.seededTopic! }).click();
+
+    await dialog.getByLabel(/^Hint/).fill("Think about what stops the calls.");
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByText(question)).toBeVisible({ timeout: 30_000 });
+
+    // The wire contract is what matters: choices land in `options` and the key
+    // in `answer`. A form that posted them at the top level would be stripped by
+    // Zod and the activity would render as an unanswerable question.
+    const activities = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const rows = Array.isArray(activities) ? activities : activities.data;
+    const saved = rows.find((a: { question: string }) => a.question === question);
+    expect(saved, "the authored activity must come back from the API").toBeTruthy();
+    expect(saved.options?.choices ?? []).toEqual(["The base case", "The recursive case"]);
+    expect(saved.answer?.correctIndex, "the marked letter is the saved key").toBe(0);
+    // The topic picked above is really attached, not just displayed —
+    // `mapActivity` emits it as `mainTopic: {id,name}`.
+    expect(saved.mainTopic?.name, "the chosen main topic is persisted").toBe(fx.seededTopic);
+  });
+
+  test("an unused choice slot is saved blank unless it is removed", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Blank Choices");
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    const question = unique("Two-option question left with four slots");
+
+    await page.getByRole("button", { name: "Add activity" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(/Question prompt/).fill(question);
+    await dialog.getByRole("textbox", { name: "Option A" }).fill("First");
+    await dialog.getByRole("textbox", { name: "Option B" }).fill("Second");
+    await dialog.getByRole("button", { name: "Mark option A correct" }).click();
+    await dialog.getByRole("combobox").first().click();
+    await page.getByRole("option", { name: fx.seededTopic! }).click();
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+
+    // The two untouched slots are dropped rather than persisted as empty
+    // strings, so a student is offered exactly the two options that were
+    // authored. Both forms now share `buildMcqSubmission`; the add path used to
+    // ship all four slots while the edit path beside it compacted them.
+    const activities = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const rows = Array.isArray(activities) ? activities : activities.data;
+    const saved = rows.find((a: { question: string }) => a.question === question);
+    expect(saved.options?.choices).toEqual(["First", "Second"]);
+    expect(saved.answer?.correctIndex, "the marked letter survives compaction").toBe(0);
+  });
+
+  test("an MCQ cannot be saved with no correct answer marked", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Answer Gate");
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    const question = unique("Ungraded question");
+
+    await page.getByRole("button", { name: "Add activity" }).click();
+    const dialog = page.getByRole("dialog");
+
+    await dialog.getByLabel(/Question prompt/).fill(question);
+    await dialog.getByRole("textbox", { name: "Option A" }).fill("First");
+    await dialog.getByRole("textbox", { name: "Option B" }).fill("Second");
+    await dialog.getByRole("button", { name: "Remove option D" }).click();
+    await dialog.getByRole("button", { name: "Remove option C" }).click();
+    await dialog.getByRole("combobox").first().click();
+    await page.getByRole("option", { name: fx.seededTopic! }).click();
+
+    // The hint is on screen and no letter has been marked…
+    await expect(dialog.getByText("No correct answer selected yet.")).toBeVisible();
+
+    // …and the submit is refused. The button stays enabled — the gate is in
+    // `handleAddActivity`, beside the existing main-topic and AI-mode guards,
+    // so the refusal is stated rather than left to a disabled control with no
+    // explanation.
+    await expect(dialog.getByRole("button", { name: "Add activity" })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+
+    // The dialog stays open, naming what is missing, and nothing was written.
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.getByText("Mark one choice as the correct answer.")).toBeVisible();
+
+    const activities = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const rows = Array.isArray(activities) ? activities : activities.data;
+    expect(
+      rows.find((a: { question: string }) => a.question === question),
+      "the un-keyed activity must be refused, not saved against option A",
+    ).toBeFalsy();
+
+    // Marking a letter clears the refusal and the save then goes through,
+    // keyed to the letter the author actually picked.
+    await dialog.getByRole("button", { name: "Mark option B correct" }).click();
+    await expect(dialog.getByText("Mark one choice as the correct answer.")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Add activity" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+
+    const after = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
+    ).json();
+    const afterRows = Array.isArray(after) ? after : after.data;
+    const saved = afterRows.find((a: { question: string }) => a.question === question);
+    expect(saved, "the keyed activity saves").toBeTruthy();
+    expect(saved.answer?.correctIndex, "keyed to B, not the option-A default").toBe(1);
+  });
+
+  test("switches the activity type to short answer", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Short Answer");
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+
+    await page.getByRole("button", { name: "Add activity" }).click();
+    const dialog = page.getByRole("dialog");
+
+    // The type toggle swaps the MCQ choice grid for a single expected-answer
+    // field, rather than leaving both on screen for the author to reconcile.
+    // It is a radio group, not a pair of buttons — the two types are exclusive.
+    await expect(dialog.getByRole("textbox", { name: "Option A" })).toBeVisible();
+    await dialog.getByRole("radio", { name: "Short answer" }).click();
+    await expect(dialog.getByRole("textbox", { name: "Option A" })).toHaveCount(0);
+    await expect(dialog.getByLabel(/answer/i).first()).toBeVisible();
+  });
+
+  test("tags an activity with a course topic", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    await gotoAiTutor(page, `/instructor/lesson/${spine.lessonId}`);
+
+    // The topic the fixture seeded in Core reaches AI Tutor through the
+    // sync-on-read seam, so it is on offer here without any manual sync.
+    // The labels are uppercased by CSS, so match the DOM text rather than the
+    // rendered casing, and exactly — "Secondary topics" is also a prefix of the
+    // picker's own "Add secondary topics…" placeholder.
+    await expect(page.getByText(fx.seededTopic!).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Main topic", { exact: true })).toBeVisible();
+    await expect(page.getByText("Secondary topics", { exact: true })).toBeVisible();
+  });
+
+  test("duplicates an activity", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    await gotoAiTutor(page, `/instructor/lesson/${spine.lessonId}`);
+
+    const before = await activityCount(page, spine.lessonId);
+    await page.getByRole("button", { name: "Duplicate activity" }).first().click();
+
+    await expect
+      .poll(async () => activityCount(page, spine.lessonId), { timeout: 30_000 })
+      .toBe(before + 1);
+  });
+
+  test("removes an activity, confirmed first", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Removable");
+    const topicIds = await (
+      await page.request.get(
+        `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics?page=1&pageSize=50`,
+      )
+    ).json();
+    const question = unique("Doomed question");
+    await page.request.post(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`, {
+      data: {
+        question,
+        type: "MCQ",
+        options: ["A", "B"],
+        answer: { correctIndex: 0 },
+        mainTopicId: (topicIds.data ?? topicIds)[0].id,
+        enableTeachMode: true,
+        enableGuideMode: true,
+      },
+    });
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    await expect(page.getByText(question)).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: "Remove activity" }).first().click();
+    const confirm = page.getByRole("alertdialog");
+    await confirm.getByRole("button", { name: "Remove" }).click();
+
+    await expect.poll(async () => activityCount(page, lessonId), { timeout: 30_000 }).toBe(0);
+  });
+
+  test("searches the activity list", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    await gotoAiTutor(page, `/instructor/lesson/${spine.lessonId}`);
+
+    // `.first()`: the duplicate test above shares this lesson, so the question
+    // may legitimately appear more than once by the time this runs.
+    await expect(page.getByText(spine.question).first()).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("searchbox", { name: "Search activities" }).fill("zzz-nothing-matches");
+    await expect(page.getByText(spine.question)).toHaveCount(0, { timeout: 30_000 });
+  });
+
+  test("imports an activity from another lesson", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Import Target");
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Import activity");
+
+    // The picker searches across every activity this instructor can reach, so
+    // the spine activity from another lesson is on offer. Its search field is a
+    // cmdk input inside the popover, addressed by placeholder rather than by an
+    // accessible name it does not carry.
+    await dialog.getByRole("combobox").click();
+    await page.getByPlaceholder("Search all your activities…").fill(spine.question);
+    await page
+      .getByRole("option", {
+        name: new RegExp(spine.question.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      })
+      .first()
+      .click();
+
+    await dialog
+      .getByRole("button", { name: /^Import/ })
+      .last()
+      .click();
+
+    await expect
+      .poll(async () => activityCount(page, lessonId), { timeout: 30_000 })
+      .toBeGreaterThan(0);
+  });
+
+  test("moves an activity to an explicit position, and reorders by dragging", async ({ page }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+    const lessonId = await freshLesson(page, "Activity Order");
+    const topicIds = await (
+      await page.request.get(`${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/topics`)
+    ).json();
+    const mainTopicId = (Array.isArray(topicIds) ? topicIds : topicIds.data)[0].id;
+
+    // Two activities minimum: both affordances only appear once order means
+    // something.
+    const questions = [unique("First question"), unique("Second question")];
+    for (const question of questions) {
+      await page.request.post(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`, {
+        data: {
+          question,
+          type: "SHORT_TEXT",
+          answer: { text: "answer" },
+          hints: [],
+          mainTopicId,
+          secondaryTopicIds: [],
+          enableTeachMode: true,
+          enableGuideMode: true,
+        },
+      });
+    }
+    await gotoAiTutor(page, `/instructor/lesson/${lessonId}`);
+    await expect(page.getByText(questions[1])).toBeVisible({ timeout: 30_000 });
+
+    const order = async () => {
+      const res = await page.request.get(
+        `${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities?page=1&pageSize=200`,
+      );
+      const body = await res.json();
+      const rows = Array.isArray(body) ? body : body.data;
+      return rows.map((a: { question: string }) => a.question);
+    };
+    expect(await order()).toEqual(questions);
+
+    // The module list has had a "Move to position" row since #1207; the
+    // activity list has the same control and had no coverage. It is the only
+    // way to move a row to a *different page*, which a drag cannot express.
+    await page.getByRole("button", { name: "Move activity to position" }).last().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("New position").fill("1");
+    await dialog.getByRole("button", { name: /Move|Save/ }).click();
+
+    await expect.poll(order, { timeout: 20_000 }).toEqual([questions[1], questions[0]]);
+
+    // Third and last of the reorder surfaces — same sensor, its own endpoint.
+    // This list uses the vertical-list strategy rather than the grid one, which
+    // is exactly why it needs its own coverage.
+    // Every grip here carries the same label — these activities have no title,
+    // so `Drag to reorder activity` is all any of them says. Position is the
+    // only thing that distinguishes them.
+    const lastGrip = page.getByRole("button", { name: "Drag to reorder activity" }).last();
+    await dragOnto(page, lastGrip, page.getByText(questions[1]).first());
+
+    await expect.poll(order, { timeout: 20_000 }).toEqual(questions);
+  });
+});
+
+/** Number of activities on a lesson, read from the API the page renders from. */
+async function activityCount(
+  page: import("@playwright/test").Page,
+  lessonId: number,
+): Promise<number> {
+  const res = await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`);
+  const body = await res.json();
+  return (Array.isArray(body) ? body : (body.data ?? [])).length;
+}

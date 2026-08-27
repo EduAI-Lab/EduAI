@@ -157,6 +157,31 @@ describe("POST /api/completion", () => {
     expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 
+  it("forwards a learner-session systemPrompt as-is — no EduAI course default (#1606)", async () => {
+    // AI Tutor and Question Maker POST here, not /api/chat. This route has no
+    // course default prompt, so the supplied systemPrompt is the whole prompt.
+    // A learner session is enough to auth; the bearer is not required.
+    const systemPrompt = "Return only JSON variants. Do not tutor.";
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "{}" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(
+      makeArgs({
+        model: "gpt",
+        messages: [{ role: "user", content: "hi" }],
+        systemPrompt,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(runCompletion).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt }));
+  });
+
   it("uses a stable non-secret identity for service-key-only callers", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(requireServiceKey).mockResolvedValue(null);
