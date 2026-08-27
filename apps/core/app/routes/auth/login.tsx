@@ -7,6 +7,7 @@ import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth, authBaseURL } from "~/lib/auth/server";
+import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
@@ -37,24 +38,22 @@ function formBodyErrorResponse(cause: unknown): Response | null {
   return null;
 }
 
+/** Cookie scopes used by the two deployed EduAI environments before this fix. */
+const LEGACY_SESSION_COOKIE_DOMAINS = [".eduai.ok.ubc.ca", ".ok.ubc.ca"] as const;
+
 /**
  * Remove legacy session cookies after issuing the configured cross-subdomain
  * cookie. Cookies with the same name but different Domain attributes coexist,
  * and browsers can send an older, more-specific cookie first; that token can
  * therefore mask the newly-created shared session on /dashboard.
  *
- * COOKIE_DOMAIN has widened over successive deployments (e.g.
- * `.eduai.ok.ubc.ca` -> `.ok.ubc.ca`), and each value a browser has ever seen
- * left behind its own cookie at that Domain scope. Expiring only the current
- * value and the exact hostname is not enough — a browser that still holds a
- * cookie from an intermediate scope (say `.eduai.ok.ubc.ca`) sends it
- * alongside the fresh one, and the server reads whichever the browser lists
- * first, not necessarily the newest. Walk every parent-domain suffix between
- * the exact hostname and the current COOKIE_DOMAIN and expire each one, so no
- * previously-issued scope can outlive this deployment's cookie policy.
+ * The derived cleanup covers narrower parent scopes between the current host
+ * and the configured domain. The explicit list also covers rollback from the
+ * broad production domain (`.ok.ubc.ca`) to the dev/previous production
+ * domain (`.eduai.ok.ubc.ca`), which the current-domain walk cannot see.
  */
 function appendLegacySessionCookieDeletions(headers: Headers): void {
-  const configuredDomain = process.env.COOKIE_DOMAIN?.trim();
+  const configuredDomain = resolveAuthCookieDomain();
   if (!configuredDomain) return;
 
   const cookieName = authBaseURL.startsWith("https://")
@@ -67,15 +66,27 @@ function appendLegacySessionCookieDeletions(headers: Headers): void {
   // scope first.
   headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
 
-  // Then expire every parent-domain scope from the exact hostname up to (but
-  // not including) the currently configured COOKIE_DOMAIN — each is a
-  // distinct cookie a past deployment could have issued.
-  const hostname = new URL(authBaseURL).hostname;
+  const hostname = new URL(authBaseURL).hostname.toLowerCase();
   const labels = hostname.split(".");
+  const configuredHost = configuredDomain.replace(/^\./, "").toLowerCase();
+  const domains = new Set<string>();
+
+  // Expire every parent-domain scope from the exact hostname up to (but not
+  // including) the currently configured COOKIE_DOMAIN.
   for (let i = 0; i < labels.length - 1; i += 1) {
     const candidate = labels.slice(i).join(".");
-    if (candidate === configuredDomain.replace(/^\./, "")) break;
-    const domainAttr = i === 0 ? candidate : `.${candidate}`;
+    if (candidate === configuredHost) break;
+    domains.add(i === 0 ? candidate : `.${candidate}`);
+  }
+
+  // Also expire known broader scopes so a COOKIE_DOMAIN rollback cannot leave
+  // an older, less-specific token competing with the freshly-issued cookie.
+  for (const legacyDomain of LEGACY_SESSION_COOKIE_DOMAINS) {
+    if (hostname.endsWith(legacyDomain)) domains.add(legacyDomain);
+  }
+
+  domains.delete(`.${configuredHost}`);
+  for (const domainAttr of domains) {
     headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${domainAttr}`);
   }
 }

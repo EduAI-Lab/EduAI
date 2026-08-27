@@ -242,7 +242,9 @@ describe("auth/login action", () => {
     )) as Response;
     const cookies = res.headers.getSetCookie();
 
-    expect(cookies).toContain("__Secure-better-auth.session_token=fresh; Domain=.ok.ubc.ca; Path=/");
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=fresh; Domain=.ok.ubc.ca; Path=/",
+    );
     expect(cookies).toContain(
       "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
     );
@@ -259,6 +261,58 @@ describe("auth/login action", () => {
     // Must NOT re-expire the domain we just issued the fresh session on.
     expect(cookies).not.toContain(
       "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.ok.ubc.ca",
+    );
+  });
+
+  it("expires the broader legacy scope when COOKIE_DOMAIN rolls back", async () => {
+    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+    authServerMocks.authBaseURL = "https://my.eduai.ok.ubc.ca";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: {
+          "Set-Cookie": "__Secure-better-auth.session_token=fresh; Domain=.eduai.ok.ubc.ca; Path=/",
+        },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+    const cookies = res.headers.getSetCookie();
+
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.ok.ubc.ca",
+    );
+    expect(cookies).not.toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.eduai.ok.ubc.ca",
+    );
+  });
+
+  it("does not expire the session cookie for loopback COOKIE_DOMAIN", async () => {
+    process.env.COOKIE_DOMAIN = "localhost";
+    authServerMocks.authBaseURL = "http://localhost:3000";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session_token=fresh; Path=/" },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+
+    expect(res.headers.getSetCookie()).not.toContain(
+      "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
     );
   });
 
