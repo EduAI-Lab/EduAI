@@ -19,6 +19,7 @@
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
 - [ai-tutor] test: Added coverage for the honest-403-message paths the #1667 PR description claimed but didn't actually cover (flagged in review, and independently by the patch-coverage bot on `student.lesson.tsx:354`) — `StudentAiChat.test.tsx` now asserts the preview message only appears when `isPreview` is true (including after an `isPreview` flip on a still-mounted chat), and a new `student.lesson.tsx` answer-submission case in `student-preview-banner.route.test.tsx` covers both an ADMIN previewer and a real STUDENT hitting the same 403. (@Ayyhab, 2026-08-26) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
+- [ai-tutor] test: `instructor-access-boundaries.spec.ts` (landed on `development` via #1623 after this PR was opened) still asserted the pre-#1660 "INSTRUCTOR is 404'd off `/student/*`" contract; CI failed looking for `404 — Page not found` on `/student`. Split that case the same way the ADMIN/UNIT_ADMIN specs already were: taught-course `/student/*` previews with the banner, a course this instructor does not teach still 404s. (@Ayyhab, 2026-08-27) — [#1667](https://github.com/EduAI-Lab/EduAI/pull/1667)
 
 ## [Week 17 — August 17–23, 2026]
 
