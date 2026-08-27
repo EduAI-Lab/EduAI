@@ -80,3 +80,63 @@ describe('QmDashboardView', () => {
     expect(screen.getByText('CPSC 101')).toBeInTheDocument();
   });
 });
+
+describe('QmDashboardView additional coverage', () => {
+  it('shows loading skeletons for recent activity', () => {
+    const { container } = renderView({ recentLoading: true, recentItems: [{ id: 'q1', label: 'x', href: '/x', updatedAt: new Date().toISOString() }] });
+    expect(screen.queryByText('x')).toBeNull();
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+  });
+
+  it('defaults the recent-item sublabel to "Activity" when absent', () => {
+    renderView({
+      recentItems: [{ id: 'q1', label: 'No sublabel item', href: '/q/1', updatedAt: new Date().toISOString() }],
+    });
+    expect(screen.getByText('Activity')).toBeInTheDocument();
+  });
+
+  it('formats minutes/hours/yesterday/days-ago relative times', () => {
+    const now = Date.now();
+    renderView({
+      recentItems: [
+        { id: 'm', label: 'Mins item', href: '/m', updatedAt: new Date(now - 5 * 60_000).toISOString() },
+        { id: 'h', label: 'Hours item', href: '/h', updatedAt: new Date(now - 3 * 60 * 60_000).toISOString() },
+        { id: 'y', label: 'Yesterday item', href: '/y', updatedAt: new Date(now - 26 * 60 * 60_000).toISOString() },
+        { id: 'd', label: 'Days item', href: '/d', updatedAt: new Date(now - 3 * 24 * 60 * 60_000).toISOString() },
+        { id: 'old', label: 'Old item', href: '/old', updatedAt: new Date(now - 30 * 24 * 60 * 60_000).toISOString() },
+      ],
+    });
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
+    expect(screen.getByText('3h ago')).toBeInTheDocument();
+    expect(screen.getByText('Yesterday')).toBeInTheDocument();
+    expect(screen.getByText('3 days ago')).toBeInTheDocument();
+    expect(screen.getByText('Old item')).toBeInTheDocument();
+  });
+
+  it('renders the analytics section when totalQuestions > 0', () => {
+    renderView({
+      analytics: {
+        typeComposition: [{ label: 'MCQ', value: 5, color: '#000' }] as any,
+        difficulty: [{ label: 'Easy', value: 5, color: '#000' }],
+        totalQuestions: 5,
+        totalVariants: 8,
+        aiCount: 3,
+        humanCount: 2,
+        reviewedCount: 1,
+      },
+    });
+    expect(screen.getByText('CPSC 101')).toBeInTheDocument();
+  });
+
+  it('caps the course list panel to 5 courses', () => {
+    const courses = Array.from({ length: 8 }, (_, i) => ({ id: i, code: `C${i}`, name: `Course ${i}` }));
+    renderView({ courses });
+    expect(screen.getByText('C0')).toBeInTheDocument();
+    expect(screen.queryByText('C7')).toBeNull();
+  });
+
+  it('renders a default (non-personalized) greeting when greetingName is absent', () => {
+    renderView({ greetingName: undefined });
+    expect(screen.getByText(/Good (morning|afternoon|evening)/)).toBeInTheDocument();
+  });
+});

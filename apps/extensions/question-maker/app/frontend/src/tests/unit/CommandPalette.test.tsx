@@ -122,3 +122,40 @@ describe('CommandPalette', () => {
     expect(goTo.items.map((i: any) => i.label)).toEqual(['Settings']);
   });
 });
+
+describe('CommandPalette additional course-scoped actions', () => {
+  it('navigates for each course-scoped tab action', () => {
+    pathnameValue = '/courses/7';
+    displayCoursesValue = [{ id: 7, code: 'CPSC 101', name: 'Intro to CS' }];
+    render(<CommandPalette />);
+    const courseGroup = capturedGroups.find((g) => g.heading === 'CPSC 101');
+
+    const cases: Array<[string, string]> = [
+      ['Questions', '/courses/7?tab=questions'],
+      ['Assessments', '/courses/7?tab=assessments'],
+      ['Topics', '/courses/7?tab=topics'],
+      ['Canvas', '/courses/7?tab=canvas'],
+      ['Overview', '/courses/7?tab=overview'],
+    ];
+    for (const [label, href] of cases) {
+      courseGroup.items.find((i: any) => i.label === label).onSelect();
+      expect(navigate).toHaveBeenCalledWith(href);
+    }
+  });
+
+  it('omits the sublabel when a switch-course entry has no code', () => {
+    displayCoursesValue = [{ id: 1, code: null, name: 'No Code Course' }];
+    render(<CommandPalette />);
+    const switchGroup = capturedGroups.find((g) => g.heading === 'Switch course');
+    expect(switchGroup.items[0].sublabel).toBeUndefined();
+    expect(switchGroup.items[0].label).toBe('No Code Course');
+  });
+
+  it('passes role through to buildAppSwitcherGroup', () => {
+    userValue = { id: '1', role: 'ADMIN' };
+    render(<CommandPalette />);
+    const appGroup = capturedGroups.find((g) => g.heading === 'Switch app');
+    expect(appGroup.__opts.role).toBe('ADMIN');
+    expect(appGroup.__opts.currentAppId).toBe('question-maker');
+  });
+});

@@ -18,6 +18,14 @@ let bugReportValue: { openBugReport: () => void } | null = { openBugReport };
 let coursesValue: any[] = [];
 let isCoursesLoadingValue = false;
 let guidedTourHandlerValue: (() => void) | null = null;
+let userValue: any = { id: '1', name: 'Ada', email: 'ada@example.com', role: 'instructor' };
+const { toastErrorFn, toastFn } = vi.hoisted(() => {
+  const toastErrorFn = vi.fn();
+  const toastFn = Object.assign(vi.fn(), { error: toastErrorFn });
+  return { toastErrorFn, toastFn };
+});
+
+vi.mock('sonner', () => ({ toast: toastFn }));
 
 vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: pathnameValue }),
@@ -26,15 +34,20 @@ vi.mock('react-router', () => ({
   Outlet: () => <div data-testid="outlet" />,
 }));
 
+let capturedAppShellProps: any = null;
+
 vi.mock('@eduai/ui', () => ({
-  AppShell: (props: any) => (
-    <div data-testid="app-shell" data-classname={props.mainClassName} data-title={props.title}>
-      <div data-testid="breadcrumbs">{props.breadcrumbs}</div>
-      <div data-testid="header-actions">{props.headerActions}</div>
-      <div data-testid="command-palette-slot">{props.commandPalette}</div>
-      {props.children}
-    </div>
-  ),
+  AppShell: (props: any) => {
+    capturedAppShellProps = props;
+    return (
+      <div data-testid="app-shell" data-classname={props.mainClassName} data-title={props.title}>
+        <div data-testid="breadcrumbs">{props.breadcrumbs}</div>
+        <div data-testid="header-actions">{props.headerActions}</div>
+        <div data-testid="command-palette-slot">{props.commandPalette}</div>
+        {props.children}
+      </div>
+    );
+  },
   ThemeToggle: () => <div data-testid="theme-toggle" />,
   Breadcrumb: ({ children }: any) => <nav>{children}</nav>,
   BreadcrumbList: ({ children }: any) => <ol>{children}</ol>,
@@ -54,7 +67,7 @@ vi.mock('@eduai/ui', () => ({
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: '1', name: 'Ada', email: 'ada@example.com', role: 'instructor' },
+    user: userValue,
     logout,
   }),
 }));
@@ -114,7 +127,7 @@ vi.mock('@/lib/apps', () => ({
   getLauncherApps: () => [],
 }));
 
-import { QmAppLayout } from '@/components/layout/QmAppLayout';
+import { QmAppLayout, QmAccessShell } from '@/components/layout/QmAppLayout';
 
 afterEach(() => {
   cleanup();
@@ -125,6 +138,8 @@ afterEach(() => {
   isCoursesLoadingValue = false;
   guidedTourHandlerValue = null;
   bugReportValue = { openBugReport };
+  userValue = { id: '1', name: 'Ada', email: 'ada@example.com', role: 'instructor' };
+  capturedAppShellProps = null;
 });
 
 describe('QmAppLayout', () => {
@@ -215,5 +230,89 @@ describe('QmAppLayout', () => {
     render(<QmAppLayout />);
     fireEvent.click(screen.getByTestId('ai-indicators'));
     expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe('QmAppLayout additional coverage', () => {
+  it('shows a toast error when logout rejects', async () => {
+    logout.mockRejectedValueOnce(new Error('network'));
+    render(<QmAppLayout />);
+    capturedAppShellProps.sidebar.navUser.onLogout();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(toastErrorFn).toHaveBeenCalledWith('Could not log out', expect.any(Object));
+  });
+
+  it('does not toast when logout resolves', async () => {
+    logout.mockResolvedValueOnce(undefined);
+    render(<QmAppLayout />);
+    capturedAppShellProps.sidebar.navUser.onLogout();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(toastErrorFn).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Guest sidebar user when unauthenticated', () => {
+    userValue = null;
+    render(<QmAppLayout />);
+    expect(capturedAppShellProps.sidebar.user).toEqual({ name: 'Guest', email: '', role: 'GUEST' });
+    expect(capturedAppShellProps.sidebar.navUser).toBeUndefined();
+  });
+
+  it('uses the user email as sidebar name when name is absent', () => {
+    userValue = { id: '1', email: 'noname@example.com', role: 'instructor' };
+    render(<QmAppLayout />);
+    expect(capturedAppShellProps.sidebar.user.name).toBe('noname@example.com');
+  });
+
+  it.each([
+    ['/courses/42/questions/1/edit', 'Edit question'],
+    ['/courses/42/questions/1/variant', 'New variant'],
+    ['/courses/42/assessments/5/variants', 'Variants'],
+    ['/courses/42/assessments/5', 'Assessment builder'],
+    ['/courses/42/banks/7', 'Question bank'],
+  ])('shows the %s sub-crumb for %s', (path, expected) => {
+    pathnameValue = path;
+    render(<QmAppLayout />);
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it('shows no sub-crumb for a bare course workspace route', () => {
+    pathnameValue = '/courses/42';
+    render(<QmAppLayout />);
+    expect(screen.queryByText('Assessment builder')).toBeNull();
+  });
+});
+
+describe('QmAccessShell', () => {
+  it('renders children inside the minimal shell for an authenticated user', () => {
+    render(
+      <QmAccessShell>
+        <p>gated content</p>
+      </QmAccessShell>,
+    );
+    expect(screen.getByText('gated content')).toBeInTheDocument();
+    expect(screen.getByTestId('app-shell').dataset.title).toBe('Question Maker');
+  });
+
+  it('falls back to a Guest sidebar user when unauthenticated', () => {
+    userValue = null;
+    render(
+      <QmAccessShell>
+        <p>gated content</p>
+      </QmAccessShell>,
+    );
+    expect(capturedAppShellProps.sidebar.user).toEqual({ name: 'Guest', email: '', role: 'GUEST' });
+    expect(capturedAppShellProps.sidebar.navUser).toBeUndefined();
+  });
+
+  it('wires onLogout and surfaces a toast on failure', async () => {
+    logout.mockRejectedValueOnce(new Error('network'));
+    render(
+      <QmAccessShell>
+        <p>gated content</p>
+      </QmAccessShell>,
+    );
+    capturedAppShellProps.sidebar.navUser.onLogout();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(toastErrorFn).toHaveBeenCalled();
   });
 });

@@ -1,16 +1,60 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Children, cloneElement, isValidElement } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent } from "@eduai/ui";
 import type { CourseTopicsState } from "~/hooks/useCourseTopics";
 import { CourseTopicsProvider } from "~/hooks/useCourseTopics";
 import AddActivityPanel from "~/components/AddActivityPanel";
 
-const mockCreateActivity = vi.fn();
+const { mockCreateActivity } = vi.hoisted(() => ({ mockCreateActivity: vi.fn() }));
 vi.mock("~/lib/api", () => ({
   default: {
     createActivity: (...args: unknown[]) => mockCreateActivity(...args),
   },
 }));
+
+// Radix Select opens on pointerdown, which jsdom doesn't implement, so swap in
+// a plain-button stand-in (same approach as instructor.module.crud.test.tsx)
+// to drive the "select a main topic" flow without relying on the panel's
+// mount-time auto-select (which only fires when the `topics` array reference
+// changes, not on an already-populated initial mount).
+vi.mock("@eduai/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@eduai/ui")>();
+  const injectHandler = (children: unknown, onValueChange: unknown): unknown =>
+    Children.map(children as never, (child) => {
+      if (!isValidElement(child)) return child;
+      return cloneElement(child as never, { __onValueChange: onValueChange } as never);
+    });
+
+  const Select = ({ value, onValueChange, disabled, children }: any) => (
+    <div data-select-value={value} data-disabled={disabled}>
+      {injectHandler(children, onValueChange)}
+    </div>
+  );
+  const SelectTrigger = ({ children, id, className }: any) => (
+    <button type="button" id={id} className={className}>
+      {children}
+    </button>
+  );
+  const SelectValue = ({ placeholder }: any) => <span>{placeholder}</span>;
+  const SelectContent = ({ children, __onValueChange }: any) => (
+    <div role="listbox">{injectHandler(children, __onValueChange)}</div>
+  );
+  const SelectItem = ({ value, children, __onValueChange, disabled }: any) => (
+    <button type="button" disabled={disabled} onClick={() => __onValueChange?.(value)}>
+      {children}
+    </button>
+  );
+
+  return {
+    ...actual,
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+  };
+});
 
 function topicsState(overrides: Partial<CourseTopicsState> = {}): CourseTopicsState {
   return {
@@ -41,6 +85,19 @@ function renderPanel(state: CourseTopicsState = topicsState(), props: Partial<Pa
   );
 }
 
+/**
+ * The panel only auto-selects the first topic as the main topic via a
+ * "derived state during render" effect that fires when the `topics` array
+ * *reference* changes (mirrors the real CourseTopicsProvider going from an
+ * empty initial fetch to a loaded one) — mounting directly with a populated
+ * topics array does not trigger it. Tests that need a main topic selected
+ * instead pick one explicitly through the mocked Select's always-rendered
+ * listbox (see the `@eduai/ui` mock above).
+ */
+function selectMainTopic(name: string) {
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 describe("AddActivityPanel — submit flows", () => {
   beforeEach(() => {
     mockCreateActivity.mockReset().mockResolvedValue({ id: 1 });
@@ -50,6 +107,7 @@ describe("AddActivityPanel — submit flows", () => {
     const onActivityCreated = vi.fn();
     renderPanel(topicsState(), { onActivityCreated });
 
+    selectMainTopic("Recursion");
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "What is 2+2?" },
     });
@@ -76,6 +134,7 @@ describe("AddActivityPanel — submit flows", () => {
   it("submits a SHORT_TEXT activity with the expected answer", async () => {
     renderPanel();
 
+    selectMainTopic("Recursion");
     fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "Capital of France?" },
@@ -173,14 +232,17 @@ describe("AddActivityPanel — submit flows", () => {
     const onActivityCreated = vi.fn();
     renderPanel(topicsState(), { onActivityCreated });
 
+    selectMainTopic("Recursion");
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "Will fail" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /^Add activity$/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Add activity$/i }));
+    });
 
-    await waitFor(() => expect(consoleSpy).toHaveBeenCalled());
     expect(onActivityCreated).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
 

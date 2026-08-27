@@ -154,6 +154,50 @@ describe('ProfileCoursesDialog', () => {
     );
   });
 
+  it('shows an error toast when re-syncing a course with no matching local record', async () => {
+    listCourses.mockResolvedValue([{ id: 'core-1', code: 'CPSC 101', name: 'Intro to CS' }]);
+    listCoreCourseTopics.mockResolvedValue([]);
+
+    render(
+      <ProfileCoursesDialog
+        {...baseProps}
+        onClose={vi.fn()}
+        existingCourses={[{ coreCourseId: 'core-1' } as any]}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Already added')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Re-sync from Core/ }));
+
+    const { toast } = await import('sonner');
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Local course not found', expect.objectContaining({}))
+    );
+    expect(syncTopicsFromCore).not.toHaveBeenCalled();
+  });
+
+  it('still counts the course as added when the practice-exam creation fails', async () => {
+    listCourses.mockResolvedValue([{ id: 'core-4', code: 'BIOL 100', name: 'Biology' }]);
+    listCoreCourseTopics.mockResolvedValue([]);
+    createCourse.mockResolvedValue({ id: 21 });
+    linkAndSyncFromCore.mockResolvedValue(undefined);
+    createPracticeExamForCourse.mockRejectedValue(new Error('exam service down'));
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    render(<ProfileCoursesDialog {...baseProps} onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText(/BIOL 100/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /Add selected courses/ }));
+
+    await waitFor(() => expect(linkAndSyncFromCore).toHaveBeenCalledWith(21, 'core-4'));
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Failed to create Practice Exam for linked course',
+      expect.any(Error),
+    );
+    consoleWarn.mockRestore();
+  });
+
   it('calls logout and onClose when the Logout button is clicked', async () => {
     listCourses.mockResolvedValue([]);
     const onClose = vi.fn();

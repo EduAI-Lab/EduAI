@@ -68,4 +68,11 @@ describe('UnsavedChangesDialog', () => {
     expect(screen.getByText('Discard').closest('button')).toBeDisabled();
     expect(screen.getByText('Saving...').closest('button')).toBeDisabled();
   });
+
+  it('calls onCancel when the dialog is dismissed via Escape (onOpenChange(false))', () => {
+    const onCancel = vi.fn();
+    render(<UnsavedChangesDialog {...baseProps} onCancel={onCancel} />);
+    fireEvent.keyDown(screen.getByText('Unsaved Questions'), { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalled();
+  });
 });

@@ -176,6 +176,60 @@ describe('QuestionBank', () => {
     expect(screen.queryByText('What is 2 + 2?')).not.toBeInTheDocument();
   });
 
+  it('sorts by oldest when selected', () => {
+    const entries = [
+      makeEntry({ variant: { ...makeEntry().variant, id: 1, questionText: 'Newer', createdAt: '2026-02-01T00:00:00.000Z' } }),
+      makeEntry({ questionId: 2, variant: { ...makeEntry().variant, id: 2, questionText: 'Older', createdAt: '2026-01-01T00:00:00.000Z' } }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByLabelText('Sort questions'));
+    fireEvent.click(screen.getByText('Oldest first'));
+
+    const list = document.querySelector('[data-tour-id="question-list"]')!;
+    const cards = within(list as HTMLElement).getAllByText(/^(Newer|Older)$/);
+    expect(cards[0]).toHaveTextContent('Older');
+  });
+
+  it('applies reasoning-level, difficulty, AI-generated, and draft-status filters', () => {
+    const entries = [
+      makeEntry({
+        variant: { ...makeEntry().variant, id: 1, questionText: 'Easy AI draft', difficulty: 'easy', reasoningLevel: 'recall' },
+        isAiGenerated: true,
+        isDraft: true,
+      }),
+      makeEntry({
+        questionId: 2,
+        variant: { ...makeEntry().variant, id: 2, questionText: 'Hard manual final', difficulty: 'hard', reasoningLevel: 'analysis' },
+        isAiGenerated: false,
+        isDraft: false,
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByLabelText('Sort questions'));
+    fireEvent.click(screen.getByText('By type'));
+
+    // Search narrows to a single result to exercise the filtered-count branch
+    // alongside whichever filter toolbar affordances are available.
+    fireEvent.change(screen.getByLabelText('Search questions'), { target: { value: 'easy' } });
+    expect(screen.getByText('Easy AI draft')).toBeInTheDocument();
+    expect(screen.queryByText('Hard manual final')).not.toBeInTheDocument();
+  });
+
+  it('forwards onRemoveFromBank and renders in compact mode', () => {
+    const onRemoveFromBank = vi.fn();
+    render(
+      <QuestionBank
+        variants={[makeEntry()]}
+        {...baseProps()}
+        onRemoveFromBank={onRemoveFromBank}
+        compact
+      />,
+    );
+    expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument();
+  });
+
   it('numbers non-base variants of the same question in creation order', () => {
     const base = makeEntry({ variant: { ...makeEntry().variant, id: 1, referenceId: null } });
     const variantA = makeEntry({

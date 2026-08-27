@@ -46,7 +46,7 @@ describe("ActivityDetailsCard", () => {
         activity={makeActivity({
           title: "Internal title text",
           instructionsMd: "Do the thing",
-          options: { choices: ["A", "B", "C"] },
+          options: { choices: ["Choice one", "Choice two", "Choice three"] },
           answer: { correctIndex: 1 },
           hints: ["Hint one", "Hint two"],
         })}
@@ -56,9 +56,9 @@ describe("ActivityDetailsCard", () => {
 
     expect(screen.getByText("Internal title text")).toBeInTheDocument();
     expect(screen.getByText("Do the thing")).toBeInTheDocument();
-    expect(screen.getByText("A")).toBeInTheDocument();
-    expect(screen.getByText("B")).toBeInTheDocument();
-    expect(screen.getByText("C")).toBeInTheDocument();
+    expect(screen.getByText("Choice one")).toBeInTheDocument();
+    expect(screen.getByText("Choice two")).toBeInTheDocument();
+    expect(screen.getByText("Choice three")).toBeInTheDocument();
     expect(screen.getByText("Hint one")).toBeInTheDocument();
     expect(screen.getByText("Hint two")).toBeInTheDocument();
     expect(screen.queryByText(/No additional details captured yet/)).not.toBeInTheDocument();

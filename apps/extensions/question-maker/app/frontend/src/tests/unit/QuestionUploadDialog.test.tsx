@@ -316,6 +316,120 @@ describe('QuestionUploadDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
+
+  it('resets the upload after extraction so a new file can be selected', async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: 'Q1', summary: 'S1', type: 'SA', difficulty: 'easy', answer: 'A1' },
+    ]);
+    renderDialog();
+
+    fireEvent.change(document.getElementById('question-upload') as HTMLInputElement, {
+      target: { files: [makeTxtFile('Q1 text')] },
+    });
+    await screen.findByText('Review extracted questions (1)');
+
+    // The "Upload & model" panel (which holds the reset control) is collapsed
+    // by default once drafts exist — expand it first.
+    fireEvent.click(screen.getByText('Upload & model'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.queryByText(/Review extracted questions/)).not.toBeInTheDocument();
+    expect(screen.getByText('Upload a file')).toBeInTheDocument();
+  });
+
+  it('opens and closes the history panel', async () => {
+    renderDialog();
+    await screen.findByText('Upload Questions');
+    const historyButton = screen.getByRole('button', { name: /history/i });
+    fireEvent.click(historyButton);
+    expect(await screen.findByText('No recent uploads')).toBeInTheDocument();
+  });
+
+  it('shows a different-course toast when selecting a history job for another course', async () => {
+    ocrJobs = [
+      {
+        id: 'job-2',
+        fileName: 'old.pdf',
+        courseId: 99,
+        courseName: 'Chemistry 101',
+        model: 'vllm:qwen2.5-32b-instruct',
+        status: 'success',
+        createdAt: new Date().toISOString(),
+        storedQuestions: [{ id: 'q1', text: 'Q', type: 'mcq' }],
+      } as any,
+    ];
+    renderDialog();
+    await screen.findByText('Upload Questions');
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    const jobCard = await screen.findByText('old.pdf');
+    const outer = jobCard.closest('[role="button"]') as HTMLElement;
+    fireEvent.click(outer);
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('Different course', expect.any(Object)),
+    );
+  });
+
+  it('restores stored questions from a matching-course history job with no pending drafts', async () => {
+    ocrJobs = [
+      {
+        id: 'job-3',
+        fileName: 'restore.pdf',
+        courseId: 7,
+        courseName: 'Biology 101',
+        model: 'vllm:qwen2.5-32b-instruct',
+        status: 'success',
+        createdAt: new Date().toISOString(),
+        storedQuestions: [
+          { id: 'q1', text: 'Restored Q', summary: 'S', type: 'short_answer' },
+        ],
+      } as any,
+    ];
+    renderDialog();
+    await screen.findByText('Upload Questions');
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    const jobCard = await screen.findByText('restore.pdf');
+    fireEvent.click(jobCard.closest('[role="button"]') as HTMLElement);
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith('Questions restored', expect.any(Object)),
+    );
+  });
+
+  it('confirms replacing unsaved drafts when restoring a different history job', async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: 'Q1', summary: 'S1', type: 'SA', difficulty: 'easy', answer: 'A1' },
+    ]);
+    ocrJobs = [
+      {
+        id: 'job-4',
+        fileName: 'restore2.pdf',
+        courseId: 7,
+        courseName: 'Biology 101',
+        model: 'vllm:qwen2.5-32b-instruct',
+        status: 'success',
+        createdAt: new Date().toISOString(),
+        storedQuestions: [
+          { id: 'q2', text: 'Restored Q2', summary: 'S', type: 'short_answer' },
+        ],
+      } as any,
+    ];
+    renderDialog();
+
+    fireEvent.change(document.getElementById('question-upload') as HTMLInputElement, {
+      target: { files: [makeTxtFile('Q1 text')] },
+    });
+    await screen.findByText('Review extracted questions (1)');
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    const jobCard = await screen.findByText('restore2.pdf');
+    fireEvent.click(jobCard.closest('[role="button"]') as HTMLElement);
+
+    expect(await screen.findByText('Replace current questions?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith('Questions restored', expect.any(Object)),
+    );
+  });
 });
 
 describe('mapExtractedToDraftQuestions', () => {

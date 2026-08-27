@@ -109,6 +109,36 @@ describe('useOCRHistory', () => {
     expect(stored).toHaveLength(1);
   });
 
+  it('retries with a reduced job list when storage quota is exceeded, and gives up if that still fails', async () => {
+    const { result } = renderHook(() => useOCRHistory());
+    await act(async () => {});
+    act(() => {
+      result.current.addJob(baseJob);
+      result.current.addJob(baseJob);
+    });
+
+    const quotaError = new DOMException('quota', 'QuotaExceededError');
+    const setItemSpy = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementationOnce(() => {
+        throw quotaError;
+      })
+      .mockImplementationOnce(() => undefined);
+
+    act(() => {
+      result.current.addJob(baseJob);
+    });
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
+
+    setItemSpy.mockImplementation(() => {
+      throw quotaError;
+    });
+    // A second failure (even on the reduced payload) is swallowed, not thrown.
+    expect(() => act(() => result.current.addJob(baseJob))).not.toThrow();
+
+    setItemSpy.mockRestore();
+  });
+
   it('addJob caps storedQuestions at MAX_STORED_QUESTIONS_PER_JOB', async () => {
     const { result } = renderHook(() => useOCRHistory());
     await act(async () => {});

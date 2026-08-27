@@ -48,6 +48,21 @@ vi.mock('@eduai/ui', async (importOriginal) => {
   return {
     ...actual,
     useTheme: () => ({ theme: 'system', setTheme: setThemeMock }),
+    // Real Radix tabs are unreliable to drive with fireEvent.click in jsdom
+    // (see CourseDetailPage.test.tsx precedent) — render every tab's content
+    // at once so we can exercise all of SettingsPage's own logic directly.
+    SettingsPageScaffold: ({ heading = 'Settings', subheading, tabs, footer }: any) => (
+      <div>
+        <h1>{heading}</h1>
+        <p>{subheading}</p>
+        {tabs.map((tab: any) => (
+          <section key={tab.value} aria-label={tab.label}>
+            {tab.content}
+          </section>
+        ))}
+        {footer}
+      </div>
+    ),
   };
 });
 
@@ -118,8 +133,9 @@ describe('SettingsPage', () => {
   it('toggles export preferences and persists to localStorage', async () => {
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText('Export preferences')).toBeInTheDocument());
-    const checkbox = screen.getByText('Include AI-generated tag').previousElementSibling as HTMLElement;
-    fireEvent.click(checkbox);
+    const checkboxes = screen.getAllByRole('checkbox');
+    // Second checkbox is "Include AI-generated tag" (first is "Include answer key").
+    fireEvent.click(checkboxes[1]);
     const stored = JSON.parse(localStorage.getItem('qm:export-prefs') || '{}');
     expect(stored.includeAiTag).toBe(true);
   });
@@ -130,7 +146,6 @@ describe('SettingsPage', () => {
       usedTestMode: false,
     });
     render(<SettingsPage />);
-    fireEvent.click(screen.getByText('Canvas'));
     await waitFor(() => expect(screen.getByText('Canvas Integration')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText('Canvas API token'), {
@@ -150,7 +165,6 @@ describe('SettingsPage', () => {
     });
     canvasService.disconnectCanvas.mockResolvedValue(undefined);
     render(<SettingsPage />);
-    fireEvent.click(screen.getByText('Canvas'));
     await waitFor(() => expect(screen.getByLabelText('Disconnect Canvas')).toBeInTheDocument());
     fireEvent.click(screen.getByLabelText('Disconnect Canvas'));
     await waitFor(() => expect(canvasService.disconnectCanvas).toHaveBeenCalled());
@@ -160,7 +174,6 @@ describe('SettingsPage', () => {
   it('shows an error toast when Canvas connect fails', async () => {
     canvasService.connectCanvasWithFallback.mockRejectedValue(new Error('bad token'));
     render(<SettingsPage />);
-    fireEvent.click(screen.getByText('Canvas'));
     await waitFor(() => expect(screen.getByText('Canvas Integration')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Canvas API token'), {
       target: { value: 'canvas-token-123' },
@@ -171,7 +184,6 @@ describe('SettingsPage', () => {
 
   it('renders the Accessibility tab', async () => {
     render(<SettingsPage />);
-    fireEvent.click(screen.getByText('Accessibility'));
     await waitFor(() => expect(screen.getByText(/Personalize how EduAI looks/)).toBeInTheDocument());
   });
 

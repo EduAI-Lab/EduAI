@@ -104,4 +104,59 @@ describe('QuestionMetadataPanel', () => {
     renderPanel();
     expect(screen.getByText('Select secondary topics')).toBeInTheDocument();
   });
+
+  it('changes the question type via its select', () => {
+    const { onChange } = renderPanel();
+    const typeLabel = screen.getByText('Type');
+    const typeTrigger = typeLabel.parentElement!.querySelector('[role="combobox"]') as HTMLElement;
+    fireEvent.click(typeTrigger);
+    fireEvent.click(screen.getByText('Short Answer'));
+    expect(onChange).toHaveBeenCalledWith('questionType', 'SA');
+  });
+
+  it('changes the primary topic via its select', () => {
+    const { onChange } = renderPanel();
+    const topicLabel = screen.getByText('Primary Topic', { exact: false });
+    const topicTrigger = topicLabel.parentElement!.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
+    fireEvent.click(topicTrigger);
+    fireEvent.click(screen.getByText('Graphs'));
+    expect(onChange).toHaveBeenCalledWith('primaryTopicId', '2');
+  });
+
+  it('changes reasoning level via its select', () => {
+    const { onChange } = renderPanel();
+    const reasoningLabel = screen.getByText('Reasoning');
+    const trigger = reasoningLabel.parentElement!.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByText('Analytical'));
+    expect(onChange).toHaveBeenCalledWith('variantReasoningLevel', 'analytical');
+  });
+
+  it('changes the assessment link', () => {
+    const { onChange } = renderPanel();
+    fireEvent.click(screen.getByRole('combobox', { name: /assessment/i }));
+    fireEvent.click(screen.getByText('Midterm (Midterm)'));
+    expect(onChange).toHaveBeenCalledWith('variantAssessmentId', '10');
+  });
+
+  it('disables all controls when disabled is set', () => {
+    renderPanel({ disabled: true });
+    for (const combo of screen.getAllByRole('combobox')) {
+      expect(combo).toBeDisabled();
+    }
+    expect(screen.getByLabelText(/description/i)).toBeDisabled();
+  });
+
+  it('disables the primary topic select and shows a loading hint when topics are still loading', () => {
+    renderPanel({ topics: [], isAuxLoading: true });
+    const topicLabel = screen.getByText('Primary Topic', { exact: false });
+    const topicTrigger = topicLabel.parentElement!.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
+    expect(topicTrigger).toBeDisabled();
+  });
 });

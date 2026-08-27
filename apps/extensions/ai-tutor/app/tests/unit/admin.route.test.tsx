@@ -26,7 +26,7 @@ const mockLoadAdminSettingsData = vi.fn();
 vi.mock('~/lib/admin-settings', () => ({
   loadAdminSettingsData: (...args: unknown[]) => mockLoadAdminSettingsData(...args),
   getApiKeySourceTag: (status: { configured: boolean; source?: string }) => {
-    if (!status.configured) return { label: 'Not configured' };
+    if (!status.configured) return null;
     if (status.source === 'ADMIN') return { label: 'Admin override' };
     return { label: 'From .env' };
   },
@@ -162,5 +162,51 @@ describe('admin route — rendering', () => {
 
     expect(screen.getByTestId('admin-settings-panel')).toBeInTheDocument();
     expect(screen.getByText('Admin override')).toBeInTheDocument();
+  });
+
+  it('switching to the AI oversight tab renders the oversight panel', async () => {
+    wrap();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /ai oversight/i }));
+    });
+
+    expect(screen.getByTestId('ai-oversight-panel')).toHaveTextContent('1 traces');
+  });
+
+  it('hides the AI settings tab content when the key status is not configured (no source tag)', async () => {
+    wrap({
+      adminSettings: {
+        status: { configured: false },
+        aiPolicy: null,
+        aiModels: [],
+        aiPolicyAvailable: true,
+        aiPolicyError: null,
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /ai settings/i }));
+    });
+
+    expect(screen.queryByTestId('admin-settings-panel')).not.toBeInTheDocument();
+  });
+
+  it('shows a "From .env" badge for an ENV-sourced key', async () => {
+    wrap({
+      adminSettings: {
+        status: { configured: true, source: 'ENV' },
+        aiPolicy: null,
+        aiModels: [],
+        aiPolicyAvailable: true,
+        aiPolicyError: null,
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /ai settings/i }));
+    });
+
+    expect(screen.getByText('From .env')).toBeInTheDocument();
   });
 });
