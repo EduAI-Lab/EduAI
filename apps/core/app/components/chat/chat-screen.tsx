@@ -33,6 +33,7 @@ import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
+  adhdAssistFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 type LongOutputMessageMetadata = {
@@ -152,6 +153,26 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     },
   );
   const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
+  /**
+   * Whether Assist was on for each assistant message's request, keyed by
+   * message id — captured at send time so toggling Assist afterward doesn't
+   * retroactively reformat older messages (#1671). Legacy rows persisted
+   * before this metadata existed are simply absent from the map, and the
+   * consuming layout falls back to the live toggle for those.
+   */
+  const [adhdAssistByMessageId, setAdhdAssistByMessageId] = useState<Record<string, boolean>>(
+    () => {
+      const hydrated: Record<string, boolean> = {};
+      for (const message of editableTranscript?.messages ?? []) {
+        const id =
+          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const wasAssist = adhdAssistFromMessage(message);
+        if (id && wasAssist !== undefined) hydrated[id] = wasAssist;
+      }
+      return hydrated;
+    },
+  );
+  const [streamingAdhdAssist, setStreamingAdhdAssist] = useState(false);
   /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   /**
@@ -171,6 +192,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const regeneratingRef = useRef(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
+  const pendingAdhdAssistRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
@@ -346,6 +368,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
       pendingWasAutoRoutedRef.current = wasAutoRouted;
       setStreamingWasAutoRouted(wasAutoRouted);
+      // Assist is disabled while a request is in flight, so this still
+      // reflects what was on when the request was sent (#1671).
+      pendingAdhdAssistRef.current = adhdAssist;
+      setStreamingAdhdAssist(adhdAssist);
 
       await logChatApiResponse(response, "learning-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
@@ -391,11 +417,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           [message.id]: pendingWasAutoRoutedRef.current,
         }));
       }
+      // Independent of routing: record what Assist was on for this turn so
+      // toggling it afterward doesn't reformat this message later (#1671).
+      if (message.role === "assistant") {
+        setAdhdAssistByMessageId((prev) => ({
+          ...prev,
+          [message.id]: pendingAdhdAssistRef.current,
+        }));
+      }
 
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
+      pendingAdhdAssistRef.current = false;
       setStreamingRoutedRegistryId(null);
       setStreamingWasAutoRouted(false);
+      setStreamingAdhdAssist(false);
 
       const id = pendingNavigateChatId.current;
 
@@ -411,8 +447,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       logChatUseChatError(error, "learning-chat");
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
+      pendingAdhdAssistRef.current = false;
       setStreamingRoutedRegistryId(null);
       setStreamingWasAutoRouted(false);
+      setStreamingAdhdAssist(false);
     },
   });
 
@@ -509,6 +547,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             // matches it — a failed regenerate (below) leaves both unchanged.
             setAdhdAssist(checked);
             setAssistive(checked);
+            // The regenerated content now reflects `checked`, so this
+            // message's per-message Assist flag must move with it — otherwise
+            // the display-transform layer would keep formatting it for the
+            // mode it was regenerated *away* from (#1671).
+            setAdhdAssistByMessageId((prev) => ({
+              ...prev,
+              [lastMessage.id]: checked,
+            }));
           }
         } catch (error) {
           console.error("Failed to regenerate response for Assist toggle:", error);
@@ -742,6 +788,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onContinue: handleContinue,
     wasAutoRoutedByMessageId,
     streamingWasAutoRouted,
+    adhdAssistByMessageId,
+    streamingAdhdAssist,
   };
 
   return (

@@ -64,6 +64,8 @@ export function ChatConversationLayout({
   onContinue,
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
+  adhdAssistByMessageId = {},
+  streamingAdhdAssist = false,
 }: ChatConversationLayoutProps) {
   const {
     startedAt,
@@ -172,6 +174,17 @@ export function ChatConversationLayout({
                         ? displayNameForRegistryId(routedRegistryId, chatModels)
                         : undefined;
 
+                    // What Assist mode *that turn* was generated under — not
+                    // the live toggle, which may have changed since (#1671).
+                    // Legacy messages persisted before this metadata existed
+                    // fall back to the live toggle, matching prior behavior.
+                    const messageAdhdAssist =
+                      message.id in adhdAssistByMessageId
+                        ? adhdAssistByMessageId[message.id]
+                        : isStreamingMessage
+                          ? streamingAdhdAssist
+                          : adhdAssist;
+
                     return (
                       <ChatMessage
                         key={message.id}
@@ -180,7 +193,7 @@ export function ChatConversationLayout({
                         answeredByLabel={answeredByLabel}
                         highlightRole={resolveMessageHighlightRole(index, messages, assistive)}
                         webToolsEnabled={webToolsEnabled}
-                        assistiveDisplay={adhdAssist}
+                        assistiveDisplay={messageAdhdAssist}
                         showContinue={cappedMessageIds?.has(message.id) ?? false}
                         onContinue={onContinue ? () => onContinue(message.id) : undefined}
                         continueDisabled={isLoading}
