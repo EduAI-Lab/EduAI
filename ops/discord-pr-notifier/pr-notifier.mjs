@@ -35,7 +35,7 @@ function parseIssues(body = "") {
 }
 function prState(pr, repo) {
   const id = key(repo, pr.number);
-  const existing = states[id] ?? { id, reviewers: [], approvers: [], completedReviewers: [], reviewRequestedAtByReviewer: {}, reviewerReminderAtByReviewer: [], threadId: null };
+  const existing = states[id] ?? { id, reviewers: [], approvers: [], reviewStatus: {}, reviewRequestedAtByReviewer: {}, reviewerReminderAtByReviewer: [], threadId: null };
   states[id] = { ...existing, repository: repo, number: pr.number, title: pr.title, url: pr.html_url, author: pr.user.login, assignees: (pr.assignees ?? []).map(({ login }) => login), open: pr.state === "open", draft: Boolean(pr.draft), sha: pr.head?.sha, linkedIssues: parseIssues(pr.body ?? ""), lastActivityAt: now() };
   return states[id];
 }
@@ -119,7 +119,8 @@ async function handle(event, payload) {
   if (!pr) return;
   const state = prState(pr, repo);
   if (state.open) await ensureThread(state);
-  if (!state.threadId) { await saveState(); return; }
+  if (!state.threadId && !(event === "pull_request" && payload.action === "closed")) { await saveState(); return; }
+  if (event === "pull_request" && payload.action === "closed" && !state.threadId) { delete states[key(repo, pr.number)]; await saveState(); return; }
   await addToThread(state.threadId, unique([state.author, ...(state.assignees ?? []), ...(state.reviewers ?? [])]));
   if (event === "pull_request") {
     if (payload.action === "assigned" && payload.assignee?.login) {
@@ -133,13 +134,13 @@ async function handle(event, payload) {
     if (payload.action === "opened" && state.draft) await setThreadArchived(state.threadId, true);
     if (payload.action === "review_requested" && payload.requested_reviewer?.login) {
       const reviewer = payload.requested_reviewer.login;
-      state.reviewers = unique([...state.reviewers, reviewer]); state.reviewRequestedAtByReviewer = { ...(state.reviewRequestedAtByReviewer ?? {}), [reviewer]: Date.now() }; state.completedReviewers = (state.completedReviewers ?? []).filter((login) => login !== reviewer); state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer);
+      state.reviewers = unique([...state.reviewers, reviewer]); state.reviewStatus = { ...(state.reviewStatus ?? {}), [reviewer]: "pending" }; state.reviewRequestedAtByReviewer = { ...(state.reviewRequestedAtByReviewer ?? {}), [reviewer]: Date.now() }; state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer);
       await addToThread(state.threadId, [reviewer]);
       await notify(state, `[Review requested] ${reviewer} has been assigned.`, [reviewer]);
     }
     if (payload.action === "review_request_removed" && payload.requested_reviewer?.login) {
       const reviewer = payload.requested_reviewer.login;
-      state.reviewers = state.reviewers.filter((login) => login !== reviewer);
+      state.reviewers = state.reviewers.filter((login) => login !== reviewer); if (state.reviewStatus) delete state.reviewStatus[reviewer];
       await removeFromThread(state.threadId, [reviewer]);
       await notify(state, `[Reviewer removed] ${reviewer} is no longer assigned to this PR.`);
     }
@@ -154,17 +155,17 @@ async function handle(event, payload) {
   if (event === "pull_request" && payload.action === "closed") {
     await notify(state, pr.merged ? `[Merged] This PR was merged. Closing the PR thread.` : `[Closed] This PR was closed. Removing the PR thread.`);
     try {
-    await discord(`/channels/${state.threadId}`, { method: "DELETE" });
+      await discord(`/channels/${state.threadId}`, { method: "DELETE" });
     } catch {
       // If the bot lacks Manage Threads, archive and lock as a safe fallback.
-      await discord(`/channels/${state.threadId}`, { method: "PATCH", body: JSON.stringify({ archived: true, locked: true }) });
+      try { await discord(`/channels/${state.threadId}`, { method: "PATCH", body: JSON.stringify({ archived: true, locked: true }) }); } catch (error) { console.error(error); }
     }
     delete states[key(repo, pr.number)];
     await saveState(); return;
   }
   if (event === "pull_request_review" && payload.action === "submitted") {
     const reviewer = payload.review?.user?.login; const decision = payload.review?.state?.toLowerCase();
-    if (reviewer) { await addToThread(state.threadId, [reviewer]); state.completedReviewers = unique([...(state.completedReviewers ?? []), reviewer]); state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer); }
+    if (reviewer) { await addToThread(state.threadId, [reviewer]); state.reviewStatus = { ...(state.reviewStatus ?? {}), [reviewer]: decision === "approved" || decision === "changes_requested" ? decision : "pending" }; state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer); }
     if (decision === "changes_requested") { state.changesRequestedAt = now(); delete state.changesReminderAt; await notify(state, `[Changes requested] ${reviewer ?? "A reviewer"} requested changes on this PR.`, [state.author]); }
     if (decision === "approved" && reviewer) { state.approvers = unique([...state.approvers, reviewer]); await maybeReady(state); }
   }
@@ -176,10 +177,10 @@ async function reminders() {
   for (const state of Object.values(states)) {
     if (!state.open || state.draft || !state.threadId) continue;
     if (state.changesRequestedAt && (!state.lastAuthorCommitAt || state.lastAuthorCommitAt < state.changesRequestedAt) && businessDays(state.changesRequestedAt, current) >= 2 && (!state.changesReminderAt || businessDays(state.changesReminderAt, current) >= 2)) { await notify(state, "[Reminder] Requested changes are awaiting an author update.", [state.author]); state.changesReminderAt = now(); }
-    const completed = new Set(state.completedReviewers ?? []);
     const remindersSent = state.reviewerReminderAtByReviewer ?? [];
     for (const reviewer of state.reviewers ?? []) {
-      if (completed.has(reviewer)) continue;
+      const status = state.reviewStatus?.[reviewer] ?? (state.approvers?.includes(reviewer) ? "approved" : "pending");
+      if (status !== "pending") continue;
       const assignedAt = state.reviewRequestedAtByReviewer?.[reviewer];
       const lastReminder = remindersSent.find((entry) => entry.login === reviewer)?.at ?? 0;
       if (assignedAt && Date.now() - assignedAt >= 24 * 60 * 60 * 1000 && (!lastReminder || Date.now() - lastReminder >= 24 * 60 * 60 * 1000)) {
