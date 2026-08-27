@@ -379,6 +379,22 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "deleteCourseTopic",
     routeFile: "routes/api/courses.topics.$.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/topic-analysis",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.topic-analysis.$.ts",
+    note: "Status of automatic topic provisioning (#1624). Staff-only (rank >= 1).",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/topic-analysis",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.topic-analysis.$.ts",
+    note: "Approve / dismiss / merge a generated topic, or retry a failed analysis (#1624). INSTRUCTOR and above.",
+  }),
 
   // ── Materials ───────────────────────────────────────────────────────────────
   entry({

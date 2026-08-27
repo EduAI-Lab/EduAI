@@ -65,6 +65,13 @@ const TOPIC = {
   createdBy: null,
   deletedAt: null,
   deletedBy: null,
+  // #1624 provenance. A hand-authored topic reads back as HUMAN/ACCEPTED with
+  // no confidence and no generating job — the same defaults the migration gives
+  // every pre-existing row.
+  origin: "HUMAN" as const,
+  reviewStatus: "ACCEPTED" as const,
+  confidence: null,
+  generatedByJobId: null,
   createdAt: TOPIC_AT,
   updatedAt: TOPIC_AT,
 };

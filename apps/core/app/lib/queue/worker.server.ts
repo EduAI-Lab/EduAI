@@ -88,7 +88,7 @@ function serverApiKeys(model: string): ServerProviderKeys {
   return {};
 }
 
-async function resolveWorkerModel(payload: JobPayload): Promise<string> {
+async function resolveWorkerModel(payload: JobPayload, prompt: string): Promise<string> {
   const requested = payload.requestedModel?.trim();
   if (requested && !isAutoRoutingModelId(requested)) {
     return requested;
@@ -102,7 +102,7 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
   try {
     const { resolveRoutedModel } = await import("~/lib/ai/routing/router");
     const decision = await resolveRoutedModel(
-      payload.input.prompt,
+      prompt,
       {
         courseId: payload.courseId ?? null,
         imagesPresent: false,
@@ -123,11 +123,21 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
  * browser/localStorage secrets are serialized into the queue payload.
  */
 export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobResult> {
-  switch (payload.kind) {
+  switch (payload.input.kind) {
+    // Topic analysis (#1624) is never enqueued here. The BullMQ pool is closed
+    // pre-MVP (`assertAiJobQueueEnabled` always throws), so topic-analysis jobs
+    // are recorded as AiJob rows and run in-process by
+    // `~/lib/topics/job.server`. Reaching this branch means one was routed onto
+    // the pool by mistake; say so rather than silently succeeding.
+    case "topic-analysis":
+      throw new Error(
+        "topic-analysis jobs run in-process via lib/topics/job.server, not on the AI job queue",
+      );
+
     case "question-generation": {
       const requestStartMs = Date.now();
-      const model = await resolveWorkerModel(payload);
       const prompt = payload.input.prompt;
+      const model = await resolveWorkerModel(payload, prompt);
       const completion = await runCompletion({
         model,
         apiKeys: serverApiKeys(model),

@@ -577,9 +577,17 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     expect(toggle).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
-    const [, request] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(request.body))).toMatchObject({
+    // Pick the save request by method rather than by call index: the view also
+    // GETs its topic-analysis status on mount (#1624), so the settings PATCH is
+    // no longer guaranteed to be the first call.
+    const savedRequest = await waitFor(() => {
+      const call = mockFetch.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.body !== undefined,
+      );
+      expect(call).toBeDefined();
+      return call![1] as RequestInit;
+    });
+    expect(JSON.parse(String(savedRequest.body))).toMatchObject({
       courseScopeGuardrailEnabled: true,
     });
   });

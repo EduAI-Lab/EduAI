@@ -110,7 +110,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export default function CourseDetailPage() {
   const { course, user, access, instructors } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
-  const { topics, createTopic, deleteTopic } = useCourseTopics(course.id);
+  const { topics, createTopic, deleteTopic, refetch: refetchTopics } = useCourseTopics(course.id);
   const {
     enrollments,
     loading: enrollmentsLoading,
@@ -281,6 +281,7 @@ export default function CourseDetailPage() {
               onDeleteTopic={async (id) => {
                 await deleteTopic(id);
               }}
+              onRefreshTopics={refetchTopics}
               onAssignInstructor={handleAssignInstructor}
               onAddTA={addTA}
               onRemoveTA={removeTA}

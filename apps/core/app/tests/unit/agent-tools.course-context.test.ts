@@ -89,6 +89,11 @@ describe("listAccessibleCourseTopics", () => {
         createdBy: null,
         deletedAt: null,
         deletedBy: null,
+        // #1624 provenance defaults for a hand-authored topic.
+        origin: "HUMAN",
+        reviewStatus: "ACCEPTED",
+        confidence: null,
+        generatedByJobId: null,
       },
     ]);
 

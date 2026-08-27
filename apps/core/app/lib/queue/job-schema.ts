@@ -9,8 +9,8 @@ import { z } from "zod";
  * its own fields.
  */
 
-// Concrete async work kinds. Seeded with the only v1 producer; extend as producers land.
-export const JobKindSchema = z.enum(["question-generation"]);
+// Concrete async work kinds. Extend as producers land.
+export const JobKindSchema = z.enum(["question-generation", "topic-analysis"]);
 export type JobKind = z.infer<typeof JobKindSchema>;
 
 // Reused from the fleet (contract §2). Fleet does not export a runtime schema yet,
@@ -27,8 +27,22 @@ const QuestionGenerationInputSchema = z.object({
   count: z.number().int().min(1).max(100),
 });
 
+/**
+ * Course-scoped topic provisioning (#1624). One job per sync batch, never one
+ * per file: `materialIds` names the materials that just finished processing and
+ * are therefore safe to read `rawText` from.
+ */
+const TopicAnalysisInputSchema = z.object({
+  kind: z.literal("topic-analysis"),
+  courseId: z.string().min(1),
+  materialIds: z.array(z.string().min(1)).min(1).max(500),
+  /** Set when the batch came from a Canvas sync, so modules can be read for structure. */
+  canvasCourseId: z.string().min(1).nullish(),
+});
+
 export const JobInputSchema = z.discriminatedUnion("kind", [
   QuestionGenerationInputSchema,
+  TopicAnalysisInputSchema,
   // future kinds add their schema here
 ]);
 

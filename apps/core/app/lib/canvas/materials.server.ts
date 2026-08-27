@@ -18,6 +18,7 @@ import type {
   SyncCanvasMaterialsResult,
 } from "@eduai/types";
 import prisma from "~/lib/prisma.server";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 
 const ALLOWED_MIME_TYPES = new Set([
   "text/plain",
@@ -465,7 +466,48 @@ export async function syncSelectedCanvasMaterials(
     }
   }
 
+  // #1624: provision topics for the batch, but only once material actually
+  // landed — a sync that imported nothing has no new structure to read, and
+  // re-deriving from unchanged content is exactly what the checksum-keyed job
+  // record exists to avoid.
+  if (result.imported + result.updated > 0) {
+    await startTopicAnalysisForCanvasBatch(courseId, userId, canvasFileIds, course.externalId!);
+  }
+
   return result;
+}
+
+/**
+ * Kick off topic analysis for the materials a Canvas batch just produced.
+ *
+ * The importer reports outcomes, not row ids, so the batch is re-read here by
+ * Canvas file id. Only READY rows are passed on: topic analysis reads `rawText`,
+ * which a still-processing or failed material does not reliably have.
+ */
+async function startTopicAnalysisForCanvasBatch(
+  courseId: string,
+  userId: string,
+  canvasFileIds: string[],
+  canvasCourseId: string,
+): Promise<void> {
+  const materials = await prisma.courseMaterial.findMany({
+    where: {
+      courseId,
+      externalSource: CANVAS_EXTERNAL_SOURCE,
+      externalId: { in: canvasFileIds },
+      status: "READY",
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (materials.length === 0) return;
+
+  startTopicAnalysis({
+    courseId,
+    userId,
+    materialIds: materials.map((material) => material.id),
+    canvasCourseId,
+  });
 }
 
 /** Marks a Canvas file as permanently excluded from sync for this course. */

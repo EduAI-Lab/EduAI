@@ -4,10 +4,20 @@ export const STUB_ONLY = {
   editTopic: true, // pending #299 — no PATCH endpoint
 } as const;
 
+/** Where a topic came from (#1624). Mirrors the `TopicOrigin` Prisma enum. */
+export type TopicOrigin = "HUMAN" | "SYSTEM" | "CANVAS_MODULE" | "MATERIAL_HEADING" | "AI";
+
+/** Mirrors the `TopicReviewStatus` Prisma enum. */
+export type TopicReviewStatus = "ACCEPTED" | "SUGGESTED";
+
 export interface CourseTopic {
   id: string;
   courseId: string;
   name: string;
+  /** #1624 provenance. Absent on responses from a pre-#1624 server. */
+  origin?: TopicOrigin;
+  reviewStatus?: TopicReviewStatus;
+  confidence?: number | null;
   createdAt: string;
   updatedAt: string;
 }

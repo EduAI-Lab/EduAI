@@ -21,7 +21,9 @@ describe("JobPayloadSchema", () => {
   it("accepts a valid question-generation payload", () => {
     const parsed = JobPayloadSchema.parse(base);
     expect(parsed.kind).toBe("question-generation");
-    expect(parsed.input.count).toBe(5);
+    // Narrow before reading kind-specific fields — `input` is a discriminated
+    // union now that topic-analysis (#1624) shares the schema.
+    expect(parsed.input.kind === "question-generation" && parsed.input.count).toBe(5);
   });
 
   it("rejects an unknown kind", () => {

@@ -26,6 +26,7 @@ import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import type { getRequestContext } from "~/lib/request-context.server";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 
 type RequestContext = ReturnType<typeof getRequestContext>;
 
@@ -437,6 +438,10 @@ export async function runMaterialExtraction(
       data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
     });
     await discardUploadBlob(materialId);
+    // #1624: the material is only now readable by topic analysis. Started here
+    // rather than at upload time precisely because the issue requires analysis
+    // to run *after* material is successfully processed.
+    startTopicAnalysis({ courseId, userId, materialIds: [materialId] });
   } catch (embeddingError) {
     await failMaterial(
       materialId,
