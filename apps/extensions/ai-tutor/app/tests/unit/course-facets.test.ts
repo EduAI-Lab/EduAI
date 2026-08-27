@@ -10,11 +10,7 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
-import {
-  clearCourseFacetsCache,
-  EMPTY_COURSE_FACETS,
-  loadCourseFacets,
-} from "~/lib/course-facets";
+import { clearCourseFacetsCache, EMPTY_COURSE_FACETS, loadCourseFacets } from "~/lib/course-facets";
 
 describe("loadCourseFacets", () => {
   beforeEach(() => {
@@ -27,7 +23,12 @@ describe("loadCourseFacets", () => {
   });
 
   it("returns the facets from the API", async () => {
-    const facets = { terms: ["Fall"], statuses: ["PUBLISHED"], progress: [], coreUnavailable: false };
+    const facets = {
+      terms: ["Fall"],
+      statuses: ["PUBLISHED"],
+      progress: [],
+      coreUnavailable: false,
+    };
     mockListCourseFacets.mockResolvedValue(facets);
     await expect(loadCourseFacets()).resolves.toEqual(facets);
   });

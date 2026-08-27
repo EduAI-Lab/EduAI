@@ -97,9 +97,9 @@ describe("formatCourseNavLabel", () => {
   });
 
   it("appends the term/year suffix when available", () => {
-    expect(
-      formatCourseNavLabel({ code: "CS101", name: "Intro", term: "Fall", year: 2026 }),
-    ).toBe("CS101 - Intro (Fall2026)");
+    expect(formatCourseNavLabel({ code: "CS101", name: "Intro", term: "Fall", year: 2026 })).toBe(
+      "CS101 - Intro (Fall2026)",
+    );
   });
 
   it("omits the suffix when there is no term/year", () => {

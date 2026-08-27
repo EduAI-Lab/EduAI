@@ -2,20 +2,20 @@
  * Unit tests for `QmLayoutProvider` / `useQmLayout` (#1546): the layout-scoped
  * context for the profile dialog's open state and the guided-tour handler slot.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { QmLayoutProvider, useQmLayout } from '@/components/layout/QmLayoutContext';
+import { describe, expect, it, vi } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { QmLayoutProvider, useQmLayout } from "@/components/layout/QmLayoutContext";
 
-describe('QmLayoutContext', () => {
-  it('throws when used outside a QmLayoutProvider', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+describe("QmLayoutContext", () => {
+  it("throws when used outside a QmLayoutProvider", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(() => renderHook(() => useQmLayout())).toThrow(
-      'useQmLayout must be used within QmLayoutProvider'
+      "useQmLayout must be used within QmLayoutProvider",
     );
     spy.mockRestore();
   });
 
-  it('starts with the profile dialog closed and no guided tour handler', () => {
+  it("starts with the profile dialog closed and no guided tour handler", () => {
     const { result } = renderHook(() => useQmLayout(), {
       wrapper: ({ children }) => <QmLayoutProvider>{children}</QmLayoutProvider>,
     });
@@ -24,7 +24,7 @@ describe('QmLayoutContext', () => {
     expect(result.current.guidedTourHandler).toBeNull();
   });
 
-  it('openProfile / closeProfile toggle profileOpen', () => {
+  it("openProfile / closeProfile toggle profileOpen", () => {
     const { result } = renderHook(() => useQmLayout(), {
       wrapper: ({ children }) => <QmLayoutProvider>{children}</QmLayoutProvider>,
     });
@@ -36,7 +36,7 @@ describe('QmLayoutContext', () => {
     expect(result.current.profileOpen).toBe(false);
   });
 
-  it('setGuidedTourHandler stores and can clear the handler', () => {
+  it("setGuidedTourHandler stores and can clear the handler", () => {
     const { result } = renderHook(() => useQmLayout(), {
       wrapper: ({ children }) => <QmLayoutProvider>{children}</QmLayoutProvider>,
     });

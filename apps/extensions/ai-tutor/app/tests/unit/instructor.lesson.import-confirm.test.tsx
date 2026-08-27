@@ -172,9 +172,7 @@ describe("instructor.lesson — import confirm flow", () => {
       fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
     });
 
-    expect(
-      await screen.findByText(/could not import this activity/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/could not import this activity/i)).toBeInTheDocument();
     expect(screen.getByText("Import activity")).toBeInTheDocument();
   });
 

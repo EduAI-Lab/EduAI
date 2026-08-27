@@ -57,7 +57,9 @@ describe("DeleteConfirmationModal", () => {
   });
 
   it("uses custom confirm/cancel labels", () => {
-    render(<DeleteConfirmationModal {...baseProps} confirmLabel="Remove" cancelLabel="Nevermind" />);
+    render(
+      <DeleteConfirmationModal {...baseProps} confirmLabel="Remove" cancelLabel="Nevermind" />,
+    );
     expect(screen.getByText("Remove")).toBeInTheDocument();
     expect(screen.getByText("Nevermind")).toBeInTheDocument();
   });

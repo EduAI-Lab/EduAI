@@ -2,8 +2,8 @@
  * Coverage for CanvasImportDialog (#1545) — connect flow, cascading course/quiz/topic
  * selects, validation, import success (with skipped-question reporting), and failure.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 
 // jsdom doesn't implement scrollIntoView; Radix Select's viewport-scroll effect calls it.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -20,11 +20,11 @@ const importQuiz = vi.fn();
 const toastError = vi.fn();
 const toastFn = vi.fn();
 
-vi.mock('sonner', () => ({
+vi.mock("sonner", () => ({
   toast: Object.assign((...args: unknown[]) => (toastFn as any)(...args), { error: toastError }),
 }));
 
-vi.mock('@/services/canvasService', () => ({
+vi.mock("@/services/canvasService", () => ({
   default: {
     getIntegration: (...args: unknown[]) => getIntegration(...args),
     getCourses: (...args: unknown[]) => getCourses(...args),
@@ -36,7 +36,7 @@ vi.mock('@/services/canvasService', () => ({
 
 const getCoursesLocal = vi.fn();
 const getCourseTopics = vi.fn();
-vi.mock('@/services/courseService', () => ({
+vi.mock("@/services/courseService", () => ({
   courseService: {
     getCourses: (...args: unknown[]) => getCoursesLocal(...args),
     getCourseTopics: (...args: unknown[]) => getCourseTopics(...args),
@@ -44,11 +44,11 @@ vi.mock('@/services/courseService', () => ({
 }));
 
 let canManageCanvas = true;
-vi.mock('@/hooks/useQmPermissions', () => ({
+vi.mock("@/hooks/useQmPermissions", () => ({
   useQmPermissionsForCourse: () => ({ canManageCanvas }),
 }));
 
-const { CanvasImportDialog } = await import('@/components/canvas/CanvasImportDialog');
+const { CanvasImportDialog } = await import("@/components/canvas/CanvasImportDialog");
 
 function renderDialog(overrides: Partial<React.ComponentProps<typeof CanvasImportDialog>> = {}) {
   const onClose = vi.fn();
@@ -69,13 +69,13 @@ async function selectByLabel(labelText: string, optionText: string) {
   // Radix's SelectTrigger is a <button role="combobox">, which RTL's getByLabelText
   // doesn't treat as a labelable control even though the <label for> association is
   // valid — query by combobox role + accessible name instead.
-  const combo = await screen.findByRole('combobox', { name: labelText });
+  const combo = await screen.findByRole("combobox", { name: labelText });
   fireEvent.click(combo);
   const option = await screen.findByText(optionText);
   fireEvent.click(option);
 }
 
-describe('CanvasImportDialog', () => {
+describe("CanvasImportDialog", () => {
   beforeEach(() => {
     cleanup();
     canManageCanvas = true;
@@ -90,7 +90,7 @@ describe('CanvasImportDialog', () => {
     toastFn.mockReset();
   });
 
-  it('shows the restricted message when the user cannot manage Canvas', async () => {
+  it("shows the restricted message when the user cannot manage Canvas", async () => {
     canManageCanvas = false;
     getIntegration.mockResolvedValue({ isConnected: false });
     renderDialog();
@@ -100,183 +100,181 @@ describe('CanvasImportDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows the connect form when there is no integration yet', async () => {
+  it("shows the connect form when there is no integration yet", async () => {
     getIntegration.mockResolvedValue({ isConnected: false });
     renderDialog();
 
-    expect(await screen.findByLabelText('Canvas Instance URL')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connect Canvas' })).toBeDisabled();
+    expect(await screen.findByLabelText("Canvas Instance URL")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Canvas" })).toBeDisabled();
   });
 
-  it('surfaces a toast when connecting fails', async () => {
+  it("surfaces a toast when connecting fails", async () => {
     getIntegration.mockResolvedValue({ isConnected: false });
-    connectCanvasWithFallback.mockRejectedValue({ response: { data: { error: 'Bad creds' } } });
+    connectCanvasWithFallback.mockRejectedValue({ response: { data: { error: "Bad creds" } } });
     renderDialog();
 
-    await screen.findByLabelText('Canvas Instance URL');
-    fireEvent.change(screen.getByLabelText('Canvas Instance URL'), {
-      target: { value: 'https://canvas.instructure.com' },
+    await screen.findByLabelText("Canvas Instance URL");
+    fireEvent.change(screen.getByLabelText("Canvas Instance URL"), {
+      target: { value: "https://canvas.instructure.com" },
     });
-    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'secret' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Connect Canvas' }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Canvas" }));
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'Failed to connect Canvas',
-        expect.objectContaining({ description: 'Bad creds' }),
+        "Failed to connect Canvas",
+        expect.objectContaining({ description: "Bad creds" }),
       ),
     );
   });
 
-  it('walks the full cascade — Canvas course, quiz, local course, topic — and imports', async () => {
+  it("walks the full cascade — Canvas course, quiz, local course, topic — and imports", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 1, name: 'Intro Bio', course_code: 'BIO101' }]);
-    getCoursesLocal.mockResolvedValue([{ id: 5, name: 'Biology', code: 'BIO-L' }]);
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: "BIO-L" }]);
     getQuizzes.mockResolvedValue([
-      { id: 20, title: 'Quiz 1', quiz_type: 'assignment', published: true },
+      { id: 20, title: "Quiz 1", quiz_type: "assignment", published: true },
     ]);
-    getCourseTopics.mockResolvedValue([{ id: 9, name: 'Cells' }]);
+    getCourseTopics.mockResolvedValue([{ id: 9, name: "Cells" }]);
     importQuiz.mockResolvedValue({
       assessmentId: 55,
-      assessmentName: 'Quiz 1',
+      assessmentName: "Quiz 1",
       questionsImported: 8,
       questionsSkipped: 0,
     });
     const { onImportSuccess, onClose } = renderDialog();
 
-    await selectByLabel('Canvas Course', 'BIO101 - Intro Bio');
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
     await waitFor(() => expect(getQuizzes).toHaveBeenCalledWith(1));
 
-    await selectByLabel('Quiz', 'Quiz 1 (Published)');
+    await selectByLabel("Quiz", "Quiz 1 (Published)");
     // Assessment name auto-fills from the quiz title.
-    await waitFor(() =>
-      expect(screen.getByLabelText('Assessment Name')).toHaveValue('Quiz 1'),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Assessment Name")).toHaveValue("Quiz 1"));
 
-    await selectByLabel('Local Course', 'BIO-L - Biology');
+    await selectByLabel("Local Course", "BIO-L - Biology");
     await waitFor(() => expect(getCourseTopics).toHaveBeenCalledWith(5));
 
     // Topic auto-selects the first one returned; the button should now be enabled.
-    const importButton = await screen.findByRole('button', { name: /import from canvas/i });
+    const importButton = await screen.findByRole("button", { name: /import from canvas/i });
     await waitFor(() => expect(importButton).toBeEnabled());
     fireEvent.click(importButton);
 
     await waitFor(() =>
       expect(importQuiz).toHaveBeenCalledWith(1, 20, 5, {
-        assessmentType: 'Quiz',
-        assessmentName: 'Quiz 1',
+        assessmentType: "Quiz",
+        assessmentName: "Quiz 1",
         primaryTopicId: 9,
       }),
     );
     await waitFor(() =>
-      expect(onImportSuccess).toHaveBeenCalledWith({ assessmentId: 55, assessmentName: 'Quiz 1' }),
+      expect(onImportSuccess).toHaveBeenCalledWith({ assessmentId: 55, assessmentName: "Quiz 1" }),
     );
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('reports skipped questions after a partial import', async () => {
+  it("reports skipped questions after a partial import", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 1, name: 'Intro Bio', course_code: 'BIO101' }]);
-    getCoursesLocal.mockResolvedValue([{ id: 5, name: 'Biology', code: 'BIO-L' }]);
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: "BIO-L" }]);
     getQuizzes.mockResolvedValue([
-      { id: 20, title: 'Quiz 1', quiz_type: 'assignment', published: true },
+      { id: 20, title: "Quiz 1", quiz_type: "assignment", published: true },
     ]);
-    getCourseTopics.mockResolvedValue([{ id: 9, name: 'Cells' }]);
+    getCourseTopics.mockResolvedValue([{ id: 9, name: "Cells" }]);
     importQuiz.mockResolvedValue({
       assessmentId: 55,
-      assessmentName: 'Quiz 1',
+      assessmentName: "Quiz 1",
       questionsImported: 3,
       questionsSkipped: 2,
       skippedQuestions: [
-        { position: 1, name: 'Q1', type: 'essay_question', reason: 'unsupported' },
+        { position: 1, name: "Q1", type: "essay_question", reason: "unsupported" },
       ],
     });
     renderDialog();
 
-    await selectByLabel('Canvas Course', 'BIO101 - Intro Bio');
-    await selectByLabel('Quiz', 'Quiz 1 (Published)');
-    await selectByLabel('Local Course', 'BIO-L - Biology');
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
+    await selectByLabel("Quiz", "Quiz 1 (Published)");
+    await selectByLabel("Local Course", "BIO-L - Biology");
 
-    const importButton = await screen.findByRole('button', { name: /import from canvas/i });
+    const importButton = await screen.findByRole("button", { name: /import from canvas/i });
     await waitFor(() => expect(importButton).toBeEnabled());
     fireEvent.click(importButton);
 
     await waitFor(() =>
       expect(toastFn).toHaveBeenCalledWith(
-        'Import successful!',
+        "Import successful!",
         expect.objectContaining({
-          description: expect.stringContaining('2 questions were skipped'),
+          description: expect.stringContaining("2 questions were skipped"),
         }),
       ),
     );
   });
 
-  it('surfaces a toast when import fails', async () => {
+  it("surfaces a toast when import fails", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 1, name: 'Intro Bio', course_code: 'BIO101' }]);
-    getCoursesLocal.mockResolvedValue([{ id: 5, name: 'Biology', code: 'BIO-L' }]);
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: "BIO-L" }]);
     getQuizzes.mockResolvedValue([
-      { id: 20, title: 'Quiz 1', quiz_type: 'assignment', published: true },
+      { id: 20, title: "Quiz 1", quiz_type: "assignment", published: true },
     ]);
-    getCourseTopics.mockResolvedValue([{ id: 9, name: 'Cells' }]);
-    importQuiz.mockRejectedValue({ response: { data: { error: 'Quiz already imported' } } });
+    getCourseTopics.mockResolvedValue([{ id: 9, name: "Cells" }]);
+    importQuiz.mockRejectedValue({ response: { data: { error: "Quiz already imported" } } });
     renderDialog();
 
-    await selectByLabel('Canvas Course', 'BIO101 - Intro Bio');
-    await selectByLabel('Quiz', 'Quiz 1 (Published)');
-    await selectByLabel('Local Course', 'BIO-L - Biology');
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
+    await selectByLabel("Quiz", "Quiz 1 (Published)");
+    await selectByLabel("Local Course", "BIO-L - Biology");
 
-    const importButton = await screen.findByRole('button', { name: /import from canvas/i });
+    const importButton = await screen.findByRole("button", { name: /import from canvas/i });
     await waitFor(() => expect(importButton).toBeEnabled());
     fireEvent.click(importButton);
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'Import failed',
-        expect.objectContaining({ description: 'Quiz already imported' }),
+        "Import failed",
+        expect.objectContaining({ description: "Quiz already imported" }),
       ),
     );
   });
 
-  it('shows empty states for quizzes, local courses, and topics', async () => {
+  it("shows empty states for quizzes, local courses, and topics", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 1, name: 'Intro Bio', course_code: 'BIO101' }]);
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
     getCoursesLocal.mockResolvedValue([]);
     getQuizzes.mockResolvedValue([]);
     renderDialog();
 
-    await selectByLabel('Canvas Course', 'BIO101 - Intro Bio');
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
     expect(await screen.findByText(/no quizzes found in this course/i)).toBeInTheDocument();
     expect(screen.getByText(/no local courses found/i)).toBeInTheDocument();
   });
 
-  it('switches back to the connect form via Change Connection', async () => {
+  it("switches back to the connect form via Change Connection", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 1, name: 'Intro Bio', course_code: 'BIO101' }]);
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
     renderDialog();
 
-    await screen.findByText('Canvas Course');
-    fireEvent.click(screen.getByRole('button', { name: 'Change Connection' }));
-    expect(await screen.findByLabelText('Canvas Instance URL')).toBeInTheDocument();
+    await screen.findByText("Canvas Course");
+    fireEvent.click(screen.getByRole("button", { name: "Change Connection" }));
+    expect(await screen.findByLabelText("Canvas Instance URL")).toBeInTheDocument();
   });
 
-  it('calls onClose from Cancel while on the connect form', async () => {
+  it("calls onClose from Cancel while on the connect form", async () => {
     getIntegration.mockResolvedValue({ isConnected: false });
     const { onClose } = renderDialog();
 
-    await screen.findByLabelText('Canvas Instance URL');
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await screen.findByLabelText("Canvas Instance URL");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('calls onClose from Close when the user cannot manage Canvas', async () => {
+  it("calls onClose from Close when the user cannot manage Canvas", async () => {
     canManageCanvas = false;
     getIntegration.mockResolvedValue({ isConnected: false });
     const { onClose } = renderDialog();
 
     // The dialog's own X button also has an accessible name of "Close" — the footer
     // button renders first in DOM order.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
     expect(onClose).toHaveBeenCalled();
   });
 });

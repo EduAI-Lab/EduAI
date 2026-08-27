@@ -140,13 +140,17 @@ describe("App routing", () => {
     it("redirects to the nested variant route when both ids are present", async () => {
       window.history.pushState({}, "", "/study?courseId=3&baselineAssessmentId=9");
       render(<App />);
-      await waitFor(() => expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument(),
+      );
     });
 
     it("redirects to the course's variants route when only courseId is present", async () => {
       window.history.pushState({}, "", "/study?courseId=3");
       render(<App />);
-      await waitFor(() => expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument(),
+      );
     });
 
     it("falls back to /courses when neither id is present", async () => {
@@ -160,13 +164,17 @@ describe("App routing", () => {
     it("redirects to the nested variant route when both ids are present", async () => {
       window.history.pushState({}, "", "/assessment-variant?courseId=3&baselineAssessmentId=9");
       render(<App />);
-      await waitFor(() => expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument(),
+      );
     });
 
     it("redirects to the course's variants route when only courseId is present", async () => {
       window.history.pushState({}, "", "/assessment-variant?courseId=3");
       render(<App />);
-      await waitFor(() => expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByTestId("assessment-variant-page")).toBeInTheDocument(),
+      );
     });
 
     it("falls back to /courses when neither id is present", async () => {

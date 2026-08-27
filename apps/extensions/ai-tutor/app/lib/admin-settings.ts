@@ -95,34 +95,36 @@ export function normalizePolicy(
     ? policy.allowedTutorModelIds.filter((id): id is string => typeof id === "string")
     : undefined;
 
-  const allowedTutorModelIds =
-    rawAllowed ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+  const allowedTutorModelIds = rawAllowed ?? (fallbackTutor === null ? [] : [fallbackTutor]);
 
-  const requestedTutor = typeof policy.defaultTutorModelId === "string"
-    ? policy.defaultTutorModelId
-    : (allowedTutorModelIds[0] ?? null);
+  const requestedTutor =
+    typeof policy.defaultTutorModelId === "string"
+      ? policy.defaultTutorModelId
+      : (allowedTutorModelIds[0] ?? null);
   const defaultTutorModelId =
     requestedTutor !== null && allowedTutorModelIds.includes(requestedTutor)
       ? requestedTutor
       : (allowedTutorModelIds[0] ?? null);
 
-  const rawIterations = typeof policy.maxSupervisorIterations === "number"
-    ? policy.maxSupervisorIterations
-    : Number(policy.maxSupervisorIterations);
+  const rawIterations =
+    typeof policy.maxSupervisorIterations === "number"
+      ? policy.maxSupervisorIterations
+      : Number(policy.maxSupervisorIterations);
 
   return {
     allowedTutorModelIds,
     defaultTutorModelId,
-    defaultSupervisorModelId: typeof policy.defaultSupervisorModelId === "string"
-      ? policy.defaultSupervisorModelId
-      : (models[0]?.modelId ?? null),
-    dualLoopEnabled: typeof policy.dualLoopEnabled === "boolean"
-      ? policy.dualLoopEnabled
-      : DEFAULT_POLICY.dualLoopEnabled,
-    maxSupervisorIterations:
-      Number.isFinite(rawIterations)
-        ? clampSupervisorIterations(rawIterations)
-        : DEFAULT_POLICY.maxSupervisorIterations,
+    defaultSupervisorModelId:
+      typeof policy.defaultSupervisorModelId === "string"
+        ? policy.defaultSupervisorModelId
+        : (models[0]?.modelId ?? null),
+    dualLoopEnabled:
+      typeof policy.dualLoopEnabled === "boolean"
+        ? policy.dualLoopEnabled
+        : DEFAULT_POLICY.dualLoopEnabled,
+    maxSupervisorIterations: Number.isFinite(rawIterations)
+      ? clampSupervisorIterations(rawIterations)
+      : DEFAULT_POLICY.maxSupervisorIterations,
   };
 }
 
@@ -150,7 +152,9 @@ async function loadAdminAiModels() {
     const rawModels = await api.listAiModels();
     const models = Array.isArray(rawModels)
       ? rawModels
-          .filter((m): m is any => m != null && typeof m === "object" && typeof m.modelId === "string")
+          .filter(
+            (m): m is any => m != null && typeof m === "object" && typeof m.modelId === "string",
+          )
           .map((model, index) => toModelOption(model, index))
       : [];
     return { models };

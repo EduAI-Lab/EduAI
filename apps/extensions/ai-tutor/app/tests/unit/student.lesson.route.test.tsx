@@ -221,9 +221,7 @@ describe("student.lesson — post-submission feedback", () => {
       fireEvent.click(screen.getByRole("button", { name: /send feedback/i }));
     });
 
-    expect(
-      await screen.findByText(/could not save feedback right now/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/could not save feedback right now/i)).toBeInTheDocument();
   });
 
   it("dismisses the feedback prompt without submitting", async () => {

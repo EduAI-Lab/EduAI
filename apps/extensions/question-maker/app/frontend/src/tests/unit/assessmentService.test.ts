@@ -83,8 +83,22 @@ describe("assessmentService.getAssessments", () => {
 
   it("walks all offset pages when limit exceeds the server max page size", async () => {
     get
-      .mockResolvedValueOnce(pageEnvelope(Array.from({ length: 100 }, (_, i) => ({ id: i })), 150, 100, 0))
-      .mockResolvedValueOnce(pageEnvelope(Array.from({ length: 50 }, (_, i) => ({ id: 100 + i })), 150, 100, 100));
+      .mockResolvedValueOnce(
+        pageEnvelope(
+          Array.from({ length: 100 }, (_, i) => ({ id: i })),
+          150,
+          100,
+          0,
+        ),
+      )
+      .mockResolvedValueOnce(
+        pageEnvelope(
+          Array.from({ length: 50 }, (_, i) => ({ id: 100 + i })),
+          150,
+          100,
+          100,
+        ),
+      );
 
     const items = await assessmentService.getAssessments({ limit: 500 });
     expect(items).toHaveLength(150);
@@ -99,7 +113,12 @@ describe("assessmentService.getAssessments", () => {
 
   it("throws when the result set exceeds the fetch-all safety cap", async () => {
     get.mockResolvedValue(
-      pageEnvelope(Array.from({ length: 100 }, (_, i) => ({ id: i })), 1_000_000, 100, 0),
+      pageEnvelope(
+        Array.from({ length: 100 }, (_, i) => ({ id: i })),
+        1_000_000,
+        100,
+        0,
+      ),
     );
     await expect(assessmentService.getAssessments({})).rejects.toThrow(/fetch-all safety cap/);
   });
@@ -153,7 +172,10 @@ describe("assessmentService CRUD", () => {
       reasoningDistribution: { factual: 0, analytical: 0, application: 0 },
       reasoningData: {} as any,
     });
-    expect(put).toHaveBeenCalledWith("/api/assessments/2", expect.objectContaining({ name: "Updated" }));
+    expect(put).toHaveBeenCalledWith(
+      "/api/assessments/2",
+      expect.objectContaining({ name: "Updated" }),
+    );
   });
 
   it("getAssessment fetches by id", async () => {

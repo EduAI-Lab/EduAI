@@ -24,7 +24,12 @@ describe("useCourseFromRoute", () => {
     useDisplayCoursesMock.mockReturnValue({ displayCourses: [], isLoading: false });
 
     const { result } = renderHook(() => useCourseFromRoute());
-    expect(result.current).toEqual({ course: null, courseId: null, isLoading: false, notFound: true });
+    expect(result.current).toEqual({
+      course: null,
+      courseId: null,
+      isLoading: false,
+      notFound: true,
+    });
   });
 
   it("returns notFound for a non-numeric or non-positive courseId", () => {

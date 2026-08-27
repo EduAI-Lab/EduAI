@@ -58,9 +58,7 @@ describe("collectAssessmentExportBlocks", () => {
         position: 1,
         createdAt: "",
         updatedAt: "",
-        sectionVariants: [
-          { id: 200, sectionId: 20, variantId: 2, displayOrder: 1, variant: v2 },
-        ],
+        sectionVariants: [{ id: 200, sectionId: 20, variantId: 2, displayOrder: 1, variant: v2 }],
       },
       {
         id: 10,
@@ -69,9 +67,7 @@ describe("collectAssessmentExportBlocks", () => {
         position: 0,
         createdAt: "",
         updatedAt: "",
-        sectionVariants: [
-          { id: 100, sectionId: 10, variantId: 1, displayOrder: 1, variant: v1 },
-        ],
+        sectionVariants: [{ id: 100, sectionId: 10, variantId: 1, displayOrder: 1, variant: v1 }],
       },
     ] as any);
 
@@ -80,7 +76,12 @@ describe("collectAssessmentExportBlocks", () => {
   });
 
   it("falls back to resolveVariant when link.variant is missing", () => {
-    const resolved: QuestionVariant = { ...baseVariant, id: 5, questionText: "Resolved", choices: [] } as any;
+    const resolved: QuestionVariant = {
+      ...baseVariant,
+      id: 5,
+      questionText: "Resolved",
+      choices: [],
+    } as any;
     const assessment = assessmentWithSections([
       {
         id: 1,
@@ -138,7 +139,12 @@ describe("collectAssessmentExportBlocks", () => {
   });
 
   it("skips a link with no usable stem at all", () => {
-    const variant: QuestionVariant = { ...baseVariant, id: 1, questionText: "", choices: [] } as any;
+    const variant: QuestionVariant = {
+      ...baseVariant,
+      id: 1,
+      questionText: "",
+      choices: [],
+    } as any;
     const assessment = assessmentWithSections([
       {
         id: 1,
@@ -164,7 +170,10 @@ describe("collectAssessmentExportBlocks", () => {
       id: 1,
       questionText: "Q",
       answer: "B",
-      choices: [{ letter: "A", text: "x" }, { letter: "B", text: "y" }],
+      choices: [
+        { letter: "A", text: "x" },
+        { letter: "B", text: "y" },
+      ],
     } as any;
     const assessment = assessmentWithSections([
       {
@@ -183,7 +192,12 @@ describe("collectAssessmentExportBlocks", () => {
   });
 
   it("has a null answerLine when there is no answer at all", () => {
-    const variant: QuestionVariant = { ...baseVariant, id: 1, questionText: "Q", choices: [] } as any;
+    const variant: QuestionVariant = {
+      ...baseVariant,
+      id: 1,
+      questionText: "Q",
+      choices: [],
+    } as any;
     const assessment = assessmentWithSections([
       {
         id: 1,

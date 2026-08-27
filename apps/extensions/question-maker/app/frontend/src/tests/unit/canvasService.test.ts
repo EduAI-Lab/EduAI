@@ -29,7 +29,9 @@ afterEach(() => {
 
 describe("canvasService.getIntegration", () => {
   it("returns the integration on success", async () => {
-    get.mockResolvedValue({ data: { data: { canvasUrl: "u", isTestMode: false, isConnected: true } } });
+    get.mockResolvedValue({
+      data: { data: { canvasUrl: "u", isTestMode: false, isConnected: true } },
+    });
     const integration = await canvasService.getIntegration();
     expect(integration).toEqual({ canvasUrl: "u", isTestMode: false, isConnected: true });
   });
@@ -43,7 +45,9 @@ describe("canvasService.getIntegration", () => {
 
 describe("canvasService.connectCanvas", () => {
   it("posts credentials and returns the integration", async () => {
-    post.mockResolvedValue({ data: { data: { canvasUrl: "u", isTestMode: true, isConnected: true } } });
+    post.mockResolvedValue({
+      data: { data: { canvasUrl: "u", isTestMode: true, isConnected: true } },
+    });
     const result = await canvasService.connectCanvas("u", "key", true);
     expect(post).toHaveBeenCalledWith("/api/canvas/connect", {
       canvasUrl: "u",
@@ -82,7 +86,9 @@ describe("canvasService.getCourses / getQuizzes / getQuizQuestions / getQuestion
 
 describe("canvasService.exportAssessment / getCourseMapping / importQuiz / importQuestionBank", () => {
   it("exportAssessment posts and unwraps data", async () => {
-    post.mockResolvedValue({ data: { data: { quizId: 1, quizTitle: "Q", questionsCreated: 5, canvasUrl: "u" } } });
+    post.mockResolvedValue({
+      data: { data: { quizId: 1, quizTitle: "Q", questionsCreated: 5, canvasUrl: "u" } },
+    });
     const result = await canvasService.exportAssessment(10, 20);
     expect(post).toHaveBeenCalledWith("/api/canvas/export/10", { canvasCourseId: 20 });
     expect(result.quizId).toBe(1);
@@ -99,7 +105,9 @@ describe("canvasService.exportAssessment / getCourseMapping / importQuiz / impor
   });
 
   it("importQuiz posts options merged with local course id", async () => {
-    post.mockResolvedValue({ data: { data: { assessmentId: 1, assessmentName: "A", questionsImported: 3, sectionId: 9 } } });
+    post.mockResolvedValue({
+      data: { data: { assessmentId: 1, assessmentName: "A", questionsImported: 3, sectionId: 9 } },
+    });
     await canvasService.importQuiz(1, 2, 3, { primaryTopicId: 7, assessmentName: "A" });
     expect(post).toHaveBeenCalledWith("/api/canvas/import/1/quizzes/2", {
       localCourseId: 3,
@@ -133,7 +141,9 @@ describe("canvasService.prefersTestMode", () => {
 
 describe("canvasService.connectCanvasWithFallback", () => {
   it("uses test mode directly when preferTestMode is set", async () => {
-    post.mockResolvedValue({ data: { data: { canvasUrl: "u", isTestMode: true, isConnected: true } } });
+    post.mockResolvedValue({
+      data: { data: { canvasUrl: "u", isTestMode: true, isConnected: true } },
+    });
     const result = await canvasService.connectCanvasWithFallback("", "", { preferTestMode: true });
     expect(result.usedTestMode).toBe(true);
     expect(post).toHaveBeenCalledWith("/api/canvas/connect", {
@@ -144,7 +154,9 @@ describe("canvasService.connectCanvasWithFallback", () => {
   });
 
   it("connects live when it succeeds", async () => {
-    post.mockResolvedValue({ data: { data: { canvasUrl: "live", isTestMode: false, isConnected: true } } });
+    post.mockResolvedValue({
+      data: { data: { canvasUrl: "live", isTestMode: false, isConnected: true } },
+    });
     const result = await canvasService.connectCanvasWithFallback("live-url", "live-key");
     expect(result.usedTestMode).toBe(false);
     expect(post).toHaveBeenCalledWith("/api/canvas/connect", {
@@ -159,7 +171,9 @@ describe("canvasService.connectCanvasWithFallback", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     post
       .mockRejectedValueOnce(new Error("live failed"))
-      .mockResolvedValueOnce({ data: { data: { canvasUrl: "fallback", isTestMode: true, isConnected: true } } });
+      .mockResolvedValueOnce({
+        data: { data: { canvasUrl: "fallback", isTestMode: true, isConnected: true } },
+      });
 
     const result = await canvasService.connectCanvasWithFallback("live-url", "live-key");
     expect(result.usedTestMode).toBe(true);

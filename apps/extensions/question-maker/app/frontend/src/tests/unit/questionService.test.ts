@@ -65,7 +65,14 @@ describe("questionService.getQuestion / mapQuestion / mapVariant normalization",
               testable: true,
               createdAt: "a",
               updatedAt: "b",
-              assessment: { id: 5, name: "Midterm", type: "Exam", semester: "F", createdAt: "a", updatedAt: "b" },
+              assessment: {
+                id: 5,
+                name: "Midterm",
+                type: "Exam",
+                semester: "F",
+                createdAt: "a",
+                updatedAt: "b",
+              },
             },
           ],
         },
@@ -92,7 +99,14 @@ describe("questionService.getQuestion / mapQuestion / mapVariant normalization",
       testable: true,
       createdAt: "a",
       updatedAt: "b",
-      assessment: { id: 5, name: "Midterm", type: "Exam", semester: "F", createdAt: "a", updatedAt: "b" },
+      assessment: {
+        id: 5,
+        name: "Midterm",
+        type: "Exam",
+        semester: "F",
+        createdAt: "a",
+        updatedAt: "b",
+      },
     });
     expect(question.course).toEqual({ id: 1, name: "C", code: "C1" });
   });
@@ -143,7 +157,18 @@ describe("questionService.getQuestion / mapQuestion / mapVariant normalization",
   });
 
   it("defaults description/course/variants when absent", async () => {
-    get.mockResolvedValue({ data: { data: { id: 2, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" } } });
+    get.mockResolvedValue({
+      data: {
+        data: {
+          id: 2,
+          type: "MCQ",
+          courseId: 1,
+          primaryTopicId: 1,
+          createdAt: "a",
+          updatedAt: "b",
+        },
+      },
+    });
     const question = await questionService.getQuestion(2);
     expect(question.description).toBeNull();
     expect(question.course).toBeUndefined();
@@ -186,13 +211,21 @@ describe("questionService.getQuestionsPage", () => {
 
   it("omits default-valued filters (all/newest) from params", async () => {
     get.mockResolvedValue(pageEnvelope([], 0, 50, 0));
-    await questionService.getQuestionsPage({ aiGenerated: "all", draftStatus: "all", sortBy: "newest" });
+    await questionService.getQuestionsPage({
+      aiGenerated: "all",
+      draftStatus: "all",
+      sortBy: "newest",
+    });
     expect(get).toHaveBeenCalledWith("/api/questions", { params: {} });
   });
 
   it("unwraps a legacy bare array response", async () => {
     get.mockResolvedValue({
-      data: { data: [{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }] },
+      data: {
+        data: [
+          { id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" },
+        ],
+      },
     });
     const page = await questionService.getQuestionsPage();
     expect(page.items).toHaveLength(1);
@@ -208,7 +241,14 @@ describe("questionService.getQuestionsPage", () => {
 
 describe("questionService.getQuestions", () => {
   it("returns a single page's items when limit is within the server max", async () => {
-    get.mockResolvedValue(pageEnvelope([{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }], 1, 50, 0));
+    get.mockResolvedValue(
+      pageEnvelope(
+        [{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }],
+        1,
+        50,
+        0,
+      ),
+    );
     const items = await questionService.getQuestions({ limit: 50 });
     expect(items).toHaveLength(1);
     expect(get).toHaveBeenCalledTimes(1);
@@ -216,8 +256,22 @@ describe("questionService.getQuestions", () => {
 
   it("walks all offset pages when no limit is given, preserving filters", async () => {
     get
-      .mockResolvedValueOnce(pageEnvelope([{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }], 2, 1, 0))
-      .mockResolvedValueOnce(pageEnvelope([{ id: 2, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }], 2, 1, 1));
+      .mockResolvedValueOnce(
+        pageEnvelope(
+          [{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }],
+          2,
+          1,
+          0,
+        ),
+      )
+      .mockResolvedValueOnce(
+        pageEnvelope(
+          [{ id: 2, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }],
+          2,
+          1,
+          1,
+        ),
+      );
 
     const items = await questionService.getQuestions({ courseId: 1, search: "x" });
     expect(items.map((q) => q.id)).toEqual([1, 2]);
@@ -229,7 +283,14 @@ describe("questionService.getQuestions", () => {
   it("throws when the result set exceeds the fetch-all safety cap", async () => {
     get.mockResolvedValue(
       pageEnvelope(
-        Array.from({ length: 100 }, (_, i) => ({ id: i, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" })),
+        Array.from({ length: 100 }, (_, i) => ({
+          id: i,
+          type: "MCQ",
+          courseId: 1,
+          primaryTopicId: 1,
+          createdAt: "a",
+          updatedAt: "b",
+        })),
         1_000_000,
         100,
         0,
@@ -241,14 +302,36 @@ describe("questionService.getQuestions", () => {
 
 describe("questionService CRUD/variant wrappers", () => {
   it("createQuestion posts and normalizes the response", async () => {
-    post.mockResolvedValue({ data: { data: { id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" } } });
+    post.mockResolvedValue({
+      data: {
+        data: {
+          id: 1,
+          type: "MCQ",
+          courseId: 1,
+          primaryTopicId: 1,
+          createdAt: "a",
+          updatedAt: "b",
+        },
+      },
+    });
     const q = await questionService.createQuestion({ type: "MCQ" } as any);
     expect(post).toHaveBeenCalledWith("/api/questions", { type: "MCQ" });
     expect(q.id).toBe(1);
   });
 
   it("updateQuestion puts and normalizes the response", async () => {
-    put.mockResolvedValue({ data: { data: { id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" } } });
+    put.mockResolvedValue({
+      data: {
+        data: {
+          id: 1,
+          type: "MCQ",
+          courseId: 1,
+          primaryTopicId: 1,
+          createdAt: "a",
+          updatedAt: "b",
+        },
+      },
+    });
     await questionService.updateQuestion(1, { type: "MCQ" });
     expect(put).toHaveBeenCalledWith("/api/questions/1", { type: "MCQ" });
   });
@@ -280,7 +363,10 @@ describe("questionService CRUD/variant wrappers", () => {
 
   it("setVariantTestable patches the testable flag", async () => {
     patch.mockResolvedValue({ data: { data: { id: "1", testable: true } } });
-    await expect(questionService.setVariantTestable(1, true)).resolves.toEqual({ id: "1", testable: true });
+    await expect(questionService.setVariantTestable(1, true)).resolves.toEqual({
+      id: "1",
+      testable: true,
+    });
     expect(patch).toHaveBeenCalledWith("/api/questions/variants/1/testable", { testable: true });
   });
 
@@ -291,10 +377,17 @@ describe("questionService CRUD/variant wrappers", () => {
 
   it("approveQuestions posts questions/courseId and normalizes results", async () => {
     post.mockResolvedValue({
-      data: { data: [{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }] },
+      data: {
+        data: [
+          { id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" },
+        ],
+      },
     });
     const result = await questionService.approveQuestions([{ id: 1 } as any], 5);
-    expect(post).toHaveBeenCalledWith("/api/questions/approve", { questions: [{ id: 1 }], courseId: 5 });
+    expect(post).toHaveBeenCalledWith("/api/questions/approve", {
+      questions: [{ id: 1 }],
+      courseId: 5,
+    });
     expect(result).toHaveLength(1);
   });
 
@@ -326,7 +419,9 @@ describe("questionService CRUD/variant wrappers", () => {
     post.mockResolvedValue({
       data: {
         data: {
-          questions: [{ id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" }],
+          questions: [
+            { id: 1, type: "MCQ", courseId: 1, primaryTopicId: 1, createdAt: "a", updatedAt: "b" },
+          ],
           assessmentId: 9,
         },
       },

@@ -33,7 +33,9 @@ const permissionFns = vi.hoisted(() => {
 });
 
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
-vi.mock("@/hooks/useCourseAccess", () => ({ useCourseAccess: (id: unknown) => useCourseAccessMock(id) }));
+vi.mock("@/hooks/useCourseAccess", () => ({
+  useCourseAccess: (id: unknown) => useCourseAccessMock(id),
+}));
 vi.mock("@/lib/rbac", () => ({
   resolvePlatformCourseAccess: (...args: unknown[]) => resolvePlatformCourseAccess(...args),
 }));

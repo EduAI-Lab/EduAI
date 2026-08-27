@@ -160,9 +160,7 @@ describe("instructor.lesson — inline edit failure", () => {
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
     });
 
-    await waitFor(() =>
-      expect(screen.getByText(/could not save activity/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/could not save activity/i)).toBeInTheDocument());
     expect(consoleSpy).toHaveBeenCalledWith("Failed to update activity", expect.any(Error));
     // The editor stays open on failure — the save button is still there.
     expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();

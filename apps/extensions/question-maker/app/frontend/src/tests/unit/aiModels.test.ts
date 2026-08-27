@@ -11,7 +11,9 @@ import {
 } from "@/utils/aiModels";
 import type { EduAIModelOption } from "@/services/eduaiService";
 
-function model(partial: Partial<EduAIModelOption> & Pick<EduAIModelOption, "id">): EduAIModelOption {
+function model(
+  partial: Partial<EduAIModelOption> & Pick<EduAIModelOption, "id">,
+): EduAIModelOption {
   return { label: partial.id, provider: "openai", ...partial } as EduAIModelOption;
 }
 

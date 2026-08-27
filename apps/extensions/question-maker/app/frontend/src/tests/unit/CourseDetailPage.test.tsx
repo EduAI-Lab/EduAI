@@ -4,9 +4,9 @@
  * wiring, question/assessment loading, and the various handlers — without
  * depending on the real design-system tree or network calls.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Question, Assessment, QuestionVariantEntry } from '@/types/question';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { Question, Assessment, QuestionVariantEntry } from "@/types/question";
 
 afterEach(cleanup);
 
@@ -28,7 +28,7 @@ const {
   assessmentService,
   tabsBox,
 } = vi.hoisted(() => {
-  const toast = vi.fn(() => 'toast-id') as any;
+  const toast = vi.fn(() => "toast-id") as any;
   toast.error = vi.fn();
   toast.dismiss = vi.fn();
   return {
@@ -65,53 +65,53 @@ const {
     // as its children in the same pass) read the already-updated value — no
     // React context needed, which matters because `createContext` needs the
     // real `react` module and can't be constructed inside `vi.hoisted`.
-    tabsBox: { value: '', onValueChange: (() => {}) as (v: string) => void },
+    tabsBox: { value: "", onValueChange: (() => {}) as (v: string) => void },
   };
 });
 
 // ── react-router ─────────────────────────────────────────────────────────────
-vi.mock('react-router', () => ({
+vi.mock("react-router", () => ({
   useNavigate: () => navigateMock,
   useSearchParams: () => [searchParamsBox.current, setSearchParamsMock],
 }));
 
 // ── sonner ───────────────────────────────────────────────────────────────────
-vi.mock('sonner', () => ({ toast: toastFn }));
+vi.mock("sonner", () => ({ toast: toastFn }));
 
 // ── hooks / contexts ─────────────────────────────────────────────────────────
-vi.mock('@/hooks/useCourseFromRoute', () => ({
+vi.mock("@/hooks/useCourseFromRoute", () => ({
   useCourseFromRoute: () => useCourseFromRouteMock(),
 }));
 
-vi.mock('@/hooks/useQmPermissions', () => ({
+vi.mock("@/hooks/useQmPermissions", () => ({
   useQmPermissionsForCourse: () => useQmPermissionsForCourseMock(),
 }));
 
-vi.mock('@/contexts/GuidedTourContext', () => ({
+vi.mock("@/contexts/GuidedTourContext", () => ({
   useGuidedTour: () => guidedTour,
 }));
 
-vi.mock('@/components/layout/QmLayoutContext', () => ({
+vi.mock("@/components/layout/QmLayoutContext", () => ({
   useQmLayout: () => qmLayout,
 }));
 
 // ── services ─────────────────────────────────────────────────────────────────
-vi.mock('@/services/questionService', () => ({ questionService }));
+vi.mock("@/services/questionService", () => ({ questionService }));
 
-vi.mock('@/services/courseService', () => ({ courseService }));
+vi.mock("@/services/courseService", () => ({ courseService }));
 
-vi.mock('@/services/assessmentService', () => ({ default: assessmentService }));
+vi.mock("@/services/assessmentService", () => ({ default: assessmentService }));
 
-vi.mock('@/services/questionBankService', () => ({
+vi.mock("@/services/questionBankService", () => ({
   questionBankService: {
     listBanks: vi.fn().mockResolvedValue([]),
-    createBank: vi.fn().mockResolvedValue({ id: 1, name: 'Bank' }),
+    createBank: vi.fn().mockResolvedValue({ id: 1, name: "Bank" }),
     deleteBank: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
 // ── @eduai/ui ────────────────────────────────────────────────────────────────
-vi.mock('@eduai/ui', () => ({
+vi.mock("@eduai/ui", () => ({
   PageTabs: ({ value, onValueChange, children }: any) => {
     tabsBox.value = value;
     tabsBox.onValueChange = onValueChange;
@@ -126,7 +126,9 @@ vi.mock('@eduai/ui', () => ({
   CourseHeroCard: (props: any) => (
     <div data-testid="hero">
       <span>{props.name}</span>
-      {props.topRightBadges?.map((b: string) => <span key={b}>{b}</span>)}
+      {props.topRightBadges?.map((b: string) => (
+        <span key={b}>{b}</span>
+      ))}
       {props.topicsAction}
     </div>
   ),
@@ -142,29 +144,37 @@ vi.mock('@eduai/ui', () => ({
   CardHeader: ({ children }: any) => <div>{children}</div>,
   CardTitle: ({ children }: any) => <h2>{children}</h2>,
   Button: ({ children, onClick, disabled }: any) => (
-    <button onClick={onClick} disabled={disabled}>{children}</button>
+    <button onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
   ),
   Alert: ({ children }: any) => <div role="alert">{children}</div>,
   AlertDescription: ({ children }: any) => <div>{children}</div>,
-  resolvePaletteAccent: () => '#000',
+  resolvePaletteAccent: () => "#000",
   ConfirmDialog: ({ open, onConfirm, title, description, confirmLabel, isLoading }: any) =>
     open ? (
       <div role="alertdialog">
         <h2>{title}</h2>
         <p>{description}</p>
-        <button onClick={onConfirm} disabled={isLoading}>{confirmLabel}</button>
+        <button onClick={onConfirm} disabled={isLoading}>
+          {confirmLabel}
+        </button>
       </div>
     ) : null,
 }));
 
 // ── local child components ──────────────────────────────────────────────────
-vi.mock('@/components/question-bank/QuestionBank', () => ({
+vi.mock("@/components/question-bank/QuestionBank", () => ({
   QuestionBank: (props: any) => (
     <div data-testid="question-bank">
       <span data-testid="qb-loading">{String(props.isLoading)}</span>
       <span data-testid="qb-empty">{props.emptyMessage}</span>
-      <button disabled={props.disableAdd} onClick={props.onAddQuestion}>add-question</button>
-      <button disabled={props.disableUpload} onClick={props.onUploadQuestions}>upload-questions</button>
+      <button disabled={props.disableAdd} onClick={props.onAddQuestion}>
+        add-question
+      </button>
+      <button disabled={props.disableUpload} onClick={props.onUploadQuestions}>
+        upload-questions
+      </button>
       <button onClick={props.onOpenProfile}>open-profile</button>
       {props.variants[0] && (
         <>
@@ -176,12 +186,12 @@ vi.mock('@/components/question-bank/QuestionBank', () => ({
   ),
 }));
 
-vi.mock('@/components/assessments/AssessmentSection', () => ({
+vi.mock("@/components/assessments/AssessmentSection", () => ({
   AssessmentSection: (props: any) => (
     <div data-testid="assessment-section">
       <span data-testid="as-loading">{String(props.isLoading)}</span>
       <span data-testid="as-error">{props.loadError}</span>
-      <button onClick={() => props.onAddAssessment({ name: 'New A' })}>add-assessment</button>
+      <button onClick={() => props.onAddAssessment({ name: "New A" })}>add-assessment</button>
       <button onClick={props.onImportFromCanvas}>import-canvas</button>
       {props.assessments.map((a: Assessment) => (
         <div key={a.id}>
@@ -196,16 +206,18 @@ vi.mock('@/components/assessments/AssessmentSection', () => ({
   ),
 }));
 
-vi.mock('@/components/shared/ListPaginationBar', () => ({
+vi.mock("@/components/shared/ListPaginationBar", () => ({
   DEFAULT_LIST_PAGE_SIZE: 25,
   ListPaginationBar: (props: any) => (
     <div data-testid={`pager-${props.itemLabel}`}>
-      <button onClick={() => props.onPageChange(props.offset + props.limit)}>next-{props.itemLabel}</button>
+      <button onClick={() => props.onPageChange(props.offset + props.limit)}>
+        next-{props.itemLabel}
+      </button>
     </div>
   ),
 }));
 
-vi.mock('@/components/questions/QuestionModal', () => ({
+vi.mock("@/components/questions/QuestionModal", () => ({
   QuestionModal: (props: any) =>
     props.open ? (
       <div data-testid="question-modal">
@@ -214,7 +226,7 @@ vi.mock('@/components/questions/QuestionModal', () => ({
         <button onClick={() => props.onDeleteVariant(props.entry)}>modal-delete-variant</button>
         <button
           onClick={() =>
-            props.onUpdateQuestionMetadata(props.entry.questionId, { description: 'updated' })
+            props.onUpdateQuestionMetadata(props.entry.questionId, { description: "updated" })
           }
         >
           modal-update-metadata
@@ -223,7 +235,7 @@ vi.mock('@/components/questions/QuestionModal', () => ({
     ) : null,
 }));
 
-vi.mock('@/pages/course-detail/CourseOverviewTab', () => ({
+vi.mock("@/pages/course-detail/CourseOverviewTab", () => ({
   CourseOverviewTab: (props: any) => (
     <div data-testid="overview-tab">
       <span>{props.questionsCount}</span>
@@ -234,35 +246,33 @@ vi.mock('@/pages/course-detail/CourseOverviewTab', () => ({
   ),
 }));
 
-vi.mock('@/pages/course-detail/CourseTopicsHeroAction', () => ({
+vi.mock("@/pages/course-detail/CourseTopicsHeroAction", () => ({
   CourseTopicsHeroAction: (props: any) => (
     <button onClick={props.onTopicsChange}>topics-action</button>
   ),
 }));
 
-vi.mock('@/pages/course-detail/CourseCanvasTab', () => ({
+vi.mock("@/pages/course-detail/CourseCanvasTab", () => ({
   CourseCanvasTab: () => <div data-testid="canvas-tab" />,
 }));
 
-vi.mock('@/components/question-bank/QuestionUploadDialog', () => ({
+vi.mock("@/components/question-bank/QuestionUploadDialog", () => ({
   QuestionUploadDialog: (props: any) =>
     props.open ? (
       <div data-testid="upload-dialog">
         <button onClick={props.onClose}>close-upload</button>
         <button onClick={() => props.onQuestionsSaved([])}>save-empty</button>
         <button
-          onClick={() =>
-            props.onQuestionsSaved([{ id: 99, courseId: 5, createdAt: '2024-01-01' }])
-          }
+          onClick={() => props.onQuestionsSaved([{ id: 99, courseId: 5, createdAt: "2024-01-01" }])}
         >
           save-questions
         </button>
         <button
           onClick={() =>
             props.onExtractInBackground({
-              text: 'x',
+              text: "x",
               courseId: 5,
-              model: 'm',
+              model: "m",
               apiKeys: {},
             })
           }
@@ -274,17 +284,17 @@ vi.mock('@/components/question-bank/QuestionUploadDialog', () => ({
   mapExtractedToDraftQuestions: (items: any[]) => items,
 }));
 
-vi.mock('@/components/canvas/CanvasExportDialog', () => ({
+vi.mock("@/components/canvas/CanvasExportDialog", () => ({
   CanvasExportDialog: (props: any) =>
     props.open ? (
       <div data-testid="canvas-export-dialog">
         <button onClick={props.onClose}>close-export</button>
-        <button onClick={() => props.onExportSuccess({ quizId: 'q1' })}>export-success</button>
+        <button onClick={() => props.onExportSuccess({ quizId: "q1" })}>export-success</button>
       </div>
     ) : null,
 }));
 
-vi.mock('@/components/canvas/CanvasImportDialog', () => ({
+vi.mock("@/components/canvas/CanvasImportDialog", () => ({
   CanvasImportDialog: (props: any) =>
     props.open ? (
       <div data-testid="canvas-import-dialog">
@@ -294,56 +304,54 @@ vi.mock('@/components/canvas/CanvasImportDialog', () => ({
     ) : null,
 }));
 
-vi.mock('@/components/canvas/CanvasBankSyncDialog', () => ({
+vi.mock("@/components/canvas/CanvasBankSyncDialog", () => ({
   CanvasBankSyncDialog: () => null,
 }));
 
-vi.mock('@/components/rbac/CourseNoAccessAlert', () => ({
-  CourseNoAccessAlert: (props: any) => (
-    <button onClick={props.onGoToCourses}>no-access</button>
-  ),
+vi.mock("@/components/rbac/CourseNoAccessAlert", () => ({
+  CourseNoAccessAlert: (props: any) => <button onClick={props.onGoToCourses}>no-access</button>,
 }));
 
-vi.mock('@/utils/assessmentExport', () => ({
-  assessmentBlocksToDocxBlob: vi.fn(async () => new Blob(['x'])),
-  assessmentBlocksToPlainText: vi.fn(() => 'plain text'),
+vi.mock("@/utils/assessmentExport", () => ({
+  assessmentBlocksToDocxBlob: vi.fn(async () => new Blob(["x"])),
+  assessmentBlocksToPlainText: vi.fn(() => "plain text"),
   collectAssessmentExportBlocks: vi.fn((assessment: Assessment) =>
     assessment.sections?.length ? [{}] : [],
   ),
-  slugifyAssessmentBasename: vi.fn(() => 'slug'),
+  slugifyAssessmentBasename: vi.fn(() => "slug"),
 }));
 
-import { CourseDetailPage } from '@/pages/CourseDetailPage';
+import { CourseDetailPage } from "@/pages/CourseDetailPage";
 
 // ── test fixtures ────────────────────────────────────────────────────────────
 const course = {
   id: 5,
-  name: 'Intro to Testing',
-  code: 'TST101',
-  description: 'A course',
-  term: 'Fall',
+  name: "Intro to Testing",
+  code: "TST101",
+  description: "A course",
+  term: "Fall",
   year: 2026,
   coreCourseId: null,
 };
 
 const question: Question = {
   id: 1,
-  description: 'Q1',
-  type: 'MCQ',
+  description: "Q1",
+  type: "MCQ",
   courseId: 5,
-  primaryTopicId: 't1',
+  primaryTopicId: "t1",
   questionOrder: null,
-  createdAt: '2024-01-01',
-  updatedAt: '2024-01-01',
+  createdAt: "2024-01-01",
+  updatedAt: "2024-01-01",
   variants: [
     {
       id: 10,
-      questionText: 'What is 2+2?',
-      difficulty: 'easy',
+      questionText: "What is 2+2?",
+      difficulty: "easy",
       assessmentId: null,
       secondaryTopicsId: null,
       referenceId: null,
-      answer: '4',
+      answer: "4",
       isAiGenerated: false,
       isDraft: true,
     } as any,
@@ -352,19 +360,17 @@ const question: Question = {
 
 const assessment: Assessment = {
   id: 100,
-  type: 'Quiz',
-  name: 'Quiz 1',
-  semester: 'Fall 2026',
+  type: "Quiz",
+  name: "Quiz 1",
+  semester: "Fall 2026",
   courseId: 5,
-  createdAt: '2024-01-01',
-  updatedAt: '2024-01-01',
-  sections: [
-    { id: 1, sectionVariants: [{ variant: { isDraft: false } }] } as any,
-  ],
+  createdAt: "2024-01-01",
+  updatedAt: "2024-01-01",
+  sections: [{ id: 1, sectionVariants: [{ variant: { isDraft: false } }] } as any],
 };
 
 function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
-  searchParamsBox.current = new URLSearchParams(overrides.tab ? `tab=${overrides.tab}` : '');
+  searchParamsBox.current = new URLSearchParams(overrides.tab ? `tab=${overrides.tab}` : "");
   useCourseFromRouteMock.mockReturnValue({
     course,
     courseId: 5,
@@ -380,14 +386,14 @@ function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
   questionService.getQuestionStats.mockResolvedValue({
     totalQuestions: 1,
     totalVariants: 1,
-    typeStats: [{ type: 'MCQ', count: 1 }],
-    difficultyStats: [{ difficulty: 'easy', count: 1 }],
+    typeStats: [{ type: "MCQ", count: 1 }],
+    difficultyStats: [{ difficulty: "easy", count: 1 }],
     aiCount: 0,
     humanCount: 1,
     reviewedCount: 0,
     usedTopicIds: [],
   });
-  courseService.getCourseTopics.mockResolvedValue([{ id: 't1', name: 'Topic 1' }]);
+  courseService.getCourseTopics.mockResolvedValue([{ id: "t1", name: "Topic 1" }]);
   assessmentService.getAssessmentsPage.mockResolvedValue({ items: [assessment], total: 1 });
 }
 
@@ -398,309 +404,343 @@ beforeEach(() => {
   setDefaultMocks();
 });
 
-describe('CourseDetailPage gate states', () => {
-  it('shows a spinner while course or access is loading', () => {
-    useCourseFromRouteMock.mockReturnValue({ course: null, courseId: null, isLoading: true, notFound: false });
-    useQmPermissionsForCourseMock.mockReturnValue({ canCreateQuestion: false, hasCourseAccess: false, accessLoading: false });
+describe("CourseDetailPage gate states", () => {
+  it("shows a spinner while course or access is loading", () => {
+    useCourseFromRouteMock.mockReturnValue({
+      course: null,
+      courseId: null,
+      isLoading: true,
+      notFound: false,
+    });
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: false,
+      hasCourseAccess: false,
+      accessLoading: false,
+    });
     const { container } = render(<CourseDetailPage />);
-    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
-  it('shows not-found card when the course does not exist', () => {
-    useCourseFromRouteMock.mockReturnValue({ course: null, courseId: 5, isLoading: false, notFound: true });
+  it("shows not-found card when the course does not exist", () => {
+    useCourseFromRouteMock.mockReturnValue({
+      course: null,
+      courseId: 5,
+      isLoading: false,
+      notFound: true,
+    });
     render(<CourseDetailPage />);
-    expect(screen.getByText('Course not found')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Courses' }));
-    expect(navigateMock).toHaveBeenCalledWith('/courses');
+    expect(screen.getByText("Course not found")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Courses" }));
+    expect(navigateMock).toHaveBeenCalledWith("/courses");
   });
 });
 
-describe('CourseDetailPage main content', () => {
-  it('renders the hero and overview tab by default, loading data', async () => {
+describe("CourseDetailPage main content", () => {
+  it("renders the hero and overview tab by default, loading data", async () => {
     render(<CourseDetailPage />);
-    expect(await screen.findByTestId('overview-tab')).toBeInTheDocument();
+    expect(await screen.findByTestId("overview-tab")).toBeInTheDocument();
     await waitFor(() => expect(questionService.getQuestionsPage).toHaveBeenCalled());
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalled());
     await waitFor(() => expect(courseService.getCourseTopics).toHaveBeenCalled());
-    expect(screen.getByText('Intro to Testing')).toBeInTheDocument();
+    expect(screen.getByText("Intro to Testing")).toBeInTheDocument();
   });
 
-  it('shows the no-access alert and read-only badge when access is missing', async () => {
-    useQmPermissionsForCourseMock.mockReturnValue({ canCreateQuestion: false, hasCourseAccess: false, accessLoading: false });
+  it("shows the no-access alert and read-only badge when access is missing", async () => {
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: false,
+      hasCourseAccess: false,
+      accessLoading: false,
+    });
     render(<CourseDetailPage />);
-    expect(screen.getByText('no-access')).toBeInTheDocument();
-    expect(await screen.findByText('Read-only')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('no-access'));
-    expect(navigateMock).toHaveBeenCalledWith('/courses');
+    expect(screen.getByText("no-access")).toBeInTheDocument();
+    expect(await screen.findByText("Read-only")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("no-access"));
+    expect(navigateMock).toHaveBeenCalledWith("/courses");
   });
 
-  it('handles a questions-loading failure', async () => {
-    setDefaultMocks({ tab: 'questions' });
-    questionService.getQuestionsPage.mockRejectedValue({ response: { data: { error: 'boom' } } });
+  it("handles a questions-loading failure", async () => {
+    setDefaultMocks({ tab: "questions" });
+    questionService.getQuestionsPage.mockRejectedValue({ response: { data: { error: "boom" } } });
     render(<CourseDetailPage />);
-    await waitFor(() => expect(screen.getAllByText('boom').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("boom").length).toBeGreaterThan(0));
   });
 
-  it('renders the questions tab and wires QuestionBank callbacks', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("renders the questions tab and wires QuestionBank callbacks", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    expect(screen.getByTestId('qb-loading')).toHaveTextContent('false');
+    await screen.findByTestId("question-bank");
+    expect(screen.getByTestId("qb-loading")).toHaveTextContent("false");
 
-    fireEvent.click(screen.getByText('add-question'));
-    expect(navigateMock).toHaveBeenCalledWith('/courses/5/questions/new');
+    fireEvent.click(screen.getByText("add-question"));
+    expect(navigateMock).toHaveBeenCalledWith("/courses/5/questions/new");
 
-    fireEvent.click(screen.getByText('upload-questions'));
-    expect(await screen.findByTestId('upload-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText("upload-questions"));
+    expect(await screen.findByTestId("upload-dialog")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('open-profile'));
-    expect(guidedTour.startTour).toHaveBeenCalledWith('main');
+    fireEvent.click(screen.getByText("open-profile"));
+    expect(guidedTour.startTour).toHaveBeenCalledWith("main");
   });
 
-  it('opens and closes the question detail modal', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("opens and closes the question detail modal", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('view-variant'));
-    expect(await screen.findByTestId('question-modal')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('close-modal'));
-    await waitFor(() => expect(screen.queryByTestId('question-modal')).not.toBeInTheDocument());
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("view-variant"));
+    expect(await screen.findByTestId("question-modal")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("close-modal"));
+    await waitFor(() => expect(screen.queryByTestId("question-modal")).not.toBeInTheDocument());
   });
 
-  it('navigates to create a variant from the question bank and from the modal', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("navigates to create a variant from the question bank and from the modal", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('create-variant'));
-    expect(navigateMock).toHaveBeenCalledWith('/courses/5/questions/new?variantOf=1');
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("create-variant"));
+    expect(navigateMock).toHaveBeenCalledWith("/courses/5/questions/new?variantOf=1");
   });
 
-  it('deletes the last remaining variant as a full question delete', async () => {
+  it("deletes the last remaining variant as a full question delete", async () => {
     questionService.deleteQuestion.mockResolvedValue(undefined);
-    setDefaultMocks({ tab: 'questions' });
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('view-variant'));
-    fireEvent.click(await screen.findByText('modal-delete-variant'));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText('Delete question?')).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("view-variant"));
+    fireEvent.click(await screen.findByText("modal-delete-variant"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Delete question?")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(questionService.deleteQuestion).toHaveBeenCalledWith(1));
   });
 
-  it('reports a variant-delete failure', async () => {
-    questionService.deleteQuestion.mockRejectedValue(new Error('nope'));
-    setDefaultMocks({ tab: 'questions' });
+  it("reports a variant-delete failure", async () => {
+    questionService.deleteQuestion.mockRejectedValue(new Error("nope"));
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('view-variant'));
-    fireEvent.click(await screen.findByText('modal-delete-variant'));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("view-variant"));
+    fireEvent.click(await screen.findByText("modal-delete-variant"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
   });
 
-  it('updates question metadata from the modal, refetching the question', async () => {
-    questionService.getQuestion.mockResolvedValue({ ...question, description: 'updated', variants: question.variants });
-    setDefaultMocks({ tab: 'questions' });
+  it("updates question metadata from the modal, refetching the question", async () => {
+    questionService.getQuestion.mockResolvedValue({
+      ...question,
+      description: "updated",
+      variants: question.variants,
+    });
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('view-variant'));
-    fireEvent.click(await screen.findByText('modal-update-metadata'));
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("view-variant"));
+    fireEvent.click(await screen.findByText("modal-update-metadata"));
     await waitFor(() => expect(questionService.getQuestion).toHaveBeenCalledWith(1));
   });
 
-  it('saves uploaded questions and merges them into the list', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("saves uploaded questions and merges them into the list", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('upload-questions'));
-    fireEvent.click(await screen.findByText('save-questions'));
-    await waitFor(() => expect(screen.queryByTestId('upload-dialog')).not.toBeInTheDocument());
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-questions"));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
   });
 
-  it('closes the upload dialog when zero questions are saved', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("closes the upload dialog when zero questions are saved", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('upload-questions'));
-    fireEvent.click(await screen.findByText('save-empty'));
-    await waitFor(() => expect(screen.queryByTestId('upload-dialog')).not.toBeInTheDocument());
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-empty"));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
   });
 
-  it('extracts questions in the background and shows a ready toast', async () => {
+  it("extracts questions in the background and shows a ready toast", async () => {
     questionService.extractQuestionsFromText.mockResolvedValue([{ id: 1 }]);
-    setDefaultMocks({ tab: 'questions' });
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('upload-questions'));
-    fireEvent.click(await screen.findByText('extract'));
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("extract"));
     await waitFor(() => expect(questionService.extractQuestionsFromText).toHaveBeenCalled());
   });
 
-  it('surfaces an extraction failure toast', async () => {
-    questionService.extractQuestionsFromText.mockRejectedValue({ message: 'extraction blew up' });
-    setDefaultMocks({ tab: 'questions' });
+  it("surfaces an extraction failure toast", async () => {
+    questionService.extractQuestionsFromText.mockRejectedValue({ message: "extraction blew up" });
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('question-bank');
-    fireEvent.click(screen.getByText('upload-questions'));
-    fireEvent.click(await screen.findByText('extract'));
-    await waitFor(() => expect(toastFn.error).toHaveBeenCalledWith('Extraction failed', expect.anything()));
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("extract"));
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith("Extraction failed", expect.anything()),
+    );
   });
 
-  it('pages through questions via ListPaginationBar', async () => {
-    setDefaultMocks({ tab: 'questions' });
+  it("pages through questions via ListPaginationBar", async () => {
+    setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('pager-questions');
-    fireEvent.click(screen.getByText('next-questions'));
+    await screen.findByTestId("pager-questions");
+    fireEvent.click(screen.getByText("next-questions"));
     await waitFor(() => expect(questionService.getQuestionsPage).toHaveBeenCalledTimes(2));
   });
 });
 
-describe('CourseDetailPage assessments tab', () => {
-  it('renders assessments, creates one, and paginates', async () => {
-    setDefaultMocks({ tab: 'assessments' });
+describe("CourseDetailPage assessments tab", () => {
+  it("renders assessments, creates one, and paginates", async () => {
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    expect(screen.getByText('Quiz 1')).toBeInTheDocument();
+    await screen.findByTestId("assessment-section");
+    expect(screen.getByText("Quiz 1")).toBeInTheDocument();
 
-    assessmentService.createAssessment.mockResolvedValue({ ...assessment, id: 200, name: 'New A' });
-    fireEvent.click(screen.getByText('add-assessment'));
+    assessmentService.createAssessment.mockResolvedValue({ ...assessment, id: 200, name: "New A" });
+    fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(assessmentService.createAssessment).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText('next-assessments'));
+    fireEvent.click(screen.getByText("next-assessments"));
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
   });
 
-  it('reports an assessment-creation failure', async () => {
-    assessmentService.createAssessment.mockRejectedValue(new Error('fail'));
-    setDefaultMocks({ tab: 'assessments' });
+  it("reports an assessment-creation failure", async () => {
+    assessmentService.createAssessment.mockRejectedValue(new Error("fail"));
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('add-assessment'));
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
   });
 
-  it('handles an assessments-loading failure', async () => {
-    setDefaultMocks({ tab: 'assessments' });
-    assessmentService.getAssessmentsPage.mockRejectedValue({ response: { data: { error: 'assessments broke' } } });
+  it("handles an assessments-loading failure", async () => {
+    setDefaultMocks({ tab: "assessments" });
+    assessmentService.getAssessmentsPage.mockRejectedValue({
+      response: { data: { error: "assessments broke" } },
+    });
     render(<CourseDetailPage />);
-    await waitFor(() => expect(screen.getAllByText('assessments broke').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("assessments broke").length).toBeGreaterThan(0));
   });
 
-  it('deletes an assessment through the confirm dialog', async () => {
+  it("deletes an assessment through the confirm dialog", async () => {
     assessmentService.deleteAssessment.mockResolvedValue(undefined);
-    setDefaultMocks({ tab: 'assessments' });
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('delete-100'));
-    const dialog = await screen.findByRole('alertdialog');
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("delete-100"));
+    const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText('Delete assessment "Quiz 1"?')).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(assessmentService.deleteAssessment).toHaveBeenCalledWith(100));
   });
 
-  it('reports an assessment-deletion failure', async () => {
-    assessmentService.deleteAssessment.mockRejectedValue(new Error('fail'));
-    setDefaultMocks({ tab: 'assessments' });
+  it("reports an assessment-deletion failure", async () => {
+    assessmentService.deleteAssessment.mockRejectedValue(new Error("fail"));
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('delete-100'));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(toastFn.error).toHaveBeenCalledWith('Failed to delete assessment', expect.anything()));
-  });
-
-  it('exports an assessment to TXT', async () => {
-    const createObjectURL = vi.fn(() => 'blob:url');
-    const revokeObjectURL = vi.fn();
-    (URL as any).createObjectURL = createObjectURL;
-    (URL as any).revokeObjectURL = revokeObjectURL;
-    setDefaultMocks({ tab: 'assessments' });
-    render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('export-txt-100'));
-    expect(createObjectURL).toHaveBeenCalled();
-    expect(toastFn).toHaveBeenCalledWith('Export started', expect.anything());
-  });
-
-  it('exports an assessment to Word', async () => {
-    (URL as any).createObjectURL = vi.fn(() => 'blob:url');
-    (URL as any).revokeObjectURL = vi.fn();
-    setDefaultMocks({ tab: 'assessments' });
-    render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('export-word-100'));
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("delete-100"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() =>
-      expect(toastFn).toHaveBeenCalledWith('Export started', expect.objectContaining({ description: expect.stringContaining('Word') })),
+      expect(toastFn.error).toHaveBeenCalledWith("Failed to delete assessment", expect.anything()),
     );
   });
 
-  it('blocks export when the assessment has no exportable blocks', async () => {
-    const emptyAssessment = { ...assessment, id: 300, name: 'Empty', sections: [] };
-    assessmentService.getAssessmentsPage.mockResolvedValue({ items: [emptyAssessment], total: 1 });
-    setDefaultMocks({ tab: 'assessments' });
-    assessmentService.getAssessmentsPage.mockResolvedValue({ items: [emptyAssessment], total: 1 });
+  it("exports an assessment to TXT", async () => {
+    const createObjectURL = vi.fn(() => "blob:url");
+    const revokeObjectURL = vi.fn();
+    (URL as any).createObjectURL = createObjectURL;
+    (URL as any).revokeObjectURL = revokeObjectURL;
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('export-txt-300'));
-    expect(toastFn.error).toHaveBeenCalledWith('Cannot export', expect.anything());
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("export-txt-100"));
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(toastFn).toHaveBeenCalledWith("Export started", expect.anything());
   });
 
-  it('opens the Canvas export dialog', async () => {
-    setDefaultMocks({ tab: 'assessments' });
+  it("exports an assessment to Word", async () => {
+    (URL as any).createObjectURL = vi.fn(() => "blob:url");
+    (URL as any).revokeObjectURL = vi.fn();
+    setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('export-canvas-100'));
-    expect(await screen.findByTestId('canvas-export-dialog')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('export-success'));
-    expect(toastFn).toHaveBeenCalledWith('Export successful!', expect.anything());
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("export-word-100"));
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        "Export started",
+        expect.objectContaining({ description: expect.stringContaining("Word") }),
+      ),
+    );
   });
 
-  it('opens the Canvas import dialog from the assessments tab and refreshes on success', async () => {
-    setDefaultMocks({ tab: 'assessments' });
+  it("blocks export when the assessment has no exportable blocks", async () => {
+    const emptyAssessment = { ...assessment, id: 300, name: "Empty", sections: [] };
+    assessmentService.getAssessmentsPage.mockResolvedValue({ items: [emptyAssessment], total: 1 });
+    setDefaultMocks({ tab: "assessments" });
+    assessmentService.getAssessmentsPage.mockResolvedValue({ items: [emptyAssessment], total: 1 });
     render(<CourseDetailPage />);
-    await screen.findByTestId('assessment-section');
-    fireEvent.click(screen.getByText('import-canvas'));
-    fireEvent.click(await screen.findByText('import-success'));
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("export-txt-300"));
+    expect(toastFn.error).toHaveBeenCalledWith("Cannot export", expect.anything());
+  });
+
+  it("opens the Canvas export dialog", async () => {
+    setDefaultMocks({ tab: "assessments" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("export-canvas-100"));
+    expect(await screen.findByTestId("canvas-export-dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("export-success"));
+    expect(toastFn).toHaveBeenCalledWith("Export successful!", expect.anything());
+  });
+
+  it("opens the Canvas import dialog from the assessments tab and refreshes on success", async () => {
+    setDefaultMocks({ tab: "assessments" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("assessment-section");
+    fireEvent.click(screen.getByText("import-canvas"));
+    fireEvent.click(await screen.findByText("import-success"));
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
   });
 });
 
-describe('CourseDetailPage canvas tab', () => {
-  it('renders the canvas tab', async () => {
-    setDefaultMocks({ tab: 'canvas' });
+describe("CourseDetailPage canvas tab", () => {
+  it("renders the canvas tab", async () => {
+    setDefaultMocks({ tab: "canvas" });
     render(<CourseDetailPage />);
-    expect(await screen.findByTestId('canvas-tab')).toBeInTheDocument();
+    expect(await screen.findByTestId("canvas-tab")).toBeInTheDocument();
   });
 });
 
-describe('CourseDetailPage overview tab actions', () => {
-  it('wires overview add-question, new-assessment, and import-from-canvas', async () => {
+describe("CourseDetailPage overview tab actions", () => {
+  it("wires overview add-question, new-assessment, and import-from-canvas", async () => {
     render(<CourseDetailPage />);
-    await screen.findByTestId('overview-tab');
-    fireEvent.click(screen.getByText('overview-add-question'));
-    expect(navigateMock).toHaveBeenCalledWith('/courses/5/questions/new');
+    await screen.findByTestId("overview-tab");
+    fireEvent.click(screen.getByText("overview-add-question"));
+    expect(navigateMock).toHaveBeenCalledWith("/courses/5/questions/new");
 
-    fireEvent.click(screen.getByText('overview-import-canvas'));
-    expect(await screen.findByTestId('canvas-import-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText("overview-import-canvas"));
+    expect(await screen.findByTestId("canvas-import-dialog")).toBeInTheDocument();
   });
 
-  it('changes topics via the hero topics action', async () => {
+  it("changes topics via the hero topics action", async () => {
     render(<CourseDetailPage />);
-    await screen.findByTestId('overview-tab');
-    fireEvent.click(screen.getByText('topics-action'));
+    await screen.findByTestId("overview-tab");
+    fireEvent.click(screen.getByText("topics-action"));
     await waitFor(() => expect(courseService.getCourseTopics).toHaveBeenCalledTimes(2));
   });
 });
 
-describe('CourseDetailPage guided tour', () => {
-  it('registers the tour handler and switches to assessments tab on the tour step', async () => {
+describe("CourseDetailPage guided tour", () => {
+  it("registers the tour handler and switches to assessments tab on the tour step", async () => {
     guidedTour.isActive = true;
-    guidedTour.activeTourId = 'main';
+    guidedTour.activeTourId = "main";
     render(<CourseDetailPage />);
-    await screen.findByTestId('overview-tab');
-    expect(guidedTour.registerStepAction).toHaveBeenCalledWith('assessment-tab', expect.any(Function));
+    await screen.findByTestId("overview-tab");
+    expect(guidedTour.registerStepAction).toHaveBeenCalledWith(
+      "assessment-tab",
+      expect.any(Function),
+    );
     expect(qmLayout.setGuidedTourHandler).toHaveBeenCalled();
   });
 });

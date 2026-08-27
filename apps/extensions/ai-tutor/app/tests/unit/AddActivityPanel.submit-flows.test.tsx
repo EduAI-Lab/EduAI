@@ -73,7 +73,10 @@ function topicsState(overrides: Partial<CourseTopicsState> = {}): CourseTopicsSt
   };
 }
 
-function renderPanel(state: CourseTopicsState = topicsState(), props: Partial<Parameters<typeof AddActivityPanel>[0]> = {}) {
+function renderPanel(
+  state: CourseTopicsState = topicsState(),
+  props: Partial<Parameters<typeof AddActivityPanel>[0]> = {},
+) {
   return render(
     <CourseTopicsProvider value={state}>
       <Dialog open>

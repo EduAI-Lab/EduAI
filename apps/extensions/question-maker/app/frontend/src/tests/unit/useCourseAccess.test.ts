@@ -28,12 +28,15 @@ describe("useCourseAccess", () => {
     expect(result.current.access).toBe("instructor");
   });
 
-  it.each([null, undefined, 0, -1, NaN])("skips the fetch for invalid courseId %s", async (courseId) => {
-    const { result } = renderHook(() => useCourseAccess(courseId as any));
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(getCourseAccess).not.toHaveBeenCalled();
-    expect(result.current.access).toBeNull();
-  });
+  it.each([null, undefined, 0, -1, NaN])(
+    "skips the fetch for invalid courseId %s",
+    async (courseId) => {
+      const { result } = renderHook(() => useCourseAccess(courseId as any));
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(getCourseAccess).not.toHaveBeenCalled();
+      expect(result.current.access).toBeNull();
+    },
+  );
 
   it("sets access to null when the request fails", async () => {
     getCourseAccess.mockRejectedValue(new Error("denied"));

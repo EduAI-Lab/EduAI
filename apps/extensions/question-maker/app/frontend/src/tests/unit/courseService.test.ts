@@ -60,10 +60,13 @@ describe("courseService.getCourse", () => {
 });
 
 describe("courseService.getCourseAccess", () => {
-  it.each(["admin", "unit", "instructor", "ta"] as const)("passes through a valid level %s", async (level) => {
-    get.mockResolvedValue({ data: { data: { level } } });
-    await expect(courseService.getCourseAccess(1)).resolves.toBe(level);
-  });
+  it.each(["admin", "unit", "instructor", "ta"] as const)(
+    "passes through a valid level %s",
+    async (level) => {
+      get.mockResolvedValue({ data: { data: { level } } });
+      await expect(courseService.getCourseAccess(1)).resolves.toBe(level);
+    },
+  );
 
   it("returns null for an unrecognized level", async () => {
     get.mockResolvedValue({ data: { data: { level: "bogus" } } });
