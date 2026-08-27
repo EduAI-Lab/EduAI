@@ -52,11 +52,22 @@ async function setAuthorizedUnits(admin: APIRequestContext, userId: string, unit
   expect((await res.json()).authorizedUnits).toEqual(units);
 }
 
+type CreateCourseForm = {
+  name: string;
+  code: string;
+  section: string;
+  term: string;
+  year: string;
+  startDate: string;
+  department: string;
+  instructorUserIds?: string;
+};
+
 async function createCourse(
   ctx: APIRequestContext,
   opts: { prefix: string; department: string; instructorUserIds?: string },
 ) {
-  const form: Record<string, string> = {
+  const form: CreateCourseForm = {
     name: `Boundary workflow ${opts.prefix}`,
     code: uniqueCourseCode(opts.prefix),
     section: "001",
