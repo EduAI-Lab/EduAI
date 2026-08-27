@@ -2,7 +2,13 @@
  * @file Student lesson player — drives the per-activity flow students see.
  *
  * Route: /student/lesson/:lessonId
- * Auth: STUDENT (enforced by clientLoader via requireClientUser)
+ * Auth: STUDENT or TA (real learners), plus ADMIN/UNIT_ADMIN/INSTRUCTOR
+ *       previewing the learner experience (#1660) — enforced by clientLoader
+ *       via requireClientUser. The backend already authorized staff reads
+ *       here (course/module/lesson membership checks); student-only writes
+ *       (answer submission, AI tutoring chat) are unchanged and still reject
+ *       non-STUDENT callers server-side, so a previewer sees everything but
+ *       cannot submit as if they were the enrolled student.
  * Loads: lesson + activities in one parallel wave alongside the role gate;
  *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
  *        (#1334) so the lesson body is not blocked on Core/ordinal work.
@@ -48,11 +54,13 @@ import { contentExcerpt } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
-import api from "../lib/api";
-import type { Activity, Course, Lesson, ModuleDetail } from "../lib/types";
+import api, { ApiHttpError } from "../lib/api";
+import type { Activity, Course, EnrollmentRole, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
@@ -120,7 +128,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
 
   const [, lesson, activitiesPage] = await Promise.all([
-    requireClientUser(["STUDENT", "TA"]),
+    requireClientUser(STUDENT_ROUTE_ROLES),
     api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
@@ -144,10 +152,24 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
+  const previewRole = resolvePreviewRole(user);
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
   const { lesson, activities, activitiesTotal } = loaderData;
   const [course, setCourse] = useState<Course | null>(null);
+  // The caller's enrollment role for THIS course, resolved by the breadcrumb
+  // fetch. Distinct from the global `/api/me` effective role on `user` — a user
+  // who is a TA elsewhere is promoted to "TA" globally but may still be a
+  // STUDENT here, and answer submission is scoped to this course (#1626).
+  const [viewerEnrollmentRole, setViewerEnrollmentRole] = useState<EnrollmentRole | null>(null);
+  // Whether the breadcrumb fetch that resolves `viewerEnrollmentRole` has
+  // settled — true on both success and a non-fatal failure. Until it does, the
+  // per-course learner capabilities (answer submission, the study buddy) fail
+  // closed rather than trusting the global role (#1626). `breadcrumbFailed`
+  // separates a resolved non-STUDENT role (a real TA) from a failed lookup, so
+  // the withheld note can say the right thing.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  const [breadcrumbFailed, setBreadcrumbFailed] = useState(false);
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
@@ -207,6 +229,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     lessonIdRef.current = lesson.id;
     loadingMoreRef.current = false;
     setActivitiesLoadFailed(false);
+    // Reset the per-course capability gate: the new lesson may belong to a
+    // different course, so withhold answer submission and the study buddy until
+    // this lesson's breadcrumb re-resolves the caller's enrollment role. Done
+    // during render — not in the breadcrumb effect, which runs post-paint — so
+    // the new lesson never renders a Submit control derived from the previous
+    // course's role (#1626).
+    setViewerEnrollmentRole(null);
+    setCrumbsReady(false);
+    setBreadcrumbFailed(false);
   }
 
   const ensureActivitiesLoaded = async (targetIdx: number) => {
@@ -289,8 +320,48 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setText("");
   }
 
+  // Answer submission is a STUDENT-only capability scoped to THIS course, not a
+  // global role check. A course TA keeps the learner surface but is not a
+  // submitter — the answer route is 403 for them. The gate is the caller's
+  // per-course enrollment role, resolved by the breadcrumb, and it FAILS CLOSED:
+  // Submit is offered only once that role resolves to STUDENT for this course.
+  //
+  // We deliberately do NOT fall back to the global `/api/me` role while the
+  // breadcrumb is unresolved. `/api/me` promotes to "TA" only when Core course
+  // discovery succeeds AND finds a TA enrollment; when discovery *fails* it
+  // returns the base STUDENT role instead (see server `authentication.js`), so a
+  // real TA can read as a global STUDENT. A separately-delayed-or-failed
+  // breadcrumb combined with that fallback would leave a dead Submit the server
+  // then 403s. Failing closed keeps the control withheld — with a "checking
+  // access" note while pending, a "couldn't verify" note if the breadcrumb
+  // failed, and the TA note once a non-STUDENT role resolves (#1626).
+  const canSubmitAnswers = viewerEnrollmentRole === "STUDENT";
+  const submitState: "allowed" | "pending" | "unverified" | "withheld" = canSubmitAnswers
+    ? "allowed"
+    : !crumbsReady
+      ? "pending"
+      : breadcrumbFailed
+        ? "unverified"
+        : "withheld";
+  // The study buddy is likewise a STUDENT-in-this-course capability: the
+  // tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session listing
+  // 403 any non-STUDENT enrollment, so a TA's composer would be a dead control.
+  // Fail closed on the exact same signal as Submit — withheld until the
+  // per-course role resolves to STUDENT, so a TA with a BYOK key can't drive a
+  // dead composer during the breadcrumb window either (#1626).
+  const studyBuddyState: "allowed" | "pending" | "unverified" | "withheld" =
+    viewerEnrollmentRole === "STUDENT"
+      ? "allowed"
+      : !crumbsReady
+        ? "pending"
+        : breadcrumbFailed
+          ? "unverified"
+          : "withheld";
+
   const submit = async () => {
-    if (!activity || !user) return;
+    // Withhold Submit (U-TA-1); also guards the path even if the button is ever
+    // reached programmatically for a non-submitter in this course.
+    if (!activity || !user || !canSubmitAnswers) return;
     setSubmitting(true);
     try {
       const payload: any = { userId: user.id };
@@ -335,7 +406,19 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      setResult("There was a problem submitting.");
+      // #1660 review (ariqmuldi): the server 403s this endpoint for three
+      // distinct reasons (server/src/routes/activities.js) — non-STUDENT
+      // caller (a previewer, what this message is about), a real student
+      // whose enrollment-sync is lagging, or content that got unpublished
+      // mid-session. Gating on `previewRole` (the client's own, already-
+      // resolved role) instead of the bare status code keeps a genuine
+      // STUDENT/TA from seeing "this is a read-only preview" for one of the
+      // other two, unrelated 403s.
+      setResult(
+        e instanceof ApiHttpError && e.status === 403 && previewRole
+          ? "Only enrolled students can submit answers — this is a read-only preview."
+          : "There was a problem submitting.",
+      );
       setWasCorrect(false);
     } finally {
       setSubmitting(false);
@@ -532,12 +615,16 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   ];
 
   // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
-  const [crumbsReady, setCrumbsReady] = useState(false);
+  // The `crumbsReady` / `breadcrumbFailed` / `viewerEnrollmentRole` states are
+  // declared with the other player state above so the render-time lesson-change
+  // reset (and the capability gate) can read them before this effect runs.
   useEffect(() => {
     let cancelled = false;
     setCrumbsReady(false);
+    setBreadcrumbFailed(false);
     setCourse(null);
     setModule(null);
+    setViewerEnrollmentRole(null);
     setOrderText(undefined);
 
     const frameId = requestAnimationFrame(() => {
@@ -547,12 +634,19 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           if (cancelled) return;
           setModule(breadcrumb.module);
           setCourse(breadcrumb.course);
+          setViewerEnrollmentRole(breadcrumb.viewerEnrollmentRole ?? null);
           setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
           setCrumbsReady(true);
         })
         .catch(() => {
-          // Non-fatal: keep skeleton placeholders rather than blocking the player.
-          if (!cancelled) setCrumbsReady(true);
+          // Non-fatal: keep skeleton placeholders rather than blocking the
+          // player. The capability gate treats a failed breadcrumb as
+          // unresolved and fails closed — Submit is withheld with a "couldn't
+          // verify your access" note rather than trusting the global role.
+          if (!cancelled) {
+            setBreadcrumbFailed(true);
+            setCrumbsReady(true);
+          }
         });
     });
 
@@ -600,6 +694,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSubmit={submit}
       result={result}
       wasCorrect={wasCorrect}
+      submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
       canPrev={canPrev}
@@ -627,12 +722,22 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       currentTopicId={currentTopicId}
       onSelectTopic={handleTopicSelect}
       studentAnswer={studentAnswer}
+      studyBuddyState={studyBuddyState}
       className="h-full"
+      isPreview={Boolean(previewRole)}
     />
   );
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height)-2.5rem)] min-h-[640px] flex-col gap-4 px-4 pt-6 pb-6 lg:px-6">
+      {/* #1660: shrink-0 like the hero below it — grows this fixed-height
+          layout's header area rather than eating into the flex-1 activity/
+          chat split, which assumes it gets whatever space the header leaves. */}
+      {previewRole && (
+        <div className="shrink-0">
+          <StudentPreviewBanner role={previewRole} exitHref={`/instructor/lesson/${lesson.id}`} />
+        </div>
+      )}
       <div className="flex shrink-0 flex-col gap-4" data-tour="student-lesson-progress">
         <ModuleHero
           orderText={orderText}

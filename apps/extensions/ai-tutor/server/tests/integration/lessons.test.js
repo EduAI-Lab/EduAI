@@ -342,6 +342,28 @@ describe("Lessons routes", () => {
       });
     });
 
+    it("carries STUDENT as the caller's per-course enrollment role (#1626)", async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(200);
+      // The client scopes answer submission on THIS field, never the global
+      // /api/me effective role, so a mixed-role account diverges per course.
+      expect(res.body.viewerEnrollmentRole).toBe("STUDENT");
+    });
+
+    it("carries TA as the caller's per-course enrollment role (#1626)", async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.viewerEnrollmentRole).toBe("TA");
+    });
+
     it("student gets 403 on unpublished lesson", async () => {
       await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
       const student = await enrollStudent();

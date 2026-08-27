@@ -74,6 +74,15 @@ describe("evaluateQuestion", () => {
     expect(evaluateQuestion(activity, payload)).toEqual({ isCorrect: null });
   });
 
+  it('SHORT_TEXT open-ended (no answer key) stays ungraded — isCorrect null, not ""', () => {
+    // An open-ended short-text question can't be auto-graded; the submission is
+    // left for a human. Must be null (the "to review" queue), never "" — the
+    // `Submission.isCorrect Boolean?` column rejects an empty string.
+    const activity = { config: { questionType: "SHORT_TEXT" } };
+    const payload = { answerText: "a thoughtful open-ended answer" };
+    expect(evaluateQuestion(activity, payload)).toEqual({ isCorrect: null });
+  });
+
   it("returns isCorrect null when payload has no answerOption for MCQ", () => {
     const activity = { config: { questionType: "MCQ", answer: 2 } };
     const payload = {};

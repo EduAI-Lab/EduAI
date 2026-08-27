@@ -28,7 +28,6 @@ export function DashboardTaView({
   dashboardStats,
 }: DashboardTaViewProps) {
   const published = courses.filter((c) => c.isPublished);
-  const learningCourses = courses.filter((c) => Boolean(c.progress));
   const resumeCourse = findResumeCourse(courses);
 
   const gradedSubmissions = submissions.filter(
@@ -40,10 +39,17 @@ export function DashboardTaView({
       ? Math.round((correctCount / gradedSubmissions.length) * 100)
       : null;
 
+  // Grading-queue depth across the TA's assisted courses (#1626). Prefer the
+  // server's cross-course rollup; fall back to the ungraded rows in the loaded
+  // `submissions` page when the stats call is unavailable.
+  const submissionsToReview =
+    dashboardStats?.submissionsToReview ??
+    submissions.filter((s) => s.isCorrect === null || s.isCorrect === undefined).length;
+
   const stats = [
     { label: "Courses assisting", value: dashboardStats?.yourCourses ?? courses.length },
     { label: "Published", value: dashboardStats?.publishedCourses ?? published.length },
-    { label: "Learning courses", value: learningCourses.length },
+    { label: "To review", value: submissionsToReview },
     { label: "Correct answers", value: correctPct !== null ? `${correctPct}%` : "—" },
   ];
 
