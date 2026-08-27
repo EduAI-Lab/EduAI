@@ -32,6 +32,7 @@
  * *quality* still needs `seed-rag-ingestion-fixtures.ts`. For a perf baseline the
  * distinction does not matter — the cost is in the vector scan, not the content.
  */
+import type { JsonValue } from "~/lib/json-value";
 import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -122,7 +123,8 @@ function poolDir(): string {
   }
   return path.join(process.cwd(), ".perf-pool");
 }
-function writeManifest(obj: unknown) {
+/** The pool manifest is written straight to disk as JSON, so that is its type. */
+function writeManifest(obj: JsonValue) {
   const dir = poolDir();
   mkdirSync(dir, { recursive: true });
   const f = path.join(dir, "core.json");

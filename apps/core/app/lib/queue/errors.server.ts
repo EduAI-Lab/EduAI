@@ -14,12 +14,7 @@ export class QueueUnavailableError extends AppError {
   readonly code = "QUEUE_UNAVAILABLE" as const;
 
   constructor(message = "Queue unavailable", options?: { cause?: unknown }) {
-    const appErrorOptions: AppErrorOptions = {
-      code: "QUEUE_UNAVAILABLE",
-      expose: true,
-    };
-    // Only set `cause` when one was actually supplied — `{ cause: undefined }`
-    // still defines the property, which changes how the error serialises.
+    const appErrorOptions: AppErrorOptions = { code: "QUEUE_UNAVAILABLE", expose: true };
     if (options?.cause !== undefined) appErrorOptions.cause = options.cause;
     super(503, message, appErrorOptions);
     this.name = "QueueUnavailableError";
@@ -42,46 +37,46 @@ const INFRA_MESSAGE_RE =
  * True when `error` is an infrastructure failure (Redis / DB connectivity),
  * as opposed to a validation or application fault.
  */
-export function isInfrastructureError(error: unknown): boolean {
-  if (error instanceof QueueUnavailableError) return true;
+export function isInfrastructureError(cause: unknown): boolean {
+  if (cause instanceof QueueUnavailableError) return true;
 
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return PRISMA_INFRA_CODES.has(error.code);
+  if (cause instanceof Prisma.PrismaClientKnownRequestError) {
+    return PRISMA_INFRA_CODES.has(cause.code);
   }
   if (
-    error instanceof Prisma.PrismaClientInitializationError ||
-    error instanceof Prisma.PrismaClientRustPanicError
+    cause instanceof Prisma.PrismaClientInitializationError ||
+    cause instanceof Prisma.PrismaClientRustPanicError
   ) {
     return true;
   }
 
-  if (error && typeof error === "object") {
-    const code = (error as { code?: unknown }).code;
+  if (cause && typeof cause === "object") {
+    const code = (cause as { code?: unknown }).code;
     if (typeof code === "string" && (PRISMA_INFRA_CODES.has(code) || INFRA_MESSAGE_RE.test(code))) {
       return true;
     }
   }
 
-  if (error instanceof Error) {
-    if (INFRA_MESSAGE_RE.test(error.message)) return true;
-    if (error.cause && isInfrastructureError(error.cause)) return true;
+  if (cause instanceof Error) {
+    if (INFRA_MESSAGE_RE.test(cause.message)) return true;
+    if (cause.cause && isInfrastructureError(cause.cause)) return true;
   }
 
   return false;
 }
 
 /** HTTP status for an enqueue/re-embed start failure (#1112). */
-export function httpStatusForEnqueueError(error: unknown): number {
-  if (error instanceof ZodError) return 400;
-  if (error instanceof QueueUnavailableError) return 503;
-  if (isInfrastructureError(error)) return 503;
+export function httpStatusForEnqueueError(cause: unknown): number {
+  if (cause instanceof ZodError) return 400;
+  if (cause instanceof QueueUnavailableError) return 503;
+  if (isInfrastructureError(cause)) return 503;
   return 500;
 }
 
 export function toQueueUnavailable(
-  error: unknown,
+  cause: unknown,
   message = "Queue unavailable",
 ): QueueUnavailableError {
-  if (error instanceof QueueUnavailableError) return error;
-  return new QueueUnavailableError(message, { cause: error });
+  if (cause instanceof QueueUnavailableError) return cause;
+  return new QueueUnavailableError(message, { cause: cause });
 }

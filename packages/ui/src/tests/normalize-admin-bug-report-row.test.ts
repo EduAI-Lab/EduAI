@@ -13,10 +13,11 @@ import {
   getContextLabel,
   getReporterLabel,
   normalizeAdminBugReportRow,
+  type RawAdminBugReport,
 } from "../bug-reports/bug-reports-utils";
 
 /** A list-shaped payload: blobs omitted, `has*` flags present (#979). */
-function corePayload(over: Record<string, unknown> = {}) {
+function corePayload(over: RawAdminBugReport = {}) {
   return {
     id: "br-1",
     source: "QUESTION_MAKER",

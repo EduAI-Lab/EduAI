@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
@@ -27,7 +28,7 @@ import { syncCourseRoster } from "~/lib/canvas/roster.server";
 const credentials = { canvasBaseUrl: "https://canvas.test", apiToken: "tok" } as never;
 const SYNC_STARTED_AT = new Date("2026-07-25T00:00:00.000Z");
 
-function baseInput(overrides: Record<string, unknown> = {}) {
+function baseInput(overrides: JsonObject = {}) {
   return {
     credentials,
     coreCourseId: "course-1",

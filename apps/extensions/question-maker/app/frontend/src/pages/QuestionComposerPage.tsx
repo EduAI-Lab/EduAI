@@ -11,6 +11,7 @@
  * @eduai/ui design system: two-column grid, sticky action bar, live QuestionCard preview,
  * AI assist panel. Tabler icons only.
  */
+import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
@@ -308,12 +309,12 @@ export function QuestionComposerPage() {
           description: question.description ?? "",
         }));
       })
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
         const message =
-          (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data
+          (cause as { response?: { data?: { error?: string } }; message?: string })?.response?.data
             ?.error ??
-          (err as { message?: string })?.message ??
+          (cause as { message?: string })?.message ??
           "Could not load the source question.";
         setSourceError(message);
       })
@@ -370,14 +371,17 @@ export function QuestionComposerPage() {
       ? `AI service does not recognize course code "${resolvedCourseCode}". Generation will still run, but results may be less accurate.`
       : null;
 
+  /** Per-field composer validation messages; an absent key means that field is fine. */
+  type ComposerValidationErrors = {
+    questionText?: string;
+    primaryTopic?: string;
+    choices?: string;
+    answer?: string;
+  };
+
   // ── Validation ───────────────────────────────────────────────────────────
   const validation = useMemo(() => {
-    const errors: {
-      questionText?: string;
-      primaryTopic?: string;
-      choices?: string;
-      answer?: string;
-    } = {};
+    const errors: ComposerValidationErrors = {};
     if (!form.questionText.trim()) errors.questionText = "Question text is required.";
     if (mode !== "variant" && !form.primaryTopicId.trim())
       errors.primaryTopic = "Select a primary topic.";
@@ -566,7 +570,7 @@ export function QuestionComposerPage() {
           ? Array.from(
               new Set(
                 generated.secondary_topic_ids
-                  .map((v: unknown) => String(v).trim())
+                  .map((v: JsonValue) => String(v).trim())
                   .filter((v) => v !== "" && topicIdSet.has(v) && v !== primaryTopicId),
               ),
             )

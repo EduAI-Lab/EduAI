@@ -1,3 +1,4 @@
+import type { ValidationResult } from "~/lib/validation-result";
 import { createHash } from "crypto";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -577,7 +578,7 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
 /**
  * Validate file type and size
  */
-export function validateFile(file: File | any): { isValid: boolean; error?: string } {
+export function validateFile(file: File | any): ValidationResult {
   const allowedTypes = [
     "text/plain",
     "text/markdown",

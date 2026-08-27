@@ -36,8 +36,8 @@ export {
  * for recognised ones it is not part of this envelope either, so no internal
  * text can reach the client through this path.
  */
-export function errorResponse(error: unknown): Response {
-  const { status, code, fields } = normalizeError(error);
+export function errorResponse(cause: unknown): Response {
+  const { status, code, fields } = normalizeError(cause);
   return apiError(status, code, fields);
 }
 

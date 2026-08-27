@@ -58,10 +58,11 @@ import { action, loader } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
 import { logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const ADMIN = { id: "admin-1", role: "ADMIN" };
 
-function makePatch(userId: string, body: unknown) {
+function makePatch(userId: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/users/${userId}`, {
       method: "PATCH",
@@ -73,7 +74,7 @@ function makePatch(userId: string, body: unknown) {
   } as any;
 }
 
-function makePost(body: unknown) {
+function makePost(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/users", {
       method: "POST",

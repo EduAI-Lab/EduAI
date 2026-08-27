@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { useEffect, useState } from "react";
 import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
@@ -82,12 +83,12 @@ const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
   { value: "ADMIN", label: "Administrator" },
 ];
 
-const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
+const ROLE_LABEL = {
   ADMIN: "Administrator",
   UNIT_ADMIN: "Unit Admin",
   INSTRUCTOR: "Instructor",
   STUDENT: "Student",
-};
+} satisfies Record<InviteRole | "STUDENT", string>;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -110,17 +111,28 @@ function StatusBadge({ invite }: { invite: Invitation }) {
       </Badge>
     );
   }
-  const map: Record<Invitation["status"], string> = {
+  const map = {
     PENDING: "bg-orange-50 text-orange-700 border-orange-200",
     ACCEPTED: "bg-green-50 text-green-700 border-green-200",
     REVOKED: "bg-gray-50 text-gray-700 border-gray-200",
-  };
+  } satisfies Record<Invitation["status"], string>;
   return (
     <Badge variant="outline" className={map[invite.status]}>
       {invite.status}
     </Badge>
   );
 }
+
+/**
+ * The body of `POST /api/invitations`. `name` is omitted when the form leaves
+ * it blank, and `authorizedUnits` only accompanies a unit-admin invite.
+ */
+type InviteRequestBody = {
+  email: string;
+  role: InviteRole | "STUDENT";
+  name?: string;
+  authorizedUnits?: string[];
+};
 
 export default function InvitationsPage() {
   const { user, invitableRoles } = useLoaderData<typeof loader>();
@@ -175,7 +187,7 @@ export default function InvitationsPage() {
     e.preventDefault();
     setSubmitting(true);
     setFormError(null);
-    const body: Record<string, unknown> = { email, role };
+    const body: InviteRequestBody = { email, role };
     if (name.trim()) body.name = name.trim();
     if (role === "UNIT_ADMIN") body.authorizedUnits = selectedUnits;
 
@@ -518,7 +530,7 @@ export default function InvitationsPage() {
   );
 }
 
-function errorMessage(code: unknown, status: number, role?: string, details?: unknown): string {
+function errorMessage(code: JsonValue, status: number, role?: string, details?: JsonValue): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";

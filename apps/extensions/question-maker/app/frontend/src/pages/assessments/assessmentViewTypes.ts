@@ -19,11 +19,11 @@ export type DeleteActionType =
 
 export const QUESTION_TYPES: QuestionType[] = ["MCQ", "SA", "LA"];
 
-export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
+export const QUESTION_TYPE_LABELS = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 
 export const defaultReasoningData = (): ReasoningDataState => ({
   factual: { total: 40, easyBoundary: 60, hardBoundary: 90 },

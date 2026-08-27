@@ -13,7 +13,7 @@ import path from "node:path";
  * treats `@eduai/ui` as matching `@eduai/ui/<anything>`, so the barrel has to
  * come last. Object insertion order guarantees that here.
  */
-export function uiAliases(rootDir: string): Record<string, string> {
+export function uiAliases(rootDir: string) {
   const uiDir = path.join(rootDir, "packages/ui");
 
   const uiExports: Record<string, string> = JSON.parse(

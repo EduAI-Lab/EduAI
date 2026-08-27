@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { JsonValue } from "~/lib/json-value";
+
 export const MAX_CREATE_QUESTION_BODY_BYTES = 64 * 1024;
 
 const CreateQuestionSchema = z
@@ -95,7 +97,7 @@ export type CreateQuestionValidation =
   | { success: true; data: ValidatedCreateQuestion }
   | { success: false; error: { error: "VALIDATION_ERROR"; fields: Record<string, string> } };
 
-export function validateCreateQuestion(body: unknown): CreateQuestionValidation {
+export function validateCreateQuestion(body: JsonValue): CreateQuestionValidation {
   const parsed = CreateQuestionSchema.safeParse(body);
   if (!parsed.success) {
     const fieldErrors = parsed.error.flatten().fieldErrors;

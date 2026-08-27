@@ -19,12 +19,21 @@ export const TERM_CODES = ["W1", "W2", "S1", "S2"] as const;
 
 export type TermCode = (typeof TERM_CODES)[number];
 
-const TERM_LABELS: Record<TermCode, string> = {
+/**
+ * A term and the ACADEMIC year it belongs to — the pair `termInfoFromDate`
+ * attributes together, since a W2 term's year label is one behind its calendar
+ * year. Named so callers pass the two around as one fact instead of re-pairing
+ * a code with whatever year is in scope. Distinct from `TermInfo` below, which
+ * is the loose "carries some term fields" shape the sort helpers accept.
+ */
+export type AcademicTerm = { term: TermCode; year: number };
+
+const TERM_LABELS = {
   W1: "Winter Term 1",
   W2: "Winter Term 2",
   S1: "Summer Term 1",
   S2: "Summer Term 2",
-};
+} satisfies Record<TermCode, string>;
 
 // Chronological rank of a term *within its academic year label*. The UBC
 // academic year runs Summer (May) → Winter Term 1 (Sep) → Winter Term 2 (Jan
@@ -32,10 +41,15 @@ const TERM_LABELS: Record<TermCode, string> = {
 // order S1 < S2 < W1 < W2 is real chronological order — not just a vocabulary
 // convention — as long as `year` is the academic-year label produced by
 // `termInfoFromDate`, not a raw calendar year.
-const TERM_RANK: Record<TermCode, number> = { S1: 0, S2: 1, W1: 2, W2: 3 };
+const TERM_RANK = { S1: 0, S2: 1, W1: 2, W2: 3 } satisfies Record<TermCode, number>;
 
-export function isTermCode(value: unknown): value is TermCode {
-  return typeof value === "string" && (TERM_CODES as readonly string[]).includes(value);
+/**
+ * Callers hold a term string from a form field, a query param, or a database
+ * column, so the input is a possibly-absent string rather than an open
+ * `unknown` — anything that is not yet a string has a parse to do first.
+ */
+export function isTermCode(value: string | null | undefined): value is TermCode {
+  return value != null && (TERM_CODES as readonly string[]).includes(value);
 }
 
 /**
@@ -99,7 +113,7 @@ export function termFromDate(date: Date): TermCode {
  * Used for both course-creation defaults ("what term/year is it right now?")
  * and current-term detection in course lists — see `groupCoursesByTerm`.
  */
-export function termInfoFromDate(date: Date): { term: TermCode; year: number } {
+export function termInfoFromDate(date: Date): AcademicTerm {
   const term = termFromMonth(date.getMonth());
   const year = term === "W2" ? date.getFullYear() - 1 : date.getFullYear();
   return { term, year };

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -7,8 +8,8 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -77,6 +78,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
@@ -136,7 +138,7 @@ function mockStreamResult(text: string) {
   } as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
     model: "vllm:test-model",

@@ -4,6 +4,7 @@
  * System logging must never block user-facing mutations. These helpers therefore guarantee
  * a console fallback when DB writes fail so operational diagnostics are still preserved.
  */
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
 import {
@@ -53,7 +54,7 @@ export type SystemLogListParams = {
 export type SystemLogRow = Awaited<ReturnType<typeof prisma.systemLog.findFirst>>;
 
 function buildSystemLogWhere(params: SystemLogListParams) {
-  const where: Record<string, unknown> = {};
+  const where: Prisma.SystemLogWhereInput = {};
 
   if (params.level) {
     where.level = params.level;
@@ -76,22 +77,22 @@ function buildSystemLogWhere(params: SystemLogListParams) {
   return where;
 }
 
-function normalizeErrorMetadata(error: unknown): {
-  errorName: string | null;
-  stack: string | null;
-} {
+/** What a log line records about a throwable: its name and stack, when it has them. */
+type ErrorMetadata = { errorName: string | null; stack: string | null };
+
+function normalizeErrorMetadata(cause: unknown): ErrorMetadata {
   // Normalizing unknown errors keeps diagnostics useful even when throwables are non-Error values.
-  if (error instanceof Error) {
+  if (cause instanceof Error) {
     return {
-      errorName: error.name || "Error",
-      stack: error.stack ?? null,
+      errorName: cause.name || "Error",
+      stack: cause.stack ?? null,
     };
   }
 
-  if (typeof error === "string") {
+  if (typeof cause === "string") {
     return {
       errorName: "Error",
-      stack: error,
+      stack: cause,
     };
   }
 

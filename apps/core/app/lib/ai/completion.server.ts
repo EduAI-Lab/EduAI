@@ -3,6 +3,7 @@
  * No chat persistence, RAG, tools, or course-chat default prompts.
  */
 
+import type { JsonValue } from "~/lib/json-value";
 import { streamText } from "ai";
 import {
   createAIProviderRegistry,
@@ -117,18 +118,27 @@ export function resolveCompletionInputLimits(
 export type CompletionMessage = {
   id?: string;
   role: string;
-  content: unknown;
+  /** Either a plain string or the AI-SDK parts array; both arrive as JSON. */
+  content: JsonValue;
+};
+
+/**
+ * Per-provider credentials the caller supplied. Keyed by provider id, and each
+ * entry is validated field by field before any of it reaches a provider.
+ */
+export type CompletionApiKeys = {
+  [providerId: string]: { apiKey?: string; baseUrl?: string } | undefined;
 };
 
 export type CompletionRequest = {
   model: string;
-  apiKeys: unknown;
+  apiKeys: CompletionApiKeys;
   systemPrompt?: string | null;
   messages?: CompletionMessage[];
   streaming?: boolean;
   temperature?: number;
   maxTokens?: number;
-  routingContext?: unknown;
+  routingContext?: JsonValue;
   /** Client disconnect / Stop — forwarded to streamText so provider generation aborts. */
   signal?: AbortSignal;
 };
@@ -137,7 +147,7 @@ function completionValidationError(status: 400 | 422, error: string): Completion
   return { ok: false, status, error };
 }
 
-function serializedContentChars(content: unknown): number | null {
+function serializedContentChars(content: JsonValue | undefined): number | null {
   if (typeof content === "string") return content.length;
   if (!Array.isArray(content)) return null;
   try {
@@ -149,7 +159,7 @@ function serializedContentChars(content: unknown): number | null {
 }
 
 function validateApiKeys(
-  value: unknown,
+  value: JsonValue | undefined,
   limits: CompletionInputLimits,
 ): CompletionValidationResult | null {
   if (value === undefined) {
@@ -167,7 +177,7 @@ function validateApiKeys(
       return completionValidationError(422, `apiKeys.${providerId} must be an object`);
     }
 
-    const entry = providerValue as Record<string, unknown>;
+    const entry = providerValue;
     if (entry.apiKey !== undefined) {
       if (typeof entry.apiKey !== "string") {
         return completionValidationError(422, `apiKeys.${providerId}.apiKey must be a string`);
@@ -195,7 +205,7 @@ function validateApiKeys(
 
 /** Validate cheap, bounded completion input before admission or provider setup. */
 export function validateCompletionRequest(
-  input: unknown,
+  input: JsonValue | undefined,
   overrides: CompletionInputLimitOverrides = {},
 ): CompletionValidationResult {
   const limits = resolveCompletionInputLimits(overrides);
@@ -203,7 +213,7 @@ export function validateCompletionRequest(
     return completionValidationError(400, "Invalid completion request body");
   }
 
-  const body = input as Record<string, unknown>;
+  const body = input;
   if (typeof body.model !== "string" || body.model.trim().length === 0) {
     return completionValidationError(400, "model is required");
   }
@@ -233,7 +243,7 @@ export function validateCompletionRequest(
     if (!message || typeof message !== "object" || Array.isArray(message)) {
       return completionValidationError(422, "each message must be an object");
     }
-    const candidate = message as Record<string, unknown>;
+    const candidate = message;
     if (typeof candidate.role !== "string") {
       return completionValidationError(422, "each message role must be a string");
     }
@@ -255,6 +265,9 @@ export function validateCompletionRequest(
 
   const apiKeysError = validateApiKeys(body.apiKeys, limits);
   if (apiKeysError) return apiKeysError;
+  // SAFETY: `validateApiKeys` returned no error, so `apiKeys` is an object of
+  // per-provider entries with only the two optional string fields.
+  const apiKeys = (body.apiKeys ?? {}) as CompletionApiKeys;
 
   if (body.temperature !== undefined) {
     if (
@@ -292,7 +305,9 @@ export function validateCompletionRequest(
     ok: true,
     request: {
       model: body.model,
-      apiKeys: body.apiKeys,
+      apiKeys,
+      // SAFETY: every field below was checked by the walk above — this is
+      // where those checks are cashed in, not where they are assumed.
       systemPrompt: body.systemPrompt as string | null | undefined,
       messages: messages as CompletionMessage[],
       streaming: body.streaming as boolean | undefined,
@@ -403,7 +418,10 @@ export function resolveCompletionPrompt(
 }
 
 export async function runCompletion(request: CompletionRequest) {
-  const validation = validateCompletionRequest(request);
+  // The abort signal is the one field that is not JSON; the bounds checks below
+  // only look at the payload, so validate the request without it.
+  const { signal: _signal, ...jsonRequest } = request;
+  const validation = validateCompletionRequest(jsonRequest);
   if (!validation.ok) {
     return {
       ok: false as const,

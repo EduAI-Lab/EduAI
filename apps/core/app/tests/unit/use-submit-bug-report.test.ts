@@ -9,9 +9,9 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
-import type { JsonResponseBody } from "../helpers/route-fixtures";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
-function res(init: { ok: boolean; status: number; json?: () => Promise<JsonResponseBody> }) {
+function res(init: { ok: boolean; status: number; json?: () => Promise<ParsedJsonBody> }) {
   return {
     ok: init.ok,
     status: init.status,

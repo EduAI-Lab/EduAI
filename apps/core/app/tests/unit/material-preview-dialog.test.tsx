@@ -10,6 +10,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import { MaterialPreviewDialog } from "~/components/courses/material-preview-dialog";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 let mockFetch: ReturnType<typeof vi.fn>;
 
@@ -23,7 +24,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function jsonResponse(body: unknown, ok = true) {
+function jsonResponse(body: ParsedJsonBody, ok = true) {
   return { ok, json: () => Promise.resolve(body) };
 }
 
@@ -55,7 +56,7 @@ describe("MaterialPreviewDialog", () => {
   });
 
   it("shows a loading state while the request is in flight", async () => {
-    let resolveFetch: (v: unknown) => void = () => {};
+    let resolveFetch: (response: ReturnType<typeof jsonResponse>) => void = () => {};
     mockFetch.mockReturnValue(new Promise((resolve) => (resolveFetch = resolve)));
 
     render(

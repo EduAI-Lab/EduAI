@@ -30,13 +30,14 @@ vi.mock("~/lib/request-context.server", () => ({
 }));
 
 import { action, loader } from "~/routes/api/routing-model-settings";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const settings = {
   autoLlmEnabled: true,
   autoRulesEnabled: false,
 };
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
   // A GET carries no body at all, so neither the body nor its content type is
   // set unless the caller passed one.
   const init: RequestInit = { method };

@@ -19,22 +19,24 @@ import type { User } from "~/lib/auth/types";
  * used to rely on the fallback (e.g. `/settings` rendering a bare
  * `<SiteHeader />`) don't need to start passing an explicit `title`.
  */
-const ROUTE_TITLES: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/courses": "Courses",
-  "/chat": "Course Chat",
-  "/settings": "Settings",
-  "/admin/users": "Users",
-  "/admin/ai-models": "AI Models",
-  "/admin/bug-reports": "Bug Reports",
-  "/admin/chat": "Admin Chatbot",
-};
+// A `Map` because the key is whatever path the router is on: an unlisted
+// route falls through to the course-detail rule, then to the app name.
+const ROUTE_TITLES = new Map<string, string>([
+  ["/dashboard", "Dashboard"],
+  ["/courses", "Courses"],
+  ["/chat", "Course Chat"],
+  ["/settings", "Settings"],
+  ["/admin/users", "Users"],
+  ["/admin/ai-models", "AI Models"],
+  ["/admin/bug-reports", "Bug Reports"],
+  ["/admin/chat", "Admin Chatbot"],
+]);
 
 /** Exported for unit tests — see `ROUTE_TITLES` doc comment above. */
 export function resolveCoreHeaderTitle(pathname: string, title?: string): string {
   return (
     title ??
-    ROUTE_TITLES[pathname] ??
+    ROUTE_TITLES.get(pathname) ??
     (pathname.startsWith("/courses/") ? "Course Detail" : "EduAI")
   );
 }

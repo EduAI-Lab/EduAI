@@ -168,6 +168,13 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
 
 // ── component ─────────────────────────────────────────────────────────────────
 
+/** The body of `PATCH /api/courses/:id/rag-settings`. */
+type RagSettingsPatch = {
+  courseScopeGuardrailEnabled: boolean;
+  ragTopK: number | null;
+  ragSimilarityThreshold: number | null;
+};
+
 export function CourseDetailManagerView({
   course,
   access,
@@ -471,7 +478,9 @@ export function CourseDetailManagerView({
     setRagSaving(true);
     setRagSaveMsg(null);
     try {
-      const payload: Record<string, number | null | boolean> = {
+      // `null` on either tuning field means "use the deployment default", so
+      // both are always sent rather than omitted when blank.
+      const payload: RagSettingsPatch = {
         courseScopeGuardrailEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
         ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),

@@ -89,12 +89,13 @@ let lastUpdatedJob = claimedJob;
 beforeEach(() => {
   vi.clearAllMocks();
   lastUpdatedJob = claimedJob;
-  transaction.mockImplementation(async <T>(callback: (tx: unknown) => T) =>
-    callback({
-      $queryRaw: queryRaw,
-      course: { findUniqueOrThrow: courseFindUniqueOrThrow },
-      courseReEmbedJob: { findFirst, findUnique, create, update },
-    }),
+  const txClient = {
+    $queryRaw: queryRaw,
+    course: { findUniqueOrThrow: courseFindUniqueOrThrow },
+    courseReEmbedJob: { findFirst, findUnique, create, update },
+  };
+  transaction.mockImplementation(async <T>(callback: (tx: typeof txClient) => T) =>
+    callback(txClient),
   );
   queryRaw.mockResolvedValue([{ id: "course_1" }]);
   courseFindUniqueOrThrow.mockResolvedValue({
@@ -105,13 +106,14 @@ beforeEach(() => {
     lastEmbeddedAt: null,
   });
   findFirst.mockResolvedValue(null);
-  findUnique.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
-    "id" in where ? { ...claimedJob, id: where.id } : null,
+  findUnique.mockImplementation(
+    async ({ where }: { where: Prisma.CourseReEmbedJobWhereUniqueInput }) =>
+      "id" in where ? { ...claimedJob, id: where.id } : null,
   );
   findUniqueOrThrow.mockImplementation(async () => lastUpdatedJob);
   create.mockResolvedValue(baseJob);
   update.mockResolvedValue(claimedJob);
-  updateMany.mockImplementation(async (args: unknown) => {
+  updateMany.mockImplementation(async (args: Prisma.CourseReEmbedJobUpdateManyArgs) => {
     const result = await update(args);
     const jobId =
       typeof args === "object" && args !== null && "where" in args

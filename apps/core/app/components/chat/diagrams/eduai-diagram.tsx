@@ -16,12 +16,12 @@ type DiagramComponent = ComponentType<{
 }>;
 
 /** Registry keyed only by canonical ids — aliases resolve before lookup. */
-const REGISTRY: Record<EduaiDiagramCanonicalId, DiagramComponent> = {
+const REGISTRY = {
   "process-flow": AnimatedProcessFlow,
   "gradient-descent": AnimatedGradientDescent,
   hierarchy: AnimatedHierarchy,
   compare: AnimatedCompare,
-};
+} satisfies Record<EduaiDiagramCanonicalId, DiagramComponent>;
 
 export const EDUAI_DIAGRAM_TYPE_IDS = [...EDUAI_DIAGRAM_CANONICAL_IDS];
 

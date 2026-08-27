@@ -43,8 +43,8 @@ function scheduleOne(
             triggerCronJobAsync(jobName, script, result.runId, result.leaseOwner, execution);
           }
         })
-        .catch((err: unknown) =>
-          console.error(`[cron] ${jobName} failed to start:`, redactErrorForConsole(err)),
+        .catch((cause: unknown) =>
+          console.error(`[cron] ${jobName} failed to start:`, redactErrorForConsole(cause)),
         );
     },
     { timezone: "UTC" },

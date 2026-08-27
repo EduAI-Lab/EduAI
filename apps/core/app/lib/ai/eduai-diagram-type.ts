@@ -21,17 +21,19 @@ const HIERARCHY_PATTERN =
 const COMPARE_PATTERN =
   /\b(compar(e|ison|ing)|versus|\bvs\.?\b|difference\s+between|contrast|pros?\s+and\s+cons?)\b/i;
 
-const TYPE_ALIASES: Record<string, EduaiDiagramCanonicalId> = {
-  gd: "gradient-descent",
-  gradient: "gradient-descent",
-  process: "process-flow",
-  flow: "process-flow",
-  steps: "process-flow",
-  tree: "hierarchy",
-  structure: "hierarchy",
-  vs: "compare",
-  contrast: "compare",
-};
+// A `Map` because the key is a caller-supplied string, not a union this
+// file owns: an unrecognised one has to be able to miss.
+const TYPE_ALIASES = new Map<string, EduaiDiagramCanonicalId>([
+  ["gd", "gradient-descent"],
+  ["gradient", "gradient-descent"],
+  ["process", "process-flow"],
+  ["flow", "process-flow"],
+  ["steps", "process-flow"],
+  ["tree", "hierarchy"],
+  ["structure", "hierarchy"],
+  ["vs", "compare"],
+  ["contrast", "compare"],
+]);
 
 /**
  * Map a fence type token / alias to a canonical id, or null if unknown.
@@ -44,7 +46,7 @@ export function matchExplicitDiagramTypeId(raw: string): EduaiDiagramCanonicalId
   if ((EDUAI_DIAGRAM_CANONICAL_IDS as readonly string[]).includes(explicit)) {
     return explicit as EduaiDiagramCanonicalId;
   }
-  return TYPE_ALIASES[explicit] ?? null;
+  return TYPE_ALIASES.get(explicit) ?? null;
 }
 
 export function resolveEduaiDiagramTypeId(args: {

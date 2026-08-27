@@ -42,6 +42,7 @@ import {
   excludeCanvasMaterial,
   unexcludeCanvasMaterial,
 } from "~/lib/canvas/materials.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const TEST_ENCRYPTION_KEY = "canvas-publish-sync-test-key!!";
 
@@ -54,7 +55,7 @@ function sessionFor(userId: string, role: string) {
   } as never);
 }
 
-function makeArgs(method: string, subpath: string, body?: unknown) {
+function makeArgs(method: string, subpath: string, body?: RouteRequestBody) {
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { "Content-Type": "application/json" };
@@ -68,7 +69,7 @@ function makeArgs(method: string, subpath: string, body?: unknown) {
   return args;
 }
 
-async function call(method: string, subpath: string, body?: unknown) {
+async function call(method: string, subpath: string, body?: RouteRequestBody) {
   const args = makeArgs(method, subpath, body);
   if (method === "GET") {
     return loader(args);

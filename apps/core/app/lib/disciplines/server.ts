@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 /**
  * Disciplines ("units" / UBCO subject codes, §541).
@@ -13,7 +14,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
  * don't hit the DB on every course create / keystroke.
  */
 
-const json = (body: unknown, status = 200) =>
+const json = (body: JsonResponseBody, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" } as const,

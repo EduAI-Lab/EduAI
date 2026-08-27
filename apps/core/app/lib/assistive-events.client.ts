@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 export type PostAssistiveClientEventInput = {
   eventType:
     | "mode_toggled"
@@ -7,7 +8,7 @@ export type PostAssistiveClientEventInput = {
     | "session_completion";
   adhdAssist: boolean;
   chatId?: string | null;
-  metrics?: Record<string, unknown>;
+  metrics?: JsonObject;
 };
 
 /** Fire-and-forget client telemetry; never blocks UI. */

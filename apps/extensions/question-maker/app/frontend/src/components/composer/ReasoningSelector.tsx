@@ -14,11 +14,11 @@ interface ReasoningMeta {
 
 const REASONING_LEVELS: ReasoningLevel[] = ["factual", "analytical", "application"];
 
-const REASONING_META: Record<ReasoningLevel, ReasoningMeta> = {
+const REASONING_META = {
   factual: { label: "Factual", blurb: "Recall facts & definitions" },
   analytical: { label: "Analytical", blurb: "Compare, break down & infer" },
   application: { label: "Application", blurb: "Use ideas in new contexts" },
-};
+} satisfies Record<ReasoningLevel, ReasoningMeta>;
 
 interface ReasoningSelectorProps {
   value: ReasoningLevel;

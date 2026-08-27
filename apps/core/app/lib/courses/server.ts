@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { UserRole, type Prisma } from "@prisma/client";
 import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
@@ -49,16 +50,23 @@ async function parseCreateCourseBody(
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    let body: unknown;
+    let body: JsonValue;
     try {
-      body = await request.json();
+      // SAFETY: `Request#json` resolves to whatever the client sent; naming it
+      // `JsonValue` claims only what JSON parsing already guarantees.
+      body = (await request.json()) as JsonValue;
     } catch {
       return {
         ok: false as const,
         response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
       };
     }
-    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
+    if (
+      opts?.forceInstructorUserIds?.length &&
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body)
+    ) {
       body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);

@@ -1,5 +1,8 @@
 /** Shared 1024-dim embedding options for per-course settings (LOCAL-EMBEDDINGS). */
 
+import { jsonObjectSchema } from "~/lib/json-value";
+import type { JsonValue } from "~/lib/json-value";
+
 export type EmbeddingProviderSetting = "local" | "ollama" | "cloud";
 
 export type CourseEmbeddingFields = {
@@ -114,15 +117,15 @@ export type EmbeddingSettingsUpdate = {
 };
 
 export function parseEmbeddingSettingsUpdate(
-  body: unknown,
+  body: JsonValue,
 ): { ok: true; value: Partial<EmbeddingSettingsUpdate> } | { ok: false; error: string } {
-  if (body == null || typeof body !== "object") {
+  const record = jsonObjectSchema.safeParse(body);
+  if (!record.success) {
     return { ok: false, error: "Request body must be a JSON object" };
   }
 
-  const record = body as Record<string, unknown>;
-  const hasProvider = "embeddingProvider" in record;
-  const hasModel = "embeddingModel" in record;
+  const hasProvider = "embeddingProvider" in record.data;
+  const hasModel = "embeddingModel" in record.data;
 
   if (!hasProvider && !hasModel) {
     return { ok: false, error: "Provide embeddingProvider and/or embeddingModel" };
@@ -131,7 +134,7 @@ export function parseEmbeddingSettingsUpdate(
   const value: Partial<EmbeddingSettingsUpdate> = {};
 
   if (hasProvider) {
-    const raw = record.embeddingProvider;
+    const raw = record.data.embeddingProvider;
     if (raw === null || raw === "") {
       value.embeddingProvider = null;
     } else if (typeof raw === "string") {
@@ -149,7 +152,7 @@ export function parseEmbeddingSettingsUpdate(
   }
 
   if (hasModel) {
-    const raw = record.embeddingModel;
+    const raw = record.data.embeddingModel;
     if (raw === null || raw === "") {
       value.embeddingModel = null;
     } else if (typeof raw === "string") {

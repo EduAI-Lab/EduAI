@@ -29,6 +29,9 @@ export function resolveLongOutputMaxTokens(adhdAssist: boolean): number {
   );
 }
 
+/** The token cap to use for a turn, and whether the long-output rule set it. */
+export type LongOutputCap = { maxTokens: number; isLongOutputIntent: boolean };
+
 export function capTokensForLongOutputIntent({
   prompt,
   currentMaxTokens,
@@ -37,10 +40,7 @@ export function capTokensForLongOutputIntent({
   prompt: string;
   currentMaxTokens: number;
   adhdAssist: boolean;
-}): {
-  maxTokens: number;
-  isLongOutputIntent: boolean;
-} {
+}): LongOutputCap {
   const longOutputIntent = isLongOutputIntent(prompt);
 
   if (!longOutputIntent) {

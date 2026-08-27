@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import type { BugReportSubmitData } from "@eduai/ui";
 
 const captureScreenshot = vi.hoisted(() => vi.fn());
 const getCapturedData = vi.hoisted(() => vi.fn());
@@ -19,7 +20,7 @@ vi.mock("@eduai/ui", () => ({
     onSubmit,
   }: {
     open: boolean;
-    onSubmit: (data: unknown) => Promise<void>;
+    onSubmit: (data: BugReportSubmitData) => Promise<void>;
   }) =>
     open ? (
       <button

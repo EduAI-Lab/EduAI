@@ -12,11 +12,11 @@ interface ProgressBarProps {
 // keeping ProgressBar's size variants means call sites that need a compact
 // (list-row) or roomy (course-detail) bar still can, which MeterBar's fixed
 // h-2 track can't do.
-const TRACK_HEIGHTS: Record<NonNullable<ProgressBarProps["size"]>, string> = {
+const TRACK_HEIGHTS = {
   sm: "h-1.5",
   md: "h-2.5",
   lg: "h-3.5",
-};
+} satisfies Record<NonNullable<ProgressBarProps["size"]>, string>;
 
 /**
  * DS-token progress bar: muted track (`bg-muted`, matches `@eduai/ui`'s

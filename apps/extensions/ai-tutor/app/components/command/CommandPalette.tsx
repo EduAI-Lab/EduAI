@@ -37,12 +37,14 @@ import type { Course } from "~/lib/types";
 
 export const AITUTOR_COMMAND_EVENT = "eduai:open-command";
 
-const NAV_ICON: Partial<Record<AtNavItemKey, React.ReactNode>> = {
-  "my-courses": <IconBooks className="size-4" />,
-  teaching: <IconBooks className="size-4" />,
-  "admin-courses": <IconBooks className="size-4" />,
-  "admin-bug-reports": <IconReport className="size-4" />,
-};
+// A `Map` because only some nav keys have a glyph: `get` returns `undefined`
+// for the rest, which is what the caller's fallback is already written for.
+const NAV_ICON = new Map<AtNavItemKey, React.ReactNode>([
+  ["my-courses", <IconBooks className="size-4" />],
+  ["teaching", <IconBooks className="size-4" />],
+  ["admin-courses", <IconBooks className="size-4" />],
+  ["admin-bug-reports", <IconReport className="size-4" />],
+]);
 
 /** Local match for the static rows, standing in for the cmdk filtering we turned off. */
 function matchesQuery(item: CommandPaletteItem, query: string): boolean {
@@ -95,7 +97,7 @@ export function CommandPalette() {
     ...getNavForUser(user).map((item) => ({
       label: item.title,
       value: `nav ${item.title}`,
-      icon: NAV_ICON[item.key] ?? <IconBooks className="size-4" />,
+      icon: NAV_ICON.get(item.key) ?? <IconBooks className="size-4" />,
       onSelect: () => navigate(item.href),
     })),
     {

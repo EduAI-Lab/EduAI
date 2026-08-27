@@ -20,8 +20,9 @@ import { loader, action } from "~/routes/api/preferences";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { saveUserPreference } from "~/lib/user-preferences.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
   // A GET carries no body at all, so the key is added only when one is passed.
   const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
   if (body !== undefined) init.body = JSON.stringify(body);

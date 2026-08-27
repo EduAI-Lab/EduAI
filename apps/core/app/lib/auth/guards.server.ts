@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { auth } from "./server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
@@ -6,6 +5,7 @@ import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import type { LogSecurityEventInput } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import prisma from "~/lib/prisma.server";
+import { hasValidServiceKey } from "./service-key.server";
 import type { Session } from "./server";
 import { getRequestSession } from "./request-session.server";
 
@@ -323,17 +323,6 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   return null;
 }
 
-/**
- * Constant-time service-key verification for request chokepoints that need to
- * distinguish an authenticated server call without emitting guard responses.
- * Header presence or shape alone is never treated as authentication.
- */
-export function hasValidServiceKey(request: Request): boolean {
-  const authHeader = request.headers.get("Authorization");
-  const envKey = process.env.EDUAI_API_KEY;
-  if (!authHeader?.startsWith("Bearer ") || !envKey) return false;
-
-  const tokenHash = createHash("sha256").update(authHeader.slice(7)).digest();
-  const keyHash = createHash("sha256").update(envKey).digest();
-  return timingSafeEqual(tokenHash, keyHash);
-}
+// Defined in service-key.server so trust-elevation callers can import the pure
+// predicate without the guard machinery; re-exported here for existing callers.
+export { hasValidServiceKey };

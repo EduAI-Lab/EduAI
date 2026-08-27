@@ -72,7 +72,8 @@ function postArgs(
     headerKey?: string;
   } = {},
 ) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
   if (opts.headerKey) headers["Idempotency-Key"] = opts.headerKey;
   const body =
     opts.idempotencyKey !== undefined

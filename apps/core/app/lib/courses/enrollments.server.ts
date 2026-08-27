@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
@@ -5,7 +6,7 @@ import { splitPage, type CursorParams } from "~/lib/cursor-list.server";
 
 const ENROLLMENT_ROLES = ["STUDENT", "TA", "INSTRUCTOR"] as const;
 
-export function isEnrollmentRole(value: unknown): value is EnrollmentRole {
+export function isEnrollmentRole(value: JsonValue | undefined): value is EnrollmentRole {
   return typeof value === "string" && (ENROLLMENT_ROLES as readonly string[]).includes(value);
 }
 
@@ -134,20 +135,21 @@ async function instructorFloorViolation(
   return null;
 }
 
+/** The request body of "add someone to this course", straight off the wire. */
 export type AddEnrollmentPayload = {
-  userId?: unknown;
-  role?: unknown;
+  userId?: JsonValue;
+  role?: JsonValue;
 };
 
 /**
  * §6 — manage enrollments requires rank >= 2; adding an INSTRUCTOR requires
  * rank >= 3 (ADMIN / UNIT_ADMIN). Single source of truth for REST + service.
  */
-export function requiredRankForEnrollmentRole(role: unknown): number {
+export function requiredRankForEnrollmentRole(role: JsonValue | undefined): number {
   return role === "INSTRUCTOR" ? 3 : 2;
 }
 
-export function canAddEnrollmentRole(actorRank: number, role: unknown): boolean {
+export function canAddEnrollmentRole(actorRank: number, role: JsonValue | undefined): boolean {
   return actorRank >= requiredRankForEnrollmentRole(role);
 }
 
@@ -221,7 +223,7 @@ export async function addEnrollment(
 export async function updateEnrollmentRole(
   courseId: string,
   enrollmentId: string,
-  payload: { role?: unknown },
+  payload: { role?: JsonValue },
 ) {
   if (!isEnrollmentRole(payload.role)) {
     return { status: "422", error: "VALIDATION_ERROR", fields: { role: "invalid role" } } as const;
