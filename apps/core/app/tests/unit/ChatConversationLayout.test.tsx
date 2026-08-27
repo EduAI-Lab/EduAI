@@ -5,6 +5,7 @@ import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
+  adhdAssistFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 const baseProps = {
@@ -173,6 +174,84 @@ describe("ChatConversationLayout — routed model labels", () => {
     );
 
     expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatConversationLayout — Assist toggle doesn't reformat history (#1671)", () => {
+  it("does not apply the live Assist toggle's relabeling to an older message sent under the other mode", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist // live toggle is now ON
+        messages={[
+          { id: "assistant-old", role: "assistant", content: "**Top summary**\nOlder answer." },
+        ]}
+        adhdAssistByMessageId={{ "assistant-old": false }} // that turn was sent with Assist OFF
+      />,
+    );
+
+    // relabelAssistiveHeadings would turn this into "TLDR" if the live
+    // toggle were applied instead of the per-message value.
+    expect(screen.getByText(/Top summary/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TLDR/i)).not.toBeInTheDocument();
+  });
+
+  it("does apply relabeling to an older message that was itself sent with Assist on", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist={false} // live toggle is now OFF
+        messages={[
+          { id: "assistant-old", role: "assistant", content: "**Top summary**\nOlder answer." },
+        ]}
+        adhdAssistByMessageId={{ "assistant-old": true }} // that turn was sent with Assist ON
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+  });
+
+  it("falls back to the live toggle for a legacy message with no recorded Assist metadata", () => {
+    const storedTranscript: Array<{
+      id: string;
+      role: string;
+      content: string;
+      metadata?: unknown;
+    }> = [
+      { id: "assistant-legacy", role: "assistant", content: "**Top summary**\nLegacy answer." },
+    ];
+    const adhdAssistByMessageId: Record<string, boolean> = {};
+    for (const message of storedTranscript) {
+      const wasAssist = adhdAssistFromMessage(message);
+      if (wasAssist !== undefined) adhdAssistByMessageId[message.id] = wasAssist;
+    }
+
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist // live toggle is ON, and there's nothing recorded for this legacy message
+        messages={storedTranscript}
+        adhdAssistByMessageId={adhdAssistByMessageId}
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+  });
+
+  it("uses streamingAdhdAssist, not the live toggle, for the in-flight message", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist={false} // toggled off after the in-flight request was already sent
+        isLoading
+        messages={[
+          { id: "assistant-streaming", role: "assistant", content: "**Top summary**\nStreaming." },
+        ]}
+        streamingAdhdAssist // the in-flight request was sent with Assist on
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
   });
 });
 
