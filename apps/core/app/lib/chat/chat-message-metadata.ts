@@ -14,6 +14,7 @@ const chatMessageMetadataSchema = z.object({
   resolvedModelId: z.string().optional().catch(undefined),
   wasAutoRouted: z.boolean().optional().catch(undefined),
   courseScopeRedirect: z.boolean().optional().catch(undefined),
+  adhdAssist: z.boolean().optional().catch(undefined),
 });
 
 export type ChatMessageMetadata = z.infer<typeof chatMessageMetadataSchema>;
@@ -82,6 +83,17 @@ export function wasAutoRoutedFromMessage(message: MessageWithMetadata): boolean 
   return readMetadata(message).wasAutoRouted === true;
 }
 
+/**
+ * Read whether Assist was on for the request that produced this assistant
+ * message (#1671: keyed by what was true at send time, not the live toggle,
+ * so flipping Assist afterward doesn't retroactively reformat older messages).
+ * Absent for messages persisted before this field existed — undefined (not
+ * false) so callers can fall back to their own default for legacy rows.
+ */
+export function adhdAssistFromMessage(message: MessageWithMetadata): boolean | undefined {
+  return readMetadata(message).adhdAssist;
+}
+
 /** A message whose metadata slot now holds this module's fields alongside whatever it already carried. */
 type WithChatMessageMetadata<T> = T & { metadata: JsonObject & ChatMessageMetadata };
 
@@ -97,6 +109,20 @@ export function withResolvedModelMetadata<T extends object>(
       ...existingMetadata(message),
       resolvedModelId,
       wasAutoRouted,
+    },
+  };
+}
+
+/** Attach the Assist mode that was in effect when this assistant turn was generated. */
+export function withAdhdAssistMetadata<T extends object>(
+  message: T,
+  adhdAssist: boolean,
+): WithChatMessageMetadata<T> {
+  return {
+    ...message,
+    metadata: {
+      ...existingMetadata(message),
+      adhdAssist,
     },
   };
 }
