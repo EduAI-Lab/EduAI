@@ -1114,21 +1114,48 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
+/**
+ * Research routing pool — vLLM tier 1 (small) + tier 3 (large) only; no cloud
+ * tier in Auto. Tier 2 is intentionally absent: it exists in the `RouterTier`
+ * enum for a cloud-overflow tier, but `normalizePickForLocalVllm` (see
+ * `apps/core/app/lib/ai/routing/local-vllm.ts`) remaps every tier-2 pick to
+ * tier 3 whenever a local vLLM host is configured, and no rule in
+ * `routing/rules.ts` targets tier 2 directly either — so a tier-2 row would
+ * never receive Auto traffic under this deployment.
+ *
+ * This list only affects models present under the given `modelId` at seed
+ * time — `applyRoutingTierAssignments` warns (does not fail) when a row is
+ * missing, e.g. after the vLLM fleet is upgraded to a new model generation.
+ * Update this list whenever the deployed fleet changes, and note the
+ * production deploy procedure (`infra/production/README.md`) does not run
+ * `db:seed:reference` — that seed step only self-heals `eduai-dev`/s378 via
+ * `infra/s378/go-live-build.sh`; keep production's tier assignment in sync
+ * manually until that gap is closed, or apply this seed step to production
+ * deploys too.
+ */
+// energyJoules/carbonGrams below are placeholders scaled from the retired
+// 7B/32B pair's constants by parameter count (2B/9B replaced 7B/32B on the
+// vLLM fleet) — NOT a real measurement. Per docs/rag-ai/routing/
+// eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md these are always
+// `ESTIMATED_FROM_TOKENS`, but a same-family interpolation is a weaker
+// estimate than the original pair had (those came from an earlier round of
+// the same placeholder scaling). Replace with real figures — or at least a
+// documented derivation — before relying on Auto's carbon-based tie-break
+// for these two models specifically.
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
+    modelId: "qwen3.5-2b-instruct",
     routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: 0.03,
+    averageCarbonGramsPerToken: 6.7e-7,
   },
   {
     providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
+    modelId: "qwen3.5-9b-instruct",
     routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
+    estEnergyJoulesPerToken: 0.15,
+    averageCarbonGramsPerToken: 3.3e-6,
   },
 ];
 

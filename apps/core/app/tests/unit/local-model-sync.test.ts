@@ -21,6 +21,7 @@ const existingModel: AIModel = {
   inputPricing: 0,
   outputPricing: 0,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId,
