@@ -88,8 +88,7 @@ export async function listBankQuestions(coreOfferingId, { topicId, limit = 20, o
         topicId,
         limit: effectiveLimit,
         offset: nextOffset,
-      })) ??
-      [];
+      })) ?? [];
     pagesRead += 1;
     // A short page is Core's own end-of-list signal.
     coreHasMorePages = page.length === effectiveLimit;

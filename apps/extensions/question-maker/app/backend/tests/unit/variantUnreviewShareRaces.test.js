@@ -45,9 +45,8 @@ vi.mock("../../src/utils/logger.js", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-const { updateVariant, applyVariantShareChoice } = await import(
-  "../../src/services/questionService.js"
-);
+const { updateVariant, applyVariantShareChoice } =
+  await import("../../src/services/questionService.js");
 
 const QUESTION_META = {
   id: 7,
@@ -90,12 +89,11 @@ describe("un-review races a concurrent approval", () => {
     );
 
     await expect(
-      updateVariant(
-        11,
-        { isDraft: true },
-        "owner-1",
-        { isInstructorPlus: true, accessLevel: "instructor", requestUserId: "user-1" },
-      ),
+      updateVariant(11, { isDraft: true }, "owner-1", {
+        isInstructorPlus: true,
+        accessLevel: "instructor",
+        requestUserId: "user-1",
+      }),
     ).rejects.toMatchObject({ status: 409, reason: "UNREVIEW_STATE_CHANGED" });
 
     expect(variantsUpdate).not.toHaveBeenCalled();
