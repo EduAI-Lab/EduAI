@@ -6,6 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import { resolveAuthCookieDomain } from "./cookie-domain";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
@@ -24,7 +25,7 @@ export const authBaseURL =
   import.meta.env.BETTER_AUTH_URL?.trim() ||
   "http://localhost:3000";
 
-const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
+const cookieDomain = resolveAuthCookieDomain();
 const useSecureCookies = authBaseURL.startsWith("https://");
 
 const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([

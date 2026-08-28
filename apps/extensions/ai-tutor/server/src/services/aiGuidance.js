@@ -37,6 +37,7 @@ import { randomUUID } from "crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { prisma } from "../config/database.js";
 import { getEduAiCompletionUrl } from "./eduaiClient.js";
+import { serviceAuthHeader } from "./systemSettings.js";
 import { trimNonEmpty } from "../utils/coreCourseId.js";
 import { DEFAULT_TUTOR_MODEL } from "./aiModelPolicy.js";
 
@@ -122,7 +123,6 @@ const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try
 const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
 const SAFE_AI_LOG_EVENTS = new Set([
   "missing_session_cookie",
-  "missing_service_key",
   "missing_user_api_key",
   "invalid_model_id",
   "upstream_retry",
@@ -137,6 +137,7 @@ const SAFE_AI_LOG_EVENTS = new Set([
   "custom_response_failed",
   "guidance_route_failed",
   "custom_route_failed",
+  "service_key_unset",
 ]);
 const SAFE_AI_LOG_NUMBER_KEYS = ["status", "attempt", "maxAttempts", "durationMs", "timeoutMs"];
 const SAFE_AI_LOG_IDENTIFIER_KEYS = ["requestId", "correlationId", "traceId"];
@@ -415,38 +416,47 @@ async function callEduAI({
     courseCode: trimmedCourseCode ?? undefined,
   };
 
+  // Core's mutation guard (`apps/core/app/root.tsx`) fails an unsafe-method
+  // request that carries a cookie closed with CROSS_ORIGIN_MUTATION unless it
+  // proves same-origin (Origin/Referer/Sec-Fetch-Site) or presents the service
+  // key. A server-to-server `fetch` adds no Origin/Referer, so in a split-origin
+  // topology the completion call is rejected before any model runs (#1647).
+  // Send the service-key Bearer like the other `eduaiClient` reads do; keep the
+  // cookie for user identity / rate-limiting. Omit the header when the key is
+  // unset so same-origin dev stacks are unaffected.
+  //
+  // The Bearer is the env `EDUAI_API_KEY` — the only source Core's guard
+  // validates against (`hasValidServiceKey` compares Core's own env key). A DB
+  // admin override can't authenticate here because Core never sees it, so
+  // `serviceAuthHeader` deliberately sends the shared env key (#1647 review).
+  const authHeader = serviceAuthHeader();
+  if (!authHeader.Authorization) {
+    // No env service key. Same-origin dev stacks are fine (the guard
+    // never triggers), but a split-origin deploy that reaches here will 403 at
+    // Core's mutation guard — leave a breadcrumb so that misconfig is
+    // diagnosable. The key itself is never logged.
+    logAiGuidanceEvent("warn", "service_key_unset");
+  }
+
   const callStartedAt = Date.now();
 
   try {
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
-    // Attach the shared service key when it is configured. callEduAI posts to
-    // /api/completion (not /api/chat): a learner session is enough to auth, and
-    // that route already uses the supplied systemPrompt as-is. The bearer is
-    // therefore optional here — it matches other Core calls and covers the
-    // no-session fallback. A missing key is an operator misconfiguration;
-    // throwing would turn it into an opaque tutoring outage, so we log
-    // missing_service_key and proceed.
-    const serviceKey = process.env.EDUAI_API_KEY;
-    if (!serviceKey) {
-      logAiGuidanceEvent("error", "missing_service_key");
-    }
-
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
-    const headers = {
-      "Content-Type": "application/json",
-      cookie,
-    };
-    if (serviceKey) {
-      headers.Authorization = `Bearer ${serviceKey}`;
-    }
-
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const attemptStartedAt = Date.now();
+      const headers = {
+        "Content-Type": "application/json",
+        cookie,
+      };
+      // `Object.assign` (not spread) keeps the `no-conditional-empty-object-spread`
+      // lint rule happy while still adding the Bearer only when a key exists.
+      Object.assign(headers, authHeader);
       const response = await fetch(endpoint, {
         method: "POST",
         headers,

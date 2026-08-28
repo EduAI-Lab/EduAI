@@ -30,6 +30,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }));
@@ -43,14 +45,22 @@ vi.mock("~/lib/auth/course-access.server", () => ({
     access: { level: "student" },
   }),
 }));
-vi.mock("~/lib/ai/providers.server", () => ({
-  getChatModelCapabilities: vi.fn().mockResolvedValue({
-    supportsTools: false,
-    maxTokens: null,
-    name: null,
-  }),
-  modelSupportsTools: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
+  // Keep the real pure budget helpers (resolveModelContextWindow,
+  // resolveSessionCharBudgetForModel, capMaxOutputTokensForPrompt, …) that the
+  // token-based history budget path now calls (#1639); only stub the two
+  // capability lookups that would otherwise hit Prisma.
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  return {
+    ...actual,
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: false,
+      maxTokens: null,
+      name: null,
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(false),
+  };
+});
 vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -65,7 +75,7 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
