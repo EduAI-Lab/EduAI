@@ -131,7 +131,7 @@ interface RoleListConfig {
   cardActions: CardActionConfig;
 }
 
-export const COURSES_ROLE_CONFIG: Record<"admin" | "unit-admin" | "instructor", RoleListConfig> = {
+export const COURSES_ROLE_CONFIG = {
   admin: {
     heading: "Courses",
     departmentOptionLabel: true,
@@ -162,7 +162,7 @@ export const COURSES_ROLE_CONFIG: Record<"admin" | "unit-admin" | "instructor", 
       deletePolicyFlag: "instructors.canDeleteCourses",
     },
   },
-};
+} satisfies Record<"admin" | "unit-admin" | "instructor", RoleListConfig>;
 
 const NO_RESULTS_TEXT = "No courses match your search.";
 

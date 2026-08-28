@@ -24,8 +24,8 @@ const prismaMock = vi.hoisted(() => {
     },
     // The mutation helpers pass a callback; `getCourseEnrollmentsPage` passes an array
     // of promises. Support both so one mock serves every caller in this file.
-    $transaction: vi.fn(async (arg: unknown) =>
-      Array.isArray(arg) ? Promise.all(arg) : (arg as (t: typeof tx) => Promise<unknown>)(tx),
+    $transaction: vi.fn(async <T>(arg: Promise<T>[] | ((t: typeof tx) => Promise<T>)) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(tx),
     ),
     __tx: tx,
   };

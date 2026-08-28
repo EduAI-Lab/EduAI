@@ -4,9 +4,13 @@ import {
   REDACTED_VALUE,
   redactDiagnosticLogString,
   redactErrorForConsole,
+  redactErrorForMessage,
   redactSecretValuesInString,
   sanitizeSensitiveData,
 } from "~/lib/redact.server";
+
+/** A node that may reference itself, for the cycle-guard tests. */
+type CircularNode = { name: string; self?: CircularNode };
 
 describe("redactSecretValuesInString", () => {
   it("redacts provider keys embedded in unstructured error prose", () => {
@@ -426,5 +430,53 @@ describe("redactErrorForConsole", () => {
       apiKey: REDACTED_VALUE,
       note: `hit /cb?token=${REDACTED_VALUE}`,
     });
+  });
+});
+
+describe("redactErrorForMessage", () => {
+  it("renders an Error as a redacted one-line string", () => {
+    const err = new TypeError("bad key sk-do-not-leak");
+
+    expect(redactErrorForMessage(err)).toBe(`TypeError: bad key ${REDACTED_VALUE}`);
+  });
+
+  it("drops the stack so persisted columns stay one line", () => {
+    const err = new Error("boom");
+    err.stack = "Error: boom\n    at somewhere (file.ts:1:1)";
+
+    expect(redactErrorForMessage(err)).toBe("Error: boom");
+  });
+
+  it("returns just the name for an Error with an empty message", () => {
+    expect(redactErrorForMessage(new RangeError(""))).toBe("RangeError");
+  });
+
+  it("scrubs thrown strings", () => {
+    expect(redactErrorForMessage("failed /cb?access_token=abc123def456")).toBe(
+      `failed /cb?access_token=${REDACTED_VALUE}`,
+    );
+  });
+
+  it("serializes non-Error objects instead of collapsing them to [object Object]", () => {
+    const message = redactErrorForMessage({ status: 502, apiKey: "sk-live-1" });
+
+    expect(message).not.toContain("[object Object]");
+    expect(message).toContain("502");
+    expect(message).not.toContain("sk-live-1");
+    expect(message).toContain(REDACTED_VALUE);
+  });
+
+  it("falls back to string coercion for circular objects", () => {
+    // A graph that points back at itself — the case JSON cannot hold and the
+    // redactor has to survive.
+    const circular: CircularNode = { name: "loop" };
+    circular.self = circular;
+
+    expect(() => redactErrorForMessage(circular)).not.toThrow();
+  });
+
+  it("coerces primitives that carry no structure", () => {
+    expect(redactErrorForMessage(null)).toBe("null");
+    expect(redactErrorForMessage(undefined)).toBe("undefined");
   });
 });

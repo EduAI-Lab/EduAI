@@ -83,7 +83,7 @@ export const UNITS = [
 
 export type Unit = (typeof UNITS)[number];
 
-export const UNIT_LABELS: Record<Unit, string> = {
+export const UNIT_LABELS = {
   ANTH: "Anthropology",
   APSC: "Applied Science",
   ARTH: "Art History and Visual Culture",
@@ -164,7 +164,7 @@ export const UNIT_LABELS: Record<Unit, string> = {
   VANT: "Vantage College",
   VISA: "Visual Arts",
   WRLD: "World Literature",
-};
+} satisfies Record<Unit, string>;
 
 export function getDepartmentLabel(code: string): string {
   return UNIT_LABELS[code as Unit] ?? code;

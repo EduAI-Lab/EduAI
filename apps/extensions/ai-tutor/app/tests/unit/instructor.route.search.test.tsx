@@ -17,7 +17,7 @@ vi.mock("~/lib/api", () => {
     listCourses: (...a: unknown[]) => listCourses(...a),
     listCourseFacets: (...a: unknown[]) => listCourseFacets(...a),
   };
-  return { default: api, api };
+  return { default: api, api, COURSE_LIST_PAGE_SIZE: 200 };
 });
 
 vi.mock("~/lib/client-auth", () => ({
@@ -63,6 +63,34 @@ describe("instructor clientLoader — filter threading", () => {
   it("sends no filters for a bare URL", async () => {
     await runLoader("http://x/instructor");
 
+    expect(listCourses).toHaveBeenCalledWith({
+      page: 1,
+      search: undefined,
+      term: [],
+      status: [],
+    });
+  });
+
+  it("forwards an explicit pageSize from the URL so a pager can run below the default page", async () => {
+    listCourses.mockResolvedValue({ data: [course()], total: 13, page: 1, pageSize: 10 });
+
+    await runLoader("http://x/instructor?pageSize=10");
+
+    expect(listCourses).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 10,
+      search: undefined,
+      term: [],
+      status: [],
+    });
+  });
+
+  it("clamps pageSize to the course-list ceiling and ignores a non-numeric value", async () => {
+    await runLoader("http://x/instructor?pageSize=9999");
+    expect(listCourses).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 200 }));
+
+    listCourses.mockClear();
+    await runLoader("http://x/instructor?pageSize=nope");
     expect(listCourses).toHaveBeenCalledWith({
       page: 1,
       search: undefined,
@@ -122,7 +150,10 @@ describe("instructor clientLoader — filter threading", () => {
 describe("InstructorHome — controlled list", () => {
   let currentSearch = "";
 
-  function renderPage(overrides: Record<string, unknown> = {}, entry = "/instructor") {
+  function renderPage(
+    overrides: Partial<Route.ComponentProps["loaderData"]> = {},
+    entry = "/instructor",
+  ) {
     currentSearch = "";
     const props = {
       loaderData: {

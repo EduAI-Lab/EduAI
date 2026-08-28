@@ -23,6 +23,7 @@ import {
   upsertUserProviderSetting,
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function withSession(userId = "u1") {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: userId } } as never);
@@ -38,7 +39,7 @@ function getReq() {
   return { request: new Request(BASE_URL) } as never;
 }
 
-function postReq(body: unknown) {
+function postReq(body: RouteRequestBody) {
   return {
     request: new Request(BASE_URL, {
       method: "POST",
@@ -48,7 +49,7 @@ function postReq(body: unknown) {
   } as never;
 }
 
-function deleteReq(body: unknown) {
+function deleteReq(body: RouteRequestBody) {
   return {
     request: new Request(BASE_URL, {
       method: "DELETE",

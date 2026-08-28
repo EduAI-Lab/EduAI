@@ -4,7 +4,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+    // The history read and trim run in one transaction; the mock hands the
+    // callback the same client the assertions below are written against.
+    $transaction: vi.fn(async <T>(fn: (tx: typeof prisma) => Promise<T>) => fn(prisma)),
     passwordHistory: {
       findMany: vi.fn(),
       create: vi.fn(),

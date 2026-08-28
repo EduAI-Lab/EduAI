@@ -18,15 +18,15 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
-function formBodyErrorResponse(error: unknown): Response | null {
-  if (error instanceof MultipartBodyTooLargeError) {
+function formBodyErrorResponse(cause: unknown): Response | null {
+  if (cause instanceof MultipartBodyTooLargeError) {
     return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
       status: 413,
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (error instanceof MultipartBodyInvalidError) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  if (cause instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: cause.message }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
@@ -163,10 +163,10 @@ export default function RegisterPage() {
             strokeWidth="1.75"
             strokeLinecap="round"
           >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 3a9 9 0 0 1 0 18" />
-            <path d="M3 12h18" />
-            <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
         <span

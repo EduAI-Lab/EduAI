@@ -1,6 +1,7 @@
 // @vitest-environment node
 // #1213 — courses.$courseId.tsx loader: found/not-found/unauthorized cases
 // explicitly called out in the issue's done-when criteria.
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -99,7 +100,7 @@ describe("courses.$courseId loader", () => {
     expect(res.headers.get("Location")).toBe("/courses?access=denied");
   });
 
-  it("redirects a student to /courses for an unpublished course", async () => {
+  it("redirects a student to /courses?access=unpublished for an unpublished course", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
@@ -110,7 +111,7 @@ describe("courses.$courseId loader", () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("student");
     const res = (await loader(makeArgs())) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses");
+    expect(res.headers.get("Location")).toBe("/courses?access=unpublished");
   });
 
   it("returns course data with hasAiConfig (not aiInstructions) for a student", async () => {
@@ -124,7 +125,7 @@ describe("courses.$courseId loader", () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("student");
 
     const result = (await loader(makeArgs())) as {
-      course: Record<string, unknown>;
+      course: JsonObject;
       access: string;
       instructors: unknown[];
     };
@@ -147,7 +148,7 @@ describe("courses.$courseId loader", () => {
     ] as never);
 
     const result = (await loader(makeArgs())) as {
-      course: Record<string, unknown>;
+      course: JsonObject;
       instructors: unknown[];
     };
     expect(result.course).toHaveProperty("aiInstructions", null);

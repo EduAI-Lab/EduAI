@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject } from "~/lib/json-value";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.auditlog.server", () => ({
@@ -211,8 +212,8 @@ describe("logging.server", () => {
       { key: "role", value: "ADMIN", redact: false },
     ];
 
-    const details: Record<string, unknown> = {};
-    const expected: Record<string, unknown> = {};
+    const details: JsonObject = {};
+    const expected: JsonObject = {};
     for (const c of cases) {
       details[c.key] = c.value;
       expected[c.key] = c.redact ? "[REDACTED]" : c.value;
@@ -231,7 +232,9 @@ describe("logging.server", () => {
   });
 
   it("does not overflow on circular details and still redacts the rest", async () => {
-    const details: Record<string, unknown> = { password: "nope", note: "ok" };
+    const details: JsonObject = {};
+    details.password = "nope";
+    details.note = "ok";
     details.self = details;
 
     await logAuditAction({

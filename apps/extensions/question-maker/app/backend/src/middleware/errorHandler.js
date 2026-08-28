@@ -62,7 +62,7 @@ export const errorHandler = (err, req, res, next) => {
     (candidate) =>
       typeof candidate === "string" &&
       /^[A-Z][A-Z0-9_]{1,63}$/.test(candidate) &&
-      /^(?:QM_|PAGINATION_|CORE_|COURSE_|EDUAI_|AUTH_|CSRF_|RESOURCE_|VARIANT_|QUESTION_|ASSESSMENT_|INVALID_|DUPLICATE_|BUG_|PROVIDER_)/.test(
+      /^(?:QM_|PAGINATION_|CORE_|COURSE_|CANVAS_|EDUAI_|AUTH_|CSRF_|RESOURCE_|VARIANT_|QUESTION_|ASSESSMENT_|INVALID_|DUPLICATE_|BUG_|PROVIDER_)/.test(
         candidate,
       ),
   );
@@ -88,18 +88,19 @@ export const errorHandler = (err, req, res, next) => {
   // Log only allowlisted transport/status metadata. Never pass the Error
   // object or its message as structured data/serialised log text.
   const logLevel = status >= 500 ? "error" : "warn";
-  logger[logLevel](
-    {
-      ...safeRequestLogFields({ ...err, status }),
-      ...(safeCode ? { code: safeCode } : {}),
-      req: {
-        method: req.method,
-        path: req.path,
-      },
-      status,
+  // `safeRequestLogFields` already carries the transport `code` (ECONNREFUSED,
+  // UND_ERR_CONNECT_TIMEOUT, ...) when there is one, so the semantic code is
+  // layered on by statement, since an explicit `code: undefined` would erase it.
+  const logFields = {
+    ...safeRequestLogFields({ ...err, status }),
+    req: {
+      method: req.method,
+      path: req.path,
     },
-    "Request error",
-  );
+    status,
+  };
+  if (safeCode) logFields.code = safeCode;
+  logger[logLevel](logFields, "Request error");
 
   res.status(status).json({
     success: false,
@@ -109,6 +110,7 @@ export const errorHandler = (err, req, res, next) => {
     // failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT` from the Core fetch
     // paths) also carry `code`, and leaking those would both expose internal
     // infrastructure detail and clobber the semantic `body.error` code below.
-    ...(safeCode ? { code: safeCode } : {}),
+    // JSON.stringify drops the undefined, so ungated errors send no `code`.
+    code: safeCode || undefined,
   });
 };

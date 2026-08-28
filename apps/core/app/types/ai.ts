@@ -27,6 +27,7 @@ export type AIModel = {
   supportsStreaming: boolean;
   inputPricing?: number;
   outputPricing?: number;
+  contextFillRatio?: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

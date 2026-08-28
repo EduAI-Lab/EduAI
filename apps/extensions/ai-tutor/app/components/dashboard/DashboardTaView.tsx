@@ -27,8 +27,14 @@ export function DashboardTaView({
   submissions,
   dashboardStats,
 }: DashboardTaViewProps) {
-  const published = courses.filter((c) => c.isPublished);
-  const learningCourses = courses.filter((c) => Boolean(c.progress));
+  // #1644: `courses` mixes TA-assigned courses (no progress) with courses the
+  // same account is separately enrolled in as a student (with progress). Split
+  // on that: "Assigned courses" lists only the assisted ones; the enrolled-as-
+  // student ones surface in the "Continue learning" panel (scoped internally to
+  // in-progress courses), so a course you learn in no longer reads as one you're
+  // "assigned" to as staff.
+  const assistingCourses = courses.filter((c) => !c.progress);
+  const published = assistingCourses.filter((c) => c.isPublished);
   const resumeCourse = findResumeCourse(courses);
 
   const gradedSubmissions = submissions.filter(
@@ -40,10 +46,17 @@ export function DashboardTaView({
       ? Math.round((correctCount / gradedSubmissions.length) * 100)
       : null;
 
+  // Grading-queue depth across the TA's assisted courses (#1626). Prefer the
+  // server's cross-course rollup; fall back to the ungraded rows in the loaded
+  // `submissions` page when the stats call is unavailable.
+  const submissionsToReview =
+    dashboardStats?.submissionsToReview ??
+    submissions.filter((s) => s.isCorrect === null || s.isCorrect === undefined).length;
+
   const stats = [
-    { label: "Courses assisting", value: dashboardStats?.yourCourses ?? courses.length },
+    { label: "Courses assisting", value: dashboardStats?.yourCourses ?? assistingCourses.length },
     { label: "Published", value: dashboardStats?.publishedCourses ?? published.length },
-    { label: "Learning courses", value: learningCourses.length },
+    { label: "To review", value: submissionsToReview },
     { label: "Correct answers", value: correctPct !== null ? `${correctPct}%` : "—" },
   ];
 
@@ -73,7 +86,7 @@ export function DashboardTaView({
   return (
     <DashboardView
       stats={stats}
-      courses={courses.map(toDashboardCourseRow)}
+      courses={assistingCourses.map(toDashboardCourseRow)}
       coursesHref="/instructor"
       leftPanelTitle="Assigned courses"
       quickActions={quickActions}

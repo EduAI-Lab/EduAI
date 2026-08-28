@@ -39,6 +39,7 @@ import { auth } from "~/lib/auth/server";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import prisma from "~/lib/prisma.server";
 import { handleAiProvidersApiRequest } from "~/lib/api/ai-providers-api.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const PROVIDER_ROW = {
   id: "provider-1",
@@ -49,7 +50,7 @@ const PROVIDER_ROW = {
   isActive: true,
 };
 
-function request(method: string, path = "/api/ai-providers", body?: unknown) {
+function request(method: string, path = "/api/ai-providers", body?: RouteRequestBody) {
   return new Request(`http://core.test${path}`, {
     method,
     body: body !== undefined ? JSON.stringify(body) : undefined,

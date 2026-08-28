@@ -31,14 +31,17 @@ export function diagramStageResetKey(
   return `${title ?? ""}\0${stages.map((s) => s.label).join("|")}`;
 }
 
-export function useDiagramStageSelection(
-  stages: EduaiDiagramStage[],
-  resetKey: string,
-): {
+/** Which stage of a diagram is open, and how to move to another one. */
+export type DiagramStageSelection = {
   selected: number;
   setSelected: (index: number) => void;
   selectedStage: EduaiDiagramStage | undefined;
-} {
+};
+
+export function useDiagramStageSelection(
+  stages: EduaiDiagramStage[],
+  resetKey: string,
+): DiagramStageSelection {
   const [selected, setSelected] = useState(0);
 
   useEffect(() => {

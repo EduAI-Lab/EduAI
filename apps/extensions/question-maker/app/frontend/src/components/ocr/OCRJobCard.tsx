@@ -32,15 +32,7 @@ interface OCRJobCardProps {
   onRemove?: (jobId: string) => void;
 }
 
-const statusConfig: Record<
-  OCRJobStatus,
-  {
-    label: string;
-    icon: typeof IconCircleCheck;
-    className: string;
-    badgeVariant: "default" | "secondary" | "destructive" | "outline";
-  }
-> = {
+const statusConfig = {
   pending: {
     label: "Pending",
     icon: IconClock,
@@ -71,7 +63,15 @@ const statusConfig: Record<
     className: "text-muted-foreground",
     badgeVariant: "outline",
   },
-};
+} satisfies Record<
+  OCRJobStatus,
+  {
+    label: string;
+    icon: typeof IconCircleCheck;
+    className: string;
+    badgeVariant: "default" | "secondary" | "destructive" | "outline";
+  }
+>;
 
 export function OCRJobCard({ job, isCurrentCourse, onSelect, onRemove }: OCRJobCardProps) {
   const config = statusConfig[job.status];

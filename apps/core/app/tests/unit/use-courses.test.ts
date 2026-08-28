@@ -12,19 +12,20 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCourses } from "~/hooks/api/use-courses";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const course = { id: "course-1", name: "Intro", code: "CS101" };
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,
     text: () => Promise.resolve(""),
     json: () => Promise.resolve(body),
-  } as unknown as Response;
+  } as Response;
 }
 
-function page(data: unknown[] = [course], total = data.length) {
+function page(data: ParsedJsonBody[] = [course], total = data.length) {
   return okJson({ data, total, page: 1, pageSize: 25 });
 }
 
@@ -73,7 +74,7 @@ describe("useCourses", () => {
       status: 400,
       text: () => Promise.resolve("PAGINATION_REQUIRED"),
       json: () => Promise.resolve({}),
-    } as unknown as Response);
+    } as Response);
 
     const { result } = renderHook(() => useCourses());
 
@@ -178,7 +179,7 @@ describe("useCourses", () => {
               ok: false,
               status: 422,
               text: () => Promise.resolve("duplicate code"),
-            } as unknown as Response)
+            } as Response)
           : page(),
       ),
     );
@@ -288,7 +289,7 @@ describe("useCourses", () => {
     mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
       Promise.resolve(
         init?.method === "DELETE"
-          ? ({ ok: true, status: 204, text: () => Promise.resolve("") } as unknown as Response)
+          ? ({ ok: true, status: 204, text: () => Promise.resolve("") } as Response)
           : page(),
       ),
     );
@@ -310,7 +311,7 @@ describe("useCourses", () => {
               ok: false,
               status: 409,
               text: () => Promise.resolve("course has enrollments"),
-            } as unknown as Response)
+            } as Response)
           : page(),
       ),
     );

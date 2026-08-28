@@ -26,11 +26,13 @@ export const PROVIDERS: ReadonlyArray<{
   },
 ];
 
-const PROVIDER_LABELS: Record<string, string> = {
-  google: "Gemini",
-  openai: "OpenAI",
-  opencode: "OpenCode Go",
-};
+// A `Map` because the provider half of a model id is free-form: an id from a
+// provider this build has never heard of labels itself.
+const PROVIDER_LABELS = new Map<string, string>([
+  ["google", "Gemini"],
+  ["openai", "OpenAI"],
+  ["opencode", "OpenCode Go"],
+]);
 
 /** Legacy unscoped localStorage key. It is deliberately discarded because its
  * owner cannot be established safely on a shared browser. */
@@ -39,7 +41,7 @@ const API_KEYS_STORAGE_PREFIX = `${API_KEYS_STORAGE_KEY}:v2:`;
 export const API_KEYS_CLEARED_EVENT = "eduai:provider-keys-cleared";
 
 export function getProviderLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
+  return PROVIDER_LABELS.get(provider) ?? provider;
 }
 
 /** The provider half of a namespaced model id ("google:gemini-2.5-flash"). */

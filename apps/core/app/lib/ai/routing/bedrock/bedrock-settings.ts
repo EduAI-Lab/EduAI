@@ -38,10 +38,7 @@ export const BEDROCK_RESOURCE_WINDOW_MS = 60_000;
 export const BEDROCK_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const BEDROCK_MONTHLY_WINDOW_MS = 30 * BEDROCK_DAILY_WINDOW_MS;
 
-export const BEDROCK_OVERFLOW_SETTING_DEFINITIONS: Record<
-  BedrockOverflowSettingKey,
-  { label: string; description: string }
-> = {
+export const BEDROCK_OVERFLOW_SETTING_DEFINITIONS = {
   enabled: {
     label: "Enable AWS Bedrock overflow",
     description:
@@ -65,7 +62,7 @@ export const BEDROCK_OVERFLOW_SETTING_DEFINITIONS: Record<
     label: "Burst / resource limit",
     description: "Maximum Bedrock overflow turns in a 60-second window. 0 blocks this cap.",
   },
-};
+} satisfies Record<BedrockOverflowSettingKey, { label: string; description: string }>;
 
 export function defaultBedrockOverflowSettings(): BedrockOverflowSettings {
   return { ...DEFAULT_BEDROCK_OVERFLOW_SETTINGS };

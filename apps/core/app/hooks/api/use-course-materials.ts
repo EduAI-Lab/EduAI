@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useState, useEffect, useCallback } from "react";
 
 export interface CourseMaterial {
@@ -209,7 +210,9 @@ export function useCourseMaterials(courseId: string) {
         method: "POST",
         body: formData,
       });
-      const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+      // SAFETY: `Response#json` resolves to whatever the server sent; the only
+      // field read below is checked for its own type first.
+      const body = (await res.json().catch(() => ({}))) as JsonObject;
       if (!res.ok) {
         throw new Error(
           typeof body.error === "string" ? body.error : `Upload failed (${res.status})`,

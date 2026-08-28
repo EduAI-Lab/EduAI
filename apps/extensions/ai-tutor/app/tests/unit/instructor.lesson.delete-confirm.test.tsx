@@ -12,6 +12,12 @@ vi.mock("~/lib/api", () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: "Lesson 1", moduleId: null }),
     activitiesForLesson: vi.fn().mockResolvedValue([]),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      course: { id: 1, title: "Course", code: "C1" },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+    }),
     deleteActivity: (...args: unknown[]) => mockDeleteActivity(...args),
     syncTopics: vi.fn().mockResolvedValue({ missingTopics: 0 }),
   },
@@ -81,7 +87,14 @@ const module = {
   courseOfferingId: 1,
   lessons: [],
 };
-const lesson = { id: 1, title: "Lesson 1", moduleId: 1, isPublished: true, contentMd: "" };
+const lesson = {
+  id: 1,
+  title: "Lesson 1",
+  moduleId: 1,
+  position: 0,
+  isPublished: true,
+  contentMd: "",
+};
 const activity = {
   id: 99,
   title: "Activity 1",

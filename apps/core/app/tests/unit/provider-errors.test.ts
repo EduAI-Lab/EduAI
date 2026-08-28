@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  classifyProviderError,
+  classifyPublicProviderError,
   providerErrorDiagnostic,
   PUBLIC_PROVIDER_TOOL_ARGUMENT_ERROR,
 } from "~/lib/ai/provider-errors.server";
@@ -15,7 +15,7 @@ describe("provider error boundaries", () => {
     );
     error.name = "AI_InvalidToolArgumentsError";
 
-    expect(classifyProviderError(error, "stream")).toEqual({
+    expect(classifyPublicProviderError(error, "stream")).toEqual({
       message: PUBLIC_PROVIDER_TOOL_ARGUMENT_ERROR,
       code: "LLM_TOOL_ARGUMENTS_INVALID",
       status: 400,
@@ -23,12 +23,12 @@ describe("provider error boundaries", () => {
   });
 
   it("uses stable public setup and stream failures", () => {
-    expect(classifyProviderError(new Error("private setup detail"), "setup")).toEqual({
+    expect(classifyPublicProviderError(new Error("private setup detail"), "setup")).toEqual({
       message: "LLM provider setup failed",
       code: "LLM_PROVIDER_SETUP_FAILED",
       status: 502,
     });
-    expect(classifyProviderError(new Error("private stream detail"), "stream")).toEqual({
+    expect(classifyPublicProviderError(new Error("private stream detail"), "stream")).toEqual({
       message: "LLM stream failed",
       code: "LLM_STREAM_FAILED",
       status: 502,

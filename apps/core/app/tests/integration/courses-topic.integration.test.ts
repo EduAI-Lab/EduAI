@@ -17,6 +17,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/courses.topics.$";
 import { auth } from "~/lib/auth/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,7 +44,7 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
       method: "GET",
       headers,
     }),
-    params: { courseId, ...(topicId ? { topicId } : {}) },
+    params: { courseId, topicId },
     context: {} as never,
   } as any;
 }
@@ -51,7 +52,7 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
 function makeActionArgs(
   method: "POST" | "DELETE",
   courseId: string,
-  body?: unknown,
+  body?: RouteRequestBody,
   authorization?: string,
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
@@ -67,14 +68,13 @@ function makeActionArgs(
   } as any;
 }
 
-function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: unknown) {
+function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: RouteRequestBody) {
   const headers = new Headers({ "Content-Type": "application/json" });
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/courses//topics", {
-      method,
-      headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    request: new Request("http://localhost/api/courses//topics", init),
     params: {} as Record<string, string>,
     context: {} as never,
   } as any;

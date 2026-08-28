@@ -15,13 +15,17 @@ import type { Route } from "./+types/student.course";
 import { useCourseTopics } from "../hooks/useCourseTopics";
 import api from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(["STUDENT", "TA"]);
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response("Invalid course id", { status: 400 });
@@ -56,6 +60,10 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
+  const { user } = useLocalUser();
+  // #1660: only set when the viewer is previewing (not a real STUDENT/TA of
+  // this course) — see StudentPreviewBanner for why this is purely a label.
+  const previewRole = resolvePreviewRole(user);
   const { course, modules, modulesTotal, page, pageSize } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
 
@@ -90,6 +98,14 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={
+        previewRole ? (
+          <StudentPreviewBanner
+            role={previewRole}
+            exitHref={course?.id != null ? `/instructor/courses/${course.id}` : "/instructor"}
+          />
+        ) : null
+      }
       hero={
         <CourseHeroCard
           code={courseCode(course)}
@@ -146,3 +162,9 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -73,13 +75,14 @@ import {
   validateUploadedFile,
 } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
@@ -122,7 +125,7 @@ function makeDeleteArgs(materialId: string) {
   } as any;
 }
 
-function makeRenameArgs(materialId: string, body: unknown) {
+function makeRenameArgs(materialId: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`, {
       method: "PATCH",
@@ -149,7 +152,7 @@ function stubUploadArgs() {
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
-  } as unknown as Request;
+  } as Request;
   return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
 }
 
@@ -163,7 +166,7 @@ async function flushBackgroundWork() {
 }
 
 /** Standard extracted-content stub for the background half of an upload. */
-function mockExtraction(overrides: Record<string, unknown> = {}) {
+function mockExtraction(overrides: JsonObject = {}) {
   vi.mocked(extractUploadedFileContent).mockResolvedValue({
     checksum: "content-checksum",
     title: "file",
@@ -363,7 +366,7 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     const res = await loader(makeArgs("GET"));
     expect(res.status).toBe(200);
     const call = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as {
-      where: Record<string, unknown>;
+      where: Prisma.CourseMaterialWhereInput;
     };
     expect(call.where).toEqual({ courseId: COURSE_ID, deletedAt: null });
     expect("unpublishedAt" in call.where).toBe(false);
@@ -402,7 +405,7 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     const res = await loader(makeArgs("GET"));
     expect(res.status).toBe(200);
     const call = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as {
-      where: Record<string, unknown>;
+      where: Prisma.CourseMaterialWhereInput;
     };
     expect("OR" in call.where).toBe(false);
   });
@@ -517,7 +520,7 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     const res = await loader(makePreviewArgs("mat-1"));
     expect(res.status).toBe(200);
     const call = vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as {
-      where: Record<string, unknown>;
+      where: Prisma.CourseMaterialWhereInput;
     };
     expect(call.where).toEqual({ id: "mat-1", courseId: COURSE_ID, deletedAt: null });
     expect("unpublishedAt" in call.where).toBe(false);
@@ -564,7 +567,7 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     const res = await loader(makePreviewArgs("mat-1"));
     expect(res.status).toBe(200);
     const call = vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as {
-      where: Record<string, unknown>;
+      where: Prisma.CourseMaterialWhereInput;
     };
     expect("OR" in call.where).toBe(false);
   });
@@ -599,7 +602,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
       }),
       body,
       signal: new AbortController().signal,
-    } as unknown as Request;
+    } as Request;
     expect(oversizedRequest.headers.get("content-length")).toBe(String(52 * 1024 * 1024 + 1));
     const res = await action({
       request: oversizedRequest,

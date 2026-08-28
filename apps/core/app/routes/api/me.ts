@@ -10,8 +10,9 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },

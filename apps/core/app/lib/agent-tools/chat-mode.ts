@@ -1,4 +1,5 @@
 import type { RbacUser } from "~/lib/auth/course-access.server";
+import type { ToolInputValue } from "./tool-input";
 
 export type ChatMode = "learning" | "admin";
 
@@ -15,7 +16,13 @@ export type ChatToolContext = {
   turnId?: string;
 };
 
-export function parseChatMode(value: unknown): ChatMode {
+/**
+ * `chatMode` arrives on the request body, so the value is whatever JSON the
+ * caller sent. Anything that is not the literal `"admin"` — a missing key, a
+ * different casing, a non-string — is a learning chat; admin mode is never
+ * reachable by accident.
+ */
+export function parseChatMode(value: ToolInputValue | undefined): ChatMode {
   return value === "admin" ? "admin" : "learning";
 }
 
@@ -83,7 +90,7 @@ type AdminPromptOptions = PromptOptions & {
 /** Platform-wide scope note appended to every admin system prompt (including custom overrides). */
 export function formatAdminCourseContext(): string {
   return `Admin chat is platform-wide (no UI course filter).
-Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCourseTopic, topic write tools, and enrollment write tools when the admin names a specific course.
+Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCourseTopic, searchCourseMaterials, topic write tools, and enrollment write tools when the admin names a specific course.
 listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.
 When looking up one enrollment for update/deactivate, call listCourseEnrollments with userId or userEmail — do not rely on an unfiltered newest-page browse.`;
 }
@@ -129,10 +136,10 @@ CRITICAL RULES:
 - NEVER replace an admin-supplied email with a similar one from a browse list.
 - Tool results include dataSource: "database". Quote exact fields from the tool JSON.
 - If truncated is true or count < total, tell the admin how many rows were returned vs total in the database.
-- You do NOT tutor students or search course materials.
+- You do NOT tutor students. You CAN search a named course's uploaded materials (searchCourseMaterials) to ground an answer about that course's syllabus, policies, or assignments — always call it rather than guessing when the admin asks a course-content question.
 
 Read tools:
-- listCourses, getCourse, listCourseEnrollments (supports userId / userEmail exact lookup), listCourseTopics, getCourseTopic, listUsers (supports email / query filters), listBugReports
+- listCourses, getCourse, listCourseEnrollments (supports userId / userEmail exact lookup), listCourseTopics, getCourseTopic, searchCourseMaterials (requires courseId or courseCode plus a question; searches that course's syllabus/materials), listUsers (supports email / query filters), listBugReports
 
 ${writeSafetyRules}
 

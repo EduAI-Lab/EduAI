@@ -238,7 +238,9 @@ export async function cloneCourseContent(
   const sourceModules = await db.module.findMany({
     where: {
       courseOfferingId: sourceCourseId,
-      ...(Array.isArray(moduleIds) && moduleIds.length > 0 ? { id: { in: moduleIds } } : {}),
+      // No explicit selection clones every module; `undefined` is Prisma's
+      // "no constraint".
+      id: Array.isArray(moduleIds) && moduleIds.length > 0 ? { in: moduleIds } : undefined,
     },
     orderBy: { position: "asc" },
     include: {

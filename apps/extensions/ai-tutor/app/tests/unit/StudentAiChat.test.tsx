@@ -26,6 +26,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import StudentAiChat, { type StudentAiChatHandle } from "~/components/StudentAiChat";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import type { Activity } from "~/lib/types";
+import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
 const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
@@ -65,11 +66,23 @@ const {
   listSuggestedPrompts,
   listAiModels,
   ApiTimeoutError,
+  ApiHttpError,
 } = vi.hoisted(() => {
   class ApiTimeoutError extends Error {
     constructor(message = "Request timed out") {
       super(message);
       this.name = "ApiTimeoutError";
+    }
+  }
+  // #1660 review: StudentAiChat special-cases a 403 (preview role hitting
+  // the student-only AI tutoring gate) — the real class shape, mirrored here
+  // the same way ApiTimeoutError already is above.
+  class ApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiHttpError";
+      this.status = status;
     }
   }
   return {
@@ -83,11 +96,13 @@ const {
         { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
       ]),
     ApiTimeoutError,
+    ApiHttpError,
   };
 });
 
 vi.mock("~/lib/api", () => ({
   ApiTimeoutError,
+  ApiHttpError,
   default: {
     listSuggestedPrompts,
     listAiModels,
@@ -125,13 +140,16 @@ const MULTI_MODE_ACTIVITY: Activity = {
 /** A pending guide-message call the test controls, honoring AbortSignal like the real api.ts. */
 function deferredGuideCall() {
   let resolve!: (value: { message: string; chatId?: string | null }) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<{ message: string; chatId?: string | null }>((res, rej) => {
     resolve = res;
     reject = rej;
   });
+  // Typed off the real call so a signature change breaks the mock instead of
+  // silently accepting the wrong arguments. Only `signal` is exercised here.
+  type GuideCallArgs = Parameters<typeof api.sendGuideMessage>;
   sendGuideMessage.mockImplementationOnce(
-    (_activityId: unknown, _params: unknown, signal?: AbortSignal) => {
+    (_activityId: GuideCallArgs[0], _params: GuideCallArgs[1], signal?: AbortSignal) => {
       signal?.addEventListener("abort", () => {
         const err = new Error("Aborted");
         err.name = "AbortError";
@@ -143,8 +161,12 @@ function deferredGuideCall() {
   return { resolve, reject };
 }
 
-function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = ACTIVITY) {
-  return render(
+function chatTree(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return (
     <MemoryRouter>
       <StudentAiChat
         ref={ref}
@@ -157,9 +179,18 @@ function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = A
         currentTopicId={null}
         onSelectTopic={vi.fn()}
         studentAnswer={null}
+        isPreview={isPreview}
       />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderChat(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return render(chatTree(ref, activity, isPreview));
 }
 
 async function typeAndSend(text: string, placeholder = "Describe where you need guidance…") {
@@ -443,6 +474,54 @@ describe("StudentAiChat — send/receive round trip (#1003)", () => {
   });
 });
 
+// ── #1660 review (ariqmuldi, PR #1667): honest 403 message gated on isPreview ──
+
+describe("StudentAiChat — 403 message only for an actual previewer (#1660 review)", () => {
+  it('shows the "read-only preview" message for a 403 when isPreview is true', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    renderChat(undefined, ACTIVITY, true);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "AI tutoring is only available to enrolled students — this is a read-only preview.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to the generic message for a 403 when isPreview is false — a real STUDENT/TA can also hit this endpoint\'s 403 for unrelated reasons (lagging enrollment sync, content unpublished mid-session), and should never be told they are "previewing"', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Not enrolled in this course"));
+    renderChat(undefined, ACTIVITY, false);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
+
+  it("rebuilds sendChat when isPreview flips on a still-mounted chat (AuthProvider role transition)", async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    const { rerender } = renderChat(undefined, ACTIVITY, true);
+
+    rerender(chatTree(undefined, ACTIVITY, false));
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
+});
+
 // ── #1003: chatId threading ───────────────────────────────────────────────
 
 describe("StudentAiChat — chatId threading (#1003)", () => {
@@ -498,7 +577,7 @@ describe("StudentAiChat — history restoration (#1003)", () => {
 function deferredRestoreCall() {
   type RestoredMessages = { id: string; role: "user" | "assistant"; content: string }[];
   let resolve!: (value: RestoredMessages) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<RestoredMessages>((res, rej) => {
     resolve = res;
     reject = rej;
@@ -583,5 +662,142 @@ describe("StudentAiChat — session restore failures (#1000 / PR #1023)", () => 
 
     expect(screen.getByText("Restored conversation B")).toBeInTheDocument();
     expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+// ── #1596 review: cuid topic ids ──────────────────────────────────────────
+
+/**
+ * `Topic.id` is a cuid string, but the focus-topic path was number-only end to
+ * end: the selector ran the chosen value through `Number()` and dropped the
+ * non-finite result, and `sendChat` only forwarded `currentTopicId` when it was
+ * a number. A real topic could therefore never reach `sendTeachMessage`.
+ */
+describe("StudentAiChat — cuid topic ids reach the tutor", () => {
+  const MAIN_TOPIC_ID = "cm4main0000000000000000a";
+  const SECONDARY_TOPIC_ID = "cm4second00000000000000b";
+
+  const TEACH_ACTIVITY: Activity = {
+    ...ACTIVITY,
+    enableTeachMode: true,
+    enableGuideMode: false,
+    mainTopic: { id: MAIN_TOPIC_ID, name: "Recursion" },
+    secondaryTopics: [{ id: SECONDARY_TOPIC_ID, name: "Base cases" }],
+  };
+
+  const TOPIC_OPTIONS = [
+    { label: "Recursion", value: MAIN_TOPIC_ID },
+    { label: "Base cases", value: SECONDARY_TOPIC_ID },
+  ];
+
+  function renderTeachChat(props: {
+    currentTopicId: string | number | null;
+    onSelectTopic?: (topicId: string | number) => void;
+  }) {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={TEACH_ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={TOPIC_OPTIONS}
+          currentTopicId={props.currentTopicId}
+          onSelectTopic={props.onSelectTopic ?? vi.fn()}
+          studentAnswer={null}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("forwards the selected cuid topic id to sendTeachMessage", async () => {
+    sendTeachMessage.mockResolvedValue({ message: "Teach reply", chatId: null });
+    renderTeachChat({ currentTopicId: SECONDARY_TOPIC_ID });
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    await typeAndSend("Explain base cases", "Ask about the topic…");
+
+    await waitFor(() => expect(sendTeachMessage).toHaveBeenCalledTimes(1));
+    expect(sendTeachMessage.mock.calls[0][1]).toMatchObject({ topicId: SECONDARY_TOPIC_ID });
+  });
+
+  it("passes the option's own cuid to onSelectTopic instead of coercing it", async () => {
+    const onSelectTopic = vi.fn();
+    renderTeachChat({ currentTopicId: MAIN_TOPIC_ID, onSelectTopic });
+
+    fireEvent.click(screen.getByLabelText("Focus topic"));
+    fireEvent.click(await screen.findByRole("option", { name: "Base cases" }));
+
+    await waitFor(() => expect(onSelectTopic).toHaveBeenCalledWith(SECONDARY_TOPIC_ID));
+  });
+});
+
+// #1626: a course TA holds the learner surface but the tutoring routes 403 a
+// non-STUDENT enrollment, so the composer must be withheld rather than left as a
+// dead control — even with a BYOK key present (`mockGetKey` returns one here).
+// The gate fails closed on every non-"allowed" state, so an unresolved role
+// (pending / unverified breadcrumb) withholds the composer just like a TA does.
+describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () => {
+  function renderState(studyBuddyState: "pending" | "unverified" | "withheld") {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={[]}
+          currentTopicId={null}
+          onSelectTopic={vi.fn()}
+          studentAnswer={null}
+          studyBuddyState={studyBuddyState}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  function expectNoComposerOrControls() {
+    // Neither the connect-a-provider prompt nor a live composer is offered, and
+    // no model / new-chat / history controls — the whole surface is withheld,
+    // not merely disabled.
+    expect(screen.queryByText(/Connect an AI provider to start/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/where you need guidance|Ask about the topic|Ask a question/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new chat/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /chat history/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  }
+
+  it("shows the withheld notice and no composer or connect state for a resolved TA", async () => {
+    renderState("withheld");
+
+    // The panel title still renders so the TA sees the study buddy exists…
+    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
+    // …but the withheld notice replaces the conversation.
+    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed while the per-course role is unresolved (pending breadcrumb)", async () => {
+    renderState("pending");
+
+    // A genuine student sees a transient "checking access" — not the TA notice —
+    // but the composer stays withheld so a TA + BYOK key can't chat in the window.
+    expect(screen.getByText(/checking your access/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/study buddy is available to students enrolled/i),
+    ).not.toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed when the breadcrumb failed (unverified)", async () => {
+    renderState("unverified");
+
+    expect(screen.getByText(/couldn't verify your access/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
   });
 });

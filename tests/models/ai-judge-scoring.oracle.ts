@@ -36,20 +36,23 @@ export type AiJudgeScoringRow = {
   ApplyUsabilityPenalty: "true" | "false";
 };
 
-const LEVEL_SCORE: Record<Level, number> = { low: 1, high: 5 };
-const DISTINCTNESS_SCORE: Record<DistinctnessLevel, 1 | 3 | 5> = { low: 1, mid: 3, high: 5 };
-const DISTINCTNESS_FACTOR: Record<1 | 2 | 3 | 4 | 5, number> = {
+const LEVEL_SCORE = { low: 1, high: 5 } satisfies Record<Level, number>;
+const DISTINCTNESS_SCORE = { low: 1, mid: 3, high: 5 } satisfies Record<
+  DistinctnessLevel,
+  1 | 3 | 5
+>;
+const DISTINCTNESS_FACTOR = {
   1: 0.1,
   2: 0.4,
   3: 0.7,
   4: 0.9,
   5: 1.0,
-};
-const USABILITY_MULTIPLIER: Record<"usable_as_is" | "usable_with_edits" | "unusable", number> = {
+} satisfies Record<1 | 2 | 3 | 4 | 5, number>;
+const USABILITY_MULTIPLIER = {
   usable_as_is: 1.0,
   usable_with_edits: 0.9,
   unusable: 0.75,
-};
+} satisfies Record<"usable_as_is" | "usable_with_edits" | "unusable", number>;
 const COMPOSITE_WEIGHTS = {
   conceptual_equivalence: 0.24,
   difficulty_similarity: 0.19,

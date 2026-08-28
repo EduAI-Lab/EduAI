@@ -64,13 +64,11 @@ type Path = (typeof PATHS)[number];
 // (helpers/disciplines.ts) — `department` is an FK to Discipline.code.
 const DEPARTMENT = "COSC";
 
-const ENROLLMENT_ROLE: Partial<
-  Record<MaterialVisibilityRow["Role"], "INSTRUCTOR" | "TA" | "STUDENT">
-> = {
+const ENROLLMENT_ROLE = {
   INSTRUCTOR: "INSTRUCTOR",
   TA: "TA",
   STUDENT: "STUDENT",
-};
+} satisfies Partial<Record<MaterialVisibilityRow["Role"], "INSTRUCTOR" | "TA" | "STUDENT">>;
 
 type SeededRow = {
   courseId: string;

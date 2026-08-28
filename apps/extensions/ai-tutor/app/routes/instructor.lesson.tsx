@@ -3,8 +3,8 @@
  *
  * Route: /instructor/lesson/:lessonId
  * Auth: INSTRUCTOR
- * Loads: lesson + activities (parallel), then walks up to module + course
- *        for breadcrumbs (sequential — module/course IDs come from lesson).
+ * Loads: lesson + activities (parallel) with the role gate; breadcrumb
+ *        ancestry loads after paint via GET /lessons/:id/breadcrumb (#1334).
  * Owns:
  *   - Activity CRUD: create (AddActivityPanel), inline edit
  *     (EditActivityPanel), delete with confirm.
@@ -19,7 +19,9 @@
  *     being edited so reports can pinpoint it.
  * Gotchas:
  *   - Validation: at least one of teach/guide/custom must remain enabled.
- *     handleActivityModeChange refuses to disable the last one and alerts.
+ *     handleActivityModeChange refuses to disable the last one and records the
+ *     refusal in `modeErrors[activityId]`, rendered under that activity's AI
+ *     study buddy box (it used to be a native `alert()`).
  *   - Saving indicators are debounced ~300ms (NOT 500ms) via
  *     topicSavingTimeoutRef and modeSavingTimeoutRef to avoid flicker on
  *     fast saves; both timers must be cleared on unmount.
@@ -60,13 +62,13 @@ import { contentExcerpt } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
-import type { ImportableActivity } from "../lib/api";
+import type { ActivityUpdateBody, ImportableActivity } from "../lib/api";
 import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from "../lib/types";
 import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics";
 import type { Route } from "./+types/instructor.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 
-import type { ActivityUpdatePayload } from "../lib/activityForm";
+import { AI_MODE_REQUIRED, type ActivityUpdatePayload } from "../lib/activityForm";
 import {
   Badge,
   Button,
@@ -115,15 +117,14 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from "~/components/common/ListSearchInput";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
- * Loads the lesson and its activities (parallel), then walks up to the
- * module and course one step at a time because each ID lives on the
- * previous resource. The breadcrumb and EduAI sync path both depend on
- * having the parent course available.
+ * Loads the lesson and its activities in parallel with the role gate (#1334).
+ * Breadcrumb ancestry is fetched after paint in the component — not awaited
+ * here — so the editor body is not blocked on Core/ordinal work.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response("Invalid lesson id", { status: 400 });
@@ -132,8 +133,9 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   // #1207: page + search live in the URL; `search` is applied server-side.
   const { page, search } = parseListUrlParams(request);
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lesson, activitiesPage] = await Promise.all([
+    requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]),
+    api.lessonById(lessonId),
     api.activitiesForLesson(lessonId, { page, search }),
   ]);
 
@@ -143,36 +145,10 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     pageSize: activitiesPage.pageSize,
   });
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so newly-created lessons
-  // (whose titles carry no number) still follow the decimal system used on the
-  // module card grid.
-  //
-  // #1207: this comes from the server now. It used to be two `findIndex` walks
-  // over the full sibling module and lesson lists — a read that silently
-  // produced "0.0" for anything past the first page once those lists were
-  // paged.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
     page: activitiesPage.page,
     pageSize: activitiesPage.pageSize,
     search,
@@ -186,16 +162,16 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
   const {
-    course,
-    module,
     lesson,
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
-    orderText,
     page,
     pageSize,
     search,
   } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   // #1043/#1162: `total` is state, not a loader constant — refresh, delete, and
@@ -264,6 +240,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [titleDrafts, setTitleDrafts] = useState<Record<number, string>>({});
   const [savingPromptId, setSavingPromptId] = useState<number | null>(null);
   const [promptErrors, setPromptErrors] = useState<Record<number, string>>({});
+  // Keyed by activity id, like promptErrors: the refusal belongs under the AI
+  // study buddy box of the activity whose last mode was being turned off.
+  const [modeErrors, setModeErrors] = useState<Record<number, string>>({});
   const [promptSaved, setPromptSaved] = useState<Record<number, boolean>>({});
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
 
@@ -638,9 +617,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     const newCustom = mode === "custom" ? enabled : activity.enableCustomMode;
 
     if (!newTeach && !newGuide && !newCustom) {
-      alert("At least one AI mode must be enabled");
+      setModeErrors((prev) => ({ ...prev, [activityId]: AI_MODE_REQUIRED }));
       return;
     }
+
+    setModeErrors((prev) => {
+      if (!prev[activityId]) return prev;
+      const { [activityId]: _cleared, ...rest } = prev;
+      return rest;
+    });
 
     // Optimistic UI via useOptimistic
     addActivityOpt((items) =>
@@ -662,7 +647,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
     beginModeUpdate(activityId);
     try {
-      const payload: Record<string, unknown> = {
+      const payload: ActivityUpdateBody = {
         enableTeachMode: newTeach,
         enableGuideMode: newGuide,
         enableCustomMode: newCustom,
@@ -849,7 +834,46 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       : { label: "Lesson" },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
+
+  const skeletonBreadcrumbItems = [
+    { label: "Courses", href: "/instructor" },
+    { label: "…" },
+    { label: "…" },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: "Lesson" },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   return (
     <CourseTopicsProvider value={courseTopics}>
@@ -976,6 +1000,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
+                  const modeError = modeErrors[activity.id];
                   const canReorderActivity =
                     perms.canManageContent && activitiesTotal > 1 && !searching;
                   return (
@@ -1144,260 +1169,269 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               <ActivityDetailsCard activity={activity} />
                             )}
 
-                            <div className="grid items-start gap-4 lg:grid-cols-2">
-                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
-                                    <IconTag className="size-3.5" aria-hidden="true" />
-                                  </span>
-                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Topics
-                                  </span>
-                                </div>
-                                {topics.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    Define course topics to tag this activity.
-                                  </p>
-                                ) : (
-                                  <div className="space-y-3">
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-main-topic`}
-                                        className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
-                                      >
-                                        Main topic
-                                      </Label>
-                                      <Select
-                                        value={mainTopicId !== "" ? String(mainTopicId) : undefined}
-                                        onValueChange={(value) =>
-                                          handleActivityMainTopicChange(activity.id, value)
-                                        }
-                                        disabled={loadingTopics || isUpdatingTopics}
-                                      >
-                                        <SelectTrigger
-                                          id={`activity-${activity.id}-main-topic`}
-                                          className="w-full"
-                                        >
-                                          <SelectValue placeholder="Select a topic…" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {topics.map((topic) => (
-                                            <SelectItem key={topic.id} value={String(topic.id)}>
-                                              {topic.name}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                      <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                                        Secondary topics
-                                      </span>
-                                      <MultiSelect
-                                        options={topics
-                                          .filter((topic) => topic.id !== mainTopicId)
-                                          .map((topic) => ({
-                                            value: String(topic.id),
-                                            label: topic.name,
-                                          }))}
-                                        value={activity.secondaryTopics.map((topic) =>
-                                          String(topic.id),
-                                        )}
-                                        onValueChange={(nextValues) =>
-                                          handleActivitySecondaryChange(activity.id, nextValues)
-                                        }
-                                        disabled={loadingTopics}
-                                        placeholder="Add secondary topics…"
-                                        searchPlaceholder="Search topics…"
-                                        emptyText="No other topics."
-                                        className="w-full"
-                                      />
-                                    </div>
+                            <PermissionGate allow={perms.canManageContent}>
+                              <div className="grid items-start gap-4 lg:grid-cols-2">
+                                <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
+                                      <IconTag className="size-3.5" aria-hidden="true" />
+                                    </span>
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                      Topics
+                                    </span>
                                   </div>
-                                )}
-                                {showTopicSaving && isUpdatingTopics && (
-                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                    <Spinner size="xs" />
-                                    Saving…
-                                  </span>
-                                )}
-                              </section>
+                                  {topics.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      Define course topics to tag this activity.
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-main-topic`}
+                                          className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
+                                        >
+                                          Main topic
+                                        </Label>
+                                        <Select
+                                          value={
+                                            mainTopicId !== "" ? String(mainTopicId) : undefined
+                                          }
+                                          onValueChange={(value) =>
+                                            handleActivityMainTopicChange(activity.id, value)
+                                          }
+                                          disabled={loadingTopics || isUpdatingTopics}
+                                        >
+                                          <SelectTrigger
+                                            id={`activity-${activity.id}-main-topic`}
+                                            className="w-full"
+                                          >
+                                            <SelectValue placeholder="Select a topic…" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {topics.map((topic) => (
+                                              <SelectItem key={topic.id} value={String(topic.id)}>
+                                                {topic.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                                          Secondary topics
+                                        </span>
+                                        <MultiSelect
+                                          options={topics
+                                            .filter((topic) => topic.id !== mainTopicId)
+                                            .map((topic) => ({
+                                              value: String(topic.id),
+                                              label: topic.name,
+                                            }))}
+                                          value={activity.secondaryTopics.map((topic) =>
+                                            String(topic.id),
+                                          )}
+                                          onValueChange={(nextValues) =>
+                                            handleActivitySecondaryChange(activity.id, nextValues)
+                                          }
+                                          disabled={loadingTopics}
+                                          placeholder="Add secondary topics…"
+                                          searchPlaceholder="Search topics…"
+                                          emptyText="No other topics."
+                                          className="w-full"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {showTopicSaving && isUpdatingTopics && (
+                                    <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                      <Spinner size="xs" />
+                                      Saving…
+                                    </span>
+                                  )}
+                                </section>
 
-                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-                                    <IconSparkles className="size-3.5" aria-hidden="true" />
-                                  </span>
-                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    AI study buddy
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {(
-                                    [
-                                      {
-                                        key: "teach",
-                                        label: "Teach me",
-                                        icon: IconSchool,
-                                        enabled: activity.enableTeachMode,
-                                      },
-                                      {
-                                        key: "guide",
-                                        label: "Guide me",
-                                        icon: IconRoute,
-                                        enabled: activity.enableGuideMode,
-                                      },
-                                      {
-                                        key: "custom",
-                                        label: "Custom prompt",
-                                        icon: IconWand,
-                                        enabled: activity.enableCustomMode,
-                                      },
-                                    ] as const
-                                  ).map((mode) => {
-                                    const ModeIcon = mode.icon;
-                                    return (
-                                      <button
-                                        key={mode.key}
-                                        type="button"
-                                        disabled={isUpdatingModes}
-                                        aria-pressed={mode.enabled}
-                                        onClick={() =>
-                                          handleActivityModeChange(
-                                            activity.id,
-                                            mode.key,
-                                            !mode.enabled,
-                                          )
-                                        }
-                                        className={cn(
-                                          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                                          mode.enabled
-                                            ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
-                                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                                          isUpdatingModes && "opacity-60",
-                                        )}
-                                      >
-                                        <ModeIcon className="size-3.5" aria-hidden="true" />
-                                        {mode.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {showModeSaving && isUpdatingModes && (
-                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
-                                    <Spinner size="xs" />
-                                    Saving…
-                                  </span>
-                                )}
-                                {isCustomEnabled && (
-                                  <div className="mt-3 space-y-3">
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-custom-title`}
-                                        className="text-xs font-semibold text-foreground"
-                                      >
-                                        Button title (shown to students, max 20 chars)
-                                      </Label>
-                                      <Input
-                                        id={`activity-${activity.id}-custom-title`}
-                                        type="text"
-                                        value={
-                                          titleDrafts[activity.id] ??
-                                          activity.customPromptTitle ??
-                                          ""
-                                        }
-                                        onChange={(event) => {
-                                          const value = event.target.value.slice(0, 20);
-                                          setTitleDrafts((prev) => ({
-                                            ...prev,
-                                            [activity.id]: value,
-                                          }));
-                                          setPromptSaved((saved) => ({
-                                            ...saved,
-                                            [activity.id]: false,
-                                          }));
-                                        }}
-                                        placeholder="e.g., Explain simply"
-                                        maxLength={20}
-                                        disabled={isSavingPrompt}
-                                      />
-                                      <div className="text-[0.65rem] text-muted-foreground">
+                                <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                                      <IconSparkles className="size-3.5" aria-hidden="true" />
+                                    </span>
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                      AI study buddy
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(
+                                      [
                                         {
-                                          (
+                                          key: "teach",
+                                          label: "Teach me",
+                                          icon: IconSchool,
+                                          enabled: activity.enableTeachMode,
+                                        },
+                                        {
+                                          key: "guide",
+                                          label: "Guide me",
+                                          icon: IconRoute,
+                                          enabled: activity.enableGuideMode,
+                                        },
+                                        {
+                                          key: "custom",
+                                          label: "Custom prompt",
+                                          icon: IconWand,
+                                          enabled: activity.enableCustomMode,
+                                        },
+                                      ] as const
+                                    ).map((mode) => {
+                                      const ModeIcon = mode.icon;
+                                      return (
+                                        <button
+                                          key={mode.key}
+                                          type="button"
+                                          disabled={isUpdatingModes}
+                                          aria-pressed={mode.enabled}
+                                          onClick={() =>
+                                            handleActivityModeChange(
+                                              activity.id,
+                                              mode.key,
+                                              !mode.enabled,
+                                            )
+                                          }
+                                          className={cn(
+                                            "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                                            mode.enabled
+                                              ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                                              : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                            isUpdatingModes && "opacity-60",
+                                          )}
+                                        >
+                                          <ModeIcon className="size-3.5" aria-hidden="true" />
+                                          {mode.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {modeError && (
+                                    <p role="alert" className="text-[0.75rem] text-destructive">
+                                      {modeError}
+                                    </p>
+                                  )}
+                                  {showModeSaving && isUpdatingModes && (
+                                    <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
+                                      <Spinner size="xs" />
+                                      Saving…
+                                    </span>
+                                  )}
+                                  {isCustomEnabled && (
+                                    <div className="mt-3 space-y-3">
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-custom-title`}
+                                          className="text-xs font-semibold text-foreground"
+                                        >
+                                          Button title (shown to students, max 20 chars)
+                                        </Label>
+                                        <Input
+                                          id={`activity-${activity.id}-custom-title`}
+                                          type="text"
+                                          value={
                                             titleDrafts[activity.id] ??
                                             activity.customPromptTitle ??
                                             ""
-                                          ).length
-                                        }
-                                        /20 characters
-                                      </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                      <Label
-                                        htmlFor={`activity-${activity.id}-custom-prompt`}
-                                        className="text-xs font-semibold text-foreground"
-                                      >
-                                        Custom AI prompt
-                                      </Label>
-                                      <Textarea
-                                        id={`activity-${activity.id}-custom-prompt`}
-                                        value={promptDraft}
-                                        onChange={(event) =>
-                                          setPromptDrafts((prev) => {
+                                          }
+                                          onChange={(event) => {
+                                            const value = event.target.value.slice(0, 20);
+                                            setTitleDrafts((prev) => ({
+                                              ...prev,
+                                              [activity.id]: value,
+                                            }));
                                             setPromptSaved((saved) => ({
                                               ...saved,
                                               [activity.id]: false,
                                             }));
-                                            return {
-                                              ...prev,
-                                              [activity.id]: event.target.value,
-                                            };
-                                          })
-                                        }
-                                        placeholder="Write a custom prompt the AI should follow for this activity…"
-                                        rows={3}
-                                        disabled={isSavingPrompt}
-                                      />
-                                      <div className="text-[0.65rem] text-muted-foreground">
-                                        Tip: Use{" "}
-                                        <code className="rounded bg-muted px-1 text-foreground">
-                                          [INSERT TOPIC HERE]
-                                        </code>{" "}
-                                        and{" "}
-                                        <code className="rounded bg-muted px-1 text-foreground">
-                                          [ENTER KNOWLEDGE LEVEL]
-                                        </code>{" "}
-                                        as placeholders.
+                                          }}
+                                          placeholder="e.g., Explain simply"
+                                          maxLength={20}
+                                          disabled={isSavingPrompt}
+                                        />
+                                        <div className="text-[0.65rem] text-muted-foreground">
+                                          {
+                                            (
+                                              titleDrafts[activity.id] ??
+                                              activity.customPromptTitle ??
+                                              ""
+                                            ).length
+                                          }
+                                          /20 characters
+                                        </div>
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <Label
+                                          htmlFor={`activity-${activity.id}-custom-prompt`}
+                                          className="text-xs font-semibold text-foreground"
+                                        >
+                                          Custom AI prompt
+                                        </Label>
+                                        <Textarea
+                                          id={`activity-${activity.id}-custom-prompt`}
+                                          value={promptDraft}
+                                          onChange={(event) =>
+                                            setPromptDrafts((prev) => {
+                                              setPromptSaved((saved) => ({
+                                                ...saved,
+                                                [activity.id]: false,
+                                              }));
+                                              return {
+                                                ...prev,
+                                                [activity.id]: event.target.value,
+                                              };
+                                            })
+                                          }
+                                          placeholder="Write a custom prompt the AI should follow for this activity…"
+                                          rows={3}
+                                          disabled={isSavingPrompt}
+                                        />
+                                        <div className="text-[0.65rem] text-muted-foreground">
+                                          Tip: Use{" "}
+                                          <code className="rounded bg-muted px-1 text-foreground">
+                                            [INSERT TOPIC HERE]
+                                          </code>{" "}
+                                          and{" "}
+                                          <code className="rounded bg-muted px-1 text-foreground">
+                                            [ENTER KNOWLEDGE LEVEL]
+                                          </code>{" "}
+                                          as placeholders.
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          onClick={() => handleCustomPromptSave(activity)}
+                                          disabled={isSavingPrompt}
+                                        >
+                                          {isSavingPrompt
+                                            ? "Saving…"
+                                            : isPromptSaved
+                                              ? "Saved"
+                                              : "Save prompt"}
+                                        </Button>
+                                        {promptError && (
+                                          <span className="text-[0.75rem] text-destructive">
+                                            {promptError}
+                                          </span>
+                                        )}
+                                        {!promptError && isSavingPrompt && (
+                                          <span className="text-[0.75rem] text-primary-text">
+                                            Saving prompt…
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={() => handleCustomPromptSave(activity)}
-                                        disabled={isSavingPrompt}
-                                      >
-                                        {isSavingPrompt
-                                          ? "Saving…"
-                                          : isPromptSaved
-                                            ? "Saved"
-                                            : "Save prompt"}
-                                      </Button>
-                                      {promptError && (
-                                        <span className="text-[0.75rem] text-destructive">
-                                          {promptError}
-                                        </span>
-                                      )}
-                                      {!promptError && isSavingPrompt && (
-                                        <span className="text-[0.75rem] text-primary-text">
-                                          Saving prompt…
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </section>
-                            </div>
+                                  )}
+                                </section>
+                              </div>
+                            </PermissionGate>
                           </div>
                         </Card>
                       )}
@@ -1570,3 +1604,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     </CourseTopicsProvider>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

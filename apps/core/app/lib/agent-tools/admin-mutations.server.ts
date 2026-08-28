@@ -50,9 +50,17 @@ import {
   updateAdminCronSchedule,
   updateAdminPolicy,
 } from "./admin-platform.server";
+import type { ToolInput } from "./tool-input";
 
 type ToolError = { error: string; fields?: Record<string, string> };
-type MutationResult = Record<string, unknown> | ToolError;
+/**
+ * What a write tool hands back. The envelope fields (`dataSource`, `mutation`,
+ * `writeSucceeded`, `appliedAt`) are added by {@link mutationPayload} /
+ * {@link mutationFailure}; the body under them is the individual tool's own
+ * result object, so only its objectness is contractual here. Callers narrow
+ * with `"error" in result` rather than reading arbitrary keys.
+ */
+export type MutationResult = object | ToolError;
 
 export const ADMIN_WRITE_TOOL_NAMES = new Set([
   "createUser",
@@ -106,7 +114,7 @@ function requirePlatformAdmin(user: RbacUser): ToolError | null {
   return null;
 }
 
-function mutationPayload(data: Record<string, unknown>) {
+function mutationPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     mutation: true as const,
@@ -116,7 +124,7 @@ function mutationPayload(data: Record<string, unknown>) {
   };
 }
 
-function mutationFailure(error: ToolError & Record<string, unknown>) {
+function mutationFailure<T extends ToolError>(error: T) {
   return {
     dataSource: "database" as const,
     mutation: true as const,
@@ -171,7 +179,7 @@ export async function runAdminWriteTool(
   });
 
   if ("error" in result && result.error) {
-    return mutationFailure(result as ToolError & Record<string, unknown>);
+    return mutationFailure(result);
   }
   if (!succeeded) {
     return mutationFailure({ ...result, error: "WRITE_FAILED" });
@@ -189,7 +197,7 @@ export async function runConfirmedAdminWriteTool(
   actor: RbacUser,
   confirmed: boolean,
   run: () => Promise<MutationResult>,
-  payload: Record<string, unknown> = {},
+  payload: ToolInput = {},
   turnId: string | null = null,
 ): Promise<MutationResult> {
   const { registerWritePreview, consumeWritePreview } =
@@ -246,9 +254,8 @@ function mapEnrollmentResult(
     if (result.status === "409" && "error" in result) {
       return mutationFailure({
         error: result.error,
-        ...("currentInstructorCount" in result
-          ? { currentInstructorCount: result.currentInstructorCount }
-          : {}),
+        currentInstructorCount:
+          "currentInstructorCount" in result ? result.currentInstructorCount : undefined,
       });
     }
     if (result.status === "403" && "error" in result) {
@@ -326,7 +333,7 @@ export async function createAdminUser(
 export async function updateAdminUser(
   actor: RbacUser,
   userId: string,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -864,16 +871,16 @@ export async function linkAdminCanvasRoster(
   return mutationPayload(result);
 }
 
-function wrapPlatformResult(result: Record<string, unknown> | ToolError): MutationResult {
+function wrapPlatformResult<T extends object>(result: T | ToolError): MutationResult {
   if ("error" in result) {
-    return mutationFailure(result as ToolError & Record<string, unknown>);
+    return mutationFailure(result);
   }
   return mutationPayload(result);
 }
 
 export async function createAdminCourseMutation(
   actor: RbacUser,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await createAdminCourse(actor, input));
 }
@@ -881,7 +888,7 @@ export async function createAdminCourseMutation(
 export async function updateAdminCourseMutation(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await updateAdminCourse(actor, opts, input));
 }
@@ -910,7 +917,7 @@ export async function unpublishAdminCourseMutation(
 export async function updateAdminCourseRagSettingsMutation(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await updateAdminCourseRagSettings(actor, opts, input));
 }
@@ -943,7 +950,7 @@ export async function deleteAdminCourseMaterialMutation(
 export async function updateAdminCourseEmbeddingSettingsMutation(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await updateAdminCourseEmbeddingSettings(actor, opts, input));
 }
@@ -1005,7 +1012,7 @@ export async function updateAdminPolicyMutation(
 
 export async function createAdminAiProviderMutation(
   actor: RbacUser,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await createAdminAiProvider(actor, input));
 }
@@ -1013,7 +1020,7 @@ export async function createAdminAiProviderMutation(
 export async function updateAdminAiProviderMutation(
   actor: RbacUser,
   providerId: string,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await updateAdminAiProvider(actor, providerId, input));
 }
@@ -1027,7 +1034,7 @@ export async function deleteAdminAiProviderMutation(
 
 export async function createAdminAiModelMutation(
   actor: RbacUser,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await createAdminAiModel(actor, input));
 }
@@ -1035,7 +1042,7 @@ export async function createAdminAiModelMutation(
 export async function updateAdminAiModelMutation(
   actor: RbacUser,
   modelId: string,
-  input: Record<string, unknown>,
+  input: ToolInput,
 ): Promise<MutationResult> {
   return wrapPlatformResult(await updateAdminAiModel(actor, modelId, input));
 }

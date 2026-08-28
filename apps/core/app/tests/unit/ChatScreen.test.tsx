@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
@@ -165,6 +166,9 @@ const autoRoutingData: ChatBaseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // append returns a Promise in the real AI SDK; the chip handler chains
+  // .finally() on it to clear its in-flight guard, so the mock must resolve.
+  appendMock.mockResolvedValue(undefined);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -299,6 +303,9 @@ function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
   };
 }
 
+/** The slice of `Response` the component under test reads off a mocked fetch. */
+type FetchResponseStub = { ok?: boolean; status?: number; json: () => Promise<JsonValue> };
+
 describe("ChatScreen — header", () => {
   it("binds its provider-key store to the authenticated loader user", () => {
     renderChatScreen();
@@ -309,7 +316,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
-  it("submits suggested prompts through the shared submit handler", async () => {
+  it("submits a suggested prompt directly via append, not through the input round-trip (#1644)", async () => {
     renderChatScreen();
 
     fireEvent.click(
@@ -319,22 +326,64 @@ describe("ChatScreen — header", () => {
     );
 
     await waitFor(() => {
-      expect(handleInputChangeMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          target: expect.objectContaining({
-            value: "Summarize this whole chat",
-          }),
-        }),
-      );
+      // The known prompt string is submitted directly; no fabricated input
+      // event and no rAF-deferred form submit (which raced with typed input).
+      expect(appendMock).toHaveBeenCalledWith({
+        role: "user",
+        content: "Summarize this whole chat",
+      });
 
       expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: "task_initiation",
         }),
       );
-
-      expect(handleSubmitMock).toHaveBeenCalledTimes(1);
     });
+
+    expect(handleInputChangeMock).not.toHaveBeenCalled();
+    expect(handleSubmitMock).not.toHaveBeenCalled();
+  });
+
+  it("clears a typed composer draft when a suggested prompt is submitted (#1648)", async () => {
+    // AI SDK v4's `append` (unlike the old `handleSubmit` path) does not clear
+    // the composer. A draft the user typed before clicking a chip must be
+    // cleared as part of the chip submission — otherwise it lingers and the
+    // next Send fires the stale draft as an unintended extra turn.
+    renderChatScreen();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Select suggested prompt",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(appendMock).toHaveBeenCalledTimes(1);
+    });
+    expect(setChatInput).toHaveBeenCalledWith("");
+  });
+
+  it("ignores a second suggested-prompt click while the first is in flight (#1644)", async () => {
+    // append resolves only when we let it, so the guard window stays open.
+    let releaseAppend: () => void = () => {};
+    appendMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseAppend = resolve;
+        }),
+    );
+
+    renderChatScreen();
+    const chip = screen.getByRole("button", { name: "Select suggested prompt" });
+
+    fireEvent.click(chip);
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(appendMock).toHaveBeenCalledTimes(1);
+    });
+
+    releaseAppend();
   });
   it("hydrates routed model ids from the stored transcript", () => {
     const transcript = makePersistedTranscript();
@@ -369,7 +418,6 @@ describe("ChatScreen — header", () => {
           content: "Stored partial answer",
           metadata: {
             resolvedModelId: "openai:gpt-4",
-            finishReason: "length",
             hitLongOutputCap: true,
           },
         },
@@ -388,7 +436,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     act(() => {
@@ -408,7 +456,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>, details?: { finishReason?: string }) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -432,7 +480,7 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
 
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>, details?: { finishReason?: string }) => void;
+      onFinish: (message: JsonObject, details?: { finishReason?: string }) => void;
     };
 
     act(() => {
@@ -460,7 +508,7 @@ describe("ChatScreen — header", () => {
 
     let latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
     const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
-      onFinish: (message: Record<string, unknown>) => void;
+      onFinish: (message: JsonObject) => void;
     };
 
     await act(async () => {
@@ -587,13 +635,11 @@ describe("ChatScreen — header", () => {
   });
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
-    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
+    let resolveFetch: (value: FetchResponseStub) => void;
+    const fetchPromise = new Promise<FetchResponseStub>((resolve) => {
       resolveFetch = resolve;
     });
-    const fetchSpy = vi
-      .spyOn(global, "fetch")
-      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+    const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(fetchPromise as Promise<Response>);
 
     const { router } = renderChatScreen(null, autoRoutingData);
 
@@ -710,7 +756,7 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
   };
 
   it("calls the regenerateOnly endpoint and swaps in the new content when toggled on", async () => {
-    let resolveFetch: (value: unknown) => void;
+    let resolveFetch: (value: FetchResponseStub) => void;
     const fetchPromise = new Promise((resolve) => {
       resolveFetch = resolve;
     });

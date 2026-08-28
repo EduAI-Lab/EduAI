@@ -130,7 +130,7 @@ describe("requireChatSessionUser", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
     const thrown = await requireChatSessionUser(new Request("http://localhost/chat/chat-1")).catch(
-      (error: unknown) => error,
+      (cause: unknown) => cause,
     );
 
     expect(thrown).toBeInstanceOf(Response);
@@ -231,7 +231,7 @@ describe("loadChatBaseDataForUser", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
     const thrown = await loadChatBaseData(new Request("http://localhost/chat")).catch(
-      (error: unknown) => error,
+      (cause: unknown) => cause,
     );
 
     expect(thrown).toBeInstanceOf(Response);
@@ -252,7 +252,7 @@ describe("loadChatBaseDataForUser", () => {
   });
 
   it("resolves the session before issuing any base-data read", async () => {
-    let releaseSession: ((value: unknown) => void) | undefined;
+    let releaseSession: ((session: { user: { id: string } } | null) => void) | undefined;
     vi.mocked(auth.api.getSession).mockReturnValue(
       new Promise((resolve) => {
         releaseSession = resolve;
