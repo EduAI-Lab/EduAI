@@ -2411,24 +2411,33 @@ ${buildEmptyCourseRagBlock()}`;
     const abortStreamFromRequest = () => streamAbortController.abort();
     if (request.signal.aborted) abortStreamFromRequest();
     else request.signal.addEventListener("abort", abortStreamFromRequest, { once: true });
+    let unregisterCancellation: (() => void) | undefined;
+    const cleanupStreamCancellation = () => {
+      unregisterCancellation?.();
+      unregisterCancellation = undefined;
+      request.signal.removeEventListener("abort", abortStreamFromRequest);
+    };
+    if (activeRequestId) {
+      unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
+        streamAbortController.abort();
+      });
+    }
+    const releaseAdmission = (keepCancellation = false) => {
+      if (admissionRelease) {
+        admissionRelease();
+        admissionRelease = null;
+      }
+      if (!keepCancellation) cleanupStreamCancellation();
+    };
     let admissionWaitedMs = 0;
     if (needsAdmission) {
       try {
         const slot = await acquireAiAdmission(streamAbortController.signal);
-        let unregisterCancellation: (() => void) | undefined;
-        admissionRelease = () => {
-          unregisterCancellation?.();
-          request.signal.removeEventListener("abort", abortStreamFromRequest);
-          slot.release();
-        };
-        if (activeRequestId) {
-          unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
-            streamAbortController.abort();
-          });
-        }
+        admissionRelease = slot.release;
         admissionWaitedMs = slot.waitedMs;
       } catch (err) {
         if (isClientAbort(err, streamAbortController.signal)) {
+          releaseAdmission();
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
@@ -2442,6 +2451,7 @@ ${buildEmptyCourseRagBlock()}`;
               serverId: overflow.serverId,
             });
           } else {
+            releaseAdmission();
             return new Response(
               JSON.stringify({
                 error: "Server busy — too many concurrent AI requests. Try again shortly.",
@@ -2454,16 +2464,11 @@ ${buildEmptyCourseRagBlock()}`;
             );
           }
         } else {
+          releaseAdmission();
           throw err;
         }
       }
     }
-    const releaseAdmission = () => {
-      if (admissionRelease) {
-        admissionRelease();
-        admissionRelease = null;
-      }
-    };
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
@@ -2698,7 +2703,10 @@ ${buildEmptyCourseRagBlock()}`;
             }
             applyBedrockOverflow(overflow);
             shouldProbeFleetStream = false;
-            releaseAdmission();
+            // The local slot is no longer needed, but the request-specific
+            // cancellation handle must survive while the Bedrock fallback
+            // stream is running.
+            releaseAdmission(true);
             chatApiTrace("bedrock overflow after fleet exhausted", {
               resolvedModelId,
               serverId: overflow.serverId,
@@ -2938,6 +2946,7 @@ ${buildEmptyCourseRagBlock()}`;
       const acquiredAdmissionRelease = admissionRelease;
       const release = () => {
         acquiredAdmissionRelease?.();
+        cleanupStreamCancellation();
       };
       admissionRelease = null;
       const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {

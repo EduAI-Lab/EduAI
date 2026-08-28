@@ -93,24 +93,41 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
+import { action as cancelAction } from "~/routes/api/chat.cancel";
 import { auth } from "~/lib/auth/server";
+import { getAiAdmissionStats, resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: RouteRequestBody, signal?: AbortSignal) {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal, requestId?: string) {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (requestId) headers.set("X-EduAI-Request-Id", requestId);
+
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
       signal,
     }),
     params: {},
     context: {} as never,
   } as any;
+}
+
+function makeCancelRequest(requestId: string) {
+  return {
+    request: new Request("http://localhost/api/chat/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }),
+    }),
+    params: {},
+    context: {} as never,
+  } as never;
 }
 
 function baseBody(overrides: JsonObject = {}) {
@@ -127,6 +144,7 @@ function baseBody(overrides: JsonObject = {}) {
 
 function streamResult() {
   return {
+    toDataStreamResponse: vi.fn(() => new Response("streamed answer")),
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve("Partial answer."),
     usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -137,6 +155,22 @@ function streamResult() {
       id: "resp-1",
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
+  } as never;
+}
+
+function heldStreamingResult() {
+  return {
+    ...(streamResult() as object),
+    toDataStreamResponse: vi.fn(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("held answer"));
+            },
+          }),
+        ),
+    ),
   } as never;
 }
 
@@ -219,6 +253,63 @@ describe("Chat API client abort (#267)", () => {
     resolveStream?.(streamResult());
 
     await actionPromise;
+  });
+
+  it("cancels a registered stream through the chat cancel route", async () => {
+    const requestId = "9f1ac5c9-2abf-4b1e-b2f9-dbc1697e0aac";
+    let resolveStream: ((value: ReturnType<typeof streamResult>) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    vi.mocked(streamText).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+          markStarted?.();
+        }) as never,
+    );
+
+    const chatAction = action(makeRequest(baseBody({ streaming: true }), undefined, requestId));
+    await started;
+    expect(lastAbortSignal()?.aborted).toBe(false);
+
+    const cancelResponse = await cancelAction(makeCancelRequest(requestId));
+    expect(cancelResponse.status).toBe(204);
+    expect(lastAbortSignal()?.aborted).toBe(true);
+
+    resolveStream?.(streamResult());
+    await chatAction;
+  });
+
+  it("cancels a request while it is queued for an admission slot", async () => {
+    const previousMaxInflight = process.env.AI_MAX_INFLIGHT;
+    process.env.AI_MAX_INFLIGHT = "1";
+    resetAiAdmission();
+    vi.mocked(streamText).mockImplementation(() => heldStreamingResult());
+
+    const holderId = "9f1ac5c9-2abf-4b1e-b2f9-dbc1697e0aac";
+    const queuedId = "4d0c8f45-7a5f-4f12-9a73-2f719ea4cc93";
+    try {
+      await action(makeRequest(baseBody({ streaming: true }), undefined, holderId));
+      await vi.waitFor(() => expect(getAiAdmissionStats().inflight).toBe(1));
+
+      const queuedAction = action(makeRequest(baseBody({ streaming: true }), undefined, queuedId));
+      await vi.waitFor(() => expect(getAiAdmissionStats().queued).toBe(1));
+
+      const cancelResponse = await cancelAction(makeCancelRequest(queuedId));
+      expect(cancelResponse.status).toBe(204);
+      await expect(queuedAction).resolves.toMatchObject({ status: 499 });
+      expect(getAiAdmissionStats().queued).toBe(0);
+
+      const holderCancelResponse = await cancelAction(makeCancelRequest(holderId));
+      expect(holderCancelResponse.status).toBe(204);
+      await vi.waitFor(() => expect(getAiAdmissionStats().inflight).toBe(0));
+    } finally {
+      resetAiAdmission();
+      if (previousMaxInflight === undefined) delete process.env.AI_MAX_INFLIGHT;
+      else process.env.AI_MAX_INFLIGHT = previousMaxInflight;
+    }
   });
 
   it("returns 499 when streamText throws AbortError", async () => {
