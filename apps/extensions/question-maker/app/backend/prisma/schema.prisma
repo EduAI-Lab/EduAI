@@ -190,6 +190,9 @@ model Variants {
   sectionLinks              SectionVariants[]
   selectionCursorLastPicked VariantSelectionCursor[]
 
+  // The section-delete orphan sweep filters on `assessmentId` alone, so this FK needs its
+  // own index or that update degrades to a sequential scan over the whole question bank.
+  @@index([assessmentId])
   @@map("variants")
 }
 

@@ -182,6 +182,16 @@ describeDb('assessmentSectionService (integration)', () => {
       expect(reloadedShared.assessmentId).toBe(assessmentId);
       expect(reloadedOnly.assessmentId).toBeNull();
     });
+
+    it('has an index on variants.assessment_id, which the sweep filters on alone', async () => {
+      // Without this the assessment-wide clear degrades to a sequential scan over the whole
+      // question bank, which would undo the point of #1371 on the delete path.
+      const rows = await prisma.$queryRaw`
+        SELECT indexdef FROM pg_indexes
+        WHERE tablename = 'variants' AND indexdef LIKE '%(assessment_id%'
+      `;
+      expect(rows.length).toBeGreaterThan(0);
+    });
   });
 
   describe('checkQuestionInAssessments / removeQuestionFromAllSections', () => {

@@ -196,6 +196,9 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     expect(results).toHaveLength(0);
     expect(errors).toHaveLength(1);
     expect(errors[0].questionId).toBe(10);
+    // Reported distinctly from the "id not visible for this course" miss, so a caller
+    // reading the response can tell a stale snapshot apart from a bad id.
+    expect(errors[0].error).toMatch(/removed during generation/i);
   });
 
   it('calls generateQuestions once per variantsToAdd iteration', async () => {

@@ -120,21 +120,25 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
 };
 
 /**
- * Clears `assessmentId` on every one of `variantIds` that no longer has a section link
- * inside `assessmentId`. The link check and the write are one statement, so a variant
- * placed into another section of the same assessment concurrently can't be unlinked. The
+ * Clears `assessmentId` on every variant that still points at `assessmentId` but no longer
+ * has a section link inside it. The link check and the write are one statement, so a variant
+ * placed into another section of the same assessment concurrently can't be unlinked, and the
  * `assessmentId` predicate carries the per-variant guard, so no read is needed first.
- * `client` is `prisma` or a transaction client.
+ * `variantIds` narrows the sweep to ids the caller already holds; omit it to cover every
+ * variant the assessment claims. `client` is `prisma` or a transaction client.
  */
-const clearOrphanedAssessmentLinks = (client, variantIds, assessmentId) =>
-  client.variants.updateMany({
-    where: {
-      id: { in: variantIds },
-      assessmentId,
-      sectionLinks: { none: { section: { assessmentId } } }
-    },
-    data: { assessmentId: null }
-  });
+const clearOrphanedAssessmentLinks = (client, assessmentId, variantIds = null) => {
+  const where = {
+    assessmentId,
+    sectionLinks: { none: { section: { assessmentId } } }
+  };
+
+  if (variantIds) {
+    where.id = { in: variantIds };
+  }
+
+  return client.variants.updateMany({ where, data: { assessmentId: null } });
+};
 
 /** Deletes a section and clears variant assessment links if they are no longer referenced. */
 export const deleteAssessmentSection = async (sectionId, userId, courseId = null) => {
@@ -142,23 +146,21 @@ export const deleteAssessmentSection = async (sectionId, userId, courseId = null
   const section = await findSectionForUser(sectionId, userId, courseId);
   const assessmentId = section.assessment.id;
 
-  // Get all variants in this section
-  const sectionVariants = await prisma.sectionVariants.findMany({
-    where: { sectionId },
-    select: { variantId: true }
-  });
-
-  const variantIds = sectionVariants.map(sv => sv.variantId);
-
   // Delete the section (this will cascade delete SectionVariants), then clear the
   // assessment link on whatever that orphaned. Both statements run in one transaction so
   // a failure after the delete can't leave variants pointing at an assessment that no
   // longer places them, with no UI path left to clear the stale link.
+  //
+  // The clear deliberately takes no id list. Reading this section's variants up front and
+  // sweeping only those ids would miss a variant linked into the section between the read
+  // and the delete: the cascade removes its link but the id never reaches the sweep, so it
+  // keeps a stale `assessmentId`. Moving that read inside the transaction would not help,
+  // since these run at the connection's default READ COMMITTED isolation and each statement
+  // takes a fresh snapshot. Sweeping the assessment instead makes the predicate the
+  // invariant itself, so the window closes regardless of when a link appeared.
   await prisma.$transaction(async (tx) => {
     await tx.assessmentSections.delete({ where: { id: section.id } });
-    if (variantIds.length > 0) {
-      await clearOrphanedAssessmentLinks(tx, variantIds, assessmentId);
-    }
+    await clearOrphanedAssessmentLinks(tx, assessmentId);
   });
 
   return true;
@@ -221,17 +223,23 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
   variantId = Number(variantId);
   const section = await findSectionForUser(sectionId, userId, courseId);
 
-  const { count: deleted } = await prisma.sectionVariants.deleteMany({
-    where: { sectionId, variantId }
+  // Unlink and clear in one transaction, matching `deleteAssessmentSection`: a failure
+  // between the two would leave the link row gone and `assessmentId` still set, which is
+  // the same orphaned pointer with no UI path to clear it. The throw rolls the delete back.
+  await prisma.$transaction(async (tx) => {
+    const { count: deleted } = await tx.sectionVariants.deleteMany({
+      where: { sectionId, variantId }
+    });
+
+    if (!deleted) {
+      throw new Error('Variant not found in section');
+    }
+
+    // If the variant is no longer in any section of this assessment, clear its assessmentId.
+    // Shared with `deleteAssessmentSection` so both paths apply the same orphan rule. The id
+    // list is the caller's own argument rather than a read, so narrowing is safe here.
+    await clearOrphanedAssessmentLinks(tx, section.assessment.id, [variantId]);
   });
-
-  if (!deleted) {
-    throw new Error('Variant not found in section');
-  }
-
-  // If the variant is no longer in any section of this assessment, clear its assessmentId.
-  // Shared with `deleteAssessmentSection` so both paths apply the same orphan rule.
-  await clearOrphanedAssessmentLinks(prisma, [variantId], section.assessment.id);
 
   return true;
 };

@@ -699,7 +699,10 @@ export async function generateBankVariantsForQuestions(userId, params) {
       data: { isDraft: false }
     });
     if (promoted === 0) {
-      errors.push({ questionId: qid, error: 'Question not found or has no variants' });
+      // Distinct from the miss above: the question resolved fine, its primary variant was
+      // deleted mid-batch. Same shape of failure, different cause, so keep the two
+      // separable in the response and in logs.
+      errors.push({ questionId: qid, error: 'Primary variant was removed during generation' });
       continue;
     }
 

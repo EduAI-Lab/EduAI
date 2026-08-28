@@ -2,8 +2,9 @@
  * deleteAssessmentSection — #1371 replaced the per-variant `findUnique` + `count` + update
  * with one `updateMany` whose where clause carries the guards. These cover the guards that
  * moved into that statement: the assessment scope that used to be a JS comparison, the
- * "still linked elsewhere" check, and the ordering constraint that the clear runs inside the
- * same transaction as the delete.
+ * "still linked elsewhere" check, the ordering constraint that the clear runs inside the
+ * same transaction as the delete, and that the sweep is not narrowed by an id list read
+ * before the delete (which would miss a variant linked in during that window).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,22 +66,15 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
   });
 
   it('clears the assessment link only on variants no longer placed in that assessment', async () => {
-    sectionVariantsFindMany.mockResolvedValue([{ variantId: 21 }, { variantId: 22 }]);
-
     await expect(deleteAssessmentSection('5', 42)).resolves.toBe(true);
 
-    expect(sectionVariantsFindMany).toHaveBeenCalledWith({
-      where: { sectionId: 5 },
-      select: { variantId: true },
-    });
     expect(sectionDelete).toHaveBeenCalledWith({ where: { id: 5 } });
 
-    // The per-variant guards all live in this one where clause now: the ids from the
-    // deleted section, the assessment scope, and "has no surviving link in it".
+    // Both guards live in this one where clause now: the assessment scope, and "has no
+    // surviving link in it".
     expect(variantsUpdateMany).toHaveBeenCalledTimes(1);
     expect(variantsUpdateMany).toHaveBeenCalledWith({
       where: {
-        id: { in: [21, 22] },
         assessmentId: 10,
         sectionLinks: { none: { section: { assessmentId: 10 } } },
       },
@@ -88,19 +82,21 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
     });
   });
 
-  it('clears after the delete, so the cascade has already removed this section links', async () => {
-    sectionVariantsFindMany.mockResolvedValue([{ variantId: 21 }]);
+  it('sweeps the assessment rather than an id list read before the delete', async () => {
+    await deleteAssessmentSection(5, 42);
 
+    // Collecting this section's variant ids up front and sweeping only those would miss a
+    // variant linked into the section between that read and the delete: the cascade drops
+    // its link but the id never reaches the sweep, leaving a stale `assessmentId`. The
+    // read must not come back, and the where clause must carry no `id` filter.
+    expect(sectionVariantsFindMany).not.toHaveBeenCalled();
+    expect(variantsUpdateMany.mock.calls[0][0].where).not.toHaveProperty('id');
+  });
+
+  it('clears after the delete, so the cascade has already removed this section links', async () => {
     await deleteAssessmentSection(5, 42);
 
     expect(callOrder).toEqual(['delete', 'updateMany']);
-  });
-
-  it('skips the clear entirely when the section held no variants', async () => {
-    await deleteAssessmentSection(5, 42);
-
-    expect(sectionDelete).toHaveBeenCalledTimes(1);
-    expect(variantsUpdateMany).not.toHaveBeenCalled();
   });
 
   it('rejects a section in a course the route was not authorized for', async () => {
@@ -115,6 +111,7 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
 
     await expect(deleteAssessmentSection(5, 42)).rejects.toThrow('Section not found');
 
-    expect(sectionVariantsFindMany).not.toHaveBeenCalled();
+    expect(sectionDelete).not.toHaveBeenCalled();
+    expect(variantsUpdateMany).not.toHaveBeenCalled();
   });
 });

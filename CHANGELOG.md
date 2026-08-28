@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
+- [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query, the section-delete and variant-unlink paths made transactional, and a new index on `variants.assessment_id` keeping the orphan sweep off a sequential scan. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
 
 ## [Week 14 - August 3-9, 2026]
 
