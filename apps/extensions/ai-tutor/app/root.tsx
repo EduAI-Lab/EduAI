@@ -13,6 +13,7 @@ import { AuthProvider } from "~/hooks/useLocalUser";
 import { TourProvider } from "~/components/TourProvider";
 import { BugReportProvider } from "~/components/bug-report/BugReportProvider";
 import { AssistiveModeProvider } from "~/components/settings/assistive-mode";
+import { UiPreferencesProvider } from "~/components/settings/ui-preferences";
 // Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
 // (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
 // even one named member from it forces Vite dev to crawl and transform the
@@ -65,8 +66,10 @@ export default function App() {
       <BugReportProvider>
         <TourProvider>
           <AssistiveModeProvider>
-            <ThemeSyncInitializer />
-            <Outlet />
+            <UiPreferencesProvider>
+              <ThemeSyncInitializer />
+              <Outlet />
+            </UiPreferencesProvider>
           </AssistiveModeProvider>
         </TourProvider>
       </BugReportProvider>

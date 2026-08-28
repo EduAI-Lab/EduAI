@@ -8,9 +8,10 @@ import {
 } from "~/lib/canvas/guards.server";
 
 describe("canManageCanvasIntegration", () => {
-  it("allows instructors and admins", () => {
+  it("allows instructors, admins, and unit admins", () => {
     expect(canManageCanvasIntegration("INSTRUCTOR")).toBe(true);
     expect(canManageCanvasIntegration("ADMIN")).toBe(true);
+    expect(canManageCanvasIntegration("UNIT_ADMIN")).toBe(true);
   });
 
   it("denies students and TAs", () => {
