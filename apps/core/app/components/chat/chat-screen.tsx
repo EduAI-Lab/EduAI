@@ -353,11 +353,27 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     // #487: send only the latest turn to the server, not the full history.
     // Spreads requestBody (carrying the stable message id from
     // sendExtraMessageFields) so dedup + latest-turn-only both hold.
-    experimental_prepareRequestBody: ({ messages, requestBody }) => ({
-      ...(requestBody ?? requestMetadata),
-      chatMode: "learning",
-      messages: messages.slice(-1),
-    }),
+    experimental_prepareRequestBody: ({ messages, requestBody }) => {
+      // Capture the Assist mode actually being sent right here, at dispatch
+      // time — not in onResponse, which only fires once response headers
+      // arrive (well after send, and for every dispatch path including
+      // handleContinue's direct `append()`, which never goes through
+      // onSubmit). Unlike the model selector, the Assist toggle is NOT
+      // disabled while a request is in flight (chat-input.tsx only disables
+      // it for assistBusy/disabledReason), so a user can flip it mid-flight;
+      // capturing later would attribute the in-flight message to whatever
+      // Assist was set to when headers arrived instead of when it was sent.
+      // requestBody (a per-call override) is not used at any call site in
+      // this file, so requestMetadata — this render's closure, i.e. the
+      // Assist value in effect right now — is what's actually sent (#1671 review).
+      pendingAdhdAssistRef.current = requestMetadata.adhdAssist;
+      setStreamingAdhdAssist(requestMetadata.adhdAssist);
+      return {
+        ...(requestBody ?? requestMetadata),
+        chatMode: "learning",
+        messages: messages.slice(-1),
+      };
+    },
     onResponse: async (response) => {
       const routedHeader = response.headers.get("X-Routed-Model")?.trim();
       const routed = routedHeader && routedHeader.length > 0 ? routedHeader : null;
@@ -368,10 +384,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
       pendingWasAutoRoutedRef.current = wasAutoRouted;
       setStreamingWasAutoRouted(wasAutoRouted);
-      // Assist is disabled while a request is in flight, so this still
-      // reflects what was on when the request was sent (#1671).
-      pendingAdhdAssistRef.current = adhdAssist;
-      setStreamingAdhdAssist(adhdAssist);
 
       await logChatApiResponse(response, "learning-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");

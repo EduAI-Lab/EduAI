@@ -689,6 +689,56 @@ describe("ChatScreen — header", () => {
   });
 });
 
+describe("ChatScreen — Assist toggle race during an in-flight request (#1671 review)", () => {
+  it("attributes the in-flight message to the Assist value captured at dispatch, not a mid-flight toggle", async () => {
+    renderChatScreen();
+
+    // Bound once, mirroring the real chat hook keeping a request's callbacks
+    // stable for the lifetime of that request (see the Focus Mode #1244
+    // tests above for the same closure-staleness pattern).
+    const initialOptions = captureUseChatOptions.mock.calls[0][0] as {
+      experimental_prepareRequestBody: (args: { messages: unknown[]; requestBody?: unknown }) => {
+        adhdAssist?: boolean;
+      };
+      onResponse: (response: Response) => Promise<void>;
+      onFinish: (message: { id: string; role: string }) => void;
+    };
+
+    // Assist is OFF at the moment the request body is actually prepared/sent.
+    act(() => {
+      const body = initialOptions.experimental_prepareRequestBody({
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(body.adhdAssist).toBe(false);
+    });
+
+    // The Assist toggle is not disabled while a request is in flight (see
+    // chat-input.tsx), so a user really can flip it before the response
+    // arrives — this mirrors that.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+    });
+    expect(captureCourseViewProps.mock.lastCall?.[0].adhdAssist).toBe(true);
+
+    await act(async () => {
+      await initialOptions.onResponse(new Response(null, { headers: {} }));
+    });
+
+    // The streaming bubble must still reflect what was sent (OFF), not the
+    // live toggle that changed after dispatch.
+    expect(captureCourseViewProps.mock.lastCall?.[0].streamingAdhdAssist).toBe(false);
+
+    act(() => {
+      initialOptions.onFinish({ id: "assistant-race", role: "assistant" });
+    });
+
+    // And the persisted per-message record must match what the request was
+    // actually sent with, not the mid-flight toggle value.
+    const finalProps = captureCourseViewProps.mock.lastCall?.[0];
+    expect(finalProps.adhdAssistByMessageId["assistant-race"]).toBe(false);
+  });
+});
+
 describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
   const transcriptWithAssistantReply: ChatTranscript = {
     chat: {

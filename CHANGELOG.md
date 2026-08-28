@@ -23,7 +23,7 @@
 
 ### Fixed
 
-- [core] fix: Toggling the Assist switch mid-conversation was retroactively reformatting every earlier assistant message in the transcript (Step-ladder/diagram/TLDR reorder), not just new ones — `ChatConversationLayout` rendered every message with the live toggle instead of the mode it was actually sent under. Each assistant message now records the Assist mode in effect when it was generated (mirroring the #829 `wasAutoRouted` per-message pattern), and the layout reads that per-message value instead of the live toggle, falling back to it only for legacy messages with no recorded value. Closes #1671. (@Ayyhab, 2026-08-26) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] fix: Toggling the Assist switch mid-conversation was retroactively reformatting every earlier assistant message in the transcript (Step-ladder/diagram/TLDR reorder), not just new ones — `ChatConversationLayout` rendered every message with the live toggle instead of the mode it was actually sent under. Each assistant message now records the Assist mode in effect when it was generated (mirroring the #829 `wasAutoRouted` per-message pattern), and the layout reads that per-message value instead of the live toggle, falling back to it only for legacy messages with no recorded value. Closes #1671. (@Ayyhab, 2026-08-26) — [#1678](https://github.com/EduAI-Lab/EduAI/pull/1678)
 
 ## [Week 17 — August 17–23, 2026]
 
