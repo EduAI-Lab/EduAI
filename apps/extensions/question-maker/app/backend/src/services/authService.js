@@ -38,20 +38,26 @@ const knownUserIds = new Map();
  * /auth/me). Never updates an existing row — only the initial values matter.
  *
  * Because the upsert never updates, repeating it once the row exists is a
- * write that changes nothing, on every authenticated request. Known user ids
- * are memoized for `USER_ROW_CACHE_TTL_MS` so the steady state does no DB work
- * at all. The TTL exists so an out-of-band row deletion self-heals rather than
- * requiring a restart; `forgetUserRow` shortens that window to the next request
- * when a FK violation proves the row is already gone.
+ * write that changes nothing. Known user ids are memoized for
+ * `USER_ROW_CACHE_TTL_MS` on side-effect-free read requests so those requests do
+ * no DB work in the steady state. Mutating requests bypass the memo and re-run
+ * the upsert before their FK-dependent writes, so an out-of-band row deletion
+ * cannot lose the first write. The TTL still lets read traffic self-heal after
+ * a deletion, and `forgetUserRow` shortens that window when a FK violation
+ * proves the row is already gone.
  *
  * @param {{ id: string, email: string, name?: string }} coreUser
+ * @param {{ skipCache?: boolean }} [options]
  * @returns {Promise<void>} nothing — the local row is written for FK integrity
  *   and never read back, and on a cache hit no row is fetched at all.
  */
-export async function findOrCreateUser(coreUser) {
+export async function findOrCreateUser(coreUser, { skipCache = false } = {}) {
   const now = Date.now();
   const expiresAt = knownUserIds.get(coreUser.id);
-  if (expiresAt !== undefined && expiresAt > now) return;
+  if (!skipCache && expiresAt !== undefined && expiresAt > now) return;
+
+  // A forced write must not leave a stale hit behind if the upsert fails.
+  if (skipCache) knownUserIds.delete(coreUser.id);
 
   await prisma.user.upsert({
     where: { id: coreUser.id },

@@ -81,7 +81,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 The upload dialog mirrors the server's 120,000-character OCR cap and rejects
 PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
-| `USER_ROW_CACHE_TTL_MS`, `USER_ROW_CACHE_MAX` | No | How long (ms, default `900000`) `requireAuth` remembers that a user's local FK row exists before re-running the upsert, and the max ids held per process (default `5000`). Set either to `0` to disable the cache and upsert on every request (#1388) |
+| `USER_ROW_CACHE_TTL_MS`, `USER_ROW_CACHE_MAX` | No | How long (ms, default `900000`) `requireAuth` remembers that a user's local FK row exists for side-effect-free reads, and the max ids held per process (default `5000`). Mutating requests and course/question mirror reads always re-run the upsert before dependent writes; set either to `0` to disable read caching (#1388) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
 | `VITE_API_URL` | No | API origin; defaults to same-origin `/api` paths when unset |

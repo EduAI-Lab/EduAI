@@ -38,8 +38,9 @@ function makeRes() {
 function makeApiReq(overrides = {}) {
   return {
     headers: {},
-    path: "/api/questions",
-    originalUrl: "/api/questions",
+    method: "GET",
+    path: "/api/assessments/1",
+    originalUrl: "/api/assessments/1",
     ...overrides,
   };
 }
@@ -129,6 +130,35 @@ describe("requireAuth", () => {
 
     expect(findOrCreateUser).toHaveBeenCalledWith(
       expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: false },
+    );
+  });
+
+  it("bypasses the user-row cache before mutating and side-effecting read handlers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+      }),
+    );
+
+    await requireAuth(makeApiReq({ method: "POST", path: "/api/questions" }), makeRes(), next);
+    await requireAuth(
+      makeApiReq({ path: "/api/course", originalUrl: "/api/course" }),
+      makeRes(),
+      next,
+    );
+
+    expect(findOrCreateUser).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: true },
+    );
+    expect(findOrCreateUser).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: true },
     );
   });
 

@@ -13,6 +13,20 @@ import { isIP } from "node:net";
 
 const DEFAULT_CORE_AUTH_TIMEOUT_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
+const CACHE_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const CACHE_SIDE_EFFECT_PATH_PREFIXES = ["/api/course", "/api/questions"];
+
+function shouldSkipUserRowCache(req) {
+  if (!CACHE_SAFE_METHODS.has(req.method)) return true;
+  const path =
+    typeof req.originalUrl === "string"
+      ? req.originalUrl.split("?", 1)[0]
+      : `${req.baseUrl ?? ""}${req.path ?? ""}`;
+  if (!path) return true;
+  return CACHE_SIDE_EFFECT_PATH_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
 
 class CoreAuthTimeoutError extends Error {
   constructor(timeoutMs, options) {
@@ -173,8 +187,13 @@ export async function requireAuth(req, res, next) {
 
   try {
     // FK integrity only, and memoized per user — `req.user` below is the Core
-    // shape, so the local row is never read back here.
-    await findOrCreateUser(normalizedUser);
+    // shape, so the local row is never read back here. Mutating requests must
+    // bypass the memo so a deleted parent row is recreated before a dependent
+    // write starts. Course and question list routes also refresh local mirrors
+    // from their GET handlers, so they use the same repair path.
+    await findOrCreateUser(normalizedUser, {
+      skipCache: shouldSkipUserRowCache(req),
+    });
   } catch (err) {
     logger.error({ err, userId: normalizedUser.id }, "Local user row upsert failed");
     return res.status(503).json({ success: false, error: "Service temporarily unavailable" });

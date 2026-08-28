@@ -112,6 +112,33 @@ describe("findOrCreateUser user row cache", () => {
     expect(upsert).toHaveBeenCalledTimes(2);
   });
 
+  it.skipIf(!cacheEnabled)(
+    "repairs a deleted row before the first FK-dependent write when the cache is bypassed",
+    async () => {
+      let localRowExists = false;
+      upsert.mockImplementation(async ({ create }) => {
+        localRowExists = true;
+        return create;
+      });
+      const createDependentRecord = vi.fn(async ({ data }) => {
+        if (!localRowExists) throw new Error("P2003");
+        return data;
+      });
+      const coreUser = { id: "u1", email: "a@b.com" };
+
+      await findOrCreateUser(coreUser);
+      localRowExists = false;
+      await findOrCreateUser(coreUser); // live cache hit does no DB work
+      expect(upsert).toHaveBeenCalledTimes(1);
+
+      await findOrCreateUser(coreUser, { skipCache: true });
+      await expect(createDependentRecord({ data: { userId: coreUser.id } })).resolves.toEqual({
+        userId: coreUser.id,
+      });
+      expect(upsert).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("retries the upsert when the first attempt fails", async () => {
     upsert.mockRejectedValueOnce(new Error("db down"));
 
