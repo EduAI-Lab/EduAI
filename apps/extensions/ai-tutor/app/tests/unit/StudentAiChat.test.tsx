@@ -66,11 +66,23 @@ const {
   listSuggestedPrompts,
   listAiModels,
   ApiTimeoutError,
+  ApiHttpError,
 } = vi.hoisted(() => {
   class ApiTimeoutError extends Error {
     constructor(message = "Request timed out") {
       super(message);
       this.name = "ApiTimeoutError";
+    }
+  }
+  // #1660 review: StudentAiChat special-cases a 403 (preview role hitting
+  // the student-only AI tutoring gate) — the real class shape, mirrored here
+  // the same way ApiTimeoutError already is above.
+  class ApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiHttpError";
+      this.status = status;
     }
   }
   return {
@@ -84,11 +96,13 @@ const {
         { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
       ]),
     ApiTimeoutError,
+    ApiHttpError,
   };
 });
 
 vi.mock("~/lib/api", () => ({
   ApiTimeoutError,
+  ApiHttpError,
   default: {
     listSuggestedPrompts,
     listAiModels,
@@ -147,8 +161,12 @@ function deferredGuideCall() {
   return { resolve, reject };
 }
 
-function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = ACTIVITY) {
-  return render(
+function chatTree(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return (
     <MemoryRouter>
       <StudentAiChat
         ref={ref}
@@ -161,9 +179,18 @@ function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = A
         currentTopicId={null}
         onSelectTopic={vi.fn()}
         studentAnswer={null}
+        isPreview={isPreview}
       />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderChat(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return render(chatTree(ref, activity, isPreview));
 }
 
 async function typeAndSend(text: string, placeholder = "Describe where you need guidance…") {
@@ -444,6 +471,54 @@ describe("StudentAiChat — send/receive round trip (#1003)", () => {
         screen.getByText("AI study buddy not available right now. Please try again later."),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+// ── #1660 review (ariqmuldi, PR #1667): honest 403 message gated on isPreview ──
+
+describe("StudentAiChat — 403 message only for an actual previewer (#1660 review)", () => {
+  it('shows the "read-only preview" message for a 403 when isPreview is true', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    renderChat(undefined, ACTIVITY, true);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "AI tutoring is only available to enrolled students — this is a read-only preview.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to the generic message for a 403 when isPreview is false — a real STUDENT/TA can also hit this endpoint\'s 403 for unrelated reasons (lagging enrollment sync, content unpublished mid-session), and should never be told they are "previewing"', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Not enrolled in this course"));
+    renderChat(undefined, ACTIVITY, false);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
+
+  it("rebuilds sendChat when isPreview flips on a still-mounted chat (AuthProvider role transition)", async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    const { rerender } = renderChat(undefined, ACTIVITY, true);
+
+    rerender(chatTree(undefined, ACTIVITY, false));
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
   });
 });
 

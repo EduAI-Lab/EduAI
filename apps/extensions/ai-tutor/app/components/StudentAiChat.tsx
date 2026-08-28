@@ -59,7 +59,7 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import { getProviderFromModelId, getProviderLabel, maskApiKey } from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
-import api, { ApiTimeoutError } from "../lib/api";
+import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
@@ -142,6 +142,14 @@ type StudentAiChatProps = {
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */
   className?: string;
+  /**
+   * #1660: true when the parent route resolved the viewer as an
+   * ADMIN/UNIT_ADMIN/INSTRUCTOR previewing the learner experience (its
+   * `previewRole`), not an enrolled STUDENT/TA. Threaded through so a 403
+   * from AI tutoring can be attributed to "this is a preview" only for an
+   * actual previewer — this component has no role info of its own.
+   */
+  isPreview?: boolean;
 };
 
 // Last-resort fallback for when the /ai-models call itself fails and no
@@ -192,6 +200,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     studentAnswer,
     studyBuddyState = "allowed",
     className,
+    isPreview,
   },
   ref,
 ) {
@@ -521,10 +530,21 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
         } else {
           console.error("AI chat failed:", error);
+          // #1660 review (ariqmuldi): the server 403s these endpoints for
+          // three distinct reasons (server/src/routes/activities.js) — a
+          // non-STUDENT caller (a previewer, what this message is about), a
+          // real student whose enrollment-sync is lagging, or content that
+          // got unpublished mid-session. Gating on the `isPreview` prop
+          // (the parent route's already-resolved role, not this
+          // component's business to re-derive) instead of the bare status
+          // code keeps a genuine STUDENT/TA from seeing "this is a
+          // read-only preview" for one of the other two, unrelated 403s.
           appendMessage(
             tab,
             "assistant",
-            "AI study buddy not available right now. Please try again later.",
+            error instanceof ApiHttpError && error.status === 403 && isPreview
+              ? "AI tutoring is only available to enrolled students — this is a read-only preview."
+              : "AI study buddy not available right now. Please try again later.",
           );
         }
       } finally {
@@ -546,6 +566,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       selectedModelId,
       studentAnswer,
       studyBuddyWithheld,
+      // #1667 review (Whiteknight07): sendChat reads isPreview in the 403
+      // branch; omitting it here would keep a stale closure across an
+      // AuthProvider role change on a still-mounted lesson.
+      isPreview,
     ],
   );
 
