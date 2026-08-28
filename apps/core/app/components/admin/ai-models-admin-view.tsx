@@ -16,7 +16,8 @@ import { PageHeading } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
-import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+import type { ModelFormData, OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
 import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
 import {
@@ -24,7 +25,11 @@ import {
   buildVllmModelCreatePayload,
   formatLocalModelSyncMessage,
   syncLocalModels,
+  type LocalModelCreatePayload,
 } from "~/lib/ai/local-model-sync";
+
+/** What `GET /api/vllm-models` answers with: the discovered models, or why not. */
+type VllmModelsResponse = { error?: string; models?: VllmModel[] };
 
 function isVllmFetchNotFound(message: string, httpStatus?: number): boolean {
   return (
@@ -52,12 +57,12 @@ export type AiModelsAdminViewProps = {
   onModelProviderIdChange: (next: string | null) => void;
   isLoading: boolean;
   error: string | null;
-  onCreateProvider: (data: Record<string, unknown>) => Promise<void>;
-  onUpdateProvider: (id: string, data: Record<string, unknown>) => Promise<void>;
+  onCreateProvider: (data: ProviderFormData) => Promise<void>;
+  onUpdateProvider: (id: string, data: ProviderFormData) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
   onToggleProviderActive: (provider: AIProvider) => Promise<void>;
-  onCreateModel: (data: Record<string, unknown>) => Promise<void>;
-  onUpdateModel: (id: string, data: Record<string, unknown>) => Promise<void>;
+  onCreateModel: (data: ModelFormData) => Promise<void>;
+  onUpdateModel: (id: string, data: Partial<ModelFormData>) => Promise<void>;
   onDeleteModel: (id: string) => Promise<void>;
   onToggleModelActive: (model: AIModel) => Promise<void>;
   routingModelSettings: RoutingModelSettings;
@@ -117,7 +122,7 @@ export function AiModelsAdminView({
   );
 
   const registerDiscoveredModels = useCallback(
-    async (provider: AIProvider, providerLabel: string, payloads: Record<string, unknown>[]) => {
+    async (provider: AIProvider, providerLabel: string, payloads: LocalModelCreatePayload[]) => {
       // Dedupe against the provider's full model set, not the page on screen.
       const existing = await fetchModelsByProvider(provider.id);
       const result = await syncLocalModels(existing, provider.id, payloads, onCreateModel);
@@ -164,7 +169,7 @@ export function AiModelsAdminView({
       setVllmFetched(false);
       try {
         const res = await fetch("/api/vllm-models");
-        let data: { error?: string; models?: VllmModel[] } = {};
+        let data: VllmModelsResponse = {};
         try {
           data = await res.json();
         } catch {
@@ -242,7 +247,7 @@ export function AiModelsAdminView({
     }
   }, []);
 
-  const handleProviderSubmit = async (data: Record<string, unknown>) => {
+  const handleProviderSubmit = async (data: ProviderFormData) => {
     try {
       if (editingProvider) {
         await onUpdateProvider(editingProvider.id, data);
@@ -256,7 +261,7 @@ export function AiModelsAdminView({
     }
   };
 
-  const handleModelSubmit = async (data: Record<string, unknown>) => {
+  const handleModelSubmit = async (data: ModelFormData) => {
     try {
       if (editingModel) {
         await onUpdateModel(editingModel.id, data);

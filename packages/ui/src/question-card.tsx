@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { IconListDetails, IconSparkles, IconHistory, IconDots } from "@tabler/icons-react";
 
 import { cn } from "./utils";
-import { Badge } from "./ui/badge";
+import { Badge, type BadgeVariant } from "./ui/badge";
 import { AnswerOption } from "./answer-option";
 
 export type QuestionDifficulty = "easy" | "medium" | "hard";
@@ -61,11 +61,11 @@ export interface QuestionCardProps {
   style?: CSSProperties;
 }
 
-const difficultyVariant: Record<QuestionDifficulty, "success" | "warning" | "destructive"> = {
+const difficultyVariant = {
   easy: "success",
   medium: "warning",
   hard: "destructive",
-};
+} satisfies Record<QuestionDifficulty, BadgeVariant>;
 
 function IconButton({
   label,

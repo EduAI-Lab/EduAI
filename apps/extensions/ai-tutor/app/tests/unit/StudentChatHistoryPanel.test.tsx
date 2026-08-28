@@ -157,7 +157,7 @@ describe("StudentChatHistoryPanel — interactions", () => {
 /** A pending listChatSessions call the test resolves/rejects on demand. */
 function deferredListCall() {
   let resolve!: (value: ApiChatSession[]) => void;
-  let reject!: (reason: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<ApiChatSession[]>((res, rej) => {
     resolve = res;
     reject = rej;

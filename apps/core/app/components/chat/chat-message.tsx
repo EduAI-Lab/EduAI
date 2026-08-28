@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { type Message } from "ai";
 import { Button } from "@eduai/ui";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
@@ -52,21 +53,20 @@ export interface ChatMessageProps {
  *   - array of parts with `.type === "text"` → join their `.text` values
  *   - anything else  → JSON.stringify (last resort, always a string)
  */
-export function coerceMessageContent(content: unknown): string {
+export function coerceMessageContent(content: JsonValue | undefined): string {
   if (typeof content === "string") return content;
   if (content === null || content === undefined) return "";
   if (Array.isArray(content)) {
     // Array of message parts — gather text parts
     const texts = content
-      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .filter((p): p is JsonObject => p !== null && typeof p === "object" && !Array.isArray(p))
       .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => p.text as string);
+      .map((p) => String(p.text));
     if (texts.length > 0) return texts.join("\n");
     // Fall through to JSON.stringify below
   }
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj.text === "string") return obj.text;
+  if (typeof content === "object" && !Array.isArray(content) && typeof content.text === "string") {
+    return content.text;
   }
   return JSON.stringify(content);
 }

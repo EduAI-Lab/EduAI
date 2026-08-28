@@ -1,5 +1,7 @@
+import "./load-core-env";
+import type { JsonObject } from "~/lib/json-value";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
@@ -1566,12 +1568,24 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
-async function seedDisciplines(): Promise<number> {
-  const csvPath = path.join(
+// import.meta.url normally resolves next to this file (true for the CLI path,
+// `tsx prisma/seed.ts`). But when main() is instead imported into the SSR app
+// bundle (the /api/e2e/seed test hook), the bundler relocates this module and
+// import.meta.url points into build/server/, where the CSV was never copied —
+// fall back to a cwd-relative path, which matches WORKDIR in both the CLI
+// (apps/core) and the served-app Docker image (also apps/core).
+function resolveDisciplinesCsvPath(): string {
+  const bundleRelative = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "data",
     "disciplines.csv",
   );
+  if (existsSync(bundleRelative)) return bundleRelative;
+  return path.join(process.cwd(), "prisma", "data", "disciplines.csv");
+}
+
+async function seedDisciplines(): Promise<number> {
+  const csvPath = resolveDisciplinesCsvPath();
   const lines = readFileSync(csvPath, "utf8").trim().split("\n").slice(1); // drop header
   for (const line of lines) {
     const parts = parseCsvLine(line);
@@ -1627,6 +1641,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
       create: {
         id: course.id,
@@ -1641,6 +1656,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
     });
 
@@ -1735,7 +1751,7 @@ async function seedBugReports() {
     status?: "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
     pageUrl?: string;
     userAgent?: string;
-    context?: Record<string, unknown>;
+    context?: JsonObject;
   };
 
   const bugs: SeedBug[] = [
@@ -2184,18 +2200,20 @@ async function seedLocalFixtures(seedPassword: string) {
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
-async function main() {
+export async function main(options?: { seedPassword?: string }) {
   console.log("Seeding Core...");
-  const referenceOnly = process.argv.includes("--reference-only");
+  const referenceOnly = process.argv.includes("--reference-only") && !options?.seedPassword;
   await seedReferenceData();
   if (referenceOnly) {
     console.log("Reference seed complete (no users or demo fixtures written)");
     return;
   }
 
-  // Validate before any fixture write so a missing local password cannot leave
-  // a partially seeded database behind.
-  await seedLocalFixtures(getLocalSeedPassword());
+  // CLI callers still require the local-demo contract. Programmatic callers
+  // (POST /api/e2e/seed, already gated on NODE_ENV=test) pass seedPassword so
+  // they can populate fixtures without flipping NODE_ENV to development.
+  const password = options?.seedPassword ?? getLocalSeedPassword();
+  await seedLocalFixtures(password);
 }
 
 const isMainModule =

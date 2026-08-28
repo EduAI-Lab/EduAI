@@ -52,7 +52,7 @@ function Auth({ onLogin }) {
       <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"28px" }}>
         <div style={{ width:"36px", height:"36px", borderRadius:"9px", background:"oklch(0.192 0.055 259)", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+            <path d="m3 9 9-5 9 5-9 5Z"/><path d="M6 11v4c3 3 9 3 12 0v-4"/><path d="M21 10v6" stroke="var(--gold)"/><circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none"/>
           </svg>
         </div>
         <span style={{ fontSize:"20px", fontWeight:700, color:"oklch(0.192 0.055 259)", letterSpacing:"-0.01em" }}>EduAI</span>

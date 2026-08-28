@@ -304,7 +304,7 @@ router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async
         ? Math.min(26, Math.max(2, Math.floor(Number(mcqRequiredChoiceCount))))
         : undefined;
 
-    const questions = await eduaiService.generateQuestions({
+    const generateParams = {
       prompt: budget.prompt,
       courseCode: resolvedCourseCode,
       courseId: coreCourseId,
@@ -317,11 +317,15 @@ router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async
         analytical: 30,
         application: 30,
       },
-      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
       cookie: req.headers.cookie ?? "",
       signal: req.aiOperation?.signal,
       deadlineAt: req.aiOperation?.deadlineAt,
-    });
+    };
+    // An unusable choice count is left out entirely so the generator falls back
+    // to its own default instead of seeing an explicit "no value".
+    if (mcqN !== undefined) generateParams.mcqRequiredChoiceCount = mcqN;
+
+    const questions = await eduaiService.generateQuestions(generateParams);
 
     res.json({
       success: true,
@@ -363,9 +367,20 @@ router.get("/courses", async (req, res) => {
     });
   } catch (error) {
     logEduaiRouteError("EduAI list courses error", error);
-    res.status(500).json({
+    // Honor an auth failure (missing cookie → 401) or an upstream Core status
+    // instead of flattening everything to 500. Message/body stay redacted.
+    // Core failures propagate as `coreError` with `.status` (see
+    // coreApiService.coreError); the Axios/legacy shapes carry `.statusCode` /
+    // `.response.status`. Only 401/403 are surfaced as client-facing auth
+    // failures — everything else degrades to 500 so upstream 5xx never leaks.
+    const rawStatus = error.status ?? error.statusCode ?? error.response?.status;
+    const status = rawStatus === 401 || rawStatus === 403 ? rawStatus : 500;
+    res.status(status).json({
       success: false,
-      error: "Failed to retrieve courses from EduAI",
+      error:
+        status === 401 || status === 403
+          ? "Not authorized to list courses"
+          : "Failed to retrieve courses from EduAI",
       code: "EDUAI_COURSE_LIST_FAILED",
     });
   }

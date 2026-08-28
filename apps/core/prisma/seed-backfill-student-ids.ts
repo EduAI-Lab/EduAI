@@ -1,3 +1,4 @@
+import "./load-core-env";
 import { prisma, seedUsers } from "./seed";
 import {
   assertLocalDemoEnvironment,

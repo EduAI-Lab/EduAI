@@ -67,7 +67,9 @@ router.use("/courses/:courseId/topics", gateCourseById());
 /**
  * GET /courses/:courseId/topics — list topics for a course.
  *
- * Auth: enrolled student or course instructor.
+ * Auth: enrolled student, or course staff — an assigned instructor, a
+ * UNIT_ADMIN whose `authorizedUnits` cover the course's department, or ADMIN
+ * (see `ensureCourseTopicAccess`).
  *
  * Why: Core is the source of truth for topics. For EduAI-imported courses,
  * this pulls the latest topic list from Core before responding, so the topic
@@ -321,7 +323,9 @@ router.post(
       res.json({ ok: true });
     } catch (e) {
       if (e instanceof TopicMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }

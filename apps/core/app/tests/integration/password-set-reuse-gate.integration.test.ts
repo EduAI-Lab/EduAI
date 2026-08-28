@@ -12,6 +12,7 @@
  * exactly like the real hook lets those requests fall through to their own
  * downstream handling.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 
@@ -121,16 +122,19 @@ async function runRow(row: PasswordSetReuseGateRow) {
           ? "definitely-the-wrong-password"
           : undefined;
 
-    const body: Record<string, unknown> = { newPassword };
+    const body: JsonObject = {};
+    body.newPassword = newPassword;
     if (currentPassword !== undefined) body.currentPassword = currentPassword;
 
     const base = new Request("http://localhost/settings");
     const req = buildAuthSubRequest("/api/auth/change-password", base, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(row.Session === "present" ? { cookie } : {}),
-      },
+      // A header set to undefined would be sent as the literal string
+      // "undefined", so the anonymous rows must omit the key outright.
+      headers:
+        row.Session === "present"
+          ? { "Content-Type": "application/json", cookie }
+          : { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const res = await auth.handler(req);

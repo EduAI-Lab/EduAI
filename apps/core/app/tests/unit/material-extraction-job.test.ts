@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,7 +47,7 @@ import {
 
 const CTX = { requestId: "req-1" } as never;
 
-function blobRow(overrides: Record<string, unknown> = {}) {
+function blobRow(overrides: JsonObject = {}) {
   return {
     id: "mat-1",
     courseId: "course-1",

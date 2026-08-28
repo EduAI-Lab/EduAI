@@ -35,7 +35,7 @@ function parseOptionalDate(value: string | undefined, field: string): Date | nul
   return parsed;
 }
 
-function adminToolPayload<T extends Record<string, unknown>>(data: T) {
+function adminToolPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     queriedAt: new Date().toISOString(),
@@ -197,20 +197,22 @@ export async function listAdminCourseEnrollments(
       ? 1
       : Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT);
 
+  // Prisma reads an `undefined` filter as "no constraint", so each bound is
+  // stated explicitly rather than left out of the object.
   const enrolledAtFilter =
     enrolledSince instanceof Date || enrolledBefore instanceof Date
       ? {
-          ...(enrolledSince instanceof Date ? { gte: enrolledSince } : {}),
-          ...(enrolledBefore instanceof Date ? { lte: enrolledBefore } : {}),
+          gte: enrolledSince instanceof Date ? enrolledSince : undefined,
+          lte: enrolledBefore instanceof Date ? enrolledBefore : undefined,
         }
       : undefined;
 
   const where = {
     courseId,
-    ...(userId ? { userId } : {}),
-    ...(userEmail ? { user: { email: { equals: userEmail, mode: "insensitive" as const } } } : {}),
-    ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
-    ...(enrolledAtFilter ? { enrolledAt: enrolledAtFilter } : {}),
+    userId,
+    user: userEmail ? { email: { equals: userEmail, mode: "insensitive" as const } } : undefined,
+    isActive: typeof opts.isActive === "boolean" ? opts.isActive : undefined,
+    enrolledAt: enrolledAtFilter,
   };
 
   const [enrollments, total] = await Promise.all([

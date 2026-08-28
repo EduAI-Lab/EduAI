@@ -6,7 +6,7 @@ import {
   validateCompletionRequest,
 } from "~/lib/ai/completion.server";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
   providerFailureBody,
   providerFailureHeaders,
 } from "~/lib/ai/provider-errors.server";
@@ -18,11 +18,9 @@ import {
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { readBoundedJson } from "~/lib/chat-input.server";
+import { readBoundedJson, type BoundedJsonReadResult } from "~/lib/chat-input.server";
 
-type CompletionBodyResult =
-  | { ok: true; body: unknown }
-  | { ok: false; status: 400 | 413 | 499; error: string };
+type CompletionBodyResult = BoundedJsonReadResult;
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -187,19 +185,24 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
+  // The same telemetry headers ride on the streaming and the buffered response;
+  // each is set only when this request has something to report for it.
+  const telemetryHeaders: Record<string, string> = {};
+  if (outcome.fleetServerId) telemetryHeaders["X-Fleet-Server"] = outcome.fleetServerId;
+  if (admissionWaitedMs > 0) telemetryHeaders["X-Admission-Wait-Ms"] = String(admissionWaitedMs);
+
   if (outcome.streaming) {
     try {
       const response = outcome.result.toDataStreamResponse({
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
-          ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
-          ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
+          ...telemetryHeaders,
         },
         // HTTP status/headers are immutable once this 200 stream begins. Route
         // late provider errors through the same sanitized contract as the
         // pre-stream path via the AI SDK stream error channel.
         getErrorMessage: (error) =>
-          JSON.stringify(providerFailureBody(classifyProviderError(outcome.provider, error))),
+          JSON.stringify(providerFailureBody(classifyProviderFailure(outcome.provider, error))),
       });
       const release = admissionRelease;
       admissionRelease = null;
@@ -215,8 +218,7 @@ export async function action({ request }: ActionFunctionArgs) {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
-      ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
+      ...telemetryHeaders,
     },
   });
 }

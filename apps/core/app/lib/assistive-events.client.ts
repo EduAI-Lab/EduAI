@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 export type PostAssistiveClientEventInput = {
   eventType:
     | "mode_toggled"
@@ -7,16 +8,18 @@ export type PostAssistiveClientEventInput = {
     | "session_completion";
   adhdAssist: boolean;
   chatId?: string | null;
-  metrics?: Record<string, unknown>;
+  metrics?: JsonObject;
 };
 
 /** Fire-and-forget client telemetry; never blocks UI. */
 export function postAssistiveClientEvent(input: PostAssistiveClientEventInput): void {
+  // JSON.stringify drops undefined values, so an event with no chat or metrics
+  // posts the same minimal body it always did.
   const body = {
     eventType: input.eventType,
     adhdAssist: input.adhdAssist,
-    ...(input.chatId ? { chatId: input.chatId } : {}),
-    ...(input.metrics ? { metrics: input.metrics } : {}),
+    chatId: input.chatId || undefined,
+    metrics: input.metrics,
   };
 
   fetch("/api/assistive-events", {

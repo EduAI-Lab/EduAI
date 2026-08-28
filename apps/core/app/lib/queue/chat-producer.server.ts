@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { EnqueueResult } from "./enqueue.server";
 import {
   AiJobQueueDisabledError,
@@ -12,13 +13,13 @@ import {
  * legacy `QUEUE_ENQUEUE_ENABLED` environment variable is intentionally ignored:
  * deployment configuration cannot expose the unfinished producer path.
  */
-export function isEnqueueRequested(_body: unknown): boolean {
+export function isEnqueueRequested(): boolean {
   return isAiJobQueueEnabled();
 }
 
 export type ChatEnqueueParams = {
-  body: Record<string, unknown>;
-  messages: unknown[];
+  body: JsonObject;
+  messages: JsonValue[];
   userId: string;
   courseId?: string;
   requestedModel?: string;

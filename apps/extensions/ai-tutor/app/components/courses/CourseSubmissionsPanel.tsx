@@ -43,6 +43,35 @@ type CourseSubmissionsPanelProps = {
 };
 
 type GradeChoice = "ungraded" | "correct" | "incorrect";
+
+export type GradePayload = { score: number | null; isCorrect: boolean | null };
+
+/**
+ * Build the `PATCH .../submissions/:id` body for the grade dialog.
+ *
+ * Both fields are always sent, `null` meaning "clear it". Omitting them —
+ * which is what "Not graded" plus an empty score used to do — posts `{}`, and
+ * the route answers `400 Nothing to update`, so a grade could never be taken
+ * back. Returns `null` when the typed score isn't a number, so the caller can
+ * say so instead of silently clearing the score.
+ */
+export function buildGradePayload(
+  gradeChoice: GradeChoice,
+  gradeScore: string,
+): GradePayload | null {
+  const trimmed = gradeScore.trim();
+  let score: number | null = null;
+  if (trimmed !== "") {
+    const parsed = Number(trimmed);
+    if (Number.isNaN(parsed)) return null;
+    score = parsed;
+  }
+  return {
+    isCorrect: gradeChoice === "ungraded" ? null : gradeChoice === "correct",
+    score,
+  };
+}
+
 type StatusFilter = "all" | "needs" | "correct" | "incorrect";
 
 const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -160,11 +189,10 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const handleSaveGrade = async () => {
     if (!activeRow) return;
 
-    const payload: { score?: number; isCorrect?: boolean } = {};
-    if (gradeChoice !== "ungraded") payload.isCorrect = gradeChoice === "correct";
-    if (gradeScore.trim() !== "") {
-      const parsedScore = Number(gradeScore);
-      if (!Number.isNaN(parsedScore)) payload.score = parsedScore;
+    const payload = buildGradePayload(gradeChoice, gradeScore);
+    if (!payload) {
+      setSaveError("Score must be a number.");
+      return;
     }
 
     const targetId = activeRow.id;

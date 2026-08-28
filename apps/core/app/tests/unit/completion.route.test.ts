@@ -1,5 +1,6 @@
 // @vitest-environment node
 // /api/completion abortSignal + provider-setup error coverage (#858 review).
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -65,8 +66,9 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { acquireAiAdmission } from "~/lib/ai/admission.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(body: object, signal?: AbortSignal): Parameters<typeof action>[0] {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<typeof action>[0] {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",
@@ -81,7 +83,7 @@ function makeRequest(body: object, signal?: AbortSignal): Parameters<typeof acti
   } as Parameters<typeof action>[0];
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     model: "vllm:test-model",
     apiKeys: { vllm: { isEnabled: true, baseUrl: "http://localhost:8001" } },

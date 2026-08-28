@@ -6,6 +6,7 @@
  * normalized rather than crashing the table, and mutations refresh from the
  * server so `total` and the page contents stay in step.
  */
+import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,7 +24,7 @@ const provider = {
   displayName: "OpenAI",
   isActive: true,
   _count: { models: 3 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 function mockPage(data: AIProvider[] = [provider], total = data.length) {
   vi.mocked(apiFetch).mockResolvedValue({ data, total, page: 1, pageSize: 25 } as never);
@@ -35,6 +36,16 @@ function listUrls() {
     .mock.calls.map((c) => c[0] as string)
     .filter((url) => url.startsWith("/api/ai-providers?"));
 }
+
+/** A complete create body; the hook now takes the form's payload, not a bag. */
+const providerFormData = (overrides: Partial<ProviderFormData> = {}): ProviderFormData => ({
+  name: "provider-1",
+  displayName: "Provider 1",
+  description: "",
+  requiresApiKey: true,
+  isActive: true,
+  ...overrides,
+});
 
 describe("useAiProviders", () => {
   beforeEach(() => {
@@ -99,7 +110,7 @@ describe("useAiProviders", () => {
     const before = listUrls().length;
 
     await act(async () => {
-      await result.current.createProvider({ name: "anthropic" });
+      await result.current.createProvider(providerFormData({ name: "anthropic" }));
     });
 
     expect(

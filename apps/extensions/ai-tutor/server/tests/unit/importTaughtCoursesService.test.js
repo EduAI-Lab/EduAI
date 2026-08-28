@@ -12,6 +12,8 @@ const courseInstructorCreate = vi.fn();
 const courseInstructorFindFirst = vi.fn();
 const courseEnrollmentUpsert = vi.fn();
 const courseEnrollmentFindMany = vi.fn();
+const courseEnrollmentCreateMany = vi.fn();
+const courseEnrollmentUpdateMany = vi.fn();
 const courseEnrollmentDeleteMany = vi.fn();
 const transaction = vi.fn();
 const syncCourseEnrollments = vi.fn();
@@ -32,6 +34,8 @@ vi.mock("../../src/config/database.js", () => ({
     courseEnrollment: {
       upsert: courseEnrollmentUpsert,
       findMany: courseEnrollmentFindMany,
+      createMany: courseEnrollmentCreateMany,
+      updateMany: courseEnrollmentUpdateMany,
       deleteMany: courseEnrollmentDeleteMany,
     },
     $transaction: transaction,
@@ -244,13 +248,34 @@ describe("ensureOfferingAnchors (AI Tutor, #1072 step 3 / #1074 admin create-on-
 describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
   const student = { id: "student-1", role: "STUDENT" };
 
+  // Offering ids the prune fixtures rely on, returned by the batched anchor read.
+  const OFFERING_ID_BY_CORE_ID = {
+    "core-1": 20,
+    "core-old": 30,
+    "core-current": 31,
+    "core-ta": 32,
+  };
+
+  let nextOfferingId = 100;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    nextOfferingId = 100;
     courseOfferingFindFirst.mockResolvedValue(null);
     courseOfferingCreate.mockResolvedValue({ id: 20, coreOfferingId: "core-1" });
+    courseOfferingCreateMany.mockResolvedValue({ count: 0 });
     courseOfferingUpdate.mockResolvedValue({});
+    courseOfferingFindMany.mockImplementation(async (args) => {
+      const ids = args?.where?.coreOfferingId?.in ?? [];
+      return ids.map((coreOfferingId) => ({
+        id: OFFERING_ID_BY_CORE_ID[coreOfferingId] ?? nextOfferingId++,
+        coreOfferingId,
+      }));
+    });
     courseEnrollmentUpsert.mockResolvedValue({});
     courseEnrollmentFindMany.mockResolvedValue([]);
+    courseEnrollmentCreateMany.mockResolvedValue({ count: 0 });
+    courseEnrollmentUpdateMany.mockResolvedValue({ count: 0 });
     courseEnrollmentDeleteMany.mockResolvedValue({ count: 0 });
     syncCourseEnrollments.mockResolvedValue({
       synced: 0,

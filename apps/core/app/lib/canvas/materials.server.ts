@@ -27,13 +27,15 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
 
-const EXTENSION_MIME: Record<string, string> = {
-  ".pdf": "application/pdf",
-  ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-};
+// A `Map` because the key is a filename suffix, not a union: the loop below
+// walks every entry looking for the one a given name ends with.
+const EXTENSION_MIME = new Map<string, string>([
+  [".pdf", "application/pdf"],
+  [".txt", "text/plain"],
+  [".md", "text/markdown"],
+  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+]);
 
 export class CanvasMaterialSyncError extends Error {
   readonly statusCode: number;
@@ -50,7 +52,7 @@ function normalizeMimeType(file: CanvasFileApi): string | null {
   // that the response MIME and file signature agree with this choice. Canvas
   // and CDN metadata commonly fall back to application/octet-stream.
   const lowerName = (file.filename || file.display_name || "").toLowerCase();
-  for (const [ext, mime] of Object.entries(EXTENSION_MIME)) {
+  for (const [ext, mime] of EXTENSION_MIME) {
     if (lowerName.endsWith(ext)) {
       return mime;
     }

@@ -7,6 +7,7 @@
  * - **`tiers.ts`** — DB-backed model pick
  */
 
+import type { JsonObject } from "~/lib/json-value";
 import { matchPhase1Rules, type Phase1RouterContext } from "./rules";
 import { pickModelForSpec, type TierModelRow, type PickSpec } from "./tiers";
 import {
@@ -96,7 +97,13 @@ export type RouterInputContext = {
 export type RouterDecision = {
   modelId: string;
   tier: 1 | 2 | 3;
-  features: Record<string, unknown>;
+  /**
+   * The feature vector this decision was made from. It is persisted to a `Json`
+   * column and read back only by the routing analysis scripts, so its contract
+   * is JSON's: rules add fields as they are added, and nothing in the request
+   * path reads one by name.
+   */
+  features: JsonObject;
 };
 
 const carbonByCourse = () => parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
@@ -203,7 +210,7 @@ async function finalizePick(
     );
   }
 
-  const features: Record<string, unknown> = {
+  const features: JsonObject = {
     routerVersion: meta.routerVersion,
     routerMode: meta.mode,
     pickSource: meta.pickSource,
@@ -224,22 +231,16 @@ async function finalizePick(
     chosenRegistryId: modelId,
     chosenTierFromDb: picked?.tier ?? null,
     fallbackUsed,
-    ...(meta.knn
-      ? {
-          knnTier: meta.knn.tier,
-          knnConfidence: meta.knn.confidence,
-          knnTopNeighbor: meta.knn.neighbors[0]?.prompt ?? null,
-          knnTopSimilarity: meta.knn.neighbors[0]?.similarity ?? null,
-          knnExemplarCount: meta.knn.exemplarCount,
-        }
-      : {}),
-    ...(meta.llm
-      ? {
-          llmTask: meta.llm.task,
-          llmComplexity: meta.llm.complexity,
-          llmConfidence: meta.llm.confidence,
-        }
-      : {}),
+    // A decision that never ran the kNN or the LLM classifier records nothing
+    // for it, rather than recording zeroes that would read as real measurements.
+    knnTier: meta.knn?.tier,
+    knnConfidence: meta.knn?.confidence,
+    knnTopNeighbor: meta.knn ? (meta.knn.neighbors[0]?.prompt ?? null) : undefined,
+    knnTopSimilarity: meta.knn ? (meta.knn.neighbors[0]?.similarity ?? null) : undefined,
+    knnExemplarCount: meta.knn?.exemplarCount,
+    llmTask: meta.llm?.task,
+    llmComplexity: meta.llm?.complexity,
+    llmConfidence: meta.llm?.confidence,
   };
 
   return { modelId, tier, features };
@@ -356,7 +357,10 @@ export async function resolveRoutedModelLlm(
 
   try {
     classification = await classifyPromptForTier(prompt, context);
-    const tier = tierFromLlmClassification(classification);
+    const tier = tierFromLlmClassification(classification, {
+      ragTopSimilarity: context.ragTopSimilarity,
+      ragChunkCount: context.ragChunkCount,
+    });
     const pick = pickSpecFromTier(tier, context);
 
     return finalizePick(pick, {

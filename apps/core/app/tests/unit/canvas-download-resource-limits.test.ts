@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { downloadCanvasFile } from "~/lib/canvas/client.server";
 
@@ -13,7 +14,7 @@ const CREDENTIALS = {
   isTestMode: false,
 } as const;
 
-function canvasFile(overrides: Record<string, unknown> = {}) {
+function canvasFile(overrides: JsonObject = {}) {
   return {
     id: 101,
     url: "http://localhost:8080/files/101/download",
@@ -28,12 +29,12 @@ function validPdfBytes(suffix = "bounded content"): Uint8Array {
 }
 
 function responseFetch(response: Response) {
-  return vi.fn(async () => response) as unknown as typeof fetch;
+  return vi.fn(async () => response) as typeof fetch;
 }
 
 function sizedPdfStream(
   totalBytes: number,
-  options: { onCancel?: (reason: unknown) => void; chunkSize?: number } = {},
+  options: { onCancel?: (cause: unknown) => void; chunkSize?: number } = {},
 ): ReadableStream<Uint8Array> {
   const chunkSize = options.chunkSize ?? ONE_MEBIBYTE;
   const repeatedChunk = new Uint8Array(chunkSize);

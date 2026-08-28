@@ -222,16 +222,31 @@ export function resolveEmbeddingRequestTimeoutMs(): number {
   return Math.min(configured, MAX_EMBEDDING_REQUEST_TIMEOUT_MS);
 }
 
-function abortSignalReason(signal: AbortSignal): unknown {
-  if (signal.reason !== undefined) return signal.reason;
-  const error = new Error("The embedding request was aborted");
+/**
+ * The value to throw / reject / re-abort with when `signal` has fired.
+ *
+ * `AbortSignal.reason` carries no contract, so this normalizes it to something
+ * throwable. Every platform abort (and every abort this module raises) already
+ * supplies an `Error` — a `DOMException` on the server runtime — and is handed
+ * back untouched, so `isEmbeddingTimeoutError`'s name/cause walk is unaffected.
+ * Only a caller aborting with a bare value gets wrapped, and that value was
+ * already invisible to that walk (it bails on non-objects).
+ */
+function abortSignalReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+
+  const error =
+    reason === undefined
+      ? new Error("The embedding request was aborted")
+      : new Error(String(reason), { cause: reason });
   error.name = "AbortError";
   return error;
 }
 
-function isEmbeddingTimeoutError(error: unknown): boolean {
+function isEmbeddingTimeoutError(cause: unknown): boolean {
   const seen = new Set<unknown>();
-  let current = error;
+  let current = cause;
 
   while (current && !seen.has(current)) {
     seen.add(current);
@@ -272,7 +287,7 @@ async function withEmbeddingRequestDeadline<T>(
   const abortFromUpstream = () => controller.abort(abortSignalReason(upstreamSignal!));
   upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
 
-  let rejectCancellation: (reason: unknown) => void = () => undefined;
+  let rejectCancellation: (cause: unknown) => void = () => undefined;
   const cancellation = new Promise<never>((_resolve, reject) => {
     rejectCancellation = reject;
   });
@@ -305,16 +320,16 @@ function reindexConcurrency(): number {
   return Math.min(configured, MAX_REINDEX_CONCURRENCY);
 }
 
-function isTransientEmbeddingError(err: unknown): boolean {
-  if (isEmbeddingTimeoutError(err)) return true;
+function isTransientEmbeddingError(cause: unknown): boolean {
+  if (isEmbeddingTimeoutError(cause)) return true;
 
   const status =
-    err && typeof err === "object" && "status" in err
-      ? Number((err as { status?: unknown }).status)
+    cause && typeof cause === "object" && "status" in cause
+      ? Number((cause as { status?: unknown }).status)
       : NaN;
   if (status === 429 || status === 503) return true;
 
-  const message = err instanceof Error ? err.message : String(err);
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /\b(429|503)\b|rate limit|too many requests|service unavailable/i.test(message);
 }
 
@@ -370,18 +385,18 @@ async function retryTransientEmbeddingError<T>(
   throw lastError;
 }
 
-function isOllamaBadRequestError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+function isOllamaBadRequestError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /bad request/i.test(message) || /\b400\b/.test(message);
 }
 
-function isOllamaContextLengthError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+function isOllamaContextLengthError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
   return /context length/i.test(message) || /input length exceeds/i.test(message);
 }
 
-function isOllamaSplittableError(err: unknown): boolean {
-  return isOllamaBadRequestError(err) || isOllamaContextLengthError(err);
+function isOllamaSplittableError(cause: unknown): boolean {
+  return isOllamaBadRequestError(cause) || isOllamaContextLengthError(cause);
 }
 
 /**
@@ -391,7 +406,10 @@ function isOllamaSplittableError(err: unknown): boolean {
  */
 const DEFAULT_OLLAMA_CHUNK_CHARS = 480;
 
-function resolveChunkParams(wantsLocal: boolean): { maxChunkSize: number; overlap: number } {
+/** How text is split before embedding: chunk width and the overlap carried between chunks. */
+type EmbeddingChunkParams = { maxChunkSize: number; overlap: number };
+
+function resolveChunkParams(wantsLocal: boolean): EmbeddingChunkParams {
   if (!wantsLocal) {
     return { maxChunkSize: 800, overlap: 80 };
   }
@@ -501,10 +519,10 @@ async function embedManyOllamaNative(
   }
 }
 
-function wrapLocalEmbeddingError(modelId: string, err: unknown): Error {
+function wrapLocalEmbeddingError(modelId: string, cause: unknown): Error {
   return new Error(
-    `Local embedding provider failed (${modelId}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
-    { cause: err },
+    `Local embedding provider failed (${modelId}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${cause instanceof Error ? cause.message : String(cause)}`,
+    { cause },
   );
 }
 
@@ -524,6 +542,16 @@ export type EmbeddingProviderKind =
   | "openrouter"
   | "google"
   | "openai";
+
+/**
+ * An embedding model plus the provider it came from. The `kind` travels with
+ * the model because index and query must share a model space: a vector written
+ * by one provider cannot be searched with another's.
+ */
+export type ResolvedEmbeddingModel = {
+  model: EmbeddingModel<string>;
+  kind: EmbeddingProviderKind;
+};
 
 export {
   ALLOWED_CLOUD_EMBEDDING_MODELS,
@@ -605,18 +633,30 @@ function getHybridAlpha(): number {
   return n;
 }
 
+/** One `[embedding]` console line: which provider served a call, and why. */
+type EmbeddingProviderLogEntry = {
+  provider: EmbeddingProviderKind;
+  dimension: number;
+  courseProvider: EffectiveEmbeddingSettings["provider"];
+  model: EffectiveEmbeddingSettings["model"];
+  detail?: string;
+};
+
 function logEmbeddingProvider(
   kind: EmbeddingProviderKind,
   settings: EffectiveEmbeddingSettings,
   detail?: string,
 ): void {
-  console.log("[embedding]", {
+  const entry: EmbeddingProviderLogEntry = {
     provider: kind,
     dimension: getExpectedEmbeddingDimension(),
     courseProvider: settings.provider,
     model: settings.model,
-    ...(detail ? { detail } : {}),
-  });
+  };
+  // A `detail: undefined` key would print in the log line, so it is added only
+  // when the caller passed one.
+  if (detail) entry.detail = detail;
+  console.log("[embedding]", entry);
 }
 
 function assertEmbeddingDimension(embedding: number[], context: string): void {
@@ -640,13 +680,13 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
  * cover the question) with no signal that RAG never ran.
  */
 export function classifyRagRetrievalError(
-  error: unknown,
+  cause: unknown,
 ): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_TIMEOUT" | "RAG_RETRIEVAL_FAILED" {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = cause instanceof Error ? cause.message : String(cause);
   if (/dimension mismatch/i.test(message) || /different vector dimensions/i.test(message)) {
     return "RAG_DIMENSION_MISMATCH";
   }
-  if (isEmbeddingTimeoutError(error)) return "RAG_RETRIEVAL_TIMEOUT";
+  if (isEmbeddingTimeoutError(cause)) return "RAG_RETRIEVAL_TIMEOUT";
   return "RAG_RETRIEVAL_FAILED";
 }
 
@@ -790,20 +830,18 @@ function createOpenRouterEmbeddingClient() {
   const referer =
     process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
+  const title = process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI";
+
   return createOpenAI({
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
-    headers: {
-      ...(referer ? { "HTTP-Referer": referer } : {}),
-      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-    },
+    // OpenRouter attributes traffic by these headers; the referer is sent only
+    // when this deployment actually has a public URL to claim.
+    headers: referer ? { "X-Title": title, "HTTP-Referer": referer } : { "X-Title": title },
   });
 }
 
-function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): {
-  model: EmbeddingModel<string>;
-  kind: EmbeddingProviderKind;
-} {
+function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): ResolvedEmbeddingModel {
   const vllm = createVllmEmbeddingClient();
   if (vllm) {
     const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
@@ -841,10 +879,7 @@ export function resolveMaterialChunks(
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
  */
-function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): {
-  model: EmbeddingModel<string>;
-  kind: EmbeddingProviderKind;
-} {
+function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): ResolvedEmbeddingModel {
   const dimension = getExpectedEmbeddingDimension();
 
   if (dimension === 1024) {

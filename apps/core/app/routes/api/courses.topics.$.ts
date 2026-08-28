@@ -215,7 +215,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return new Response(
           JSON.stringify({
             error: "Invalid input",
-            ...(result.details ? { details: result.details } : {}),
+            // JSON.stringify drops an undefined value, so a result without
+            // field errors still serializes to a bare `{ error }`.
+            details: result.details ?? undefined,
           }),
           {
             status: Number(result.status),
@@ -304,7 +306,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: "Invalid input",
-          ...(result.details ? { details: result.details } : {}),
+          // JSON.stringify drops an undefined value, so a result without field
+          // errors still serializes to a bare `{ error }`.
+          details: result.details ?? undefined,
         }),
         { status: Number(result.status), headers: { "Content-Type": "application/json" } },
       );
@@ -349,7 +353,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? { error: "Topic not found" }
             : {
                 error: "Invalid input",
-                ...(result.details ? { details: result.details } : {}),
+                // JSON.stringify drops an undefined value, so a result without
+                // field errors still serializes to a bare `{ error }`.
+                details: result.details ?? undefined,
               };
         return new Response(JSON.stringify(responseBody), {
           status: Number(result.status),

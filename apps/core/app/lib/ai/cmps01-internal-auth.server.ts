@@ -1,6 +1,13 @@
 /** Header nginx checks for the server-managed Ollama edge on cmps01 :8001. */
 export const CMPS01_INTERNAL_KEY_HEADER = "X-EduAI-Internal-Key";
 
+/**
+ * The internal-auth header, or nothing at all when no key is configured —
+ * naming the one header this module can set keeps callers from treating it as
+ * an open header bag they may add to.
+ */
+export type Cmps01AuthHeaders = { [CMPS01_INTERNAL_KEY_HEADER]?: string };
+
 let warnedMissingInternalKey = false;
 
 /** Normalize Ollama/LiteLLM base URLs for trusted-host comparison. */
@@ -31,7 +38,7 @@ export function isTrustedCmps01EdgeUrl(baseUrl: string): boolean {
 }
 
 /** Shared secret from infra/cmps01/.env — required when using edge paths on :8001. */
-export function cmps01InternalAuthHeaders(): Record<string, string> {
+export function cmps01InternalAuthHeaders(): Cmps01AuthHeaders {
   const key = process.env.CMPS01_INTERNAL_KEY?.trim();
   if (!key) {
     if (!warnedMissingInternalKey) {
@@ -46,7 +53,7 @@ export function cmps01InternalAuthHeaders(): Record<string, string> {
 }
 
 /** Attach internal key only for trusted cmps01 edge URLs (never user-controlled hosts). */
-export function cmps01InternalAuthHeadersForUrl(baseUrl: string): Record<string, string> {
+export function cmps01InternalAuthHeadersForUrl(baseUrl: string): Cmps01AuthHeaders {
   if (!isTrustedCmps01EdgeUrl(baseUrl)) {
     return {};
   }

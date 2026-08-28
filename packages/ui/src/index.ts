@@ -135,7 +135,7 @@ export type {
   CourseSwitcherOption,
   CourseSwitcherId,
 } from "./course-switcher";
-export { AIServiceIndicators } from "./ai-service-indicators";
+export { AIServiceIndicators, isServiceActive } from "./ai-service-indicators";
 export type {
   AIServiceIndicatorsProps,
   ServiceStatus,
@@ -196,7 +196,7 @@ export {
   compareByTerm,
   groupCoursesByTerm,
 } from "./lib/term";
-export type { TermCode, TermInfo, CourseTermGroup } from "./lib/term";
+export type { AcademicTerm, TermCode, TermInfo, CourseTermGroup } from "./lib/term";
 
 // ── Analytics charts ───────────────────────────────────────────────────────
 export { DonutChart } from "./charts/donut-chart";
@@ -222,6 +222,7 @@ export {
   CardAction,
 } from "./ui/card";
 export { Badge, badgeVariants } from "./ui/badge";
+export type { BadgeVariant } from "./ui/badge";
 export { Input } from "./ui/input";
 
 // ── shadcn primitives ──────────────────────────────────────────────────────

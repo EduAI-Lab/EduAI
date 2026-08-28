@@ -779,7 +779,16 @@ router.get("/courses/:courseId", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
 
-    res.json(mapCourseOffering(course, coreCourse));
+    // The caller's role *on this course* (not their global effective role). The
+    // client gates course-detail staff tabs on this so a global-effective TA who
+    // is only a STUDENT on this course sees no staff tabs (#1644). Learners get
+    // the live enrolment role; staff get their principal role, falling back to
+    // the principal kind (a unit admin authorized by unit has no enrolment role).
+    const viewerRole = isLearner
+      ? (liveEnrollment?.role ?? null)
+      : (liveStaffPrincipal?.role ?? liveStaffPrincipal?.kind ?? null);
+
+    res.json({ ...mapCourseOffering(course, coreCourse), viewerRole });
   } catch (e) {
     sendSafeError(res, e, "Internal server error");
   }
@@ -835,7 +844,9 @@ router.post(
       res.json(updated);
     } catch (e) {
       if (e instanceof CourseMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -873,7 +884,9 @@ router.patch(
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
     } catch (e) {
       if (e instanceof CourseMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -915,7 +928,9 @@ router.patch(
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, false));
     } catch (e) {
       if (e instanceof CourseMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -1147,11 +1162,26 @@ router.get("/courses/:courseId/student-metrics", async (req, res) => {
       where: { activity: { lesson: { module: { courseOfferingId: courseId } } } },
     });
 
+    // Same best-effort Core name resolution as the submissions route above —
+    // without it the panel prints raw user ids where Submissions shows names.
+    const nameById = new Map();
+    if (course.coreOfferingId) {
+      try {
+        const enrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+        for (const enrollment of enrollments) {
+          if (enrollment?.studentId) nameById.set(enrollment.studentId, enrollment.studentName);
+        }
+      } catch {
+        // Leave the map empty; rows degrade to the userId.
+      }
+    }
+
     const byStudent = {};
     for (const m of rawMetrics) {
       if (!byStudent[m.userId]) {
         byStudent[m.userId] = {
           userId: m.userId,
+          studentName: nameById.get(m.userId) ?? null,
           submissionCount: 0,
           correctSubmissionCount: 0,
           incorrectSubmissionCount: 0,

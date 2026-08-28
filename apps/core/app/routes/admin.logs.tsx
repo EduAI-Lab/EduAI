@@ -152,10 +152,17 @@ function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Normalizes unknown row payloads into serializable plain objects for the client. */
-function serializeRows(rows: unknown[]) {
+/**
+ * A row from any of the log tables this page can show. The four models share no
+ * columns the client distinguishes, and the only field this pass has to touch
+ * is `createdAt` — so that is the whole contract stated here.
+ */
+type LogRowLike = { createdAt?: Date | string | null } | null;
+
+/** Normalizes log rows into serializable plain objects for the client. */
+function serializeRows(rows: LogRowLike[]) {
   return rows.map((row) => {
-    const safeRow = (row ?? {}) as Record<string, unknown>;
+    const safeRow = row ?? {};
     const createdAt = safeRow.createdAt;
     return {
       ...safeRow,
@@ -271,7 +278,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const sharedReturn = (result: { rows: unknown[]; total: number }) => ({
+  const sharedReturn = (result: { rows: LogRowLike[]; total: number }) => ({
     user,
     tab,
     page,

@@ -21,6 +21,7 @@ import { loader, action } from "~/routes/api/canvas.$";
 import { auth } from "~/lib/auth/server";
 import { verifyCanvasCredentials, CanvasVerificationError } from "~/lib/canvas/client.server";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const TEST_ENCRYPTION_KEY = "canvas-integration-test-key!!";
 
@@ -40,7 +41,7 @@ function noSession() {
   vi.mocked(auth.api.getSession).mockResolvedValue(null);
 }
 
-function makeArgs(method: string, subpath: string, body?: unknown) {
+function makeArgs(method: string, subpath: string, body?: RouteRequestBody) {
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { "Content-Type": "application/json" };
@@ -54,7 +55,7 @@ function makeArgs(method: string, subpath: string, body?: unknown) {
   return args;
 }
 
-async function call(method: string, subpath: string, body?: unknown) {
+async function call(method: string, subpath: string, body?: RouteRequestBody) {
   const args = makeArgs(method, subpath, body);
   if (method === "GET") {
     return loader(args);

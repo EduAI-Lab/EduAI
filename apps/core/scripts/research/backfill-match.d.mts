@@ -1,8 +1,10 @@
+import type { JsonValue } from "@eduai/types";
+
 export interface BackfillRow {
   userId?: string | null;
   query?: string | null;
   createdAt?: string | Date | null;
-  [key: string]: unknown;
+  [key: string]: JsonValue | Date | undefined;
 }
 
 export interface BackfillIndex {

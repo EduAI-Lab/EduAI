@@ -30,6 +30,7 @@ import { loader as adminLoader, action as adminAction } from "~/routes/api/admin
 import { loader as mineLoader } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const REPORT = {
   id: "br-1",
@@ -74,15 +75,14 @@ const LIST_ROW = {
 function makeArgs(
   path: string,
   method = "GET",
-  body?: unknown,
+  body?: RouteRequestBody,
   params: Record<string, string> = {},
 ) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request(`http://localhost${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request(`http://localhost${path}`, init),
     params,
     context: {} as never,
   } as any;

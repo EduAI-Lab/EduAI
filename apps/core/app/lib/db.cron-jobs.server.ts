@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
+import {
+  redactErrorForConsole,
+  redactErrorForMessage,
+  redactSecretValuesInString,
+} from "~/lib/redact.server";
 
 const DEFAULT_CRON_RUN_LEASE_MS = 60_000;
 const MIN_CRON_RUN_LEASE_MS = 15_000;
@@ -440,15 +444,18 @@ export function triggerCronJobAsync(
           0,
         ),
       )
-      .catch((err: unknown) =>
+      .catch((cause: unknown) =>
         finishCronRun(
           runId,
           leaseOwner,
           "ERROR",
-          `Core handler failed: ${redactErrorForConsole(err)}`,
+          utf8Tail(
+            `Core handler failed: ${redactErrorForMessage(cause)}`,
+            CRON_PERSISTED_MESSAGE_MAX_BYTES,
+          ),
           1,
-        ).catch((finishErr: unknown) =>
-          console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+        ).catch((cause: unknown) =>
+          console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
         ),
       );
     return;
@@ -465,9 +472,12 @@ export function triggerCronJobAsync(
       timeout: 10 * 60 * 1000,
     });
   } catch (err) {
-    const message = `Failed to start script: ${err instanceof Error ? err.message : String(err)}`;
-    void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((finishErr: unknown) =>
-      console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+    const message = utf8Tail(
+      `Failed to start script: ${redactErrorForMessage(err)}`,
+      CRON_PERSISTED_MESSAGE_MAX_BYTES,
+    );
+    void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((cause: unknown) =>
+      console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
     );
     return;
   }
@@ -531,8 +541,8 @@ export function triggerCronJobAsync(
           terminate("Cron run lease ownership was lost; process terminated");
         }
       })
-      .catch((err: unknown) => {
-        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(err));
+      .catch((cause: unknown) => {
+        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
         // Continuing after the database can no longer confirm our lease risks
         // overlapping external side effects with a successor after expiry.
         terminate("Cron run lease could not be renewed; process terminated");
@@ -565,8 +575,8 @@ export function triggerCronJobAsync(
           console.warn(`[cron] ${jobName} completion ignored after lease ownership changed`);
         }
       })
-      .catch((err: unknown) =>
-        console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
+      .catch((cause: unknown) =>
+        console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
       );
   };
 

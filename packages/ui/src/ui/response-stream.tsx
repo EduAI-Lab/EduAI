@@ -13,7 +13,7 @@ export type UseTextStreamOptions = {
   fadeDuration?: number;
   segmentDelay?: number;
   characterChunkSize?: number;
-  onError?: (error: unknown) => void;
+  onError?: (cause: unknown) => void;
 };
 
 export type UseTextStreamResult = {

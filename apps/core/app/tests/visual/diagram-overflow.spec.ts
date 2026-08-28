@@ -12,12 +12,12 @@ import {
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 
 /** Expected stage count per catalog fixture, keyed the same as DIAGRAM_FIXTURE_NAMES. */
-const EXPECTED_STAGE_COUNT: Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number> = {
+const EXPECTED_STAGE_COUNT = {
   "process-flow": processFlowPayload.stages.length,
   hierarchy: hierarchyPayload.stages.length,
   compare: comparePayload.stages.length,
   "gradient-descent": gradientDescentPayload.stages.length,
-};
+} satisfies Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number>;
 
 /**
  * #1320 real-browser regression, replacing the Happy DOM className-only

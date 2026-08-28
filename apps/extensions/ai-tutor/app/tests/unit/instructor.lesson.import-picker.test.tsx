@@ -18,6 +18,12 @@ vi.mock("~/lib/api", () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: "Lesson 1", moduleId: null }),
     activitiesForLesson: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      course: { id: 1, title: "Course", code: "C1" },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+    }),
     listImportableActivities: (...args: unknown[]) => mockListImportable(...args),
     moveActivityToPosition: (...args: unknown[]) => mockMoveActivity(...args),
     importActivity: vi.fn().mockResolvedValue({}),
@@ -25,7 +31,6 @@ vi.mock("~/lib/api", () => ({
     syncTopics: vi.fn().mockResolvedValue({ missingTopics: 0 }),
   },
 }));
-
 vi.mock("~/hooks/useLocalUser", () => ({
   useLocalUser: () => ({
     user: { id: "u1", name: "Instructor", role: "INSTRUCTOR", authorizedUnits: [] },
@@ -99,6 +104,7 @@ const module_ = {
   title: "Module 1",
   description: "",
   position: 0,
+  isPublished: true,
   courseOfferingId: 1,
   lessons: [],
 };
@@ -106,6 +112,7 @@ const lesson = {
   id: 1,
   title: "Lesson 1",
   moduleId: 1,
+  position: 0,
   isPublished: true,
   contentMd: "",
   courseOfferingId: 1,
@@ -260,7 +267,7 @@ describe("instructor.lesson — paged activity list (#1207)", () => {
     customPromptTitle: null,
   });
 
-  const wrapList = (overrides: Record<string, unknown> = {}) => {
+  const wrapList = (overrides: Partial<Route.ComponentProps["loaderData"]> = {}) => {
     const props = {
       loaderData: {
         course,
@@ -334,7 +341,7 @@ describe("instructor.lesson — activity drag persists an absolute ordinal (#120
     customPromptTitle: null,
   });
 
-  const wrapList = (overrides: Record<string, unknown> = {}) => {
+  const wrapList = (overrides: Partial<Route.ComponentProps["loaderData"]> = {}) => {
     const props = {
       loaderData: {
         course,

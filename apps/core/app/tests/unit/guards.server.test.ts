@@ -12,6 +12,7 @@ import { invitableRolesFor } from "~/lib/invitations/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn(), verifyApiKey: vi.fn() } },
@@ -53,7 +54,7 @@ function makeRequest(authorization?: string, apiKey?: string): Request {
   return new Request("http://localhost/api/test", { method: "GET", headers });
 }
 
-async function parseBody(response: Response): Promise<unknown> {
+async function parseBody(response: Response): Promise<ParsedJsonBody> {
   return response.json();
 }
 
@@ -491,17 +492,36 @@ describe("requireAdmin", () => {
 
   beforeEach(() => {
     vi.mocked(auth.api.getSession).mockReset();
+    vi.mocked(isActiveAdminUser).mockReset();
+    // Default: an ADMIN-role session is also active. Individual tests override.
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     vi.mocked(logSecurityEvent).mockClear();
   });
 
-  it("admits an ADMIN session", async () => {
+  it("admits an active ADMIN session", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN", email: "admin@test.com" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const gate = await requireAdmin(sessionReq());
     expect(gate.response).toBeNull();
     expect(gate.session?.user.role).toBe("ADMIN");
+    expect(isActiveAdminUser).toHaveBeenCalledWith("a1");
     expect(logSecurityEvent).not.toHaveBeenCalled();
+  });
+
+  it("403s an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN", email: "admin@test.com" },
+    } as never);
+    // Session still claims ADMIN, but the DB says the account is no longer active.
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const gate = await requireAdmin(sessionReq());
+    expect(gate.response?.status).toBe(403);
+    expect(gate.session).toBeNull();
+    expect(logSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "ADMIN_ACCESS_DENIED", outcome: "DENIED" }),
+    );
   });
 
   it("403s a non-ADMIN role and logs ADMIN_ACCESS_DENIED with the actor's identity", async () => {

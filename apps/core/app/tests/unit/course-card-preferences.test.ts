@@ -26,19 +26,19 @@ describe("course-card-preferences", () => {
   });
 
   it("reads and writes localStorage map", () => {
-    writeCourseCardPreferences({
-      "course-1": { color: "oklch(0.56 0.20 255)", nickname: "My CS course" },
-    });
-    expect(readCourseCardPreferences()["course-1"]?.nickname).toBe("My CS course");
+    writeCourseCardPreferences(
+      new Map([["course-1", { color: "oklch(0.56 0.20 255)", nickname: "My CS course" }]]),
+    );
+    expect(readCourseCardPreferences().get("course-1")?.nickname).toBe("My CS course");
   });
 
   it("removes empty preferences on merge", () => {
     const next = mergeCourseCardPreference(
-      { c1: { color: "oklch(0.56 0.20 255)", nickname: "Nick" } },
+      new Map([["c1", { color: "oklch(0.56 0.20 255)", nickname: "Nick" }]]),
       "c1",
       { color: "", nickname: "" },
     );
-    expect(next.c1).toBeUndefined();
+    expect(next.get("c1")).toBeUndefined();
   });
 
   it("resolves display name and hero colour", () => {
@@ -53,15 +53,15 @@ describe("course-card-preferences", () => {
   });
 
   it("uses the shared storage key", () => {
-    writeCourseCardPreferences({ c1: { color: "oklch(0.56 0.18 145)" } });
+    writeCourseCardPreferences(new Map([["c1", { color: "oklch(0.56 0.18 145)" }]]));
     expect(localStorage.getItem(COURSE_CARD_PREFERENCES_KEY)).toContain("oklch");
   });
 
   it("caps nicknames at MAX_COURSE_NICKNAME_LENGTH", () => {
     const long = "a".repeat(MAX_COURSE_NICKNAME_LENGTH + 20);
     expect(normalizeCourseNickname(long)).toHaveLength(MAX_COURSE_NICKNAME_LENGTH);
-    const next = mergeCourseCardPreference({}, "c1", { nickname: long });
-    expect(next.c1?.nickname).toHaveLength(MAX_COURSE_NICKNAME_LENGTH);
+    const next = mergeCourseCardPreference(new Map(), "c1", { nickname: long });
+    expect(next.get("c1")?.nickname).toHaveLength(MAX_COURSE_NICKNAME_LENGTH);
     expect(getCourseDisplayName("Official", { nickname: long })).toHaveLength(
       MAX_COURSE_NICKNAME_LENGTH,
     );

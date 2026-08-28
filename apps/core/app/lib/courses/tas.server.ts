@@ -5,7 +5,10 @@ import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from
 // A TA is a course-level role, modelled as an Enrollment with role = "TA".
 // There is no longer a separate CourseTA table or platform-level UserRole.TA.
 
-function shapeTA(enrollment: { id: string; user: { id: string; name: string; email: string } }) {
+function toTASummary(enrollment: {
+  id: string;
+  user: { id: string; name: string; email: string };
+}) {
   return { id: enrollment.id, user: enrollment.user };
 }
 
@@ -113,7 +116,7 @@ export async function getCourseTA(courseId: string) {
     include: { user: { select: { id: true, name: true, email: true } } },
     orderBy: { enrolledAt: "asc" },
   });
-  return enrollments.map(shapeTA);
+  return enrollments.map(toTASummary);
 }
 
 export async function addCourseTA(courseId: string, payload: AddTAInput) {
@@ -158,7 +161,7 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
     include: { user: { select: { id: true, name: true, email: true } } },
   });
 
-  return { ta: shapeTA(enrollment) } as const;
+  return { ta: toTASummary(enrollment) } as const;
 }
 
 export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {

@@ -11,13 +11,14 @@ import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withNoStore } from "~/lib/api/cache-control.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 /**
  * #1453: every response here is scoped to `session.user.id`, so none of it may
  * be stored. The browser cache key is method + URL with no session component,
  * so a stored body would be served to the next account on the same profile.
  */
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return withNoStore(
     new Response(JSON.stringify(body), {
       status,

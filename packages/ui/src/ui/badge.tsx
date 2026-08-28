@@ -61,4 +61,10 @@ function Badge({
   );
 }
 
+/**
+ * The variant names `Badge` actually accepts, derived from the cva config so a
+ * lookup table that picks one for a domain value cannot drift from the component.
+ */
+export type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+
 export { Badge, badgeVariants };

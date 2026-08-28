@@ -283,14 +283,14 @@ export type CourseScopeFailOpenCause = "timeout" | "parse" | "provider_error";
  * requested JSON-only output format; provider_error covers everything else
  * (host unreachable, non-2xx, etc.).
  */
-export function classifyCourseScopeFailOpenCause(err: unknown): CourseScopeFailOpenCause {
-  if (err instanceof Error) {
+export function classifyCourseScopeFailOpenCause(cause: unknown): CourseScopeFailOpenCause {
+  if (cause instanceof Error) {
     // AbortSignal.timeout() rejects with a DOMException named "TimeoutError"
     // (or "AbortError" on some runtimes/versions).
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
+    if (cause.name === "TimeoutError" || cause.name === "AbortError") {
       return "timeout";
     }
-    if (err.message.includes("Course-scope classifier")) {
+    if (cause.message.includes("Course-scope classifier")) {
       return "parse";
     }
   }

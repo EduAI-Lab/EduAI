@@ -36,16 +36,18 @@ import { QuestionPreviewSheet } from "@/components/question-bank/QuestionPreview
 
 const COURSE_ALL = "__all__";
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const TYPE_ICON: Record<string, typeof IconListCheck> = {
-  MCQ: IconListCheck,
-  SA: IconAbc,
-  LA: IconFileText,
-};
-const difficultyBadge: Record<string, "success" | "warning" | "destructive"> = {
-  easy: "success",
-  medium: "warning",
-  hard: "destructive",
-};
+// A `Map` because the key is a value off a row, not a union this file owns:
+// `get` can miss, which is what the fallback at the call site is for.
+const TYPE_ICON = new Map<string, typeof IconListCheck>([
+  ["MCQ", IconListCheck],
+  ["SA", IconAbc],
+  ["LA", IconFileText],
+]);
+const difficultyBadge = new Map<string, "success" | "warning" | "destructive">([
+  ["easy", "success"],
+  ["medium", "warning"],
+  ["hard", "destructive"],
+]);
 
 const repVariant = (q: Question) => q.variants?.[0];
 const topicLabel = (q: Question) => q.primaryTopic?.name ?? "";
@@ -207,7 +209,7 @@ export default function QuestionBankPage() {
             {questions.map((q) => {
               const variant = repVariant(q);
               const difficulty = difficultyOf(q);
-              const TypeIcon = TYPE_ICON[q.type] ?? IconListCheck;
+              const TypeIcon = TYPE_ICON.get(q.type) ?? IconListCheck;
               return (
                 <li key={q.id}>
                   <button
@@ -251,7 +253,7 @@ export default function QuestionBankPage() {
                         </Badge>
                       )}
                       {difficulty && (
-                        <Badge variant={difficultyBadge[difficulty] ?? "warning"}>
+                        <Badge variant={difficultyBadge.get(difficulty) ?? "warning"}>
                           {capitalize(difficulty)}
                         </Badge>
                       )}

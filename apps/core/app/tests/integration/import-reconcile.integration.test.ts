@@ -81,7 +81,7 @@ function toCanvasFileApi(
     size: 128,
     updated_at: upstream.updatedAt.toISOString(),
     url: upstream.url,
-    ...(canvasPublished === "no" ? { hidden: true } : {}),
+    hidden: canvasPublished === "no" ? true : undefined,
   };
 }
 

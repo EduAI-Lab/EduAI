@@ -1,6 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 /**
  * Disciplines ("units" / UBCO subject codes, §541).
@@ -14,7 +15,7 @@ import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.s
  * don't hit the DB on every course create / keystroke.
  */
 
-const json = (body: unknown, status = 200) =>
+const json = (body: JsonResponseBody, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" } as const,

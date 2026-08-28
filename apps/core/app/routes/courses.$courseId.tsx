@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useState, useCallback } from "react";
 import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
@@ -68,7 +69,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!access) return redirect("/courses?access=denied");
 
   // Students cannot view unpublished courses by direct URL
-  if (access === "student" && !course.isPublished) return redirect("/courses");
+  if (access === "student" && !course.isPublished) return redirect("/courses?access=unpublished");
 
   // Reassigning the instructor is ADMIN/UNIT_ADMIN only. Load the instructor
   // list only when usable.
@@ -91,10 +92,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const audience = isStudent ? "student" : "staff";
 
   return {
+    // SAFETY: the serializer adds audience-specific fields on top of the
+    // detail shape; `JsonObject` names those extras as what they are — JSON
+    // the client renders — rather than reopening the whole course.
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
-    }) as unknown as CourseDetail & Record<string, unknown>,
+    }) as CourseDetail & JsonObject,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
     user,

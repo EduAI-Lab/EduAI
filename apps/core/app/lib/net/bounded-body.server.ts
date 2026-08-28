@@ -39,7 +39,7 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
-  let rejectAbort: ((reason: unknown) => void) | undefined;
+  let rejectAbort: ((cause: unknown) => void) | undefined;
   const abortPromise = new Promise<never>((_, reject) => {
     rejectAbort = reject;
   });

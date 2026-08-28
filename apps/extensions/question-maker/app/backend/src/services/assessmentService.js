@@ -423,14 +423,15 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
     throw relationNotFound("Question not found");
   }
 
-  // Remove from question order
-  const currentOrder = {
-    ...(question.questionOrder &&
+  // Legacy rows can hold a null or an array here; only a real object carries
+  // an order worth copying forward.
+  const storedOrder =
+    question.questionOrder &&
     typeof question.questionOrder === "object" &&
     !Array.isArray(question.questionOrder)
       ? question.questionOrder
-      : {}),
-  };
+      : undefined;
+  const currentOrder = { ...storedOrder };
   delete currentOrder[String(parsedAssessmentId)];
 
   const updated = await prisma.questionMetadata.update({

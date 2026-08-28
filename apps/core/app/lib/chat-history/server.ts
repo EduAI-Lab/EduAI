@@ -55,8 +55,8 @@ export type ListChatsOptions = {
 function extractText(content: Prisma.JsonValue | null | undefined): string | null {
   if (!content) return null;
   if (typeof content === "string") return content.trim() || null;
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
+  if (typeof content === "object" && !Array.isArray(content)) {
+    const obj = content;
     if (typeof obj.content === "string" && obj.content.trim()) return obj.content.trim();
     if (Array.isArray(obj.parts)) {
       const text = obj.parts

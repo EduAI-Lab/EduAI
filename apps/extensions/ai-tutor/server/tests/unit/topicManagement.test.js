@@ -38,6 +38,39 @@ describe("topic service boundaries", () => {
     });
   });
 
+  it("admits course staff who hold no local membership row", async () => {
+    // A UNIT_ADMIN is neither an assigned instructor nor an enrolled student,
+    // so the local tables say nothing about them — `isCourseAdmin` is what
+    // resolves their department scope against Core. Reading only the membership
+    // rows used to 403 this role on a course inside its own unit, which cost
+    // them the course hero's topic chips and blocked activity authoring
+    // outright (the form refuses to save without a main topic).
+    const unitAdmin = { id: "unit-admin-1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] };
+    isCourseAdmin.mockResolvedValue(true);
+
+    await expect(ensureCourseTopicAccess(20, unitAdmin)).resolves.toEqual({
+      course,
+      authorized: true,
+      isInstructor: false,
+    });
+    expect(isCourseAdmin).toHaveBeenCalledWith(unitAdmin, course);
+  });
+
+  it("still refuses a stranger, and does not ask Core twice about a member", async () => {
+    isCourseAdmin.mockResolvedValue(false);
+    const outsider = { id: "someone-else", role: "UNIT_ADMIN", authorizedUnits: ["MATH"] };
+
+    await expect(ensureCourseTopicAccess(20, outsider)).resolves.toMatchObject({
+      authorized: false,
+    });
+
+    // The local rows answer the common cases on their own — an assigned
+    // instructor must not cost a Core round trip on every topic read.
+    isCourseAdmin.mockClear();
+    await expect(ensureCourseTopicAccess(20, user)).resolves.toMatchObject({ authorized: true });
+    expect(isCourseAdmin).not.toHaveBeenCalled();
+  });
+
   it("rejects an empty remap payload as a stable mutation error", async () => {
     await expect(remapCourseTopics({ courseId: 20, user, body: {} })).rejects.toMatchObject({
       name: "TopicMutationError",

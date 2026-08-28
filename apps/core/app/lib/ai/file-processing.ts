@@ -1,3 +1,4 @@
+import type { ValidationResult } from "~/lib/validation-result";
 import { createHash } from "crypto";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -450,6 +451,14 @@ export interface FileInfo {
 /**
  * Sanitize text content for database storage
  * Removes null bytes and other problematic characters for PostgreSQL
+ *
+ * TRUST BOUNDARY (#1571): this strips control characters only — it does NOT
+ * strip HTML. A `.md`/`.html` upload's raw `<script>`/`<img onerror=…>` survives
+ * ingest. That is safe TODAY only because the sole render sink for material
+ * `rawText`/`excerpt` is a React-escaped `<pre>{excerpt}</pre>`
+ * (components/courses/material-preview-dialog.tsx). If any future consumer
+ * renders material text through a raw-HTML/markdown renderer, this becomes
+ * stored XSS — sanitize the HTML on ingest (or at that sink) before doing so.
  */
 export function sanitizeTextContent(content: string): string {
   return (
@@ -569,7 +578,7 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
 /**
  * Validate file type and size
  */
-export function validateFile(file: File | any): { isValid: boolean; error?: string } {
+export function validateFile(file: File | any): ValidationResult {
   const allowedTypes = [
     "text/plain",
     "text/markdown",
