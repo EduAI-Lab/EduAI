@@ -13,6 +13,7 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
 const captureApiKeysOwner = vi.hoisted(() => vi.fn());
+const useCoursesMock = vi.hoisted(() => vi.fn());
 const {
   handleSubmitMock,
   handleInputChangeMock,
@@ -62,13 +63,7 @@ vi.mock("~/lib/assistive-events.client", () => ({
 }));
 
 vi.mock("~/hooks/api/use-courses", () => ({
-  useCourses: () => ({
-    courses: [
-      { id: "c1", code: "COSC 101", name: "Intro to CS" },
-      { id: "c2", code: "PHYS 121", name: "Mechanics" },
-    ],
-    loading: false,
-  }),
+  useCourses: (...args: unknown[]) => useCoursesMock(...args),
 }));
 
 vi.mock("~/hooks/api/use-chat-history", () => ({
@@ -166,6 +161,13 @@ const autoRoutingData: ChatBaseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useCoursesMock.mockReturnValue({
+    courses: [
+      { id: "c1", code: "COSC 101", name: "Intro to CS" },
+      { id: "c2", code: "PHYS 121", name: "Mechanics" },
+    ],
+    loading: false,
+  });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -686,6 +688,28 @@ describe("ChatScreen — header", () => {
       responseOptions.onFinish({ id: "assistant-2", role: "assistant" });
     });
     expect(router.state.location.pathname).toBe("/chat");
+  });
+});
+
+describe("ChatScreen — course loading gate", () => {
+  it("does not report a missing course while the initial course request is loading", () => {
+    useCoursesMock.mockReturnValue({ courses: [], loading: true });
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({ disabledReason: "courses-loading" }),
+    );
+  });
+
+  it("reports no courses only after the initial course request finishes", () => {
+    useCoursesMock.mockReturnValue({ courses: [], loading: false });
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({ disabledReason: "no-courses" }),
+    );
   });
 });
 

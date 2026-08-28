@@ -90,7 +90,7 @@ describe("ChatConversationLayout — routed model labels", () => {
     expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
   });
 
-  it("does not expose the routed vLLM model for an auto-routed reply", () => {
+  it("shows the routed vLLM model for an in-flight auto-routed reply", () => {
     render(
       <ChatConversationLayout
         {...baseProps}
@@ -102,10 +102,12 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
+    ).toBeInTheDocument();
   });
 
-  it("keeps a persisted auto-routed message's label hidden after the picker is switched to an explicit model (#829)", () => {
+  it("keeps a persisted auto-routed message's label after the picker is switched to an explicit model (#829)", () => {
     render(
       <ChatConversationLayout
         {...baseProps}
@@ -116,7 +118,9 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
+    ).toBeInTheDocument();
   });
 
   it("still shows a persisted explicit-model message's label after the picker is switched to auto", () => {
@@ -141,7 +145,7 @@ describe("ChatConversationLayout — routed model labels", () => {
     expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
   });
 
-  it("keeps an auto-routed reply's label hidden after a reload with no live selector state (#829)", () => {
+  it("keeps an auto-routed reply's label after a reload with no live selector state (#829)", () => {
     // Simulates ChatScreen's hydration path: a DB-loaded transcript, not a
     // client session that ever saw the picker change.
     const storedTranscript = [
@@ -172,7 +176,9 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
+    ).toBeInTheDocument();
   });
 });
 

@@ -167,10 +167,14 @@ export function ChatConversationLayout({
                         : isStreamingMessage
                           ? streamingWasAutoRouted
                           : false;
-                    const answeredByLabel =
-                      !wasAutoRouted && routedRegistryId
-                        ? displayNameForRegistryId(routedRegistryId, chatModels)
-                        : undefined;
+                    const answeredByModel = routedRegistryId
+                      ? displayNameForRegistryId(routedRegistryId, chatModels)
+                      : undefined;
+                    const answeredByLabel = answeredByModel
+                      ? wasAutoRouted
+                        ? `${answeredByModel} (Auto-routed)`
+                        : answeredByModel
+                      : undefined;
 
                     return (
                       <ChatMessage
