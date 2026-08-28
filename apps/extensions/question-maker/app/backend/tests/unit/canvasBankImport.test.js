@@ -1,19 +1,24 @@
 /**
- * Unit tests for importQuestionBankFromCanvas (#845).
- * Mocks Prisma, Canvas HTTP (axios), and Core bank helpers.
+ * Unit tests for importQuestionBankFromCanvas (#845 / #1509).
+ * Canvas LMS egress is mocked via Core proxies (coreApiService).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const axiosRequest = vi.fn();
+const proxyCoreCanvasGetIntegration = vi.fn();
+const proxyCoreGetQuestionBank = vi.fn();
+const proxyCoreListQuestionBankQuestions = vi.fn();
 
-vi.mock("axios", () => ({
-  default: axiosRequest,
-}));
-
-vi.mock("../../src/utils/encryption.js", () => ({
-  encrypt: (v) => v,
-  decrypt: (v) => v,
-  isEncrypted: () => false,
+vi.mock("../../src/services/coreApiService.js", () => ({
+  proxyCoreCanvasGetIntegration: (...args) => proxyCoreCanvasGetIntegration(...args),
+  proxyCoreGetQuestionBank: (...args) => proxyCoreGetQuestionBank(...args),
+  proxyCoreListQuestionBankQuestions: (...args) => proxyCoreListQuestionBankQuestions(...args),
+  proxyCoreListQuestionBanks: vi.fn(),
+  proxyCoreCreateQuiz: vi.fn(),
+  proxyCoreCreateQuizQuestion: vi.fn(),
+  proxyCoreGetQuiz: vi.fn(),
+  proxyCoreGetQuizQuestion: vi.fn(),
+  proxyCoreListQuizQuestions: vi.fn(),
+  proxyCoreListQuizzes: vi.fn(),
 }));
 
 vi.mock("../../src/services/questionService.js", () => ({
@@ -37,7 +42,6 @@ vi.mock("../../src/services/questionBankService.js", () => ({
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
-    canvasIntegration: { findUnique: vi.fn() },
     course: { findFirst: vi.fn() },
     canvasCourseMapping: { findUnique: vi.fn() },
     canvasBankMapping: {
@@ -72,6 +76,12 @@ const { listBanks, createBank, addQuestionsToBank } =
 const { createQuestion } = await import("../../src/services/questionService.js");
 const { importQuestionBankFromCanvas } = await import("../../src/services/canvasService.js");
 
+const COOKIE = "session=test";
+
+function importBank(options, ownerId = "u1") {
+  return importQuestionBankFromCanvas("u1", 1, 10, 9, options, ownerId, COOKIE);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   prisma.$transaction.mockImplementation(async (fn) =>
@@ -88,12 +98,14 @@ beforeEach(() => {
       },
     }),
   );
-  prisma.canvasIntegration.findUnique.mockResolvedValue({
-    userId: "u1",
-    canvasUrl: "https://canvas.example.edu",
-    apiKey: "token",
-    isTestMode: false,
+  proxyCoreCanvasGetIntegration.mockResolvedValue({
+    data: {
+      canvasUrl: "https://canvas.example.edu",
+      isTestMode: false,
+    },
   });
+  proxyCoreGetQuestionBank.mockResolvedValue({ data: { id: 10, title: "Chapter 1" } });
+  proxyCoreListQuestionBankQuestions.mockResolvedValue({ data: [] });
   prisma.course.findFirst.mockResolvedValue({
     id: 9,
     coreCourseId: "core_1",
@@ -105,7 +117,6 @@ beforeEach(() => {
     userId: "u1",
   });
   listBanks.mockResolvedValue([{ id: "bank_default", name: "Course bank" }]);
-  // Default: no existing bank mapping for this Canvas bank
   prisma.canvasBankMapping.findUnique.mockResolvedValue(null);
   prisma.canvasBankMapping.upsert.mockResolvedValue({ id: 1 });
   prisma.canvasBankMapping.update.mockResolvedValue({
@@ -114,41 +125,30 @@ beforeEach(() => {
   });
   createBank.mockResolvedValue({ id: "bank_new", name: "Chapter 1" });
   addQuestionsToBank.mockResolvedValue({ added: 0 });
-  axiosRequest.mockImplementation(async (config) => {
-    if (String(config.url).includes("/questions")) {
-      return { data: [] };
-    }
-    if (String(config.url).includes("/question_banks/")) {
-      return { data: { id: 10, title: "Chapter 1" } };
-    }
-    return { data: [] };
-  });
 });
 
 describe("importQuestionBankFromCanvas", () => {
   it("throws when Canvas is not connected", async () => {
-    prisma.canvasIntegration.findUnique.mockResolvedValue(null);
-    await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, { primaryTopicId: "t1" }),
-    ).rejects.toThrow(/Canvas integration not configured/);
+    proxyCoreCanvasGetIntegration.mockResolvedValue({ data: null });
+    await expect(importBank({ primaryTopicId: "t1" })).rejects.toThrow(
+      /Canvas integration not configured/,
+    );
   });
 
   it("throws 404 when the local course is missing", async () => {
     prisma.course.findFirst.mockResolvedValue(null);
-    await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, { primaryTopicId: "t1" }),
-    ).rejects.toMatchObject({ status: 404 });
+    await expect(importBank({ primaryTopicId: "t1" })).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it("requires a primary topic", async () => {
-    await expect(importQuestionBankFromCanvas("u1", 1, 10, 9, {})).rejects.toThrow(
-      /Primary topic ID is required/,
-    );
+    await expect(importBank({})).rejects.toThrow(/Primary topic ID is required/);
   });
 
   it("rejects a missing targetBankId", async () => {
     await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, {
+      importBank({
         primaryTopicId: "t1",
         targetBankId: "missing",
       }),
@@ -156,19 +156,14 @@ describe("importQuestionBankFromCanvas", () => {
   });
 
   it("creates a Core bank and imports convertible questions", async () => {
-    axiosRequest.mockImplementation(async (config) => {
-      if (String(config.url).includes("/questions")) {
-        return {
-          data: [
-            {
-              id: 100,
-              question_text: "Explain polymorphism",
-              question_type: "essay_question",
-            },
-          ],
-        };
-      }
-      return { data: { id: 10, title: "Chapter 1" } };
+    proxyCoreListQuestionBankQuestions.mockResolvedValue({
+      data: [
+        {
+          id: 100,
+          question_text: "Explain polymorphism",
+          question_type: "essay_question",
+        },
+      ],
     });
     prisma.canvasBankQuestionMapping.findUnique.mockResolvedValue(null);
     createQuestion.mockResolvedValue({ id: 55 });
@@ -176,9 +171,7 @@ describe("importQuestionBankFromCanvas", () => {
     prisma.canvasBankQuestionMapping.create.mockResolvedValue({});
     addQuestionsToBank.mockResolvedValue({ added: 1 });
 
-    const result = await importQuestionBankFromCanvas("u1", 1, 10, 9, {
-      primaryTopicId: "topic_1",
-    });
+    const result = await importBank({ primaryTopicId: "topic_1" });
 
     expect(createBank).toHaveBeenCalled();
     expect(createQuestion).toHaveBeenCalledWith(
@@ -215,9 +208,9 @@ describe("importQuestionBankFromCanvas", () => {
 
   it("rejects when the local course is not linked to Canvas", async () => {
     prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
-    await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, { primaryTopicId: "t1" }),
-    ).rejects.toMatchObject({ status: 400 });
+    await expect(importBank({ primaryTopicId: "t1" })).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it("rejects when canvasCourseId does not match the synced course mapping", async () => {
@@ -226,9 +219,9 @@ describe("importQuestionBankFromCanvas", () => {
       canvasCourseId: 77,
       userId: "u1",
     });
-    await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, { primaryTopicId: "t1" }),
-    ).rejects.toMatchObject({ status: 400 });
+    await expect(importBank({ primaryTopicId: "t1" })).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it("rejects when the Canvas bank is already synced to a different local course", async () => {
@@ -239,36 +232,30 @@ describe("importQuestionBankFromCanvas", () => {
       localCourseId: 2,
       localBankId: "bank_elsewhere",
     });
-    await expect(
-      importQuestionBankFromCanvas("u1", 1, 10, 9, { primaryTopicId: "t1" }),
-    ).rejects.toMatchObject({ status: 400 });
+    await expect(importBank({ primaryTopicId: "t1" })).rejects.toMatchObject({
+      status: 400,
+    });
     expect(createQuestion).not.toHaveBeenCalled();
   });
 
   it("does not overwrite another course question when Canvas question id collides", async () => {
     listBanks.mockResolvedValue([{ id: "bank_extra", name: "Extra" }]);
-    axiosRequest.mockImplementation(async (config) => {
-      if (String(config.url).includes("/questions")) {
-        return {
-          data: [
-            {
-              id: 100,
-              question_text: "Explain polymorphism",
-              question_type: "essay_question",
-            },
-          ],
-        };
-      }
-      return { data: { id: 10, title: "Chapter 1" } };
+    proxyCoreListQuestionBankQuestions.mockResolvedValue({
+      data: [
+        {
+          id: 100,
+          question_text: "Explain polymorphism",
+          question_type: "essay_question",
+        },
+      ],
     });
-    // Course-scoped lookup finds nothing in course 9
     prisma.canvasBankQuestionMapping.findUnique.mockResolvedValue(null);
     createQuestion.mockResolvedValue({ id: 99 });
     prisma.variants.create.mockResolvedValue({});
     prisma.canvasBankQuestionMapping.create.mockResolvedValue({});
     addQuestionsToBank.mockResolvedValue({ added: 1 });
 
-    const result = await importQuestionBankFromCanvas("u1", 1, 10, 9, {
+    const result = await importBank({
       primaryTopicId: "t1",
       targetBankId: "bank_extra",
     });
@@ -293,7 +280,7 @@ describe("importQuestionBankFromCanvas", () => {
 
   it("reuses targetBankId when provided", async () => {
     listBanks.mockResolvedValue([{ id: "bank_extra", name: "Extra" }]);
-    const result = await importQuestionBankFromCanvas("u1", 1, 10, 9, {
+    const result = await importBank({
       primaryTopicId: "t1",
       targetBankId: "bank_extra",
     });
@@ -303,14 +290,11 @@ describe("importQuestionBankFromCanvas", () => {
 
   it("skips remote rows without an id", async () => {
     listBanks.mockResolvedValue([{ id: "bank_extra", name: "Extra" }]);
-    axiosRequest.mockImplementation(async (config) => {
-      if (String(config.url).includes("/questions")) {
-        return { data: [{ question_text: "orphan" }] };
-      }
-      return { data: { id: 10, title: "Chapter 1" } };
+    proxyCoreListQuestionBankQuestions.mockResolvedValue({
+      data: [{ question_text: "orphan" }],
     });
 
-    const result = await importQuestionBankFromCanvas("u1", 1, 10, 9, {
+    const result = await importBank({
       primaryTopicId: "t1",
       targetBankId: "bank_extra",
     });
@@ -321,9 +305,15 @@ describe("importQuestionBankFromCanvas", () => {
 
   it("rejects non-numeric canvas ids", async () => {
     await expect(
-      importQuestionBankFromCanvas("u1", "123&context_type=Account", 10, 9, {
-        primaryTopicId: "t1",
-      }),
+      importQuestionBankFromCanvas(
+        "u1",
+        "123&context_type=Account",
+        10,
+        9,
+        { primaryTopicId: "t1" },
+        "u1",
+        COOKIE,
+      ),
     ).rejects.toMatchObject({ status: 400 });
   });
 });

@@ -357,6 +357,8 @@ describe("Courses routes", () => {
       expect(res.body.id).toBe(seed.course.id);
       expect(res.body.title).toBe("Test Course");
       expect(res.body.isPublished).toBe(true);
+      // #1644: the caller's role on THIS course, so the client can gate staff tabs.
+      expect(res.body.viewerRole).toBe("INSTRUCTOR");
     });
 
     it("TA enrolled in course can access course details", async () => {
@@ -372,6 +374,25 @@ describe("Courses routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(seed.course.id);
+      expect(res.body.viewerRole).toBe("TA");
+    });
+
+    it("reports viewerRole STUDENT for a global-effective TA enrolled here only as a student (#1644)", async () => {
+      // The account's global effective role is TA (promoted by some other
+      // course), but on THIS course the live enrolment is STUDENT — the client
+      // gates staff tabs on viewerRole, so it must not read as staff here.
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: true,
+        state: "allowed",
+        role: "STUDENT",
+      });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.viewerRole).toBe("STUDENT");
     });
 
     it("TA enrolled in course sees it even when unpublished", async () => {

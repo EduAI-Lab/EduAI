@@ -12,9 +12,6 @@
  */
 import express from "express";
 import {
-  getCanvasIntegration,
-  saveCanvasIntegration,
-  getCanvasCourses,
   exportAssessmentToCanvas,
   getCanvasCourseMapping,
   getCanvasQuizzes,
@@ -25,142 +22,132 @@ import {
   importQuestionBankFromCanvas,
   parseCanvasNumericId,
 } from "../services/canvasService.js";
+import {
+  proxyCoreCanvasConnect,
+  proxyCoreCanvasDisconnect,
+  proxyCoreCanvasGetIntegration,
+  proxyCoreCanvasListCourses,
+} from "../services/coreApiService.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { CANVAS_ROLES } from "../middleware/roles.js";
 import { requireCourseAccess } from "../middleware/courseAccess.js";
 import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
-import { prisma } from "../config/database.js";
-import {
-  validateCanvasUrl,
-  canonicalCanvasBaseUrl,
-  CanvasUrlValidationError,
-} from "../utils/canvasUrlGuard.js";
 import { canvasRequestContext } from "../middleware/canvasRequestContext.js";
+import { prisma } from "../config/database.js";
 
 const router = express.Router();
 
-// Service calls inherit this signal so a browser disconnect cancels in-flight
-// Canvas requests while preserving the route's existing argument contract.
+// Core proxy calls inherit this signal, so a browser disconnect cancels the
+// in-flight QM→Core request (and with it Core's Canvas egress) instead of
+// letting a long import run on for a caller that has gone away. Mounted as
+// middleware to keep the service functions' argument contracts unchanged.
 router.use(canvasRequestContext);
+
+function respondCoreError(res, err) {
+  const status = Number.isInteger(err?.status) ? err.status : 502;
+  const payload = { success: false, error: err.message || "Core request failed" };
+  // Core's machine-readable code and validation details are relayed only when
+  // Core actually sent them.
+  if (err.body?.error) payload.code = err.body.error;
+  if (err.body?.details) payload.details = err.body.details;
+  return res.status(status).json(payload);
+}
+
+function handleCoreProxyError(res, error, next) {
+  if (Number.isInteger(error?.status)) {
+    return respondCoreError(res, error);
+  }
+  return next(error);
+}
+
+/** Maps Core's picker items back to the Canvas API shape the QM frontend expects. */
+function mapCoreCoursesForFrontend(coreData) {
+  const courses = Array.isArray(coreData?.courses) ? coreData.courses : coreData;
+  if (!Array.isArray(courses)) return [];
+
+  return courses.map((course) => ({
+    id: Number(course.canvasId ?? course.id),
+    name: course.name,
+    course_code: course.course_code ?? course.courseCode ?? course.name,
+  }));
+}
 
 /** GET /api/canvas/integration – returns whether the caller has Canvas configured (own, no key exposed). */
 router.get("/integration", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
-    const integration = await getCanvasIntegration(req.user.id);
+    const coreResult = await proxyCoreCanvasGetIntegration(req.headers.cookie);
 
-    if (!integration) {
+    if (!coreResult?.data) {
       return res.json({
         success: true,
         data: null,
-        message: "Canvas integration not configured",
+        message: coreResult?.message ?? "Canvas integration not configured",
       });
     }
 
-    // Don't send API key in response
     res.json({
       success: true,
       data: {
-        canvasUrl: integration.canvasUrl,
-        isTestMode: integration.isTestMode,
-        isConnected: true,
+        canvasUrl: coreResult.data.canvasUrl,
+        isTestMode: coreResult.data.isTestMode,
+        isConnected: coreResult.data.isConnected ?? true,
       },
     });
   } catch (error) {
-    next(error);
+    handleCoreProxyError(res, error, next);
   }
 });
 
-/** POST /api/canvas/connect – stores the caller's Canvas credentials/test-mode flag. */
+/** POST /api/canvas/connect – stores the caller's Canvas credentials/test-mode flag on Core. */
 router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
-    const { canvasUrl, apiKey, isTestMode } = req.body;
+    const coreResult = await proxyCoreCanvasConnect(req.headers.cookie, req.body);
 
-    if (!canvasUrl) {
-      return res.status(400).json({
-        success: false,
-        error: "Canvas URL is required",
-      });
+    const data = {
+      canvasUrl: coreResult.data.canvasUrl,
+      isTestMode: coreResult.data.isTestMode,
+    };
+    // Older Core builds omit `isConnected`; forward it only when Core states it.
+    if (coreResult.data.isConnected !== undefined) {
+      data.isConnected = coreResult.data.isConnected;
     }
 
-    // In test mode, API key is optional
-    if (!isTestMode && !apiKey) {
-      return res.status(400).json({
-        success: false,
-        error: "API key is required (unless using test mode)",
-      });
-    }
-
-    // Validate URL format and block SSRF targets (#991) — private/link-local/
-    // loopback IPs and non-HTTPS schemes. Preserve an HTTPS path prefix so
-    // Canvas installs under a subpath (e.g. /lms) keep working.
-    let canonicalCanvasUrl;
-    try {
-      canonicalCanvasUrl = canonicalCanvasBaseUrl(validateCanvasUrl(canvasUrl));
-    } catch (e) {
-      if (e instanceof CanvasUrlValidationError) {
-        return res.status(400).json({
-          success: false,
-          error: e.message,
-        });
-      }
-      throw e;
-    }
-
-    const integration = await saveCanvasIntegration(req.user.id, {
-      canvasUrl: canonicalCanvasUrl,
-      apiKey: apiKey || "test-key", // Use placeholder in test mode
-      isTestMode: isTestMode || false,
-    });
-
-    res.json({
-      success: true,
-      message: isTestMode
-        ? "Canvas test mode enabled. You can test exports without a real Canvas account."
-        : "Canvas integration connected successfully",
-      data: {
-        canvasUrl: integration.canvasUrl,
-        isTestMode: integration.isTestMode,
-      },
-    });
+    res.json({ success: true, message: coreResult.message, data });
   } catch (error) {
-    next(error);
+    handleCoreProxyError(res, error, next);
   }
 });
 
-/** DELETE /api/canvas/disconnect – removes the caller's saved Canvas integration. */
+/** DELETE /api/canvas/disconnect – removes the caller's saved Canvas integration on Core. */
 router.delete(
   "/disconnect",
   authenticateToken,
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
-      const integration = await getCanvasIntegration(req.user.id);
-
-      if (integration) {
-        await prisma.canvasIntegration.delete({ where: { userId: req.user.id } });
-      }
+      const coreResult = await proxyCoreCanvasDisconnect(req.headers.cookie);
 
       res.json({
         success: true,
-        message: "Canvas integration disconnected",
+        message: coreResult?.message ?? "Canvas integration disconnected",
       });
     } catch (error) {
-      next(error);
+      handleCoreProxyError(res, error, next);
     }
   },
 );
 
-/** GET /api/canvas/courses – lists Canvas courses via the caller's integration. */
+/** GET /api/canvas/courses – lists Canvas courses via the caller's Core integration. */
 router.get("/courses", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
-    const courses = await getCanvasCourses(req.user.id);
+    const coreResult = await proxyCoreCanvasListCourses(req.headers.cookie);
 
     res.json({
       success: true,
-      data: courses,
+      data: mapCoreCoursesForFrontend(coreResult.data),
     });
   } catch (error) {
-    next(error);
+    handleCoreProxyError(res, error, next);
   }
 });
 
@@ -183,10 +170,10 @@ router.post(
       }
 
       const result = await exportAssessmentToCanvas(
-        req.user.id,
         assessmentId,
         canvasCourseId,
         req.qmCourse.userId,
+        req.headers.cookie,
       );
 
       res.json({
@@ -228,7 +215,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { canvasCourseId } = req.params;
-      const quizzes = await getCanvasQuizzes(req.user.id, canvasCourseId);
+      const quizzes = await getCanvasQuizzes(req.headers.cookie, canvasCourseId);
 
       res.json({
         success: true,
@@ -248,7 +235,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { canvasCourseId, quizId } = req.params;
-      const questions = await getCanvasQuizQuestions(req.user.id, canvasCourseId, quizId);
+      const questions = await getCanvasQuizQuestions(req.headers.cookie, canvasCourseId, quizId);
 
       res.json({
         success: true,
@@ -302,6 +289,7 @@ router.post(
           primaryTopicId,
         },
         req.qmCourse.userId,
+        req.headers.cookie,
       );
 
       res.json({
@@ -328,7 +316,7 @@ router.get(
       } catch (error) {
         return res.status(400).json({ success: false, error: error.message });
       }
-      const banks = await getCanvasQuestionBanks(req.user.id, canvasCourseId);
+      const banks = await getCanvasQuestionBanks(req.headers.cookie, canvasCourseId);
       res.json({ success: true, data: banks });
     } catch (error) {
       next(error);
@@ -351,7 +339,7 @@ router.get(
         return res.status(400).json({ success: false, error: error.message });
       }
       const { questions, truncated } = await getCanvasQuestionBankQuestions(
-        req.user.id,
+        req.headers.cookie,
         canvasBankId,
       );
       res.json({ success: true, data: questions, truncated });
@@ -406,6 +394,7 @@ router.post(
           targetBankId: targetBankId ? String(targetBankId) : undefined,
         },
         req.qmCourse.userId,
+        req.headers.cookie,
       );
 
       res.json({

@@ -7,6 +7,8 @@ export type ActiveChatModel = {
   supportsImages: boolean;
   /** DB maxTokens — often total context window for vLLM, not output-only. */
   maxTokens: number | null;
+  /** Per-model override for the context fill ratio; null/absent = env/global default. */
+  contextFillRatio?: number | null;
 };
 
 /** Rough chars-per-token for budgeting when the provider has no tokenizer hook. */
@@ -37,6 +39,7 @@ export async function resolveActiveChatModel(
       supportsTools: true,
       supportsImages: true,
       maxTokens: true,
+      contextFillRatio: true,
       name: true,
     },
   });
@@ -50,6 +53,7 @@ export async function resolveActiveChatModel(
     supportsTools: model.supportsTools,
     supportsImages: model.supportsImages,
     maxTokens: model.maxTokens,
+    contextFillRatio: model.contextFillRatio,
   };
 }
 
@@ -125,6 +129,69 @@ export function estimateAdminToolStepReserve(contextWindow: number): number {
   return 0;
 }
 
+/** Default fraction of the context window the prompt may fill before digesting older turns. */
+export const DEFAULT_CONTEXT_FILL_RATIO = 0.9;
+const CONTEXT_FILL_RATIO_MIN = 0.5;
+const CONTEXT_FILL_RATIO_MAX = 0.98;
+
+/**
+ * Fraction of the model context window the assembled prompt (history + system +
+ * RAG + tool schemas + reserved output) may fill before older turns are
+ * digested. Per-model DB override wins, then env `CHAT_CONTEXT_FILL_RATIO`, then
+ * {@link DEFAULT_CONTEXT_FILL_RATIO}. Clamped so a bad value can neither disable
+ * digesting nor starve the prompt.
+ */
+export function resolveContextFillRatio(perModelRatio?: number | null): number {
+  for (const value of [perModelRatio, Number(process.env.CHAT_CONTEXT_FILL_RATIO)]) {
+    if (value != null && Number.isFinite(value) && value > 0) {
+      return Math.min(CONTEXT_FILL_RATIO_MAX, Math.max(CONTEXT_FILL_RATIO_MIN, value));
+    }
+  }
+  return DEFAULT_CONTEXT_FILL_RATIO;
+}
+
+/**
+ * History char budget for `prepareBoundedSessionContext`, derived from the model
+ * context window so digesting triggers on tokens — not message count (#1639).
+ *
+ * The fill ratio bounds the **input** prompt: history + system + RAG + tool
+ * schemas + mid-turn tool-step payloads must fit within `ratio × contextWindow`,
+ * leaving the remaining `(1 - ratio)` of the window for the completion (the
+ * caller caps output into that space separately via {@link capMaxOutputTokensForPrompt}).
+ * Everything else sharing the input allowance is reserved first; the remainder
+ * is what history may occupy. It is never inflated past what the window leaves:
+ * once the reservations already fill the input budget, history yields to zero so
+ * the caller's fit-check can fail closed instead of forcing an over-context
+ * request (#1643). Returned in characters for the char-budgeted digest path.
+ */
+export function resolveSessionCharBudgetForModel(params: {
+  contextWindow: number;
+  perModelRatio?: number | null;
+  systemChars?: number;
+  ragChars?: number;
+  toolCount?: number;
+  /** Reserve headroom for mid-turn tool-result payloads on multi-step tool calls. */
+  reserveToolSteps?: boolean;
+  safetyBufferTokens?: number;
+}): number {
+  const ratio = resolveContextFillRatio(params.perModelRatio);
+  const inputTokenBudget = Math.floor(params.contextWindow * ratio);
+
+  const reserved =
+    estimateToolDefinitionTokens(params.toolCount ?? 0) +
+    (params.reserveToolSteps ? estimateAdminToolStepReserve(params.contextWindow) : 0) +
+    estimateTokensFromChars(params.systemChars ?? 0) +
+    estimateTokensFromChars(params.ragChars ?? 0) +
+    (params.safetyBufferTokens ?? 256);
+
+  // History gets whatever the input budget leaves after the fixed reservations,
+  // and never more: a large fixed prompt (big system/RAG block + tool schemas)
+  // must be able to squeeze history to zero so the caller's fit-check can fail
+  // closed instead of forcing an over-context request (#1643).
+  const historyTokens = Math.max(0, inputTokenBudget - reserved);
+  return historyTokens * ESTIMATED_CHARS_PER_TOKEN;
+}
+
 /** Fit completion tokens inside what remains after the prompt (+ safety buffer). */
 export function capMaxOutputTokensForPrompt(params: {
   contextWindow: number;
@@ -172,6 +239,8 @@ export type ChatModelCapabilities = {
   supportsTools: boolean;
   supportsImages: boolean;
   maxTokens: number | null;
+  /** Per-model context fill ratio override; null/absent = env/global default. */
+  contextFillRatio?: number | null;
   name: string | null;
 };
 
@@ -187,6 +256,7 @@ export async function getChatModelCapabilities(
       supportsTools: model?.supportsTools ?? false,
       supportsImages: model?.supportsImages ?? false,
       maxTokens: model?.maxTokens ?? null,
+      contextFillRatio: model?.contextFillRatio ?? null,
       name: model?.name ?? null,
     };
     console.log(
@@ -195,7 +265,13 @@ export async function getChatModelCapabilities(
     return capabilities;
   } catch (error) {
     console.error("Error checking model tool support:", error);
-    return { supportsTools: false, supportsImages: false, maxTokens: null, name: null };
+    return {
+      supportsTools: false,
+      supportsImages: false,
+      maxTokens: null,
+      contextFillRatio: null,
+      name: null,
+    };
   }
 }
 

@@ -49,7 +49,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -76,7 +79,7 @@ vi.mock("~/lib/ai/embedding", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   },
