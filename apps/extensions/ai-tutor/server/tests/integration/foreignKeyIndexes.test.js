@@ -29,24 +29,24 @@
  * Composite FKs are out of scope; AI Tutor has none, and `conkey[1]` would only check
  * the first column if one were added.
  */
-import { describe, it, expect, afterAll } from 'vitest';
-import { prisma } from '../helpers.js';
+import { describe, it, expect, afterAll } from "vitest";
+import { prisma } from "../helpers.js";
 
 /** Every index the #1374 migration is responsible for, as `Table.column`. */
 const EXPECTED_INDEXED_FKS = [
-  'Activity.lessonId',
-  'Activity.mainTopicId',
-  'ActivityFeedback.activityId',
-  'ActivityFeedback.submissionId',
-  'ActivitySecondaryTopic.topicId',
-  'ActivityStudentMetric.activityId',
-  'AiChatSession.activityId',
-  'AiInteractionTrace.activityId',
-  'AiInteractionTrace.aiChatSessionId',
-  'CourseInstructor.courseOfferingId',
-  'Lesson.moduleId',
-  'Module.courseOfferingId',
-  'Submission.activityId',
+  "Activity.lessonId",
+  "Activity.mainTopicId",
+  "ActivityFeedback.activityId",
+  "ActivityFeedback.submissionId",
+  "ActivitySecondaryTopic.topicId",
+  "ActivityStudentMetric.activityId",
+  "AiChatSession.activityId",
+  "AiInteractionTrace.activityId",
+  "AiInteractionTrace.aiChatSessionId",
+  "CourseInstructor.courseOfferingId",
+  "Lesson.moduleId",
+  "Module.courseOfferingId",
+  "Submission.activityId",
 ];
 
 /**
@@ -58,7 +58,7 @@ const EXPECTED_INDEXED_FKS = [
  * Pinned as an exact set rather than ignored: if a "list activities by prompt template"
  * read lands later, this test is the thing that says the decision needs revisiting.
  */
-const DELIBERATELY_UNINDEXED_FKS = ['Activity.promptTemplateId'];
+const DELIBERATELY_UNINDEXED_FKS = ["Activity.promptTemplateId"];
 
 /**
  * Per-user reads on a column the FK audit structurally cannot see: `userId` is a Core CUID
@@ -71,21 +71,21 @@ const DELIBERATELY_UNINDEXED_FKS = ['Activity.promptTemplateId'];
  * `@@unique([userId, activityId, attemptNumber])`, so `GET /me/submissions` already seeks
  * on that and a standalone index would only duplicate it on every insert.
  */
-const EXPECTED_NON_FK_INDEXES = ['CourseEnrollment_userId_idx'];
+const EXPECTED_NON_FK_INDEXES = ["CourseEnrollment_userId_idx"];
 
 /**
  * FK columns that must keep riding an existing leading PK/unique WITHOUT acquiring a
  * standalone index of their own, which would duplicate it on every write.
  */
 const COVERED_BY_LEADING_KEY = [
-  'ActivityAnalytics.activityId', // @unique
-  'ActivitySecondaryTopic.activityId', // leads @@id([activityId, topicId])
-  'CourseEnrollment.courseOfferingId', // leads @@id([courseOfferingId, userId])
-  'Topic.courseOfferingId', // leads @@unique([courseOfferingId, name])
+  "ActivityAnalytics.activityId", // @unique
+  "ActivitySecondaryTopic.activityId", // leads @@id([activityId, topicId])
+  "CourseEnrollment.courseOfferingId", // leads @@id([courseOfferingId, userId])
+  "Topic.courseOfferingId", // leads @@unique([courseOfferingId, name])
 ];
 
 /** `conrelid::regclass` quotes mixed-case identifiers ("Activity"); strip for readability. */
-const unquote = (identifier) => identifier.replace(/"/g, '');
+const unquote = (identifier) => identifier.replace(/"/g, "");
 
 /**
  * `Table.column` -> every usable index whose leading column is that FK column, with an
@@ -141,20 +141,20 @@ async function findUnindexedForeignKeys(client = prisma) {
     .toSorted();
 }
 
-describe('foreign key indexes (integration)', () => {
+describe("foreign key indexes (integration)", () => {
   afterAll(async () => {
     await prisma.$disconnect();
   });
 
-  it('leaves exactly the one documented FK unindexed, and nothing else', async () => {
+  it("leaves exactly the one documented FK unindexed, and nothing else", async () => {
     expect(await findUnindexedForeignKeys()).toEqual(DELIBERATELY_UNINDEXED_FKS);
   });
 
-  it('has every index the migration declares, and each is a plain non-partial btree', async () => {
+  it("has every index the migration declares, and each is a plain non-partial btree", async () => {
     const byColumn = await indexesByForeignKey();
 
     for (const fk of EXPECTED_INDEXED_FKS) {
-      const [table, column] = fk.split('.');
+      const [table, column] = fk.split(".");
       const matches = byColumn.get(fk) ?? [];
       expect(matches.length, `${fk} has no usable index`).toBeGreaterThan(0);
       // Prisma's own naming, so a later `migrate dev` sees no drift and does not drop
@@ -165,12 +165,12 @@ describe('foreign key indexes (integration)', () => {
       // access method on the same column (a BRIN for an analytics scan, say) is a
       // legitimate addition, not a regression of FK coverage.
       expect(named?.method, `${table}_${column}_idx is a ${named?.method}, not a btree`).toBe(
-        'btree',
+        "btree",
       );
     }
   });
 
-  it('keeps the composites that made three activityId columns non-leading', async () => {
+  it("keeps the composites that made three activityId columns non-leading", async () => {
     // The single-column indexes above serve the activity-scoped reads; these composites
     // serve the per-user reads they were built for. Dropping one in favour of "we already
     // index activityId now" would quietly regress the per-user path, which no other
@@ -190,13 +190,13 @@ describe('foreign key indexes (integration)', () => {
         )
     `;
     expect(rows.map((r) => r.indexname).toSorted()).toEqual([
-      'ActivityFeedback_userId_activityId_key',
-      'ActivityStudentMetric_userId_activityId_key',
-      'AiChatSession_userId_activityId_mode_idx',
+      "ActivityFeedback_userId_activityId_key",
+      "ActivityStudentMetric_userId_activityId_key",
+      "AiChatSession_userId_activityId_mode_idx",
     ]);
   });
 
-  it('indexes the per-user column the FK audit cannot see, and no redundant twin', async () => {
+  it("indexes the per-user column the FK audit cannot see, and no redundant twin", async () => {
     // `userId` carries no FK anywhere in this schema (Core owns User), so every other
     // assertion in this file is blind to it while these are the hottest per-user reads.
     // `Submission_userId_idx` must NOT be here: the attempt-number unique leads with
@@ -217,19 +217,19 @@ describe('foreign key indexes (integration)', () => {
         AND i.indisvalid
         AND a.attname = 'userId'
     `;
-    expect(submissionUserIdReads.map((r) => r.index_name)).toEqual([
-      'Submission_userId_activityId_attemptNumber_key',
+    expect(submissionUserIdReads.map((r) => unquote(r.index_name))).toEqual([
+      "Submission_userId_activityId_attemptNumber_key",
     ]);
   });
 
-  it('keeps the FK columns that ride a leading PK/unique, without giving them their own', async () => {
+  it("keeps the FK columns that ride a leading PK/unique, without giving them their own", async () => {
     // The first test already fails if any of these lost coverage entirely. What it cannot
     // see is HOW they are covered: these must keep riding the pre-existing key rather than
     // quietly acquiring a redundant `<Table>_<column>_idx` that duplicates it on writes.
     const byColumn = await indexesByForeignKey();
 
     for (const fk of COVERED_BY_LEADING_KEY) {
-      const [table, column] = fk.split('.');
+      const [table, column] = fk.split(".");
       const matches = byColumn.get(fk) ?? [];
       expect(
         matches.some((m) => m.is_unique),
@@ -242,7 +242,7 @@ describe('foreign key indexes (integration)', () => {
     }
   });
 
-  it('reports a dropped index as unindexed, so the audit itself is trustworthy', async () => {
+  it("reports a dropped index as unindexed, so the audit itself is trustworthy", async () => {
     // Guards the query above. If `Activity_lessonId_idx` can be dropped and the audit
     // still comes back clean, the leading-column test has broken and would keep passing
     // while real seq scans exist.
@@ -251,10 +251,10 @@ describe('foreign key indexes (integration)', () => {
         async (tx) => {
           await tx.$executeRawUnsafe('DROP INDEX "Activity_lessonId_idx"');
 
-          expect(await findUnindexedForeignKeys(tx)).toContain('Activity.lessonId');
+          expect(await findUnindexedForeignKeys(tx)).toContain("Activity.lessonId");
 
           // Roll back so the index survives for the rest of the suite.
-          throw new Error('__rollback__');
+          throw new Error("__rollback__");
         },
         // The DROP takes an ACCESS EXCLUSIVE lock and there are several catalog round
         // trips around it; Prisma's 5s interactive default turns a slow runner into a
@@ -262,7 +262,7 @@ describe('foreign key indexes (integration)', () => {
         { timeout: 30_000, maxWait: 10_000 },
       )
       .catch((err) => {
-        if (err.message !== '__rollback__') throw err;
+        if (err.message !== "__rollback__") throw err;
       });
 
     // The rollback must have restored it.
