@@ -4,6 +4,7 @@ import {
   cancelActiveChat,
   isValidActiveChatRequestId,
 } from "~/lib/ai/active-chat-cancellations.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const cancellationSchema = z.object({ requestId: z.string() });
 
@@ -15,6 +16,14 @@ const cancellationSchema = z.object({ requestId: z.string() });
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response(null, { status: 405, headers: { Allow: "POST" } });
+  }
+
+  const session = await getRequestSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   let body: unknown;
