@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { IconChevronDown, IconListDetails } from "@tabler/icons-react";
 import { AnswerOption } from "@eduai/ui";
 import { cn } from "~/lib/utils";
+import { readActivityAnswer } from "../lib/api-schemas";
 import type { Activity } from "../lib/types";
 
 type ActivityDetailsCardProps = {
@@ -13,14 +14,14 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
 
   const details = useMemo(() => {
     const choices = activity.options?.choices ?? [];
+    // The answer column is untyped JSON, so decode it before branching. A
+    // malformed `text` has to render nothing rather than reach the DOM as an
+    // object, which React throws on (#1629).
+    const answer = readActivityAnswer(activity.answer);
     const correctChoiceIndex =
-      activity.type === "MCQ" && activity.answer?.correctIndex !== undefined
-        ? activity.answer.correctIndex
-        : null;
+      activity.type === "MCQ" && answer.correctIndex !== undefined ? answer.correctIndex : null;
     const shortAnswerText =
-      activity.type === "SHORT_TEXT" && activity.answer?.text !== undefined
-        ? activity.answer.text
-        : null;
+      activity.type === "SHORT_TEXT" && answer.text !== undefined ? answer.text : null;
 
     const hasContent =
       Boolean(activity.title) ||
