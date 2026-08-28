@@ -5,6 +5,12 @@ import {
   EduAiQuestionListSchema,
 } from "../schemas/eduai.js";
 import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+// TODO(#1647-followup): the inline `Bearer ${process.env.EDUAI_API_KEY}` reads
+// below predate `serviceAuthHeader()`/`getEffectiveEduAiApiKey` and still read
+// the env key directly (throwing on unset). Migrate them to the effective key
+// in a focused follow-up — it changes both the key source and the unset
+// contract per call site, so it is kept out of the #1647 fix. `listEduAiModels`
+// (~:592) already uses the effective key as the reference pattern.
 const DEFAULT_BASE_URL = "http://localhost:5174/api";
 
 function normalizeBaseUrl(rawUrl) {

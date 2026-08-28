@@ -834,7 +834,16 @@ router.get("/courses/:courseId", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
 
-    res.json(mapCourseOffering(course, coreCourse));
+    // The caller's role *on this course* (not their global effective role). The
+    // client gates course-detail staff tabs on this so a global-effective TA who
+    // is only a STUDENT on this course sees no staff tabs (#1644). Learners get
+    // the live enrolment role; staff get their principal role, falling back to
+    // the principal kind (a unit admin authorized by unit has no enrolment role).
+    const viewerRole = isLearner
+      ? (liveEnrollment?.role ?? null)
+      : (liveStaffPrincipal?.role ?? liveStaffPrincipal?.kind ?? null);
+
+    res.json({ ...mapCourseOffering(course, coreCourse), viewerRole });
   } catch (e) {
     sendSafeError(res, e, "Internal server error");
   }

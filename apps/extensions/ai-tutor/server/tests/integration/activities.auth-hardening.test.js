@@ -483,6 +483,38 @@ describe("activity auth hardening", () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
+  it("returns an empty transcript for a locally-minted chatId Core has no record of (#1646)", async () => {
+    const activity = await createActivity();
+    const student = makeStudent();
+    await enroll(student, "STUDENT");
+    await prisma.aiChatSession.create({
+      data: {
+        userId: student.id,
+        activityId: activity.id,
+        mode: "teach",
+        chatId: "minted-uuid-chat",
+      },
+    });
+    const app = await createApp({ mockUser: student });
+    // AI-Tutor mints its own session chatId; Core's stateless /api/completion
+    // never created a matching Chat, so its message endpoint 404s. The proxy
+    // must degrade to a benign empty transcript instead of dead-ending the
+    // restored history entry in a 404.
+    const provider = vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
+    vi.stubGlobal("fetch", provider);
+
+    const response = await request(app).get(
+      `/api/activities/${activity.id}/chat-sessions/minted-uuid-chat/messages`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      chat: { id: "minted-uuid-chat", title: null },
+      messages: [],
+    });
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [
       "course",
