@@ -9,6 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveSmokeApiKey } from "./lib/vllm-api-key.mjs";
+import { missingExpectedFleetModels } from "./lib/fleet-smoke-validation.mjs";
 
 function loadEnvFile() {
   const envPath = resolve(process.cwd(), ".env");
@@ -133,6 +134,14 @@ async function main() {
 
   const okCount = results.filter((r) => r.ok).length;
   console.log(`\nSummary: ${okCount}/${results.length} hosts healthy`);
+  const missingFleetModels = missingExpectedFleetModels(results, expectedModels);
+  if (missingFleetModels.length > 0) {
+    console.error(
+      `FAIL  Fleet defaults missing from all healthy hosts: ${missingFleetModels.join(", ")}. ` +
+        "Provision the configured interactive fleet before enabling these defaults.",
+    );
+    process.exit(1);
+  }
   const assistHosts = results.filter((result) =>
     result.modelIds.some((modelId) => modelId.toLowerCase() === assistModel.toLowerCase()),
   );

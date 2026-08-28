@@ -119,10 +119,12 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  forceDeterministicCompliance,
   isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
+import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 import {
   resolveAdhdResponseWordCap,
   isProfileStructuralPass,
@@ -2262,6 +2264,9 @@ ${buildEmptyCourseRagBlock()}`;
           schema: jsonSchema(
             buildAdhdAssistStructuredResponseSchema(
               requestedAssistStageCount,
+              requestedAssistStageCount && requestedAssistStageCount > 2
+                ? "process-flow"
+                : resolveEduaiDiagramTypeId({ userText: lastUserText }),
             ) as unknown as Parameters<typeof jsonSchema>[0],
           ),
         })
@@ -3006,7 +3011,14 @@ ${buildEmptyCourseRagBlock()}`;
         // JSON/Markdown when constrained decoding is ignored or malformed.
         // Without oversight there is no later application pass to restore the
         // canonical ladder/diagram contract, so reject the result instead.
-        const normalizedText = renderedText;
+        const normalizedText = renderedText
+          ? forceDeterministicCompliance(renderedText, {
+              wordCap: adhdWordCap,
+              profile: adhdProfile ?? "full_tutoring",
+              expectSources: adhdToolsUsed,
+              userText: lastUserText,
+            })
+          : null;
         if (!normalizedText) {
           throw new Error("Provider returned invalid structured Assist output");
         }
@@ -3115,11 +3127,13 @@ ${buildEmptyCourseRagBlock()}`;
             { ...streamTrace, stage: "structured-provider" },
           );
         }
-        console.error("Error rendering structured Assist response:", error);
+        console.error(
+          "Error rendering structured Assist response:",
+          providerErrorDiagnostic(error),
+        );
         return new Response(
           JSON.stringify({
             error: "Failed to render structured Assist response",
-            details: error instanceof Error ? error.message : "Unknown error",
           }),
           {
             status: 500,

@@ -4,7 +4,10 @@ import {
   normalizeStagesForType,
   type EduaiDiagramStage,
 } from "~/lib/ai/eduai-diagram-payload";
-import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
+import {
+  resolveEduaiDiagramTypeId,
+  type EduaiDiagramCanonicalId,
+} from "~/lib/ai/eduai-diagram-type";
 import { userRequestedDiagram, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import { jsonObjectSchema, type JsonObject, type JsonValue } from "~/lib/json-value";
 
@@ -42,11 +45,18 @@ export function resolveRequestedAssistStageCount(userText?: string): number | nu
   return count >= 3 && count <= 5 ? count : null;
 }
 
-export function buildAdhdAssistStructuredResponseSchema(exactStageCount?: number | null) {
+export function buildAdhdAssistStructuredResponseSchema(
+  exactStageCount?: number | null,
+  diagramType?: EduaiDiagramCanonicalId,
+) {
   const stageCount =
     exactStageCount != null && exactStageCount >= 3 && exactStageCount <= 5
       ? exactStageCount
       : null;
+  // The compare visual is intentionally two-sided. Keep the default process
+  // flow contract at 3-5 stages, while allowing compare prompts to satisfy
+  // their own two-stage payload without being silently truncated later.
+  const compareWithoutExplicitCount = diagramType === "compare" && stageCount == null;
 
   return {
     type: "object" as const,
@@ -55,8 +65,8 @@ export function buildAdhdAssistStructuredResponseSchema(exactStageCount?: number
       answer: { type: "string" as const },
       stages: {
         type: "array" as const,
-        minItems: stageCount ?? 3,
-        maxItems: stageCount ?? 5,
+        minItems: stageCount ?? (compareWithoutExplicitCount ? 2 : 3),
+        maxItems: stageCount ?? (compareWithoutExplicitCount ? 2 : 5),
         items: {
           type: "object" as const,
           properties: {
@@ -141,6 +151,7 @@ function parseJsonObject(text: string): JsonObject | null {
 export function parseAdhdStructuredResponse(
   text: string,
   expectedStageCount?: number | null,
+  diagramType?: EduaiDiagramCanonicalId,
 ): AdhdStructuredResponse | null {
   const object = parseJsonObject(text);
   if (!object) return null;
@@ -164,12 +175,15 @@ export function parseAdhdStructuredResponse(
     expectedStageCount != null && expectedStageCount >= 3 && expectedStageCount <= 5
       ? expectedStageCount
       : null;
+  const minimumStageCount = diagramType === "compare" && exactStageCount == null ? 2 : 3;
+  const maximumStageCount = diagramType === "compare" && exactStageCount == null ? 2 : 5;
   if (
     !title ||
     !answer ||
     !tldr ||
     !next ||
-    stages.length < 3 ||
+    stages.length < minimumStageCount ||
+    stages.length > maximumStageCount ||
     (exactStageCount != null && stages.length !== exactStageCount)
   ) {
     return null;
@@ -190,9 +204,12 @@ export function renderAdhdStructuredResponse(args: {
   text: string;
   userText?: string;
 }): string | null {
+  const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
+  const requestedTypeId = resolveEduaiDiagramTypeId({ userText: args.userText });
   const parsed = parseAdhdStructuredResponse(
     args.text,
-    resolveRequestedAssistStageCount(args.userText),
+    requestedStageCount,
+    requestedStageCount && requestedStageCount > 2 ? "process-flow" : requestedTypeId,
   );
   if (!parsed) return null;
 
@@ -203,7 +220,6 @@ export function renderAdhdStructuredResponse(args: {
   // The comparison visual supports only two sides. An explicit request for
   // three to five stages must remain a process flow even when a topic (for
   // example, binary search) contains comparison-like wording.
-  const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
   const typeId = requestedStageCount && requestedStageCount > 2 ? "process-flow" : resolvedTypeId;
   const stages = normalizeStagesForType(typeId, parsed.stages);
   const summary = stages.map((stage) => `- **${stage.label}** — ${stage.detail}`).join("\n");
@@ -223,14 +239,12 @@ export function renderAdhdStructuredResponse(args: {
     "**Top summary**",
     summary,
     "",
-    parsed.answer,
-    "",
     "### Step ladder",
     `Start here: **${stages[0]?.label ?? "the first stage"}** (~5 min)`,
     ladder,
     diagram,
     "",
-    `**TLDR** ${parsed.tldr}`,
+    parsed.answer,
     "",
     `**Next?** ${cleanNextPrompt(parsed.next)}`,
   ]

@@ -90,6 +90,7 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { invalidatePolicyCache } from "~/lib/policy.server";
@@ -466,6 +467,97 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "keeps valid structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: STRUCTURED_ASSIST });
+      mockAuditResult();
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("**Top summary**");
+      expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+        expect.objectContaining({ draft: expect.stringContaining("### Step ladder") }),
+      );
+    },
+  );
+
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "rejects malformed structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: "not valid Assist JSON" });
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(502);
+      const body = await res.json();
+      expect(body.error).toBe("Provider request failed");
+      expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+      expect(body).not.toHaveProperty("details");
+      expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not expose persistence errors from the no-oversight structured path", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    vi.mocked(prisma.chatMessage.createMany).mockRejectedValue(
+      new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+    );
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Internal server error");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
+  });
+
+  it("adds a Sources footer before persisting no-oversight structured RAG output", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    vi.mocked(findRelevantContent).mockResolvedValue([
+      {
+        content: "Tax brackets group taxable income.",
+        similarity: 0.95,
+        materialTitle: "Lecture 1",
+      },
+    ]);
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("Sources: Retrieved materials used this turn.");
+    expect(JSON.stringify(lastPersistedRows())).toContain(
+      "Sources: Retrieved materials used this turn.",
+    );
+  });
+
   it("rejects malformed or Markdown Assist output without oversight", async () => {
     process.env.ADHD_ASSIST_OVERSIGHT = "false";
     mockStreamResult({
@@ -485,7 +577,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Failed to render structured Assist response");
-    expect(body.details).toContain("invalid structured Assist output");
+    expect(body).not.toHaveProperty("details");
     expect(JSON.stringify(body)).not.toContain("### Step ladder");
   });
 
@@ -508,7 +600,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Failed to render structured Assist response");
-    expect(body.details).toContain("invalid structured Assist output");
+    expect(body).not.toHaveProperty("details");
     expect(JSON.stringify(body)).not.toContain("### Step ladder");
   });
 });

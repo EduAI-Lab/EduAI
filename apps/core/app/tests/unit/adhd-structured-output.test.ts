@@ -41,6 +41,43 @@ describe("structured Assist output", () => {
     expect(rendered?.indexOf("### Step ladder")).toBeLessThan(
       rendered?.indexOf("```eduai-diagram") ?? 0,
     );
+    expect(rendered?.indexOf("### Step ladder")).toBeLessThan(
+      rendered?.indexOf("The optimizer lowers error") ?? 0,
+    );
+    expect(rendered).toContain("**Top summary**");
+    expect(rendered).not.toContain("**TLDR**");
+    expect(rendered?.indexOf("```eduai-diagram")).toBeLessThan(
+      rendered?.indexOf("The optimizer lowers error") ?? 0,
+    );
+  });
+
+  it("accepts the two-sided compare contract without truncating it", () => {
+    const compare = JSON.stringify({
+      ...JSON.parse(structured),
+      title: "Study methods",
+      answer:
+        "Flashcards emphasize repeated recall, while practice tests simulate retrieval under pressure.",
+      tldr: "Choose flashcards for recall practice and tests for retrieval practice.",
+      next: "try both methods and compare how much you remember",
+      stages: [
+        { label: "Flashcards", detail: "Recall small pieces repeatedly." },
+        { label: "Practice tests", detail: "Retrieve answers under test-like conditions." },
+      ],
+    });
+
+    expect(
+      buildAdhdAssistStructuredResponseSchema(undefined, "compare").properties.stages,
+    ).toMatchObject({
+      minItems: 2,
+      maxItems: 2,
+    });
+    expect(parseAdhdStructuredResponse(compare, undefined, "compare")?.stages).toHaveLength(2);
+    expect(
+      renderAdhdStructuredResponse({
+        text: compare,
+        userText: "Compare flashcards versus practice tests with a diagram",
+      }),
+    ).toContain("```eduai-diagram\ncompare");
   });
 
   it("uses the structured path for full-tutoring vLLM Assist turns", () => {
