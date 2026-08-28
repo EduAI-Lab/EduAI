@@ -48,21 +48,40 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
   return items;
 }
 
-export function getCourseDetailTabs(user: AtUser | null | undefined) {
+/**
+ * Course-detail tab set for one course.
+ *
+ * `courseRole` is the viewer's role *on this course* (#1644). When given, the
+ * staff tabs (Submissions/Feedback/Analytics) gate on it, not on the global
+ * effective `user.role` — otherwise a global-effective TA (promoted by some
+ * other course) sees staff tabs on a course where they're only a STUDENT, whose
+ * content the server then 403s. Callers with no per-course role (tests, legacy)
+ * omit it and keep the old global-role behaviour.
+ */
+export function getCourseDetailTabs(
+  user: AtUser | null | undefined,
+  courseRole?: AtUser["role"] | null,
+) {
   const tabs: Array<{
     id: "content" | "submissions" | "feedback" | "analytics";
     label: string;
   }> = [{ id: "content", label: "Content" }];
 
-  if (canViewCourseAnalytics(user) || user?.role === "TA") {
+  // Evaluate the staff permissions against the per-course role when it's known,
+  // preserving authorizedUnits (unit-admin scoping) from the real user.
+  const scoped: AtUser | null | undefined = courseRole
+    ? { id: user?.id ?? "", authorizedUnits: user?.authorizedUnits, role: courseRole }
+    : user;
+
+  if (canViewCourseAnalytics(scoped) || scoped?.role === "TA") {
     tabs.push({ id: "submissions", label: "Submissions" });
   }
 
-  if (canViewCourseFeedback(user)) {
+  if (canViewCourseFeedback(scoped)) {
     tabs.push({ id: "feedback", label: "Feedback" });
   }
 
-  if (canViewCourseAnalytics(user)) {
+  if (canViewCourseAnalytics(scoped)) {
     tabs.push({ id: "analytics", label: "Analytics" });
   }
 

@@ -70,32 +70,45 @@ export async function getBaselineVariantReadiness(userId, { assessmentId, course
   }
 
   const orderedVariants = await loadOrderedVariantsForAssessment(assessment.id);
-  const seenMeta = new Set();
-  const slots = [];
 
+  // Dedupe to one entry per question metadata id, preserving placement order.
+  const seenMeta = new Set();
+  const orderedMeta = [];
   for (const v of orderedVariants) {
     const mid = v.questionMetadata?.id;
     if (mid == null || seenMeta.has(mid)) continue;
     seenMeta.add(mid);
+    orderedMeta.push(v.questionMetadata);
+  }
 
-    const metaRow = await prisma.questionMetadata.findFirst({
-      where: { id: mid, courseId: Number(courseId) },
-      select: { id: true },
-    });
-    if (!metaRow) continue;
+  const slots = [];
 
-    const nonDraftVariantCount = await prisma.variants.count({
-      where: { questionMetadataId: mid, isDraft: false },
-    });
+  // Course scope is an authorization boundary, not a convenience filter — questions
+  // outside the requested course must stay out of the response. `courseId` comes back
+  // on the loader's metadata select, so this needs no extra round trip.
+  const authorizedMeta = orderedMeta.filter((m) => m.courseId === Number(courseId));
 
-    slots.push({
-      order: slots.length + 1,
-      questionMetadataId: mid,
-      description: v.questionMetadata?.description ?? null,
-      questionType: v.questionMetadata?.type ?? null,
-      nonDraftVariantCount,
-      ready: nonDraftVariantCount >= MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW,
+  if (authorizedMeta.length > 0) {
+    // groupBy omits zero-row groups, hence the `?? 0` below — a question with no
+    // non-draft variants still belongs in `slots`.
+    const counts = await prisma.variants.groupBy({
+      by: ["questionMetadataId"],
+      where: { questionMetadataId: { in: authorizedMeta.map((m) => m.id) }, isDraft: false },
+      _count: { _all: true },
     });
+    const countByMeta = new Map(counts.map((c) => [c.questionMetadataId, c._count._all]));
+
+    for (const meta of authorizedMeta) {
+      const nonDraftVariantCount = countByMeta.get(meta.id) ?? 0;
+      slots.push({
+        order: slots.length + 1,
+        questionMetadataId: meta.id,
+        description: meta.description ?? null,
+        questionType: meta.type ?? null,
+        nonDraftVariantCount,
+        ready: nonDraftVariantCount >= MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW,
+      });
+    }
   }
 
   return {
@@ -874,14 +887,27 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const results = [];
   const errors = [];
 
+  // Prefetched once for the whole batch. Safe despite the writes below: each iteration
+  // reads only its own question's `type` and lowest-id variant, writes only that same
+  // question's rows, and newly created variants take higher ids, so no iteration can
+  // invalidate the snapshot another iteration reads. `courseId` keeps the authorization
+  // scope the per-question lookup had — unauthorized ids simply miss the map and fall
+  // into `errors` exactly as before. `normalizedQuestionIds` is already deduped positive
+  // integers out of admission, so no coercion is needed here.
+  assertQmAiDeadline({ deadlineAt, signal });
+  const metas = await prisma.questionMetadata.findMany({
+    where: { id: { in: normalizedQuestionIds }, courseId: course.id },
+    include: {
+      // Only the lowest-id variant is ever read, so don't materialize the rest of the
+      // bank (question text, answers, MCQ `choices` JSONB) for every question.
+      variants: { orderBy: { id: "asc" }, take: 1 },
+    },
+  });
+  const metaById = new Map(metas.map((m) => [m.id, m]));
+
   for (const qid of normalizedQuestionIds) {
     assertQmAiDeadline({ deadlineAt, signal });
-    const meta = await prisma.questionMetadata.findFirst({
-      where: { id: qid, courseId: course.id },
-      include: {
-        variants: { orderBy: { id: "asc" } },
-      },
-    });
+    const meta = metaById.get(qid);
 
     if (!meta || !meta.variants?.length) {
       errors.push({ questionId: qid, error: "Question not found or has no variants" });
@@ -890,7 +916,22 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
     const primaryVariant = meta.variants[0];
     assertQmAiDeadline({ deadlineAt, signal });
-    await prisma.variants.update({ where: { id: primaryVariant.id }, data: { isDraft: false } });
+
+    // The snapshot above is taken once for the whole batch, and generation runs for
+    // minutes, so this id can be deleted from under us mid-loop. `updateMany` reports a
+    // zero count instead of throwing P2025, keeping a concurrent delete a per-question
+    // error rather than a 500 that discards every result generated so far.
+    const { count: promoted } = await prisma.variants.updateMany({
+      where: { id: primaryVariant.id },
+      data: { isDraft: false },
+    });
+    if (promoted === 0) {
+      // Distinct from the miss above: the question resolved fine, its primary variant was
+      // deleted mid-batch. Same shape of failure, different cause, so keep the two
+      // separable in the response and in logs.
+      errors.push({ questionId: qid, error: "Primary variant was removed during generation" });
+      continue;
+    }
 
     const createdVariantIds = [];
     const createdVariants = [];
