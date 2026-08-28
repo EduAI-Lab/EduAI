@@ -13,7 +13,7 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "#about");
     expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("href", "#products");
@@ -25,7 +25,7 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "EduAI Lab" })).toHaveAttribute("href", "/");
   });
@@ -34,20 +34,17 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
-    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
-      "href",
-      "/auth/register"
-    );
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/auth/register");
   });
 
   it("no longer carries a Dashboard action — that lives on the page now", () => {
     render(
       <MemoryRouter>
         <SiteNavigation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();

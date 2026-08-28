@@ -84,18 +84,19 @@ export default function HomePage() {
           <div className="grid items-start gap-10 lg:grid-cols-2">
             <div className="space-y-6">
               <p className="text-lg leading-relaxed text-muted-foreground">
-                EduAI is a research initiative at UBC Okanagan focused on developing and testing AI-powered study tools in real-world educational settings.
+                EduAI is a research initiative at UBC Okanagan focused on developing and testing
+                AI-powered study tools in real-world educational settings.
               </p>
 
               <p className="text-lg leading-relaxed text-muted-foreground">
-                Our models run on UBC's own GPUs, so your questions and files stay on campus. We are studying how to make AI tutors that are accurate, energy-efficient, and fair.
+                Our models run on UBC's own GPUs, so your questions and files stay on campus. We are
+                studying how to make AI tutors that are accurate, energy-efficient, and fair.
               </p>
             </div>
 
             <Card className="lg:self-stretch">
               <CardContent className="flex flex-col justify-center px-6 py-8">
                 <div className="flex flex-row items-center gap-3">
-
                   <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
                     <IconBulb className="h-6 w-6 text-primary-text" />
                   </div>

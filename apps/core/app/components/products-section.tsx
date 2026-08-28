@@ -116,7 +116,9 @@ function ProductCard({ product, featured = false }: { product: Product; featured
   return (
     <Card
       className={`border bg-background transition-colors ${
-        featured ? "border-primary/40" : "border-border hover:border-primary/30 dark:hover:border-primary/45"
+        featured
+          ? "border-primary/40"
+          : "border-border hover:border-primary/30 dark:hover:border-primary/45"
       }`}
     >
       <CardContent className="p-6">
@@ -168,7 +170,10 @@ function ProductCard({ product, featured = false }: { product: Product; featured
 
 export function ProductsSection() {
   return (
-    <section id="products" className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card">
+    <section
+      id="products"
+      className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card"
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="What we build"
@@ -176,7 +181,8 @@ export function ProductsSection() {
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">
-              EduAI is one connected platform, with everything else as an extension that plugs straight into it. Every tool shares the same account, course data, and grounded AI.
+              EduAI is one connected platform, with everything else as an extension that plugs
+              straight into it. Every tool shares the same account, course data, and grounded AI.
             </span>
           }
         />
@@ -186,9 +192,7 @@ export function ProductsSection() {
 
           <div className="flex items-center gap-3">
             <IconPlugConnected className="h-5 w-5 shrink-0 text-primary-text" />
-            <span className="text-sm font-medium text-foreground">
-              Extensions
-            </span>
+            <span className="text-sm font-medium text-foreground">Extensions</span>
             <span aria-hidden="true" className="h-px flex-1 bg-border" />
           </div>
 

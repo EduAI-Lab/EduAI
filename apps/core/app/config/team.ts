@@ -1,17 +1,17 @@
 export interface TeamMember {
-  id: number
-  role: "professor" | "student"
-  name: string
+  id: number;
+  role: "professor" | "student";
+  name: string;
   /** Actual position/role name, shown as the roster card's corner tag, e.g. "Professor", "Developer", "Project Lead". */
-  position: string
+  position: string;
   /** The part of the system this member owns, shown under the name, e.g. "Backend & Infra". */
-  title: string
-  image: string
-  biography: string
-  contribution: string
-  techStack: string[]
-  codeSnippet: string
-  imagePosition?: string
+  title: string;
+  image: string;
+  biography: string;
+  contribution: string;
+  techStack: string[];
+  codeSnippet: string;
+  imagePosition?: string;
 }
 
 export const teamMembers: TeamMember[] = [
@@ -27,7 +27,8 @@ export const teamMembers: TeamMember[] = [
     contribution:
       "Directs AI research, managing model selection and experiments with students to optimize LLM and RAG performance for EduAI.",
     techStack: ["Machine Learning", "Deep Learning", "RAG", "LLMs", "Parallel Computing"],
-    codeSnippet: "Awarded 2023 IKBFOS Grant for innovative courseware advancing computer programming education.",
+    codeSnippet:
+      "Awarded 2023 IKBFOS Grant for innovative courseware advancing computer programming education.",
   },
   {
     id: 2,
@@ -41,7 +42,8 @@ export const teamMembers: TeamMember[] = [
     contribution:
       "Leads backend development and guides students in building scalable AI infrastructure using LLMs and RAG pipelines for EduAI.",
     techStack: ["Big Data", "GPU acceleration", "Cloud Computing", "Medical Image Processing"],
-    codeSnippet: "500+ citations pioneering AI medical image analysis, leukemia detection, and published at IEEE.",
+    codeSnippet:
+      "500+ citations pioneering AI medical image analysis, leukemia detection, and published at IEEE.",
   },
   {
     id: 3,
@@ -54,7 +56,15 @@ export const teamMembers: TeamMember[] = [
       "Assistant Professor in Computer Science and Data Science at UBC Okanagan, leading the FARD Lab (Foundational AIware Research and Development). Her research focuses on AI-driven software engineering, large language models for code, and NLP applications in low-resource programming languages.",
     contribution:
       "Leads research on adapter-based fine-tuning for low-resource programming languages, exploring transfer learning techniques to improve code intelligence. She has published extensively on code summarization, code clone detection, and the intersection of AI and software development.",
-    techStack: ["Python", "PyTorch", "Transformers", "HuggingFace", "NLP", "LLMs", "Data Visualization"],
+    techStack: [
+      "Python",
+      "PyTorch",
+      "Transformers",
+      "HuggingFace",
+      "NLP",
+      "LLMs",
+      "Data Visualization",
+    ],
     codeSnippet:
       "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base'); tokenizer = AutoTokenizer.from_pretrained('microsoft/codebert-base'); inputs = tokenizer('def example(): return True', return_tensors='pt'); outputs = model(**inputs)",
   },
@@ -85,7 +95,8 @@ export const teamMembers: TeamMember[] = [
     contribution:
       "Led full-stack development of the platform including auth, UI, backend, and RAG pipeline, while architecting extensible tool interfaces for web search and document retrieval.",
     techStack: ["React", "TypeScript", "Next.js", "Prisma", "AI SDK"],
-    codeSnippet: "generateText({ model: 'openai/gpt-5.2', prompt: 'You are a helpful assistant.' })",
+    codeSnippet:
+      "generateText({ model: 'openai/gpt-5.2', prompt: 'You are a helpful assistant.' })",
   },
   {
     id: 6,
@@ -110,9 +121,18 @@ export const teamMembers: TeamMember[] = [
     image: "/AA.JPG",
     biography:
       "As a junior in Computer Science and Data science at UBC and a International Undergraduate Research Award recipient (IURA), I've accumulated strong skills in software development. Specific experience lies within building full-stack web applications and AI/ML projects. I've worked under the supervision of multiple professors developing EduAI and Hospital Wayfinding mobile application using Swift and Flutter. I'm eager to contribute to EduAI and collaborate with a passionate research team.",
-    contribution: " Made system design, architecture, and accessibility-focused UI decisions for an ADHD-assistive AI chatbot, alongside full-stack development on the EduAI platform.",
-    techStack: ["React Native & RR7", "Node.js", "TensorFlow", "Docker", "Vite+TypeScript", "Next.js"],
-    codeSnippet: "IURA 2026, Software Engineering Intern,Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
+    contribution:
+      " Made system design, architecture, and accessibility-focused UI decisions for an ADHD-assistive AI chatbot, alongside full-stack development on the EduAI platform.",
+    techStack: [
+      "React Native & RR7",
+      "Node.js",
+      "TensorFlow",
+      "Docker",
+      "Vite+TypeScript",
+      "Next.js",
+    ],
+    codeSnippet:
+      "IURA 2026, Software Engineering Intern,Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
   },
   {
     id: 8,
@@ -137,7 +157,8 @@ export const teamMembers: TeamMember[] = [
     image: "/rib.jpeg",
     biography:
       "Ribhav Sharma is a 4th-year Computer Science student who has demonstrated a strong aptitude for AI and software development. He contributed to the EduAI project, focusing on enhancing the platform's learning capabilities and user-interaction framework. Ribhav brings a blend of academic rigor and hands-on development experience, making him an asset in building innovative tech solutions.",
-    contribution: "Contributed to EduAI: improved core learning algorithms and enhanced user-interaction systems.",
+    contribution:
+      "Contributed to EduAI: improved core learning algorithms and enhanced user-interaction systems.",
     techStack: ["Java", "Python", "Machine Learning", "React", "Node.js"],
     codeSnippet: "while( internship_game == up ) {chills}",
     imagePosition: "object-center",
@@ -179,20 +200,22 @@ export const teamMembers: TeamMember[] = [
     image: "/saad.jpeg",
     biography:
       "Syed Saad Ali is a fourth year computer science student who created the question maker project, dedicated towards assisting professors in creating assessment variations to in their respective courses. He is currently working on a research project for adaptive AI model routing, dedicated towards routing AI prompts to appropriate AI models to optimize educational value and energy use. He is keen on exploring how computer science can improve sustainable impact through well designed systems.",
-    contribution: "Full stack development on Question Maker (Deployment, apis, tests, database, UI, components).",
+    contribution:
+      "Full stack development on Question Maker (Deployment, apis, tests, database, UI, components).",
     techStack: ["Docker", "React", "PostgreSQL", "Typescript", "Vibe Coding"],
     codeSnippet: "while laptop.status != 418: spawn(worktree(), agent())",
   },
   {
     id: 13,
-    role: "student", 
+    role: "student",
     name: "Abdullah Mohsin Naqvi",
     position: "Developer",
     title: "Backend & Infra",
     image: "/abdu.jpeg",
     biography:
       "Abdullah is a third-year Computer Science Co-op student at UBC Okanagan focused on backend and infrastructure. He built a Redis-compatible key-value store from scratch in C11 hitting over 1.3M RPS on SET/GET, and a React-based therapy booking platform that's been live in production for over a year. He recently wrapped a backend internship at Systems Limited working on cache invalidation and rate limiting, and writes about his projects at naqvi.dev.",
-    contribution: "Worked on the core platform development and implemented backend architecture and system design features to enhance user experience on EduAI.",
+    contribution:
+      "Worked on the core platform development and implemented backend architecture and system design features to enhance user experience on EduAI.",
     techStack: ["React", "TypeScript", "C", "Node.js", "Redis", "MongoDB"],
     codeSnippet: "if (living) { code(); } else { prompt(); }",
   },
@@ -205,7 +228,8 @@ export const teamMembers: TeamMember[] = [
     image: "/evan.jpg",
     biography:
       "Evan is a third-year Computer Science student at UBC Okanagan interested in system design and architecture. His background includes work in the Minecraft modding community, and writing enterprise software using VB.net, Python, FastAPI, and Next.js. You can find his personal site at evanbowness.dev.",
-    contribution: "Worked on the monorepo migration, platform centralization, backend test suites, documentation, and bugfixes.",
+    contribution:
+      "Worked on the monorepo migration, platform centralization, backend test suites, documentation, and bugfixes.",
     techStack: ["Java", "React", "C#", "Python", "C++", "Prisma"],
     codeSnippet: "if fps != 60 { fps = 60 }",
   },
@@ -220,7 +244,16 @@ export const teamMembers: TeamMember[] = [
       "Ye is a fourth-year Computer Science Co-op student at UBC Okanagan. He worked as a software developer on the EduAI project, focusing on frontend, security, and testing.",
     contribution:
       "Developed the shared UI library, the testing and CI framework, and audited and fixed security bugs across the system.",
-    techStack: ["React", "Node.js", "Python", "Java", "PostgreSQL", "Playwright", "Prisma", "Docker"],
+    techStack: [
+      "React",
+      "Node.js",
+      "Python",
+      "Java",
+      "PostgreSQL",
+      "Playwright",
+      "Prisma",
+      "Docker",
+    ],
     codeSnippet: 'if (reviewRequested) { return "LGTM" }',
   },
   {
@@ -248,7 +281,16 @@ export const teamMembers: TeamMember[] = [
       "Ariq Muldi is a 5th year Bachelor of Science, Honours in Computer Science, Minor in Data Science student who was the project lead for EduAI in summer of 2026. He was responsible for the team structure, delivery process, and engineering standards behind the summer build.",
     contribution:
       "Ariq led EduAI summer 2026 and built the foundation the team worked in. He set up the GitHub organization and project boards, created the Discord for fast communication between team members, and designed a review process where nothing merges without proper review and best practices. He built the system that every developer followed when it was time to do work; creating proper issues, creating descriptive pull requests, and in general, following the projects defined workflows. He also lead all the standup meetings, sprint planning meetings, meetings with professors, and meetings with the full team. This made communication between professors, 2 leads, 6 developers, and volunteers clear and kept everyone working in parallel. He was also responsible for reviewing every developers work and also acted as a senior software developer; answering any questions from the team and providing the most optimal solutions.",
-    techStack: ["TypeScript", "Python", "React", "Node.js", "SQL", "Prisma", "Docker", "Google Cloud Platform"],
+    techStack: [
+      "TypeScript",
+      "Python",
+      "React",
+      "Node.js",
+      "SQL",
+      "Prisma",
+      "Docker",
+      "Google Cloud Platform",
+    ],
     codeSnippet: 'if (!issue) throw new Error("no record of this work");',
   },
   {
@@ -262,7 +304,14 @@ export const teamMembers: TeamMember[] = [
       "Gwantana Kiboigo is a Junior Computer Science student at UBC with experience in software engineering, full-stack development, and building reliable software systems. Through his work on EduAI, he has gained hands-on experience across frontend, backend, database, and infrastructure development, with a particular focus on security, system reliability, and maintainable application architecture.",
     contribution:
       "Contributed to EduAI across Core, AI Tutor, and Question Maker, focusing on backend reliability, database integrity, AI service integration, and user management, while also resolving a multitude of bugs across the platform.",
-    techStack: ["React", "TypeScript/JavaScript", "Node.js", "Prisma", "Docker", "Software Development"],
+    techStack: [
+      "React",
+      "TypeScript/JavaScript",
+      "Node.js",
+      "Prisma",
+      "Docker",
+      "Software Development",
+    ],
     codeSnippet: "if (bug) { fix(); } else { sleep(); }",
   },
   {
@@ -279,4 +328,4 @@ export const teamMembers: TeamMember[] = [
     techStack: ["TypeScript", "React", "Node.js", "PostgreSQL", "Vitest"],
     codeSnippet: "if (stuck) { snack(); tryAgain(); }",
   },
-]
+];

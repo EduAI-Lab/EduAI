@@ -5,9 +5,7 @@ import { ApproachSection } from "~/components/approach-section";
 describe("ApproachSection — rendering", () => {
   it("renders the section heading", () => {
     render(<ApproachSection />);
-    expect(
-      screen.getByRole("heading", { name: "What makes EduAI different" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What makes EduAI different" })).toBeInTheDocument();
   });
 
   it("renders each differentiator pillar", () => {

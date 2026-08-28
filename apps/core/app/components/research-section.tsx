@@ -52,8 +52,8 @@ export function ResearchSection() {
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">
-              EduAI is a product students use, and a testbed for how AI should behave in a classroom.
-              A few of the threads the team is pulling on:
+              EduAI is a product students use, and a testbed for how AI should behave in a
+              classroom. A few of the threads the team is pulling on:
             </span>
           }
         />

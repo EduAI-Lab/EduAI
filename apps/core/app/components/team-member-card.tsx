@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  Badge,
-  Card,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@eduai/ui";
+import { Badge, Card, Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
 import { IconArrowRight, IconBriefcase, IconSparkles, IconTools } from "@tabler/icons-react";
 import type { TeamMember } from "~/config/team";
 

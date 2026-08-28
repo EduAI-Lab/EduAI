@@ -8,7 +8,10 @@ import { TeamMemberCard } from "~/components/team-member-card";
  */
 export function TeamSection() {
   return (
-    <section id="team" className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card">
+    <section
+      id="team"
+      className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card"
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="Meet our research team"
