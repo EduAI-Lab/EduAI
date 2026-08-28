@@ -1,6 +1,6 @@
-import { IconInfoCircle, IconRoute } from "@tabler/icons-react";
+import { IconEdit, IconInfoCircle, IconRoute } from "@tabler/icons-react";
 import {
-  Badge,
+  Button,
   Switch,
   Table,
   TableBody,
@@ -21,25 +21,52 @@ type RoutingModelsTableProps = {
   definitions: RoutingModelSettingDefinition[];
   settings: RoutingModelSettings;
   onToggle: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
+  onEdit: () => void;
 };
 
-export function RoutingModelsTable({ definitions, settings, onToggle }: RoutingModelsTableProps) {
+export function RoutingModelsTable({
+  definitions,
+  settings,
+  onToggle,
+  onEdit,
+}: RoutingModelsTableProps) {
   return (
     <div className="space-y-2">
       <div>
         <h3 className="text-sm font-semibold">Automatic routing</h3>
         <p className="text-sm text-muted-foreground">
-          Control which automatic model-selection modes appear in chat.
+          Auto chooses from the models assigned below based on the request. Use Edit to manage the
+          Small and Large model groups.
         </p>
+      </div>
+      <div className="grid gap-3 text-sm md:grid-cols-3">
+        <div className="rounded-md border bg-muted/30 p-3">
+          <p className="font-medium">Small tier</p>
+          <p className="mt-1 text-muted-foreground">
+            Faster and more efficient for straightforward questions.
+          </p>
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3">
+          <p className="font-medium">Large tier</p>
+          <p className="mt-1 text-muted-foreground">
+            More capable for complex reasoning, coding, and long context.
+          </p>
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3">
+          <p className="font-medium">How Auto works</p>
+          <p className="mt-1 text-muted-foreground">
+            It estimates what each request needs and selects the best available group.
+          </p>
+        </div>
       </div>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Model</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead>Mode</TableHead>
+              <TableHead>Description</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -69,13 +96,9 @@ export function RoutingModelsTable({ definitions, settings, onToggle }: RoutingM
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="mt-1 text-sm text-muted-foreground">{definition.id}</div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">Routing</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">CHAT</Badge>
+                    <span className="text-sm text-muted-foreground">{definition.description}</span>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
@@ -86,6 +109,18 @@ export function RoutingModelsTable({ definitions, settings, onToggle }: RoutingM
                       />
                       <span className="text-sm">{enabled ? "Active" : "Inactive"}</span>
                     </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onEdit}
+                      aria-label={`Edit ${definition.name} models`}
+                    >
+                      <IconEdit className="mr-2 h-4 w-4" />
+                      Edit Auto models
+                    </Button>
                   </TableCell>
                 </TableRow>
               );

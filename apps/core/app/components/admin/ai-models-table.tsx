@@ -95,11 +95,6 @@ const isLocalProvider = (provider: AIProvider) => {
   return provider.name === "ollama";
 };
 
-const formatRouterTier = (tier: AIModel["routerTier"]) => {
-  if (!tier) return null;
-  return tier.replace("TIER_", "Tier ");
-};
-
 export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIModelsTableProps) {
   return (
     <div className="rounded-md border">
@@ -109,7 +104,6 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
             <TableHead>Model</TableHead>
             <TableHead>Provider</TableHead>
             <TableHead>Type</TableHead>
-            <TableHead>Auto Tier</TableHead>
             <TableHead>Context</TableHead>
             <TableHead>Pricing</TableHead>
             <TableHead>Features</TableHead>
@@ -120,7 +114,7 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
         <TableBody>
           {models.length === 0 && (
             <TableRow>
-              <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 No models found.
               </TableCell>
             </TableRow>
@@ -155,15 +149,6 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                 <Badge variant="outline" className={getTypeColor(model.type)}>
                   {model.type}
                 </Badge>
-              </TableCell>
-              <TableCell>
-                {formatRouterTier(model.routerTier) ? (
-                  <Badge variant="outline" className="text-xs">
-                    {formatRouterTier(model.routerTier)}
-                  </Badge>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Not in pool</span>
-                )}
               </TableCell>
               <TableCell className="text-sm">{formatTokens(model.maxTokens)}</TableCell>
               <TableCell>

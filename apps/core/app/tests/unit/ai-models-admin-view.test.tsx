@@ -18,6 +18,7 @@ import { fetchModelsByProvider } from "~/hooks/api/use-ai-models";
 
 vi.mock("~/hooks/api/use-ai-models", () => ({
   fetchModelsByProvider: vi.fn(),
+  fetchAllModels: vi.fn().mockResolvedValue([]),
 }));
 
 const provider = {

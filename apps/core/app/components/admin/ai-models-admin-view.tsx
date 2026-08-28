@@ -2,12 +2,16 @@ import { useCallback, useMemo, useState } from "react";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
+import {
+  AutoRoutingConfigDialog,
+  type AutoRoutingSelection,
+} from "~/components/admin/auto-routing-config-dialog";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { RoutingModelsTable } from "~/components/admin/routing-models-table";
 import { TablePagination } from "~/components/ui/table-pagination";
-import { fetchModelsByProvider } from "~/hooks/api/use-ai-models";
+import { fetchAllModels, fetchModelsByProvider } from "~/hooks/api/use-ai-models";
 import type { PaginationState } from "~/hooks/api/pagination";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -111,6 +115,10 @@ export function AiModelsAdminView({
   const [ollamaFetched, setOllamaFetched] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncingProvider, setSyncingProvider] = useState<"ollama" | "vllm" | null>(null);
+  const [autoRoutingDialogOpen, setAutoRoutingDialogOpen] = useState(false);
+  const [autoRoutingModels, setAutoRoutingModels] = useState<AIModel[]>([]);
+  const [fetchingAutoRoutingModels, setFetchingAutoRoutingModels] = useState(false);
+  const [autoRoutingError, setAutoRoutingError] = useState<string | null>(null);
 
   const ollamaProvider = useMemo(
     () => providers.find((provider) => provider.name === "ollama" && provider.isActive),
@@ -315,6 +323,44 @@ export function AiModelsAdminView({
     }
   };
 
+  const handleEditAutoRouting = async () => {
+    setAutoRoutingDialogOpen(true);
+    setFetchingAutoRoutingModels(true);
+    setAutoRoutingError(null);
+    try {
+      setAutoRoutingModels(await fetchAllModels());
+    } catch (err) {
+      setAutoRoutingError(
+        err instanceof Error ? err.message : "Failed to load models for Auto routing",
+      );
+    } finally {
+      setFetchingAutoRoutingModels(false);
+    }
+  };
+
+  const handleSaveAutoRouting = async ({ smallModelIds, largeModelIds }: AutoRoutingSelection) => {
+    const small = new Set(smallModelIds);
+    const large = new Set(largeModelIds);
+
+    for (const model of autoRoutingModels) {
+      if (model.type !== "CHAT") continue;
+      const routerTier = small.has(model.id) ? "TIER_1" : large.has(model.id) ? "TIER_3" : null;
+      if (model.routerTier !== routerTier) {
+        await onUpdateModel(model.id, { routerTier });
+      }
+    }
+
+    setAutoRoutingModels((current) =>
+      current.map((model) => {
+        if (model.type !== "CHAT") return model;
+        return {
+          ...model,
+          routerTier: small.has(model.id) ? "TIER_1" : large.has(model.id) ? "TIER_3" : null,
+        };
+      }),
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
@@ -394,6 +440,7 @@ export function AiModelsAdminView({
                       definitions={routingModelDefinitions}
                       settings={routingModelSettings}
                       onToggle={handleToggleRoutingModel}
+                      onEdit={() => void handleEditAutoRouting()}
                     />
 
                     {(syncMessage || ollamaError || vllmError) && (
@@ -523,6 +570,15 @@ export function AiModelsAdminView({
         vllmFetched={vllmFetched}
         onFetchVllmModels={() => void handleFetchVllmModels()}
         syncMessage={syncMessage}
+      />
+
+      <AutoRoutingConfigDialog
+        open={autoRoutingDialogOpen}
+        onOpenChange={setAutoRoutingDialogOpen}
+        models={autoRoutingModels}
+        loading={fetchingAutoRoutingModels}
+        error={autoRoutingError}
+        onSave={handleSaveAutoRouting}
       />
 
       <ProviderFormDialog
