@@ -22,6 +22,7 @@ import {
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 function json(status: number, body: JsonResponseBody) {
@@ -51,7 +52,12 @@ async function requireAdmin(request: Request) {
     logAdminDenied(null);
     return { response: json(401, { error: "Unauthorized" }), session: null };
   }
-  if (session.user.role !== "ADMIN") {
+  // Re-checks `isActive` against the DB, not just the session's cached role
+  // (#1571, mirrored from `requireAdmin` in `~/lib/auth/guards.server`): a
+  // deactivated admin's still-live session must lose bug-report triage access
+  // (including full attachments/console/network logs) on their very next
+  // request, not only once that session expires.
+  if (session.user.role !== "ADMIN" || !(await isActiveAdminUser(session.user.id))) {
     logAdminDenied(session.user);
     return { response: json(403, { error: "Forbidden" }), session: null };
   }

@@ -25,7 +25,13 @@
  */
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
-import { createAdmin, createInstructor, createUnitAdmin, registerUser } from "../helpers/auth";
+import {
+  createAdmin,
+  createInstructor,
+  createUnitAdmin,
+  registerUser,
+  uniqueEmail,
+} from "../helpers/auth";
 
 let runCounter = 0;
 function uniqueCourseCode(prefix: string): string {
@@ -571,6 +577,47 @@ test.describe("Unit Admin: department scope for course visibility and management
       await unitAdmin.dispose();
     }
   });
+
+  // Closes a gap the doc's "Not yet covered by this pass" note flagged: the
+  // `unitAdmins.canDeleteCourses` flag was read but never exercised against a
+  // live delete.
+  test("UNIT_ADMIN course delete is gated by unitAdmins.canDeleteCourses (default ON); ADMIN is unaffected by the flag", async ({
+    playwright,
+  }) => {
+    const admin = await playwright.request.newContext();
+    const unitAdmin = await playwright.request.newContext();
+    try {
+      await createAdmin(admin, { prefix: "unit-delete-admin" });
+      await createUnitAdmin(unitAdmin, { prefix: "unit-delete-unit" });
+      const unitAdminId = await getUserId(unitAdmin);
+      await setAuthorizedUnits(admin, unitAdminId, ["COSC"]);
+
+      await setPolicy(admin, "unitAdmins.canDeleteCourses", false);
+
+      const course1 = await createCourse(admin, { prefix: "unit-delete-off", department: "COSC" });
+      const course1Id = (await course1.json()).id;
+      const deniedRes = await unitAdmin.delete(`${CORE_URL}/api/courses/${course1Id}`);
+      expect(deniedRes.status()).toBe(403);
+      // Denied, not silently no-op — the course must still be readable/undeleted.
+      expect((await admin.get(`${CORE_URL}/api/courses/${course1Id}`)).status()).toBe(200);
+
+      await setPolicy(admin, "unitAdmins.canDeleteCourses", true);
+
+      const course2 = await createCourse(admin, { prefix: "unit-delete-on", department: "COSC" });
+      const course2Id = (await course2.json()).id;
+      const allowedRes = await unitAdmin.delete(`${CORE_URL}/api/courses/${course2Id}`);
+      expect(allowedRes.status()).toBe(204);
+      // Soft-deleted: a normal (non-forensics) read now 404s.
+      expect((await admin.get(`${CORE_URL}/api/courses/${course2Id}`)).status()).toBe(404);
+
+      // Restore the documented default (ON) so this test doesn't leave global
+      // policy state altered for anything else running against this instance.
+      await setPolicy(admin, "unitAdmins.canDeleteCourses", true);
+    } finally {
+      await admin.dispose();
+      await unitAdmin.dispose();
+    }
+  });
 });
 
 // ===========================================================================
@@ -742,6 +789,169 @@ test.describe("Instructor: single-course ownership", () => {
       expect(bugTriageRes.status()).toBe(403);
     } finally {
       await instructor.dispose();
+    }
+  });
+});
+
+// Closes the doc's "Canvas integration management from the unit-admin angle"
+// gap: canManageCanvasIntegration (apps/core/app/lib/canvas/guards.server.ts)
+// grants ADMIN/UNIT_ADMIN/INSTRUCTOR at the role level, but every downstream
+// Canvas operation is scoped to the *caller's own* CanvasIntegration row
+// (keyed by userId, not courseId/department) and the caller's own external
+// Canvas "teacher" course list (validateInstructorCanvasCourseIds fetches
+// live from Canvas using the caller's own credentials) — so there is no
+// department-scope question to test here the way there is for rag-settings
+// or enrollments; a UNIT_ADMIN's Canvas access is exactly as
+// self-contained as an INSTRUCTOR's. What's worth probing directly (no live
+// Canvas sandbox needed) is that the role gate and the INSTRUCTOR-only policy
+// gate are both actually enforced by the route, for all three roles.
+test.describe("Canvas integration API: role gate + instructors.canManageCanvasIntegration policy gate", () => {
+  test("ADMIN and UNIT_ADMIN pass the role gate unconditionally; STUDENT/TA are blocked", async ({
+    playwright,
+  }) => {
+    const admin = await playwright.request.newContext();
+    const unitAdmin = await playwright.request.newContext();
+    const student = await playwright.request.newContext();
+    try {
+      await createAdmin(admin, { prefix: "canvas-admin" });
+      await createUnitAdmin(unitAdmin, { prefix: "canvas-unitadmin" });
+      await registerUser(student, { prefix: "canvas-student" });
+
+      // No Canvas account is actually connected for any of these fresh users,
+      // so "integration" reads null (200) rather than erroring — this alone
+      // proves the role gate passed without needing a live Canvas sandbox.
+      const adminRes = await admin.get(`${CORE_URL}/api/canvas/integration`);
+      expect(adminRes.status()).toBe(200);
+      expect((await adminRes.json()).data).toBeNull();
+
+      const unitAdminRes = await unitAdmin.get(`${CORE_URL}/api/canvas/integration`);
+      expect(unitAdminRes.status()).toBe(200);
+      expect((await unitAdminRes.json()).data).toBeNull();
+
+      // STUDENT (and, by the same STUDENT-platform-role fact documented
+      // elsewhere in this file, TA) fails canManageCanvasIntegration entirely.
+      const studentRes = await student.get(`${CORE_URL}/api/canvas/integration`);
+      expect(studentRes.status()).toBe(403);
+      expect((await studentRes.json()).error).toBe("FORBIDDEN");
+    } finally {
+      await admin.dispose();
+      await unitAdmin.dispose();
+      await student.dispose();
+    }
+  });
+
+  test("SECURITY: INSTRUCTOR's Canvas access is gated by instructors.canManageCanvasIntegration; ADMIN/UNIT_ADMIN are unaffected by the flag", async ({
+    playwright,
+  }) => {
+    const admin = await playwright.request.newContext();
+    const unitAdmin = await playwright.request.newContext();
+    const instructor = await playwright.request.newContext();
+    try {
+      await createAdmin(admin, { prefix: "canvas-flag-admin" });
+      await createUnitAdmin(unitAdmin, { prefix: "canvas-flag-unitadmin" });
+      await createInstructor(instructor, { prefix: "canvas-flag-instructor" });
+
+      await setPolicy(admin, "instructors.canManageCanvasIntegration", false);
+
+      const instructorDenied = await instructor.get(`${CORE_URL}/api/canvas/integration`);
+      expect(instructorDenied.status()).toBe(403);
+
+      // ADMIN/UNIT_ADMIN's role-level grant is unconditional — only INSTRUCTOR
+      // reads the policy flag (canvas.$.ts's route-level check).
+      expect((await admin.get(`${CORE_URL}/api/canvas/integration`)).status()).toBe(200);
+      expect((await unitAdmin.get(`${CORE_URL}/api/canvas/integration`)).status()).toBe(200);
+
+      await setPolicy(admin, "instructors.canManageCanvasIntegration", true);
+      const instructorAllowed = await instructor.get(`${CORE_URL}/api/canvas/integration`);
+      expect(instructorAllowed.status()).toBe(200);
+    } finally {
+      await setPolicy(admin, "instructors.canManageCanvasIntegration", true);
+      await admin.dispose();
+      await unitAdmin.dispose();
+      await instructor.dispose();
+    }
+  });
+
+  test("SECURITY: an INSTRUCTOR cannot sync a Canvas course they don't actually teach in Canvas (fabricated canvasCourseId is rejected, not silently scoped-out)", async ({
+    playwright,
+  }) => {
+    const instructor = await playwright.request.newContext();
+    try {
+      await createInstructor(instructor, { prefix: "canvas-sync-instructor" });
+
+      // No CanvasIntegration row exists yet for this fresh instructor —
+      // sync must fail closed (CANVAS_NOT_CONNECTED), never silently succeed
+      // or fall through to treating an arbitrary canvasCourseId as valid.
+      const syncRes = await instructor.post(`${CORE_URL}/api/canvas/sync`, {
+        data: { canvasCourseIds: ["999999"] },
+      });
+      expect(syncRes.status()).toBe(400);
+      expect((await syncRes.json()).error).toBe("CANVAS_NOT_CONNECTED");
+    } finally {
+      await instructor.dispose();
+    }
+  });
+});
+
+// #1571-pattern gap found in a #1669 deep-audit pass: three admin-gated
+// surfaces (cron-jobs trigger/schedule, bug-report triage, invitation
+// create/list/revoke/resend) each rolled their own admin check that only read
+// the session's cached role, unlike the shared `requireAdmin`/`requireInviter`
+// guards used everywhere else, which re-check `isActive` against the DB
+// (fixed for #1571: deactivating an admin must revoke access on their very
+// next request, not only once their session naturally expires). A deactivated
+// admin's still-live session therefore kept full access to all three surfaces
+// indefinitely. Fixed in this pass by threading the same DB re-check through
+// all three call sites.
+test.describe("SECURITY: deactivating an admin revokes access to every admin-gated surface immediately (#1571 pattern)", () => {
+  test("a deactivated ADMIN's still-live session loses cron-jobs, bug-report triage, and invitation authority", async ({
+    playwright,
+  }) => {
+    const operator = await playwright.request.newContext();
+    const target = await playwright.request.newContext();
+    try {
+      await createAdmin(operator, { prefix: "deact-operator" });
+      await createAdmin(target, { prefix: "deact-target" });
+      const targetId = await getUserId(target);
+
+      // Sanity: before deactivation, the target admin's session can reach all
+      // three surfaces.
+      expect((await target.get(`${CORE_URL}/api/admin/cron-jobs`)).status()).toBe(200);
+      expect((await target.get(`${CORE_URL}/api/admin/bug-reports`)).status()).toBe(200);
+      expect((await target.get(`${CORE_URL}/api/invitations`)).status()).toBe(200);
+
+      // The operator (a separate active admin) deactivates the target — the
+      // AUTH-04 admin floor is preserved since the operator stays active.
+      const deactivateRes = await operator.patch(`${CORE_URL}/api/users/${targetId}`, {
+        data: { isActive: false },
+      });
+      expect(deactivateRes.status()).toBe(200);
+
+      // The target's session cookie is still the same live cookie — no
+      // sign-out/sign-in happened — so this exercises the exact race the
+      // #971 session hook only closes for the NEXT full getSession resolution.
+      // The per-route DB re-check is what must reject it here.
+      const cronRes = await target.get(`${CORE_URL}/api/admin/cron-jobs`);
+      expect(cronRes.status()).toBe(401);
+
+      const cronTriggerRes = await target.post(`${CORE_URL}/api/admin/cron-jobs`, {
+        data: { intent: "trigger", jobName: "backup-nightly" },
+      });
+      expect(cronTriggerRes.status()).toBe(401);
+
+      const bugsRes = await target.get(`${CORE_URL}/api/admin/bug-reports`);
+      expect(bugsRes.status()).toBe(403);
+
+      const inviteRes = await target.post(`${CORE_URL}/api/invitations`, {
+        data: { email: uniqueEmail("deact-invite-target"), role: "STUDENT" },
+      });
+      expect(inviteRes.status()).toBe(403);
+
+      const inviteListRes = await target.get(`${CORE_URL}/api/invitations`);
+      expect(inviteListRes.status()).toBe(403);
+    } finally {
+      await operator.dispose();
+      await target.dispose();
     }
   });
 });

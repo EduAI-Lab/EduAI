@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
 
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
@@ -13,12 +14,16 @@ import {
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 
+// Re-checks `isActive` against the DB, not just the session's cached role
+// (#1571, mirrored from `requireAdmin` in `~/lib/auth/guards.server`): a
+// deactivated admin's still-live session must lose cron-job trigger/schedule
+// access on their very next request, not only once that session expires.
 async function requireAdmin(request: Request) {
   const session = await getRequestSession(request);
   if (!session?.user) {
     return null;
   }
-  if (session.user.role !== "ADMIN") {
+  if (session.user.role !== "ADMIN" || !(await isActiveAdminUser(session.user.id))) {
     return null;
   }
   return session.user;

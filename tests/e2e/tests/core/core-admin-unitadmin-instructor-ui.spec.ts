@@ -15,7 +15,7 @@
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
-import { uniqueEmail } from "../helpers/auth";
+import { createInstructor, registerUser, uniqueEmail } from "../helpers/auth";
 
 const PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
 
@@ -183,6 +183,135 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         data: { key: "instructors.canCreateCourses", value: true },
       });
       await ctx.dispose();
+    }
+  });
+
+  // Closes the doc's "System Logs page content beyond 'loads without
+  // redirecting'" gap: trigger a real PATCH /api/policies (which
+  // apps/core/app/routes/api/policies.ts writes as an AuditLog row with
+  // actionCode POLICY_FLAG_UPDATED — see admin.logs.tsx's default "audit"
+  // tab, sorted newest-first) and assert the row actually renders, not just
+  // that the page loads.
+  test("System Logs (Audit tab) renders a real audit-log row after a policy change", async ({
+    page,
+    playwright,
+  }) => {
+    const ctx = await newAuthedContext(playwright, USERS.admin);
+    const flagKey = "instructors.canManageEnrollments";
+    let before: boolean | undefined;
+    try {
+      const beforeRes = await ctx.get(`${CORE_URL}/api/policies`);
+      before = (await beforeRes.json()).policies[flagKey] as boolean;
+
+      const patchRes = await ctx.patch(`${CORE_URL}/api/policies`, {
+        data: { key: flagKey, value: !before },
+      });
+      expect(patchRes.status()).toBe(200);
+
+      await skipDashboardTour(page);
+      await injectSession(page, ctx);
+      await page.goto(`${CORE_URL}/admin/logs`);
+      await page.waitForLoadState("networkidle");
+
+      await expect(page.getByText("POLICY_FLAG_UPDATED").first()).toBeVisible({
+        timeout: 15_000,
+      });
+      // The row's Entity column renders entityLabel, which policies.ts sets
+      // to the flag key — confirms this is *this* change, not a stale
+      // pre-existing row that happens to share the actionCode.
+      await expect(page.getByText(flagKey).first()).toBeVisible();
+    } finally {
+      // restore default so this test doesn't leak state into other tests
+      await ctx.patch(`${CORE_URL}/api/policies`, { data: { key: flagKey, value: before } });
+      await ctx.dispose();
+    }
+  });
+
+  // `courseChatViewPolicyKey`'s "ADMIN is always on" contract already has API
+  // coverage in core-admin-unitadmin-instructor-boundaries.spec.ts. What's
+  // never been exercised is the actual rendering path: CourseChatsPanel /
+  // CourseChatsTab (course-chats-panel.tsx) has zero prior e2e UI coverage.
+  // This proves the "Chat history" tab really surfaces a real student chat in
+  // the browser, not just that the underlying API returns one.
+  test("Chat history tab renders a real student chat for ADMIN's oversight view", async ({
+    page,
+    playwright,
+  }) => {
+    const adminCtx = await newAuthedContext(playwright, USERS.admin);
+    const instructorCtx = await playwright.request.newContext();
+    const studentCtx = await playwright.request.newContext();
+    try {
+      await createInstructor(instructorCtx, { prefix: "chatoversight-ui-instructor" });
+      const instructorMe = await instructorCtx.get(`${CORE_URL}/api/me`);
+      const instructorId = (await instructorMe.json()).id;
+
+      const courseCode = `CHATUI-${Date.now()}`;
+      const createRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
+        form: {
+          name: `Chat oversight UI ${courseCode}`,
+          code: courseCode,
+          section: "001",
+          term: "W1",
+          year: "2026",
+          startDate: "2026-09-08",
+          department: "COSC",
+          instructorUserIds: instructorId,
+        },
+      });
+      expect(createRes.status(), await createRes.text()).toBe(201);
+      const courseId = (await createRes.json()).id;
+      expect((await adminCtx.patch(`${CORE_URL}/api/courses/${courseId}/publish`)).status()).toBe(
+        200,
+      );
+
+      const studentName = `E2E Chat Oversight Student ${Date.now()}`;
+      const student = await registerUser(studentCtx, {
+        name: studentName,
+        prefix: "chatoversight-ui-student",
+      });
+      const studentMe = await studentCtx.get(`${CORE_URL}/api/me`);
+      const studentId = (await studentMe.json()).id;
+      expect(
+        (
+          await adminCtx.post(`${CORE_URL}/api/courses/${courseId}/enrollments`, {
+            data: { userId: studentId, role: "STUDENT" },
+          })
+        ).status(),
+      ).toBe(201);
+
+      // Same fast-chat trick as course-scope-guardrail.spec.ts /
+      // week15-student-ta-exploration-round2.spec.ts: an empty `messages`
+      // array short-circuits before any (unreachable in this dev env) LLM
+      // call, but still persists a real Chat row with a real owner.
+      const chatRes = await studentCtx.post(`${CORE_URL}/api/chat`, {
+        data: {
+          messages: [],
+          systemPrompt: "You are a helpful course tutor.",
+          courseId,
+        },
+      });
+      expect(chatRes.ok(), await chatRes.text()).toBeTruthy();
+
+      await skipDashboardTour(page);
+      await injectSession(page, adminCtx);
+      await page.goto(`${CORE_URL}/courses`);
+      await page.waitForLoadState("networkidle");
+      await page
+        .getByRole("link", { name: new RegExp(courseCode) })
+        .first()
+        .click();
+      await page.waitForLoadState("networkidle");
+      await page.getByRole("tab", { name: "Chat history" }).click();
+
+      // The chat list button shows the owner's name (course-chats-panel.tsx),
+      // not the chat content — proves the oversight list is really wired to
+      // this course's real chats, not a stub/empty state.
+      await expect(page.getByText(studentName)).toBeVisible({ timeout: 15_000 });
+      expect(student.name).toBe(studentName);
+    } finally {
+      await adminCtx.dispose();
+      await instructorCtx.dispose();
+      await studentCtx.dispose();
     }
   });
 });

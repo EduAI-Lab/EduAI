@@ -591,6 +591,10 @@ describe("requireInviter", () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     vi.mocked(denyByPolicy).mockClear();
     vi.mocked(logSecurityEvent).mockClear();
+    vi.mocked(prisma.user.findUnique).mockReset();
+    // Default: an ADMIN/UNIT_ADMIN session's account is active. The
+    // deactivated-account tests below override this per call.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ isActive: true } as never);
     vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
   });
 
@@ -740,6 +744,38 @@ describe("requireInviter", () => {
     const gate = await requireInviter(sessionReq(`Bearer ${VALID_KEY}`), "invitation.create");
     expect(gate.session?.user.role).not.toBe("ADMIN");
     expect(invitableRolesFor(gate.session?.user.role)).toEqual(["INSTRUCTOR", "STUDENT"]);
+  });
+
+  // #1571-pattern gap found in a #1669 deep-audit pass: unlike `requireAdmin`,
+  // this guard used to trust the session's cached role for ADMIN/UNIT_ADMIN
+  // callers with no DB re-check, so a deactivated admin's still-live session
+  // retained full invitation authority (create/list/revoke/resend) until the
+  // session naturally expired.
+  it("403s an ADMIN session whose account was deactivated", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN", email: "admin@test.com" },
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ isActive: false } as never);
+    const gate = await requireInviter(sessionReq(), "invitation.create");
+    expect(gate.response?.status).toBe(403);
+    expect(gate.session).toBeNull();
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "a1" },
+      select: { isActive: true },
+    });
+    // A deactivated ADMIN never gets policy-flag treatment either — denial
+    // happens before the policy gate is even consulted.
+    expect(getPolicy).not.toHaveBeenCalled();
+  });
+
+  it("403s a UNIT_ADMIN session whose account was deactivated", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN", email: "unit-admin@test.com" },
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ isActive: false } as never);
+    const gate = await requireInviter(sessionReq(), "invitation.create");
+    expect(gate.response?.status).toBe(403);
+    expect(gate.session).toBeNull();
   });
 });
 
