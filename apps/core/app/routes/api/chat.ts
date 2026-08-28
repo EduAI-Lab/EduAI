@@ -173,7 +173,7 @@ import {
   resolveChatInputLimits,
   validateChatBody,
 } from "~/lib/chat-input.server";
-import { withErrorResponse } from "~/lib/errors.server";
+import { ValidationError, withErrorResponse } from "~/lib/errors.server";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -493,7 +493,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   const externalUserId = proxyUser.id?.trim();
 
   if (!externalUserId) {
-    throw new Error("proxyUser.id is required");
+    throw new ValidationError("proxyUser.id is required", { status: 400 });
   }
 
   const rawEmail = proxyUser.email?.trim().toLowerCase();
@@ -522,12 +522,16 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   }
 
   if (!suppliedEmail || !isUbcEmail(suppliedEmail)) {
-    throw new Error(
+    throw new ValidationError(
       "proxyUser.email must be a verifiable UBC email address to create a new proxy identity",
+      { status: 400 },
     );
   }
   if (!(await getPolicy("auth.allowPublicRegistration"))) {
-    throw new Error("Cannot create a new proxy identity while public registration is disabled");
+    throw new ValidationError(
+      "Cannot create a new proxy identity while public registration is disabled",
+      { status: 400 },
+    );
   }
 
   let user: User;
@@ -544,8 +548,9 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     if (isUniqueConstraintViolation(error)) {
       // The email already belongs to an existing EduAI account. Refuse to
       // bind an external identity onto it — that is exactly the AUTH-01
-      // escalation path this fix closes.
-      throw new Error("An EduAI account with this email already exists");
+      // escalation path this fix closes. Typed so the route surfaces it as the
+      // caller's 400 (a taken email), not a generic 500.
+      throw new ValidationError("An EduAI account with this email already exists", { status: 400 });
     }
     throw error;
   }
@@ -868,11 +873,16 @@ export async function action({ request }: ActionFunctionArgs) {
             };
           } catch (error) {
             console.error("Failed to resolve proxy user:", error);
+            // Only the deliberate validation failures are the caller's fault and
+            // carry a client-safe message (400). A DB/transport failure must not
+            // leak its message — rethrow it to the boundary mapper, which returns
+            // the uniform generic 500 and logs the outage.
+            if (!(error instanceof ValidationError)) throw error;
             return chatApiReject(
               400,
               {
                 error: "Failed to resolve proxy user",
-                details: error instanceof Error ? error.message : "Unknown error",
+                details: error.message,
               },
               { chatMode, userId: actingUser.id },
             );
@@ -1177,7 +1187,9 @@ export async function action({ request }: ActionFunctionArgs) {
                   : status === 503
                     ? "Queue unavailable"
                     : "Failed to enqueue AI job",
-                details: error instanceof Error ? error.message : "Unknown error",
+                // Only a validation failure carries client-safe field detail; an
+                // infra/transport error's message must not reach the client.
+                details: error instanceof ZodError ? error.flatten() : undefined,
               },
               { chatMode, userId: actingUser.id },
             );

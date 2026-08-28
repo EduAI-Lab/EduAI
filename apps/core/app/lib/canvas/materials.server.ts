@@ -338,9 +338,22 @@ export async function importSingleCanvasFile(
       // A concurrent sync of the same Canvas file already claimed the
       // provisional `canvas-pending:<id>` checksum. The pre-check saw no row
       // because both raced past it — the unique constraint is the real guard.
-      // Let the winner finish and skip this loser rather than surface a raw P2002.
+      // Defer to the winner (the concurrent import of this same `externalId`) and
+      // skip this loser rather than surface a raw P2002 — but confirm the winner
+      // is actually there first. If it vanished (rolled back after the collision),
+      // there is no import in flight to finish this file, so surface it as failed
+      // instead of a silent skip. `#1495`
       if (isChecksumConflict(error)) {
-        return "skipped-not-modified";
+        const winner = await prisma.courseMaterial.findFirst({
+          where: { courseId, externalSource: CANVAS_EXTERNAL_SOURCE, externalId: canvasFileId },
+          select: { id: true },
+        });
+        if (winner) {
+          return "skipped-not-modified";
+        }
+        throw new Error(
+          "Concurrent Canvas import collided but left no in-flight material; retry the sync",
+        );
       }
       throw error;
     }
@@ -357,10 +370,9 @@ export async function importSingleCanvasFile(
     throw error;
   }
 
-  // Resolve a lost content-hash race: drop the loser's provisional row (new
-  // import) or revert the pre-extraction PROCESSING flip (re-import), leaving
-  // the winning material's content untouched.
-  const resolveAsDuplicate = async (): Promise<"skipped-not-modified"> => {
+  // Drop the loser's provisional row (new import) or revert the pre-extraction
+  // PROCESSING flip (re-import), leaving the winning material's content untouched.
+  const revertLoser = async (): Promise<void> => {
     if (!existing) {
       await prisma.courseMaterial.delete({ where: { id: materialId } });
     } else {
@@ -372,15 +384,44 @@ export async function importSingleCanvasFile(
         },
       });
     }
+  };
+
+  const markFailed = async (): Promise<void> => {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: "FAILED" },
+    });
+  };
+
+  // Resolve a lost `(courseId, checksum)` race by deferring to the row that won
+  // the unique index — but only if there really is a healthy winner to defer to.
+  // The winner can be absent (deleted or rolled back between the collision and
+  // this lookup) or itself `FAILED`; in either case there is no good surviving
+  // copy of this content, so dropping our row would make the file vanish
+  // silently. Mark it `FAILED` and surface it as a failed item instead, rather
+  // than reporting a skip that hides missing content. `#1495`
+  const resolveChecksumConflict = async (checksum: string): Promise<"skipped-not-modified"> => {
+    const winner = await prisma.courseMaterial.findFirst({
+      where: { courseId, checksum, id: { not: materialId } },
+      select: { id: true, status: true },
+    });
+    if (!winner || winner.status === "FAILED") {
+      await markFailed();
+      throw new Error(
+        "Content duplicate collided with a missing or failed material; marked for re-sync",
+      );
+    }
+    await revertLoser();
     return "skipped-not-modified";
   };
 
   const duplicateByChecksum = await prisma.courseMaterial.findFirst({
     where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+    select: { id: true, status: true },
   });
 
   if (duplicateByChecksum) {
-    return resolveAsDuplicate();
+    return resolveChecksumConflict(fileInfo.checksum);
   }
 
   try {
@@ -400,15 +441,12 @@ export async function importSingleCanvasFile(
   } catch (error) {
     // The pre-check and this write are not atomic: a concurrent import of a
     // file with identical extracted text can win the content hash between them.
-    // The unique constraint is the real guard — take the duplicate branch
+    // The unique constraint is the real guard — resolve against the winner
     // instead of leaking a raw P2002 and stranding the row in PROCESSING.
     if (isChecksumConflict(error)) {
-      return resolveAsDuplicate();
+      return resolveChecksumConflict(fileInfo.checksum);
     }
-    await prisma.courseMaterial.update({
-      where: { id: materialId },
-      data: { status: "FAILED" },
-    });
+    await markFailed();
     throw error;
   }
 
