@@ -43,13 +43,13 @@ interface Product {
  */
 const core: Product = {
   icon: IconMessages,
-  name: "EduAI Core",
+  name: "EduAI",
   kind: "platform",
-  tagline: "The platform everything runs on",
+  tagline: "The core of the platform",
   description:
-    "Our home-grown tutoring platform, and the hub every other tool plugs into. It connects to your course slides, readings, and syllabi, then answers questions grounded in what your professor actually taught — not random guesses from the open web.",
+    "Our home-grown tutoring platform, and the hub every other tool plugs into. It connects to your course slides, readings, and syllabi, then answers each question from what your professor actually taught.",
   details:
-    "Core owns the parts every tool needs: accounts and sign-in, courses and enrollment, the uploaded course materials, and the retrieval layer that grounds answers in them. Build an extension on top and it inherits all of that for free — one account, one design system, and one grounded model layer shared across the whole platform.",
+    "EduAI owns the parts every tool needs: accounts and sign-in, courses and enrollment, the uploaded course materials, and the retrieval layer that grounds answers in them. Build an extension on top and it inherits all of that for free: one account, one design system, and one grounded model layer shared across the whole platform.",
   features: [
     "Retrieval-augmented chat grounded in your course slides, readings, and syllabi",
     "Courses and enrollment for students, TAs, and instructors",
@@ -64,18 +64,18 @@ const extensions: Product[] = [
     icon: IconSparkles,
     name: "AI Tutor",
     kind: "extension",
-    tagline: "Guided, step-by-step lessons",
+    tagline: "",
     description:
       "Interactive lessons and practice activities that walk you through tricky topics one step at a time. Instead of handing over the answer, it nudges you toward it and adapts to where you are in your coursework.",
     details:
-      "Instructors and TAs author lessons and activities per unit; students work through them at their own pace with feedback along the way. Because it runs on Core, it already knows the course roster and can ground its explanations in the same uploaded materials the Core tutor uses.",
+      "Instructors and TAs author lessons and activities per unit; students work through them at their own pace with feedback along the way. Because it runs on EduAI, it already knows the course roster and can ground its explanations in the same uploaded materials EduAI itself uses.",
     features: [
       "Interactive lessons and practice activities, one step at a time",
       "Adapts to where you are in the course",
       "Authoring and grading tools for instructors and TAs",
-      "Reads course materials and enrollment straight from Core",
+      "Reads course materials and enrollment straight from EduAI",
     ],
-    connection: "Plugs into Core for sign-in, course data, and the grounded model layer.",
+    connection: "Plugs into EduAI for sign-in, course data, and the grounded model layer.",
   },
   {
     icon: IconClipboardText,
@@ -85,14 +85,14 @@ const extensions: Product[] = [
     description:
       "A tool built for instructors. It helps professors spin up fresh variations of assessment questions for their courses, cutting the busywork of writing practice sets and exams by hand.",
     details:
-      "Generate new takes on a question, collect them into reusable banks per course, and pull it all together into an assessment. It leans on Core for course context and model access, so the questions it drafts stay tied to the material a class is actually covering.",
+      "Generate new takes on a question, collect them into reusable banks per course, and pull it all together into an assessment. It leans on EduAI for course context and model access, so the questions it drafts stay tied to the material a class is actually covering.",
     features: [
       "Generate fresh variations of assessment questions",
       "Build and reuse question banks per course",
       "Cuts the manual work of writing practice sets and exams",
-      "Uses Core's course data and model access",
+      "Uses EduAI's course data and model access",
     ],
-    connection: "Plugs into Core for sign-in, course data, and the grounded model layer.",
+    connection: "Plugs into EduAI for sign-in, course data, and the grounded model layer.",
   },
 ];
 
@@ -116,7 +116,7 @@ function ProductCard({ product, featured = false }: { product: Product; featured
   return (
     <Card
       className={`border bg-background transition-colors ${
-        featured ? "border-primary/40" : "border-border hover:border-primary/50"
+        featured ? "border-primary/40" : "border-border hover:border-primary/30 dark:hover:border-primary/45"
       }`}
     >
       <CardContent className="p-6">
@@ -125,7 +125,7 @@ function ProductCard({ product, featured = false }: { product: Product; featured
             <Icon className="h-6 w-6 text-primary-text" />
           </div>
           <Badge variant={featured ? "secondary" : "outline"}>
-            {product.kind === "platform" ? "Core platform" : "Extension"}
+            {product.kind === "platform" ? "Platform" : "Extension"}
           </Badge>
         </div>
 
@@ -168,7 +168,7 @@ function ProductCard({ product, featured = false }: { product: Product; featured
 
 export function ProductsSection() {
   return (
-    <section id="products" className="scroll-mt-20 border-t border-border bg-card py-20">
+    <section id="products" className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="What we build"
@@ -176,9 +176,7 @@ export function ProductsSection() {
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">
-              EduAI is one platform, not a pile of separate apps. Core does the heavy lifting, and
-              everything else is an extension that plugs straight into it — so every tool shares the
-              same account, course data, and grounded AI.
+              EduAI is one connected platform, with everything else as an extension that plugs straight into it. Every tool shares the same account, course data, and grounded AI.
             </span>
           }
         />
@@ -189,7 +187,7 @@ export function ProductsSection() {
           <div className="flex items-center gap-3">
             <IconPlugConnected className="h-5 w-5 shrink-0 text-primary-text" />
             <span className="text-sm font-medium text-foreground">
-              Extensions — each one connects back to Core
+              Extensions
             </span>
             <span aria-hidden="true" className="h-px flex-1 bg-border" />
           </div>
