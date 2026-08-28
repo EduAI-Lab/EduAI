@@ -305,6 +305,7 @@ export function LessonActivityView({
               disabled={
                 !canSubmitAnswers ||
                 submitting ||
+                wasCorrect ||
                 (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
               }
             >
