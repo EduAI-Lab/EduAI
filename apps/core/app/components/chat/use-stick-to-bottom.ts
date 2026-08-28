@@ -7,6 +7,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 export const STICK_TO_BOTTOM_THRESHOLD_PX = 48;
 
+/**
+ * Fallback release for the programmatic-scroll latch, for engines without
+ * `scrollend`. Comfortably longer than a native smooth scroll of one pane.
+ */
+const SMOOTH_SCROLL_MAX_MS = 1000;
+
 type ScrollMetrics = Pick<HTMLElement, "scrollTop" | "scrollHeight" | "clientHeight">;
 
 /**
@@ -32,9 +38,11 @@ export function isScrolledToBottom(
  * something — surfacing a "jump to latest" affordance instead of yanking them
  * back down mid-sentence.
  *
- * Growth is observed on the content element rather than inferred from the
- * message list: a streaming reply mutates one message's text, so the list is
- * not a reliable signal that the pane actually got taller.
+ * Growth is followed from two directions. The transcript array is a new
+ * identity on every streamed update, so a render-driven effect catches token
+ * growth; a ResizeObserver on the content element catches the height changes
+ * that land outside a render — markdown, diagrams, code blocks and images
+ * settling after their first paint.
  */
 export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLElement>(
   transcript: TranscriptRevision,
@@ -45,11 +53,28 @@ export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLE
   // without being torn down and rebuilt on every pin change.
   const pinnedRef = useRef(true);
   const [pinned, setPinned] = useState(true);
+  // Latched while a programmatic smooth scroll animates, so its per-frame
+  // scroll events are not mistaken for the reader scrolling away.
+  const smoothScrollingRef = useRef(false);
+  const smoothScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setPinnedState = useCallback((next: boolean) => {
     pinnedRef.current = next;
     setPinned((current) => (current === next ? current : next));
   }, []);
+
+  const endSmoothScroll = useCallback(() => {
+    if (!smoothScrollingRef.current) return;
+    smoothScrollingRef.current = false;
+    if (smoothScrollTimerRef.current) {
+      clearTimeout(smoothScrollTimerRef.current);
+      smoothScrollTimerRef.current = null;
+    }
+    // Settle on where the pane actually ended up: at the bottom if the
+    // animation completed, wherever the reader interrupted it if not.
+    const pane = paneRef.current;
+    if (pane) setPinnedState(isScrolledToBottom(pane));
+  }, [setPinnedState]);
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = "auto") => {
@@ -57,13 +82,27 @@ export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLE
       if (!pane) return;
       setPinnedState(true);
       if (typeof pane.scrollTo === "function") {
+        if (behavior === "smooth") {
+          smoothScrollingRef.current = true;
+          if (smoothScrollTimerRef.current) clearTimeout(smoothScrollTimerRef.current);
+          // `scrollend` is not everywhere yet; release the latch on a timer too
+          // so a browser without it cannot strand the pane in pinned state.
+          smoothScrollTimerRef.current = setTimeout(endSmoothScroll, SMOOTH_SCROLL_MAX_MS);
+        }
         pane.scrollTo({ top: pane.scrollHeight, behavior });
       } else {
         // happy-dom and older engines expose scrollTop but not scrollTo.
         pane.scrollTop = pane.scrollHeight;
       }
     },
-    [setPinnedState],
+    [endSmoothScroll, setPinnedState],
+  );
+
+  useEffect(
+    () => () => {
+      if (smoothScrollTimerRef.current) clearTimeout(smoothScrollTimerRef.current);
+    },
+    [],
   );
 
   // Unpin when the reader scrolls away from the bottom; re-pin when they return.
@@ -71,15 +110,26 @@ export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLE
     const pane = paneRef.current;
     if (!pane) return;
 
-    const handleScroll = () => setPinnedState(isScrolledToBottom(pane));
+    const handleScroll = () => {
+      // The jump button's smooth scroll emits a scroll event per animation
+      // frame, every one of them still short of the bottom. Reading those as
+      // the reader scrolling would unpin the pane — and flicker the button
+      // back into view — until the final frame landed.
+      if (smoothScrollingRef.current) return;
+      setPinnedState(isScrolledToBottom(pane));
+    };
     pane.addEventListener("scroll", handleScroll, { passive: true });
-    return () => pane.removeEventListener("scroll", handleScroll);
-  }, [setPinnedState]);
+    pane.addEventListener("scrollend", endSmoothScroll);
+    return () => {
+      pane.removeEventListener("scroll", handleScroll);
+      pane.removeEventListener("scrollend", endSmoothScroll);
+    };
+  }, [endSmoothScroll, setPinnedState]);
 
-  // Follow content growth while pinned. `transcript` covers renders that
-  // replace the pane's children outright (a transcript loading in, a new
-  // message appended); the observer covers token-by-token growth within one
-  // message, which does not always change the array identity.
+  // Follow content growth while pinned. `transcript` covers everything React
+  // renders — including token-by-token growth, since each streamed update
+  // hands down a new array — and the observer below covers the height changes
+  // that happen without a render.
   useEffect(() => {
     if (pinnedRef.current) scrollToBottom("auto");
   }, [transcript, scrollToBottom]);

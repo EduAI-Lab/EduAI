@@ -14,6 +14,7 @@ import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
   resolveMessageHighlightRole,
 } from "~/components/assistive/active-highlight";
+import { useMotionReducedPreference } from "~/components/assistive/ui-preferences-provider";
 import { cn } from "~/lib/utils";
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import { useStickToBottom } from "~/components/chat/use-stick-to-bottom";
@@ -88,6 +89,9 @@ export function ChatConversationLayout({
     HTMLDivElement,
     HTMLDivElement
   >(messages);
+  // Native smooth scrolling animates regardless of the app's reduce-motion
+  // setting, so the jump has to opt out of it explicitly.
+  const motionReduced = useMotionReducedPreference();
 
   return (
     <div
@@ -219,7 +223,7 @@ export function ChatConversationLayout({
         {!pinned && messages.length > 0 && (
           <button
             type="button"
-            onClick={() => scrollToBottom("smooth")}
+            onClick={() => scrollToBottom(motionReduced ? "auto" : "smooth")}
             aria-label="Jump to latest message"
             className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >

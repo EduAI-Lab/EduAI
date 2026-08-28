@@ -142,4 +142,90 @@ describe("useStickToBottom", () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
     expect(getByTestId("pinned").textContent).toBe("true");
   });
+
+  it("stays pinned through the scroll events a smooth jump emits on its way down", () => {
+    const { getByTestId } = render(<Harness transcript={ONE_MESSAGE} />);
+    const pane = getByTestId("pane");
+    stubPaneMetrics(pane, { scrollTop: 0, scrollHeight: 1000 });
+    pane.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      getByTestId("jump").click();
+    });
+    expect(getByTestId("pinned").textContent).toBe("true");
+
+    // Mid-animation frames are still far from the bottom; without the latch
+    // each one would unpin the pane and flicker the jump button back.
+    (pane as unknown as { scrollTop: number }).scrollTop = 200;
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+    expect(getByTestId("pinned").textContent).toBe("true");
+
+    (pane as unknown as { scrollTop: number }).scrollTop = 600;
+    act(() => {
+      pane.dispatchEvent(new Event("scrollend"));
+    });
+    expect(getByTestId("pinned").textContent).toBe("true");
+  });
+
+  it("releases the latch on scrollend, so a later scroll up still unpins", () => {
+    const { getByTestId } = render(<Harness transcript={ONE_MESSAGE} />);
+    const pane = getByTestId("pane");
+    stubPaneMetrics(pane, { scrollTop: 0, scrollHeight: 1000 });
+    pane.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      getByTestId("jump").click();
+    });
+
+    (pane as unknown as { scrollTop: number }).scrollTop = 600;
+    act(() => {
+      pane.dispatchEvent(new Event("scrollend"));
+    });
+
+    (pane as unknown as { scrollTop: number }).scrollTop = 0;
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+    expect(getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("falls back to a timer when the engine never fires scrollend", () => {
+    vi.useFakeTimers();
+    try {
+      const { getByTestId } = render(<Harness transcript={ONE_MESSAGE} />);
+      const pane = getByTestId("pane");
+      stubPaneMetrics(pane, { scrollTop: 0, scrollHeight: 1000 });
+      pane.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+
+      act(() => {
+        getByTestId("jump").click();
+      });
+
+      // The spied scrollTo never moved the pane, so releasing the latch has to
+      // re-read the real position rather than assume the jump landed.
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(getByTestId("pinned").textContent).toBe("false");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an instant follow-scroll unlatched so a scroll up unpins immediately", () => {
+    const { getByTestId, rerender } = render(<Harness transcript={ONE_MESSAGE} />);
+    const pane = getByTestId("pane");
+    stubPaneMetrics(pane, { scrollTop: 600, scrollHeight: 1000 });
+    pane.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+
+    rerender(<Harness transcript={TWO_MESSAGES} />);
+
+    (pane as unknown as { scrollTop: number }).scrollTop = 0;
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+    expect(getByTestId("pinned").textContent).toBe("false");
+  });
 });

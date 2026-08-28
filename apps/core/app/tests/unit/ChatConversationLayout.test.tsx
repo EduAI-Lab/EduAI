@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
+import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import {
   resolvedModelIdFromMessage,
@@ -132,6 +133,61 @@ describe("ChatConversationLayout — stick to bottom (#1517)", () => {
     });
 
     expect(screen.getByRole("button", { name: /jump to latest/i })).toBeInTheDocument();
+  });
+
+  it("scrolls smoothly back to the bottom when the jump button is clicked", () => {
+    const { container } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+      />,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+    const scrollTo = vi.fn();
+    pane.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    act(() => {
+      screen.getByRole("button", { name: /jump to latest/i }).click();
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
+  });
+
+  it("jumps without animating for a reader who has asked for reduced motion", () => {
+    const { container } = render(
+      <UiPreferencesProvider initialMotionReduced initialDensity="comfortable">
+        <ChatConversationLayout
+          {...baseProps}
+          messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+        />
+      </UiPreferencesProvider>,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+    const scrollTo = vi.fn();
+    pane.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    act(() => {
+      screen.getByRole("button", { name: /jump to latest/i }).click();
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "auto" });
   });
 
   it("does not offer the jump button on an empty transcript", () => {
