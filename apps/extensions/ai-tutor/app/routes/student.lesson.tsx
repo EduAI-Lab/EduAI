@@ -2,7 +2,13 @@
  * @file Student lesson player — drives the per-activity flow students see.
  *
  * Route: /student/lesson/:lessonId
- * Auth: STUDENT (enforced by clientLoader via requireClientUser)
+ * Auth: STUDENT or TA (real learners), plus ADMIN/UNIT_ADMIN/INSTRUCTOR
+ *       previewing the learner experience (#1660) — enforced by clientLoader
+ *       via requireClientUser. The backend already authorized staff reads
+ *       here (course/module/lesson membership checks); student-only writes
+ *       (answer submission, AI tutoring chat) are unchanged and still reject
+ *       non-STUDENT callers server-side, so a previewer sees everything but
+ *       cannot submit as if they were the enrolled student.
  * Loads: lesson + activities in one parallel wave alongside the role gate;
  *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
  *        (#1334) so the lesson body is not blocked on Core/ordinal work.
@@ -48,11 +54,13 @@ import { contentExcerpt } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
-import api from "../lib/api";
+import api, { ApiHttpError } from "../lib/api";
 import type { Activity, Course, EnrollmentRole, Lesson, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
@@ -120,7 +128,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
 
   const [, lesson, activitiesPage] = await Promise.all([
-    requireClientUser(["STUDENT", "TA"]),
+    requireClientUser(STUDENT_ROUTE_ROLES),
     api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
@@ -144,6 +152,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
+  const previewRole = resolvePreviewRole(user);
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
   const { lesson, activities, activitiesTotal } = loaderData;
@@ -397,7 +406,19 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      setResult("There was a problem submitting.");
+      // #1660 review (ariqmuldi): the server 403s this endpoint for three
+      // distinct reasons (server/src/routes/activities.js) — non-STUDENT
+      // caller (a previewer, what this message is about), a real student
+      // whose enrollment-sync is lagging, or content that got unpublished
+      // mid-session. Gating on `previewRole` (the client's own, already-
+      // resolved role) instead of the bare status code keeps a genuine
+      // STUDENT/TA from seeing "this is a read-only preview" for one of the
+      // other two, unrelated 403s.
+      setResult(
+        e instanceof ApiHttpError && e.status === 403 && previewRole
+          ? "Only enrolled students can submit answers — this is a read-only preview."
+          : "There was a problem submitting.",
+      );
       setWasCorrect(false);
     } finally {
       setSubmitting(false);
@@ -666,7 +687,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       questionCount={activitiesTotal}
       accentColor={accentColor}
       mcq={mcq}
-      onSelectMcq={setMcq}
+      onSelectMcq={(i) => {
+        setMcq(i);
+        // #1644: clear a prior wrong grade when the student re-picks an option,
+        // so the new choice doesn't render already red before they resubmit.
+        // (A correct grade disables the options, so this never clears one.)
+        setResult(null);
+        setWasCorrect(false);
+      }}
       text={text}
       onTextChange={setText}
       submitting={submitting}
@@ -703,11 +731,20 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       studentAnswer={studentAnswer}
       studyBuddyState={studyBuddyState}
       className="h-full"
+      isPreview={Boolean(previewRole)}
     />
   );
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height)-2.5rem)] min-h-[640px] flex-col gap-4 px-4 pt-6 pb-6 lg:px-6">
+      {/* #1660: shrink-0 like the hero below it — grows this fixed-height
+          layout's header area rather than eating into the flex-1 activity/
+          chat split, which assumes it gets whatever space the header leaves. */}
+      {previewRole && (
+        <div className="shrink-0">
+          <StudentPreviewBanner role={previewRole} exitHref={`/instructor/lesson/${lesson.id}`} />
+        </div>
+      )}
       <div className="flex shrink-0 flex-col gap-4" data-tour="student-lesson-progress">
         <ModuleHero
           orderText={orderText}

@@ -62,7 +62,7 @@ import {
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
-  ESTIMATED_CHARS_PER_TOKEN,
+  resolveSessionCharBudgetForModel,
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
@@ -131,6 +131,7 @@ import {
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
+  pickCoreAdminChatTools,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
@@ -152,6 +153,7 @@ import {
   LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  resolveMaxDigestSourceMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
@@ -1265,14 +1267,21 @@ export async function action({ request }: ActionFunctionArgs) {
     // Fetch only the slice of history we plan to send back to the LLM. Stateless
     // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords =
+    // The load ceiling is a memory-safety bound, not the real context cap (the
+    // token budget is — #1639). Count the full stored history so any turns older
+    // than the loaded slice are disclosed in the digest marker rather than
+    // silently dropped before the digest ever sees them (#1643).
+    const [totalStoredCount, recentMessageRecords] =
       ephemeral || !chat.id
-        ? []
-        : await prisma.chatMessage.findMany({
-            where: { chatId: chat.id },
-            orderBy: { position: "desc" },
-            take: maxContextMessages,
-          });
+        ? [0, []]
+        : await Promise.all([
+            prisma.chatMessage.count({ where: { chatId: chat.id } }),
+            prisma.chatMessage.findMany({
+              where: { chatId: chat.id },
+              orderBy: { position: "desc" },
+              take: maxContextMessages,
+            }),
+          ]);
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -1282,9 +1291,44 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
+    // Turns older than the verbatim window still carry content a "summarize
+    // everything" request needs. Load that older span (bounded, memory-safe) and
+    // pass its extracted text to the digest so its old/middle topics are
+    // summarized rather than disclosed only as a count (#1643). Only the turns
+    // beyond even this span stay a bare count.
+    const olderTurnsBeyondWindow = Math.max(0, totalStoredCount - storedMessages.length);
+    let priorOlderEntries: { role: string; text: string }[] = [];
+    let loadedOlderCount = 0;
+    if (olderTurnsBeyondWindow > 0 && chat.id && !ephemeral) {
+      const olderRecords = await prisma.chatMessage.findMany({
+        where: { chatId: chat.id },
+        orderBy: { position: "desc" },
+        skip: storedMessages.length,
+        take: resolveMaxDigestSourceMessages(),
+        select: { messageId: true, role: true, content: true },
+      });
+      loadedOlderCount = olderRecords.length;
+      priorOlderEntries = olderRecords
+        .reverse()
+        .map((record) => ({
+          role: record.role,
+          text: extractMessageText(
+            reviveStoredMessage({
+              messageId: record.messageId,
+              role: record.role,
+              content: record.content,
+            }),
+          )
+            .replace(/\s+/g, " ")
+            .trim(),
+        }))
+        .filter((entry) => entry.text.length > 0);
+    }
+
     chatApiDebug("chat history loaded", {
       chatId: chat.id,
       storedCount: storedMessages.length,
+      priorOlderLoaded: priorOlderEntries.length,
       incomingCount: normalizedIncomingMessages.length,
     });
 
@@ -1294,15 +1338,30 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
+    // Older turns cut before the digest sees them as *content*: those beyond the
+    // digest-source span (loaded above into priorOlderEntries) plus those the
+    // tail-slice dropped. The digest folds this into its omission marker so
+    // nothing is lost silently (#1643); the span it loaded is summarized, not
+    // merely counted. storedMessages omits the current incoming turn(s), so the
+    // loaded count can never exceed the stored total.
+    const priorOmittedCount =
+      Math.max(0, olderTurnsBeyondWindow - loadedOlderCount) +
+      (mergedMessages.length - trimmedMessages.length);
+
     chatApiDebug("chat history merged", {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
       maxContextMessages,
+      totalStoredCount,
+      priorOmittedCount,
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages));
+    let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages), {
+      priorOmittedCount,
+      priorOlderEntries,
+    });
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -1422,9 +1481,11 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
+    let ragLatencyMs: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
     if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
+      const ragStartedAt = Date.now();
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1439,6 +1500,8 @@ export async function action({ request }: ActionFunctionArgs) {
         ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err: formatStreamError(err) });
+      } finally {
+        ragLatencyMs = Date.now() - ragStartedAt;
       }
     }
 
@@ -1688,6 +1751,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fleetPick = await resolveFleetHost({
           jobType,
           resolvedModelId,
+          affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
         });
         if (fleetPick) {
           chatApiTrace("fleet host selected", {
@@ -1874,9 +1938,18 @@ export async function action({ request }: ActionFunctionArgs) {
     // later (outside the branch) for debug logging and the
     // X-Web-Tools-Enabled response header.
     let webToolsEnabled: boolean;
-    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
-    let adminContextWindow: number | undefined;
+    /** Admin's desired completion cap, re-applied after composeSecurityPrompt expands `system`. */
     let adminDesiredMaxOutput: number | undefined;
+
+    // Model-derived inputs for the token-based history budget (#1639), set in
+    // both the admin and non-admin branches so the digest triggers on the actual
+    // context window — everything sharing it (system + RAG + tool schemas +
+    // reserved output) is reserved before history — instead of a fixed char cap.
+    let budgetContextWindow: number | undefined;
+    let budgetFillRatio: number | null = null;
+    let budgetToolCount = 0;
+    let budgetReserveToolSteps = false;
+    let budgetToolResultCap: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -1922,29 +1995,29 @@ export async function action({ request }: ActionFunctionArgs) {
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
-      // Leave room for the ~17 admin tool schemas on small context models.
-      const adminSessionBudget =
-        contextWindow <= 16_384
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
-          : contextWindow <= 32_768
-            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
-            : undefined;
+      // #1665 review: the full admin registry is 63 tool() entries —
+      // estimateToolDefinitionTokens(63) alone (~26.7k tokens) already
+      // exceeds the seeded 16k vLLM admin model's context window, and still
+      // eats most of a 32k window once system prompt/history/reserve are
+      // added. Below that, send only ADMIN_CORE_TOOL_NAMES — the same
+      // read+common-write set the default admin system prompt already
+      // documents to the model (chat-mode.ts) — so small-context admin chat
+      // stays usable instead of unconditionally failing ADMIN_CONTEXT_TOO_LARGE.
+      // Larger-context models (OpenAI/Gemini rows) keep the full registry.
+      const effectiveAdminTools = contextWindow <= 32_768 ? pickCoreAdminChatTools(tools) : tools;
 
       const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
-      modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
-        adminSessionBudget
-          ? {
-              charBudget: adminSessionBudget,
-              recentCount: 3,
-              digestMaxChars: toolResultCapChars,
-            }
-          : undefined,
-      );
-
-      adminContextWindow = contextWindow;
+      // History is trimmed by the token-based budget at the unified recompute
+      // after composeSecurityPrompt (#1639), once the final system prompt + tool
+      // schemas are known. Admin reserves the ~17 tool JSON schemas + mid-turn
+      // tool-step payloads, replacing the old fixed 0.12/0.25 char fractions.
       adminDesiredMaxOutput = desiredMaxOutput;
+      budgetContextWindow = contextWindow;
+      budgetFillRatio = activeChatModel?.contextFillRatio ?? null;
+      budgetToolCount = Object.keys(tools).length;
+      budgetReserveToolSteps = true;
+      budgetToolResultCap = toolResultCapChars;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -1952,7 +2025,6 @@ export async function action({ request }: ActionFunctionArgs) {
         supportsTools,
         contextWindow,
         desiredMaxOutput,
-        adminSessionBudget: adminSessionBudget ?? null,
         dbMaxTokens: activeChatModel?.maxTokens ?? null,
         chatId: chat?.id ?? null,
       });
@@ -1981,7 +2053,7 @@ export async function action({ request }: ActionFunctionArgs) {
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
         maxSteps: adminMaxSteps,
-        tools,
+        tools: effectiveAdminTools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
@@ -2018,6 +2090,7 @@ export async function action({ request }: ActionFunctionArgs) {
         if (routerRagPrefetch) {
           return { hits: routerRagPrefetch };
         }
+        const ragStartedAt = Date.now();
         try {
           const hits = await findRelevantContent(
             userQuestion,
@@ -2027,8 +2100,10 @@ export async function action({ request }: ActionFunctionArgs) {
             restrictRagToStudentVisible,
             { signal: request.signal },
           );
+          ragLatencyMs = Date.now() - ragStartedAt;
           return { hits };
         } catch (error) {
+          ragLatencyMs = Date.now() - ragStartedAt;
           console.error("Error prefetching course RAG context:", error);
           return { hits: [], error };
         }
@@ -2053,6 +2128,18 @@ export async function action({ request }: ActionFunctionArgs) {
         (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
       useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
+
+      // Token-based history budget inputs (#1639); the digest recompute after
+      // composeSecurityPrompt uses the final system prompt (RAG already folded
+      // into `system` on this path, so it is counted via systemChars — not
+      // reserved twice). Small vLLM windows keep a tighter verbatim tail.
+      budgetContextWindow = resolveModelContextWindow(
+        modelCapabilities.maxTokens,
+        parsedModel.providerId,
+      );
+      budgetFillRatio = modelCapabilities.contextFillRatio ?? null;
+      budgetToolCount = useToolCalling ? Object.keys(tools).length : 0;
+      budgetReserveToolSteps = useToolCalling;
 
       const courseStyleBlock = effectiveCourse
         ? buildCourseResponseStylePrompt(
@@ -2270,10 +2357,46 @@ ${buildEmptyCourseRagBlock()}`;
       }),
     );
 
-    // Re-cap after composeSecurityPrompt so the security block is included, and
-    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
-    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
-    if (chatMode === "admin" && adminContextWindow != null && adminDesiredMaxOutput != null) {
+    // Token-based history budget (#1639): now that the final system prompt (RAG
+    // + security + ADHD blocks) and tool schemas are known, digest older turns so
+    // the assembled input fits within `ratio × contextWindow`. Everything else
+    // sharing the input allowance is reserved first; history takes the rest.
+    // Runs for every mode with a resolved window — the fixed-char default at the
+    // early call above is only a fallback when the window is unknown.
+    if (budgetContextWindow != null) {
+      const budgetSystemChars = z.string().safeParse(streamConfig.system).success
+        ? String(streamConfig.system).length
+        : 0;
+      const historyCharBudget = resolveSessionCharBudgetForModel({
+        contextWindow: budgetContextWindow,
+        perModelRatio: budgetFillRatio,
+        systemChars: budgetSystemChars,
+        toolCount: budgetToolCount,
+        reserveToolSteps: budgetReserveToolSteps,
+      });
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, budgetToolResultCap),
+        {
+          charBudget: historyCharBudget,
+          recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
+          digestMaxChars: budgetToolResultCap,
+          priorOmittedCount,
+          priorOlderEntries,
+        },
+      );
+      streamConfig.messages = modelMessages;
+    }
+
+    // Re-cap the completion after composeSecurityPrompt so the security block +
+    // tool JSON schemas are inside the budget (the old flat 512 under-counted
+    // ~17 admin tools and blew 16k windows: ContextWindowExceededError). Applied
+    // to every mode so output always fits `contextWindow − input`; only admin
+    // hard-rejects an over-budget prompt — its tool schemas can be unshrinkable,
+    // whereas other modes have already had history digested to fit.
+    if (budgetContextWindow != null) {
+      const parsedStreamMaxTokens = z.number().safeParse(streamConfig.maxTokens);
+      const desiredMaxOutput =
+        adminDesiredMaxOutput ?? (parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 256);
       const systemChars = z.string().safeParse(streamConfig.system).success
         ? String(streamConfig.system).length
         : 0;
@@ -2284,55 +2407,85 @@ ${buildEmptyCourseRagBlock()}`;
       const declaredTools = z.record(z.string(), z.unknown()).safeParse(streamConfig.tools);
       const toolCount = declaredTools.success ? Object.keys(declaredTools.data).length : 0;
       const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
-      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const toolStepReserve = budgetReserveToolSteps
+        ? estimateAdminToolStepReserve(budgetContextWindow)
+        : 0;
       const estimatedInputTokens =
         estimateTokensFromChars(systemChars + messageChars) +
         toolDefinitionTokens +
         toolStepReserve;
 
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow: adminContextWindow,
+      const contextFitMaxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         toolDefinitionTokens: 0,
         safetyBuffer: 512,
         minOutput: 256,
       });
 
-      if (longOutputCap.isLongOutputIntent) {
-        const adminContextMaxTokens = streamConfig.maxTokens;
-        streamConfig.maxTokens = Math.min(adminContextMaxTokens, longOutputCap.maxTokens);
-        longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+      if (chatMode === "admin") {
+        streamConfig.maxTokens = contextFitMaxTokens;
+        if (longOutputCap.isLongOutputIntent) {
+          const adminContextMaxTokens = streamConfig.maxTokens;
+          streamConfig.maxTokens = Math.min(adminContextMaxTokens, longOutputCap.maxTokens);
+          longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+        }
+      } else {
+        // Non-admin already applied the long-output cap earlier; only tighten the
+        // completion so it still fits the window after history was digested —
+        // never loosen it, so the long-output flag/value are left intact.
+        const current = parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 0;
+        streamConfig.maxTokens = Math.min(current, contextFitMaxTokens);
       }
 
       chatApiTrace("max output tokens capped", {
-        contextWindow: adminContextWindow,
+        chatMode,
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
         toolCount,
         toolDefinitionTokens,
         toolStepReserve,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         effectiveMaxTokens: streamConfig.maxTokens,
         systemChars,
         messageChars,
       });
 
+      // Final fit check for EVERY mode: history has already been digested toward
+      // the budget and the completion capped into the remaining space, so if the
+      // prompt still does not fit, the fixed prompt itself (system + RAG + tool
+      // schemas + the irreducible current turn) exceeds the window. Fail closed
+      // with a clear 400 rather than send an over-context request the provider
+      // would reject with a raw ContextWindowExceededError (#1643).
       if (
         !promptFitsContextWindow({
-          contextWindow: adminContextWindow,
+          contextWindow: budgetContextWindow,
           estimatedInputTokens,
           maxOutputTokens: streamConfig.maxTokens,
           safetyBuffer: 256,
         })
       ) {
+        if (chatMode === "admin") {
+          return chatApiReject(
+            400,
+            {
+              error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+              code: "ADMIN_CONTEXT_TOO_LARGE",
+              estimatedInputTokens,
+              contextWindow: budgetContextWindow,
+              toolCount,
+            },
+            { model, chatId: chat?.id ?? null },
+          );
+        }
         return chatApiReject(
           400,
           {
-            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
-            code: "ADMIN_CONTEXT_TOO_LARGE",
+            error: `This conversation is too long for the selected model's ${budgetContextWindow}-token context window. Start a new chat or pick a model with a larger context window.`,
+            code: "CONTEXT_TOO_LARGE",
             estimatedInputTokens,
-            contextWindow: adminContextWindow,
-            toolCount,
+            contextWindow: budgetContextWindow,
           },
           { model, chatId: chat?.id ?? null },
         );
@@ -2697,6 +2850,7 @@ ${buildEmptyCourseRagBlock()}`;
             failedPick,
             resolvedModelId,
             jobType,
+            affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
           });
           if (nextPick) {
             fleetPick = nextPick;
@@ -2871,6 +3025,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          if (ragLatencyMs !== null) {
+            headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+          }
           Object.assign(
             headers,
             autoRoutingHeaders(
@@ -2894,6 +3051,7 @@ ${buildEmptyCourseRagBlock()}`;
 
               dataStream.writeMessageAnnotation({
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                ragLatencyMs,
               });
 
               dataStream.write(
@@ -2908,6 +3066,10 @@ ${buildEmptyCourseRagBlock()}`;
         await persistOverseenAssistantMessages(finalText);
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: finalText,
@@ -2923,8 +3085,12 @@ ${buildEmptyCourseRagBlock()}`;
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: responseHeaders,
+          },
         );
       } catch (error) {
         releaseAdmission();
@@ -2959,6 +3125,9 @@ ${buildEmptyCourseRagBlock()}`;
       headers["Transfer-Encoding"] = "chunked";
       headers["Connection"] = "keep-alive";
       Object.assign(headers, admissionHeaders());
+      if (ragLatencyMs !== null) {
+        headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+      }
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -3055,6 +3224,10 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: text,
@@ -3070,8 +3243,12 @@ ${buildEmptyCourseRagBlock()}`;
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: responseHeaders,
+          },
         );
       } catch (error) {
         releaseAdmission();
