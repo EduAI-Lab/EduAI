@@ -7,6 +7,7 @@ const member: TeamMember = {
   id: 1,
   role: "professor",
   name: "Ada Lovelace",
+  position: "Professor",
   title: "Analytical Engine Lead",
   image: "/public/images/ada.png",
   biography: "First programmer.",
@@ -22,26 +23,16 @@ describe("TeamMemberCard — grid face", () => {
     expect(screen.getByText("Analytical Engine Lead")).toBeInTheDocument();
   });
 
-  it("renders the contribution as the focus line", () => {
+  it("shows the position tag and a clickable View profile affordance", () => {
     render(<TeamMemberCard member={member} />);
-    expect(screen.getByText("Analytical Engine notes.")).toBeInTheDocument();
+    expect(screen.getByText("Professor")).toBeInTheDocument();
+    expect(screen.getByText("View profile")).toBeInTheDocument();
   });
 
-  it("shows the first tech as the specialty chip and the rest as badges", () => {
+  it("keeps the tech stack off the grid face", () => {
     render(<TeamMemberCard member={member} />);
-    expect(screen.getByText("Math")).toBeInTheDocument();
-    expect(screen.getByText("Logic")).toBeInTheDocument();
-    expect(screen.getByText("Poetry")).toBeInTheDocument();
-  });
-
-  it("collapses extra tech beyond three badges into a +N chip", () => {
-    render(
-      <TeamMemberCard
-        member={{ ...member, techStack: ["A", "B", "C", "D", "E", "F"] }}
-      />,
-    );
-    // "A" is the specialty chip; B/C/D are badges; E/F collapse into +2.
-    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.queryByText("Math")).not.toBeInTheDocument();
+    expect(screen.queryByText("Analytical Engine notes.")).not.toBeInTheDocument();
   });
 
   it("strips /public from the image src", () => {

@@ -2,7 +2,9 @@ export interface TeamMember {
   id: number
   role: "professor" | "student"
   name: string
-  /** Short role/specialty shown on the roster card, e.g. "Backend & Infra Lead". */
+  /** Actual position/role name, shown as the roster card's corner tag, e.g. "Professor", "Developer", "Project Lead". */
+  position: string
+  /** The part of the system this member owns, shown under the name, e.g. "Backend & Infra". */
   title: string
   image: string
   biography: string
@@ -17,6 +19,7 @@ export const teamMembers: TeamMember[] = [
     id: 1,
     role: "professor",
     name: "Dr. Abdallah Mohamed",
+    position: "Professor",
     title: "AI Research Director",
     image: "/AbdullahMoh.jpeg",
     biography:
@@ -30,6 +33,7 @@ export const teamMembers: TeamMember[] = [
     id: 2,
     role: "professor",
     name: "Dr. Mostafa Mohamed",
+    position: "Professor",
     title: "Backend & Infra Lead",
     image: "/MohMustafa.jpeg",
     biography:
@@ -43,6 +47,7 @@ export const teamMembers: TeamMember[] = [
     id: 3,
     role: "professor",
     name: "Dr. Fatemeh Fard",
+    position: "Assistant Professor",
     title: "FARD Lab · Code LLMs",
     image: "/Fatemah.jpeg",
     biography:
@@ -57,6 +62,7 @@ export const teamMembers: TeamMember[] = [
     id: 4,
     role: "professor",
     name: "Dr. Ramon Lawrence",
+    position: "Professor",
     title: "Dept. Head · Databases",
     image: "/Ramon_Law.jpeg",
     biography:
@@ -71,6 +77,7 @@ export const teamMembers: TeamMember[] = [
     id: 5,
     role: "student",
     name: "Ronit Buti",
+    position: "Developer",
     title: "Founding Full-Stack Dev",
     image: "/ronit.jpg",
     biography:
@@ -84,6 +91,7 @@ export const teamMembers: TeamMember[] = [
     id: 6,
     role: "student",
     name: "Stavan Shah",
+    position: "Developer",
     title: "Backend & API",
     image: "/Stavan.jpeg",
     biography:
@@ -97,6 +105,7 @@ export const teamMembers: TeamMember[] = [
     id: 7,
     role: "student",
     name: "Ahab Masud Siddiqui",
+    position: "Developer",
     title: "System Design & UX",
     image: "/AA.JPG",
     biography:
@@ -109,6 +118,7 @@ export const teamMembers: TeamMember[] = [
     id: 8,
     role: "student",
     name: "Necmi Kaan Sapoglu",
+    position: "Developer",
     title: "Backend & APIs",
     image: "/kaan.png",
     biography:
@@ -122,6 +132,7 @@ export const teamMembers: TeamMember[] = [
     id: 9,
     role: "student",
     name: "Ribhav Sharma",
+    position: "Developer",
     title: "Learning Systems",
     image: "/rib.jpeg",
     biography:
@@ -135,6 +146,7 @@ export const teamMembers: TeamMember[] = [
     id: 10,
     role: "student",
     name: "Leila Saparbek",
+    position: "Developer",
     title: "Backend & Data Pipelines",
     image: "/Leila.jpg",
     biography:
@@ -148,6 +160,7 @@ export const teamMembers: TeamMember[] = [
     id: 11,
     role: "student",
     name: "Mohamed Gamal Sakr",
+    position: "Project Manager",
     title: "Lead AI Engineer & PM",
     image: "/sakr.jpg",
     biography:
@@ -161,6 +174,7 @@ export const teamMembers: TeamMember[] = [
     id: 12,
     role: "student",
     name: "Syed Saad Ali",
+    position: "Developer",
     title: "Question Maker Lead",
     image: "/saad.jpeg",
     biography:
@@ -173,6 +187,7 @@ export const teamMembers: TeamMember[] = [
     id: 13,
     role: "student", 
     name: "Abdullah Mohsin Naqvi",
+    position: "Developer",
     title: "Backend & Infra",
     image: "/abdu.jpeg",
     biography:
@@ -185,6 +200,7 @@ export const teamMembers: TeamMember[] = [
     id: 14,
     role: "student",
     name: "Evan Bowness",
+    position: "Developer",
     title: "Systems & Architecture",
     image: "/evan.jpg",
     biography:
@@ -197,6 +213,7 @@ export const teamMembers: TeamMember[] = [
     id: 15,
     role: "student",
     name: "Ye Thway Aung",
+    position: "Developer",
     title: "Frontend, Security & Testing",
     image: "/ye.jpeg",
     biography:
@@ -210,6 +227,7 @@ export const teamMembers: TeamMember[] = [
     id: 16,
     role: "student",
     name: "Al-Ameen Oludare",
+    position: "Developer",
     title: "Full-Stack & QA",
     image: "",
     biography:
@@ -223,6 +241,7 @@ export const teamMembers: TeamMember[] = [
     id: 17,
     role: "student",
     name: "Ariq Muldi",
+    position: "Project Lead",
     title: "Project Lead",
     image: "/ariq.jpg",
     biography:
@@ -236,6 +255,7 @@ export const teamMembers: TeamMember[] = [
     id: 18,
     role: "student",
     name: "Gwantana Kiboigo",
+    position: "Developer",
     title: "Full-Stack Dev",
     image: "/gwan.jpg",
     biography:
@@ -249,6 +269,7 @@ export const teamMembers: TeamMember[] = [
     id: 19,
     role: "student",
     name: "Yibing Wang",
+    position: "Developer",
     title: "Core Chat & Reliability",
     image: "/yibing.jpg",
     biography:
