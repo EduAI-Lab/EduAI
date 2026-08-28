@@ -1,4 +1,5 @@
 import { request as undiciRequest } from "undici";
+import type { JsonValue } from "~/lib/json-value";
 import { getPinnedDispatcher } from "~/lib/net/pinned-dispatcher.server";
 import { assertPublicHostname, assertPublicIpLiteral } from "~/lib/net/ssrf-guard.server";
 import { z } from "zod";
@@ -35,6 +36,28 @@ export const CANVAS_PAGINATION_ITEM_LIMIT_ERROR = "Canvas pagination exceeded th
 export const CANVAS_PAGINATION_DEADLINE_ERROR = "Canvas pagination exceeded its deadline";
 export const CANVAS_PAGINATION_CANCELLED_ERROR = "Canvas pagination was cancelled";
 const CANVAS_PAGINATION_CONFIG_ERROR = "Canvas pagination limits must be positive integers";
+
+export const CANVAS_URL_CREDENTIALS_ERROR = "Canvas URL may not contain credentials";
+export const CANVAS_URL_QUERY_OR_FRAGMENT_ERROR = "Canvas URL may not contain a query or fragment";
+
+/**
+ * Egress budgets for Canvas JSON traffic. Centralizing QM's Canvas calls in
+ * Core moved its request/response size limits here: without them a write body
+ * assembled from local content, or a hostile/broken Canvas response, is only
+ * bounded by the per-request timeout.
+ */
+export const CANVAS_MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
+export const CANVAS_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+export const CANVAS_REQUEST_BODY_LIMIT_ERROR =
+  "Canvas request body exceeded the configured size limit";
+export const CANVAS_RESPONSE_LIMIT_ERROR = "Canvas response exceeded the configured size limit";
+
+/**
+ * Machine-readable code for a Canvas 403. Relayed verbatim to QM so a caller
+ * can tell "you may not read this resource" apart from a broken token or a
+ * transport failure.
+ */
+export const CANVAS_PERMISSION_DENIED_ERROR = "CANVAS_PERMISSION_DENIED";
 
 /** Absolute cap for streamed Canvas response bytes. */
 const MAX_CANVAS_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -368,6 +391,18 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
     throw new CanvasVerificationError("Invalid Canvas URL format", 400);
   }
 
+  // A Canvas base URL is an origin plus an optional deployment sub-path and
+  // nothing else. Userinfo would smuggle credentials into every derived
+  // request URL (and into audit records); a query or fragment would be
+  // silently dropped or re-interpreted once `/api/v1/...` is appended. Reject
+  // all three here so a non-canonical base can never be persisted or used.
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new CanvasVerificationError(CANVAS_URL_CREDENTIALS_ERROR, 400);
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new CanvasVerificationError(CANVAS_URL_QUERY_OR_FRAGMENT_ERROR, 400);
+  }
+
   const hostname = parsed.hostname.toLowerCase();
   // Scoped to http: the allowance exists for the dev docker Canvas, so an
   // https URL aimed at a loopback address gets the IP check like any other.
@@ -407,9 +442,19 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
   throw new CanvasVerificationError("Canvas URL must use HTTP or HTTPS", 400);
 }
 
+/**
+ * Origin plus the configured deployment sub-path, trailing slashes trimmed.
+ * A Canvas hosted at `https://lms.example.edu/ubc` serves its API under
+ * `/ubc/api/v1/...`, so rebuilding from `origin` alone would silently target
+ * the wrong host root.
+ */
+export function canonicalCanvasBaseUrl(parsed: URL): string {
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+
 function buildCanvasProfileUrl(canvasUrl: string): string {
   const parsed = parseAndValidateCanvasUrl(canvasUrl);
-  return `${parsed.origin}/api/v1/users/self/profile`;
+  return `${canonicalCanvasBaseUrl(parsed)}/api/v1/users/self/profile`;
 }
 
 /**
@@ -538,7 +583,7 @@ export async function verifyCanvasCredentials(
 function buildCanvasApiUrl(canvasUrl: string, path: string): string {
   const parsed = parseAndValidateCanvasUrl(canvasUrl);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${parsed.origin}/api/v1${normalizedPath}`;
+  return `${canonicalCanvasBaseUrl(parsed)}/api/v1${normalizedPath}`;
 }
 
 function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
@@ -608,12 +653,70 @@ function canonicalizeCanvasPaginationUrl(url: string): string {
   return new URL(url).href;
 }
 
+function canvasByteLimit(envName: string, fallback: number): number {
+  return parsePositiveInteger(process.env[envName]) ?? fallback;
+}
+
+/**
+ * Reads a Canvas JSON response with a hard byte ceiling, cancelling the body
+ * stream as soon as the budget is exceeded rather than buffering the whole
+ * payload first. `Content-Length`, when Canvas sends one, short-circuits the
+ * read entirely. Responses without a readable stream (e.g. an empty body) fall
+ * back to `response.json()`, whose failure modes are unchanged.
+ */
+async function readBoundedCanvasJson<T>(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<T> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isSafeInteger(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    throw new CanvasApiError(CANVAS_RESPONSE_LIMIT_ERROR, 502);
+  }
+
+  const body = response.body;
+  if (!body) {
+    // SAFETY: no stream to meter (an empty body, or a fetch stand-in that only
+    // implements `json()`), so the existing parse path and its failure modes
+    // are preserved; the Content-Length check above still applies.
+    return (await raceWithAbort(response.json(), signal)) as T;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytesRead = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await raceWithAbort(reader.read(), signal);
+      if (done) break;
+      if (!value) continue;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        throw new CanvasApiError(CANVAS_RESPONSE_LIMIT_ERROR, 502);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+
+  // SAFETY: the caller declares the Canvas payload shape it expects, exactly as
+  // `response.json()` would have; this parse only adds the byte ceiling.
+  return JSON.parse(text) as T;
+}
+
 async function canvasFetchJson<T>(
   url: string,
   canvasUrl: string,
   apiKey: string,
   fetchImpl: typeof fetch,
   options: {
+    method?: string;
+    body?: JsonValue;
     signal?: AbortSignal;
     deadlineSignal?: AbortSignal;
     cancellationSignal?: AbortSignal;
@@ -624,13 +727,31 @@ async function canvasFetchJson<T>(
     "Canvas request timed out",
   );
   const requestSignal = composeAbortSignals([options.signal, requestDeadline.signal]);
+  // A write carries its own content type; a read must not advertise one at all,
+  // so the two header sets are built as whole literals rather than mutated.
+  const requestBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  const maxRequestBodyBytes = canvasByteLimit(
+    "CANVAS_MAX_REQUEST_BODY_BYTES",
+    CANVAS_MAX_REQUEST_BODY_BYTES,
+  );
+  if (requestBody !== undefined && Buffer.byteLength(requestBody, "utf8") > maxRequestBodyBytes) {
+    requestDeadline.cancel();
+    requestSignal.cancel();
+    throw new CanvasApiError(CANVAS_REQUEST_BODY_LIMIT_ERROR, 413);
+  }
+  const headers =
+    requestBody === undefined
+      ? { Authorization: `Bearer ${apiKey}` }
+      : { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
 
   try {
     await raceWithAbort(assertSafeCanvasRequestHost(url, canvasUrl), requestSignal.signal);
 
     const response = await raceWithAbort(
       fetchImpl(url, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        method: options.method,
+        headers,
+        body: requestBody,
         signal: requestSignal.signal,
         redirect: "manual",
         dispatcher: canvasRequestDispatcher(url, canvasUrl),
@@ -642,15 +763,26 @@ async function canvasFetchJson<T>(
       throw new CanvasApiError(REDIRECT_REFUSED_MESSAGE, 502);
     }
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new CanvasApiError("Invalid Canvas API token", 401);
+    }
+
+    // A 403 is about *this* resource, not the token, and callers act on the
+    // difference — QM's quiz import falls back to the list item when a single
+    // question is not readable, but must fail the import on any other error.
+    if (response.status === 403) {
+      throw new CanvasApiError(CANVAS_PERMISSION_DENIED_ERROR, 403);
     }
 
     if (!response.ok) {
       throw new CanvasApiError(`Canvas API error: ${response.status}`, response.status);
     }
 
-    const data = (await raceWithAbort(response.json(), requestSignal.signal)) as T;
+    const data = await readBoundedCanvasJson<T>(
+      response,
+      canvasByteLimit("CANVAS_MAX_RESPONSE_BYTES", CANVAS_MAX_RESPONSE_BYTES),
+      requestSignal.signal,
+    );
     return { data, linkHeader: response.headers.get("link") };
   } catch (error) {
     if (error instanceof CanvasApiError || error instanceof CanvasVerificationError) {
@@ -667,6 +799,128 @@ async function canvasFetchJson<T>(
     requestSignal.cancel();
     requestDeadline.cancel();
   }
+}
+
+export type CanvasRequestJsonOptions = {
+  method?: string;
+  body?: JsonValue;
+};
+
+/** Performs a single Canvas API request (GET/POST/etc.) and returns parsed JSON. */
+export async function canvasRequestJson<T>(
+  credentials: CanvasIntegrationCredentials,
+  path: string,
+  options: CanvasRequestJsonOptions = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  const method = options.method ?? "GET";
+  const body = options.body;
+
+  if (credentials.isTestMode) {
+    return getMockCanvasRequestResponse<T>(path, method, body);
+  }
+
+  const url = buildCanvasApiUrl(credentials.canvasUrl, path);
+  const { data } = await canvasFetchJson<T>(
+    url,
+    credentials.canvasUrl,
+    credentials.apiKey,
+    fetchImpl,
+    { method, body },
+  );
+  return data;
+}
+
+function getMockCanvasRequestResponse<T>(path: string, method: string, body?: JsonValue): T {
+  if (path.includes("/question_banks") && method === "GET") {
+    const bankQuestionsMatch = path.match(/\/question_banks\/(\d+)\/questions/);
+    if (bankQuestionsMatch) {
+      return [
+        {
+          id: 1,
+          question_name: "1. Bank Question",
+          question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+          question_type: "multiple_choice_question",
+          position: 1,
+          answers: [
+            { id: 1, answer_text: "3", answer_weight: 0 },
+            { id: 2, answer_text: "4", answer_weight: 100 },
+            { id: 3, answer_text: "5", answer_weight: 0 },
+            { id: 4, answer_text: "6", answer_weight: 0 },
+          ],
+        },
+      ] as T;
+    }
+
+    const singleBankMatch = path.match(/\/question_banks\/(\d+)/);
+    if (singleBankMatch) {
+      return {
+        id: Number(singleBankMatch[1]),
+        title: "Test Question Bank",
+        question_count: 1,
+      } as T;
+    }
+
+    return [
+      { id: 1, title: "Test Question Bank 1", question_count: 1 },
+      { id: 2, title: "Test Question Bank 2", question_count: 0 },
+    ] as T;
+  }
+
+  if (path.includes("/quizzes") && method === "POST") {
+    const quizBody = body as { quiz?: { title?: string } } | undefined;
+    return {
+      id: Math.floor(Math.random() * 1000),
+      title: quizBody?.quiz?.title ?? "Test Quiz",
+    } as T;
+  }
+
+  if (path.includes("/quizzes") && method === "GET" && !path.includes("/questions")) {
+    const singleQuizMatch = path.match(/\/quizzes\/(\d+)$/);
+    if (singleQuizMatch) {
+      const quizId = Number(singleQuizMatch[1]);
+      return {
+        id: quizId,
+        title: "Test Quiz",
+        quiz_type: "assignment",
+        published: false,
+      } as T;
+    }
+    return [
+      { id: 1, title: "Test Quiz 1", quiz_type: "assignment", published: false },
+      { id: 2, title: "Test Quiz 2", quiz_type: "assignment", published: true },
+    ] as T;
+  }
+
+  if (path.includes("/questions") && method === "POST") {
+    return { id: Math.floor(Math.random() * 1000) } as T;
+  }
+
+  if (path.includes("/questions") && method === "GET") {
+    const singleQuestionMatch = path.match(/\/questions\/(\d+)$/);
+    const singleQuestion = {
+      id: 1,
+      question_name: "1. Test Question",
+      question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+      question_type: "multiple_choice_question",
+      position: 1,
+      answers: [
+        { id: 1, answer_text: "3", answer_weight: 0 },
+        { id: 2, answer_text: "4", answer_weight: 100 },
+        { id: 3, answer_text: "5", answer_weight: 0 },
+        { id: 4, answer_text: "6", answer_weight: 0 },
+      ],
+    };
+    if (singleQuestionMatch) {
+      return {
+        ...singleQuestion,
+        id: Number(singleQuestionMatch[1]),
+      } as T;
+    }
+    return [singleQuestion] as T;
+  }
+
+  return { success: true } as T;
 }
 
 /** Fetches all pages from a Canvas list endpoint. */
@@ -776,6 +1030,18 @@ export async function canvasGetPaginated<T>(
 }
 
 function getMockPaginatedResponse<T>(path: string): T[] {
+  // Quiz, quiz-question and question-bank collections are page-walked like any
+  // other Canvas list, but their test-mode fixtures live with the single-request
+  // mocks — reuse them rather than duplicating the payloads here.
+  if (
+    path.includes("/quizzes") ||
+    path.includes("/questions") ||
+    path.includes("/question_banks")
+  ) {
+    const data = getMockCanvasRequestResponse<T | T[]>(path, "GET");
+    return (Array.isArray(data) ? data : [data]).filter(Boolean) as T[];
+  }
+
   if (path.includes("/courses") && path.includes("/files")) {
     const courseMatch = path.match(/\/courses\/(\d+)\/files/);
     if (courseMatch) {

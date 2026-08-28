@@ -4,6 +4,13 @@ import { createLearningChatTools } from "./create-learning-chat-tools";
 import type { ChatMode } from "./chat-mode";
 
 export {
+  ADMIN_CORE_TOOL_NAMES,
+  pickCoreAdminChatTools,
+  type AdminChatToolRegistry,
+} from "./create-admin-chat-tools";
+export type LearningChatToolRegistry = ReturnType<typeof createLearningChatTools>;
+
+export {
   getAccessibleCourse,
   getAccessibleCourseTopic,
   listAccessibleCourseTopics,
@@ -46,6 +53,18 @@ export {
   type ChatToolContext,
 } from "./chat-mode";
 
+// Overloads narrow the return type on a literal `mode` argument (e.g. inside
+// an `if (chatMode === "admin")` block) so callers get the concrete tool
+// registry type back — no manual cast needed to pass it to
+// pickCoreAdminChatTools (AdminChatToolRegistry-typed).
+export function createChatTools(
+  ctx: ChatToolContext,
+  mode: "admin",
+): ReturnType<typeof createAdminChatTools>;
+export function createChatTools(
+  ctx: ChatToolContext,
+  mode: "learning",
+): ReturnType<typeof createLearningChatTools>;
 export function createChatTools(ctx: ChatToolContext, mode: ChatMode) {
   return mode === "admin" ? createAdminChatTools(ctx) : createLearningChatTools(ctx);
 }

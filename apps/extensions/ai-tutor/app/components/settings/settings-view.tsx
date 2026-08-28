@@ -6,15 +6,16 @@
  *
  * Accessibility now composes the shared `AccessibilitySettings` component
  * (`@eduai/ui`) directly, same as Core and Question Maker. Density and
- * reduce-motion have no dedicated CSS in AI Tutor yet (only Core's
- * `app.css` wires `[data-density]` / `[data-reduce-motion]` today) — this
- * mirrors Question Maker's own settings page, which ships the same two
- * toggles as session-only attribute state ahead of shared CSS landing.
+ * reduce-motion are owned by `UiPreferencesProvider` (mounted in `root.tsx`),
+ * which persists them to `localStorage` and applies the `[data-density]` /
+ * `[data-reduce-motion]` hooks app-wide; this app's `app.css` carries the CSS
+ * that reads them, ported from Core's. Question Maker's settings page still
+ * ships the same two toggles as session-only attribute state and needs the
+ * same fix — this screen no longer does.
  * Assistive Mode is passed through unchanged: it is BREB-approved and its
  * `[data-assistive] .reading-surface` contract (see
  * `~/components/settings/assistive-mode.tsx`) must not be touched.
  */
-import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   AccessibilitySettings,
@@ -29,56 +30,27 @@ import {
   SettingsPageScaffold,
   SignOutCard,
   useTheme,
-  type AccessibilityUiDensity,
   type AccessibilityUiTheme,
 } from "@eduai/ui";
 import { IconAccessible, IconLogout, IconUser, IconWorld } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import { useAssistiveMode } from "~/components/settings/assistive-mode";
+import { useUiPreferences } from "~/components/settings/ui-preferences";
 import { ProvidersSettings } from "~/components/settings/providers-settings";
 import { useLocalUser } from "~/hooks/useLocalUser";
-import { hasDocument } from "@eduai/ui/runtime-env";
-
-function readInitialDensity(): AccessibilityUiDensity {
-  if (!hasDocument()) return "comfortable";
-  return document.documentElement.getAttribute("data-density") === "compact"
-    ? "compact"
-    : "comfortable";
-}
-
-function readInitialMotionReduced(): boolean {
-  if (!hasDocument()) return false;
-  return document.documentElement.hasAttribute("data-reduce-motion");
-}
 
 export function SettingsView() {
   const { user, logout } = useLocalUser();
   const navigate = useNavigate();
   const { theme: nextTheme, setTheme } = useTheme();
   const { assistive, setAssistive } = useAssistiveMode();
-  const [density, setDensity] = useState<AccessibilityUiDensity>(readInitialDensity);
-  const [motionReduced, setMotionReduced] = useState<boolean>(readInitialMotionReduced);
+  // Owned by `UiPreferencesProvider` (mounted in `root.tsx`), which persists
+  // both and applies the html hooks app-wide — not just while this screen is
+  // mounted, and not lost on reload.
+  const { density, motionReduced, setDensity, setMotionReduced } = useUiPreferences();
 
   const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? "system";
-
-  const handleDensityChange = (value: AccessibilityUiDensity) => {
-    setDensity(value);
-    if (value === "compact") {
-      document.documentElement.setAttribute("data-density", "compact");
-    } else {
-      document.documentElement.removeAttribute("data-density");
-    }
-  };
-
-  const handleMotionReducedChange = (value: boolean) => {
-    setMotionReduced(value);
-    if (value) {
-      document.documentElement.setAttribute("data-reduce-motion", "true");
-    } else {
-      document.documentElement.removeAttribute("data-reduce-motion");
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -141,8 +113,8 @@ export function SettingsView() {
               motionReduced={motionReduced}
               assistive={assistive}
               onThemeChange={(value) => setTheme(value)}
-              onDensityChange={handleDensityChange}
-              onMotionReducedChange={handleMotionReducedChange}
+              onDensityChange={setDensity}
+              onMotionReducedChange={setMotionReduced}
               onAssistiveChange={setAssistive}
               description="Personalize how AI Tutor looks and feels. These settings are optional for everyone."
             />

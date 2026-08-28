@@ -3,8 +3,8 @@
  *
  * Covers the paths an admin reaches before touching any course: landing on the
  * shared dashboard, the RBAC-filtered sidebar, the command palette, the app
- * launcher, Help, sign-out, and the routes an admin is deliberately kept out
- * of (the student shell).
+ * launcher, Help, sign-out, and (#1660) previewing the student shell as a
+ * read-only learner view rather than being kept out of it.
  *
  * Companion specs: admin-dashboard, admin-console, admin-course-oversight,
  * admin-content-authoring. Path inventory and findings live in
@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { createAdmin, DEFAULT_PASSWORD, promoteUser, registerUser, signOut } from "../helpers/auth";
 import { gotoAiTutor, loginAsAdmin, openTab, sidebar } from "../helpers/at-ui";
-import { seedAtCourse } from "../helpers/at-admin-fixtures";
+import { seedAtCourse, seedCourseWithActivity } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — sign-in and landing", () => {
   test("signs in through Core's form and lands on AI Tutor's dashboard as ADMIN", async ({
@@ -168,24 +168,70 @@ test.describe("AI Tutor ADMIN — Help", () => {
   });
 });
 
-test.describe("AI Tutor ADMIN — routes an admin is kept out of", () => {
-  for (const path of ["/student", "/student/courses/1", "/student/module/1", "/student/lesson/1"]) {
-    test(`${path} answers an ADMIN with a 404 rather than a silent bounce`, async ({ page }) => {
-      // These used to redirect to /dashboard, which reads as a glitch — the
-      // reader asked for one page and silently got another. A 404 also keeps
-      // the app from confirming the page exists to someone who may not open it.
-      await createAdmin(page.request, { prefix: "at-admin-blocked" });
-      await page.goto(`${AI_TUTOR_URL}${path}`);
-
-      await expect(page.getByText("404 — Page not found")).toBeVisible({ timeout: 30_000 });
-      // The URL is left alone, so a reload retries the page that was asked for.
-      await expect(page).toHaveURL(new RegExp(`${path}$`));
-      // Still inside the shell, with a way onwards.
-      await expect(page.getByRole("link", { name: "Admin", exact: true }).first()).toBeVisible();
-      await page.getByRole("link", { name: /go to dashboard/i }).click();
-      await expect(page).toHaveURL(/\/dashboard$/);
+test.describe("AI Tutor ADMIN — previewing the student shell (#1660)", () => {
+  // #1660: an admin can now open /student/* to preview the learner experience
+  // "without switching accounts" instead of being bounced with a 404 — see
+  // StudentPreviewBanner. Each route lands on real content and shows the
+  // preview banner with a way back to the matching instructor page.
+  test("/student shows the course list with the preview banner and an exit link home", async ({
+    page,
+    playwright,
+  }) => {
+    const seeded = await seedCourseWithActivity(playwright, {
+      name: `Admin Preview Course ${Date.now()}`,
+      codePrefix: "APV",
+      publish: true,
     });
-  }
+    try {
+      await createAdmin(page.request, { prefix: "at-admin-preview-list" });
+      await page.goto(`${AI_TUTOR_URL}/student`);
+
+      await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText(/previewing as a student/i)).toBeVisible();
+      const exitLink = page.getByTestId("student-preview-exit");
+      await expect(exitLink).toHaveAttribute("href", "/instructor");
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("/student/courses/:id, /student/module/:id and /student/lesson/:id each preview real content", async ({
+    page,
+    playwright,
+  }) => {
+    const seeded = await seedCourseWithActivity(playwright, {
+      name: `Admin Preview Content ${Date.now()}`,
+      codePrefix: "APC",
+      publish: true,
+    });
+    try {
+      await createAdmin(page.request, { prefix: "at-admin-preview-content" });
+
+      await page.goto(`${AI_TUTOR_URL}/student/courses/${seeded.atCourseId}`);
+      await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible();
+      await expect(page.getByTestId("student-preview-exit")).toHaveAttribute(
+        "href",
+        `/instructor/courses/${seeded.atCourseId}`,
+      );
+
+      await page.goto(`${AI_TUTOR_URL}/student/module/${seeded.moduleId}`);
+      await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("student-preview-exit")).toHaveAttribute(
+        "href",
+        `/instructor/module/${seeded.moduleId}`,
+      );
+
+      await page.goto(`${AI_TUTOR_URL}/student/lesson/${seeded.lessonId}`);
+      await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("student-preview-exit")).toHaveAttribute(
+        "href",
+        `/instructor/lesson/${seeded.lessonId}`,
+      );
+    } finally {
+      await seeded.dispose();
+    }
+  });
 
   test("a URL that matches no route is a 404 inside the shell", async ({ page }) => {
     await createAdmin(page.request, { prefix: "at-admin-nosuchroute" });

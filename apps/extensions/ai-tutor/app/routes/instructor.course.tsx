@@ -22,7 +22,7 @@ import type { FormEvent } from "react";
 import { useOptimistic, useRef, useState } from "react";
 import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { IconDownload, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
+import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import {
   Button,
   Card,
@@ -105,7 +105,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   const { page, search } = parseListUrlParams(request);
 
   const [course, modulesPage] = await Promise.all([
-    api.courseById(courseId) as Promise<Course>,
+    api.courseById(courseId),
     api.modulesForCourse(courseId, { page, search }),
   ]);
 
@@ -138,10 +138,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
-  const tabs = getCourseDetailTabs(
-    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
-  );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
   const {
     course,
     modules: initialModules,
@@ -150,6 +146,23 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     pageSize,
     search,
   } = loaderData;
+  // #1644: gate staff tabs on the viewer's role *on this course* (from the
+  // loader), not the global effective role — a global-effective TA who is only a
+  // STUDENT here must not see staff tabs whose content the server 403s.
+  const tabs = getCourseDetailTabs(
+    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
+    course.viewerRole ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  // #1644: the router reuses this instance when CourseSwitcher changes only
+  // `:courseId`, so `activeTab` survives the switch. If the new course's
+  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
+  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
+  // trigger and every tab panel hides — the page renders blank. Clamp back to
+  // `content` during render whenever the active tab is no longer available.
+  if (!tabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab("content");
+  }
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
@@ -559,23 +572,39 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <PageTabsContent value="content" className="space-y-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Modules</h2>
-            <PermissionGate allow={perms.canManageContent}>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {/* #1660: TA excluded — a TA already has a real (non-preview)
+                  view of this course via /student, not a preview of someone
+                  else's. */}
+              {perms.canPreviewAsStudent && numericCourseId != null ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => handleImportOpenChange(true)}
+                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
                 >
-                  <IconDownload className="size-4" aria-hidden="true" />
-                  Import
+                  <IconEye className="size-4" aria-hidden="true" />
+                  Preview as student
                 </Button>
-                <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                  <IconPlus className="size-4" aria-hidden="true" />
-                  Add module
-                </Button>
-              </div>
-            </PermissionGate>
+              ) : null}
+              <PermissionGate allow={perms.canManageContent}>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleImportOpenChange(true)}
+                  >
+                    <IconDownload className="size-4" aria-hidden="true" />
+                    Import
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                    <IconPlus className="size-4" aria-hidden="true" />
+                    Add module
+                  </Button>
+                </div>
+              </PermissionGate>
+            </div>
           </div>
 
           <PermissionGate allow={perms.canManageContent}>

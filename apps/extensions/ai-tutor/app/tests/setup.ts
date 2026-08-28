@@ -26,3 +26,13 @@ if (!window.matchMedia) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// Radix's Select (and the other pointer-driven primitives) call the Pointer
+// Capture API on open. jsdom does not implement it, so without these the
+// listbox never opens and no `option` is ever rendered — a combobox looks
+// permanently empty rather than failing loudly.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
