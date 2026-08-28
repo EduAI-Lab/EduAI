@@ -17,7 +17,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -35,7 +35,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 
@@ -68,7 +68,10 @@ function mockPagedTransaction(rows = [ROW], total = rows.length) {
  * The `courseId` candidate branch runs a narrow `[count, findMany]`
  * $transaction only — no platform-wide aggregates.
  */
-function mockCandidateTransaction(rows: Array<Pick<typeof ROW, "id" | "name" | "email">>, total = rows.length) {
+function mockCandidateTransaction(
+  rows: Array<Pick<typeof ROW, "id" | "name" | "email">>,
+  total = rows.length,
+) {
   vi.mocked(prisma.$transaction).mockResolvedValue([total, rows] as never);
 }
 
@@ -126,7 +129,7 @@ describe("GET /api/users — filters", () => {
   /** The `where` handed to the page's findMany. */
   const whereFromFindMany = () => {
     const calls = vi.mocked(prisma.user.findMany).mock.calls;
-    return (calls[0]?.[0] as { where?: Record<string, unknown> })?.where;
+    return calls[0]?.[0]?.where;
   };
 
   it("maps a comma-separated role facet onto one `in` filter", async () => {
@@ -223,9 +226,7 @@ describe("GET /api/users — ?ids= lookup (#1125)", () => {
 
     await get("?ids=u1,u2&search=ali");
 
-    const where = (
-      vi.mocked(prisma.user.findMany).mock.calls[0][0] as { where: Record<string, unknown> }
-    ).where;
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0][0]!.where!;
     expect(where.id).toEqual({ in: ["u1", "u2"] });
     expect(where.OR).toBeDefined();
   });
@@ -239,7 +240,7 @@ describe("GET /api/users course student candidates", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -247,9 +248,7 @@ describe("GET /api/users course student candidates", () => {
 
     expect((await get(candidateQuery)).status).toBe(200);
 
-    const where = (vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
-      where: Record<string, unknown>;
-    }).where;
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0][0]!.where!;
     expect(where).toMatchObject({
       role: { in: ["STUDENT"] },
       isActive: true,
@@ -262,7 +261,7 @@ describe("GET /api/users course student candidates", () => {
   });
 
   it("returns only the candidate fields for a course-scoped search", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -280,7 +279,7 @@ describe("GET /api/users course student candidates", () => {
   });
 
   it("never runs the admin-shaped query for a courseId request — narrow select, no admin transaction", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -301,9 +300,7 @@ describe("GET /api/users course student candidates", () => {
     // other admin-only field or relation count may appear here, since those
     // leak the moment they're selected regardless of what the mapped response
     // later omits.
-    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
-      select?: Record<string, unknown>;
-    };
+    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0]!;
     expect(findManyArgs.select).toEqual({ id: true, name: true, email: true });
 
     // The raw response body itself carries no admin metadata either.
@@ -336,6 +333,8 @@ describe("GET /api/users course student candidates", () => {
     const response = await get("?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT");
 
     expect(response.status).toBe(400);
-    expect(JSON.stringify(await body(response))).toContain("COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
+    expect(JSON.stringify(await body(response))).toContain(
+      "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS",
+    );
   });
 });

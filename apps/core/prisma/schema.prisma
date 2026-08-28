@@ -62,6 +62,9 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // #1369: unindexed FK. Every authenticated request resolves a session, and the
+  // `onDelete: Cascade` from User seq-scans this table on account deletion.
+  @@index([userId])
   @@map("session")
 }
 
@@ -83,6 +86,11 @@ model Account {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  // #1369: `getPasswordChangedAt` filters { userId, providerId: "credential" } from
+  // the root loader on every authenticated render, and the unique above leads with
+  // `providerId` so it cannot serve that lookup. Composite rather than `userId`
+  // alone: same write cost, and it still covers any `userId`-prefix query.
+  @@index([userId, providerId])
   @@map("account")
 }
 
@@ -160,31 +168,51 @@ model Course {
   reEmbedJobs                 CourseReEmbedJob[]
   topics                      CourseTopic[]
   questions                   Question[]
+  questionBanks               QuestionBank[]
 
   @@unique([code, startDate, section])
-  @@index([externalSource, externalId])
+  // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
+  // courses remain unconstrained while every populated external identity maps
+  // to exactly one row (including a soft-deleted row that can be reactivated).
+  @@unique([externalSource, externalId])
+  // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
+  // index every discipline rename or delete seq-scans courses to enforce the action.
+  @@index([department])
+  // #1369 deferred: `instructorId` returned 223/238 rows on the perf seed, so the
+  // planner would ignore an index there. Re-evaluate against production selectivity.
   @@map("courses")
 }
 
 model CourseReEmbedJob {
-  id                   String           @id @default(cuid())
-  courseId             String
+  id                        String           @id @default(cuid())
+  courseId                  String
   /// Optional client key for retry-safe starts (#1112). Unique per course when set.
-  idempotencyKey       String?
-  status               ReEmbedJobStatus @default(PENDING)
-  totalMaterials       Int              @default(0)
-  processedCount       Int              @default(0)
-  failedMaterialIds    String[]         @default([])
-  currentMaterialTitle String?
-  errorMessage         String?
-  startedAt            DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  idempotencyKey            String?
+  status                    ReEmbedJobStatus @default(PENDING)
+  /// Effective provider/model frozen atomically with job creation.
+  embeddingProviderSnapshot String
+  embeddingModelSnapshot    String
+  totalMaterials            Int              @default(0)
+  processedCount            Int              @default(0)
+  failedMaterialIds         String[]         @default([])
+  currentMaterialTitle      String?
+  errorMessage              String?
+  /// Renewable execution lease. An expired RUNNING row is reclaimable in place.
+  leaseOwner                String?
+  leaseHeartbeatAt          DateTime?
+  leaseExpiresAt            DateTime?
+  attemptCount              Int              @default(0)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  course                    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
+  @@index([status, leaseExpiresAt])
+  // A PostgreSQL partial unique index enforces one PENDING/RUNNING row per
+  // course; Prisma cannot represent its predicate. See the hardening migration.
   @@map("course_re_embed_jobs")
 }
 
@@ -216,6 +244,7 @@ model AiJob {
   @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
+  @@index([queueName, status, completedAt])
   @@map("ai_jobs")
 }
 
@@ -264,10 +293,20 @@ model AIInteraction {
   energySource     EnergyMeasurementSource?
   carbonGramsCO2   Float?
   finishReason     String?
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed or pre-tracking. */
+  serverId         String?
+  /**
+   * Durable correlation id for metrics. Null for async Question Maker /
+   * background completions and pre-tracking rows. This is intentionally not a
+   * relation to Chat, so deleting a chat cannot rewrite historical metrics.
+   */
+  chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
+  @@index([serverId])
+  @@index([chatId])
   @@map("ai_interactions")
 }
 
@@ -306,6 +345,9 @@ model AIModel {
   description                String
   type                       AIModelType
   maxTokens                  Int?
+  // Per-model override for CHAT_CONTEXT_FILL_RATIO (0 < r <= 1): fraction of the
+  // context window the assembled prompt may fill before older turns are digested.
+  contextFillRatio           Float?
   supportsImages             Boolean         @default(false)
   supportsTools              Boolean         @default(false)
   supportsStreaming          Boolean         @default(true)
@@ -339,6 +381,9 @@ model UserProviderSettings {
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
+  // #1369 deferred: the unique above leads with `userId`, so the `onDelete: Cascade`
+  // from AIProvider seq-scans this table. One row per user per provider keeps it tiny;
+  // revisit if provider deletes ever become routine.
   @@map("user_provider_settings")
 }
 
@@ -390,18 +435,69 @@ model CourseMaterial {
   /// never be set/cleared by the same code path. Student-facing reads filter
   /// `unpublishedAt: null` alongside `deletedAt: null`.
   unpublishedAt     DateTime?
+  /// Upload receipt pointer (#949). Extraction moved off the upload request, so
+  /// the content checksum — and therefore duplicate detection — is only known
+  /// after the response has been sent. When the background pass finds this
+  /// upload's content already on the course, the row becomes terminal FAILED
+  /// and points here at the material that won, which is how a client learns
+  /// that its 202 resolved to an existing material instead of a new one. This
+  /// is the asynchronous successor to the old synchronous 409. Null on every
+  /// row that is not a duplicate receipt.
+  duplicateOfId     String?
+  /// Durable-extraction bookkeeping (#949). Extraction runs off the request, so
+  /// the row is also the job record: a worker must hold a lease before it may
+  /// run, and the lease is what makes a restart recoverable. A PROCESSING row
+  /// whose `extractionLeaseUntil` has passed is definitionally abandoned — its
+  /// worker died — and the sweeper re-claims it and re-runs from the persisted
+  /// upload bytes. `extractionAttempts` bounds that retry loop so a file that
+  /// reliably kills its worker fails terminally instead of looping forever.
+  extractionAttempts Int            @default(0)
+  extractionLeaseUntil DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   processedAt       DateTime?
   course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates        CourseMaterial[] @relation("MaterialDuplicate")
   chunks            MaterialChunk[]
+  uploadBlob        MaterialUploadBlob?
 
   @@unique([courseId, checksum])
+  @@index([duplicateOfId])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
   @@index([courseId, deletedAt])
+  @@index([status, extractionLeaseUntil])
   @@map("course_materials")
+}
+
+/// The raw uploaded bytes, persisted before the upload request returns 202 (#949).
+///
+/// Extraction no longer happens on the request, so the bytes have to outlive it:
+/// without this table a restart mid-extraction loses the upload entirely and
+/// strands the material row with nothing to retry from. Written in the same
+/// transaction as the `CourseMaterial` row, so a material in PROCESSING always
+/// has bytes to re-run against, and deleted as soon as the row reaches a terminal
+/// state (READY, FAILED, or a duplicate receipt) so this table only ever holds
+/// in-flight uploads rather than a second copy of the corpus.
+///
+/// Stored in Postgres rather than on a volume or in object storage deliberately:
+/// it is transactional with the row it belongs to, needs no new deployment
+/// surface, and the payload is already capped by the upload validator.
+model MaterialUploadBlob {
+  id         String         @id @default(cuid())
+  materialId String         @unique
+  /// Exactly the bytes the client uploaded — pre-extraction, unmodified.
+  bytes      Bytes
+  /// Declared upload metadata, kept so a resumed extraction can rebuild the same
+  /// `File` the original request would have handed to the extractor.
+  fileName   String
+  mimeType   String
+  createdAt  DateTime       @default(now())
+  material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("material_upload_blobs")
 }
 
 model CanvasMaterialExclusion {
@@ -447,9 +543,11 @@ model Question {
   type            QuestionType
   difficulty      QuestionDifficulty       @default(MEDIUM)
   reasoningLevel  ReasoningLevel           @default(FACTUAL)
-  choices         Json?
-  answer          String?
-  testable        Boolean                  @default(false)
+  choices            Json?
+  answer             String?
+  selectAllThatApply Boolean                  @default(false)
+  correctAnswers     Json?
+  testable           Boolean                  @default(false)
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -460,6 +558,12 @@ model Question {
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
+  // #1369 deferred: a bare `@@index([topicId])` measured 1.105 ms -> 0.095 ms on the perf
+  // seed (10,046 rows), but Core never issues a topic-only filter — `listQuestions` types
+  // `courseId` as required, so `topicId` is only ever an extra narrowing on top of the
+  // composite above, which already seeks. The `Restrict` FK check doesn't need it either:
+  // topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted.
+  // Add it if a cross-course topic view ever ships.
   @@map("questions")
 }
 
@@ -472,6 +576,41 @@ model QuestionSecondaryTopic {
   @@id([questionId, topicId])
   @@index([topicId])
   @@map("question_secondary_topics")
+}
+
+/// Named question bank scoped to a Core course (Canvas-modeled).
+/// Questions from extensions (e.g. Question Maker) join via QuestionBankMembership.externalQuestionId.
+model QuestionBank {
+  id          String                   @id @default(cuid())
+  courseId    String
+  name        String
+  description String?
+  isDefault   Boolean                  @default(false)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  course      Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  memberships QuestionBankMembership[]
+
+  @@index([courseId, isDefault])
+  /// Partial unique (one default bank per course) is enforced in SQL:
+  /// question_banks_courseId_default_key WHERE "isDefault"
+  @@map("question_banks")
+}
+
+model QuestionBankMembership {
+  id                 String       @id @default(cuid())
+  questionBankId     String
+  /// Extension-local question id (e.g. QM QuestionMetadata.id as string)
+  externalQuestionId String
+  /// Source system that owns the question row
+  source             String       @default("question-maker")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  questionBank       QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  @@unique([questionBankId, source, externalQuestionId])
+  @@index([source, externalQuestionId])
+  @@map("question_bank_memberships")
 }
 
 model BugReport {
@@ -503,11 +642,20 @@ model MaterialChunk {
   materialId String
   index      Int
   content    String
+  content_tsv Unsupported("tsvector")
   createdAt  DateTime           @default(now())
   material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
   embedding  MaterialEmbedding?
 
+  // #941: `content_tsv` (GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  // GIN-indexed) also lives on this table. Prisma has no first-class `tsvector` type
+  // and can't model a generated/STORED column, so it's intentionally left off this
+  // model (same reasoning as the `Unsupported("vector(1024)")` column on
+  // MaterialEmbedding below — raw SQL only). See
+  // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
+  // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
+  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
 }
 
@@ -523,29 +671,32 @@ model MaterialEmbedding {
 
 model apikey {
   id                  String    @id @default(cuid())
+  configId            String    @default("default")
   name                String?
   start               String?
   prefix              String?
   key                 String
-  userId              String
+  referenceId         String
   refillInterval      Int?
   refillAmount        Int?
   lastRefillAt        DateTime?
   enabled             Boolean   @default(true)
-  rateLimitEnabled    Boolean   @default(false)
-  rateLimitTimeWindow Int?
-  rateLimitMax        Int?
+  rateLimitEnabled    Boolean   @default(true)
+  rateLimitTimeWindow Int?      @default(86400000)
+  rateLimitMax        Int?      @default(10)
   requestCount        Int       @default(0)
   remaining           Int?
   lastRequest         DateTime?
   expiresAt           DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  permissions         Json?
-  metadata            Json?
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions         String?
+  metadata            String?
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
   @@map("apiKey")
 }
 
@@ -647,6 +798,9 @@ model CanvasRosterMember {
   @@index([email])
   @@index([sisUserIdLookup])
   @@index([canvasUserId])
+  // #1369 deferred: `syncedByUserId` has the default `Restrict`, so a user delete
+  // seq-scans here. This table grows with every roster sync, making it the likeliest
+  // of the deferred candidates to need an index later.
   @@map("canvas_roster_members")
 }
 
@@ -710,6 +864,8 @@ model Invitation {
 
   @@index([email])
   @@index([status])
+  // #1369 deferred: `invitedById` / `acceptedUserId` are both `onDelete: SetNull` from
+  // User, so a user delete seq-scans here. Table is small; revisit past ~10k rows.
   @@map("invitations")
 }
 
@@ -936,17 +1092,28 @@ enum CronJobStatus {
   ERROR
 }
 
+enum CronJobTriggerSource {
+  SCHEDULE
+  ADMIN_UI
+  ADMIN_CHAT
+  UNKNOWN
+}
+
 model CronJobRun {
-  id         String        @id @default(cuid())
-  jobName    String
-  status     CronJobStatus
-  startedAt  DateTime
-  finishedAt DateTime?
-  message    String?
-  exitCode   Int?
-  createdAt  DateTime      @default(now())
+  id               String        @id @default(cuid())
+  jobName          String
+  status           CronJobStatus
+  startedAt        DateTime
+  finishedAt       DateTime?
+  message          String?
+  exitCode         Int?
+  leaseOwner       String?
+  leaseHeartbeatAt DateTime?
+  leaseExpiresAt   DateTime?
+  createdAt        DateTime      @default(now())
 
   @@index([jobName, startedAt])
+  @@index([status, leaseExpiresAt])
   /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
   /// Prisma cannot express WHERE status = 'RUNNING' in schema.
   @@map("cron_job_runs")

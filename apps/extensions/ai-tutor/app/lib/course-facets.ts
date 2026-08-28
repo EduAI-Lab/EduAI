@@ -18,7 +18,7 @@
  *
  * Related: routes/instructor.tsx, routes/student.tsx, server/src/routes/courses.js
  */
-import api, { type CourseFacets } from './api';
+import api, { type CourseFacets } from "./api";
 
 /** Facets are per-caller and change rarely; a short TTL keeps a long-lived SPA
  *  session from pinning a stale set after an import or a publish. */

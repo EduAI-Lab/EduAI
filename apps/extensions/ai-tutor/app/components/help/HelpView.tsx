@@ -5,8 +5,8 @@
  * as Core's `apps/core/app/components/help/help-view.tsx`, built on
  * `@eduai/ui`'s `Card` primitives instead of hand-rolled divs.
  */
-import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import type { ReactNode } from "react";
+import { Link } from "react-router";
 import {
   IconRobot,
   IconBooks,
@@ -14,12 +14,12 @@ import {
   IconChalkboard,
   IconShieldLock,
   type Icon,
-} from '@tabler/icons-react';
-import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeading } from '@eduai/ui';
+} from "@tabler/icons-react";
+import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
 
-import { getRoleViewLabel } from '~/lib/rbac';
-import { routeForRole } from '~/lib/role-routing';
-import type { Role } from '~/lib/types';
+import { getRoleViewLabel } from "~/lib/rbac";
+import { routeForRole } from "~/lib/role-routing";
+import type { Role } from "~/lib/types";
 
 type HelpTopic = {
   id: string;
@@ -31,19 +31,19 @@ type HelpTopic = {
 };
 
 /** Teaching-shell roles — instructors, TAs, unit admins, and admins (admin ⊇ instructor). */
-const STAFF: Role[] = ['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN'];
-const ADMINS: Role[] = ['ADMIN'];
+const STAFF: Role[] = ["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"];
+const ADMINS: Role[] = ["ADMIN"];
 
-const LINK = 'text-primary-text hover:underline';
-const KBD = 'rounded border bg-muted px-1.5 py-0.5 text-xs font-medium';
+const LINK = "text-primary-text hover:underline";
+const KBD = "rounded border bg-muted px-1.5 py-0.5 text-xs font-medium";
 
 function buildTopics(role: Role | undefined): HelpTopic[] {
-  const coursesHref = role ? routeForRole(role) : '/student';
+  const coursesHref = role ? routeForRole(role) : "/student";
 
   return [
     {
-      id: 'chat-modes',
-      title: 'Using the AI tutor',
+      id: "chat-modes",
+      title: "Using the AI tutor",
       icon: IconRobot,
       points: [
         "Open any activity inside a lesson to start chatting with your AI study buddy — every conversation stays scoped to that activity.",
@@ -57,28 +57,28 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
           Intermediate, or Advanced) and add your own API key for the model provider — a one-time
           setup you can revisit any time from &ldquo;Change&rdquo; next to your level.
         </>,
-        'Every conversation is saved automatically. Reopen a past chat from the history panel above the message box.',
+        "Every conversation is saved automatically. Reopen a past chat from the history panel above the message box.",
       ],
     },
     {
-      id: 'navigation',
-      title: 'Finding your way around',
+      id: "navigation",
+      title: "Finding your way around",
       icon: IconBooks,
       points: [
         <>
-          Content is organized <strong>courses → modules → lessons → activities</strong>. Open{' '}
+          Content is organized <strong>courses → modules → lessons → activities</strong>. Open{" "}
           <Link to={coursesHref} className={LINK}>
             Courses
-          </Link>{' '}
+          </Link>{" "}
           from the sidebar to start browsing.
         </>,
         "The course name in the breadcrumb doubles as a switcher — click it to jump to a different course without losing your place.",
-        'Breadcrumbs always show your trail (course, module, lesson) so you can jump back up a level in one click.',
+        "Breadcrumbs always show your trail (course, module, lesson) so you can jump back up a level in one click.",
       ],
     },
     {
-      id: 'suite',
-      title: 'Command palette & suite tools',
+      id: "suite",
+      title: "Command palette & suite tools",
       icon: IconCommand,
       points: [
         <>
@@ -86,44 +86,44 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
           Windows/Linux) anywhere to open the command palette — jump to any page or course by
           typing, no menu-hunting required.
         </>,
-        'The app-grid button in the sidebar switches you to another EduAI app you have access to, without logging in again.',
-        'The sun/moon toggle in the header switches between light and dark themes.',
+        "The app-grid button in the sidebar switches you to another EduAI app you have access to, without logging in again.",
+        "The sun/moon toggle in the header switches between light and dark themes.",
         '"Report a bug" in the header captures a screenshot and your console/network logs alongside a description, so issues are easy to triage.',
         'Look for the sparkle "Take Tour" button in the header while browsing your courses for a guided walkthrough — open it any time you want a refresher.',
       ],
     },
     {
-      id: 'teaching',
-      title: 'For instructors, TAs, and unit admins',
+      id: "teaching",
+      title: "For instructors, TAs, and unit admins",
       icon: IconChalkboard,
       roles: STAFF,
       points: [
         <>
-          Manage modules, lessons, and activities from your{' '}
+          Manage modules, lessons, and activities from your{" "}
           <Link to="/instructor" className={LINK}>
             Courses
-          </Link>{' '}
+          </Link>{" "}
           view.
         </>,
         "Per activity, toggle which chat modes students see — Teach me, Guide me, and a custom mode with your own prompt and tab title.",
-        'TAs share the same teaching view, with a slightly narrower set of course tabs.',
+        "TAs share the same teaching view, with a slightly narrower set of course tabs.",
       ],
     },
     {
-      id: 'admin',
-      title: 'For admins',
+      id: "admin",
+      title: "For admins",
       icon: IconShieldLock,
       roles: ADMINS,
       points: [
         <>
-          Triage submitted issues in{' '}
+          Triage submitted issues in{" "}
           <Link to="/admin" className={LINK}>
             Bug Reports
           </Link>
           .
         </>,
         <>
-          Configure the AI Tutor loop policy and EduAI API integration in{' '}
+          Configure the AI Tutor loop policy and EduAI API integration in{" "}
           <Link to="/settings" className={LINK}>
             Settings
           </Link>

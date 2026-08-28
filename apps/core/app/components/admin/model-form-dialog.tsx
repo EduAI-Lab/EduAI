@@ -25,12 +25,33 @@ export type VllmModel = {
   created?: number;
 };
 
+/**
+ * What the model form submits — the create body for a new AI model, and the
+ * patch body for an existing one. `maxTokens` and the two prices are optional
+ * because the form leaves them blank to mean "unset", not zero.
+ */
+export type ModelFormData = {
+  modelId: string;
+  name: string;
+  description: string;
+  type: "CHAT" | "COMPLETION" | "EMBEDDING" | "IMAGE" | "AUDIO" | "VIDEO";
+  maxTokens?: number;
+  supportsImages: boolean;
+  supportsTools: boolean;
+  supportsStreaming: boolean;
+  inputPricing?: number;
+  outputPricing?: number;
+  contextFillRatio?: number | null;
+  isActive: boolean;
+  providerId: string;
+};
+
 export interface ModelFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   model?: AIModel | null;
   providers: AIProvider[];
-  onSubmit: (data: any) => void;
+  onSubmit: (data: ModelFormData) => void;
   ollamaModels?: OllamaModel[];
   fetchingOllamaModels?: boolean;
   ollamaError?: string | null;
@@ -73,6 +94,7 @@ export function ModelFormDialog({
     supportsStreaming: boolean;
     inputPricing: string;
     outputPricing: string;
+    contextFillRatio: string;
     isActive: boolean;
     providerId: string;
   }>({
@@ -86,6 +108,7 @@ export function ModelFormDialog({
     supportsStreaming: true,
     inputPricing: "",
     outputPricing: "",
+    contextFillRatio: "",
     isActive: true,
     providerId: "",
   });
@@ -106,6 +129,7 @@ export function ModelFormDialog({
         supportsStreaming: model.supportsStreaming,
         inputPricing: model.inputPricing?.toString() || "",
         outputPricing: model.outputPricing?.toString() || "",
+        contextFillRatio: model.contextFillRatio?.toString() || "",
         isActive: model.isActive,
         providerId: model.providerId,
       });
@@ -121,6 +145,7 @@ export function ModelFormDialog({
         supportsStreaming: true,
         inputPricing: "",
         outputPricing: "",
+        contextFillRatio: "",
         isActive: true,
         providerId: "",
       });
@@ -132,7 +157,7 @@ export function ModelFormDialog({
     setSelectedVllmModel("");
   }, [formData.providerId]);
 
-  const selectedProvider = providers.find(p => p.id === formData.providerId);
+  const selectedProvider = providers.find((p) => p.id === formData.providerId);
   const providerName = selectedProvider?.name?.toLowerCase() ?? "";
   const isOllamaProvider = providerName === "ollama";
   const isVllmProvider = providerName === "vllm";
@@ -167,16 +192,18 @@ export function ModelFormDialog({
 
   const handleOllamaModelSelect = (modelName: string) => {
     setSelectedOllamaModel(modelName);
-    const selected = ollamaModels.find(m => m.name === modelName);
+    const selected = ollamaModels.find((m) => m.name === modelName);
     if (selected) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         modelId: selected.name,
         name: selected.name.charAt(0).toUpperCase() + selected.name.slice(1),
         description: `Local Ollama model: ${selected.name}`,
         type: "CHAT",
         maxTokens: "",
-        supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
+        supportsImages:
+          selected.name.toLowerCase().includes("vision") ||
+          selected.name.toLowerCase().includes("llava"),
         supportsTools: true,
         supportsStreaming: true,
         inputPricing: "0",
@@ -187,13 +214,13 @@ export function ModelFormDialog({
 
   const handleVllmModelSelect = (modelId: string) => {
     setSelectedVllmModel(modelId);
-    const selected = vllmModels.find(m => m.id === modelId);
+    const selected = vllmModels.find((m) => m.id === modelId);
     if (selected) {
       const displayName = selected.id
         .split(/[-_]/)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(" ");
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         modelId: selected.id,
         name: displayName,
@@ -216,6 +243,9 @@ export function ModelFormDialog({
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
+      // Empty clears the per-model override (null) so the model falls back to
+      // the env/default fill ratio; a value is sent for Zod to bound (#1639).
+      contextFillRatio: formData.contextFillRatio ? Number(formData.contextFillRatio) : null,
     });
   };
 
@@ -242,11 +272,13 @@ export function ModelFormDialog({
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.filter(p => p.isActive).map((provider) => (
-                    <SelectItem key={provider.id} value={provider.id}>
-                      {provider.displayName}
-                    </SelectItem>
-                  ))}
+                  {providers
+                    .filter((p) => p.isActive)
+                    .map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.displayName}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -325,7 +357,7 @@ export function ModelFormDialog({
                           <div className="flex flex-col">
                             <span>{m.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              Size: {Math.round(m.size / 1024 / 1024 / 1024 * 100) / 100} GB
+                              Size: {Math.round((m.size / 1024 / 1024 / 1024) * 100) / 100} GB
                             </span>
                           </div>
                         </SelectItem>
@@ -393,9 +425,8 @@ export function ModelFormDialog({
               {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
                 <Alert>
                   <AlertDescription>
-                    No models returned. Ops: verify LiteLLM on cmps01 and{" "}
-                    <code>VLLM_BASE_URL</code> in EduAI <code>.env</code> (
-                    <code>http://cmps01.ok.ubc.ca:8001</code>).
+                    No models returned. Ops: verify LiteLLM on cmps01 and <code>VLLM_BASE_URL</code>{" "}
+                    in EduAI <code>.env</code> (<code>http://cmps01.ok.ubc.ca:8001</code>).
                   </AlertDescription>
                 </Alert>
               )}
@@ -424,9 +455,7 @@ export function ModelFormDialog({
                         <div className="flex flex-col">
                           <span>{m.id}</span>
                           {m.owned_by && (
-                            <span className="text-xs text-muted-foreground">
-                              {m.owned_by}
-                            </span>
+                            <span className="text-xs text-muted-foreground">{m.owned_by}</span>
                           )}
                         </div>
                       </SelectItem>
@@ -507,6 +536,24 @@ export function ModelFormDialog({
                 placeholder="10.00"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="contextFillRatio">Context Fill Ratio</Label>
+              <Input
+                id="contextFillRatio"
+                type="number"
+                step="0.01"
+                min="0.5"
+                max="0.98"
+                value={formData.contextFillRatio}
+                onChange={(e) => setFormData({ ...formData, contextFillRatio: e.target.value })}
+                placeholder="0.90"
+              />
+              <p className="text-xs text-muted-foreground">
+                Fraction of the context window filled before older chat turns are digested. Blank
+                uses the platform default (0.5–0.98).
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-6">
@@ -515,7 +562,9 @@ export function ModelFormDialog({
                 <Switch
                   id="supportsImages"
                   checked={formData.supportsImages}
-                  onCheckedChange={(checked) => setFormData({ ...formData, supportsImages: checked })}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, supportsImages: checked })
+                  }
                 />
                 <Label htmlFor="supportsImages">Supports Images</Label>
               </div>
@@ -524,7 +573,9 @@ export function ModelFormDialog({
                 <Switch
                   id="supportsTools"
                   checked={formData.supportsTools}
-                  onCheckedChange={(checked) => setFormData({ ...formData, supportsTools: checked })}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, supportsTools: checked })
+                  }
                 />
                 <Label htmlFor="supportsTools">Supports Tools</Label>
               </div>
@@ -535,7 +586,9 @@ export function ModelFormDialog({
                 <Switch
                   id="supportsStreaming"
                   checked={formData.supportsStreaming}
-                  onCheckedChange={(checked) => setFormData({ ...formData, supportsStreaming: checked })}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, supportsStreaming: checked })
+                  }
                 />
                 <Label htmlFor="supportsStreaming">Supports Streaming</Label>
               </div>
@@ -555,9 +608,7 @@ export function ModelFormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">
-              {model ? "Update" : "Create"} Model
-            </Button>
+            <Button type="submit">{model ? "Update" : "Create"} Model</Button>
           </div>
         </form>
       </DialogContent>

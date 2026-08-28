@@ -1,20 +1,20 @@
-import type { CSSProperties } from "react"
+import type { CSSProperties } from "react";
 
 export interface StatCardProps {
   /** Metric label e.g. "Active Students" */
-  label: string
+  label: string;
   /** Displayed value e.g. "4,532" */
-  value: string | number
+  value: string | number;
   /** Percentage change (positive or negative number) */
-  trend?: number
+  trend?: number;
   /** Trend description e.g. "vs last month" */
-  trendLabel?: string
-  style?: CSSProperties
+  trendLabel?: string;
+  style?: CSSProperties;
 }
 
 export function StatCard({ label, value, trend, trendLabel, style }: StatCardProps) {
-  const isPositive = trend !== undefined && trend > 0
-  const isNegative = trend !== undefined && trend < 0
+  const isPositive = trend !== undefined && trend > 0;
+  const isNegative = trend !== undefined && trend < 0;
 
   return (
     <div
@@ -28,9 +28,7 @@ export function StatCard({ label, value, trend, trendLabel, style }: StatCardPro
       <div className={`flex flex-col gap-1 px-5 pt-5 ${trendLabel ? "" : "pb-5"}`}>
         <div className="text-sm text-muted-foreground leading-normal">{label}</div>
         <div className="flex items-center justify-between">
-          <div className="text-2xl font-semibold text-card-foreground tracking-normal">
-            {value}
-          </div>
+          <div className="text-2xl font-semibold text-card-foreground tracking-normal">{value}</div>
           {trend !== undefined && (
             <span
               className="inline-flex items-center gap-0.5 text-xs font-semibold px-[7px] py-0.5 rounded-full"
@@ -58,5 +56,5 @@ export function StatCard({ label, value, trend, trendLabel, style }: StatCardPro
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -5,17 +5,19 @@
  * Core server-side (`courseListService.js` #1076/#1072 §3) — no client-side
  * re-enrichment needed.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useCourses } from './useCourses';
-import { useAuth } from '../contexts/AuthContext';
-import { eduaiService } from '../services/eduaiService';
-import { filterCoursesForCourseSelection } from '../utils/courseDisplay';
+import { useEffect, useMemo, useState } from "react";
+import { useCourses } from "./useCourses";
+import { useAuth } from "../contexts/AuthContext";
+import { eduaiService } from "../services/eduaiService";
+import { filterCoursesForCourseSelection } from "../utils/courseDisplay";
 
 export function useDisplayCourses() {
   const { user } = useAuth();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const [coreCoursesLoaded, setCoreCoursesLoaded] = useState(false);
-  const [coreCourses, setCoreCourses] = useState<Awaited<ReturnType<typeof eduaiService.listCourses>>>([]);
+  const [coreCourses, setCoreCourses] = useState<
+    Awaited<ReturnType<typeof eduaiService.listCourses>>
+  >([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -27,7 +29,7 @@ export function useDisplayCourses() {
           setCoreCourses(options);
         }
       } catch (err) {
-        console.error('Failed to load Core courses for display filter', err);
+        console.error("Failed to load Core courses for display filter", err);
         if (isMounted) {
           setCoreCourses([]);
         }
@@ -48,9 +50,9 @@ export function useDisplayCourses() {
   const { courses: displayCourses, showMockLabel } = useMemo(
     () =>
       filterCoursesForCourseSelection(courses, coreCourses, {
-        bypassCoreEnrollmentFilter: user?.role === 'ADMIN',
+        bypassCoreEnrollmentFilter: user?.role === "ADMIN",
       }),
-    [courses, coreCourses, user?.role]
+    [courses, coreCourses, user?.role],
   );
 
   return {
@@ -62,4 +64,3 @@ export function useDisplayCourses() {
     fetchCourses,
   };
 }
-

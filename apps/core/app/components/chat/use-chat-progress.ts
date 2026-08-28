@@ -7,20 +7,8 @@ import {
   estimateExpectedResponseMs,
   estimateFollowupRemainingMs,
   resolveAwaitingFollowup,
+  type MessageLike,
 } from "~/components/chat/chat-progress-stage";
-
-type MessageLike = {
-  id?: string;
-  role?: string;
-  content?: unknown;
-  parts?: Array<{
-    type?: string;
-    text?: string;
-    toolInvocation?: { toolName?: string; state?: string };
-    toolName?: string;
-    state?: string;
-  } | null> | null;
-};
 
 type ProgressEdgeRef = {
   hasActiveTool: boolean;
@@ -44,13 +32,8 @@ type ProgressEdgeRef = {
  * (extended when tools run; rebased to a short remaining window after a tool
  * finishes) so ADHD users can see how close they are.
  */
-export function useChatProgress(args: {
-  isLoading: boolean;
-  messages: MessageLike[];
-  adhdAssist: boolean;
-  selectedModel?: string | null;
-  streamingRoutedRegistryId?: string | null;
-}): {
+/** Everything the progress row renders from for the in-flight turn. */
+export type ChatProgress = {
   /** Wall-clock start of the in-flight turn; null when idle. */
   startedAt: number | null;
   /** Absolute elapsed target for fill + “About Xs left”. */
@@ -63,7 +46,15 @@ export function useChatProgress(args: {
   showProgressIndicator: boolean;
   /** Slimmer row under an already-streaming assistant bubble (multi-step). */
   compactProgress: boolean;
-} {
+};
+
+export function useChatProgress(args: {
+  isLoading: boolean;
+  messages: MessageLike[];
+  adhdAssist: boolean;
+  selectedModel?: string | null;
+  streamingRoutedRegistryId?: string | null;
+}): ChatProgress {
   const {
     isLoading,
     messages,
@@ -93,8 +84,7 @@ export function useChatProgress(args: {
   const frozenSelectedModelRef = useRef<string | null>(null);
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
-  const inFlightAssistant =
-    isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
+  const inFlightAssistant = isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
   const hasAssistantText = assistantMessageHasText(inFlightAssistant);
   const activeToolName = activeToolNameFromMessage(inFlightAssistant);
   const fingerprint = assistantTextFingerprint(inFlightAssistant);

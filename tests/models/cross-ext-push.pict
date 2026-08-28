@@ -1,0 +1,8 @@
+# S10 — cross-ext-push (issue #1189).
+# QM pushQuestionToCore + Core POST /api/questions (cookie-only).
+# docs/PICT_CENSUS.md § S10
+Draft:          yes, no
+Session:        present, missing
+CourseAccess:   allowed, forbidden, course-missing
+CoreReachable:  yes, down-5xx
+Idempotency:    fresh, adopt-p2002, in-progress

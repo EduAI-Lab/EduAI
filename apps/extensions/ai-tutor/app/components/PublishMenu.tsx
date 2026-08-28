@@ -5,7 +5,7 @@ import {
   IconTrash,
   IconWorldOff,
   IconWorldUpload,
-} from '@tabler/icons-react';
+} from "@tabler/icons-react";
 import {
   Button,
   DropdownMenu,
@@ -14,8 +14,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@eduai/ui';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import { cn } from "~/lib/utils";
 
 type PublishMenuProps = {
   isPublished: boolean;
@@ -60,7 +60,7 @@ export function PublishMenu({
   onEdit,
   onDelete,
   onMove,
-  itemLabel = 'item',
+  itemLabel = "item",
   className,
 }: PublishMenuProps) {
   const blocked = Boolean(blockedReason);
@@ -77,7 +77,7 @@ export function PublishMenu({
           variant="ghost"
           size="icon"
           aria-label="More options"
-          className={cn('size-8 text-muted-foreground hover:text-foreground', className)}
+          className={cn("size-8 text-muted-foreground hover:text-foreground", className)}
         >
           <IconDotsVertical className="size-4" aria-hidden="true" />
         </Button>
@@ -86,7 +86,7 @@ export function PublishMenu({
         {showPublish && (
           <>
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              {isPublished ? 'Visible to students' : 'Hidden from students'}
+              {isPublished ? "Visible to students" : "Hidden from students"}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -100,7 +100,11 @@ export function PublishMenu({
               ) : (
                 <IconWorldUpload className="size-4 text-primary-text" aria-hidden="true" />
               )}
-              {pending ? 'Saving…' : isPublished ? `Unpublish ${itemLabel}` : `Publish ${itemLabel}`}
+              {pending
+                ? "Saving…"
+                : isPublished
+                  ? `Unpublish ${itemLabel}`
+                  : `Publish ${itemLabel}`}
             </DropdownMenuItem>
             {blocked && (
               <p className="px-2 pb-1 pt-0.5 text-xs leading-snug text-muted-foreground">
@@ -123,10 +127,7 @@ export function PublishMenu({
         )}
         {(showPublish || showEdit || showMove) && showDelete && <DropdownMenuSeparator />}
         {showDelete && (
-          <DropdownMenuItem
-            variant="destructive"
-            onSelect={() => onDelete?.()}
-          >
+          <DropdownMenuItem variant="destructive" onSelect={() => onDelete?.()}>
             <IconTrash className="size-4" aria-hidden="true" />
             Delete {itemLabel}
           </DropdownMenuItem>

@@ -1,0 +1,52 @@
+[
+  {
+    "LessonPublished": "no",
+    "ModulePublished": "yes",
+    "AttemptPattern": "incorrect_then_correct"
+  },
+  {
+    "LessonPublished": "no",
+    "ModulePublished": "no",
+    "AttemptPattern": "incorrect_only"
+  },
+  {
+    "LessonPublished": "yes",
+    "ModulePublished": "no",
+    "AttemptPattern": "correct_then_incorrect"
+  },
+  {
+    "LessonPublished": "yes",
+    "ModulePublished": "yes",
+    "AttemptPattern": "incorrect_only"
+  },
+  {
+    "LessonPublished": "no",
+    "ModulePublished": "yes",
+    "AttemptPattern": "correct_then_incorrect"
+  },
+  {
+    "LessonPublished": "no",
+    "ModulePublished": "no",
+    "AttemptPattern": "correct_only"
+  },
+  {
+    "LessonPublished": "yes",
+    "ModulePublished": "no",
+    "AttemptPattern": "incorrect_then_correct"
+  },
+  {
+    "LessonPublished": "yes",
+    "ModulePublished": "yes",
+    "AttemptPattern": "correct_only"
+  },
+  {
+    "LessonPublished": "no",
+    "ModulePublished": "no",
+    "AttemptPattern": "not_attempted"
+  },
+  {
+    "LessonPublished": "yes",
+    "ModulePublished": "yes",
+    "AttemptPattern": "not_attempted"
+  }
+]

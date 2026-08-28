@@ -1,6 +1,6 @@
+import type { JsonObject } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import type { Prisma, UserRole } from "@prisma/client";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
@@ -17,7 +17,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
   paginatedResponse,
@@ -27,6 +27,7 @@ import {
   unpagedResponse,
   type Pagination,
 } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 
@@ -59,7 +60,9 @@ export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
   const requestContext = getRequestContext(request);
 
-  const logAdminDenied = (actor: { id: string; role?: string | null; email?: string | null } | null) =>
+  const logAdminDenied = (
+    actor: { id: string; role?: string | null; email?: string | null } | null,
+  ) =>
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(actor),
@@ -69,7 +72,7 @@ export async function handleUsersApiRequest(request: Request) {
         entityType: "User",
         entityId: actor?.id ?? null,
         entityLabel: actor?.email ?? null,
-        ...(actor?.email ? { details: { email: actor.email } } : {}),
+        details: actor?.email ? { email: actor.email } : undefined,
       }),
     );
 
@@ -78,7 +81,7 @@ export async function handleUsersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user) {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -90,7 +93,7 @@ export async function handleUsersApiRequest(request: Request) {
       const courseId = url.searchParams.get("courseId")?.trim() || null;
       let isCourseManager = false;
       if (courseId && session.user.role !== "ADMIN") {
-        const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+        const { course, access } = await resolveCourseAccessGate(session.user, courseId);
         isCourseManager = Boolean(course && access && access.rank >= 2);
       }
       if (session.user.role !== "ADMIN" && !isCourseManager) {
@@ -144,11 +147,7 @@ export async function handleUsersApiRequest(request: Request) {
       if (courseId) {
         // This mode is constrained to the picker contract so course managers
         // cannot turn it into a platform-wide user directory.
-        if (
-          roleFilter.length !== 1 ||
-          roleFilter[0] !== "STUDENT" ||
-          isActiveParam !== "true"
-        ) {
+        if (roleFilter.length !== 1 || roleFilter[0] !== "STUDENT" || isActiveParam !== "true") {
           return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
         }
 
@@ -285,7 +284,7 @@ export async function handleUsersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -305,7 +304,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -358,8 +357,7 @@ export async function handleUsersApiRequest(request: Request) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
-      const platformRoleChanged =
-        result.data.role !== undefined && previousRole !== effectiveRole;
+      const platformRoleChanged = result.data.role !== undefined && previousRole !== effectiveRole;
 
       // AUTH-04: this update would take the target out of the active-ADMIN
       // pool — either a role change away from ADMIN, or a deactivation.
@@ -369,12 +367,8 @@ export async function handleUsersApiRequest(request: Request) {
           result.data.isActive === false);
 
       try {
-        const {
-          studentId: studentIdInput,
-          taCourseIds,
-          ...userUpdateFields
-        } = result.data;
-        const updateData: Record<string, unknown> = { ...userUpdateFields };
+        const { studentId: studentIdInput, taCourseIds, ...userUpdateFields } = result.data;
+        const updateData: Prisma.UserUpdateInput = { ...userUpdateFields };
 
         if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
           updateData.authorizedUnits = [];
@@ -399,30 +393,31 @@ export async function handleUsersApiRequest(request: Request) {
           }
         }
 
-        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) => client.user.update({
-          where: { id: userId },
-          data: updateData,
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            role: true,
-            studentId: true,
-            isActive: true,
-            emailVerified: true,
-            authorizedUnits: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: {
-              select: {
-                enrollments: { where: activeStudentEnrollmentWhere },
-                taughtCourses: true,
-                aiInteractions: true,
+        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) =>
+          client.user.update({
+            where: { id: userId },
+            data: updateData,
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              image: true,
+              role: true,
+              studentId: true,
+              isActive: true,
+              emailVerified: true,
+              authorizedUnits: true,
+              createdAt: true,
+              updatedAt: true,
+              _count: {
+                select: {
+                  enrollments: { where: activeStudentEnrollmentWhere },
+                  taughtCourses: true,
+                  aiInteractions: true,
+                },
               },
             },
-          },
-        });
+          });
 
         const shouldReconcileTACourses =
           taCourseIds !== undefined ||
@@ -453,9 +448,7 @@ export async function handleUsersApiRequest(request: Request) {
             return {
               updated: await updateUser(tx),
               activeTACourseIds: reconciliation.activeTACourseIds,
-              previousTACourseIds: previousTAEnrollments.map(
-                (enrollment) => enrollment.courseId,
-              ),
+              previousTACourseIds: previousTAEnrollments.map((enrollment) => enrollment.courseId),
             } as const;
           });
 
@@ -487,18 +480,14 @@ export async function handleUsersApiRequest(request: Request) {
             where: { userId, role: "TA", isActive: true },
             select: { courseId: true },
           });
-          activeTACourseIds = activeTAEnrollments.map(
-            (enrollment) => enrollment.courseId,
-          );
+          activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
         } else {
           updatedWithCount = await updateUser(prisma);
           const activeTAEnrollments = await prisma.enrollment.findMany({
             where: { userId, role: "TA", isActive: true },
             select: { courseId: true },
           });
-          activeTACourseIds = activeTAEnrollments.map(
-            (enrollment) => enrollment.courseId,
-          );
+          activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
         }
 
         const { _count, ...updated } = updatedWithCount;
@@ -548,15 +537,16 @@ export async function handleUsersApiRequest(request: Request) {
             entityType: "User",
             entityId: updated.id,
             entityLabel: userEntityLabel(updated.name, updated.email),
+            // The role pair and the TA-course pair are each recorded only when
+            // that half of the edit ran; `undefined` keeps them out of the
+            // stored JSON so the trail shows exactly what changed.
             details: {
               email: updated.email,
               changedFields,
-              ...(platformRoleChanged
-                ? { previousRole, newRole: effectiveRole }
-                : {}),
-              ...(shouldReconcileTACourses
-                ? { taCourseIdsAdded, taCourseIdsRemoved }
-                : {}),
+              previousRole: platformRoleChanged ? previousRole : undefined,
+              newRole: platformRoleChanged ? effectiveRole : undefined,
+              taCourseIdsAdded: shouldReconcileTACourses ? taCourseIdsAdded : undefined,
+              taCourseIdsRemoved: shouldReconcileTACourses ? taCourseIdsRemoved : undefined,
             },
           }),
         );
@@ -590,7 +580,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -661,7 +651,7 @@ export async function handleUsersApiRequest(request: Request) {
 }
 
 async function createUserFromBody(
-  body: Record<string, unknown> | null,
+  body: JsonObject | null,
   actor: { id: string; name?: string | null; email?: string | null },
   requestContext: ReturnType<typeof getRequestContext>,
 ): Promise<Response> {
@@ -685,8 +675,7 @@ async function createUserFromBody(
   try {
     const createData = {
       ...result.data,
-      authorizedUnits:
-        result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
+      authorizedUnits: result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
     };
     const { _count, ...created } = await prisma.user.create({
       data: {

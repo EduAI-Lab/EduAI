@@ -12,10 +12,11 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 import { action } from "~/routes/api/bug-reports";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const VALID_SERVICE_KEY = "bug-reports-integration-key-xyz";
 
-function makeActionArgs(body: unknown, authorization?: string) {
+function makeActionArgs(body: RouteRequestBody, authorization?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   return {
@@ -77,14 +78,19 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("POST /api/bug-reports — service key auth", () => {
   it("returns 401 MISSING_SERVICE_KEY when Authorization header is absent", async () => {
-    const res = await action(makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }));
+    const res = await action(
+      makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }),
+    );
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "MISSING_SERVICE_KEY" });
   });
 
   it("returns 403 INVALID_SERVICE_KEY for a wrong Bearer token", async () => {
     const res = await action(
-      makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }, "Bearer wrong-key"),
+      makeActionArgs(
+        { source: "AI_TUTOR", userId: aiTutorUserId, description: "test" },
+        "Bearer wrong-key",
+      ),
     );
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "INVALID_SERVICE_KEY" });
@@ -164,7 +170,10 @@ describe("POST /api/bug-reports — AI Tutor reports land in Core DB", () => {
     expect(await res.json()).toMatchObject({ id: expect.any(String) });
 
     const row = await prisma.bugReport.findFirst({
-      where: { userId: aiTutorUserId, description: "AI Tutor integration: page crashed on submit." },
+      where: {
+        userId: aiTutorUserId,
+        description: "AI Tutor integration: page crashed on submit.",
+      },
     });
     expect(row).not.toBeNull();
     expect(row!.source).toBe("AI_TUTOR");
@@ -264,7 +273,10 @@ describe("POST /api/bug-reports — bugType", () => {
       expect(res.status).toBe(201);
 
       const row = await prisma.bugReport.findFirst({
-        where: { userId: aiTutorUserId, description: "Bug type round-trip: feature not working on submit." },
+        where: {
+          userId: aiTutorUserId,
+          description: "Bug type round-trip: feature not working on submit.",
+        },
       });
       expect(row).not.toBeNull();
       expect(row!.bugType).toBe("FEATURE_NOT_WORKING");
@@ -307,7 +319,10 @@ describe("POST /api/bug-reports — bugType", () => {
     expect(res.status).toBe(201);
 
     const row = await prisma.bugReport.findFirst({
-      where: { userId: aiTutorUserId, description: "Bug type null round-trip test — no type selected." },
+      where: {
+        userId: aiTutorUserId,
+        description: "Bug type null round-trip test — no type selected.",
+      },
     });
     expect(row).not.toBeNull();
     expect(row!.bugType).toBeNull();
@@ -346,8 +361,8 @@ describe("POST /api/bug-reports — optional fields", () => {
           source: "QUESTION_MAKER",
           userId: qmUserId,
           description: "Optional fields round-trip test.",
-          consoleLogs: "[{\"level\":\"error\"}]",
-          networkLogs: "[{\"url\":\"/api/test\",\"status\":500}]",
+          consoleLogs: '[{"level":"error"}]',
+          networkLogs: '[{"url":"/api/test","status":500}]',
           screenshot: "data:image/png;base64,abc==",
           pageUrl: "https://qm.example.com/variants/99",
           userAgent: "vitest/1.0",
@@ -363,7 +378,7 @@ describe("POST /api/bug-reports — optional fields", () => {
       where: { userId: qmUserId, description: "Optional fields round-trip test." },
     });
     expect(row).not.toBeNull();
-    expect(row!.consoleLogs).toBe("[{\"level\":\"error\"}]");
+    expect(row!.consoleLogs).toBe('[{"level":"error"}]');
     expect(row!.screenshot).toBe("data:image/png;base64,abc==");
     expect(row!.pageUrl).toBe("https://qm.example.com/variants/99");
     expect(row!.context).toEqual({ variantId: "v-abc", courseId: "c-xyz" });
@@ -376,9 +391,8 @@ describe("POST /api/bug-reports — optional fields", () => {
 
 describe("admin bug-reports lifecycle (#304)", () => {
   it("a #279-submitted report surfaces in the admin list with its source; status transitions persist", async () => {
-    const { loader: adminLoader, action: adminAction } = await import(
-      "~/routes/api/admin.bug-reports"
-    );
+    const { loader: adminLoader, action: adminAction } =
+      await import("~/routes/api/admin.bug-reports");
     const { auth } = await import("~/lib/auth/server");
 
     const admin = await prisma.user.create({

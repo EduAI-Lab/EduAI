@@ -13,12 +13,13 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 import { loader } from "~/routes/api/courses.student-candidates.$";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1" };
 
@@ -26,8 +27,11 @@ function session(role = "INSTRUCTOR", id = "u1") {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id, role } } as never);
 }
 
-function mockAccess(access: { level: string; rank: number } | null, course: object | null = COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+function mockAccess(
+  access: { level: string; rank: number } | null,
+  course: CourseGateFixture | null = COURSE,
+) {
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
@@ -123,16 +127,12 @@ describe("GET /api/courses/:courseId/student-candidates", () => {
   it("clamps an oversized ?limit= to the route's MAX_LIMIT (25)", async () => {
     session();
     await loader(args("?limit=9999"));
-    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 25 }),
-    );
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 25 }));
   });
 
   it("defaults to limit=20 when ?limit= is absent", async () => {
     session();
     await loader(args());
-    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 20 }),
-    );
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 20 }));
   });
 });

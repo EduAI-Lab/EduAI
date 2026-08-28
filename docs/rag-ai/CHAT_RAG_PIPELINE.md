@@ -6,6 +6,8 @@
 
 This document describes how a user prompt flows through **`POST /api/chat`** ([`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)) and how retrieval-augmented generation (RAG) is triggered relative to **`findRelevantContent`** ([`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts)). RAG context caps live in [`chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts).
 
+Both **learning chat** (`chatMode: "learning"`, sections 1–7 below) and **admin chat** (`chatMode: "admin"`, §3.C) hit the same route and the same retrieval core, but resolve "which course" differently and share only the retrieval body, not the surrounding tool. See §3.C for the admin branch.
+
 ## Diagram
 
 ```mermaid
@@ -26,11 +28,20 @@ flowchart TB
     A8 -->|no| A9["400 Missing required fields"]
     A8 -->|yes| A10["createAIProviderRegistry → languageModel"]
     A11["appendMessages: persist new rows"]
+    A12{"chatMode?"}
   end
 
-  subgraph branch["Branch: modelSupportsTools (DB)"]
+  subgraph branch["Branch: modelSupportsTools (DB) — learning chat"]
     B1["supportsTools = true"]
     B2["supportsTools = false"]
+  end
+
+  subgraph adminrag["Admin chat — createAdminChatTools (§3.C)"]
+    AD1["tools = full 63-tool registry, or<br/>ADMIN_CORE_TOOL_NAMES subset on ≤32k windows"]
+    AD2["searchCourseMaterials(courseId | courseCode, question)<br/>explicit per-call course, no ambient effectiveCourseId"]
+    AD3["resolveAdminCourseId → resolved courseId"]
+    AD4["runCourseMaterialSearchTool(question, courseId,<br/>restrictToStudentVisible) — always false for ADMIN role"]
+    AD1 --> AD2 --> AD3 --> AD4
   end
 
   subgraph hybrid["Hybrid path — no tools"]
@@ -72,14 +83,18 @@ flowchart TB
   end
 
   client --> entry
-  A10 --> A11 --> branch
+  A10 --> A11 --> A12
+  A12 -->|"learning"| branch
+  A12 -->|"admin"| adminrag
   branch --> B1 --> toolpath
   branch --> B2 --> hybrid
   H4 --> ragcore
   P3 --> ragcore
+  AD4 --> ragcore
   ingest -.->|"indexes"| R2
   hybrid --> ST["streamText"]
   toolpath --> ST
+  adminrag --> ST
   ST --> out
 ```
 
@@ -90,6 +105,7 @@ flowchart TB
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
 - **Similarity threshold** applies to both retrieval paths: chunks must clear the vector cosine floor before ranking. Defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`; per-course `ragSimilarityThreshold` overrides when set.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
+- **Admin chat's `searchCourseMaterials`** (#1658, §3.C) reuses `findRelevantContent` + `capRagHitsForTool` via the shared **`runCourseMaterialSearchTool`** helper (`chat-rag.ts`) — same retrieval body as learning chat's `getInformation`, but course resolution and visibility differ; see §3.C.
 
 ## Code references
 
@@ -104,6 +120,9 @@ flowchart TB
 | Chat debug logging | [`apps/core/app/lib/chat-api-log.ts`](../../apps/core/app/lib/chat-api-log.ts) |
 | Web tools | [`apps/core/app/lib/ai/tools/`](../../apps/core/app/lib/ai/tools/) |
 | Provider registry | [`apps/core/app/lib/ai/providers.ts`](../../apps/core/app/lib/ai/providers.ts) |
+| Admin chat tools (`searchCourseMaterials`, §3.C) | [`apps/core/app/lib/agent-tools/create-admin-chat-tools.ts`](../../apps/core/app/lib/agent-tools/create-admin-chat-tools.ts) |
+| Admin course resolution | [`apps/core/app/lib/agent-tools/admin-context.server.ts`](../../apps/core/app/lib/agent-tools/admin-context.server.ts) |
+| Admin context-budget helpers | [`apps/core/app/lib/ai/providers.server.ts`](../../apps/core/app/lib/ai/providers.server.ts) |
 
 ---
 
@@ -161,6 +180,16 @@ RAG is **not** one pipeline. It branches on `getChatModelCapabilities(model).sup
 
 **Summary:** both paths prefetch on course-scoped chat; excerpts inject when the smart gate passes. `getInformation` is supplemental on the tool path only.
 
+### C. Admin chat path (`chatMode: "admin"`) — `searchCourseMaterials`
+
+Admin chat (`/admin/chat`, ADMIN session only, [`create-admin-chat-tools.ts`](../../apps/core/app/lib/agent-tools/create-admin-chat-tools.ts)) never enters the tool-vs-hybrid split above — `routes/api/chat.ts` branches on `chatMode` before that split (see the `chatMode?` node in the diagram) and always uses tool-calling. Its RAG tool differs from learning chat's `getInformation` in three ways:
+
+1. **Explicit course, not ambient context.** Learning chat resolves RAG against `effectiveCourseId` from the session/UI course selector — there's always exactly one course in scope. Admin chat is platform-wide with no UI course filter, so `searchCourseMaterials` takes `courseId` or `courseCode` as tool call parameters; the model must name a course. Resolution goes through **`resolveAdminCourseId`** — the same helper every other course-scoped admin tool uses (`listCourseEnrollments`, `listCourseTopics`, …) — which also accepts a `fallbackCourseId` (the UI's `effectiveCourseId`, when the admin has one selected) before erroring if no course can be resolved.
+2. **Shared retrieval body, separate gating.** Once a `courseId` is resolved, both `getInformation` and `searchCourseMaterials` call the same **`runCourseMaterialSearchTool(question, courseId, restrictToStudentVisible)`** in `chat-rag.ts` — `findRelevantContent` (chunk cap `HYBRID_RAG_MAX_CHUNKS`) capped for a tool result via `capRagHitsForTool`, fails closed with a typed `{ error }` (never throws) on retrieval failure. Only "which course, and is one even selected" is duplicated per caller (#1658 review) — the retrieval/error-handling body is not.
+3. **Visibility is a pass-through, not a role check.** `restrictToStudentVisible` (excludes hidden/scheduled materials, #839) comes from `ChatToolContext.restrictToStudentVisible`, set once in `routes/api/chat.ts` as `courseAccess?.level === "student"`. ADMIN-role callers never resolve to a `"student"` access level, so `searchCourseMaterials` always passes `restrictToStudentVisible: false` — admins can search a course's full material set, including anything hidden from students.
+
+**Tool budget:** the full admin registry (63 tools) does not fit the seeded 16k-context admin model's token budget (`estimateToolDefinitionTokens`, `providers.server.ts`); `routes/api/chat.ts` sends only `ADMIN_CORE_TOOL_NAMES` (which includes `searchCourseMaterials`) on ≤32k-context models, the full registry otherwise. See `docs/AGENT_READINESS.md` and `chat-admin-registry-budget.test.ts`.
+
 ### RAG caps (constants in `chat-rag.ts`)
 
 | Constant | Value | Used for |
@@ -178,7 +207,7 @@ Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 1. **`generateEmbedding(userQuery)`** — `embed()` via OpenRouter `google/gemini-embedding-001` (if `OPENROUTER_API_KEY`), else direct Gemini `gemini-embedding-001`, else OpenAI `text-embedding-3-small`. Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
 2. **Retrieval SQL** — branches on **`RAG_HYBRID_BM25`**:
-   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): pre-filters with the same vector cosine floor as the pure-vector path (`1 − (embedding <=> query) > threshold`), then ranks survivors by combined score: `(1 − (embedding <=> query)) × α + ts_rank(content, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Improves label queries ("assignment 4") and vague queries ("I'm confused about what prof said") that pure vector search misses, without returning top-k chunks that fail the similarity floor.
+   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): unions lexical candidates selected by the GIN-backed `content_tsv @@ query` predicate with semantic candidates above the vector cosine floor (`1 − (embedding <=> query) > threshold`), then ranks the union by `(1 − (embedding <=> query)) × α + ts_rank(content_tsv, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Exact labels can enter through full-text search while semantically relevant chunks remain eligible even when they do not contain the query terms.
    - **Pure-vector path** (default when flag is off): `1 - (embedding <=> query)`, filtered by threshold from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**), `ORDER BY similarity DESC`.
 3. **Returns** `{ content, similarity, materialTitle }[]` — same shape for both paths; `similarity` holds the combined score in hybrid mode.
 
@@ -191,6 +220,7 @@ Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThresh
 - **`streamText(streamConfig)`** — provider from registry (OpenAI, Google, Ollama, vLLM, etc.). Local models on **cmps01**: `ollama:…` (:11434), `vllm:…` (:8001, OpenAI-compatible — see [VLLM.md](VLLM.md))
 - **Streaming:** `toDataStreamResponse` with `X-Chat-Id` when known
 - **Non-streaming:** `consumeStream`, read text/usage/finishReason, `appendMessages` for assistant (from `response.messages` or fallback text), JSON body
+- **Provider failures:** before streaming starts (and on non-streaming requests), Core returns the same sanitized `error`/`code`/`retryable`/`provider` JSON contract as `/api/completion`. After a 200 stream has begun, HTTP status and headers are immutable, so the same JSON object is serialized as the AI SDK stream-error message instead. Client aborts remain 499 and are never classified as provider failures.
 
 Resolved system prompt order: request `systemPrompt` → stored `chat.systemPrompt` → route default (tool or hybrid template with optional `courseCode` line).
 
@@ -217,7 +247,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
 | Hybrid retrieval (inject) | Smart inject gate (`needsCourseRag` + similarity thresholds); prefetch always when course selected. Override: `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` |
-| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines vector + full-text BM25 ranking after the same vector similarity floor as pure-vector search; no schema migration needed (uses built-in PostgreSQL `ts_rank`/`plainto_tsquery`). Recommended for production. |
+| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines GIN-backed lexical candidates (`content_tsv @@ query`) with independent vector-threshold candidates, then reranks their union; `content_tsv` is a generated (`GENERATED ALWAYS ... STORED`) `tsvector` column, so content is not tokenized per query. Recommended for production. |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |

@@ -1,8 +1,16 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/home";
 import { Link } from "react-router";
-import { auth } from "~/lib/auth/server";
-import { IconBrain, IconBook, IconUsers, IconBulb, IconArrowRight, IconCode, IconTerminal, IconCpu } from "@tabler/icons-react";
+import {
+  IconBrain,
+  IconBook,
+  IconUsers,
+  IconBulb,
+  IconArrowRight,
+  IconCode,
+  IconTerminal,
+  IconCpu,
+} from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent } from "@eduai/ui";
 import { AnimatedBackground } from "~/components/animated-background";
@@ -10,8 +18,9 @@ import { SiteFooter } from "~/components/site-footer";
 import { ProjectGoals } from "~/components/project-goals";
 import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
     { title: "EduAI Core Learning" },
     { name: "description", content: "AI-powered learning platform" },
@@ -19,7 +28,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (session?.user) {
     return redirect("/dashboard");
@@ -54,14 +63,18 @@ export default function HomePage() {
             </h1>
 
             <div className="mb-8">
-              <p className="text-xl lg:text-2xl text-foreground/70 mb-4 leading-relaxed">{projectInfo.subtitle}</p>
+              <p className="text-xl lg:text-2xl text-foreground/70 mb-4 leading-relaxed">
+                {projectInfo.subtitle}
+              </p>
               <div className="flex justify-center items-center space-x-4 text-muted-foreground font-mono text-sm">
                 <IconTerminal className="h-4 w-4" />
                 <span>{"> python train_model.py --task=education --model=transformer"}</span>
               </div>
             </div>
 
-            <p className="text-lg text-muted-foreground mb-12 max-w-3xl mx-auto">{projectInfo.description}</p>
+            <p className="text-lg text-muted-foreground mb-12 max-w-3xl mx-auto">
+              {projectInfo.description}
+            </p>
 
             <Link
               to={siteConfig.navigation.team}
@@ -79,22 +92,25 @@ export default function HomePage() {
       <section className="relative py-20 bg-card/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-foreground mb-4">What is {projectInfo.title}?</h2>
+            <h2 className="text-4xl font-bold text-foreground mb-4">
+              What is {projectInfo.title}?
+            </h2>
             <div className="w-24 h-1 bg-gradient-to-r from-green-400 to-blue-500 mx-auto rounded"></div>
           </div>
 
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
               <p className="text-lg text-muted-foreground leading-relaxed mb-6">
-                EduAI is a groundbreaking research initiative at UBC Okanagan that harnesses the power of artificial
-                intelligence to transform educational experiences. Our project focuses on developing intelligent systems
-                that understand, adapt, and respond to individual learning needs.
+                EduAI is a groundbreaking research initiative at UBC Okanagan that harnesses the
+                power of artificial intelligence to transform educational experiences. Our project
+                focuses on developing intelligent systems that understand, adapt, and respond to
+                individual learning needs.
               </p>
 
               <p className="text-lg text-muted-foreground leading-relaxed mb-8">
-                By combining advanced machine learning algorithms, natural language processing, and educational theory,
-                we're creating tools that make learning more personalized, accessible, and effective for students across
-                all disciplines.
+                By combining advanced machine learning algorithms, natural language processing, and
+                educational theory, we're creating tools that make learning more personalized,
+                accessible, and effective for students across all disciplines.
               </p>
 
               <div className="flex flex-wrap gap-4">
@@ -141,8 +157,8 @@ export default function HomePage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold text-white mb-6">Ready to learn more?</h2>
           <p className="text-xl text-green-100 mb-8 leading-relaxed">
-            Discover the brilliant minds behind EduAI and learn about their groundbreaking contributions to educational
-            artificial intelligence research.
+            Discover the brilliant minds behind EduAI and learn about their groundbreaking
+            contributions to educational artificial intelligence research.
           </p>
 
           <Link

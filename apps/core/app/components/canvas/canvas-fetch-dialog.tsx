@@ -119,7 +119,9 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
             Loading your Canvas courses…
           </div>
         ) : courses.length === 0 ? (
-          <p className="py-6 text-sm text-muted-foreground">No Canvas courses found for your account.</p>
+          <p className="py-6 text-sm text-muted-foreground">
+            No Canvas courses found for your account.
+          </p>
         ) : (
           <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
             {courses.map((course) =>
@@ -165,7 +167,9 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         {resultSummary && (
-          <p className="text-sm text-green-700 dark:text-green-400">Fetch complete: {resultSummary}.</p>
+          <p className="text-sm text-green-700 dark:text-green-400">
+            Fetch complete: {resultSummary}.
+          </p>
         )}
         {result?.synced.map((entry) => (
           <p key={entry.canvasId} className="text-sm text-muted-foreground">
@@ -184,7 +188,12 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
         ))}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={syncing}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={syncing}
+          >
             Close
           </Button>
           <Button

@@ -16,22 +16,28 @@
  *     from the raw appendix when `report.isAnonymous` is true.
  */
 
-import { hasAttachmentContent } from '@eduai/types';
+import { hasAttachmentContent, type JsonObject, type JsonValue } from "@eduai/types";
 
-import type {
-  AdminBugReportRow,
-  BugReportContext,
-  BugReportStatus,
-  BugReportType,
-} from './types';
+import type { BadgeVariant } from "../ui/badge";
 
-export type StatusFilter = BugReportStatus | 'all';
-export type TypeFilter = BugReportType | 'all';
-export type ReporterFilter = 'all' | 'named' | 'anonymous';
+import type { AdminBugReportRow, BugReportContext, BugReportStatus, BugReportType } from "./types";
 
-export type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page' | 'bugType' | 'source';
-export type SortDirection = 'asc' | 'desc';
-export type ViewerType = 'description' | 'console' | 'network' | 'screenshot' | null;
+export type StatusFilter = BugReportStatus | "all";
+export type TypeFilter = BugReportType | "all";
+export type ReporterFilter = "all" | "named" | "anonymous";
+
+export type SortKey =
+  | "status"
+  | "description"
+  | "reporter"
+  | "role"
+  | "createdAt"
+  | "context"
+  | "page"
+  | "bugType"
+  | "source";
+export type SortDirection = "asc" | "desc";
+export type ViewerType = "description" | "console" | "network" | "screenshot" | null;
 
 export type ConsoleLogEntry = {
   level?: string;
@@ -52,38 +58,51 @@ export type NetworkLogEntry = {
   responseBody?: unknown;
 };
 
-export const STATUS_OPTIONS: BugReportStatus[] = ['unhandled', 'in progress', 'resolved'];
-export const STATUS_LABELS: Record<BugReportStatus, string> = {
-  unhandled: 'Unhandled',
-  'in progress': 'In progress',
-  resolved: 'Resolved',
-};
+export const STATUS_OPTIONS: BugReportStatus[] = ["unhandled", "in progress", "resolved"];
+export const STATUS_LABELS = {
+  unhandled: "Unhandled",
+  "in progress": "In progress",
+  resolved: "Resolved",
+} satisfies Record<BugReportStatus, string>;
 // Traffic-light triage semantics: unhandled needs attention (red), in progress
 // is underway (amber), resolved is done (green). Drives the Badge rendered
 // inside the status Select's trigger.
-export const STATUS_BADGE_VARIANT: Record<BugReportStatus, 'destructive' | 'warning' | 'success'> = {
-  unhandled: 'destructive',
-  'in progress': 'warning',
-  resolved: 'success',
-};
+export const STATUS_BADGE_VARIANT = {
+  unhandled: "destructive",
+  "in progress": "warning",
+  resolved: "success",
+} satisfies Record<BugReportStatus, BadgeVariant>;
 
-export const BUG_TYPE_LABELS: Record<BugReportType, string> = {
-  UI_DISPLAY: 'UI / display',
-  FEATURE_NOT_WORKING: 'Feature not working',
-  PERFORMANCE: 'Performance',
-  CONTENT_ERROR: 'Content error',
-  ACCESS_PERMISSION: 'Access / permission',
-  OTHER: 'Other',
-};
-export const CONSOLE_LEVELS = ['all', 'log', 'warn', 'error'] as const;
-export const NETWORK_TABS = ['meta', 'request', 'response', 'headers'] as const;
-export const CONSOLE_LEVEL_OPTIONS = CONSOLE_LEVELS.map((level) => ({ value: level, label: level }));
+export const BUG_TYPE_LABELS = {
+  UI_DISPLAY: "UI / display",
+  FEATURE_NOT_WORKING: "Feature not working",
+  PERFORMANCE: "Performance",
+  CONTENT_ERROR: "Content error",
+  ACCESS_PERMISSION: "Access / permission",
+  OTHER: "Other",
+} satisfies Record<BugReportType, string>;
+export const CONSOLE_LEVELS = ["all", "log", "warn", "error"] as const;
+export const NETWORK_TABS = ["meta", "request", "response", "headers"] as const;
+export const CONSOLE_LEVEL_OPTIONS = CONSOLE_LEVELS.map((level) => ({
+  value: level,
+  label: level,
+}));
 export const NETWORK_TAB_OPTIONS = NETWORK_TABS.map((tab) => ({ value: tab, label: tab }));
-export const CONSOLE_LEVEL_BADGE_VARIANT: Record<string, 'destructive' | 'warning' | 'muted'> = {
-  error: 'destructive',
-  warn: 'warning',
-  log: 'muted',
-};
+/**
+ * A captured console entry carries whatever `level` string the page logged, so
+ * this is a function rather than a table: the lookup key is not a domain union
+ * and every unrecognised level has to land somewhere.
+ */
+export function consoleLevelBadgeVariant(level: string): BadgeVariant {
+  switch (level) {
+    case "error":
+      return "destructive";
+    case "warn":
+      return "warning";
+    default:
+      return "muted";
+  }
+}
 export const COPY_FEEDBACK_DURATION_MS = 2_000;
 
 export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
@@ -102,7 +121,7 @@ export function formatDateTime(value: string) {
 }
 
 export function getReporterLabel(report: AdminBugReportRow) {
-  if (report.isAnonymous) return 'Anonymous';
+  if (report.isAnonymous) return "Anonymous";
   const name = report.reporterName ?? report.userName ?? report.user?.name ?? null;
   const email = report.reporterEmail ?? report.userEmail ?? report.user?.email ?? null;
   if (name && email) return `${name} (${email})`;
@@ -121,7 +140,7 @@ export function getContextLabel(report: AdminBugReportRow) {
     report.activityTitle,
   ].filter(Boolean) as string[];
 
-  if (parts.length > 0) return parts.join(' / ');
+  if (parts.length > 0) return parts.join(" / ");
 
   const ids = [
     report.courseOfferingId ? `Course #${report.courseOfferingId}` : null,
@@ -130,11 +149,11 @@ export function getContextLabel(report: AdminBugReportRow) {
     report.activityId ? `Activity #${report.activityId}` : null,
   ].filter(Boolean);
 
-  return ids.length > 0 ? ids.join(' / ') : '-';
+  return ids.length > 0 ? ids.join(" / ") : "-";
 }
 
 export function getPathLabel(pageUrl: string | null | undefined) {
-  if (!pageUrl) return '-';
+  if (!pageUrl) return "-";
   try {
     const url = new URL(pageUrl);
     return url.pathname + url.search;
@@ -198,7 +217,7 @@ export function buildBugReportCopyText(report: AdminBugReportRow) {
     report.description,
   ].filter(Boolean);
 
-  const rawAppendix: Record<string, unknown> = {
+  const requiredAppendix = {
     id: report.id,
     status: report.status,
     description: report.description,
@@ -206,62 +225,67 @@ export function buildBugReportCopyText(report: AdminBugReportRow) {
     isAnonymous: report.isAnonymous,
   };
 
-  if (report.createdAt) rawAppendix.createdAt = report.createdAt;
-  if (report.updatedAt) rawAppendix.updatedAt = report.updatedAt;
+  // The rest of the appendix is filled key by key, so it is a `JsonObject`
+  // accumulator: everything that lands in it is a scalar off the row and goes
+  // straight back out through `JSON.stringify`.
+  const optionalAppendix: JsonObject = {};
+
+  if (report.createdAt) optionalAppendix.createdAt = report.createdAt;
+  if (report.updatedAt) optionalAppendix.updatedAt = report.updatedAt;
   if (includeReporterIdentity && report.reporterName)
-    rawAppendix.reporterName = report.reporterName;
+    optionalAppendix.reporterName = report.reporterName;
   if (includeReporterIdentity && report.reporterEmail)
-    rawAppendix.reporterEmail = report.reporterEmail;
-  if (reporterRole) rawAppendix.reporterRole = reporterRole;
-  if (report.pageUrl) rawAppendix.pageUrl = report.pageUrl;
-  if (report.userAgent) rawAppendix.userAgent = report.userAgent;
+    optionalAppendix.reporterEmail = report.reporterEmail;
+  if (reporterRole) optionalAppendix.reporterRole = reporterRole;
+  if (report.pageUrl) optionalAppendix.pageUrl = report.pageUrl;
+  if (report.userAgent) optionalAppendix.userAgent = report.userAgent;
   if (report.courseOfferingId !== null && report.courseOfferingId !== undefined) {
-    rawAppendix.courseOfferingId = report.courseOfferingId;
+    optionalAppendix.courseOfferingId = report.courseOfferingId;
   }
   if (report.moduleId !== null && report.moduleId !== undefined) {
-    rawAppendix.moduleId = report.moduleId;
+    optionalAppendix.moduleId = report.moduleId;
   }
   if (report.lessonId !== null && report.lessonId !== undefined) {
-    rawAppendix.lessonId = report.lessonId;
+    optionalAppendix.lessonId = report.lessonId;
   }
   if (report.activityId !== null && report.activityId !== undefined) {
-    rawAppendix.activityId = report.activityId;
+    optionalAppendix.activityId = report.activityId;
   }
-  if (report.courseTitle) rawAppendix.courseTitle = report.courseTitle;
-  if (report.moduleTitle) rawAppendix.moduleTitle = report.moduleTitle;
-  if (report.lessonTitle) rawAppendix.lessonTitle = report.lessonTitle;
-  if (report.activityTitle) rawAppendix.activityTitle = report.activityTitle;
-  if (report.consoleLogs) rawAppendix.consoleLogs = report.consoleLogs;
-  if (report.networkLogs) rawAppendix.networkLogs = report.networkLogs;
-  if (report.screenshot) rawAppendix.screenshot = report.screenshot;
+  if (report.courseTitle) optionalAppendix.courseTitle = report.courseTitle;
+  if (report.moduleTitle) optionalAppendix.moduleTitle = report.moduleTitle;
+  if (report.lessonTitle) optionalAppendix.lessonTitle = report.lessonTitle;
+  if (report.activityTitle) optionalAppendix.activityTitle = report.activityTitle;
+  if (report.consoleLogs) optionalAppendix.consoleLogs = report.consoleLogs;
+  if (report.networkLogs) optionalAppendix.networkLogs = report.networkLogs;
+  if (report.screenshot) optionalAppendix.screenshot = report.screenshot;
 
-  return `${summaryLines.join('\n')}\n\nRaw Appendix\n${JSON.stringify(rawAppendix, null, 2)}`;
+  return `${summaryLines.join("\n")}\n\nRaw Appendix\n${JSON.stringify({ ...requiredAppendix, ...optionalAppendix }, null, 2)}`;
 }
 
 export async function copyTextToClipboard(text: string) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return;
   }
 
-  if (typeof document === 'undefined') {
-    throw new Error('Clipboard is not available');
+  if (typeof document === "undefined") {
+    throw new Error("Clipboard is not available");
   }
 
-  const textarea = document.createElement('textarea');
+  const textarea = document.createElement("textarea");
   textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
   document.body.appendChild(textarea);
   textarea.select();
   textarea.setSelectionRange(0, textarea.value.length);
 
   try {
-    const copied = document.execCommand('copy');
+    const copied = document.execCommand("copy");
     if (!copied) {
-      throw new Error('Clipboard copy failed');
+      throw new Error("Clipboard copy failed");
     }
   } finally {
     document.body.removeChild(textarea);
@@ -272,46 +296,46 @@ export async function copyTextToClipboard(text: string) {
 // (so "11" sorts after "2"); other columns use locale-aware string compare
 // to give case-insensitive ordering. Null/undefined coerce to '' (top of asc).
 export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: SortDirection) {
-  const dir = direction === 'asc' ? 1 : -1;
+  const dir = direction === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
     const av =
-      key === 'status'
+      key === "status"
         ? a.status
-        : key === 'description'
+        : key === "description"
           ? a.description
-          : key === 'reporter'
+          : key === "reporter"
             ? getReporterLabel(a)
-            : key === 'role'
-              ? (getReporterRole(a) ?? '')
-              : key === 'context'
+            : key === "role"
+              ? (getReporterRole(a) ?? "")
+              : key === "context"
                 ? getContextLabel(a)
-                : key === 'page'
+                : key === "page"
                   ? getPathLabel(a.pageUrl)
-                  : key === 'bugType'
-                    ? (a.bugType ?? '')
-                    : key === 'source'
-                      ? (a.source ?? '')
+                  : key === "bugType"
+                    ? (a.bugType ?? "")
+                    : key === "source"
+                      ? (a.source ?? "")
                       : a.createdAt;
     const bv =
-      key === 'status'
+      key === "status"
         ? b.status
-        : key === 'description'
+        : key === "description"
           ? b.description
-          : key === 'reporter'
+          : key === "reporter"
             ? getReporterLabel(b)
-            : key === 'role'
-              ? (getReporterRole(b) ?? '')
-              : key === 'context'
+            : key === "role"
+              ? (getReporterRole(b) ?? "")
+              : key === "context"
                 ? getContextLabel(b)
-                : key === 'page'
+                : key === "page"
                   ? getPathLabel(b.pageUrl)
-                  : key === 'bugType'
-                    ? (b.bugType ?? '')
-                    : key === 'source'
-                      ? (b.source ?? '')
+                  : key === "bugType"
+                    ? (b.bugType ?? "")
+                    : key === "source"
+                      ? (b.source ?? "")
                       : b.createdAt;
 
-    if (key === 'createdAt') {
+    if (key === "createdAt") {
       const at = new Date(av).getTime();
       const bt = new Date(bv).getTime();
       if (at === bt) return 0;
@@ -331,71 +355,76 @@ export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: 
  * only in STATUS_LABELS, which would delete this map entirely; that requires
  * changing AI Tutor's server-side mapper and is deliberately not done here.
  */
-export const CORE_STATUS_TO_UI: Record<string, BugReportStatus> = {
-  UNHANDLED: 'unhandled',
-  IN_PROGRESS: 'in progress',
-  RESOLVED: 'resolved',
-};
+// A `Map` rather than an object because the key is whatever string arrives on
+// the wire, not a union this package controls: `get` answers "unknown status"
+// with `undefined` where an index signature would have promised a value.
+export const CORE_STATUS_TO_UI = new Map<string, BugReportStatus>([
+  ["UNHANDLED", "unhandled"],
+  ["IN_PROGRESS", "in progress"],
+  ["RESOLVED", "resolved"],
+]);
 
-export const UI_STATUS_TO_CORE: Record<BugReportStatus, string> = {
-  unhandled: 'UNHANDLED',
-  'in progress': 'IN_PROGRESS',
-  resolved: 'RESOLVED',
-};
+export const UI_STATUS_TO_CORE = {
+  unhandled: "UNHANDLED",
+  "in progress": "IN_PROGRESS",
+  resolved: "RESOLVED",
+} satisfies Record<BugReportStatus, string>;
 
 /** Tolerates either casing, so callers can pass raw API payloads. */
 export function toUiStatus(status: string): BugReportStatus {
-  return CORE_STATUS_TO_UI[status] ?? (status as BugReportStatus);
+  return CORE_STATUS_TO_UI.get(status) ?? (status as BugReportStatus);
 }
 
 /**
  * Core's admin payload, as it comes off the wire. Every field is optional
  * because the list endpoint omits the diagnostic blobs (#979) and the extension
- * proxies pass the body through untouched.
+ * proxies pass the body through untouched, and every field is a `JsonValue`
+ * because this is the shape straight out of `JSON.parse` — the coercers below
+ * are what turn it into an `AdminBugReportRow`.
  */
 export type RawAdminBugReport = {
-  id?: unknown;
-  description?: unknown;
-  bugType?: unknown;
-  status?: unknown;
-  source?: unknown;
-  consoleLogs?: unknown;
-  networkLogs?: unknown;
-  screenshot?: unknown;
-  hasConsoleLogs?: unknown;
-  hasNetworkLogs?: unknown;
-  hasScreenshot?: unknown;
-  pageUrl?: unknown;
-  userAgent?: unknown;
-  isAnonymous?: unknown;
-  userId?: unknown;
-  userName?: unknown;
-  userEmail?: unknown;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-  context?: unknown;
+  id?: JsonValue;
+  description?: JsonValue;
+  bugType?: JsonValue;
+  status?: JsonValue;
+  source?: JsonValue;
+  consoleLogs?: JsonValue;
+  networkLogs?: JsonValue;
+  screenshot?: JsonValue;
+  hasConsoleLogs?: JsonValue;
+  hasNetworkLogs?: JsonValue;
+  hasScreenshot?: JsonValue;
+  pageUrl?: JsonValue;
+  userAgent?: JsonValue;
+  isAnonymous?: JsonValue;
+  userId?: JsonValue;
+  userName?: JsonValue;
+  userEmail?: JsonValue;
+  createdAt?: JsonValue;
+  updatedAt?: JsonValue;
+  context?: JsonValue;
 };
 
-function optionalString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
+function optionalString(value: JsonValue | undefined): string | null {
+  return typeof value === "string" ? value : null;
 }
 
-function optionalInt(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
+function optionalInt(value: JsonValue | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
 }
 
-function optionalBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
+function optionalBoolean(value: JsonValue | undefined): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 /** Core stores per-app context as a `Json?` column; non-objects mean "no context". */
-function readContext(value: unknown): BugReportContext {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+function readContext(value: JsonValue | undefined): BugReportContext {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as BugReportContext;
 }
 
@@ -424,16 +453,16 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
   // a proxy that forgot to mask cannot leak a name through the shared view.
   const userName = isAnonymous ? null : optionalString(raw.userName);
   const userEmail = isAnonymous ? null : optionalString(raw.userEmail);
-  const userId = optionalString(raw.userId) ?? 'unknown';
+  const userId = optionalString(raw.userId) ?? "unknown";
   const consoleLogs = optionalString(raw.consoleLogs);
   const networkLogs = optionalString(raw.networkLogs);
   const screenshot = optionalString(raw.screenshot);
 
   return {
-    id: String(raw.id ?? ''),
-    description: typeof raw.description === 'string' ? raw.description : '',
+    id: String(raw.id ?? ""),
+    description: typeof raw.description === "string" ? raw.description : "",
     bugType: (raw.bugType as BugReportType | null) ?? null,
-    status: toUiStatus(String(raw.status ?? 'UNHANDLED')),
+    status: toUiStatus(String(raw.status ?? "UNHANDLED")),
     source: optionalString(raw.source),
     consoleLogs,
     networkLogs,
@@ -445,20 +474,20 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
     userAgent: optionalString(raw.userAgent),
     isAnonymous,
     userId,
-    reporterName: isAnonymous ? 'Anonymous' : userName,
+    reporterName: isAnonymous ? "Anonymous" : userName,
     reporterEmail: userEmail,
     reporterRole: null,
     user: { id: userId, name: userName, email: userEmail, role: null },
     userName,
     userEmail,
     createdAt:
-      typeof raw.createdAt === 'string'
+      typeof raw.createdAt === "string"
         ? raw.createdAt
         : raw.createdAt instanceof Date
           ? raw.createdAt.toISOString()
-          : '',
+          : "",
     updatedAt:
-      typeof raw.updatedAt === 'string'
+      typeof raw.updatedAt === "string"
         ? raw.updatedAt
         : raw.updatedAt instanceof Date
           ? raw.updatedAt.toISOString()

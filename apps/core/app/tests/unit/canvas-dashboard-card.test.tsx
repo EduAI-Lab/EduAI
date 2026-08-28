@@ -43,9 +43,7 @@ describe("CanvasDashboardCard", () => {
       "href",
       "/settings",
     );
-    expect(
-      screen.queryByRole("button", { name: "Fetch from Canvas" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fetch from Canvas" })).not.toBeInTheDocument();
   });
 
   it("shows Fetch from Canvas button when connected", async () => {
@@ -64,9 +62,7 @@ describe("CanvasDashboardCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fetch from Canvas" }));
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Fetch from Canvas" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Fetch from Canvas" })).toBeInTheDocument();
     });
   });
 

@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Client abort / stop-button support for /api/chat (#267).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -29,6 +35,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -46,7 +54,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -76,14 +87,14 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
 }));
 
-import { streamText } from "ai";
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
@@ -92,7 +103,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object, signal?: AbortSignal) {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -105,7 +116,7 @@ function makeRequest(body: object, signal?: AbortSignal) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -156,16 +167,14 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...(args.data ?? {}),
-    })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
@@ -208,4 +217,70 @@ describe("Chat API client abort (#267)", () => {
 
     expect(res.status).toBe(499);
   });
+
+  it("normalizes non-admin stream startup failures", async () => {
+    vi.mocked(streamText).mockImplementation(() => {
+      throw providerApiError(503, "15");
+    });
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("15");
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("normalizes non-streaming provider result failures", async () => {
+    const providerError = providerApiError(503, "7");
+    vi.mocked(streamText).mockReturnValue({
+      consumeStream: vi.fn().mockRejectedValue(providerError),
+      text: Promise.resolve(""),
+      usage: Promise.resolve(undefined),
+      finishReason: Promise.resolve("error"),
+      sources: Promise.resolve([]),
+      reasoning: Promise.resolve(undefined),
+      response: Promise.resolve(undefined),
+    } as never);
+
+    const res = await action(makeRequest(baseBody({ streaming: false })));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("7");
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("rejects a missing cloud-provider configuration before provider work", async () => {
+    const res = await action(makeRequest(baseBody({ model: "openai:gpt-4o", apiKeys: {} })));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+  });
 });
+
+function providerApiError(statusCode: number, retryAfter: string) {
+  return new APICallError({
+    message: "provider failed with sk-do-not-leak",
+    url: "https://provider.test/v1/chat",
+    requestBodyValues: { apiKey: "sk-do-not-leak" },
+    statusCode,
+    responseHeaders: { "retry-after": retryAfter },
+    responseBody: "private provider response",
+    isRetryable: true,
+  });
+}

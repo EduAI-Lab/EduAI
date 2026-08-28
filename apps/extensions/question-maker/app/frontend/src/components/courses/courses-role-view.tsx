@@ -1,8 +1,8 @@
-import { PageHeading } from '@eduai/ui';
-import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
+import { PageHeading } from "@eduai/ui";
+import { CoursesGrid, type CoursesGridProps } from "./CoursesGrid";
 
-type CoursesRoleViewProps = Omit<CoursesGridProps, 'emptyHint' | 'showDepartment'> & {
-  role: 'admin' | 'instructor';
+type CoursesRoleViewProps = Omit<CoursesGridProps, "emptyHint" | "showDepartment"> & {
+  role: "admin" | "instructor";
 };
 
 type RoleConfig = {
@@ -12,20 +12,24 @@ type RoleConfig = {
   showDepartment?: boolean;
 };
 
-const ROLE_CONFIG: Record<'admin' | 'instructor', RoleConfig> = {
+const ROLE_CONFIG = {
   admin: {
-    heading: 'Courses',
-    subheading: 'Every course you have access to appears here. Open a course to manage its question bank.',
-    emptyHint: 'No courses linked yet. Add a course to start authoring.',
+    heading: "Courses",
+    subheading:
+      "Every course you have access to appears here. Open a course to manage its question bank.",
+    emptyHint: "No courses linked yet. Add a course to start authoring.",
     showDepartment: true,
   },
   instructor: {
-    heading: 'Courses',
+    heading: "Courses",
     subheading:
-      'Select a course to manage its question bank and assessments. Shared courses are ones you co-teach via enrollment.',
-    emptyHint: 'No courses yet. Add a course from your profile to get started.',
+      "Select a course to manage its question bank and assessments. Shared courses are ones you co-teach via enrollment.",
+    emptyHint: "No courses yet. Add a course from your profile to get started.",
+    // Spelled out rather than left absent: both arms answer the same questions,
+    // so a reader does not have to know which keys each one happens to carry.
+    showDepartment: false,
   },
-};
+} satisfies Record<"admin" | "instructor", RoleConfig>;
 
 /**
  * Shared admin/instructor course selection view, driven by a small role
@@ -38,11 +42,7 @@ export function CoursesRoleView({ role, ...props }: CoursesRoleViewProps) {
   return (
     <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       <PageHeading heading={config.heading} subheading={config.subheading} />
-      <CoursesGrid
-        {...props}
-        showDepartment={config.showDepartment}
-        emptyHint={config.emptyHint}
-      />
+      <CoursesGrid {...props} showDepartment={config.showDepartment} emptyHint={config.emptyHint} />
     </div>
   );
 }

@@ -37,12 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@eduai/ui";
-import {
-  PageTabs,
-  PageTabsList,
-  PageTabsTrigger,
-  PageTabsContent,
-} from "@eduai/ui";
+import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
 import { resolvePaletteAccent } from "@eduai/ui";
@@ -68,13 +63,9 @@ import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
-import { canManageTopics, canManageInstructors, canManageStudents, courseChatViewPolicyKey, manageEnrollmentsPolicyKey } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
-import {
-  PolicyTooltip,
-  DisabledTooltip,
-  usePolicyGate,
-} from "~/components/policy/policy-gate";
+import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
+import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 
 interface StaffUser {
   id: string;
@@ -82,8 +73,13 @@ interface StaffUser {
   email: string;
 }
 
+export type CourseDetailManagerCourse = CourseDetail & {
+  /** Staff course loaders always include the persisted, non-null toggle. */
+  courseScopeGuardrailEnabled: boolean;
+};
+
 interface Props {
-  course: CourseDetail;
+  course: CourseDetailManagerCourse;
   access: CourseAccess;
   topics: CourseTopic[];
   enrollments: CourseEnrollment[];
@@ -123,10 +119,8 @@ interface Props {
 
 function fileTypeColor(mime: string): string {
   if (mime.includes("pdf")) return "var(--color-file-pdf)";
-  if (mime.includes("pptx") || mime.includes("presentation"))
-    return "var(--color-file-slides)";
-  if (mime.includes("docx") || mime.includes("word"))
-    return "var(--color-file-doc)";
+  if (mime.includes("pptx") || mime.includes("presentation")) return "var(--color-file-slides)";
+  if (mime.includes("docx") || mime.includes("word")) return "var(--color-file-doc)";
   return "var(--color-file-generic)";
 }
 
@@ -173,6 +167,13 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
+
+/** The body of `PATCH /api/courses/:id/rag-settings`. */
+type RagSettingsPatch = {
+  courseScopeGuardrailEnabled: boolean;
+  ragTopK: number | null;
+  ragSimilarityThreshold: number | null;
+};
 
 export function CourseDetailManagerView({
   course,
@@ -234,6 +235,9 @@ export function CourseDetailManagerView({
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
   );
+  const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] = useState(
+    course.courseScopeGuardrailEnabled,
+  );
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -252,25 +256,17 @@ export function CourseDetailManagerView({
   }, [materialsSuccess]);
 
   const { isEnabled } = usePolicyGate();
-  const canManage = canManageTopics(access, isEnabled("tas.canManageTopics"));
-  // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
-  // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates.
-  const canAssignInstructor = canManageInstructors(access);
-  // §807: resolve each policy-gated tab to one of show-enabled / show-greyed /
-  // hide. `'always'` → the role qualifies regardless of any flag (admin/unit);
-  // `'never'` → the role can never access it (hide the tab); a PolicyKey → the
-  // role qualifies but the flag decides enabled vs greyed-with-tooltip.
-  const staffGate = manageEnrollmentsPolicyKey(access);
-  const showStaffTab = staffGate !== "never";
-  const canManageStaff =
-    staffGate === "always" || (staffGate !== "never" && isEnabled(staffGate));
-  const chatGate = courseChatViewPolicyKey(access);
-  const showChatTab = chatGate !== "never";
-  const canViewChats =
-    chatGate === "always" || (chatGate !== "never" && isEnabled(chatGate));
-  const canManageStudentEnrollments = canManageStudents(access);
-  const canManageRagSettings = access === "admin" || access === "instructor";
+  const {
+    canManage,
+    canAssignInstructor,
+    showStaffTab,
+    canManageStaff,
+    showChatTab,
+    canViewChats,
+    canManageStudentEnrollments,
+    canManageRagSettings,
+    canDeleteMaterial: canDeleteMaterialForUploader,
+  } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
   // Server already pages active STUDENT rows (#1042 review); keep the client
@@ -279,34 +275,14 @@ export function CourseDetailManagerView({
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
 
-  // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
-  // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
-  // TAs can delete only their own uploads (uploadedBy === currentUserId).
-  const canDeleteMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    // TA own-only: check if this is their upload.
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canDeleteMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
   // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
-  const canRenameMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canRenameMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
-  const availableInstructors = instructors.filter(
-    (p) => p.id !== course.instructorId,
-  );
+  const availableInstructors = instructors.filter((p) => p.id !== course.instructorId);
 
   const handleTopicCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,9 +298,7 @@ export function CourseDetailManagerView({
     try {
       await onAssignInstructor(selectedInstructorId);
       setStaffSuccess(
-        course.instructor
-          ? "Instructor replaced successfully"
-          : "Instructor assigned successfully",
+        course.instructor ? "Instructor replaced successfully" : "Instructor assigned successfully",
       );
       setSelectedInstructorId("");
     } catch {
@@ -349,14 +323,11 @@ export function CourseDetailManagerView({
     setAddingTAs(false);
     setSelectedTAIds([]);
     if (failed.length === 0) {
-      setStaffSuccess(
-        `${ids.length} TA${ids.length > 1 ? "s" : ""} added successfully`,
-      );
+      setStaffSuccess(`${ids.length} TA${ids.length > 1 ? "s" : ""} added successfully`);
     } else {
       setStaffError(`${failed.length} of ${ids.length} TAs failed to add`);
     }
   };
-
 
   const handleRemoveTA = async (userId: string) => {
     setStaffError(null);
@@ -389,9 +360,7 @@ export function CourseDetailManagerView({
         `${ids.length} student${ids.length > 1 ? "s" : ""} enrolled successfully`,
       );
     } else {
-      setEnrollmentActionError(
-        `${failed.length} of ${ids.length} students failed to enroll`,
-      );
+      setEnrollmentActionError(`${failed.length} of ${ids.length} students failed to enroll`);
     }
   };
 
@@ -432,14 +401,11 @@ export function CourseDetailManagerView({
     setRenamingMaterial(true);
     setRenameError(null);
     try {
-      const res = await fetch(
-        `/api/courses/${courseId}/materials/${renameMaterialId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title }),
-        },
-      );
+      const res = await fetch(`/api/courses/${courseId}/materials/${renameMaterialId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error ?? "Failed to rename material");
@@ -487,14 +453,11 @@ export function CourseDetailManagerView({
     setSavingVisibility(true);
     setVisibilityError(null);
     try {
-      const res = await fetch(
-        `/api/courses/${courseId}/materials/${visibilityMaterialId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ visibleToStudents: visibilityVisible, availableAt }),
-        },
-      );
+      const res = await fetch(`/api/courses/${courseId}/materials/${visibilityMaterialId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibleToStudents: visibilityVisible, availableAt }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error ?? "Failed to update visibility");
@@ -515,10 +478,12 @@ export function CourseDetailManagerView({
     setRagSaving(true);
     setRagSaveMsg(null);
     try {
-      const payload: Record<string, number | null> = {
+      // `null` on either tuning field means "use the deployment default", so
+      // both are always sent rather than omitted when blank.
+      const payload: RagSettingsPatch = {
+        courseScopeGuardrailEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
-        ragSimilarityThreshold:
-          ragThreshold === "" ? null : parseFloat(ragThreshold),
+        ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),
       };
       const res = await fetch(`/api/courses/${courseId}/rag-settings`, {
         method: "PATCH",
@@ -539,9 +504,7 @@ export function CourseDetailManagerView({
   };
 
   // B2: top-right hero badges
-  const topRightBadges: string[] = [
-    ...(course.isActive ? ["Active"] : [])
-  ];
+  const topRightBadges: string[] = course.isActive ? ["Active"] : [];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
   // `enrollmentsTotal` is the server-side active-STUDENT count across all
   // pages; only the loaded pages are actually in `studentEnrollments`
@@ -597,10 +560,7 @@ export function CourseDetailManagerView({
                 Choose the AI model used to search this course's materials.
               </DialogDescription>
             </DialogHeader>
-            <CourseEmbeddingSettings
-              courseId={courseId}
-              onSettingsSaved={onMaterialsRefresh}
-            />
+            <CourseEmbeddingSettings courseId={courseId} onSettingsSaved={onMaterialsRefresh} />
           </DialogContent>
         </Dialog>
       )}
@@ -616,9 +576,8 @@ export function CourseDetailManagerView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete material?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the file and its search data from the course. Deletes
-              are not propagated to Canvas, and re-uploading the same file
-              restores it.
+              This removes the file and its search data from the course. Deletes are not propagated
+              to Canvas, and re-uploading the same file restores it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -651,9 +610,7 @@ export function CourseDetailManagerView({
               <IconPencil className="h-4 w-4" />
               Rename material
             </DialogTitle>
-            <DialogDescription>
-              Change the display name of this course material.
-            </DialogDescription>
+            <DialogDescription>Change the display name of this course material.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -669,9 +626,7 @@ export function CourseDetailManagerView({
               maxLength={255}
               autoFocus
             />
-            {renameError && (
-              <p className="text-[13px] text-destructive">{renameError}</p>
-            )}
+            {renameError && <p className="text-[13px] text-destructive">{renameError}</p>}
             <DialogFooter>
               <Button
                 type="button"
@@ -709,9 +664,8 @@ export function CourseDetailManagerView({
               Student visibility
             </DialogTitle>
             <DialogDescription>
-              Control whether students can see this material, and optionally
-              schedule when it becomes available. Instructors and TAs always see
-              every material.
+              Control whether students can see this material, and optionally schedule when it
+              becomes available. Instructors and TAs always see every material.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
@@ -731,8 +685,8 @@ export function CourseDetailManagerView({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="material-available-at">Available from (optional)</Label>
               <p className="text-[12px] text-muted-foreground">
-                Students won't see this material until the selected date and time.
-                Leave blank to make it available as soon as it's visible.
+                Students won't see this material until the selected date and time. Leave blank to
+                make it available as soon as it's visible.
               </p>
               <div className="flex items-center gap-2">
                 <Input
@@ -759,9 +713,7 @@ export function CourseDetailManagerView({
                 </p>
               )}
             </div>
-            {visibilityError && (
-              <p className="text-[13px] text-destructive">{visibilityError}</p>
-            )}
+            {visibilityError && <p className="text-[13px] text-destructive">{visibilityError}</p>}
           </div>
           <DialogFooter>
             <Button
@@ -804,9 +756,7 @@ export function CourseDetailManagerView({
               <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
             </DisabledTooltip>
           )}
-          {canManageRagSettings && (
-            <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
-          )}
+          {canManageRagSettings && <PageTabsTrigger value="settings">Settings</PageTabsTrigger>}
           {showChatTab && (
             <DisabledTooltip disabled={!canViewChats}>
               <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
@@ -820,7 +770,6 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-
           {/* Stat row */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
             <StatCard label="Students" value={studentCount} />
@@ -833,9 +782,7 @@ export function CourseDetailManagerView({
             {/* B3: Enriched info card */}
             <Card>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                <p className="text-[13px] font-semibold text-foreground">
-                  Course information
-                </p>
+                <p className="text-[13px] font-semibold text-foreground">Course information</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
@@ -847,18 +794,14 @@ export function CourseDetailManagerView({
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
                       Term
                     </p>
-                    <p className="text-sm text-foreground">
-                      {termLabel(course.term, course.year)}
-                    </p>
+                    <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
                   </div>
                   {course.department && (
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
                         Course Code
                       </p>
-                      <p className="text-sm text-foreground">
-                        {course.department}
-                      </p>
+                      <p className="text-sm text-foreground">{course.department}</p>
                     </div>
                   )}
                   <div>
@@ -882,22 +825,17 @@ export function CourseDetailManagerView({
                       Materials
                     </p>
                     <p className="text-sm text-foreground">
-                      {materials.length} file{materials.length !== 1 ? "s" : ""}{" "}
-                      · {readyMaterials} embedded
+                      {materials.length} file{materials.length !== 1 ? "s" : ""} · {readyMaterials}{" "}
+                      embedded
                     </p>
                   </div>
                 </div>
-                {courseHasAiConfig(
-                  course.responseStyleTags ?? [],
-                  course.aiInstructions,
-                ) && (
+                {courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) && (
                   <div className="pt-3 border-t border-border">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
                       AI response style
                     </p>
-                    <CourseResponseStyleSummary
-                      tagIds={course.responseStyleTags ?? []}
-                    />
+                    <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
                   </div>
                 )}
               </CardContent>
@@ -907,22 +845,14 @@ export function CourseDetailManagerView({
             {course.instructor ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-sm font-semibold text-foreground">
-                    Instructor
-                  </p>
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
-                    <Avatar
-                      name={course.instructor.name}
-                      size={40}
-                      radius={9}
-                    />
+                    <Avatar name={course.instructor.name} size={40} radius={9} />
                     <div>
                       <p className="text-sm font-semibold text-foreground">
                         {course.instructor.name}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {course.instructor.email}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
                     </div>
                   </div>
                   <div>
@@ -932,23 +862,16 @@ export function CourseDetailManagerView({
                     {tas.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {tas.map((ta) => (
-                          <div
-                            key={ta.id}
-                            className="flex items-center gap-1.5"
-                          >
+                          <div key={ta.id} className="flex items-center gap-1.5">
                             <Avatar name={ta.user.name} size={22} radius={5} />
-                            <span className="text-xs text-foreground">
-                              {ta.user.name}
-                            </span>
+                            <span className="text-xs text-foreground">{ta.user.name}</span>
                           </div>
                         ))}
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">
-                            {"No TAs assigned"}
-                          </span>
+                          <span className="text-xs text-muted-foreground">{"No TAs assigned"}</span>
                         </div>
                       </div>
                     )}
@@ -958,39 +881,28 @@ export function CourseDetailManagerView({
             ) : (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
-                  <p className="text-sm font-semibold text-foreground">
-                    Instructor
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    No professor assigned
-                  </p>
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
+                  <p className="text-xs text-muted-foreground">No professor assigned</p>
                   <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
-                      Teaching assistants
-                    </p>
-                    {tas.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {tas.map((ta) => (
-                          <div
-                            key={ta.id}
-                            className="flex items-center gap-1.5"
-                          >
-                            <Avatar name={ta.user.name} size={22} radius={5} />
-                            <span className="text-xs text-foreground">
-                              {ta.user.name}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">
-                            {"No TAs assigned"}
-                          </span>
+                    Teaching assistants
+                  </p>
+                  {tas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tas.map((ta) => (
+                        <div key={ta.id} className="flex items-center gap-1.5">
+                          <Avatar name={ta.user.name} size={22} radius={5} />
+                          <span className="text-xs text-foreground">{ta.user.name}</span>
                         </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">{"No TAs assigned"}</span>
                       </div>
-                    )}
-                  </CardContent>
+                    </div>
+                  )}
+                </CardContent>
               </Card>
             )}
           </div>
@@ -1003,39 +915,28 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
-            items={materials.map(
-              (m): MaterialListItem => ({
-                id: m.id,
-                name: m.title,
-                status: m.status,
-                mimeType: m.mimeType,
-                meta: (
-                  <>
-                    {formatSize(m.fileSize)} ·{" "}
-                    {new Date(m.createdAt).toLocaleDateString()}
-                  </>
-                ),
-              }),
-            )}
+            items={materials.map((m): MaterialListItem => ({
+              id: m.id,
+              name: m.title,
+              status: m.status,
+              mimeType: m.mimeType,
+              meta: (
+                <>
+                  {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                </>
+              ),
+            }))}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
             headerActions={
               <>
                 {showCanvasMaterialSync && courseId && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCanvasSyncOpen(true)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setCanvasSyncOpen(true)}>
                     <IconDownload className="h-4 w-4 mr-1.5" />
                     Sync from Canvas
                   </Button>
                 )}
                 {courseId && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEmbeddingOpen(true)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setEmbeddingOpen(true)}>
                     <IconSettings className="h-4 w-4 mr-1.5" />
                     Course search settings
                   </Button>
@@ -1200,8 +1101,7 @@ export function CourseDetailManagerView({
                 Enrolled users
               </CardTitle>
               <CardDescription>
-                Manage student enrollments here. Instructor and TA assignments
-                are on the Staff tab.
+                Manage student enrollments here. Instructor and TA assignments are on the Staff tab.
               </CardDescription>
             </CardHeader>
 
@@ -1309,9 +1209,7 @@ export function CourseDetailManagerView({
                         {enrollingStudent
                           ? "Enrolling…"
                           : `Enroll${
-                              selectedStudentIds.length > 0
-                                ? ` ${selectedStudentIds.length}`
-                                : ""
+                              selectedStudentIds.length > 0 ? ` ${selectedStudentIds.length}` : ""
                             } student${selectedStudentIds.length !== 1 ? "s" : ""}`}
                       </Button>
                     </div>
@@ -1337,38 +1235,65 @@ export function CourseDetailManagerView({
                 </CardTitle>
               </CardHeader>
 
-              {staffError && (
-                <p className="text-sm text-destructive">{staffError}</p>
-              )}
-              {staffSuccess && (
-                <p className="text-sm text-green-600">{staffSuccess}</p>
-              )}
+              {staffError && <p className="text-sm text-destructive">{staffError}</p>}
+              {staffSuccess && <p className="text-sm text-green-600">{staffSuccess}</p>}
 
               {/* Instructor assignment — ADMIN/UNIT_ADMIN only */}
               {canAssignInstructor && (
-              <div className="flex flex-col gap-3">
-                <p className="text-sm font-medium">Instructor</p>
-                {course.instructor ? (
-                  <>
-                    <Card>
-                      <CardContent className="flex items-center justify-between py-3">
-                        <div>
-                          <span className="text-sm font-medium">
-                            {course.instructor.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {course.instructor.email}
-                          </span>
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm font-medium">Instructor</p>
+                  {course.instructor ? (
+                    <>
+                      <Card>
+                        <CardContent className="flex items-center justify-between py-3">
+                          <div>
+                            <span className="text-sm font-medium">{course.instructor.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {course.instructor.email}
+                            </span>
+                          </div>
+                          <Badge>Current</Badge>
+                        </CardContent>
+                      </Card>
+                      {availableInstructors.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            Selecting a new instructor will replace the current one.
+                          </p>
+                          <div className="flex gap-2">
+                            <Combobox
+                              className="flex-1"
+                              options={availableInstructors.map((p) => ({
+                                value: p.id,
+                                label: p.name,
+                                description: p.email,
+                              }))}
+                              value={selectedInstructorId || null}
+                              onValueChange={(v) => setSelectedInstructorId(v ?? "")}
+                              placeholder="Select replacement instructor"
+                              searchPlaceholder="Search by name or email"
+                              emptyText="No instructors found"
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={handleAssignInstructor}
+                              disabled={!selectedInstructorId}
+                            >
+                              <IconArrowsExchange className="w-4 h-4 mr-1" />
+                              Replace
+                            </Button>
+                          </div>
                         </div>
-                        <Badge>Current</Badge>
-                      </CardContent>
-                    </Card>
-                    {availableInstructors.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <p className="text-xs text-muted-foreground">
-                          Selecting a new instructor will replace the current
-                          one.
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No other instructors available.
                         </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">No instructor assigned yet.</p>
+                      {availableInstructors.length > 0 ? (
                         <div className="flex gap-2">
                           <Combobox
                             className="flex-1"
@@ -1379,61 +1304,22 @@ export function CourseDetailManagerView({
                             }))}
                             value={selectedInstructorId || null}
                             onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                            placeholder="Select replacement instructor"
+                            placeholder="Select an instructor to assign"
                             searchPlaceholder="Search by name or email"
                             emptyText="No instructors found"
                           />
-                          <Button
-                            variant="outline"
-                            onClick={handleAssignInstructor}
-                            disabled={!selectedInstructorId}
-                          >
-                            <IconArrowsExchange className="w-4 h-4 mr-1" />
-                            Replace
+                          <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
+                            Assign
                           </Button>
                         </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No other instructors available.
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="text-xs text-muted-foreground">
-                      No instructor assigned yet.
-                    </p>
-                    {availableInstructors.length > 0 ? (
-                      <div className="flex gap-2">
-                        <Combobox
-                          className="flex-1"
-                          options={availableInstructors.map((p) => ({
-                            value: p.id,
-                            label: p.name,
-                            description: p.email,
-                          }))}
-                          value={selectedInstructorId || null}
-                          onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                          placeholder="Select an instructor to assign"
-                          searchPlaceholder="Search by name or email"
-                          emptyText="No instructors found"
-                        />
-                        <Button
-                          onClick={handleAssignInstructor}
-                          disabled={!selectedInstructorId}
-                        >
-                          Assign
-                        </Button>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No instructors available to assign.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No instructors available to assign.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
 
               {/* TAs */}
@@ -1451,9 +1337,7 @@ export function CourseDetailManagerView({
                       <Card key={ta.id}>
                         <CardContent className="flex items-center justify-between py-3">
                           <div>
-                            <span className="text-sm font-medium">
-                              {ta.user.name}
-                            </span>
+                            <span className="text-sm font-medium">{ta.user.name}</span>
                             <span className="text-xs text-muted-foreground ml-2">
                               {ta.user.email}
                             </span>
@@ -1496,9 +1380,7 @@ export function CourseDetailManagerView({
                     {addingTAs
                       ? "Adding…"
                       : `Add ${
-                          selectedTAIds.length > 0
-                            ? `${selectedTAIds.length} `
-                            : ""
+                          selectedTAIds.length > 0 ? `${selectedTAIds.length} ` : ""
                         }TA${selectedTAIds.length !== 1 ? "s" : ""}`}
                   </Button>
                 </div>
@@ -1530,18 +1412,33 @@ export function CourseDetailManagerView({
                   Search Tuning
                 </CardTitle>
                 <CardDescription>
-                  Override how course chat searches this course's materials by
-                  default. Leave a field blank to use the platform default.
+                  Override how course chat searches this course's materials by default. Leave a
+                  field blank to use the platform default.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 max-w-sm">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="course-scope-guardrail">
+                        Restrict Course Chat to this course
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        When enabled, clearly off-topic student requests are redirected. This is off
+                        by default.
+                      </p>
+                    </div>
+                    <Switch
+                      id="course-scope-guardrail"
+                      checked={courseScopeGuardrailEnabled}
+                      onCheckedChange={setCourseScopeGuardrailEnabled}
+                      aria-label="Restrict Course Chat to this course"
+                    />
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="ragTopK">
                       Results per question{" "}
-                      <span className="text-muted-foreground text-xs">
-                        (default: 4)
-                      </span>
+                      <span className="text-muted-foreground text-xs">(default: 4)</span>
                     </Label>
                     <Input
                       id="ragTopK"
@@ -1553,17 +1450,15 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagTopK(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Maximum number of material excerpts course chat can use to
-                      answer each question (1–20).
+                      Maximum number of material excerpts course chat can use to answer each
+                      question (1–20).
                     </p>
                   </div>
 
                   <div className="grid gap-2">
                     <Label htmlFor="ragThreshold">
                       Minimum match relevance{" "}
-                      <span className="text-muted-foreground text-xs">
-                        (default: 0.5)
-                      </span>
+                      <span className="text-muted-foreground text-xs">(default: 0.5)</span>
                     </Label>
                     <Input
                       id="ragThreshold"
@@ -1576,8 +1471,8 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagThreshold(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Minimum relevance score for a match (0–1). Higher values
-                      return fewer but more relevant results.
+                      Minimum relevance score for a match (0–1). Higher values return fewer but more
+                      relevant results.
                     </p>
                   </div>
 
@@ -1586,9 +1481,7 @@ export function CourseDetailManagerView({
                       {ragSaving ? "Saving…" : "Save settings"}
                     </Button>
                     {ragSaveMsg && (
-                      <span className="text-sm text-muted-foreground">
-                        {ragSaveMsg}
-                      </span>
+                      <span className="text-sm text-muted-foreground">{ragSaveMsg}</span>
                     )}
                   </div>
                 </div>

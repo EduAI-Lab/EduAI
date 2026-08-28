@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Route-level coverage for admin chat 16k context budgeting (#1008 review).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -24,12 +30,55 @@ vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn(),
 }));
 
-const { ADMIN_TOOL_COUNT, adminTools } = vi.hoisted(() => {
-  const ADMIN_TOOL_COUNT = 17;
-  const adminTools = Object.fromEntries(
-    Array.from({ length: ADMIN_TOOL_COUNT }, (_, i) => [`adminTool${i}`, { description: `t${i}` }]),
-  );
-  return { ADMIN_TOOL_COUNT, adminTools };
+// #1665 review: this suite's `createChatTools` mock must return the same
+// tool *names* the real admin registry does — the route's small-window
+// trimming (`pickCoreAdminChatTools`) filters by name, so a mock with
+// synthetic `adminTool0..N` names would look like an empty registry post-trim
+// and silently stop exercising the budgeting math this suite covers.
+// `CORE_TOOL_COUNT` mirrors ADMIN_CORE_TOOL_NAMES's length; `EXTRA_TOOL_COUNT`
+// simulates the rest of the 63-tool full registry that a 16k window must NOT
+// receive. See create-admin-chat-tools.test.ts for the real registry's shape
+// and chat-admin-registry-budget.test.ts for the real-registry token math.
+const { coreToolNames, EXTRA_TOOL_COUNT, ADMIN_TOOL_COUNT, adminTools } = vi.hoisted(() => {
+  // Mirrors ADMIN_CORE_TOOL_NAMES in create-admin-chat-tools.ts.
+  const hoistedCoreToolNames = [
+    "listCourses",
+    "getCourse",
+    "listCourseEnrollments",
+    "listCourseTopics",
+    "getCourseTopic",
+    "searchCourseMaterials",
+    "listUsers",
+    "listBugReports",
+    "createUser",
+    "updateUser",
+    "deleteUser",
+    "createCourseEnrollment",
+    "updateCourseEnrollment",
+    "deactivateCourseEnrollment",
+    "createCourseTopic",
+    "updateCourseTopic",
+    "deleteCourseTopic",
+    "updateBugReportStatus",
+  ];
+  const hoistedExtraToolCount = 45; // 63 (full registry) - 18 (core)
+  const hoistedAdminTools = {
+    ...Object.fromEntries(hoistedCoreToolNames.map((name) => [name, { description: name }])),
+    ...Object.fromEntries(
+      Array.from({ length: hoistedExtraToolCount }, (_, i) => [
+        `extraAdminTool${i}`,
+        { description: `extra${i}` },
+      ]),
+    ),
+  };
+  // The route trims to the core set on this suite's 16k window, so that's
+  // what ends up on streamText's `tools`.
+  return {
+    coreToolNames: hoistedCoreToolNames,
+    EXTRA_TOOL_COUNT: hoistedExtraToolCount,
+    ADMIN_TOOL_COUNT: hoistedCoreToolNames.length,
+    adminTools: hoistedAdminTools,
+  };
 });
 
 vi.mock("~/lib/agent-tools", async (importOriginal) => {
@@ -37,10 +86,12 @@ vi.mock("~/lib/agent-tools", async (importOriginal) => {
   return {
     ...actual,
     createChatTools: vi.fn().mockReturnValue(adminTools),
-    buildAdminSystemPrompt: vi.fn().mockReturnValue(
-      "You are EduAI Admin Assistant.\n".repeat(40) +
-        "Write safety rules require confirmed:true.\n".repeat(20),
-    ),
+    buildAdminSystemPrompt: vi
+      .fn()
+      .mockReturnValue(
+        "You are EduAI Admin Assistant.\n".repeat(40) +
+          "Write safety rules require confirmed:true.\n".repeat(20),
+      ),
   };
 });
 
@@ -97,7 +148,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -105,7 +156,14 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
@@ -117,7 +175,7 @@ import {
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const CONTEXT_WINDOW = 16_384;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -129,7 +187,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "List users named alice@ubc.ca" }],
     model: "vllm:qwen2.5-32b-instruct",
@@ -140,16 +198,18 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): {
+/**
+ * The slice of the `streamText` config this test reads back. `tools` is keyed by
+ * tool name; only which names are present is ever asserted.
+ */
+type StreamConfig = {
   maxTokens?: number;
   maxSteps?: number;
-  tools?: Record<string, unknown>;
-} {
-  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as {
-    maxTokens?: number;
-    maxSteps?: number;
-    tools?: Record<string, unknown>;
-  };
+  tools?: Record<string, { description?: string }>;
+};
+
+function lastStreamConfig(): StreamConfig {
+  return (vi.mocked(streamText).mock.calls.at(-1)?.[0] ?? {}) as StreamConfig;
 }
 
 const originalVllm = process.env.VLLM_BASE_URL;
@@ -157,6 +217,7 @@ const originalVllm = process.env.VLLM_BASE_URL;
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "admin-1", role: "ADMIN" },
@@ -200,6 +261,13 @@ describe("POST /api/chat — admin 16k context budget (#1008)", () => {
 
     const config = lastStreamConfig();
     expect(Object.keys(config.tools ?? {})).toHaveLength(ADMIN_TOOL_COUNT);
+    // #1665 review: on a 16k window the route must send only the core set —
+    // none of the simulated "rest of the 63-tool registry" extras — or a
+    // real 63-tool registry blows the budget below and every admin request
+    // fails ADMIN_CONTEXT_TOO_LARGE (see chat-admin-registry-budget.test.ts).
+    expect(Object.keys(config.tools ?? {}).sort()).toEqual([...coreToolNames].sort());
+    expect(Object.keys(config.tools ?? {})).not.toContain("extraAdminTool0");
+    expect(EXTRA_TOOL_COUNT).toBeGreaterThan(0);
     // 16k admin path caps desired completion at 512 before further headroom shrink.
     expect(config.maxTokens).toBeLessThanOrEqual(512);
     expect(config.maxTokens).toBeGreaterThanOrEqual(256);

@@ -7,7 +7,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/policy.server", () => ({
@@ -28,18 +28,19 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { action } from "~/routes/api/courses.id.response-style";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "c1" },
     access: { level: "instructor", rank: 2 },
   } as never);
@@ -51,7 +52,7 @@ beforeEach(() => {
 });
 
 function patchArgs(
-  body: unknown,
+  body: RouteRequestBody,
   opts: { role?: string; courseId?: string | undefined } = {},
 ) {
   const role = opts.role ?? "INSTRUCTOR";
@@ -97,40 +98,34 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("returns 403 for a student (rank < 2)", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "student", rank: 1 },
     } as never);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }));
     expect(res.status).toBe(403);
     expect(prisma.course.update).not.toHaveBeenCalled();
   });
 
   it("returns 403 for a TA when tas.canSetAiInstructions is off", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }));
     expect(res.status).toBe(403);
     expect(getPolicy).toHaveBeenCalledWith("tas.canSetAiInstructions");
     expect(prisma.course.update).not.toHaveBeenCalled();
   });
 
   it("allows a TA when tas.canSetAiInstructions is on", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await action(
-      patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }));
     expect(res.status).toBe(200);
     expect(prisma.course.update).toHaveBeenCalledWith({
       where: { id: "c1" },
@@ -150,7 +145,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("returns 404 when the course is missing", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: null,
       access: null,
     } as never);

@@ -6,13 +6,30 @@
  * accent-fill hero for the top draft plus a compact accent-railed list for the
  * rest. Derived entirely from the real `isPublished` flag on
  * `api.listCourses()` results — no fabrication.
+ *
+ * "Publish it" publishes. It used to be a label on a card whose only behaviour
+ * was to navigate to the course page — which carries no course-level publish
+ * control — so the panel promised an action it never performed. The write it
+ * now makes (`PATCH /api/courses/:id/publish`) proxies straight through to
+ * Core, the owner of course publish state; AI Tutor holds no publish flag of
+ * its own. Publishing a course is deliberately non-cascading, so the confirm
+ * says so: modules and lessons still have to be published individually.
+ *
+ * Each draft therefore carries two affordances, not one: publish it here, or
+ * open it first. They are separate controls so a click meant for one can never
+ * fire the other.
  */
-import { useNavigate } from 'react-router';
-import { IconCircleCheck, IconArrowRight, IconEyeOff } from '@tabler/icons-react';
-import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
-import type { Course } from '~/lib/types';
-import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
+import { useState } from "react";
+import { useNavigate, useRevalidator } from "react-router";
+import { toast } from "sonner";
+import { IconCircleCheck, IconArrowRight, IconEyeOff } from "@tabler/icons-react";
+import { Card, CardContent, ConfirmDialog, courseHeroBackgroundStyle } from "@eduai/ui";
+import api from "~/lib/api";
+import type { Course } from "~/lib/types";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { canPublishContent } from "~/lib/rbac/permissions";
+import { accentForCourse, courseCode, courseName } from "~/lib/course-display";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
 
 type NeedsAttentionPanelProps = {
   courses: Course[];
@@ -26,13 +43,46 @@ type NeedsAttentionPanelProps = {
   total?: number;
 };
 
-export function NeedsAttentionPanel({
-  courses,
-  coursesBaseHref,
-  total,
-}: NeedsAttentionPanelProps) {
+export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAttentionPanelProps) {
   const navigate = useNavigate();
-  const drafts = courses.filter((c) => !c.isPublished);
+  const revalidator = useRevalidator();
+  const { user } = useLocalUser();
+  const canPublish = canPublishContent(user);
+
+  const [pending, setPending] = useState<Course | null>(null);
+  const [publishingId, setPublishingId] = useState<number | null>(null);
+  /**
+   * Courses published from this panel, hidden immediately.
+   *
+   * The list comes from the route loader, and `revalidate()` is a round trip —
+   * without this the row a user just published sits there still labelled Draft
+   * until the refetch lands, which reads as "nothing happened".
+   */
+  const [publishedHere, setPublishedHere] = useState<Set<number>>(new Set());
+
+  const drafts = courses.filter((c) => !c.isPublished && !publishedHere.has(c.id));
+
+  const publish = async (course: Course) => {
+    setPublishingId(course.id);
+    try {
+      const updated = await api.publishCourse(course.id);
+      setPublishedHere((prev) => new Set(prev).add(course.id));
+      // #225 SEAM-04: the write reached Core but the read-back didn't, so the
+      // flag we just showed is our own optimism. Say so rather than claiming a
+      // confirmed publish.
+      toast.success(
+        updated?.corePublishStale
+          ? `Published ${courseCode(course)} — EduAI hasn't confirmed it back yet.`
+          : `${courseCode(course)} is now visible to students.`,
+      );
+      revalidator.revalidate();
+    } catch (error) {
+      console.error("Failed to publish course", error);
+      toast.error(`Could not publish ${courseCode(course)}. Try again.`);
+    } finally {
+      setPublishingId((current) => (current === course.id ? null : current));
+    }
+  };
 
   if (drafts.length === 0) {
     // "All caught up" is a strong claim to make from one bounded page — a draft
@@ -65,16 +115,17 @@ export function NeedsAttentionPanel({
   const accent = accentForCourse(primary);
   // Darkened accent for the CTA label so text-on-white clears AA contrast.
   const ctaTextColor = `color-mix(in oklch, ${accent} 72%, black)`;
+  const openCourse = (course: Course) => navigate(`${coursesBaseHref}/courses/${course.id}`);
 
   return (
     <div className="flex flex-col gap-3">
       {/* Solid accent-fill hero — the primary draft to publish, mirroring the
-          CourseHeroCard/ContinueLearning idiom so it reads as the top action. */}
-      <button
-        type="button"
-        onClick={() => navigate(`${coursesBaseHref}/courses/${primary.id}`)}
+          CourseHeroCard/ContinueLearning idiom so it reads as the top action.
+          A plain container, not a button: the publish CTA inside it is the real
+          control, and a button cannot legally nest inside another. */}
+      <div
         style={courseHeroBackgroundStyle(accent)}
-        className="group relative w-full cursor-pointer overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group relative w-full overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)]"
       >
         <div className="relative flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -82,7 +133,9 @@ export function NeedsAttentionPanel({
               <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-white/70">
                 {courseCode(primary)}
               </div>
-              <h3 className="text-lg font-semibold leading-snug text-white">{courseName(primary)}</h3>
+              <h3 className="text-lg font-semibold leading-snug text-white">
+                {courseName(primary)}
+              </h3>
             </div>
             <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
@@ -95,15 +148,28 @@ export function NeedsAttentionPanel({
             Not visible to students yet
           </p>
 
-          <span
-            style={{ color: ctaTextColor }}
-            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
+          {canPublish && (
+            <button
+              type="button"
+              onClick={() => setPending(primary)}
+              disabled={publishingId === primary.id}
+              style={{ color: ctaTextColor }}
+              className="mt-1 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {publishingId === primary.id ? "Publishing…" : `Publish ${courseCode(primary)}`}
+              <IconArrowRight size={16} aria-hidden="true" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => openCourse(primary)}
+            className="inline-flex cursor-pointer items-center justify-center gap-1 self-start rounded-[var(--radius-lg)] px-1 py-0.5 text-sm font-medium text-white/85 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
           >
-            Publish it
-            <IconArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
-          </span>
+            Open {courseCode(primary)} first
+          </button>
         </div>
-      </button>
+      </div>
 
       {others.length > 0 && (
         <Card>
@@ -111,23 +177,36 @@ export function NeedsAttentionPanel({
             {others.slice(0, 4).map((course) => {
               const otherAccent = accentForCourse(course);
               return (
-                <button
+                <div
                   key={course.id}
-                  type="button"
-                  onClick={() => navigate(`${coursesBaseHref}/courses/${course.id}`)}
-                  className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
+                  className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-b-0"
                 >
                   <span
                     className="h-9 w-1 flex-shrink-0 rounded-full"
                     style={{ background: otherAccent }}
                     aria-hidden="true"
                   />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">{courseCode(course)}</div>
+                  <button
+                    type="button"
+                    onClick={() => openCourse(course)}
+                    className="min-w-0 flex-1 cursor-pointer text-left transition-colors hover:opacity-80"
+                  >
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {courseCode(course)}
+                    </div>
                     <div className="truncate text-xs text-muted-foreground">{course.title}</div>
-                  </div>
-                  <span className="flex-shrink-0 text-xs font-medium text-primary-text">Publish it →</span>
-                </button>
+                  </button>
+                  {canPublish && (
+                    <button
+                      type="button"
+                      onClick={() => setPending(course)}
+                      disabled={publishingId === course.id}
+                      className="flex-shrink-0 cursor-pointer text-xs font-medium text-primary-text hover:underline disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {publishingId === course.id ? "Publishing…" : `Publish ${courseCode(course)}`}
+                    </button>
+                  )}
+                </div>
               );
             })}
           </CardContent>
@@ -138,6 +217,22 @@ export function NeedsAttentionPanel({
         shown={courses.length}
         total={total ?? courses.length}
         action="search your courses to find the rest"
+      />
+
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open) setPending(null);
+        }}
+        title={pending ? `Publish "${courseName(pending)}"?` : ""}
+        description="Students will be able to see this course. Its modules and lessons stay hidden until you publish them individually."
+        confirmLabel="Publish"
+        variant="default"
+        onConfirm={() => {
+          if (!pending) return;
+          void publish(pending);
+          setPending(null);
+        }}
       />
     </div>
   );

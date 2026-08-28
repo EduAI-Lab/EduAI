@@ -1,4 +1,4 @@
-import { QuestionDifficulty } from '../types/question';
+import { QuestionDifficulty } from "../types/question";
 
 export type VariantMetadataUpdateInput = {
   isDraft: boolean;
@@ -8,6 +8,15 @@ export type VariantMetadataUpdateInput = {
   editDifficulty: QuestionDifficulty;
 };
 
+/**
+ * The fields a metadata edit actually changed. Both are optional because the
+ * PUT carries only what moved — an empty object means "nothing to send".
+ */
+export type VariantMetadataUpdates = {
+  questionText?: string;
+  difficulty?: QuestionDifficulty;
+};
+
 /** Build variant PUT payload for metadata edit; empty when reviewed or nothing changed. */
 export function buildVariantMetadataUpdates({
   isDraft,
@@ -15,12 +24,12 @@ export function buildVariantMetadataUpdates({
   editQuestionText,
   currentDifficulty,
   editDifficulty,
-}: VariantMetadataUpdateInput): { questionText?: string; difficulty?: QuestionDifficulty } {
+}: VariantMetadataUpdateInput): VariantMetadataUpdates {
   if (!isDraft) {
     return {};
   }
 
-  const updates: { questionText?: string; difficulty?: QuestionDifficulty } = {};
+  const updates: VariantMetadataUpdates = {};
   const trimmedText = editQuestionText.trim();
   const trimmedCurrent = currentQuestionText.trim();
 

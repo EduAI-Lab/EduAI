@@ -136,17 +136,18 @@ export function parseKnnMinSimilarity(raw: string | undefined): number {
   return Math.max(0, Math.min(1, n));
 }
 
+/** A routing tier and how much the neighbors agreed on it (0..1). */
+export type TierVote = { tier: 1 | 2 | 3; confidence: number };
+
 /**
  * Weighted vote over top-k exemplar neighbors. Confidence = best similarity.
  */
-export function voteTierFromNeighbors(
-  neighbors: KnnNeighbor[],
-): { tier: 1 | 2 | 3; confidence: number } {
+export function voteTierFromNeighbors(neighbors: KnnNeighbor[]): TierVote {
   if (neighbors.length === 0) {
     return { tier: 2, confidence: 0 };
   }
 
-  const scores: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+  const scores = { 1: 0, 2: 0, 3: 0 } satisfies Record<1 | 2 | 3, number>;
   for (const n of neighbors) {
     scores[n.tier] += Math.max(0, n.similarity);
   }
@@ -175,9 +176,7 @@ export async function predictTierKnn(
   const minSimilarity =
     options?.minSimilarity ?? parseKnnMinSimilarity(process.env.ROUTING_KNN_MIN_SIM);
 
-  const exemplars = await loadCachedKnnExemplars(
-    options?.exemplarPath ?? defaultExemplarsPath(),
-  );
+  const exemplars = await loadCachedKnnExemplars(options?.exemplarPath ?? defaultExemplarsPath());
   const queryEmbedding = await generateEmbedding(prompt.trim());
 
   const ranked: KnnNeighbor[] = exemplars

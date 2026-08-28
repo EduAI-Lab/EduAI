@@ -2,10 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import type {
-  JobPayload,
-  QueuedJobPayload,
-} from "~/lib/queue/job-schema";
+import type { JobPayload, QueuedJobPayload } from "~/lib/queue/job-schema";
 
 const prismaMock = vi.hoisted(() => ({
   aiJob: {
@@ -19,6 +16,7 @@ const prismaMock = vi.hoisted(() => ({
 const queueAdd = vi.hoisted(() => vi.fn());
 const getQueueMock = vi.hoisted(() => vi.fn(() => ({ add: queueAdd })));
 const runCompletionMock = vi.hoisted(() => vi.fn());
+const persistAiInteractionTelemetryMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("@prisma/client", () => ({
@@ -27,8 +25,7 @@ vi.mock("@prisma/client", () => ({
   },
 }));
 vi.mock("~/lib/queue/queues.server", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("~/lib/queue/queues.server")>();
+  const original = await importOriginal<typeof import("~/lib/queue/queues.server")>();
   return {
     ...original,
     getQueue: getQueueMock,
@@ -37,9 +34,17 @@ vi.mock("~/lib/queue/queues.server", async (importOriginal) => {
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: runCompletionMock,
 }));
+vi.mock("~/lib/ai/routing/telemetry.server", () => ({
+  persistAiInteractionTelemetry: persistAiInteractionTelemetryMock,
+}));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn().mockResolvedValue(undefined),
+}));
+// Keep unit coverage for dormant queue internals; production entry points use
+// the real module and are asserted fail-closed in queue.pre-mvp-disabled.test.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
 }));
 
 import { enqueue } from "~/lib/queue/enqueue.server";
@@ -88,17 +93,16 @@ beforeEach(() => {
   prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.aiJob.delete.mockResolvedValue({});
   queueAdd.mockResolvedValue({ id: "bull_1" });
+  persistAiInteractionTelemetryMock.mockResolvedValue(undefined);
 });
 
 describe("AI-job dequeue worker", () => {
   it("uses the durable id when dequeue wins the bullJobId persistence race", async () => {
     let emittedPayload: QueuedJobPayload | undefined;
-    queueAdd.mockImplementation(
-      async (_name: string, data: QueuedJobPayload) => {
-        emittedPayload = data;
-        return { id: "bull_1" };
-      },
-    );
+    queueAdd.mockImplementation(async (_name: string, data: QueuedJobPayload) => {
+      emittedPayload = data;
+      return { id: "bull_1" };
+    });
 
     await expect(enqueue(payload)).resolves.toEqual({
       jobId: "aijob_1",
@@ -125,11 +129,7 @@ describe("AI-job dequeue worker", () => {
       fleetHost: "http://cmps03:8001",
     });
 
-    const result = await processAiJob(
-      bullJob(emittedPayload),
-      "ai-jobs-chat",
-      execute,
-    );
+    const result = await processAiJob(bullJob(emittedPayload), "ai-jobs-chat", execute);
 
     expect(execute).toHaveBeenCalledWith(payload);
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith({
@@ -170,16 +170,14 @@ describe("AI-job dequeue worker", () => {
   });
 
   it("falls back to the queue identity when the embedded row lost an idempotency race", async () => {
-    prismaMock.aiJob.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: "aijob_winner",
-        status: "PENDING",
-        startedAt: null,
-        userId: "user_1",
-        queueName: "ai-jobs-chat",
-        bullJobId: "dedupe-key",
-      });
+    prismaMock.aiJob.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "aijob_winner",
+      status: "PENDING",
+      startedAt: null,
+      userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: "dedupe-key",
+    });
     const execute = vi.fn().mockResolvedValue({
       kind: "question-generation",
       model: "vllm:qwen2.5-32b-instruct",
@@ -228,9 +226,9 @@ describe("AI-job dequeue worker", () => {
     prismaMock.aiJob.updateMany.mockResolvedValueOnce({ count: 0 });
     const execute = vi.fn();
 
-    await expect(
-      processAiJob(bullJob(), "ai-jobs-chat", execute),
-    ).rejects.toThrow("Could not claim AiJob aijob_1");
+    await expect(processAiJob(bullJob(), "ai-jobs-chat", execute)).rejects.toThrow(
+      "Could not claim AiJob aijob_1",
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -250,9 +248,10 @@ describe("AI-job dequeue worker", () => {
     });
     const execute = vi.fn();
 
-    await expect(
-      processAiJob(bullJob(), "ai-jobs-chat", execute),
-    ).resolves.toEqual({ skipped: true, reason: "cancelled" });
+    await expect(processAiJob(bullJob(), "ai-jobs-chat", execute)).resolves.toEqual({
+      skipped: true,
+      reason: "cancelled",
+    });
     expect(execute).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.updateMany).not.toHaveBeenCalled();
   });
@@ -326,11 +325,7 @@ describe("AI-job dequeue worker", () => {
     });
 
     await expect(
-      processAiJob(
-        bullJob(payload, { name: "wrong-kind" }),
-        "ai-jobs-chat",
-        vi.fn(),
-      ),
+      processAiJob(bullJob(payload, { name: "wrong-kind" }), "ai-jobs-chat", vi.fn()),
     ).rejects.toThrow('does not match payload kind "question-generation"');
   });
 });
@@ -375,6 +370,83 @@ describe("AI-job execution", () => {
         routingContext: { jobType: "background" },
         signal: expect.any(AbortSignal),
       }),
+    );
+  });
+
+  // Async Question Maker jobs (this seam) previously never wrote an
+  // AIInteraction row at all, so a completed job never showed up in the
+  // admin Servers tab's per-server/per-model totals — those totals only
+  // ever queried AIInteraction. This mirrors chat.ts's persistTurnTelemetry
+  // call so worker-executed completions become visible the same way.
+  it("persists AIInteraction telemetry for the fleet server that served the job", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: '[{"question":"What is binary search?"}]',
+        model: "vllm:qwen2.5-32b-instruct",
+        usage: { inputTokens: 12, outputTokens: 20 },
+        finishReason: "stop",
+      },
+      internal: {
+        fleetHost: "http://cmps03:8001",
+        fleetServerId: "cmps03",
+      },
+    });
+
+    await executeAiJobPayload(payload);
+
+    expect(persistAiInteractionTelemetryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user_1",
+        courseId: "course_1",
+        resolvedModelId: "vllm:qwen2.5-32b-instruct",
+        query: "Generate questions about binary search",
+        responseText: '[{"question":"What is binary search?"}]',
+        usage: { inputTokens: 12, outputTokens: 20 },
+        finishReason: "stop",
+        durationMs: expect.any(Number),
+        serverId: "cmps03",
+      }),
+    );
+  });
+
+  it("persists a null serverId when the completion was not fleet-routed", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: "[]",
+        model: "openai:gpt-4o",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        finishReason: "stop",
+      },
+      internal: { fleetHost: null, fleetServerId: null },
+    });
+
+    await executeAiJobPayload(payload);
+
+    expect(persistAiInteractionTelemetryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ serverId: null }),
+    );
+  });
+
+  it("does not let a telemetry write failure fail the job itself", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: "[]",
+        model: "vllm:qwen2.5-32b-instruct",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        finishReason: "stop",
+      },
+      internal: { fleetHost: "http://cmps03:8001", fleetServerId: "cmps03" },
+    });
+    persistAiInteractionTelemetryMock.mockRejectedValueOnce(new Error("db unavailable"));
+
+    await expect(executeAiJobPayload(payload)).resolves.toEqual(
+      expect.objectContaining({ kind: "question-generation" }),
     );
   });
 

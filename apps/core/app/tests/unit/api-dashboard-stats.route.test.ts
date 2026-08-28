@@ -119,7 +119,12 @@ describe("GET /api/dashboard/stats", () => {
 
     const res = await loader(makeArgs());
     const body = await res.json();
-    expect(body).toMatchObject({ chatCount: 0, chatCountWeek: 0, materialCount: 0, studentCount: 0 });
+    expect(body).toMatchObject({
+      chatCount: 0,
+      chatCountWeek: 0,
+      materialCount: 0,
+      studentCount: 0,
+    });
     expect(prisma.chat.count).not.toHaveBeenCalled();
   });
 
@@ -134,7 +139,12 @@ describe("GET /api/dashboard/stats", () => {
 
     const res = await loader(makeArgs());
     const body = await res.json();
-    expect(body).toMatchObject({ chatCount: 7, chatCountWeek: 2, materialCount: 4, studentCount: 11 });
+    expect(body).toMatchObject({
+      chatCount: 7,
+      chatCountWeek: 2,
+      materialCount: 4,
+      studentCount: 11,
+    });
   });
 
   it("scopes stats to the caller's own chats/enrollments for a STUDENT", async () => {

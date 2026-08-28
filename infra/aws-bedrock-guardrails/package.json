@@ -1,0 +1,28 @@
+{
+  "name": "aws-bedrock-guardrails",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Least-privilege IAM + CloudWatch tripwire + SNS topic for EduAI Bedrock overflow (#1619)",
+  "bin": {
+    "aws-bedrock-guardrails": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "synth": "cdk synth",
+    "test": "node --require ts-node/register --test lib/thresholds.test.ts",
+    "verify": "node scripts/verify-synth.mjs && npm test",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.211.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "aws-cdk": "^2.211.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}

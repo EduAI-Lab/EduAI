@@ -16,9 +16,9 @@
  * Related: `services/api.ts` (`Paginated<T>`), `services/courseService.ts`
  * (`getCoursesPage`).
  */
-import { useEffect } from 'react';
-import { Button, Pagination, PaginationContent, PaginationItem } from '@eduai/ui';
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { useEffect } from "react";
+import { Button, Pagination, PaginationContent, PaginationItem } from "@eduai/ui";
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 
 export type PaginationControlsProps = {
   /** 1-based current page. */

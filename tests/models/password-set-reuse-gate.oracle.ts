@@ -29,12 +29,12 @@ export type Verdict =
   | { outcome: "blocked-reuse" }
   | { outcome: "not-blocked" };
 
-const AUTH_PATH: Record<PasswordSetReuseGateRow["Path"], string> = {
+const AUTH_PATH = {
   "sign-up": "/sign-up/email",
   "change-password": "/change-password",
   "reset-password": "/reset-password",
   "set-password": "/set-password",
-};
+} satisfies Record<PasswordSetReuseGateRow["Path"], string>;
 
 export function authPathFor(row: PasswordSetReuseGateRow): string {
   return AUTH_PATH[row.Path];

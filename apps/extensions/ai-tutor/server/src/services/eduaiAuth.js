@@ -2,7 +2,7 @@
  * @file Auth bridge for EduAI API calls.
  *
  * AI Tutor forwards the user's Core session
- * cookie on every user-scoped EduAI API call. 
+ * cookie on every user-scoped EduAI API call.
  * This file provides the cookie extraction helper.
  */
 
@@ -11,5 +11,5 @@
  * EduAI API calls on behalf of the user.
  */
 export function getEduAiCookieForRequest(req) {
-  return req.headers.cookie ?? '';
+  return req.headers.cookie ?? "";
 }

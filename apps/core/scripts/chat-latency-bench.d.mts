@@ -1,4 +1,3 @@
-export function responseChatId(
-  response: Response,
-  json: unknown,
-): string | null;
+import type { JsonValue } from "@eduai/types";
+
+export function responseChatId(response: Response, json: JsonValue): string | null;

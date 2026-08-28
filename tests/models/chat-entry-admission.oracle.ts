@@ -60,9 +60,7 @@ function actingPlatformRole(row: ChatEntryAdmissionRow): "ADMIN" | "INSTRUCTOR" 
 }
 
 /** Course access level used by the §10 publish gate (null = no relationship). */
-function courseAccessLevel(
-  row: ChatEntryAdmissionRow,
-): "admin" | "instructor" | "student" | null {
+function courseAccessLevel(row: ChatEntryAdmissionRow): "admin" | "instructor" | "student" | null {
   if (row.Enrollment === "none") {
     if (isServiceKeyCaller(row) || row.Auth === "admin-api-key") {
       return "admin";

@@ -13,31 +13,33 @@
  * UTC calendar-day basis, regardless of server/browser timezone.
  */
 function toUtcDayStart(date: Date): number {
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
-export function groupCoursesByDate<T extends { startDate: string | Date; endDate?: string | Date | null }>(
-  courses: T[],
-  now: Date = new Date(),
-): { previous: T[]; current: T[]; upcoming: T[] } {
-  const previous: T[] = []
-  const current: T[] = []
-  const upcoming: T[] = []
+/** Courses split by where today falls relative to each one's run. */
+export type TermGroups<T> = { previous: T[]; current: T[]; upcoming: T[] };
 
-  const nowDay = toUtcDayStart(now)
+export function groupCoursesByDate<
+  T extends { startDate: string | Date; endDate?: string | Date | null },
+>(courses: T[], now: Date = new Date()): TermGroups<T> {
+  const previous: T[] = [];
+  const current: T[] = [];
+  const upcoming: T[] = [];
+
+  const nowDay = toUtcDayStart(now);
 
   for (const course of courses) {
-    const startDay = toUtcDayStart(new Date(course.startDate))
-    const endDay = course.endDate ? toUtcDayStart(new Date(course.endDate)) : null
+    const startDay = toUtcDayStart(new Date(course.startDate));
+    const endDay = course.endDate ? toUtcDayStart(new Date(course.endDate)) : null;
 
     if (nowDay < startDay) {
-      upcoming.push(course)
+      upcoming.push(course);
     } else if (endDay !== null && nowDay > endDay) {
-      previous.push(course)
+      previous.push(course);
     } else {
-      current.push(course)
+      current.push(course);
     }
   }
 
-  return { previous, current, upcoming }
+  return { previous, current, upcoming };
 }

@@ -1,6 +1,6 @@
-import { expect, type APIRequestContext } from '@playwright/test';
-import { CORE_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { createAdmin, createInstructor } from './auth';
+import { expect, type APIRequestContext } from "@playwright/test";
+import { CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
+import { createAdmin, createInstructor } from "./auth";
 
 const QM = QM_BACKEND_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
@@ -37,15 +37,15 @@ export async function importQmCourseForInstructor(
 function coreCourseForm(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E QM Course',
-    code: `${codeBase ?? 'QM-E2E'}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
+    name: "E2E QM Course",
+    code: `${codeBase ?? "QM-E2E"}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
     // September start — must agree with `term` above (August maps to S2 via
     // `termFromMonth`, the exact literal/startDate mismatch #1011 outlaws).
-    startDate: '2026-09-08',
-    department: 'COSC',
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -65,7 +65,7 @@ export async function createQmCourseForInstructor(
   const adminCtx = await playwright.request.newContext();
 
   try {
-    await createAdmin(adminCtx, { prefix: 'qm-course-admin' });
+    await createAdmin(adminCtx, { prefix: "qm-course-admin" });
     const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
 
     const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
@@ -74,7 +74,9 @@ export async function createQmCourseForInstructor(
     expect(coreRes.status()).toBe(201);
     const { id: coreCourseId } = await coreRes.json();
 
-    const qmRes = await instrCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
+    const qmRes = await instrCtx.post(`${QM}/api/course`, {
+      data: { coreCourseId },
+    });
     // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
     expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();
@@ -86,17 +88,9 @@ export async function createQmCourseForInstructor(
 }
 
 /**
- * Create a Core course (admin) taught by a fresh instructor, enroll
- * `studentCtx` as STUDENT, and publish it, then create the QM anchor for it
- * as the student via `POST /api/course {coreCourseId}`.
- *
- * Publishing is required here even though it's not for the instructor path:
- * Core's `buildCourseListFilter` (apps/core/app/lib/auth/course-access.server.ts)
- * only includes a STUDENT-enrollment course in the caller's scoped list when
- * `isPublished: true` (the INSTRUCTOR/TA enrollment branch has no such gate).
- * QM's `POST /api/course` authorizes via `isCoreCourseInScopedList`, i.e. the
- * caller's own scoped Core list — so an unpublished course is invisible to
- * the enrolled student and QM would 403 without this step.
+ * Create a published Core course, enroll `studentCtx`, and materialize its QM
+ * anchor through a separate instructor. This gives learner-denial tests a
+ * real, linked course id without granting the learner QM authoring rights.
  */
 export async function createQmCourseForStudent(
   playwright: PlaywrightRequestFixture,
@@ -107,8 +101,8 @@ export async function createQmCourseForStudent(
   const instrCtx = await playwright.request.newContext();
 
   try {
-    await createAdmin(adminCtx, { prefix: 'qm-course-admin' });
-    await createInstructor(instrCtx, { prefix: 'qm-course-instr' });
+    await createAdmin(adminCtx, { prefix: "qm-course-admin" });
+    await createInstructor(instrCtx, { prefix: "qm-course-instr" });
     const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
     const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
@@ -119,15 +113,16 @@ export async function createQmCourseForStudent(
     const { id: coreCourseId } = await coreRes.json();
 
     const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${coreCourseId}/enrollments`, {
-      data: { userId: studentId, role: 'STUDENT' },
+      data: { userId: studentId, role: "STUDENT" },
     });
     expect(enrollRes.status()).toBe(201);
 
-    const pubRes = await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
-    expect(pubRes.status()).toBe(200);
+    const publishRes = await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
+    expect(publishRes.status()).toBe(200);
 
-    const qmRes = await studentCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
-    // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
+    const qmRes = await instrCtx.post(`${QM}/api/course`, {
+      data: { coreCourseId },
+    });
     expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();
 

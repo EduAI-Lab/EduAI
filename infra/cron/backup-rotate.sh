@@ -18,4 +18,6 @@ done < <(find "$BACKUP_DIR" -name '*.sql.gz' -mtime +"$BACKUP_RETAIN_DAYS" -type
 
 log "=== Backup rotation complete ==="
 
-[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish
+if [[ -z "${CORE_CRON_RUN_ID:-}" ]]; then
+  cron_finish
+fi

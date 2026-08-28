@@ -1,12 +1,12 @@
-import { auth } from "~/lib/auth/server";
 import { resolveChatReadAccess } from "~/lib/chat-history/server";
 import prisma from "~/lib/prisma.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -43,18 +43,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // read). The owner's session-resume path (useChatSession) reads metadata
     // only, so don't pull the full transcript on that hot path. Bounded to a
     // cursor "load more" page instead of the whole transcript (#1042).
-    let messages: { messageId: string; role: string; content: unknown; position: number }[] | undefined;
+    let messages:
+      | { messageId: string; role: string; content: unknown; position: number }[]
+      | undefined;
     let nextCursor: string | null = null;
     if (!isOwner) {
       const url = new URL(request.url);
       const { cursor, limit } = parseCursorParams(url.searchParams);
-      const rows = await prisma.chatMessage.findMany({
+      const pageArgs = {
         where: { chatId: chat.id },
         select: { id: true, messageId: true, role: true, content: true, position: true },
-        orderBy: [{ position: "asc" }, { id: "asc" }],
+        orderBy: [{ position: "asc" as const }, { id: "asc" as const }],
         take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      });
+      };
+      // A cursor page resumes past the cursor row itself; the first page sends
+      // neither key, so Prisma never sees a half-specified pair.
+      const rows = cursor
+        ? await prisma.chatMessage.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+        : await prisma.chatMessage.findMany(pageArgs);
       const split = splitPage(rows, limit);
       messages = split.page.map(({ messageId, role, content, position }) => ({
         messageId,
@@ -87,7 +93,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 }
 
-
 /**
  * DELETE /api/chats/:chatId (#302, §10) — owner-only; ADMIN may delete any
  * chat. Returns 204 on success.
@@ -101,7 +106,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,

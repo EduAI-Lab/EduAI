@@ -1,8 +1,14 @@
-import { Button } from '@eduai/ui';
+import { Button } from "@eduai/ui";
 
-import { IconAlertTriangle } from '@tabler/icons-react';
+import { IconAlertTriangle } from "@tabler/icons-react";
 import {
-  AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@eduai/ui";
 interface UnsavedChangesDialogProps {
   open: boolean;
   questionsCount: number;
@@ -34,10 +40,10 @@ export function UnsavedChangesDialog({
           </div>
           <AlertDialogDescription className="pt-2 space-y-1">
             <p>
-              You have{' '}
+              You have{" "}
               <span className="font-medium text-foreground">
-                {questionsCount} extracted question{questionsCount !== 1 ? 's' : ''}
-              </span>{' '}
+                {questionsCount} extracted question{questionsCount !== 1 ? "s" : ""}
+              </span>{" "}
               that haven&apos;t been saved yet. What would you like to do?
             </p>
             <p className="text-xs text-muted-foreground/90">
@@ -47,7 +53,12 @@ export function UnsavedChangesDialog({
         </AlertDialogHeader>
 
         <AlertDialogFooter className="sm:flex-row gap-2">
-          <Button variant="ghost" onClick={onCancel} disabled={isSaving} title="Return to the dialog and keep editing">
+          <Button
+            variant="ghost"
+            onClick={onCancel}
+            disabled={isSaving}
+            title="Return to the dialog and keep editing"
+          >
             Keep Editing
           </Button>
           <Button
@@ -59,8 +70,16 @@ export function UnsavedChangesDialog({
           >
             Discard
           </Button>
-          <Button onClick={onSave} disabled={!canSave || isSaving} title={canSave ? 'Save now and close' : 'Add at least one question and assessment details to save'}>
-            {isSaving ? 'Saving...' : 'Save Questions'}
+          <Button
+            onClick={onSave}
+            disabled={!canSave || isSaving}
+            title={
+              canSave
+                ? "Save now and close"
+                : "Add at least one question and assessment details to save"
+            }
+          >
+            {isSaving ? "Saving..." : "Save Questions"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

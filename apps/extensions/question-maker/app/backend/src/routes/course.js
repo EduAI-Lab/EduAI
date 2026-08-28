@@ -4,30 +4,66 @@
  * Core enrollment/unit data — so ADMIN, UNIT_ADMIN (in-unit) and enrolled instructor
  * peers reach a course, not just its original owner.
  */
-import express from 'express';
-import { createId } from '@paralleldrive/cuid2';
-import { Prisma } from '@eduai/question-maker-prisma-client';
-import { prisma } from '../config/database.js';
-import { authenticateToken } from '../middleware/auth.js';
-import {
-  requireCourseAccess,
-  resolveCourseAccessWithCourse,
-} from '../middleware/courseAccess.js';
+import express from "express";
+import { createId } from "@paralleldrive/cuid2";
+import { prisma } from "../config/database.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { INSTRUCTORS } from "../middleware/roles.js";
+import { requireCourseAccess, resolveCourseAccessWithCourse } from "../middleware/courseAccess.js";
 import {
   pushTopicToCore,
   isCoreCourseInScopedList,
   getCourseEnrollmentsFromCore,
-} from '../services/coreApiService.js';
-import { listCoursesPageForUser, enrichCourseDetail } from '../services/courseListService.js';
-import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
-import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
-import { logger } from '../utils/logger.js';
-import { parsePaginationParams, paginated } from '../utils/pagination.js';
+} from "../services/coreApiService.js";
+import { listCoursesPageForUser, enrichCourseDetail } from "../services/courseListService.js";
+import { syncTopicsFromCoreForCourse } from "../services/topicSyncService.js";
+import { importTaughtCoursesFromCore } from "../services/importTaughtCoursesService.js";
+import { ensureCourseAnchor } from "../services/ensureCourseAnchor.js";
+import { logger } from "../utils/logger.js";
+import { parsePaginationParams, paginated } from "../utils/pagination.js";
+import {
+  listBanks,
+  createBank,
+  updateBank,
+  deleteBank,
+  addQuestionToBank,
+  removeQuestionFromBank,
+  ensureDefaultBank,
+} from "../services/questionBankService.js";
+import {
+  safeRequestLogFields,
+  safeStatusCode,
+  toStableUpstreamError,
+} from "../utils/safeLogging.js";
 
 const router = express.Router();
 
 /** Resolves the QM course id from the URL param for per-course access gates. */
 const courseIdFromParam = (req) => req.params.id;
+
+/** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
+const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
+
+const PUBLIC_CORE_ERROR_RE = /^CORE_[A-Z0-9_]{1,63}$/;
+
+/** Converts a Core failure into stable response text and allowlisted log metadata. */
+function stableCoreFailure(error, fallbackMessage) {
+  const statusCode = safeStatusCode(error);
+  const status = statusCode !== null && statusCode >= 400 ? statusCode : 502;
+  const publicCode =
+    error?.isPublic === true &&
+    typeof error?.code === "string" &&
+    PUBLIC_CORE_ERROR_RE.test(error.code)
+      ? error.code
+      : null;
+  const stable = toStableUpstreamError(error, { serviceName: "Core API" });
+
+  return {
+    status,
+    message: publicCode || stable.message || fallbackMessage,
+    logFields: safeRequestLogFields(error),
+  };
+}
 
 // The Core course mirror (`importTaughtCoursesFromCore`) is a background side
 // effect, not a dependency of the list response: it fetches Core's cookie-
@@ -49,8 +85,8 @@ function runCoreImportMirror(userId, role, cookie) {
   lastMirrorAtByUser.set(userId, now);
 
   // Fire-and-forget — errors are logged, never surfaced to the list response.
-  void importTaughtCoursesFromCore(userId, role ?? 'STUDENT', cookie ?? '').catch((err) => {
-    logger.warn({ err, userId }, 'Core course mirror failed on list');
+  void importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "").catch((err) => {
+    logger.warn({ err, userId }, "Core course mirror failed on list");
   });
 }
 
@@ -65,13 +101,19 @@ export function resetCoreImportThrottleForTests() {
  * "sandbox" creation has been retired: Core is the source of truth for course
  * data (name/code included, #1072 §4 step 10), so every row is just a
  * caller-scoped `coreCourseId` anchor.
+ *
+ * #1114: only ADMIN / UNIT_ADMIN / INSTRUCTOR may create anchors, and an
+ * INSTRUCTOR must hold an active teaching enrollment (INSTRUCTOR or TA) on
+ * that Core course — scoped-list membership alone (e.g. STUDENT) is not
+ * enough. Creation is serialized per coreCourseId via advisory lock so
+ * concurrent ensures return the same persisted owner.
  */
-router.post('/', authenticateToken, async (req, res, next) => {
+router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
-    if (!coreCourseId || typeof coreCourseId !== 'string') {
-      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
+    if (!coreCourseId || typeof coreCourseId !== "string") {
+      return res.status(400).json({ success: false, error: "coreCourseId is required" });
     }
 
     const cookie = req.headers.cookie;
@@ -79,42 +121,47 @@ router.post('/', authenticateToken, async (req, res, next) => {
     try {
       linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
     } catch (err) {
-      const status = Number.isInteger(err?.status) ? err.status : 502;
-      return res.status(status).json({
+      const failure = stableCoreFailure(err, "Failed to verify Core course access");
+      logger.warn(failure.logFields, "Core course access check failed");
+      return res.status(failure.status).json({
         success: false,
-        error: err.message || 'Failed to verify Core course access',
+        error: failure.message,
       });
     }
 
     if (!linkable) {
-      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+      return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
     }
 
-    // Idempotent ENSURE (unified contract): coreCourseId is globally unique —
-    // the throttled background import mirror (or another caller) may have
-    // anchored this course between the caller's list and this request, so an
-    // existing anchor is a success (200 with the row), not an error. The
-    // create path race (mirror wins between our miss and the insert) is
-    // absorbed by re-reading on a unique-constraint violation.
-    let courseData = await prisma.course.findUnique({ where: { coreCourseId } });
-    let created = false;
-    if (!courseData) {
+    // Platform ADMIN/UNIT_ADMIN may materialize any scoped course; INSTRUCTOR
+    // must also hold a teaching enrollment on that Core course (#1114).
+    if (req.user.role === "INSTRUCTOR") {
+      let enrollments = [];
       try {
-        courseData = await prisma.course.create({
-          data: { userId: req.user.id, coreCourseId },
+        const data = await getCourseEnrollmentsFromCore(coreCourseId, { cookie });
+        enrollments = data?.enrollments ?? [];
+      } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 502;
+        return res.status(status).json({
+          success: false,
+          error: err.message || "Failed to verify Core teaching enrollment",
         });
-        created = true;
-      } catch (error) {
-        const isUniqueViolation = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
-        if (!isUniqueViolation) throw error;
-        courseData = await prisma.course.findUnique({ where: { coreCourseId } });
-        if (!courseData) throw error;
+      }
+      const teaches = enrollments.some(
+        (e) => e.studentId === req.user.id && e.isActive && TEACHING_ENROLLMENT_ROLES.has(e.role),
+      );
+      if (!teaches) {
+        return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
       }
     }
 
+    // Shared locked ensure — same path as auto-import + ADMIN materialization
+    // so races with those writers recover cleanly (#1114 / #1270).
+    const { course: courseData, created } = await ensureCourseAnchor(req.user.id, coreCourseId);
+
     res.status(created ? 201 : 200).json({
       success: true,
-      message: created ? 'Course created successfully' : 'Course already linked',
+      message: created ? "Course created successfully" : "Course already linked",
       data: await enrichCourseDetail(courseData, { cookie }),
     });
   } catch (error) {
@@ -135,7 +182,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * Core enrollment roles are refreshed once per caller per TTL; subsequent
  * pages use the local SQL predicate and do not refetch the catalog.
  */
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const pagination = parsePaginationParams(req, { required: true });
 
@@ -148,7 +195,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
       pagination,
     });
 
-    if (includeStats !== 'true') {
+    if (includeStats !== "true") {
       return res.json(paginated(courses, total, pagination));
     }
 
@@ -159,8 +206,8 @@ router.get('/', authenticateToken, async (req, res, next) => {
           where: { id: { in: visibleIds } },
           include: {
             questionMetadata: { select: { id: true, type: true, description: true } },
-            topics: { select: { id: true, name: true } }
-          }
+            topics: { select: { id: true, name: true } },
+          },
         })
       : [];
 
@@ -170,12 +217,13 @@ router.get('/', authenticateToken, async (req, res, next) => {
         {
           totalQuestions: course.questionMetadata?.length || 0,
           totalTopics: course.topics?.length || 0,
-          questionTypes: course.questionMetadata?.reduce((acc, q) => {
-            acc[q.type] = (acc[q.type] || 0) + 1;
-            return acc;
-          }, {}) || {}
-        }
-      ])
+          questionTypes:
+            course.questionMetadata?.reduce((acc, q) => {
+              acc[q.type] = (acc[q.type] || 0) + 1;
+              return acc;
+            }, {}) || {},
+        },
+      ]),
     );
 
     const coursesWithStats = courses.map((course) => ({
@@ -183,8 +231,8 @@ router.get('/', authenticateToken, async (req, res, next) => {
       stats: statsById.get(course.id) ?? {
         totalQuestions: 0,
         totalTopics: 0,
-        questionTypes: {}
-      }
+        questionTypes: {},
+      },
     }));
 
     res.json(paginated(coursesWithStats, total, pagination));
@@ -198,14 +246,14 @@ router.get('/', authenticateToken, async (req, res, next) => {
  * (shared contract §3). Returns `{ level, rank }` or null `data` when the caller
  * has no access; 404 only when the course does not exist.
  */
-router.get('/:id/access', authenticateToken, async (req, res, next) => {
+router.get("/:id/access", authenticateToken, async (req, res, next) => {
   try {
     const { course, access } = await resolveCourseAccessWithCourse(req.user, req.params.id, {
       cookie: req.headers.cookie,
     });
 
     if (!course) {
-      return res.status(404).json({ success: false, error: 'Course not found' });
+      return res.status(404).json({ success: false, error: "Course not found" });
     }
 
     res.json({ success: true, data: access });
@@ -219,15 +267,15 @@ router.get('/:id/access', authenticateToken, async (req, res, next) => {
  * to any caller with at least TA access to the course (§5 view course details).
  */
 router.get(
-  '/:id',
+  "/:id",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
       const { includeDetails = false } = req.query;
       const cookie = req.headers.cookie;
 
-      if (includeDetails !== 'true') {
+      if (includeDetails !== "true") {
         return res.json({
           success: true,
           data: await enrichCourseDetail(req.qmCourse, { cookie }),
@@ -239,19 +287,22 @@ router.get(
         include: {
           questionMetadata: {
             select: {
-              id: true, type: true, description: true, questionOrder: true,
-              primaryTopic: { select: { id: true, name: true } }
-            }
+              id: true,
+              type: true,
+              description: true,
+              questionOrder: true,
+              primaryTopic: { select: { id: true, name: true } },
+            },
           },
-          topics: { select: { id: true, name: true } }
-        }
+          topics: { select: { id: true, name: true } },
+        },
       });
 
       res.json({ success: true, data: await enrichCourseDetail(courseData, { cookie }) });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -262,82 +313,83 @@ router.get(
  * (e.g. RBAC checks), and returns the current Core-projected detail.
  */
 router.put(
-  '/:id',
+  "/:id",
   authenticateToken,
-  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
       const courseData = req.qmCourse;
 
       res.json({
         success: true,
-        message: 'Course updated successfully',
+        message: "Course updated successfully",
         data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** DELETE /api/course/:id – removes a course and its associations (§5 delete: instructor+). */
 router.delete(
-  '/:id',
+  "/:id",
   authenticateToken,
-  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
       await prisma.course.delete({ where: { id: req.qmCourse.id } });
 
       res.json({
         success: true,
-        message: 'Course deleted successfully'
+        message: "Course deleted successfully",
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/course/:id/topics – returns the topic list (§8 view topics: TA access or above). */
 router.get(
-  '/:id/topics',
+  "/:id/topics",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
-  try {
-    // Structure-bounded list (#1044): always a bounded page. Flat query, so the
-    // window is a true DB-level limit/offset. Params are optional — a caller
-    // that sends none gets the first page at `defaultPageSize` instead of a 400
-    // — but the response is never unbounded; `getCourseTopics` walks pages.
-    const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    try {
+      // Structure-bounded list (#1044): always a bounded page. Flat query, so the
+      // window is a true DB-level limit/offset. Params are optional — a caller
+      // that sends none gets the first page at `defaultPageSize` instead of a 400
+      // — but the response is never unbounded; `getCourseTopics` walks pages.
+      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
 
-    const course = req.qmCourse;
+      const course = req.qmCourse;
 
-    const cookie = req.headers.cookie ?? '';
-    if (course.coreCourseId) {
-      await syncTopicsFromCoreForCourse(course, cookie);
+      const cookie = req.headers.cookie ?? "";
+      if (course.coreCourseId) {
+        await syncTopicsFromCoreForCourse(course, cookie);
+      }
+
+      const where = { courseId: course.id };
+      const [count, rows] = await prisma.$transaction([
+        prisma.topics.count({ where }),
+        prisma.topics.findMany({
+          where,
+          // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
+          // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
+          // pages can repeat and drop rows across requests.
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          take: pagination.limit,
+          skip: pagination.offset,
+        }),
+      ]);
+
+      res.json(paginated(rows, count, pagination));
+    } catch (error) {
+      next(error);
     }
-
-    const where = { courseId: course.id };
-    const [count, rows] = await prisma.$transaction([
-      prisma.topics.count({ where }),
-      prisma.topics.findMany({
-        where,
-        // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
-        // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
-        // pages can repeat and drop rows across requests.
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: pagination.limit,
-        skip: pagination.offset
-      })
-    ]);
-
-    res.json(paginated(rows, count, pagination));
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /**
  * GET /api/course/:id/enrollments – lists users enrolled in the course by
@@ -345,9 +397,9 @@ router.get(
  * only active enrollments, mapped to the QM-facing shape.
  */
 router.get(
-  '/:id/enrollments',
+  "/:id/enrollments",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
       const course = req.qmCourse;
@@ -373,129 +425,264 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** POST /api/course/:id/topics – adds a topic (§8 create topic: instructor access or above). */
 router.post(
-  '/:id/topics',
+  "/:id/topics",
   authenticateToken,
-  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
-  try {
-    const { name } = req.body;
+    try {
+      const { name } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Topic name is required'
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Topic name is required",
+        });
+      }
+
+      const course = req.qmCourse;
+
+      const topic = await prisma.topics.create({
+        data: {
+          id: createId(),
+          courseId: course.id,
+          name: name.trim(),
+        },
       });
-    }
 
-    const course = req.qmCourse;
-
-    const topic = await prisma.topics.create({
-      data: {
-        id: createId(),
-        courseId: course.id,
-        name: name.trim()
-      }
-    });
-
-    if (course.coreCourseId) {
-      try {
-        const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
-        if (coreResult?.id) {
-          await prisma.topics.update({ where: { id: topic.id }, data: { coreTopicId: coreResult.id } });
-          // Prisma's update() doesn't mutate `topic` in place (unlike Sequelize's
-          // `.update()`) — patch it locally so the response below reflects the link.
-          topic.coreTopicId = coreResult.id;
+      if (course.coreCourseId) {
+        try {
+          const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
+          if (coreResult?.id) {
+            await prisma.topics.update({
+              where: { id: topic.id },
+              data: { coreTopicId: coreResult.id },
+            });
+            // Prisma's update() doesn't mutate `topic` in place (unlike Sequelize's
+            // `.update()`) — patch it locally so the response below reflects the link.
+            topic.coreTopicId = coreResult.id;
+          }
+        } catch (coreErr) {
+          logger.warn(
+            { err: coreErr },
+            "Core topic push failed; local topic created without Core link",
+          );
         }
-      } catch (coreErr) {
-        logger.warn({ err: coreErr }, 'Core topic push failed; local topic created without Core link');
       }
-    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Topic created successfully',
-      data: topic
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.status(201).json({
+        success: true,
+        message: "Topic created successfully",
+        data: topic,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** PATCH /api/course/:id/link-core – stores a Core course CUID (§18 link: instructor access or above). */
 router.patch(
-  '/:id/link-core',
+  "/:id/link-core",
   authenticateToken,
-  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
-  try {
-    const { coreCourseId } = req.body;
-
-    if (!coreCourseId || typeof coreCourseId !== 'string') {
-      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
-    }
-
-    const course = req.qmCourse;
-
-    const cookie = req.headers.cookie ?? '';
-    let linkable = false;
     try {
-      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
-    } catch (err) {
-      const status = Number.isInteger(err?.status) ? err.status : 502;
-      return res.status(status).json({
-        success: false,
-        error: err.message || 'Failed to verify Core course access',
+      const { coreCourseId } = req.body;
+
+      if (!coreCourseId || typeof coreCourseId !== "string") {
+        return res.status(400).json({ success: false, error: "coreCourseId is required" });
+      }
+
+      const course = req.qmCourse;
+
+      // A linked QM course is a local anchor for the Core course that owns all
+      // of its topics/questions/assessments. Relinking it would leave that
+      // content under the old Core identity while reads and future writes use a
+      // different one. Keep the anchor immutable once set; importantly, reject
+      // before looking up the requested target so an unauthorized target cannot
+      // be probed through this endpoint. Re-sending the existing id remains the
+      // idempotent path below.
+      if (course.coreCourseId && course.coreCourseId !== coreCourseId) {
+        return res.status(409).json({
+          success: false,
+          error: "Core course link is immutable",
+          code: "CORE_COURSE_LINK_IMMUTABLE",
+        });
+      }
+
+      const cookie = req.headers.cookie ?? "";
+      let linkable = false;
+      try {
+        linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+      } catch (err) {
+        const failure = stableCoreFailure(err, "Failed to verify Core course access");
+        logger.warn(failure.logFields, "Core course access check failed");
+        return res.status(failure.status).json({
+          success: false,
+          error: failure.message,
+        });
+      }
+
+      if (!linkable) {
+        return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
+      }
+
+      const updatedCourse = await prisma.course.update({
+        where: { id: course.id },
+        data: { coreCourseId },
       });
+
+      res.json({
+        success: true,
+        data: await enrichCourseDetail(updatedCourse, { cookie }),
+      });
+    } catch (error) {
+      next(error);
     }
-
-    if (!linkable) {
-      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
-    }
-
-    const updatedCourse = await prisma.course.update({ where: { id: course.id }, data: { coreCourseId } });
-
-    res.json({
-      success: true,
-      data: await enrichCourseDetail(updatedCourse, { cookie }),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/course/:id/sync-topics – pulls topics from Core (§18 sync: instructor access or above). */
 router.post(
-  '/:id/sync-topics',
+  "/:id/sync-topics",
   authenticateToken,
-  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
-  try {
-    const course = req.qmCourse;
-
-    const cookie = req.headers.cookie ?? '';
-    if (!course.coreCourseId) {
-      return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
-    }
-
-    let synced;
     try {
-      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
-    } catch (err) {
-      return res.status(502).json({
-        success: false,
-        error: err.message || 'Core request failed',
-      });
-    }
+      const course = req.qmCourse;
 
-    res.json({ success: true, data: { synced } });
+      const cookie = req.headers.cookie ?? "";
+      if (!course.coreCourseId) {
+        return res.status(400).json({ success: false, error: "Course is not linked to Core" });
+      }
+
+      let synced;
+      try {
+        synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+      } catch (err) {
+        const failure = stableCoreFailure(err, "Core request failed");
+        logger.warn(failure.logFields, "Core topic sync failed");
+        return res.status(failure.status).json({
+          success: false,
+          error: failure.message,
+        });
+      }
+
+      res.json({ success: true, data: { synced } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Question banks are owned by EduAI Core; these routes proxy via questionBankService
+ * using the local course's `coreCourseId`.
+ */
+const bankAccess = requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam });
+
+/** GET /api/course/:id/banks */
+router.get("/:id/banks", authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    await ensureDefaultBank(req.qmCourse.id, req.user.id).catch(() => null);
+    const banks = await listBanks(req.qmCourse.id, req.user.id);
+    res.json({ success: true, data: banks });
   } catch (error) {
     next(error);
   }
 });
+
+/** POST /api/course/:id/banks */
+router.post("/:id/banks", authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const bank = await createBank(req.qmCourse.id, req.user.id, {
+      name: req.body?.name,
+      description: req.body?.description ?? null,
+    });
+    res.status(201).json({ success: true, data: bank });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** PUT /api/course/:id/banks/:bankId */
+router.put("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const bank = await updateBank(req.qmCourse.id, req.user.id, req.params.bankId, {
+      name: req.body?.name,
+      description: req.body?.description,
+    });
+    res.json({ success: true, data: bank });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** DELETE /api/course/:id/banks/:bankId */
+router.delete("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const result = await deleteBank(req.qmCourse.id, req.user.id, req.params.bankId, {
+      moveMembershipsToBankId: req.body?.moveMembershipsToBankId
+        ? String(req.body.moveMembershipsToBankId)
+        : undefined,
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/banks/:bankId/questions */
+router.post(
+  "/:id/banks/:bankId/questions",
+  authenticateToken,
+  bankAccess,
+  async (req, res, next) => {
+    try {
+      const questionMetadataId = Number(req.body?.questionMetadataId);
+      if (!Number.isInteger(questionMetadataId)) {
+        return res.status(400).json({ success: false, error: "questionMetadataId is required" });
+      }
+      const result = await addQuestionToBank(
+        req.qmCourse.id,
+        req.user.id,
+        req.params.bankId,
+        questionMetadataId,
+      );
+      res.status(201).json({
+        success: true,
+        data: result.membership,
+        message: "Question added to bank",
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** DELETE /api/course/:id/banks/:bankId/questions/:questionMetadataId */
+router.delete(
+  "/:id/banks/:bankId/questions/:questionMetadataId",
+  authenticateToken,
+  bankAccess,
+  async (req, res, next) => {
+    try {
+      const result = await removeQuestionFromBank(
+        req.qmCourse.id,
+        req.user.id,
+        req.params.bankId,
+        req.params.questionMetadataId,
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

@@ -184,10 +184,12 @@ describe("UsersTable — row actions", () => {
         {...defaultProps}
         users={[{ ...baseUser, id: "current-user" }]}
         currentUserId="current-user"
-      />
+      />,
     );
     openRowMenu();
-    expect(screen.getByRole("menuitem", { name: /deactivate|activate/i })).toHaveAttribute("data-disabled");
+    expect(screen.getByRole("menuitem", { name: /deactivate|activate/i })).toHaveAttribute(
+      "data-disabled",
+    );
     expect(screen.getByRole("menuitem", { name: /delete/i })).toHaveAttribute("data-disabled");
   });
 

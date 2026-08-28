@@ -14,7 +14,7 @@ import prisma from "~/lib/prisma.server";
 const VALID_ROLES = new Set<string>(Object.values(UserRole));
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (process.env.NODE_ENV !== 'test') {
+  if (process.env.NODE_ENV !== "test") {
     return new Response(null, { status: 404 });
   }
 
@@ -44,10 +44,13 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (!VALID_ROLES.has(role)) {
-    return new Response(JSON.stringify({ error: `Invalid role. Must be one of: ${[...VALID_ROLES].join(', ')}` }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: `Invalid role. Must be one of: ${[...VALID_ROLES].join(", ")}` }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   const user = await prisma.user.findUnique({ where: { email } });

@@ -48,7 +48,7 @@ export const MAX_PAGE = 1_000_000;
 export class PaginationError extends Error {
   constructor(message, code) {
     super(message);
-    this.name = 'PaginationError';
+    this.name = "PaginationError";
     this.status = 400;
     this.code = code;
   }
@@ -113,9 +113,9 @@ export function activitySearchWhere(term, prefix = []) {
   const casings = [...new Set([term, lower, term.toUpperCase(), sentence, title])];
   return {
     OR: [
-      nest({ title: { contains: term, mode: 'insensitive' } }),
-      nest({ instructionsMd: { contains: term, mode: 'insensitive' } }),
-      ...['question', 'prompt'].flatMap((key) =>
+      nest({ title: { contains: term, mode: "insensitive" } }),
+      nest({ instructionsMd: { contains: term, mode: "insensitive" } }),
+      ...["question", "prompt"].flatMap((key) =>
         casings.map((cased) => nest({ config: { path: [key], string_contains: cased } })),
       ),
     ],
@@ -124,11 +124,9 @@ export function activitySearchWhere(term, prefix = []) {
 
 export function searchWhere(term, fields) {
   if (!term || fields.length === 0) return null;
-  const match = { contains: term, mode: 'insensitive' };
+  const match = { contains: term, mode: "insensitive" };
   const OR = fields.map((field) =>
-    field
-      .split('.')
-      .reduceRight((acc, segment) => ({ [segment]: acc }), match),
+    field.split(".").reduceRight((acc, segment) => ({ [segment]: acc }), match),
   );
   return { OR };
 }
@@ -165,14 +163,11 @@ export function parsePaginationParams(req, opts = {}) {
 
   const rawPage = req.query.page;
   const rawPageSize = req.query.pageSize;
-  const hasPage = rawPage !== undefined && rawPage !== '';
-  const hasPageSize = rawPageSize !== undefined && rawPageSize !== '';
+  const hasPage = rawPage !== undefined && rawPage !== "";
+  const hasPageSize = rawPageSize !== undefined && rawPageSize !== "";
 
   if (required && (!hasPage || !hasPageSize)) {
-    throw new PaginationError(
-      'page and pageSize query params are required',
-      'PAGINATION_REQUIRED',
-    );
+    throw new PaginationError("page and pageSize query params are required", "PAGINATION_REQUIRED");
   }
 
   const pageNum = hasPage ? Number(rawPage) : 1;
@@ -181,14 +176,8 @@ export function parsePaginationParams(req, opts = {}) {
   // Validate only what the caller actually sent. A param that is present but
   // unparseable is a 400 in both modes; an absent one already either threw
   // above (required) or fell back to its default (optional).
-  if (
-    (hasPage && !Number.isFinite(pageNum)) ||
-    (hasPageSize && !Number.isFinite(pageSizeNum))
-  ) {
-    throw new PaginationError(
-      'page and pageSize must be numbers',
-      'PAGINATION_INVALID',
-    );
+  if ((hasPage && !Number.isFinite(pageNum)) || (hasPageSize && !Number.isFinite(pageSizeNum))) {
+    throw new PaginationError("page and pageSize must be numbers", "PAGINATION_INVALID");
   }
 
   const page = clampInt(pageNum, 1, MAX_PAGE);
@@ -234,17 +223,20 @@ export const MAX_FILTER_VALUES = 25;
  *
  * @returns {string|undefined} the normalized query, or undefined when unset.
  */
-export function parseSearchParam(req, { param = 'search', maxLength = MAX_SEARCH_LENGTH } = {}) {
+export function parseSearchParam(req, { param = "search", maxLength = MAX_SEARCH_LENGTH } = {}) {
   const raw = req.query?.[param];
   if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== 'string') {
-    throw new PaginationError(`${param} must be a single value`, 'SEARCH_INVALID');
+  if (typeof raw !== "string") {
+    throw new PaginationError(`${param} must be a single value`, "SEARCH_INVALID");
   }
   if (raw.length > maxLength) {
-    throw new PaginationError(`${param} must be at most ${maxLength} characters`, 'SEARCH_TOO_LONG');
+    throw new PaginationError(
+      `${param} must be at most ${maxLength} characters`,
+      "SEARCH_TOO_LONG",
+    );
   }
-  const normalized = raw.trim().replace(/\s+/g, ' ');
-  return normalized === '' ? undefined : normalized;
+  const normalized = raw.trim().replace(/\s+/g, " ");
+  return normalized === "" ? undefined : normalized;
 }
 
 /**
@@ -270,18 +262,18 @@ export function parseFilterParam(req, param, { allowed, maxValues = MAX_FILTER_V
   if (raw === undefined || raw === null) return [];
 
   const list = Array.isArray(raw) ? raw : [raw];
-  if (list.some((v) => typeof v !== 'string')) {
-    throw new PaginationError(`${param} values must be strings`, 'FILTER_INVALID');
+  if (list.some((v) => typeof v !== "string")) {
+    throw new PaginationError(`${param} values must be strings`, "FILTER_INVALID");
   }
 
-  const values = [...new Set(list.map((v) => v.trim()).filter((v) => v !== ''))];
+  const values = [...new Set(list.map((v) => v.trim()).filter((v) => v !== ""))];
   if (values.length > maxValues) {
-    throw new PaginationError(`${param} accepts at most ${maxValues} values`, 'FILTER_TOO_MANY');
+    throw new PaginationError(`${param} accepts at most ${maxValues} values`, "FILTER_TOO_MANY");
   }
   if (allowed) {
     const bad = values.find((v) => !allowed.includes(v));
     if (bad !== undefined) {
-      throw new PaginationError(`${param} has an unsupported value: ${bad}`, 'FILTER_INVALID');
+      throw new PaginationError(`${param} has an unsupported value: ${bad}`, "FILTER_INVALID");
     }
   }
   return values;

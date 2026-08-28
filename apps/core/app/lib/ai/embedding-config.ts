@@ -1,5 +1,8 @@
 /** Shared 1024-dim embedding options for per-course settings (LOCAL-EMBEDDINGS). */
 
+import { jsonObjectSchema } from "~/lib/json-value";
+import type { JsonValue } from "~/lib/json-value";
+
 export type EmbeddingProviderSetting = "local" | "ollama" | "cloud";
 
 export type CourseEmbeddingFields = {
@@ -56,12 +59,13 @@ export function resolveEnvEmbeddingProvider(): EmbeddingProviderSetting {
 
 export function resolveEnvEmbeddingModel(provider: EmbeddingProviderSetting): string {
   if (provider === "local") {
-    return process.env.OLLAMA_EMBEDDING_MODEL?.trim() || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+    return (
+      process.env.VLLM_EMBEDDING_MODEL?.trim() ||
+      process.env.OLLAMA_EMBEDDING_MODEL?.trim() ||
+      DEFAULT_OLLAMA_EMBEDDING_MODEL
+    );
   }
-  return (
-    process.env.OPENROUTER_EMBEDDING_MODEL?.trim() ||
-    DEFAULT_OPENROUTER_OPENAI_MODEL
-  );
+  return process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || DEFAULT_OPENROUTER_OPENAI_MODEL;
 }
 
 export function resolveEffectiveEmbeddingSettings(
@@ -91,9 +95,7 @@ export function isAllowedEmbeddingModel(
   model: string,
 ): boolean {
   const allowed =
-    provider === "local"
-      ? ALLOWED_LOCAL_EMBEDDING_MODELS
-      : ALLOWED_CLOUD_EMBEDDING_MODELS;
+    provider === "local" ? ALLOWED_LOCAL_EMBEDDING_MODELS : ALLOWED_CLOUD_EMBEDDING_MODELS;
   return allowed.some((entry) => entry.id === model);
 }
 
@@ -106,9 +108,7 @@ export function isEmbeddingIndexStale(
   }
   const indexedProvider =
     normalizeEmbeddingProvider(course.embeddedWithProvider) ?? course.embeddedWithProvider;
-  return (
-    indexedProvider !== effective.provider || course.embeddedWithModel !== effective.model
-  );
+  return indexedProvider !== effective.provider || course.embeddedWithModel !== effective.model;
 }
 
 export type EmbeddingSettingsUpdate = {
@@ -117,15 +117,15 @@ export type EmbeddingSettingsUpdate = {
 };
 
 export function parseEmbeddingSettingsUpdate(
-  body: unknown,
+  body: JsonValue,
 ): { ok: true; value: Partial<EmbeddingSettingsUpdate> } | { ok: false; error: string } {
-  if (body == null || typeof body !== "object") {
+  const record = jsonObjectSchema.safeParse(body);
+  if (!record.success) {
     return { ok: false, error: "Request body must be a JSON object" };
   }
 
-  const record = body as Record<string, unknown>;
-  const hasProvider = "embeddingProvider" in record;
-  const hasModel = "embeddingModel" in record;
+  const hasProvider = "embeddingProvider" in record.data;
+  const hasModel = "embeddingModel" in record.data;
 
   if (!hasProvider && !hasModel) {
     return { ok: false, error: "Provide embeddingProvider and/or embeddingModel" };
@@ -134,7 +134,7 @@ export function parseEmbeddingSettingsUpdate(
   const value: Partial<EmbeddingSettingsUpdate> = {};
 
   if (hasProvider) {
-    const raw = record.embeddingProvider;
+    const raw = record.data.embeddingProvider;
     if (raw === null || raw === "") {
       value.embeddingProvider = null;
     } else if (typeof raw === "string") {
@@ -152,7 +152,7 @@ export function parseEmbeddingSettingsUpdate(
   }
 
   if (hasModel) {
-    const raw = record.embeddingModel;
+    const raw = record.data.embeddingModel;
     if (raw === null || raw === "") {
       value.embeddingModel = null;
     } else if (typeof raw === "string") {
@@ -170,9 +170,7 @@ export function validateEmbeddingSettingsUpdate(
   update: Partial<EmbeddingSettingsUpdate>,
 ): { ok: true; value: EmbeddingSettingsUpdate } | { ok: false; error: string } {
   const nextProvider =
-    update.embeddingProvider !== undefined
-      ? update.embeddingProvider
-      : current.embeddingProvider;
+    update.embeddingProvider !== undefined ? update.embeddingProvider : current.embeddingProvider;
   const nextModel =
     update.embeddingModel !== undefined ? update.embeddingModel : current.embeddingModel;
 

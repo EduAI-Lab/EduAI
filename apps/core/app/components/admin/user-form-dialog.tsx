@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@eduai/ui";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@eduai/ui";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
@@ -25,6 +33,15 @@ type FormData = {
   role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
+};
+
+/**
+ * The form's fields plus the two role/mode-dependent lists. Both are optional
+ * because their absence is meaningful: the server only reads a key it receives.
+ */
+type SubmittedUserForm = FormData & {
+  authorizedUnits?: string[];
+  taCourseIds?: string[];
 };
 
 export interface UserFormDialogProps {
@@ -138,13 +155,12 @@ export function UserFormDialog({
   const handleSubmit = async (data: FormData) => {
     if (submissionInFlightRef.current) return;
 
-    const payload = {
-      ...data,
-      ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
-      ...(isEditing
-        ? { taCourseIds: data.role === "STUDENT" ? selectedTACourseIds : [] }
-        : {}),
-    };
+    // Unit scoping exists only for a UNIT_ADMIN, and TA course assignment only
+    // on edit. Neither key is sent otherwise — the server strips fields outside
+    // the mode's schema, so an absent key is the only way to mean "unchanged".
+    const payload: SubmittedUserForm = { ...data };
+    if (data.role === "UNIT_ADMIN") payload.authorizedUnits = selectedUnits;
+    if (isEditing) payload.taCourseIds = data.role === "STUDENT" ? selectedTACourseIds : [];
 
     // Lightweight pre-submit checks so the admin gets an inline message without
     // a round trip. These mirror the create/update schema's field messages; the
@@ -185,9 +201,7 @@ export function UserFormDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Edit User" : "Create New User"}
-          </DialogTitle>
+          <DialogTitle>{isEditing ? "Edit User" : "Create New User"}</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>

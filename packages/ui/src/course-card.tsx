@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   IconCalendar,
   IconDotsVertical,
@@ -8,82 +8,82 @@ import {
   IconTrash,
   IconWorldOff,
   IconWorldUpload,
-} from "@tabler/icons-react"
-import { CourseCardHero } from "./course-color-bar"
-import { courseThemeVars, paletteColorAtIndex, type CourseAccentColor } from "./course-theme"
-import { StatusBadge } from "./status-badge"
-import { termLabel } from "./lib/term"
+} from "@tabler/icons-react";
+import { CourseCardHero } from "./course-color-bar";
+import { courseThemeVars, paletteColorAtIndex, type CourseAccentColor } from "./course-theme";
+import { StatusBadge } from "./status-badge";
+import { termLabel } from "./lib/term";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "./ui/dropdown-menu"
-import { cn } from "./utils"
+} from "./ui/dropdown-menu";
+import { cn } from "./utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface CourseCardAction {
   /** If true, show the publish/unpublish toggle item */
-  showPublish?: boolean
+  showPublish?: boolean;
   /** Current published state; required when showPublish is true */
-  isPublished?: boolean
+  isPublished?: boolean;
   /** Called when publish/unpublish is clicked */
-  onPublishToggle?: () => void
+  onPublishToggle?: () => void;
   /** Render the publish item greyed-out and non-clickable (e.g. an admin policy
    * turned it off) instead of hiding it. `publishDisabledReason` is shown beneath. */
-  publishDisabled?: boolean
+  publishDisabled?: boolean;
   /** Muted explanation shown under a disabled publish item. */
-  publishDisabledReason?: string
+  publishDisabledReason?: string;
   /** If true, show an "Edit course" item */
-  showEdit?: boolean
+  showEdit?: boolean;
   /** Called when edit is clicked */
-  onEdit?: () => void
+  onEdit?: () => void;
   /** If true, show a destructive "Delete course" item */
-  showDelete?: boolean
+  showDelete?: boolean;
   /** Called when delete is clicked */
-  onDelete?: () => void
+  onDelete?: () => void;
   /** Render the delete item greyed-out and non-clickable instead of hiding it. */
-  deleteDisabled?: boolean
+  deleteDisabled?: boolean;
   /** Muted explanation shown under a disabled delete item. */
-  deleteDisabledReason?: string
+  deleteDisabledReason?: string;
 }
 
 export interface CourseCardProps {
-  id: string
-  code: string
-  name: string
-  description?: string | null
-  term: string
-  year?: number | string | null
-  isPublished: boolean
-  department?: string | null
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  term: string;
+  year?: number | string | null;
+  isPublished: boolean;
+  department?: string | null;
   /** Pre-formatted department label (e.g. "Computer Science (CPSC)") */
-  departmentLabel?: string | null
+  departmentLabel?: string | null;
   /** Extra badge labels to show below the meta row (e.g. "Enrolled") */
-  extraBadges?: string[]
+  extraBadges?: string[];
   /** Card colour index — used when no accentColor is passed */
-  colorIndex?: number
+  colorIndex?: number;
   /** Resolved accent colour (dashboard + detail should share this). */
-  accentColor?: CourseAccentColor
+  accentColor?: CourseAccentColor;
   /** @deprecated Use accentColor */
-  heroColor?: CourseAccentColor
+  heroColor?: CourseAccentColor;
   /** Optional display name override (e.g. student nickname) */
-  displayName?: string
+  displayName?: string;
   /** Optional hero top-right action (e.g. customize menu) */
-  heroAction?: React.ReactNode
+  heroAction?: React.ReactNode;
   /** The link destination when the card title is clicked */
-  href: string
+  href: string;
   /**
    * Link component to use for navigation. Defaults to a plain <a>.
    * Pass React Router's Link to get client-side navigation:
    *   import { Link } from 'react-router'; <CourseCard LinkComponent={Link} ... />
    */
-  LinkComponent?: React.ElementType<{ to: string; className?: string; children?: React.ReactNode }>
+  LinkComponent?: React.ElementType<{ to: string; className?: string; children?: React.ReactNode }>;
   /** Action menu configuration; pass undefined to hide the menu */
-  actions?: CourseCardAction
-  className?: string
+  actions?: CourseCardAction;
+  className?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ function AccentPill({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full leading-none border border-[var(--course-border)] bg-[var(--course-muted)] text-foreground/80">
       {children}
     </span>
-  )
+  );
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -119,23 +119,18 @@ export function CourseCard({
   actions,
   className,
 }: CourseCardProps) {
-  const cardTitle = displayName?.trim() || name
+  const cardTitle = displayName?.trim() || name;
   const resolvedAccent: CourseAccentColor =
-    accentColor ?? heroColor ?? paletteColorAtIndex(colorIndex)
-  const hasMenu =
-    actions &&
-    (actions.showPublish || actions.showEdit || actions.showDelete)
+    accentColor ?? heroColor ?? paletteColorAtIndex(colorIndex);
+  const hasMenu = actions && (actions.showPublish || actions.showEdit || actions.showDelete);
 
-  const hasBadges =
-    departmentLabel ||
-    department ||
-    extraBadges.length > 0
+  const hasBadges = departmentLabel || department || extraBadges.length > 0;
 
   // Render the link overlay as a React Router <Link> when provided, otherwise a plain <a>
-  const titleLinkProps = LinkComponent
-    ? { to: href }
-    : { href }
-  const TitleEl = (LinkComponent ?? "a") as React.ElementType<React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; className?: string }>
+  const titleLinkProps = LinkComponent ? { to: href } : { href };
+  const TitleEl = (LinkComponent ?? "a") as React.ElementType<
+    React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; className?: string }
+  >;
 
   return (
     <div
@@ -205,7 +200,9 @@ export function CourseCard({
                       disabled={actions.publishDisabled}
                       className={cn(
                         "gap-2",
-                        actions.publishDisabled && actions.publishDisabledReason && "flex-col items-start gap-0.5",
+                        actions.publishDisabled &&
+                          actions.publishDisabledReason &&
+                          "flex-col items-start gap-0.5",
                       )}
                     >
                       <span className="flex items-center gap-2">
@@ -229,10 +226,7 @@ export function CourseCard({
                     </DropdownMenuItem>
                   )}
                   {actions.showEdit && (
-                    <DropdownMenuItem
-                      onClick={actions.onEdit}
-                      className="gap-2"
-                    >
+                    <DropdownMenuItem onClick={actions.onEdit} className="gap-2">
                       <IconEdit size={15} className="text-muted-foreground" />
                       Edit course
                     </DropdownMenuItem>
@@ -246,8 +240,11 @@ export function CourseCard({
                       disabled={actions.deleteDisabled}
                       className={cn(
                         "gap-2 text-destructive focus:text-destructive",
-                        actions.deleteDisabled && "text-muted-foreground focus:text-muted-foreground",
-                        actions.deleteDisabled && actions.deleteDisabledReason && "flex-col items-start gap-0.5",
+                        actions.deleteDisabled &&
+                          "text-muted-foreground focus:text-muted-foreground",
+                        actions.deleteDisabled &&
+                          actions.deleteDisabledReason &&
+                          "flex-col items-start gap-0.5",
                       )}
                     >
                       <span className="flex items-center gap-2">
@@ -271,9 +268,7 @@ export function CourseCard({
         <p
           className={cn(
             "text-[12px] leading-relaxed line-clamp-2 flex-1",
-            description
-              ? "text-muted-foreground"
-              : "text-muted-foreground/50 italic",
+            description ? "text-muted-foreground" : "text-muted-foreground/50 italic",
           )}
         >
           {description ?? "No description yet"}
@@ -287,11 +282,7 @@ export function CourseCard({
               <IconCalendar size={13} />
               {termLabel(term, year)}
             </span>
-            <StatusBadge
-              active={isPublished}
-              activeLabel="Published"
-              inactiveLabel="Draft"
-            />
+            <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Draft" />
           </div>
 
           {/* Badges row — own dedicated row, wraps cleanly */}
@@ -308,5 +299,5 @@ export function CourseCard({
         </div>
       </div>
     </div>
-  )
+  );
 }

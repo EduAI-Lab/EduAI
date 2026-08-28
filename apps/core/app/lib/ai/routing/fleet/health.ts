@@ -1,4 +1,6 @@
+import type { JsonValue } from "~/lib/json-value";
 import type { FleetHealthResult } from "./types";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
 const HEALTH_CACHE_TTL_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 5_000;
@@ -7,23 +9,24 @@ type CacheEntry = FleetHealthResult;
 
 const healthCache = new Map<string, CacheEntry>();
 
-function vllmAuthHeader(): string {
-  return process.env.VLLM_API_KEY?.trim() || "vllm-local";
-}
-
 /**
  * Parse `/v1/models` payload.
  * - `null`: response shape unusable → health check marks host unhealthy (no configured-model fallback)
  * - `[]`: endpoint is healthy but hosts no models → do not fall back
  */
-function parseModelIds(payload: unknown): string[] | null {
-  if (!payload || typeof payload !== "object") return null;
-  const data = payload as { data?: unknown };
-  if (!Array.isArray(data.data)) return null;
+function parseModelIds(payload: JsonValue | undefined): string[] | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = payload.data;
+  if (!Array.isArray(data)) return null;
   const ids: string[] = [];
-  for (const entry of data.data) {
-    if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
-      ids.push((entry as { id: string }).id);
+  for (const entry of data) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof entry.id === "string"
+    ) {
+      ids.push(entry.id);
     }
   }
   return ids;
@@ -51,9 +54,21 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
   }
 
   const checkedAt = Date.now();
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    const result: FleetHealthResult = {
+      ok: false,
+      modelIds: null,
+      checkedAt,
+      error: "VLLM_API_KEY not configured",
+    };
+    healthCache.set(normalized, result);
+    return result;
+  }
+
   try {
     const res = await fetch(`${normalized}/v1/models`, {
-      headers: { Authorization: `Bearer ${vllmAuthHeader()}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
     });
     if (!res.ok) {
@@ -66,7 +81,9 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       healthCache.set(normalized, result);
       return result;
     }
-    const body = (await res.json()) as unknown;
+    // SAFETY: `Response#json` resolves to whatever the host sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees.
+    const body = (await res.json()) as JsonValue;
     const modelIds = parseModelIds(body);
     // HTTP 200 without a valid `data` array is unhealthy — do not fall back to configured models.
     if (modelIds === null) {

@@ -1,0 +1,11 @@
+# S10 — cross-ext-read (issue #1189). Validated against pict 3.7.4 → 18 rows
+# (pairwise + silent-omission seeds; see cross-ext-read.config.json).
+# docs/PICT_CENSUS.md § S10
+Ext:            ai-tutor, question-maker
+DataKind:       course-field, material, topic, publish-state, enrollment-role
+Auth:           service-key, session-cookie
+CoreState:      present, soft-deleted, absent-404, core-down-5xx
+CallerEnrolled: yes, no
+
+IF [DataKind] = "enrollment-role" THEN [Auth] = "session-cookie";
+IF [CoreState] = "soft-deleted" THEN [DataKind] in {"material", "topic"};

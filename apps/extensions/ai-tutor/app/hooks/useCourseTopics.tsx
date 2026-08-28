@@ -15,10 +15,10 @@
  * Related: `app/lib/api.ts` (`topicsForCourse`, `createTopic`).
  */
 
-import type { ReactNode } from 'react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import api from '../lib/api';
-import type { Topic } from '../lib/types';
+import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import api from "../lib/api";
+import type { Topic } from "../lib/types";
 
 export type CourseTopicsState = {
   topics: Topic[];
@@ -89,8 +89,8 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
       }
     } catch (err) {
       if (requestId === requestIdRef.current) {
-        console.error('Failed to load topics', err);
-        setError('Could not load topics for this course.');
+        console.error("Failed to load topics", err);
+        setError("Could not load topics for this course.");
         setTopics([]);
         setTotal(0);
       }
@@ -120,7 +120,7 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
   const createTopic = useCallback(
     async (name: string) => {
       if (!courseOfferingId) {
-        throw new Error('Course offering is not defined.');
+        throw new Error("Course offering is not defined.");
       }
 
       const created = await api.createTopic(courseOfferingId, { name });
@@ -169,7 +169,7 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
       return true;
     } catch (err) {
       if (requestId !== requestIdRef.current) return false;
-      console.error('Failed to load more topics', err);
+      console.error("Failed to load more topics", err);
       return false;
     } finally {
       if (requestId === requestIdRef.current) {
@@ -204,7 +204,7 @@ export function CourseTopicsProvider({ value, children }: CourseTopicsProviderPr
 export function useCourseTopicsContext() {
   const context = useContext(CourseTopicsContext);
   if (!context) {
-    throw new Error('useCourseTopicsContext must be used within a CourseTopicsProvider.');
+    throw new Error("useCourseTopicsContext must be used within a CourseTopicsProvider.");
   }
   return context;
 }

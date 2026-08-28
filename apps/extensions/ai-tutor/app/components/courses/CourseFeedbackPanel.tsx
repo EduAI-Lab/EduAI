@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import api from '~/lib/api';
-import type { ActivityFeedbackRow } from '~/lib/types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Input } from "@eduai/ui";
+import api from "~/lib/api";
+import type { ActivityFeedbackRow } from "~/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -12,8 +13,8 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   const [rows, setRows] = useState<ActivityFeedbackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activityIdFilter, setActivityIdFilter] = useState('');
-  const [studentIdFilter, setStudentIdFilter] = useState('');
+  const [activityIdFilter, setActivityIdFilter] = useState("");
+  const [studentIdFilter, setStudentIdFilter] = useState("");
   const [appliedActivityId, setAppliedActivityId] = useState<number | undefined>();
   const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>();
   const [skip, setSkip] = useState(0);
@@ -35,7 +36,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
       setRows(data);
     } catch {
       if (requestId !== requestIdRef.current) return;
-      setError('Could not load feedback.');
+      setError("Could not load feedback.");
       setRows([]);
     } finally {
       if (requestId === requestIdRef.current) {
@@ -51,7 +52,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   const applyFilters = () => {
     const nextActivityId = activityIdFilter.trim() ? Number(activityIdFilter.trim()) : undefined;
     if (activityIdFilter.trim() && !Number.isFinite(nextActivityId)) {
-      setError('Activity ID must be a number.');
+      setError("Activity ID must be a number.");
       return;
     }
     setAppliedActivityId(nextActivityId);
@@ -60,8 +61,12 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   };
 
   const clearFilters = () => {
-    setActivityIdFilter('');
-    setStudentIdFilter('');
+    // Clearing the inputs must clear their validation message too: with no
+    // applied filter to change, no reload follows to reset it, and the panel
+    // was left describing a malformed Activity ID the reader can see is gone.
+    setError(null);
+    setActivityIdFilter("");
+    setStudentIdFilter("");
     setAppliedActivityId(undefined);
     setAppliedStudentId(undefined);
     setSkip(0);
@@ -93,14 +98,14 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           >
             Activity ID
           </label>
-          <input
+          <Input
             id="feedback-activity-id"
             type="text"
             inputMode="numeric"
             value={activityIdFilter}
             onChange={(e) => setActivityIdFilter(e.target.value)}
             placeholder="Any"
-            className="input-field w-32"
+            className="w-32"
           />
         </div>
         <div>
@@ -110,21 +115,21 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           >
             Student ID
           </label>
-          <input
+          <Input
             id="feedback-student-id"
             type="text"
             value={studentIdFilter}
             onChange={(e) => setStudentIdFilter(e.target.value)}
             placeholder="Any"
-            className="input-field w-48"
+            className="w-48"
           />
         </div>
-        <button type="button" onClick={applyFilters} className="btn-primary">
+        <Button type="button" variant="primary" onClick={applyFilters}>
           Apply filters
-        </button>
-        <button type="button" onClick={clearFilters} className="btn-secondary">
+        </Button>
+        <Button type="button" variant="secondary" onClick={clearFilters}>
           Clear
-        </button>
+        </Button>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -154,7 +159,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
                       ? row.note
                       : row.rating != null
                         ? `Rating: ${row.rating}`
-                        : '—'}
+                        : "—"}
                   </td>
                   <td className="px-2 py-2">{new Date(row.createdAt).toLocaleString()}</td>
                 </tr>
@@ -167,25 +172,27 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
       <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>
           Showing {rows.length === 0 ? 0 : skip + 1}–{skip + rows.length}
-          {rows.length === PAGE_SIZE ? '+' : ''}
+          {rows.length === PAGE_SIZE ? "+" : ""}
         </span>
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
-            className="btn-secondary"
+            variant="secondary"
+            size="sm"
             disabled={!canGoBack || loading}
             onClick={() => setSkip((current) => Math.max(current - PAGE_SIZE, 0))}
           >
             Previous
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn-secondary"
+            variant="secondary"
+            size="sm"
             disabled={!canGoForward || loading}
             onClick={() => setSkip((current) => current + PAGE_SIZE)}
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
     </div>

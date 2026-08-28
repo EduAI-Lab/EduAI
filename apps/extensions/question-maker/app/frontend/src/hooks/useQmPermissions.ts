@@ -1,11 +1,7 @@
-import { useAuth } from '@/contexts/AuthContext';
-import {
-  resolvePlatformCourseAccess,
-  type QmCourseAccess,
-  type QmUser,
-} from '@/lib/rbac';
-import * as permissions from '@/lib/rbac/permissions';
-import { useCourseAccess } from './useCourseAccess';
+import { useAuth } from "@/contexts/AuthContext";
+import { resolvePlatformCourseAccess, type QmCourseAccess, type QmUser } from "@/lib/rbac";
+import * as permissions from "@/lib/rbac/permissions";
+import { useCourseAccess } from "./useCourseAccess";
 
 /**
  * Resolves permissions for a specific course when `courseAccess` is passed.
@@ -18,10 +14,7 @@ export function useQmPermissions(courseAccess?: QmCourseAccess) {
     ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits }
     : null;
 
-  const access =
-    courseAccess !== undefined
-      ? courseAccess
-      : resolvePlatformCourseAccess(qmUser);
+  const access = courseAccess !== undefined ? courseAccess : resolvePlatformCourseAccess(qmUser);
 
   return {
     user: qmUser,
@@ -37,13 +30,9 @@ export function useQmPermissions(courseAccess?: QmCourseAccess) {
     canLinkCourse: permissions.canLinkCourse(qmUser),
     canTriageBugReports: permissions.canTriageBugReports(qmUser),
     canEditResource: (resource?: { createdBy?: string | null } | null) =>
-      qmUser
-        ? permissions.canEditDraftVariant(qmUser, access, resource)
-        : false,
+      qmUser ? permissions.canEditDraftVariant(qmUser, access, resource) : false,
     canDeleteResource: (resource?: { createdBy?: string | null } | null) =>
-      qmUser
-        ? permissions.canDeleteVariant(qmUser, access, resource)
-        : false,
+      qmUser ? permissions.canDeleteVariant(qmUser, access, resource) : false,
   };
 }
 

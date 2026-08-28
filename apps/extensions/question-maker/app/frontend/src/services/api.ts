@@ -1,7 +1,7 @@
-import axios, { AxiosResponse, AxiosError } from 'axios';
-import { getCoreLoginUrl } from '@/lib/coreUrl';
+import axios, { AxiosResponse, AxiosError } from "axios";
+import { getCoreLoginUrl } from "@/lib/coreUrl";
 
-const API_URL = (import.meta as any).env?.VITE_API_URL || '/api';
+export const API_URL = (import.meta as any).env?.VITE_API_URL || "";
 
 /**
  * Server pagination envelope (#1044). QM's paginated list endpoints return
@@ -17,12 +17,19 @@ export type Paginated<T> = {
   pageSize: number;
 };
 
+/**
+ * Query-string values, as axios serialises them. Named so a list call can
+ * assemble its params key by key and still say what may go in one — anything
+ * that is not a scalar has to be joined into one first.
+ */
+export type QueryParams = Record<string, string | number | boolean | undefined>;
+
 export const api = axios.create({
   baseURL: API_URL,
   headers: {
-    'Content-Type': 'application/json'
+    "Content-Type": "application/json",
   },
-  withCredentials: true
+  withCredentials: true,
 });
 
 api.interceptors.response.use(
@@ -31,17 +38,17 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const apiError = (error.response.data as { error?: string; success?: boolean })?.error;
       const isSessionExpired =
-        apiError === 'Authentication required' ||
-        (apiError === 'Unauthorized' &&
-          typeof error.config?.url === 'string' &&
-          error.config.url.includes('/api/auth/me'));
+        apiError === "Authentication required" ||
+        (apiError === "Unauthorized" &&
+          typeof error.config?.url === "string" &&
+          error.config.url.includes("/api/auth/me"));
 
       if (isSessionExpired) {
         window.location.href = getCoreLoginUrl();
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

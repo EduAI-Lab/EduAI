@@ -1,0 +1,19 @@
+# S8 — difficulty-banding (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# See tests/models/difficulty-banding.oracle.ts for the oracle spec.
+#
+# `calculateDifficulty` (apps/extensions/ai-tutor/server/src/services/activityAnalytics.js:34)
+# is a documented, hand-tuned policy heuristic (see the function's own doc
+# comment) rather than a statistically-derived model — the coefficients
+# (15/45/25) and the 35/65 label thresholds are named there as deliberate
+# product decisions. `AverageRating` includes both "null" (no feedback yet)
+# and "5" (a perfect rating) specifically to lock in that the heuristic
+# treats them identically today (ratingPenalty = 0 for both) — a documented
+# simplification of the coarse heuristic, asserted deliberately rather than
+# left to accident.
+StudentCount:            zero, one, many
+HelpRequestCount:        zero, low, high
+SubmissionCount:         zero, nonzero
+IncorrectRate:           zero, half, all
+AverageRating:           null, worst, mid, perfect
+
+IF [SubmissionCount] = "zero" THEN [IncorrectRate] = "zero";

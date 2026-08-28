@@ -1,9 +1,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
@@ -18,6 +17,7 @@ import {
 } from "~/lib/courses/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
@@ -87,7 +87,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return topicsGetResponse(courseId, topicId);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -118,7 +118,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // §8 view tier: any course relationship; students need a published course.
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -157,7 +157,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let session = null;
   let access: AccessLevel | null = null;
   if (!serviceAuth) {
-    session = await auth.api.getSession({ headers: request.headers });
+    session = await getRequestSession(request);
 
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -166,7 +166,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
+    const resolved = await resolveCourseAccessGate(session.user, courseId);
     if (!resolved.course) {
       return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
         status: 404,
@@ -191,12 +191,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (
         !serviceAuth &&
         (!access ||
-          (access.rank < 2 &&
-            !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
+          (access.rank < 2 && !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
@@ -217,7 +215,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return new Response(
           JSON.stringify({
             error: "Invalid input",
-            ...(result.details ? { details: result.details } : {}),
+            // JSON.stringify drops an undefined value, so a result without
+            // field errors still serializes to a bare `{ error }`.
+            details: result.details ?? undefined,
           }),
           {
             status: Number(result.status),
@@ -256,7 +256,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       if (
         !serviceAuth &&
-        (!access || !session?.user ||
+        (!access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,
@@ -267,7 +268,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await updateCourseTopic(courseId, topicId, body);
@@ -306,7 +306,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: "Invalid input",
-          ...(result.details ? { details: result.details } : {}),
+          // JSON.stringify drops an undefined value, so a result without field
+          // errors still serializes to a bare `{ error }`.
+          details: result.details ?? undefined,
         }),
         { status: Number(result.status), headers: { "Content-Type": "application/json" } },
       );
@@ -329,7 +331,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
 
         if (
-          !access || !session?.user ||
+          !access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,
@@ -350,7 +353,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? { error: "Topic not found" }
             : {
                 error: "Invalid input",
-                ...(result.details ? { details: result.details } : {}),
+                // JSON.stringify drops an undefined value, so a result without
+                // field errors still serializes to a bare `{ error }`.
+                details: result.details ?? undefined,
               };
         return new Response(JSON.stringify(responseBody), {
           status: Number(result.status),

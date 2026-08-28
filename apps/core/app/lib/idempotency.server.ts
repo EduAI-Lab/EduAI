@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { apiError, jsonResponse } from "~/lib/api-error.server";
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const IN_PROGRESS_REPLAY_WAIT_MS = 5_000;
@@ -17,23 +18,26 @@ export const LEGACY_ENTITY_BACKFILL_HASH = "legacy-entity-backfill";
 
 export type IdempotencyClaimResult =
   | { kind: "claimed" }
-  | { kind: "replay"; statusCode: number; responseBody: unknown }
+  | { kind: "replay"; statusCode: number; responseBody: JsonValue }
   | { kind: "mismatch" }
   | { kind: "in_progress" };
 
-/** Stable SHA-256 of a JSON-serializable request body for mismatch detection. */
-export function hashRequestBody(body: unknown): string {
+/**
+ * Stable SHA-256 of a request body for mismatch detection. Object keys are
+ * sorted at every depth so two bodies that differ only in key order hash the
+ * same and a retry is not mistaken for a different request.
+ */
+export function hashRequestBody(body: JsonValue | undefined): string {
   const normalized =
     body === undefined
       ? ""
-      : JSON.stringify(body, (_key, value) => {
-          if (value && typeof value === "object" && !Array.isArray(value)) {
-            return Object.keys(value)
-              .sort()
-              .reduce<Record<string, unknown>>((acc, k) => {
-                acc[k] = (value as Record<string, unknown>)[k];
-                return acc;
-              }, {});
+      : JSON.stringify(body, (_key, value: JsonValue) => {
+          if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+            const sorted: JsonObject = {};
+            for (const k of Object.keys(value).sort()) {
+              sorted[k] = value[k];
+            }
+            return sorted;
           }
           return value;
         });
@@ -46,7 +50,7 @@ export function hashRequestBody(body: unknown): string {
  */
 export function extractIdempotencyKey(
   request: Request,
-  body: Record<string, unknown> | null | undefined,
+  body: JsonObject | null | undefined,
 ): string | undefined {
   const header = request.headers.get(IDEMPOTENCY_HEADER)?.trim();
   if (header) return header;
@@ -59,9 +63,7 @@ export function extractIdempotencyKey(
 }
 
 /** Body copy without `idempotencyKey` for request-hash comparison. */
-export function bodyForIdempotencyHash(
-  body: Record<string, unknown> | null | undefined,
-): unknown {
+export function bodyForIdempotencyHash(body: JsonObject | null | undefined): JsonObject | null {
   if (!body || typeof body !== "object") return body ?? null;
   const { idempotencyKey: _ignored, ...rest } = body;
   return rest;
@@ -71,7 +73,7 @@ function expiresAtFromNow(ttlMs = DEFAULT_TTL_MS): Date {
   return new Date(Date.now() + ttlMs);
 }
 
-function replayResponse(statusCode: number, responseBody: unknown): Response {
+function replayResponse(statusCode: number, responseBody: JsonValue): Response {
   return jsonResponse(statusCode, responseBody);
 }
 
@@ -153,9 +155,7 @@ export async function claimIdempotency(opts: {
     });
     return { kind: "claimed" };
   } catch (error) {
-    if (
-      !(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-    ) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       throw error;
     }
   }
@@ -219,7 +219,7 @@ export async function completeIdempotency(opts: {
   route: string;
   actorId: string;
   statusCode: number;
-  responseBody: unknown;
+  responseBody: JsonValue;
 }): Promise<void> {
   await prisma.idempotencyRecord.update({
     where: {
@@ -280,7 +280,7 @@ export type WithIdempotencyOptions = {
    * Pre-parsed JSON body from the route (e.g. after an RBAC peek).
    * When set, skips cloning/parsing the request again.
    */
-  body?: Record<string, unknown> | null;
+  body?: JsonObject | null;
 };
 
 /**
@@ -291,21 +291,16 @@ export type WithIdempotencyOptions = {
  */
 const inFlightIdempotentRequests = new Map<string, Promise<Response>>();
 
-function inFlightKey(
-  key: string,
-  route: string,
-  actorId: string,
-  requestHash: string,
-): string {
+function inFlightKey(key: string, route: string, actorId: string, requestHash: string): string {
   return `${key}\0${route}\0${actorId}\0${requestHash}`;
 }
 
 async function executeIdempotentRequest(
   opts: WithIdempotencyOptions,
-  body: Record<string, unknown> | null,
+  body: JsonObject | null,
   key: string,
   requestHash: string,
-  handler: (body: Record<string, unknown> | null) => Promise<Response>,
+  handler: (body: JsonObject | null) => Promise<Response>,
 ): Promise<Response> {
   const claim = await claimIdempotency({
     key,
@@ -352,7 +347,10 @@ async function executeIdempotentRequest(
   }
 
   const statusCode = response.status;
-  const responseBody = await response.clone().json().catch(() => null);
+  const responseBody = await response
+    .clone()
+    .json()
+    .catch(() => null);
 
   if (statusCode >= 200 && statusCode < 300) {
     // Do not release or mark FAILED if persistence fails after the mutation
@@ -382,20 +380,23 @@ async function executeIdempotentRequest(
  */
 export async function withIdempotency(
   opts: WithIdempotencyOptions,
-  handler: (body: Record<string, unknown> | null) => Promise<Response>,
+  handler: (body: JsonObject | null) => Promise<Response>,
 ): Promise<Response> {
-  let body: Record<string, unknown> | null;
+  let body: JsonObject | null;
   if (opts.body !== undefined) {
     body = opts.body;
   } else {
-    const rawBody = await opts.request
+    // SAFETY: `Request#json` resolves to whatever the client sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees. Checked
+    // structurally rather than decoded — this runs on every idempotent write,
+    // and a recursive union decode would walk and clone the whole body to
+    // establish only that its top level is an object.
+    const rawBody = (await opts.request
       .clone()
       .json()
-      .catch(() => null);
+      .catch(() => null)) as JsonValue | null;
     body =
-      rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
-        ? (rawBody as Record<string, unknown>)
-        : null;
+      rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : null;
   }
 
   const key = extractIdempotencyKey(opts.request, body);

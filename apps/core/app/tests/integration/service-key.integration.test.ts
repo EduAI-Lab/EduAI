@@ -7,7 +7,7 @@ vi.mock("~/lib/auth/server", () => ({
 vi.mock("~/lib/courses/server", () => ({
   getCourseTopics: vi.fn().mockResolvedValue([
     { id: "topic-cuid-1", name: "Arrays & Hashing", deletedAt: null },
-    { id: "topic-cuid-2", name: "Two Pointers",     deletedAt: null },
+    { id: "topic-cuid-2", name: "Two Pointers", deletedAt: null },
   ]),
   createCourseTopic: vi.fn(),
   deleteCourseTopic: vi.fn(),
@@ -23,11 +23,11 @@ function makeArgs(authorization?: string) {
   const headers = new Headers();
   if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(
-      `http://localhost/api/courses/${COURSE_ID}/topics`,
-      { method: "GET", headers }
-    ),
-    params:  { courseId: COURSE_ID },
+    request: new Request(`http://localhost/api/courses/${COURSE_ID}/topics`, {
+      method: "GET",
+      headers,
+    }),
+    params: { courseId: COURSE_ID },
     context: {} as never,
   } as any;
 }

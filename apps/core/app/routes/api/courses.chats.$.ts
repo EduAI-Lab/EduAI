@@ -14,13 +14,13 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
@@ -28,12 +28,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Course ID is required" }, 400);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return json({ error: "COURSE_NOT_FOUND" }, 404);
   }
@@ -58,13 +58,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
-  const rows = await prisma.chat.findMany({
+  const pageArgs = {
     // Owner must be an active STUDENT of this course — excludes staff chats
     // (instructor/TA/unit-admin) that are also tagged to the course.
     where: {
       courseId,
       user: {
-        enrollments: { some: { courseId, role: "STUDENT", isActive: true } },
+        enrollments: { some: { courseId, role: "STUDENT" as const, isActive: true } },
       },
     },
     select: {
@@ -74,10 +74,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       updatedAt: true,
       user: { select: { id: true, name: true } },
     },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    orderBy: [{ updatedAt: "desc" as const }, { id: "desc" as const }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  });
+  };
+  // A cursor page resumes past the cursor row itself; the first page sends
+  // neither key, so Prisma never sees a half-specified pair.
+  const rows = cursor
+    ? await prisma.chat.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+    : await prisma.chat.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
 
   return json({

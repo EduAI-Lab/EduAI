@@ -7,7 +7,13 @@ import type { LauncherApp } from "../app-launcher";
 const APPS: LauncherApp[] = [
   { id: "core", name: "EduAI Core", url: "http://core", description: "Hub" },
   { id: "ai-tutor", name: "AI Tutor", url: "http://tutor", description: "Chat" },
-  { id: "question-maker", name: "Question Maker", url: "http://qm", description: "Assess", roles: ["INSTRUCTOR", "ADMIN"] },
+  {
+    id: "question-maker",
+    name: "Question Maker",
+    url: "http://qm",
+    description: "Assess",
+    roles: ["INSTRUCTOR", "ADMIN"],
+  },
 ];
 
 describe("buildAppSwitcherGroup", () => {

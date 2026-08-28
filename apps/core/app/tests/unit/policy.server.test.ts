@@ -35,9 +35,7 @@ describe("policy.server", () => {
   });
 
   it("applies a persisted override over the default", async () => {
-    prismaMock.systemConfig.findMany.mockResolvedValue([
-      { key: `policy.${FLAG}`, value: "false" },
-    ]);
+    prismaMock.systemConfig.findMany.mockResolvedValue([{ key: `policy.${FLAG}`, value: "false" }]);
     expect(await getPolicy(FLAG)).toBe(false);
   });
 
@@ -74,9 +72,7 @@ describe("policy.server", () => {
     );
 
     // Cache was invalidated, so the next read re-queries.
-    prismaMock.systemConfig.findMany.mockResolvedValue([
-      { key: `policy.${FLAG}`, value: "false" },
-    ]);
+    prismaMock.systemConfig.findMany.mockResolvedValue([{ key: `policy.${FLAG}`, value: "false" }]);
     expect(await getPolicy(FLAG)).toBe(false);
     expect(prismaMock.systemConfig.findMany).toHaveBeenCalledTimes(2);
   });
@@ -95,9 +91,7 @@ describe("policy.server", () => {
   it("exposes definitions for the admin UI", () => {
     const defs = getPolicyDefinitions();
     expect(defs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: FLAG, label: expect.any(String) }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ key: FLAG, label: expect.any(String) })]),
     );
   });
 });

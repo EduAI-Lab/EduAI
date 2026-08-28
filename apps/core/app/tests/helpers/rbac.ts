@@ -23,11 +23,13 @@ export type SeededUser = {
   authorizedUnits: string[];
 };
 
-export async function seedUser(opts: {
-  role?: UserRole;
-  authorizedUnits?: string[];
-  name?: string;
-} = {}): Promise<SeededUser> {
+export async function seedUser(
+  opts: {
+    role?: UserRole;
+    authorizedUnits?: string[];
+    name?: string;
+  } = {},
+): Promise<SeededUser> {
   const role = opts.role ?? "STUDENT";
   const suffix = randomUUID().slice(0, 8);
   const user = await prisma.user.create({
@@ -44,12 +46,14 @@ export async function seedUser(opts: {
   return user as SeededUser;
 }
 
-export async function seedCourse(opts: {
-  department?: string | null;
-  isPublished?: boolean;
-  name?: string;
-  deletedAt?: Date | null;
-} = {}) {
+export async function seedCourse(
+  opts: {
+    department?: string | null;
+    isPublished?: boolean;
+    name?: string;
+    deletedAt?: Date | null;
+  } = {},
+) {
   const suffix = randomUUID().slice(0, 8);
   return prisma.course.create({
     data: {
@@ -79,9 +83,7 @@ export async function enroll(
 
 /** Point the mocked better-auth getSession at a user (or null for anonymous). */
 export function mockSession(user: { id: string; role: string } | null) {
-  vi.mocked(auth.api.getSession).mockResolvedValue(
-    (user ? { user } : null) as never,
-  );
+  vi.mocked(auth.api.getSession).mockResolvedValue((user ? { user } : null) as never);
 }
 
 /** Delete seeded rows (enrollments cascade off users/courses are NOT automatic — pass everything). */

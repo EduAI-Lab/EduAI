@@ -25,9 +25,9 @@
  * persists the choice, and applies the reading treatment to any content here
  * marked `reading-surface`.
  */
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-const ASSISTIVE_STORAGE_KEY = 'eduai:assistive';
+const ASSISTIVE_STORAGE_KEY = "eduai:assistive";
 
 type AssistiveModeContextValue = {
   assistive: boolean;
@@ -37,9 +37,9 @@ type AssistiveModeContextValue = {
 const AssistiveModeContext = createContext<AssistiveModeContextValue | null>(null);
 
 function readInitialAssistive(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(ASSISTIVE_STORAGE_KEY) === 'true';
+    return window.localStorage.getItem(ASSISTIVE_STORAGE_KEY) === "true";
   } catch {
     return false;
   }
@@ -54,16 +54,16 @@ export function AssistiveModeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const el = document.documentElement;
     if (assistive) {
-      el.setAttribute('data-assistive', 'true');
+      el.setAttribute("data-assistive", "true");
     } else {
-      el.removeAttribute('data-assistive');
+      el.removeAttribute("data-assistive");
     }
   }, [assistive]);
 
   const setAssistive = (value: boolean) => {
     setAssistiveState(value);
     try {
-      window.localStorage.setItem(ASSISTIVE_STORAGE_KEY, value ? 'true' : 'false');
+      window.localStorage.setItem(ASSISTIVE_STORAGE_KEY, value ? "true" : "false");
     } catch {
       // Best-effort only (private browsing, quota, etc.) — state still updates.
     }
@@ -79,7 +79,7 @@ export function AssistiveModeProvider({ children }: { children: ReactNode }) {
 export function useAssistiveMode(): AssistiveModeContextValue {
   const ctx = useContext(AssistiveModeContext);
   if (!ctx) {
-    throw new Error('useAssistiveMode must be used within an AssistiveModeProvider');
+    throw new Error("useAssistiveMode must be used within an AssistiveModeProvider");
   }
   return ctx;
 }

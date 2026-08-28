@@ -8,14 +8,19 @@ import { toUiStatus } from "@eduai/ui";
 // The fixture carries Core's Prisma enum casing; the view renders the UI form.
 const rows = stubBugReports.map((r) => ({
   ...r,
-  status: toUiStatus(r.status as unknown as string),
+  status: toUiStatus(r.status as string),
   userId: r.id,
 })) as never[];
 
 describe("BugReportsAdminView (shared)", () => {
   it("renders bug reports for admin triage", () => {
     render(
-      <BugReportsAdminView reports={rows} isLoading={false} onUpdateStatus={vi.fn()} showSourceColumn />,
+      <BugReportsAdminView
+        reports={rows}
+        isLoading={false}
+        onUpdateStatus={vi.fn()}
+        showSourceColumn
+      />,
     );
 
     expect(screen.getByText("Bug reports")).toBeInTheDocument();

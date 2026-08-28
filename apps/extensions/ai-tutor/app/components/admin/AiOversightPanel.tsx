@@ -18,7 +18,7 @@
  *     returned" after a courseId-scoped refetch.
  */
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -40,37 +40,37 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@eduai/ui';
-import { IconAlertCircle } from '@tabler/icons-react';
-import api, { type AiTraceRow } from '~/lib/api';
+} from "@eduai/ui";
+import { IconAlertCircle } from "@tabler/icons-react";
+import api, { type AiTraceRow } from "~/lib/api";
 
-const LIMIT_OPTIONS = ['25', '50', '100', '200'] as const;
-const DEFAULT_LIMIT = '50';
+const LIMIT_OPTIONS = ["25", "50", "100", "200"] as const;
+const DEFAULT_LIMIT = "50";
 const ERROR_STATUS_PATTERN = /error|fail/i;
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '—';
+  if (Number.isNaN(then)) return "—";
   const diffMins = Math.floor((Date.now() - then) / 60_000);
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /** Sentence-case a raw mode/status value like "SOCRATIC" or "in_progress" for display. */
 function formatLabel(value: string): string {
-  const words = value.toLowerCase().replace(/_/g, ' ').trim();
+  const words = value.toLowerCase().replace(/_/g, " ").trim();
   return words.length ? words[0].toUpperCase() + words.slice(1) : words;
 }
 
-function outcomeBadgeVariant(outcome?: string | null): 'destructive' | 'outline' {
-  if (outcome && ERROR_STATUS_PATTERN.test(outcome)) return 'destructive';
-  return 'outline';
+function outcomeBadgeVariant(outcome?: string | null): "destructive" | "outline" {
+  if (outcome && ERROR_STATUS_PATTERN.test(outcome)) return "destructive";
+  return "outline";
 }
 
 type CourseOption = { id: string; label: string };
@@ -89,7 +89,7 @@ function uniqueCourseOptions(rows: AiTraceRow[]): CourseOption[] {
 
 export function AiOversightPanel({ initialTraces }: { initialTraces: AiTraceRow[] }) {
   const [traces, setTraces] = useState<AiTraceRow[]>(initialTraces);
-  const [courseFilter, setCourseFilter] = useState('all');
+  const [courseFilter, setCourseFilter] = useState("all");
   const [limit, setLimit] = useState<string>(DEFAULT_LIMIT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,12 +103,12 @@ export function AiOversightPanel({ initialTraces }: { initialTraces: AiTraceRow[
     setError(null);
     try {
       const rows = await api.adminAiTraces({
-        courseId: nextCourseFilter === 'all' ? undefined : nextCourseFilter,
+        courseId: nextCourseFilter === "all" ? undefined : nextCourseFilter,
         limit: Number(nextLimit),
       });
       setTraces(rows ?? []);
     } catch {
-      setError('Could not load AI oversight data. Try again.');
+      setError("Could not load AI oversight data. Try again.");
     } finally {
       setLoading(false);
     }
@@ -128,7 +128,9 @@ export function AiOversightPanel({ initialTraces }: { initialTraces: AiTraceRow[
     <Card className="animate-fade-up delay-150">
       <CardHeader>
         <CardTitle>AI oversight</CardTitle>
-        <CardDescription>Review recent AI tutoring interactions across your courses.</CardDescription>
+        <CardDescription>
+          Review recent AI tutoring interactions across your courses.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? (
@@ -203,28 +205,34 @@ export function AiOversightPanel({ initialTraces }: { initialTraces: AiTraceRow[
               traces.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium text-foreground">
-                    {row.user?.name ?? 'Unknown student'}
+                    {row.user?.name ?? "Unknown student"}
                   </TableCell>
                   <TableCell>
-                    {row.courseTitle ?? (row.courseId != null ? `Course ${row.courseId}` : '—')}
+                    {row.courseTitle ?? (row.courseId != null ? `Course ${row.courseId}` : "—")}
                   </TableCell>
-                  <TableCell>{row.activity?.title ?? '—'}</TableCell>
+                  <TableCell>{row.activity?.title ?? "—"}</TableCell>
                   <TableCell>
-                    {row.mode ? <Badge variant="outline">{formatLabel(row.mode)}</Badge> : '—'}
+                    {row.mode ? <Badge variant="outline">{formatLabel(row.mode)}</Badge> : "—"}
                   </TableCell>
-                  <TableCell className="text-sm">{row.tutorModelId ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.iterationCount ?? '—'}</TableCell>
+                  <TableCell className="text-sm">{row.tutorModelId ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.iterationCount ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">{row.tutorModelId ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.iterationCount ?? "—"}
+                  </TableCell>
                   <TableCell>
                     {row.finalOutcome ? (
                       <Badge variant={outcomeBadgeVariant(row.finalOutcome)}>
                         {formatLabel(row.finalOutcome)}
                       </Badge>
                     ) : (
-                      '—'
+                      "—"
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {row.createdAt ? relativeTime(row.createdAt) : '—'}
+                    {row.createdAt ? relativeTime(row.createdAt) : "—"}
                   </TableCell>
                 </TableRow>
               ))
