@@ -1546,8 +1546,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // previews so a content preview does not spend a daily token. Recorded
     // so a later Bedrock overflow (admission timeout / fleet exhaustion) can
     // refund this charge — that turn ends up running on cloud, not local.
-    let localDailyCapCharge: { userId: string; role: string | undefined; model: string } | null =
-      null;
+    let localDailyCapCharge: { userId: string; reservationToken: string } | null = null;
     if (!regenerateOnly) {
       let dailyCap;
       try {
@@ -1556,11 +1555,17 @@ export async function action({ request }: ActionFunctionArgs) {
           role: actingUser.role ?? undefined,
           model: resolvedModelId,
         });
-        if (dailyCap) {
+        // #1547 review: reservationToken is only present when this call
+        // actually charged (checkRateLimit's contract) — checking for it
+        // specifically, rather than just truthy `dailyCap`, means a refund
+        // is never attempted for a charge that never happened (dailyCap is
+        // also truthy, just with `limited: true`, when the cap was already
+        // exhausted — but that path returns 429 below before this variable
+        // is ever read again).
+        if (dailyCap?.reservationToken) {
           localDailyCapCharge = {
             userId: actingUser.id,
-            role: actingUser.role ?? undefined,
-            model: resolvedModelId,
+            reservationToken: dailyCap.reservationToken,
           };
         }
       } catch (error) {
@@ -2427,12 +2432,15 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+    const applyBedrockOverflow = async (overflow: BedrockOverflowActivation) => {
       // This turn is landing on Bedrock (cloud), not the local model it was
       // reserved against — refund that reservation so it does not count
-      // toward the user's local daily cap.
+      // toward the user's local daily cap. Awaited (#1547 review): a
+      // fire-and-forget refund let a very-fast follow-up request from the
+      // same user observe the still-charged bucket before the refund landed,
+      // occasionally 429ing a request that should have been allowed.
       if (localDailyCapCharge) {
-        fireAndForget(refundLocalChatDailyCap(localDailyCapCharge));
+        await refundLocalChatDailyCap(localDailyCapCharge);
         localDailyCapCharge = null;
       }
       resolvedModelId = overflow.resolvedModelId;
@@ -2471,7 +2479,7 @@ ${buildEmptyCourseRagBlock()}`;
             userId: actingUser.id,
           });
           if (overflow) {
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             chatApiTrace("bedrock overflow after admission timeout", {
               resolvedModelId,
               serverId: overflow.serverId,
@@ -2731,7 +2739,7 @@ ${buildEmptyCourseRagBlock()}`;
             if (!overflow) {
               throw error;
             }
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             shouldProbeFleetStream = false;
             releaseAdmission();
             chatApiTrace("bedrock overflow after fleet exhausted", {

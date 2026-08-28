@@ -8,6 +8,15 @@ const mocks = vi.hoisted(() => ({
   setChatDailyLimitSettings: vi.fn(),
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
+  // A real (not mocked) Error subclass so `error instanceof
+  // ChatDailyLimitSettingsUnavailableError` in the route works against the
+  // exact same class reference the test throws (#1557 review).
+  ChatDailyLimitSettingsUnavailableError: class extends Error {
+    constructor(message = "Local chatbot daily cap settings are unavailable") {
+      super(message);
+      this.name = "ChatDailyLimitSettingsUnavailableError";
+    }
+  },
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
@@ -17,6 +26,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/chat-daily-limits.server", () => ({
   getChatDailyLimitSettings: mocks.getChatDailyLimitSettings,
   setChatDailyLimitSettings: mocks.setChatDailyLimitSettings,
+  ChatDailyLimitSettingsUnavailableError: mocks.ChatDailyLimitSettingsUnavailableError,
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -63,6 +73,29 @@ describe("admin chat daily limits API", () => {
     const res = await loader(makeArgs());
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ settings });
+  });
+
+  // #1557 review: a cold cache + Postgres unreachable makes
+  // getChatDailyLimitSettings throw, which /api/chat already maps to a 503 —
+  // this loader previously let it propagate as an unhandled loader error
+  // instead of the same documented outage response.
+  it("maps a cold-cache settings outage to the documented 503, not an unhandled error", async () => {
+    mocks.getChatDailyLimitSettings.mockRejectedValue(
+      new mocks.ChatDailyLimitSettingsUnavailableError(),
+    );
+
+    const res = await loader(makeArgs());
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "Daily message limits could not be loaded. Please try again shortly.",
+    });
+  });
+
+  it("re-throws an unrelated loader error instead of treating it as the settings outage", async () => {
+    mocks.getChatDailyLimitSettings.mockRejectedValue(new Error("boom"));
+
+    await expect(loader(makeArgs())).rejects.toThrow("boom");
   });
 
   it("forwards the administrator guard response", async () => {

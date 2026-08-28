@@ -161,7 +161,6 @@ import { requireAdmin } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { invalidateChatDailyLimitSettingsCache } from "~/lib/chat-daily-limits.server";
-import { fireAndForget } from "~/lib/logging.server";
 import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
 import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
 
@@ -355,14 +354,12 @@ describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
       .mockRejectedValueOnce(new AdmissionTimeoutError())
       .mockResolvedValue({ release: () => {}, waitedMs: 0 } as never);
 
+    // #1547 review: applyBedrockOverflow now awaits the refund directly
+    // (rather than fireAndForget-ing it), so by the time chatAction resolves
+    // the refund has already landed — no need to separately drain
+    // fireAndForget's pending promises before checking the next request.
     const overflowed = await chatAction(chatRequest());
     expect(overflowed.status).toBe(200);
-    await Promise.all(
-      vi
-        .mocked(fireAndForget)
-        .mock.results.map((result) => result.value)
-        .filter((value) => value !== undefined && value !== null),
-    );
 
     const localAfterRefund = await chatAction(chatRequest());
     expect(localAfterRefund.status).toBe(200);

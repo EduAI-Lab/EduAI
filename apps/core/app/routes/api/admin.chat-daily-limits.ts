@@ -9,6 +9,7 @@ import {
   normalizeChatDailyLimitSettings,
 } from "~/lib/chat-daily-limits";
 import {
+  ChatDailyLimitSettingsUnavailableError,
   getChatDailyLimitSettings,
   setChatDailyLimitSettings,
 } from "~/lib/chat-daily-limits.server";
@@ -22,14 +23,35 @@ const UpdateChatDailyLimitSettingsSchema = z.object({
   instructorLimit: limitSchema,
 });
 
+/**
+ * `getChatDailyLimitSettings` throws `ChatDailyLimitSettingsUnavailableError`
+ * only on a cold cache with Postgres unreachable (a warm cache keeps serving
+ * the last-known settings through an outage) — the same condition
+ * `/api/chat` already maps to a 503 rather than letting it surface as an
+ * unhandled loader/action error (#1557 review).
+ */
+function chatDailyLimitUnavailableResponse() {
+  return json(
+    { error: "Daily message limits could not be loaded. Please try again shortly." },
+    503,
+  );
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { response: adminGuard } = await requireAdmin(request);
   if (adminGuard) return adminGuard;
 
-  return json({
-    settings: await getChatDailyLimitSettings(),
-    definitions: CHAT_DAILY_LIMIT_DEFINITIONS,
-  });
+  let settings;
+  try {
+    settings = await getChatDailyLimitSettings();
+  } catch (error) {
+    if (error instanceof ChatDailyLimitSettingsUnavailableError) {
+      return chatDailyLimitUnavailableResponse();
+    }
+    throw error;
+  }
+
+  return json({ settings, definitions: CHAT_DAILY_LIMIT_DEFINITIONS });
 }
 
 export async function action({ request }: ActionFunctionArgs) {

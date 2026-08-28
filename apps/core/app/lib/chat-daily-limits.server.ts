@@ -1,6 +1,6 @@
 import {
   checkRateLimit,
-  refundMostRecentRateLimitCharge,
+  refundRateLimitCharge,
   type RateLimitResult,
 } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
@@ -124,25 +124,22 @@ export async function consumeLocalChatDailyCap(options: {
 }
 
 /**
- * Undo a `consumeLocalChatDailyCap` charge. The cap is reserved right after
- * Auto routing picks a local model, before admission/fleet resolution runs —
- * if the turn later overflows to Bedrock (admission timeout or fleet
+ * Undo a `consumeLocalChatDailyCap` charge, by the `reservationToken` that
+ * call's `RateLimitResult` returned. The cap is reserved right after Auto
+ * routing picks a local model, before admission/fleet resolution runs — if
+ * the turn later overflows to Bedrock (admission timeout or fleet
  * exhaustion), it executed on cloud, not local, and must not count against
  * the local daily quota (the PR's contract: cloud turns are never counted).
- * No-op for callers that never charged (regenerateOnly, non-local models,
- * uncapped roles).
+ *
+ * Callers only ever hold a `reservationToken` when `consumeLocalChatDailyCap`
+ * actually charged (see `RateLimitResult.reservationToken`'s contract), so
+ * there is no need to re-derive "would this have charged" from
+ * `isLocalChatbotModel`/`dailyLimitForRole` here the way the pre-#1547-review
+ * version did — the token's mere presence already proves it (#1547 review).
  */
 export async function refundLocalChatDailyCap(options: {
   userId: string;
-  role: string | undefined;
-  model: string | undefined;
-  settings?: ChatDailyLimitSettings;
+  reservationToken: string;
 }): Promise<void> {
-  if (!isLocalChatbotModel(options.model)) return;
-
-  const settings = options.settings ?? (await getChatDailyLimitSettings());
-  const limit = dailyLimitForRole(options.role, settings);
-  if (limit <= 0) return;
-
-  await refundMostRecentRateLimitCharge(chatDailyLimitKey(options.userId));
+  await refundRateLimitCharge(chatDailyLimitKey(options.userId), options.reservationToken);
 }

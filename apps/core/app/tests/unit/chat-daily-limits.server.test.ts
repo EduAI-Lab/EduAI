@@ -105,7 +105,7 @@ describe("chat-daily-limits.server", () => {
         role: "STUDENT",
         model: "vllm:test-model",
       }),
-    ).resolves.toEqual({ limited: false, retryAfter: 0 });
+    ).resolves.toEqual({ limited: false, retryAfter: 0, reservationToken: expect.any(String) });
 
     prismaMock.systemConfig.findMany.mockRejectedValue(new Error("db down"));
     const later = Date.now() + 11_000;
@@ -161,7 +161,7 @@ describe("consumeLocalChatDailyCap", () => {
         model: "vllm:test-model",
         settings,
       }),
-    ).resolves.toEqual({ limited: false, retryAfter: 0 });
+    ).resolves.toEqual({ limited: false, retryAfter: 0, reservationToken: expect.any(String) });
     await expect(
       consumeLocalChatDailyCap({
         userId,
@@ -228,34 +228,51 @@ describe("refundLocalChatDailyCap", () => {
     const request = { userId, role: "STUDENT", model: "vllm:test-model", settings };
 
     // Spends the student's only slot for the day.
-    await expect(consumeLocalChatDailyCap(request)).resolves.toEqual({
-      limited: false,
-      retryAfter: 0,
-    });
+    const charge = await consumeLocalChatDailyCap(request);
+    expect(charge).toEqual({ limited: false, retryAfter: 0, reservationToken: expect.any(String) });
     // This turn actually ran on Bedrock overflow, not the local model — refund it.
-    await refundLocalChatDailyCap(request);
+    await refundLocalChatDailyCap({ userId, reservationToken: charge!.reservationToken! });
     // The refunded slot is available again, not double-charged.
     await expect(consumeLocalChatDailyCap(request)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
   });
 
-  it("is a no-op for cloud providers, Auto, and uncapped roles", async () => {
+  // #1547 review: the old `refundMostRecentRateLimitCharge` removed whichever
+  // charge was newest, so refunding an earlier charge could accidentally
+  // free a later, unrelated one instead — passing an exact reservation
+  // token (rather than relying on "most recent") is what this test pins.
+  it("refunds the exact charge identified by its token, not whichever charge is newest", async () => {
+    const settings = { studentLimit: 2, instructorLimit: 200 };
+    const userId = `student-${randomUUID()}`;
+    const request = { userId, role: "STUDENT", model: "vllm:test-model", settings };
+
+    const first = await consumeLocalChatDailyCap(request);
+    const second = await consumeLocalChatDailyCap(request);
+    expect(first?.reservationToken).toBeDefined();
+    expect(second?.reservationToken).toBeDefined();
+    expect(first?.reservationToken).not.toBe(second?.reservationToken);
+    // Cap is full — a third charge would 429.
+    await expect(consumeLocalChatDailyCap(request)).resolves.toMatchObject({ limited: true });
+
+    // Refund the FIRST charge specifically (e.g. it — not the second — is
+    // the one that overflowed to Bedrock).
+    await refundLocalChatDailyCap({ userId, reservationToken: first!.reservationToken! });
+
+    // Exactly one slot is free: a new charge fits (second + this one = 2
+    // still counted), but the one after that does not. If the refund had
+    // instead removed `second`'s charge (the "most recent" bug), the same
+    // two calls below would both succeed instead.
+    await expect(consumeLocalChatDailyCap(request)).resolves.toMatchObject({ limited: false });
+    await expect(consumeLocalChatDailyCap(request)).resolves.toMatchObject({ limited: true });
+  });
+
+  it("is a safe no-op for a reservation token that was never charged", async () => {
     const userId = `student-${randomUUID()}`;
     await expect(
-      refundLocalChatDailyCap({ userId, role: "STUDENT", model: "openai:gpt-4o" }),
-    ).resolves.toBeUndefined();
-    await expect(
-      refundLocalChatDailyCap({ userId, role: "STUDENT", model: "auto" }),
-    ).resolves.toBeUndefined();
-    await expect(
-      refundLocalChatDailyCap({
-        userId,
-        role: "STUDENT",
-        model: "vllm:test-model",
-        settings: { studentLimit: 0, instructorLimit: 200 },
-      }),
+      refundLocalChatDailyCap({ userId, reservationToken: "mem:never-charged" }),
     ).resolves.toBeUndefined();
   });
 });
