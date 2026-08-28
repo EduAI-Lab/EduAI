@@ -79,6 +79,7 @@ export default [
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/routing-model-settings", "routes/api/routing-model-settings.ts"),
+  route("/api/fleet-config", "routes/api/fleet-config.ts"),
   route("/api/admin/bedrock-settings", "routes/api/admin.bedrock-settings.ts"),
   route("/api/me", "routes/api/me.ts"),
   route("/api/preferences", "routes/api/preferences.ts"),

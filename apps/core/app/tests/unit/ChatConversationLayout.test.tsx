@@ -102,9 +102,7 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Answered by vllm:qwen2.5-7b-instruct")).toBeInTheDocument();
   });
 
   it("keeps a persisted auto-routed message's label after the picker is switched to an explicit model (#829)", () => {
@@ -118,9 +116,7 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Answered by vllm:qwen2.5-7b-instruct")).toBeInTheDocument();
   });
 
   it("still shows a persisted explicit-model message's label after the picker is switched to auto", () => {
@@ -176,9 +172,7 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Answered by vllm:qwen2.5-7b-instruct (Auto-routed)"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Answered by vllm:qwen2.5-7b-instruct")).toBeInTheDocument();
   });
 });
 

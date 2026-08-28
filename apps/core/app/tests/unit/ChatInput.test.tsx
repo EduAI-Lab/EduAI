@@ -53,6 +53,28 @@ describe("ChatInput — rendering", () => {
     render(<ChatInput {...makeProps()} />);
     expect(screen.getByRole("button", { name: /chat settings/i })).toBeInTheDocument();
   });
+
+  it("shows model names without provider labels in the model menu", () => {
+    render(
+      <ChatInput
+        {...makeProps({
+          chatModels: [
+            baseModel,
+            { ...baseModel, id: "m2", name: "Claude", provider: "anthropic" },
+          ],
+        })}
+      />,
+    );
+
+    const modelButton = screen.getByRole("button", { name: /GPT-4o/ });
+    fireEvent.pointerDown(modelButton, { button: 0, pointerType: "mouse" });
+    fireEvent.click(modelButton);
+
+    expect(screen.getByRole("menuitem", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Claude" })).toBeInTheDocument();
+    expect(screen.queryByText("openai")).not.toBeInTheDocument();
+    expect(screen.queryByText("anthropic")).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

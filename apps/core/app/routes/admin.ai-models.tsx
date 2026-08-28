@@ -8,6 +8,7 @@ import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
 import { useRoutingModelSettings } from "~/hooks/api/use-routing-model-settings";
+import { useFleetConfig } from "~/hooks/api/use-fleet-config";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -74,6 +75,15 @@ export default function AIModelsPage() {
     error: routingModelsError,
     setEnabled: setRoutingModelEnabled,
   } = useRoutingModelSettings();
+  const {
+    servers: fleetServers,
+    configured: fleetConfigured,
+    source: fleetSource,
+    isLoading: fleetConfigLoading,
+    isSaving: fleetConfigSaving,
+    error: fleetConfigError,
+    save: saveFleetConfig,
+  } = useFleetConfig();
 
   const isLoading = providersLoading || modelsLoading || routingModelsLoading;
   const error = providersError ?? modelsError ?? routingModelsError;
@@ -151,6 +161,13 @@ export default function AIModelsPage() {
         routingModelSettings={routingModelSettings}
         routingModelDefinitions={routingModelDefinitions}
         onToggleRoutingModel={setRoutingModelEnabled}
+        fleetServers={fleetServers}
+        fleetConfigured={fleetConfigured}
+        fleetSource={fleetSource}
+        fleetConfigLoading={fleetConfigLoading}
+        fleetConfigSaving={fleetConfigSaving}
+        fleetConfigError={fleetConfigError}
+        onSaveFleetConfig={saveFleetConfig}
       />
     </CoreAppShell>
   );

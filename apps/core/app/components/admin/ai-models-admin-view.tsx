@@ -10,6 +10,7 @@ import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { RoutingModelsTable } from "~/components/admin/routing-models-table";
+import { FleetConfigPanel } from "~/components/admin/fleet-config-panel";
 import { TablePagination } from "~/components/ui/table-pagination";
 import { fetchAllModels, fetchModelsByProvider } from "~/hooks/api/use-ai-models";
 import type { PaginationState } from "~/hooks/api/pagination";
@@ -24,6 +25,7 @@ import type { ModelFormData, OllamaModel, VllmModel } from "~/components/admin/m
 import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
 import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
+import type { FleetServerConfig } from "~/hooks/api/use-fleet-config";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -72,6 +74,13 @@ export type AiModelsAdminViewProps = {
   routingModelSettings: RoutingModelSettings;
   routingModelDefinitions: RoutingModelSettingDefinition[];
   onToggleRoutingModel: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
+  fleetServers: FleetServerConfig[];
+  fleetConfigured: boolean;
+  fleetSource: "file" | "environment";
+  fleetConfigLoading: boolean;
+  fleetConfigSaving: boolean;
+  fleetConfigError: string | null;
+  onSaveFleetConfig: (servers: FleetServerConfig[]) => Promise<FleetServerConfig[]>;
 };
 
 export function AiModelsAdminView({
@@ -100,6 +109,13 @@ export function AiModelsAdminView({
   routingModelSettings,
   routingModelDefinitions,
   onToggleRoutingModel,
+  fleetServers,
+  fleetConfigured,
+  fleetSource,
+  fleetConfigLoading,
+  fleetConfigSaving,
+  fleetConfigError,
+  onSaveFleetConfig,
 }: AiModelsAdminViewProps) {
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
@@ -392,6 +408,7 @@ export function AiModelsAdminView({
               <PageTabsList>
                 <PageTabsTrigger value="models">Models</PageTabsTrigger>
                 <PageTabsTrigger value="providers">Providers</PageTabsTrigger>
+                <PageTabsTrigger value="fleet">Fleet</PageTabsTrigger>
               </PageTabsList>
 
               <PageTabsContent value="models" className="space-y-4">
@@ -547,6 +564,18 @@ export function AiModelsAdminView({
                     />
                   </CardContent>
                 </Card>
+              </PageTabsContent>
+
+              <PageTabsContent value="fleet" className="space-y-4">
+                <FleetConfigPanel
+                  servers={fleetServers}
+                  configured={fleetConfigured}
+                  source={fleetSource}
+                  loading={fleetConfigLoading}
+                  saving={fleetConfigSaving}
+                  error={fleetConfigError}
+                  onSave={onSaveFleetConfig}
+                />
               </PageTabsContent>
             </PageTabs>
           </div>

@@ -90,6 +90,13 @@ function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdmin
         routingModelSettings={defaultRoutingModelSettings()}
         routingModelDefinitions={routingModelSettingDefinitions()}
         onToggleRoutingModel={vi.fn()}
+        fleetServers={[]}
+        fleetConfigured={false}
+        fleetSource="environment"
+        fleetConfigLoading={false}
+        fleetConfigSaving={false}
+        fleetConfigError={null}
+        onSaveFleetConfig={vi.fn()}
         {...overrides}
       />
     </MemoryRouter>,
@@ -486,6 +493,41 @@ describe("AiModelsAdminView", () => {
         expect(consoleError).toHaveBeenCalledWith("Failed to toggle provider:", expect.any(Error));
       });
       consoleError.mockRestore();
+    });
+  });
+
+  describe("fleet tab", () => {
+    it("shows the fleet config editor and saves the current server list", async () => {
+      const onSaveFleetConfig = vi.fn().mockResolvedValue(undefined);
+      renderView({
+        fleetServers: [
+          {
+            id: "cmps01",
+            baseUrl: "http://cmps01.ok.ubc.ca:8001",
+            jobTypes: ["interactive"],
+            models: [],
+          },
+        ],
+        onSaveFleetConfig,
+      });
+
+      fireEvent.mouseDown(screen.getByRole("tab", { name: "Fleet" }), { button: 0 });
+      await waitFor(() => {
+        expect(screen.getByText("AI fleet configuration")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Save fleet config" }));
+
+      await waitFor(() => {
+        expect(onSaveFleetConfig).toHaveBeenCalledWith([
+          {
+            id: "cmps01",
+            baseUrl: "http://cmps01.ok.ubc.ca:8001",
+            jobTypes: ["interactive"],
+            models: [],
+          },
+        ]);
+      });
     });
   });
 
