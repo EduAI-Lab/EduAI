@@ -23,6 +23,11 @@ import {
   isQmAiDeadlineError,
   assertQmAiDeadline,
 } from "../middleware/aiAdmission.js";
+import {
+  deleteUserProviderSettingOnCore,
+  getUserProviderSettingsFromCore,
+  upsertUserProviderSettingOnCore,
+} from "../services/coreApiService.js";
 
 const router = express.Router();
 
@@ -149,6 +154,51 @@ function logEduaiRouteError(event, error) {
 }
 
 router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+
+router.get("/provider-settings", async (req, res, next) => {
+  try {
+    res.json(await getUserProviderSettingsFromCore(req.headers.cookie ?? ""));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/provider-settings", async (req, res, next) => {
+  const { providerName, isEnabled, apiKey, baseUrl } = req.body ?? {};
+  if (typeof providerName !== "string" || !providerName.trim()) {
+    return res.status(400).json({ error: "providerName is required" });
+  }
+  if (typeof isEnabled !== "boolean") {
+    return res.status(400).json({ error: "isEnabled must be a boolean" });
+  }
+  if (apiKey !== undefined && typeof apiKey !== "string") {
+    return res.status(400).json({ error: "apiKey must be a string" });
+  }
+  if (baseUrl !== undefined && typeof baseUrl !== "string") {
+    return res.status(400).json({ error: "baseUrl must be a string" });
+  }
+  try {
+    const payload = { providerName: providerName.trim(), isEnabled };
+    if (apiKey !== undefined) payload.apiKey = apiKey;
+    if (baseUrl !== undefined) payload.baseUrl = baseUrl;
+    await upsertUserProviderSettingOnCore(req.headers.cookie ?? "", payload);
+    return res.status(204).end();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete("/provider-settings", async (req, res, next) => {
+  const providerName =
+    typeof req.query.providerName === "string" ? req.query.providerName.trim() : "";
+  if (!providerName) return res.status(400).json({ error: "providerName is required" });
+  try {
+    await deleteUserProviderSettingOnCore(req.headers.cookie ?? "", providerName);
+    return res.status(204).end();
+  } catch (error) {
+    return next(error);
+  }
+});
 
 const chatAdmission = qmAiProviderCallAdmission({
   validate: validateChatAdmission,

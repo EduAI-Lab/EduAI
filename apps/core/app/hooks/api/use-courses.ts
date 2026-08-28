@@ -88,6 +88,8 @@ export interface UseCoursesOptions {
    * pass `false` to skip the extra unpaginated scalar scan (default `true`).
    */
   includeFacets?: boolean;
+  /** Fetch every matching page for unpaged consumers such as the chat picker. */
+  loadAll?: boolean;
 }
 
 /**
@@ -102,7 +104,7 @@ export interface UseCoursesOptions {
  * current filtered page and must not be re-filtered client-side.
  */
 export function useCourses(options: UseCoursesOptions = {}) {
-  const { pageSize = DEFAULT_PAGE_SIZE, isActive, includeFacets = true } = options;
+  const { pageSize = DEFAULT_PAGE_SIZE, isActive, includeFacets = true, loadAll = false } = options;
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [total, setTotal] = useState(0);
@@ -146,18 +148,38 @@ export function useCourses(options: UseCoursesOptions = {}) {
     const seq = ++requestSeq.current;
     setError(null);
     try {
-      const params = new URLSearchParams(
-        paginationQuery(pagination, {
-          search: debouncedSearch,
-          isActive: isActive === undefined ? undefined : String(isActive),
-        }),
-      );
-      for (const key of COURSE_FILTER_KEYS) {
-        for (const value of selectedFilters[key]) params.append(key, value);
+      const readPage = async (pageIndex: number): Promise<PaginatedResponse<Course>> => {
+        const params = new URLSearchParams(
+          paginationQuery(
+            { ...pagination, pageIndex },
+            {
+              search: debouncedSearch,
+              isActive: isActive === undefined ? undefined : String(isActive),
+            },
+          ),
+        );
+        for (const key of COURSE_FILTER_KEYS) {
+          for (const value of selectedFilters[key]) params.append(key, value);
+        }
+        const res = await fetch(`/api/courses?${params.toString()}`);
+        if (!res.ok) throw new Error(await res.text());
+        return res.json() as Promise<PaginatedResponse<Course>>;
+      };
+
+      const first = await readPage(loadAll ? 0 : pagination.pageIndex);
+      let body = first;
+      if (loadAll) {
+        const pageCount = Math.ceil(first.total / first.pageSize) || 1;
+        const remaining = await Promise.all(
+          Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => readPage(index + 1)),
+        );
+        body = {
+          ...first,
+          data: [first.data, ...remaining.map((page) => page.data)].flat(),
+          page: 1,
+          pageSize: body.data.length,
+        };
       }
-      const res = await fetch(`/api/courses?${params.toString()}`);
-      if (!res.ok) throw new Error(await res.text());
-      const body: PaginatedResponse<Course> = await res.json();
       if (seq !== requestSeq.current) return;
       setCourses(body.data);
       setTotal(body.total);
@@ -174,7 +196,7 @@ export function useCourses(options: UseCoursesOptions = {}) {
     } finally {
       if (seq === requestSeq.current) setLoading(false);
     }
-  }, [pagination, debouncedSearch, isActive, selectedFilters]);
+  }, [pagination, debouncedSearch, isActive, selectedFilters, loadAll]);
 
   // Facets are best-effort metadata for the dropdowns: a failure must never
   // block the list, so errors are swallowed and the toolbar falls back to the

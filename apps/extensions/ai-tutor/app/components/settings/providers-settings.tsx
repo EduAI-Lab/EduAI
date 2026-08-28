@@ -38,7 +38,7 @@ export function ProvidersSettings() {
         setErrors((e) => ({ ...e, [provider]: result.error || "Invalid API key" }));
         return;
       }
-      setKey(provider, draft);
+      await setKey(provider, draft);
       setDrafts((d) => ({ ...d, [provider]: "" }));
     } catch {
       setErrors((e) => ({ ...e, [provider]: "Could not validate API key" }));
@@ -90,7 +90,12 @@ export function ProvidersSettings() {
                   <div className="flex-1 rounded-[var(--radius-md)] border border-border bg-muted/40 px-3 py-2 font-mono text-sm text-muted-foreground">
                     {maskApiKey(getKey(p.id))}
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeKey(p.id)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void removeKey(p.id)}
+                  >
                     <IconTrash className="h-4 w-4" /> Remove
                   </Button>
                 </div>

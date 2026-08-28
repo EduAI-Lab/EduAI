@@ -652,7 +652,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setApiKeyError(result.error || "Invalid API key");
         return;
       }
-      setKey(currentProvider, tempApiKey.trim());
+      await setKey(currentProvider, tempApiKey.trim());
       setShowApiKeyDialog(false);
       setTempApiKey("");
     } catch {

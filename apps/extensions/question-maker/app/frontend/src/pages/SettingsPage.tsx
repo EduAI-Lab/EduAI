@@ -32,7 +32,11 @@ import {
   SelectValue,
   useTheme,
 } from "@eduai/ui";
-import apiKeyStorage, { type AIProvider } from "../services/apiKeyStorage";
+import apiKeyStorage, {
+  CORE_STORED_KEY,
+  type AIProvider,
+  type ProviderSettingStatus,
+} from "../services/apiKeyStorage";
 import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
 import { canvasService, type CanvasIntegration } from "../services/canvasService";
 import { getCanvasDefaultUrl } from "../services/canvasDefaults";
@@ -149,8 +153,18 @@ export default function SettingsPage() {
   const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(() => readExportPrefs());
 
   const refreshKeys = async (): Promise<void> => {
-    const keys = await apiKeyStorage.getAllApiKeys();
-    setStoredKeys(keys);
+    try {
+      const statuses: ProviderSettingStatus[] = await apiKeyStorage.getProviderSettings();
+      setStoredKeys(
+        Object.fromEntries(
+          statuses
+            .filter((status) => status.isEnabled && status.hasKey)
+            .map((status) => [status.providerName, CORE_STORED_KEY]),
+        ),
+      );
+    } catch {
+      setStoredKeys(await apiKeyStorage.getAllApiKeys());
+    }
   };
 
   useEffect(() => {
@@ -179,7 +193,7 @@ export default function SettingsPage() {
   };
 
   const handleRemoveKey = async (provider: AIProvider): Promise<void> => {
-    apiKeyStorage.removeApiKey(provider);
+    await apiKeyStorage.removeProviderSetting(provider);
     await refreshKeys();
     toast(`${PROVIDER_LABELS[provider]} API key removed`);
   };
@@ -329,7 +343,10 @@ export default function SettingsPage() {
                         )}
                         {existing ? (
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Configured ({maskKey(existing)})</Badge>
+                            <Badge variant="secondary">
+                              Configured
+                              {existing === CORE_STORED_KEY ? "" : ` (${maskKey(existing)})`}
+                            </Badge>
                             <Button
                               type="button"
                               size="sm"

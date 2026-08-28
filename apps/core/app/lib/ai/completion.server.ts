@@ -22,6 +22,7 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
@@ -132,7 +133,8 @@ export type CompletionApiKeys = {
 
 export type CompletionRequest = {
   model: string;
-  apiKeys: CompletionApiKeys;
+  apiKeys?: CompletionApiKeys;
+  userId?: string;
   systemPrompt?: string | null;
   messages?: CompletionMessage[];
   streaming?: boolean;
@@ -263,7 +265,7 @@ export function validateCompletionRequest(
     }
   }
 
-  const apiKeysError = validateApiKeys(body.apiKeys, limits);
+  const apiKeysError = validateApiKeys(body.apiKeys ?? {}, limits);
   if (apiKeysError) return apiKeysError;
   // SAFETY: `validateApiKeys` returned no error, so `apiKeys` is an object of
   // per-provider entries with only the two optional string fields.
@@ -458,7 +460,7 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
-  const apiKeysParsed = clientApiKeysBodySchema.safeParse(request.apiKeys);
+  const apiKeysParsed = clientApiKeysBodySchema.safeParse(request.apiKeys ?? {});
   if (!apiKeysParsed.success) {
     return {
       ok: false as const,
@@ -488,8 +490,18 @@ export async function runCompletion(request: CompletionRequest) {
     }
   }
 
+  const requestApiKeys = toUserProviderSettings(apiKeysParsed.data);
+  const storedApiKeys = request.userId ? await getUserProviderSettings(request.userId) : {};
+  const mergedApiKeys = { ...storedApiKeys };
+  for (const [provider, requestSettings] of Object.entries(requestApiKeys)) {
+    const stored = storedApiKeys[provider];
+    const mergedSettings = { ...requestSettings, ...stored };
+    if (stored?.apiKey) mergedSettings.apiKey = stored.apiKey;
+    mergedApiKeys[provider] = mergedSettings;
+  }
+
   const validatedApiKeys = mergeLocalInferenceFromEnv(
-    toUserProviderSettings(apiKeysParsed.data),
+    mergedApiKeys,
     validatedModelId,
     fleetBaseUrl,
   );

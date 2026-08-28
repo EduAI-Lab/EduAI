@@ -7,6 +7,9 @@
 
 export type ProviderId = "google" | "openai" | "opencode";
 
+/** Sentinel used in UI state when the encrypted key is owned by Core. */
+export const CORE_STORED_KEY = "__core_stored__";
+
 /** Providers a student can configure a key for, in display order. */
 export const PROVIDERS: ReadonlyArray<{
   id: ProviderId;

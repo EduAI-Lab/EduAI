@@ -62,9 +62,10 @@ export async function action({ request }: ActionFunctionArgs) {
   // Completion is stateless, but retain a stable principal for admission and
   // billing-abuse controls. Service-key traffic is intentionally one shared
   // bucket until extension callers carry a signed end-user identity.
-  let rateLimitIdentity = apiKeySession?.user?.id ?? null;
-  if (!apiKeySession?.user) {
-    const session = await getRequestSession(request);
+  let session = apiKeySession;
+  let rateLimitIdentity = session?.user?.id ?? null;
+  if (!session?.user) {
+    session = await getRequestSession(request);
     if (session?.user) {
       rateLimitIdentity = session.user.id;
     } else {
@@ -155,6 +156,7 @@ export async function action({ request }: ActionFunctionArgs) {
     outcome = await runCompletion({
       model,
       apiKeys: payload.apiKeys,
+      userId: session?.user?.id,
       systemPrompt: payload.systemPrompt,
       messages: payload.messages,
       streaming: payload.streaming,

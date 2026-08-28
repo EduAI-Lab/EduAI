@@ -10,6 +10,9 @@ vi.mock("~/lib/api", async () => {
       me: vi.fn().mockResolvedValue({ user: null }),
       logout: vi.fn().mockResolvedValue({ ok: true }),
       validateApiKey: vi.fn().mockResolvedValue({ valid: true }),
+      getUserProviderSettings: vi.fn().mockRejectedValue(new Error("Core unavailable")),
+      saveUserProviderSetting: vi.fn().mockResolvedValue(undefined),
+      deleteUserProviderSetting: vi.fn().mockResolvedValue(undefined),
     },
   };
 });

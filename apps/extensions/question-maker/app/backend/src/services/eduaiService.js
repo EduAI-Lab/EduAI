@@ -163,12 +163,12 @@ class EduAIService {
    * session cookie only when no service key is configured.
    */
   buildChatAuthHeaders(cookie) {
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
+    }
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }

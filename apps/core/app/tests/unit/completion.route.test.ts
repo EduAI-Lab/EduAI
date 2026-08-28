@@ -58,6 +58,10 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";

@@ -162,7 +162,7 @@ async function fetchFromCore(
       throw error;
     }
     assertQmAiDeadline({ signal });
-    if (res.ok) return res.json();
+    if (res.ok) return res.status === 204 ? null : res.json();
 
     const errBody = await res.json().catch(() => ({}));
     const err = coreError(errBody.error || "Core request failed", res.status, errBody);
@@ -174,6 +174,34 @@ async function fetchFromCore(
   }
 
   throw lastError;
+}
+
+/** Core-owned provider settings. Raw keys are accepted only on this
+ * authenticated session-scoped write; Core encrypts them before storage. */
+export async function getUserProviderSettingsFromCore(cookie) {
+  const data = await fetchFromCore("/api/user-provider-settings", {
+    cookie,
+    cookieOnly: true,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function upsertUserProviderSettingOnCore(cookie, payload) {
+  return fetchFromCore("/api/user-provider-settings", {
+    method: "POST",
+    cookie,
+    cookieOnly: true,
+    body: payload,
+  });
+}
+
+export async function deleteUserProviderSettingOnCore(cookie, providerName) {
+  return fetchFromCore("/api/user-provider-settings", {
+    method: "DELETE",
+    cookie,
+    cookieOnly: true,
+    body: { providerName },
+  });
 }
 
 function coreError(message, status, body) {

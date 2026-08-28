@@ -46,6 +46,7 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 const GENERATION_ERROR_MESSAGE = "AI study buddy not available right now. Please try again later.";
+const CORE_STORED_KEY = "__core_stored__";
 
 function getModelProvider(modelId) {
   if (typeof modelId !== "string") return null;
@@ -356,12 +357,9 @@ async function callEduAI({
   }
 
   const userMessageId = messageId || randomUUID();
-  const apiKeys = {
-    [provider]: {
-      apiKey: userApiKey,
-      isEnabled: true,
-    },
-  };
+  const providerSettings = { isEnabled: true };
+  if (userApiKey !== CORE_STORED_KEY) providerSettings.apiKey = userApiKey;
+  const apiKeys = { [provider]: providerSettings };
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
   const trimmedCourseId = trimNonEmpty(courseId);

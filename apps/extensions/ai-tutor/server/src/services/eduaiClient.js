@@ -50,6 +50,41 @@ export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
 }
 
+/** Read Core-owned provider status for the authenticated caller. */
+export async function getUserProviderSettings(cookie) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to read provider settings");
+    error.status = 401;
+    throw error;
+  }
+  const data = await requestEduAi("/user-provider-settings", { cookie });
+  return Array.isArray(data) ? data : [];
+}
+
+/** Persist one provider setting in Core; Core encrypts any supplied secret. */
+export async function upsertUserProviderSetting(cookie, payload) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to save provider settings");
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi("/user-provider-settings", { method: "POST", cookie, body: payload });
+}
+
+/** Remove one Core-owned provider setting. */
+export async function deleteUserProviderSetting(cookie, providerName) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to delete provider settings");
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi("/user-provider-settings", {
+    method: "DELETE",
+    cookie,
+    body: { providerName },
+  });
+}
+
 /**
  * Shared fetch helper. Surfaces upstream HTTP failures as Errors with
  * `status` set so route handlers can pass them through unchanged. Returns

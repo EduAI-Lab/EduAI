@@ -3,8 +3,8 @@ import { useLocalUser } from "~/hooks/useLocalUser";
 import api from "~/lib/api";
 import {
   API_KEYS_CLEARED_EVENT,
+  CORE_STORED_KEY,
   loadApiKeysFromStorage,
-  saveApiKeysToStorage,
 } from "~/lib/provider-keys";
 
 export type UseApiKeysResult = {
@@ -14,8 +14,8 @@ export type UseApiKeysResult = {
   loaded: boolean;
   hasKey: (provider: string) => boolean;
   getKey: (provider: string) => string;
-  setKey: (provider: string, key: string) => void;
-  removeKey: (provider: string) => void;
+  setKey: (provider: string, key: string) => Promise<void>;
+  removeKey: (provider: string) => Promise<void>;
   validateKey: (provider: string, key: string) => Promise<{ valid: boolean; error?: string }>;
 };
 
@@ -37,7 +37,29 @@ export function useApiKeys(): UseApiKeysResult {
   const loaded = isCurrentAccount && accountKeys.loaded;
 
   useEffect(() => {
-    setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
+    let active = true;
+    setAccountKeys({ userId, keys: {}, loaded: false });
+    void api
+      .getUserProviderSettings()
+      .then((rows) => {
+        if (!active) return;
+        const nextKeys = Object.fromEntries(
+          rows
+            .filter((row) => row.isEnabled && row.hasKey)
+            .map((row) => [row.providerName, CORE_STORED_KEY]),
+        );
+        setAccountKeys({
+          userId,
+          keys: nextKeys,
+          loaded: true,
+        });
+      })
+      .catch(() => {
+        if (active) setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
+      });
+    return () => {
+      active = false;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -51,12 +73,17 @@ export function useApiKeys(): UseApiKeysResult {
   }, [userId]);
 
   const setKey = useCallback(
-    (provider: string, key: string) => {
+    async (provider: string, key: string) => {
       if (!userId) return;
       setAccountKeys((previous) => {
-        const previousKeys = previous.userId === userId ? previous.keys : {};
-        const next = { ...previousKeys, [provider]: key };
-        saveApiKeysToStorage(userId, next);
+        const next = previous.userId === userId ? { ...previous.keys } : {};
+        next[provider] = key;
+        return { userId, keys: next, loaded: true };
+      });
+      await api.saveUserProviderSetting({ providerName: provider, isEnabled: true, apiKey: key });
+      setAccountKeys((previous) => {
+        const next = previous.userId === userId ? { ...previous.keys } : {};
+        next[provider] = CORE_STORED_KEY;
         return { userId, keys: next, loaded: true };
       });
     },
@@ -64,14 +91,12 @@ export function useApiKeys(): UseApiKeysResult {
   );
 
   const removeKey = useCallback(
-    (provider: string) => {
+    async (provider: string) => {
       if (!userId) return;
+      await api.deleteUserProviderSetting(provider);
       setAccountKeys((previous) => {
-        // Keys belonging to a different user are never carried into this one.
-        const existing = previous.userId === userId ? previous.keys : undefined;
-        const next = { ...existing };
+        const next = previous.userId === userId ? { ...previous.keys } : {};
         delete next[provider];
-        saveApiKeysToStorage(userId, next);
         return { userId, keys: next, loaded: true };
       });
     },
