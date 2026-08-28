@@ -1,16 +1,11 @@
 import { Link, redirect } from "react-router";
 import type { Route } from "./+types/home";
-import {
-  IconArrowRight,
-  IconBook,
-  IconBulb,
-  IconCpu,
-  IconUsers,
-} from "@tabler/icons-react";
+import { IconArrowRight, IconBulb } from "@tabler/icons-react";
 import { Button, Card, CardContent, PageHeading } from "@eduai/ui";
 import { SiteFooter } from "~/components/site-footer";
-import { ProjectGoals } from "~/components/project-goals";
+import { ApproachSection } from "~/components/approach-section";
 import { ProductsSection } from "~/components/products-section";
+import { ResearchSection } from "~/components/research-section";
 import { TeamSection } from "~/components/team-section";
 import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
@@ -18,11 +13,11 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "EduAI Core Learning" },
+    { title: "EduAI Learning" },
     {
       name: "description",
       content:
-        "An AI learning platform crafted at UBC Okanagan. Discover what we are building, why we love doing it, and meet the team behind it all.",
+        "AI study tools from a research lab at UBC Okanagan. They answer from your own course materials and run on the university's own GPUs.",
     },
   ];
 }
@@ -37,21 +32,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {};
 }
 
-const capabilities = [
-  { icon: IconCpu, label: "Smart course AI" },
-  { icon: IconBook, label: "Real class notes" },
-  { icon: IconUsers, label: "Personalized practice" },
-];
-
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteNavigation />
 
       {/* Hero */}
-      <section className="border-b border-border py-20 lg:py-28">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-10 lg:grid-cols-[1fr_360px]">
+      <section className="border-b border-border">
+        <div className="mx-auto flex min-h-[85vh] max-w-7xl flex-col justify-end px-4 pb-20 pt-28 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
             <div>
               <h1 className="text-4xl font-bold text-foreground lg:text-6xl">
                 {projectInfo.title}
@@ -79,18 +68,6 @@ export default function HomePage() {
                 </Button>
               </div>
             </div>
-
-            <Card className="lg:self-stretch">
-              <CardContent className="flex flex-col justify-center px-6 py-8">
-                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
-                  <IconBulb className="h-6 w-6 text-primary-text" />
-                </div>
-                <h2 className="mb-3 text-lg font-semibold text-card-foreground">Our vision</h2>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {projectInfo.vision}
-                </p>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
@@ -107,59 +84,37 @@ export default function HomePage() {
           <div className="grid items-start gap-10 lg:grid-cols-2">
             <div className="space-y-6">
               <p className="text-lg leading-relaxed text-muted-foreground">
-                We are a research lab at UBC Okanagan building learning tools that feel genuinely
-                helpful. Instead of handing you the answer or replacing great teachers,
-                our tools break down confusing topics step by step, and meet
-                you wherever you are in your coursework.
+                EduAI is a research initiative at UBC Okanagan focused on developing and testing AI-powered study tools in real-world educational settings.
               </p>
 
               <p className="text-lg leading-relaxed text-muted-foreground">
-                By mixing machine learning research with real classroom feedback, we build software
-                that students actually want to use. Whether you are untangling difficult code, reviewing
-                lecture slides before an exam, or exploring new ideas, we want studying to feel less
-                daunting and more accessible.
+                Our models run on UBC's own GPUs, so your questions and files stay on campus. We are studying how to make AI tutors that are accurate, energy-efficient, and fair.
               </p>
-
-              <div className="flex flex-wrap gap-3">
-                {capabilities.map(({ icon: Icon, label }) => (
-                  <div
-                    key={label}
-                    className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2"
-                  >
-                    <Icon className="h-4 w-4 text-primary-text" />
-                    <span className="text-sm font-medium text-foreground">{label}</span>
-                  </div>
-                ))}
-              </div>
             </div>
 
-            <Card>
-              <CardContent className="px-6 py-6">
-                <h3 className="mb-4 text-lg font-semibold text-card-foreground">
-                  Powered by the platform right here
-                </h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  EduAI Core is our home-grown tutoring platform. It connects directly with your
-                  course slides, readings, and syllabi so every answer is anchored in what your
-                  professor actually taught, rather than random guesses from the open web.
-                </p>
-                <div className="mt-5">
-                  <Button asChild variant="outline">
-                    <Link to={siteConfig.navigation.dashboard}>
-                      Open the dashboard
-                      <IconArrowRight className="ml-1 h-4 w-4" />
-                    </Link>
-                  </Button>
+            <Card className="lg:self-stretch">
+              <CardContent className="flex flex-col justify-center px-6 py-8">
+                <div className="flex flex-row items-center gap-3">
+
+                  <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
+                    <IconBulb className="h-6 w-6 text-primary-text" />
+                  </div>
+                  <h2 className="mb-3 text-lg font-semibold text-card-foreground">Our vision</h2>
                 </div>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {projectInfo.vision}
+                </p>
               </CardContent>
             </Card>
           </div>
         </div>
       </section>
 
+      <ApproachSection />
+
       <ProductsSection />
 
-      <ProjectGoals />
+      <ResearchSection />
 
       <TeamSection />
 
@@ -167,15 +122,15 @@ export default function HomePage() {
       <section className="bg-primary py-20">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-primary-foreground lg:text-4xl">
-            Ready to dive in?
+            Try it on your own course
           </h2>
           <div
             aria-hidden="true"
             className="mx-auto my-5 h-[3px] w-10 rounded-[2px] bg-[var(--gold)]"
           />
           <p className="mb-8 text-lg leading-relaxed text-primary-foreground/80">
-            Jump into your dashboard to continue your studies, or set up a free account and try out
-            an AI tutor that actually knows your syllabus.
+            Create a free account and point the tutor at your own slides and syllabus, or open the
+            dashboard if you are already set up.
           </p>
 
           <div className="flex flex-wrap justify-center gap-3">

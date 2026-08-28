@@ -14,7 +14,7 @@ import { scrollToSection } from "~/lib/scroll-to-section";
 const navigationItems = [
   { name: "About", href: "#about" },
   { name: "Products", href: "#products" },
-  { name: "Goals", href: "#goals" },
+  { name: "Research", href: "#research" },
   { name: "Team", href: "#team" },
 ];
 

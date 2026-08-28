@@ -27,7 +27,11 @@ describe("HomePage — single-scroll layout", () => {
   it("renders every section of the merged page", () => {
     renderHome();
     expect(screen.getByRole("heading", { name: /What is EduAI Lab\?/ })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Project goals" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What makes EduAI different" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What we build" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Research at the lab" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Meet our research team" })).toBeInTheDocument();
   });
 
@@ -51,7 +55,9 @@ describe("HomePage — single-scroll layout", () => {
   it("carries the anchor targets the header links to", () => {
     const { container } = renderHome();
     expect(container.querySelector("#about")).toBeInTheDocument();
-    expect(container.querySelector("#goals")).toBeInTheDocument();
+    expect(container.querySelector("#approach")).toBeInTheDocument();
+    expect(container.querySelector("#products")).toBeInTheDocument();
+    expect(container.querySelector("#research")).toBeInTheDocument();
     expect(container.querySelector("#team")).toBeInTheDocument();
   });
 });

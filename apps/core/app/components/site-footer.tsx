@@ -12,7 +12,8 @@ import { scrollToSection } from "~/lib/scroll-to-section";
  */
 const sectionLinks = [
   { name: "About", href: "#about" },
-  { name: "Project goals", href: "#goals" },
+  { name: "Products", href: "#products" },
+  { name: "Research", href: "#research" },
   { name: "Our team", href: "#team" },
 ];
 

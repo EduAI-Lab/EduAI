@@ -16,7 +16,8 @@ describe("SiteNavigation — rendering", () => {
       </MemoryRouter>
     );
     expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "#about");
-    expect(screen.getByRole("link", { name: "Goals" })).toHaveAttribute("href", "#goals");
+    expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("href", "#products");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "#research");
     expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("href", "#team");
   });
 
