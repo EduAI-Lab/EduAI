@@ -3,16 +3,20 @@
  *
  * A unit admin's authority is bounded by `authorizedUnits`. Everything here
  * asks the same question from a different direction: can this role reach
- * something outside its unit, above its rank, or on the student side?
+ * something outside its unit, or above its rank?
  *
- * **One UI contract, three causes.** On this branch every refusal resolves to
+ * **One UI contract, two causes.** On this branch every refusal resolves to
  * the same in-shell 404 (`NotFoundState`), and that sameness is the point — the
  * app must not confirm that a record exists to someone who cannot see it:
- *   - Wrong *role* for a route (anything under `/student`, and `/admin`):
- *     `requireClientUser` throws `new Response(404)`.
- *   - Wrong *unit* for a record on a route the role may otherwise use: the
- *     loader's API call 403s and `http()` throws an `ApiHttpError` carrying the
- *     status, which `RouteErrorState` maps to the same 404 page.
+ *   - Wrong *role* for a route (`/admin`): `requireClientUser` throws
+ *     `new Response(404)`. #1660 widened `/student/*`'s allow-list to include
+ *     UNIT_ADMIN as a preview of the learner experience — see
+ *     student-preview-banner.route.test.tsx and the two #1660 tests below —
+ *     so it is no longer a role refusal on this branch, only a unit one.
+ *   - Wrong *unit* for a record on a route the role may otherwise use
+ *     (including a `/student/*` preview of out-of-unit content): the loader's
+ *     API call 403s and `http()` throws an `ApiHttpError` carrying the status,
+ *     which `RouteErrorState` maps to the same 404 page.
  *   - A URL matching no route at all: the `*` catch-all.
  * The boundary sits on the child route rather than on `_app.tsx`, so the
  * sidebar and header stay mounted and the reader can navigate onwards.
@@ -238,20 +242,15 @@ test.describe("UNIT_ADMIN access boundaries", () => {
     expect(asInstructor.isPublished).toBe(false);
   });
 
-  test("SECURITY: the student routes are not available to a unit admin", async ({ page }) => {
+  test("SECURITY: the student routes still refuse out-of-unit content", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    // The student shell is a different role's view, not a superset a staff role
-    // may drop into. Every `/student*` loader gates on `["STUDENT", "TA"]`, and
-    // `requireClientUser` answers a role mismatch with a 404 — the same page a
-    // nonexistent route gets, so the app never confirms the shell is there.
-    //
-    // All four routes are walked: routes.ts also defines /student/module/:id
-    // and /student/lesson/:id, and a gate covering only the list and the course
-    // page would leave those open.
+    // #1660 lets a UNIT_ADMIN open /student/* to preview the learner
+    // experience, but only for content the unit gate already lets them reach
+    // through the instructor shell — the preview is a different lens on the
+    // same authorization, not a bypass of it. Out-of-unit content must still
+    // be refused there exactly as it is on the instructor side.
     for (const path of [
-      "/student",
-      `/student/courses/${ua.course.atCourseId}`,
       `/student/module/${foreign.moduleId}`,
       `/student/lesson/${foreign.lessonId}`,
     ]) {
@@ -265,14 +264,14 @@ test.describe("UNIT_ADMIN access boundaries", () => {
     }
   });
 
-  test("the student shell is refused for in-unit content too, not just foreign content", async ({
+  test("the student shell previews in-unit content instead of refusing it (#1660)", async ({
     page,
   }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    // A module the admin *can* manage through the instructor shell. The student
-    // route must still refuse it — the gate is on the shell, not the record, so
-    // reaching for content they own must not open a learner view.
+    // A module the admin can manage through the instructor shell. #1660 makes
+    // the student route open the same record as a read-only preview — the
+    // unit gate already let them in, so there is nothing left to refuse.
     const moduleRes = await page.request.post(
       `${AI_TUTOR_API_URL}/api/courses/${ua.course.atCourseId}/modules`,
       { data: { title: "In-unit module for student-shell check" } },
@@ -280,11 +279,23 @@ test.describe("UNIT_ADMIN access boundaries", () => {
     expect(moduleRes.status()).toBe(201);
     const ownModuleId = (await moduleRes.json()).id;
 
+    await page.goto(`${AI_TUTOR_URL}/student`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(`${AI_TUTOR_URL}/student/courses/${ua.course.atCourseId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+
     await page.goto(`${AI_TUTOR_URL}/student/module/${ownModuleId}`, {
       waitUntil: "domcontentloaded",
     });
-    await expect(errorBoundary(page)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("In-unit module for student-shell check")).toHaveCount(0);
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+    // The title also appears in the breadcrumb, so scope to the hero heading —
+    // getByText would otherwise match both and violate Playwright's strict mode.
+    await expect(
+      page.getByRole("heading", { name: "In-unit module for student-shell check" }),
+    ).toBeVisible();
   });
 
   test("an unsupported-role landing sends a supported role back to their dashboard", async ({

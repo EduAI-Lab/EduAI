@@ -13,6 +13,7 @@ import { AuthProvider } from "~/hooks/useLocalUser";
 import { TourProvider } from "~/components/TourProvider";
 import { BugReportProvider } from "~/components/bug-report/BugReportProvider";
 import { AssistiveModeProvider } from "~/components/settings/assistive-mode";
+import { UiPreferencesProvider } from "~/components/settings/ui-preferences";
 // Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
 // (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
 // even one named member from it forces Vite dev to crawl and transform the
@@ -38,6 +39,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/eduai-graduation.svg" type="image/svg+xml" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
@@ -64,8 +66,10 @@ export default function App() {
       <BugReportProvider>
         <TourProvider>
           <AssistiveModeProvider>
-            <ThemeSyncInitializer />
-            <Outlet />
+            <UiPreferencesProvider>
+              <ThemeSyncInitializer />
+              <Outlet />
+            </UiPreferencesProvider>
           </AssistiveModeProvider>
         </TourProvider>
       </BugReportProvider>

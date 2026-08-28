@@ -163,10 +163,10 @@ export default function RegisterPage() {
             strokeWidth="1.75"
             strokeLinecap="round"
           >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 3a9 9 0 0 1 0 18" />
-            <path d="M3 12h18" />
-            <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
         <span

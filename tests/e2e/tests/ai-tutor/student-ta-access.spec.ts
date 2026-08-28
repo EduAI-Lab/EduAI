@@ -39,7 +39,11 @@ test.describe("AI Tutor STUDENT — TA enrolment shares the student shell", () =
       await expect(page.getByText("Which case stops a recursion?")).toBeVisible({
         timeout: 20_000,
       });
-      await expect(page.getByText("AI study buddy")).toBeVisible();
+      // Match the chat panel header exactly — the fleet-unavailable fallback
+      // message ("AI study buddy not available right now…") also contains this
+      // text, so a substring match resolves to two elements in CI where no live
+      // model answers.
+      await expect(page.getByText("AI study buddy", { exact: true })).toBeVisible();
     } finally {
       await seeded.dispose();
     }

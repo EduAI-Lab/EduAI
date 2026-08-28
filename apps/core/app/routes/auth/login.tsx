@@ -6,7 +6,8 @@ import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
-import { auth } from "~/lib/auth/server";
+import { auth, authBaseURL } from "~/lib/auth/server";
+import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
@@ -35,6 +36,59 @@ function formBodyErrorResponse(cause: unknown): Response | null {
     });
   }
   return null;
+}
+
+/** Cookie scopes used by the two deployed EduAI environments before this fix. */
+const LEGACY_SESSION_COOKIE_DOMAINS = [".eduai.ok.ubc.ca", ".ok.ubc.ca"] as const;
+
+/**
+ * Remove legacy session cookies after issuing the configured cross-subdomain
+ * cookie. Cookies with the same name but different Domain attributes coexist,
+ * and browsers can send an older, more-specific cookie first; that token can
+ * therefore mask the newly-created shared session on /dashboard.
+ *
+ * The derived cleanup covers narrower parent scopes between the current host
+ * and the configured domain. The explicit list also covers rollback from the
+ * broad production domain (`.ok.ubc.ca`) to the dev/previous production
+ * domain (`.eduai.ok.ubc.ca`), which the current-domain walk cannot see.
+ */
+function appendLegacySessionCookieDeletions(headers: Headers): void {
+  const configuredDomain = resolveAuthCookieDomain();
+  if (!configuredDomain) return;
+
+  const cookieName = authBaseURL.startsWith("https://")
+    ? "__Secure-better-auth.session_token"
+    : "better-auth.session_token";
+  const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
+  const attributes = `Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`;
+
+  // The original deployment created a host-only cookie. Expire that exact
+  // scope first.
+  headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
+
+  const hostname = new URL(authBaseURL).hostname.toLowerCase();
+  const labels = hostname.split(".");
+  const configuredHost = configuredDomain.replace(/^\./, "").toLowerCase();
+  const domains = new Set<string>();
+
+  // Expire every parent-domain scope from the exact hostname up to (but not
+  // including) the currently configured COOKIE_DOMAIN.
+  for (let i = 0; i < labels.length - 1; i += 1) {
+    const candidate = labels.slice(i).join(".");
+    if (candidate === configuredHost) break;
+    domains.add(i === 0 ? candidate : `.${candidate}`);
+  }
+
+  // Also expire known broader scopes so a COOKIE_DOMAIN rollback cannot leave
+  // an older, less-specific token competing with the freshly-issued cookie.
+  for (const legacyDomain of LEGACY_SESSION_COOKIE_DOMAINS) {
+    if (hostname.endsWith(legacyDomain)) domains.add(legacyDomain);
+  }
+
+  domains.delete(`.${configuredHost}`);
+  for (const domainAttr of domains) {
+    headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${domainAttr}`);
+  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -142,6 +196,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
+    appendLegacySessionCookieDeletions(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
@@ -248,10 +303,10 @@ export default function LoginPage() {
             strokeWidth="1.75"
             strokeLinecap="round"
           >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 3a9 9 0 0 1 0 18" />
-            <path d="M3 12h18" />
-            <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
         <span className="text-xl font-bold text-primary-text">EduAI</span>

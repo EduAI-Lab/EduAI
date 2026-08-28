@@ -28,6 +28,7 @@ import express from "express";
 import { prisma } from "../config/database.js";
 import { requireRole, isCourseAdmin } from "../middleware/auth.js";
 import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
+import { resolveNextChatId } from "../utils/chatSession.js";
 import {
   parsePaginationParams,
   paginated,
@@ -406,8 +407,14 @@ async function handleAiInteraction({
       signal: abortController.signal,
     });
 
-    // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
-    const nextChatId = aiResult.chatId || chatId || null;
+    // Session identity is owned by AI Tutor, not Core. Core's `/api/completion`
+    // is deliberately stateless and returns no chatId, so on a first turn both
+    // `aiResult.chatId` and the client-supplied `chatId` are null. Mint one here
+    // (rather than leaving it null) so `upsertChatSession` persists an
+    // `AiChatSession` row and the student's history panel is non-empty; the
+    // response threads it back to the client for subsequent turns (#1646).
+    // Tutor content stays out of Core's Chat/ChatMessage store by design.
+    const nextChatId = resolveNextChatId(aiResult.chatId, chatId);
     const session = await upsertChatSession({
       userId: authUser.id,
       activityId,
@@ -1521,7 +1528,11 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // A course TA is a STUDENT-platform user (Core has no UserRole.TA), so
+      // `authUser.role` is "STUDENT" here. Verify against the TA *enrollment*
+      // role explicitly — the default `expectedRole` (authUser.role) would build
+      // an allowedRoles of ["STUDENT"] and deny the very TA this branch admits.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1627,7 +1638,10 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       return res.status(403).json({ error: "Not authorized for this submission" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // See the submissions-list handler above: a TA's platform role is STUDENT,
+      // so the TA enrollment role must be checked explicitly or this grade
+      // override 403s the very TA the `isTa` branch is meant to authorize.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this submission" });
@@ -1711,7 +1725,10 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // As above: check the TA enrollment role explicitly. `authUser.role` is
+      // "STUDENT" for a course TA, so the default would deny feedback access to
+      // the TA this branch is meant to admit.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1978,11 +1995,26 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
       return res.status(403).json({ error: "Activity is not available" });
     }
 
+    // AI-Tutor owns its session identity: on a first turn Core's stateless
+    // `/api/completion` returns no chatId, so the route mints one locally
+    // (`resolveNextChatId`) and Core never creates a matching `Chat`. Restoring
+    // such a session therefore proxies to a Core chat that cannot exist and
+    // gets a 404 — which used to dead-end every restored history entry in an
+    // error (#1646). Transcript CONTENT is not persisted anywhere yet (deferred
+    // follow-up), so a locally-minted session simply has no messages to show:
+    // return a benign empty transcript that the client renders as its normal
+    // empty state instead of surfacing an error.
+    const emptyTranscript = { chat: { id: chatId, title: null }, messages: [] };
+
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
     const headers = { "Content-Type": "application/json" };
     if (cookie) headers.cookie = cookie;
     const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
+    if (upstream.status === 404) {
+      // Not a Core-backed chat (the common, locally-minted case) — empty state.
+      return res.json(emptyTranscript);
+    }
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }

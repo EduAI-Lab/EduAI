@@ -30,12 +30,55 @@ vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn(),
 }));
 
-const { ADMIN_TOOL_COUNT, adminTools } = vi.hoisted(() => {
-  const ADMIN_TOOL_COUNT = 17;
-  const adminTools = Object.fromEntries(
-    Array.from({ length: ADMIN_TOOL_COUNT }, (_, i) => [`adminTool${i}`, { description: `t${i}` }]),
-  );
-  return { ADMIN_TOOL_COUNT, adminTools };
+// #1665 review: this suite's `createChatTools` mock must return the same
+// tool *names* the real admin registry does — the route's small-window
+// trimming (`pickCoreAdminChatTools`) filters by name, so a mock with
+// synthetic `adminTool0..N` names would look like an empty registry post-trim
+// and silently stop exercising the budgeting math this suite covers.
+// `CORE_TOOL_COUNT` mirrors ADMIN_CORE_TOOL_NAMES's length; `EXTRA_TOOL_COUNT`
+// simulates the rest of the 63-tool full registry that a 16k window must NOT
+// receive. See create-admin-chat-tools.test.ts for the real registry's shape
+// and chat-admin-registry-budget.test.ts for the real-registry token math.
+const { coreToolNames, EXTRA_TOOL_COUNT, ADMIN_TOOL_COUNT, adminTools } = vi.hoisted(() => {
+  // Mirrors ADMIN_CORE_TOOL_NAMES in create-admin-chat-tools.ts.
+  const hoistedCoreToolNames = [
+    "listCourses",
+    "getCourse",
+    "listCourseEnrollments",
+    "listCourseTopics",
+    "getCourseTopic",
+    "searchCourseMaterials",
+    "listUsers",
+    "listBugReports",
+    "createUser",
+    "updateUser",
+    "deleteUser",
+    "createCourseEnrollment",
+    "updateCourseEnrollment",
+    "deactivateCourseEnrollment",
+    "createCourseTopic",
+    "updateCourseTopic",
+    "deleteCourseTopic",
+    "updateBugReportStatus",
+  ];
+  const hoistedExtraToolCount = 45; // 63 (full registry) - 18 (core)
+  const hoistedAdminTools = {
+    ...Object.fromEntries(hoistedCoreToolNames.map((name) => [name, { description: name }])),
+    ...Object.fromEntries(
+      Array.from({ length: hoistedExtraToolCount }, (_, i) => [
+        `extraAdminTool${i}`,
+        { description: `extra${i}` },
+      ]),
+    ),
+  };
+  // The route trims to the core set on this suite's 16k window, so that's
+  // what ends up on streamText's `tools`.
+  return {
+    coreToolNames: hoistedCoreToolNames,
+    EXTRA_TOOL_COUNT: hoistedExtraToolCount,
+    ADMIN_TOOL_COUNT: hoistedCoreToolNames.length,
+    adminTools: hoistedAdminTools,
+  };
 });
 
 vi.mock("~/lib/agent-tools", async (importOriginal) => {
@@ -105,7 +148,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -218,6 +261,13 @@ describe("POST /api/chat — admin 16k context budget (#1008)", () => {
 
     const config = lastStreamConfig();
     expect(Object.keys(config.tools ?? {})).toHaveLength(ADMIN_TOOL_COUNT);
+    // #1665 review: on a 16k window the route must send only the core set —
+    // none of the simulated "rest of the 63-tool registry" extras — or a
+    // real 63-tool registry blows the budget below and every admin request
+    // fails ADMIN_CONTEXT_TOO_LARGE (see chat-admin-registry-budget.test.ts).
+    expect(Object.keys(config.tools ?? {}).sort()).toEqual([...coreToolNames].sort());
+    expect(Object.keys(config.tools ?? {})).not.toContain("extraAdminTool0");
+    expect(EXTRA_TOOL_COUNT).toBeGreaterThan(0);
     // 16k admin path caps desired completion at 512 before further headroom shrink.
     expect(config.maxTokens).toBeLessThanOrEqual(512);
     expect(config.maxTokens).toBeGreaterThanOrEqual(256);

@@ -357,7 +357,10 @@ export async function resolveRoutedModelLlm(
 
   try {
     classification = await classifyPromptForTier(prompt, context);
-    const tier = tierFromLlmClassification(classification);
+    const tier = tierFromLlmClassification(classification, {
+      ragTopSimilarity: context.ragTopSimilarity,
+      ragChunkCount: context.ragChunkCount,
+    });
     const pick = pickSpecFromTier(tier, context);
 
     return finalizePick(pick, {

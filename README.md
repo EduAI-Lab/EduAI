@@ -43,6 +43,8 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
+Core and its extensions use the shared EduAI graduation-cap mark for in-app branding and browser-tab favicons. The canonical SVG assets live in each app's `public/` directory so they remain available to static hosting and deployments.
+
 Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
@@ -117,6 +119,26 @@ TSV, so the two runs can be compared directly:
 CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
  ```
+
+For authenticated RAG fleet testing, use
+[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
+fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
+Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved
+`FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test
+database; it refuses to overwrite an existing fixture. The setup command
+prints a `courseId`; remove the fixture and its stress chats afterward by
+rerunning the helper with that ID and `--cleanup`.
+The harness signs in, verifies a two-turn RAG conversation, records chat
+continuity/citations and `X-Fleet-Server`, then runs the controlled
+16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated
+session. First-run results and raw
+artifacts are recorded in
+[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
+the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
+and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
+provide the per-server measurements and machine-readable artifact context.
+Those results are baseline evidence and do not replace a later load-aware
+rerun.
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 

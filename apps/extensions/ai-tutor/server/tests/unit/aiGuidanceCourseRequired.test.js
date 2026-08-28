@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
+    // `serviceAuthHeader` sends the env `EDUAI_API_KEY`, not this override;
+    // the stub is kept so any `getEffectiveEduAiApiKey` read stays deterministic.
+    systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     promptTemplate: {
       findUnique: vi.fn().mockResolvedValue({ systemPrompt: "Be a helpful tutor." }),
     },
