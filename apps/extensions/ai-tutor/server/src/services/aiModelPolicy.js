@@ -39,11 +39,6 @@ import { logSafeError } from "../utils/safeErrors.js";
 
 export const DEFAULT_TUTOR_MODEL = "google:gemini-2.5-flash";
 
-// UBC-hosted providers are served with the deployment's own key and are gated
-// purely by the admin allow-list. Every other provider is BYOK: a student may
-// select it with their own key even when the allow-list omits it (#1645). Kept
-// in sync with `SERVER_HOSTED_PROVIDERS` in services/aiGuidance.js.
-const SERVER_HOSTED_TUTOR_PROVIDERS = new Set(["vllm", "ollama"]);
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
 // Hard floor/ceiling for supervisor iterations: 0 would disable supervision
 // (use dualLoopEnabled instead), >5 risks runaway cost on a per-request basis.
@@ -307,31 +302,20 @@ export async function setAiModelPolicy(policyInput) {
  * caller request a nonexistent/hallucinated model id whenever the admin
  * hasn't set an explicit allow-list.
  */
-export async function resolveTutorModelSelection(requestedModelId, keyedProviders = new Set()) {
-  const { policy, availableModels } = await getAiModelPolicyState();
+export async function resolveTutorModelSelection(requestedModelId) {
+  const { policy } = await getAiModelPolicyState();
   const { allowedTutorModelIds, defaultTutorModelId } = policy;
 
   if (!requestedModelId) return defaultTutorModelId || DEFAULT_TUTOR_MODEL;
   if (allowedTutorModelIds.includes(requestedModelId)) return requestedModelId;
 
-  // #1645 facet 2: a student may run a model on their OWN provider key even
-  // when the admin allow-list doesn't list it — this mirrors the picker, which
-  // merges BYOK models a held key unlocks. Two guard rails keep this from
-  // becoming a policy bypass:
-  //   1. The provider must be a BYOK provider the request actually holds a key
-  //      for. UBC-hosted models (vllm/ollama) are never admitted this way —
-  //      they route through the allow-list above, on the server's own key.
-  //   2. A model the admin catalog KNOWS but left disallowed (admin-only) stays
-  //      forbidden, so a personal key can't reopen a model a policy named and
-  //      closed. Only models the policy never mentioned at all are admitted.
-  const provider = requestedModelId.split(":")[0] || "";
-  const providers = keyedProviders instanceof Set ? keyedProviders : new Set(keyedProviders);
-  const isByokProvider = Boolean(provider) && !SERVER_HOSTED_TUTOR_PROVIDERS.has(provider);
-  const knownToCatalog = availableModels.some((model) => model.modelId === requestedModelId);
-  if (isByokProvider && providers.has(provider) && !knownToCatalog) {
-    return requestedModelId;
-  }
-
+  // #1645: the admin allow-list is absolute. A student's own (BYOK) provider
+  // key is a fallback for reaching an ALLOWED model when UBC inference is down
+  // (Core's fleet fallback), never a way to run a model the admin left off the
+  // list. So a personal key does not widen this gate — a model not on the
+  // reconciled allow-list is rejected regardless of which keys the request
+  // holds. (`allowedTutorModelIds` is empty ⇒ unrestricted-within-the-catalog,
+  // so a nonexistent/hallucinated id still fails here.)
   const error = new Error("Selected tutor model is not allowed");
   error.status = 403;
   throw error;

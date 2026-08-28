@@ -29,8 +29,9 @@ import type { Activity } from "~/lib/types";
 import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
-// #1645: the composer reads the held-keys map to merge BYOK models into the
-// picker. Named so the mutable ref has an owning contract, not an inline type.
+// #1645: the composer reads the held-keys map to decide whether the selected
+// model needs a personal key and to forward every held key to Core for the
+// fleet-down fallback. Named so the mutable ref has an owning contract.
 type HeldKeysRef = { current: Record<string, string> };
 
 const { mockGetKey, mockSetKey, mockValidateKey, mockKeysRef } = vi.hoisted(() => {
@@ -294,31 +295,25 @@ describe("StudentAiChat — BYOK as fallback (#1645)", () => {
     expect(sendGuideMessage).not.toHaveBeenCalled();
   });
 
-  it("merges BYOK models into the picker when the catalogue is empty", async () => {
-    // Admin allow-list is empty, but the student holds an OpenAI key.
+  it("does not populate the picker from a held key when the catalogue is empty (allow-list is absolute)", async () => {
+    // Admin catalogue is empty, but the student holds an OpenAI key. The key is
+    // a fallback for reaching an *allowed* model, never a way to conjure one the
+    // admin never allowed — so the picker stays empty and the composer blocked
+    // rather than offering a model Core would 422.
     mockKeysRef.current = { openai: "sk-openai" };
     mockGetKey.mockReturnValue("sk-openai");
     listAiModels.mockResolvedValue([]);
-    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
     renderChat();
 
-    // The picker is populated from the BYOK key alone, so chat unlocks and the
-    // "No AI models configured" notice is not shown.
-    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
-    expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
-
-    await typeAndSend("I need a hint");
-    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
-    const params = sendGuideMessage.mock.calls[0][1];
-    expect(params.modelId).toBe("openai:gpt-4o-mini");
-    expect(params.apiKey).toBe("sk-openai");
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
   });
 
-  it("keeps a policy-forbidden BYOK model out of the picker (review: no policy bypass)", async () => {
-    // A student model policy is active and the catalogue forbids the student's
-    // held-key models (studentSelectable:false). A personal key must NOT let the
-    // student pick a model the course policy meant to forbid: with every held
-    // BYOK model excluded the picker is empty and the composer stays blocked.
+  it("does not surface a model the admin allow-list omits, even with a held key", async () => {
+    // A student model policy is active and every catalogue model is disallowed
+    // for students (studentSelectable:false). A held key must NOT reopen any of
+    // them: the picker is empty and the composer stays blocked.
     mockKeysRef.current = { google: "g-key" };
     mockGetKey.mockReturnValue("g-key");
     listAiModels.mockResolvedValue([
@@ -342,10 +337,10 @@ describe("StudentAiChat — BYOK as fallback (#1645)", () => {
     expect(sendGuideMessage).not.toHaveBeenCalled();
   });
 
-  it("still surfaces a policy-allowed BYOK model when a policy is active", async () => {
-    // Policy is active (an allowed UBC model carries a policy flag) but the
-    // catalogue says nothing about the student's held BYOK models, so those stay
-    // permissible and the composer unlocks rather than being wrongly stripped.
+  it("offers only the allow-listed catalog models when a policy is active (a held key adds nothing)", async () => {
+    // Policy is active (the allowed UBC model carries a policy flag). The picker
+    // offers exactly that allowed model; the student's held google key does not
+    // add any extra entry.
     mockKeysRef.current = { google: "g-key" };
     mockGetKey.mockReturnValue("g-key");
     listAiModels.mockResolvedValue([
@@ -362,11 +357,14 @@ describe("StudentAiChat — BYOK as fallback (#1645)", () => {
 
     await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
     expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
-    // The policy-limited notice appears because a policy is active but the picker
-    // still has usable models (the allowed UBC default plus permissible BYOK).
+    // The policy-limited notice appears because a policy is active; the only
+    // picker entry is the allowed UBC model, and no BYOK entry was merged in.
     expect(
       screen.getByText("Tutor model choices are limited by your course configuration."),
     ).toBeInTheDocument();
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({ modelId: "vllm:llama-3" });
   });
 });
 

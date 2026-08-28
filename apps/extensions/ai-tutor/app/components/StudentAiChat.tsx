@@ -57,7 +57,6 @@ import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import {
-  byokModelsForHeldKeys,
   getProviderFromModelId,
   getProviderLabel,
   maskApiKey,
@@ -217,9 +216,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
-  // Full, pre-policy-filter catalog. Kept so a BYOK entry can inherit any
-  // student-policy verdict the admin set for that model id (#1645 review).
-  const [catalogModels, setCatalogModels] = useState<StudentSelectableModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(false);
@@ -351,7 +347,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (!isMounted) return;
         const policyActive = models.some(modelHasStudentPolicy);
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
-        setCatalogModels(models);
         setAvailableModels(selectableModels);
         setStudentModelPolicyActive(policyActive);
         setSelectedModelId((current) => {
@@ -374,55 +369,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     };
   }, []);
 
-  // #1645 facet 2: the server catalogue only lists admin-allowed EduAI/vLLM
-  // models, so a BYOK key alone could never populate the picker. Merge the
-  // student's BYOK-capable models in (deduped by model id — an admin-allowed
-  // entry always wins) so holding a key is enough to unlock chat.
-  const heldByokProviders = useMemo(
-    () => Object.keys(providerKeys).filter((provider) => Boolean(providerKeys[provider])),
-    [providerKeys],
-  );
-
-  const pickerModels = useMemo<StudentSelectableModel[]>(() => {
-    const catalogIds = new Set(availableModels.map((model) => model.modelId));
-    // Consult the full catalog so a BYOK entry inherits the admin's student
-    // policy for that model id: a personal key must not let a student pick a
-    // model a course policy forbids (#1645 review). Any policy representation
-    // (studentSelectable / availability / …) collapses to one boolean here.
-    const catalogById = new Map(catalogModels.map((model) => [model.modelId, model]));
-    const byok = byokModelsForHeldKeys(heldByokProviders)
-      .filter((model) => !catalogIds.has(model.modelId))
-      .map<StudentSelectableModel>((model) => {
-        const policyMatch = catalogById.get(model.modelId);
-        return {
-          id: `byok:${model.modelId}`,
-          // `model` already carries conservative capability defaults
-          // (studentSelectable/isDefaultTutor) from byokModelsForHeldKeys.
-          ...model,
-          // A catalog verdict, when the model is known to the policy, overrides
-          // the permissive default so a forbidden model can't slip in.
-          studentSelectable: policyMatch
-            ? isStudentSelectableModel(policyMatch)
-            : model.studentSelectable,
-        };
-      })
-      // When a student model policy is active, hold BYOK entries to the same
-      // predicate as catalog entries so a forbidden model can't slip in.
-      .filter((model) => !studentModelPolicyActive || isStudentSelectableModel(model));
-    return [...availableModels, ...byok];
-  }, [availableModels, catalogModels, heldByokProviders, studentModelPolicyActive]);
-
-  // Keep the selection valid once BYOK models arrive: if the current pick isn't
-  // in the merged list (e.g. the catalogue is empty and the student only holds
-  // an OpenAI key), fall to the default tutor or the first usable model.
-  useEffect(() => {
-    if (!pickerModels.length) return;
-    setSelectedModelId((current) => {
-      if (pickerModels.some((model) => model.modelId === current)) return current;
-      const defaultModel = pickerModels.find((model) => model.isDefaultTutor);
-      return defaultModel?.modelId ?? pickerModels[0].modelId;
-    });
-  }, [pickerModels]);
+  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
+  // held BYOK key never adds models the admin left off the allow-list — the
+  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
+  // serve without one, and Core falls back to a keyed provider when the fleet
+  // is down), not a way to pick a model policy forbids.
+  const pickerModels = availableModels as StudentSelectableModel[];
 
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
