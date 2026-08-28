@@ -4,6 +4,13 @@
 **Status:** Design — frozen for handoff (v1)
 **Covers:** EduAICore #912 (design). Unblocks the dequeue/dispatch worker (Deployment epic #168) and the producer track (#914 enqueue, #915 backpressure, #916 tests, #917 ETA).
 
+> **Pre-MVP operational status (August 2026): hard-disabled.** This document is
+> a future design contract, not a deployment runbook. Core ignores the legacy
+> `QUEUE_ENQUEUE_ENABLED` flag, `/api/chat` stays on direct chat, and the worker
+> entry point exits before creating Redis/BullMQ resources. Re-enabling requires
+> owner-scoped authenticated status/cancellation plus server-side model/provider
+> authorization; an environment-only rollout is intentionally impossible.
+
 > **This doc is the frozen contract** between the two sides — the producer/enqueue side (`enqueue()`, the `AiJob` model, status read model) and the dequeue/dispatch side (routing into the GPU fleet, epic #168). It fixes the job schema and the queue interface. Neither side may change a field or a status transition without updating this doc.
 
 ---
@@ -375,10 +382,16 @@ This read model is the **single source of queue position and ETA** — `enqueue`
 never stale. Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps),
 matching `serializeReEmbedJob`:
 
+Served by `GET /api/ai-jobs/:jobId`, scoped to the caller's own jobs (a session, or the
+`EDUAI_API_KEY` service-key path for jobs Question Maker/AI Tutor create under the synthetic
+`service` user) — 404s rather than 403s on a job id the caller doesn't own, so the response can't
+confirm the id exists.
+
 ```typescript
 {
   id, kind, type, source, status,
   queuePosition,          // computed at read: PENDING jobs ahead in the same queue (not a column)
+  etaSeconds,             // advisory live estimate from recent completions in that pool, or null
   result,                 // null until COMPLETED
   errorMessage,           // null unless FAILED
   attempts,
@@ -386,10 +399,14 @@ matching `serializeReEmbedJob`:
 }
 ```
 
-**ETA (#917)** is derived, not stored: `eta ≈ queuePosition × rollingMeanJobDuration(type)`, where
-the rolling mean comes from recent `completedAt − startedAt` per pool. Position is recomputed from
-the queue at read time so it decreases as the worker drains the pool. This is a later issue; the
-contract only guarantees the `queuePosition` field and the timestamps ETA is computed from.
+**ETA (#917)** is derived, not stored: `etaSeconds ≈ queuePosition × rollingMeanJobDuration(pool) /
+worker-sized waves, `ceil((runningCount + queuePosition) / poolConcurrency) × rollingMeanJobDuration(pool)`.
+The rolling mean uses the most recent completed jobs with both `startedAt` and `completedAt` in the
+same persisted pool. The estimate also counts currently `RUNNING` jobs in that pool so a saturated
+worker set is not treated as idle. It is advisory and returns `null` until that pool has a usable
+sample. Position is recomputed from the queue at read time so it decreases as the worker drains the
+pool. The duration lookup is backed by the `(queueName, status, completedAt)` index and capped to
+the most recent sample window.
 
 ---
 

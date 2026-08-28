@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # What:
 #    This script pulls latest git changes then restarts pm2 (uses ecosystem.config.cjs).
@@ -11,10 +12,11 @@
 #    If --force is passed, deployment will continue even with no new commit.
 
 # Variables
-GIT_BRANCH="main"
-REPO_DIR="/srv/www/AiTutor"
-DOCKER_COMPOSE_FILE="docker-compose.yml"
-LAST_COMMIT_FILE="$REPO_DIR/.last_commit"
+GIT_BRANCH="${GIT_BRANCH:-development}"
+REPO_DIR="${REPO_DIR:-/srv/www/EduAI}"
+APP_DIR="$REPO_DIR/apps/extensions/ai-tutor"
+DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
+LAST_COMMIT_FILE="$REPO_DIR/.git/last_deployed_ai_tutor"
 LOCKFILE="/tmp/deploy-aitutor.lock"
 
 # Function to clean up the lock file on exit
@@ -25,7 +27,7 @@ trap cleanup EXIT INT TERM
 
 # Check for the --force flag
 FORCE_DEPLOY=false
-if [ "$1" == "--force" ]; then
+if [ "${1:-}" == "--force" ]; then
     FORCE_DEPLOY=true
     echo "Force deploy enabled: will rebuild and deploy even if no new commit."
 fi
@@ -44,13 +46,14 @@ echo "Starting deployment process..."
 # Navigate to the repository
 cd "$REPO_DIR" || { echo "Failed to change directory to $REPO_DIR"; rm -f "$LOCKFILE"; exit 1; }
 
-# Ensure a clean working state (preserves .env files)
-git reset --hard
-git clean -fd --exclude=.env --exclude=server/.env
-git checkout "$GIT_BRANCH"
+if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    echo "Deployment aborted: repository has local changes."
+    git status --short
+    exit 1
+fi
 
-# Fetch the latest changes
-git fetch origin
+git fetch origin "$GIT_BRANCH"
+git switch "$GIT_BRANCH"
 
 # Get the latest commit hash on the branch
 LATEST_COMMIT=$(git rev-parse origin/"$GIT_BRANCH")
@@ -65,38 +68,38 @@ if [ "$FORCE_DEPLOY" = false ] && [ -f "$LAST_COMMIT_FILE" ]; then
     fi
 fi
 
-# Pull the latest changes and reset to the latest commit
-git pull origin "$GIT_BRANCH" || { echo "Git pull failed. Exiting."; exit 1; }
-
-# Set execute permissions for deploy.sh so it can run after the pull
-chmod +x deploy.sh
+git merge --ff-only "origin/$GIT_BRANCH" || { echo "Fast-forward failed. Exiting."; exit 1; }
 
 # ---- Dependencies ----
-echo "Installing frontend dependencies..."
-npm install || { echo "npm install (frontend) failed. Exiting."; exit 1; }
-
-echo "Installing server dependencies..."
-cd server && npm install || { echo "npm install (server) failed. Exiting."; exit 1; }
-cd "$REPO_DIR"
+echo "Installing locked monorepo dependencies..."
+npm ci --no-audit --no-fund || { echo "npm ci failed. Exiting."; exit 1; }
 
 # ---- Docker (PostgreSQL) ----
 echo "Starting Docker containers..."
-sudo docker compose up -d || { echo "Docker compose failed. Exiting."; exit 1; }
+: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to the same non-default secret used by DATABASE_URL}"
+if [ "$POSTGRES_PASSWORD" = "postgres" ]; then
+    echo "Deployment aborted: POSTGRES_PASSWORD must not use the default value."
+    exit 1
+fi
+node "$APP_DIR/scripts/verify-production-compose-network.mjs"
+docker compose -f "$DOCKER_COMPOSE_FILE" up -d || { echo "Docker compose failed. Exiting."; exit 1; }
 
 # ---- Database migrations ----
 echo "Running database migrations..."
-cd server
-npx prisma generate || { echo "Prisma generate failed. Exiting."; exit 1; }
-npx prisma migrate deploy || { echo "Prisma migrate failed. Exiting."; exit 1; }
-cd "$REPO_DIR"
+npm exec -w ai-tutor-server -- prisma generate || { echo "Prisma generate failed. Exiting."; exit 1; }
+npm exec -w ai-tutor-server -- prisma migrate deploy || { echo "Prisma migrate failed. Exiting."; exit 1; }
 
 # ---- Build frontend ----
 echo "Building frontend application..."
-npm run build || { echo "Build failed. Exiting."; exit 1; }
+npm run build -w ai-tutor || { echo "Build failed. Exiting."; exit 1; }
 
 # ---- Restart backend with PM2 ----
 echo "Restarting application with PM2..."
-pm2 restart ecosystem.config.cjs --update-env 2>/dev/null || pm2 start ecosystem.config.cjs || { echo "PM2 start failed. Exiting."; exit 1; }
+(
+    cd "$APP_DIR"
+    pm2 restart ecosystem.config.cjs --update-env 2>/dev/null \
+        || pm2 start ecosystem.config.cjs
+) || { echo "PM2 start failed. Exiting."; exit 1; }
 pm2 save
 
 # Save the latest commit hash
@@ -107,6 +110,6 @@ rm -f "$LOCKFILE"
 
 echo "Deployment complete: $(date)"
 
-# Restart Apache
-echo "Restarting Apache Server (need sudo access - press escape to skip)"
-sudo systemctl restart httpd
+if [ "${RELOAD_WEB_SERVER:-false}" = "true" ]; then
+    sudo systemctl reload httpd
+fi

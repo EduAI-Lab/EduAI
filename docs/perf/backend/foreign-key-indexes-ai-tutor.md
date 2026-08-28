@@ -34,7 +34,7 @@ should not be: the primary key already leads with it. Adding one would be pure w
 
 ## What landed
 
-Migration `20260810000000_index_ai_tutor_foreign_keys` — 15 indexes added, 1 dropped.
+Migration `20260810000000_index_ai_tutor_foreign_keys` — 14 indexes added, 1 dropped.
 
 | Index | Column | Why |
 |---|---|---|
@@ -55,13 +55,17 @@ Migration `20260810000000_index_ai_tutor_foreign_keys` — 15 indexes added, 1 d
 ### Columns with no FK, indexed anyway
 
 `userId` is a Core CUID everywhere in this schema — Core owns the `User` table, so there is no
-local foreign key and a `pg_constraint` audit cannot see these columns at all. Two of them are
-the sole predicate of a hot read and trail their table's key, so they were seq scans:
+local foreign key and a `pg_constraint` audit cannot see these columns at all. One of them is
+the sole predicate of a hot read and trails its table's key, so it was a seq scan:
 
 | Index | Column | Why |
 |---|---|---|
-| `Submission_userId_idx` | `Submission(userId)` | `GET /me/submissions` filters on `userId` alone, over the largest table in the tree |
 | `CourseEnrollment_userId_idx` | `CourseEnrollment(userId)` | PK leads with `courseOfferingId`; the "my courses" list and every `enrollments: { some: { userId } }` access check filter on `userId` |
+
+`Submission.userId` is the other hot per-user read (`GET /me/submissions`) and is **not** indexed
+here: `@@unique([userId, activityId, attemptNumber])` (added alongside this work) already leads
+with `userId`, so the read seeks on that unique and a standalone index would only duplicate it on
+every submission insert.
 
 ### Dropped
 
@@ -126,8 +130,9 @@ for a current hotspot.
 
 ## Cost
 
-15 indexes is 15 write-amplification points, less the one redundant `AiChatSession` prefix this
+14 indexes is 14 write-amplification points, less the one redundant `AiChatSession` prefix this
 migration drops. The highest-insert tables here are `Submission` and `AiInteractionTrace` (one
 row per learner attempt / per AI turn). That cost is accepted because both are also the tables
 whose reads and cascade deletes were scanning; the one column that would have been pure write
-cost (`Activity.promptTemplateId`) is the one deliberately skipped.
+cost (`Activity.promptTemplateId`) is the one deliberately skipped, and `Submission.userId` rides
+the attempt-number unique rather than taking an index of its own.

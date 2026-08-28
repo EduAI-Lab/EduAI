@@ -1,5 +1,8 @@
-import { auth } from "~/lib/auth/server";
-import { CanvasApiError, CanvasVerificationError } from "~/lib/canvas/client.server";
+import {
+  CanvasApiError,
+  CanvasVerificationError,
+  type CanvasIntegrationCredentials,
+} from "~/lib/canvas/client.server";
 import {
   CanvasNotConnectedError,
   InvalidCanvasCourseAccessError,
@@ -15,16 +18,39 @@ import {
 import {
   deleteCanvasIntegration,
   getCanvasIntegrationPublic,
+  getCanvasIntegrationWithDecryptedKey,
   saveCanvasIntegration,
   CanvasStoredCredentialsError,
 } from "~/lib/canvas/integration.server";
+import {
+  createCanvasQuiz,
+  createCanvasQuizQuestion,
+  getCanvasQuiz,
+  getCanvasQuizQuestion,
+  listCanvasQuizQuestions,
+  listCanvasQuizzes,
+} from "~/lib/canvas/quizzes.server";
+import {
+  getCanvasQuestionBank,
+  listCanvasQuestionBankQuestions,
+  listCanvasQuestionBanks,
+} from "~/lib/canvas/question-banks.server";
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
-import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import {
+  CanvasCourseIdQuerySchema,
+  ConnectCanvasSchema,
+  CreateCanvasQuizBodySchema,
+  CreateCanvasQuizQuestionBodySchema,
+  LinkRosterSchema,
+  SyncCanvasCoursesSchema,
+} from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return handleCanvasRequest(request);
@@ -34,19 +60,170 @@ export async function action({ request }: ActionFunctionArgs) {
   return handleCanvasRequest(request);
 }
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 function canvasSubpath(pathname: string): string {
   return pathname.replace(/^\/api\/canvas\/?/, "");
 }
 
+type CanvasQuizRouteMatch =
+  | { kind: "list" }
+  | { kind: "quiz"; quizId: number }
+  | { kind: "questions"; quizId: number }
+  | { kind: "question"; quizId: number; questionId: number };
+
+type CanvasQuestionBankRouteMatch =
+  | { kind: "list" }
+  | { kind: "bank"; bankId: number }
+  | { kind: "questions"; bankId: number };
+
+function parseCanvasQuizSubpath(subpath: string): CanvasQuizRouteMatch | null {
+  if (subpath === "quizzes") {
+    return { kind: "list" };
+  }
+
+  const quizMatch = subpath.match(/^quizzes\/(\d+)$/);
+  if (quizMatch) {
+    return { kind: "quiz", quizId: Number(quizMatch[1]) };
+  }
+
+  const questionsMatch = subpath.match(/^quizzes\/(\d+)\/questions$/);
+  if (questionsMatch) {
+    return { kind: "questions", quizId: Number(questionsMatch[1]) };
+  }
+
+  const questionMatch = subpath.match(/^quizzes\/(\d+)\/questions\/(\d+)$/);
+  if (questionMatch) {
+    return {
+      kind: "question",
+      quizId: Number(questionMatch[1]),
+      questionId: Number(questionMatch[2]),
+    };
+  }
+
+  return null;
+}
+
+function parseCanvasQuestionBankSubpath(subpath: string): CanvasQuestionBankRouteMatch | null {
+  if (subpath === "question-banks") {
+    return { kind: "list" };
+  }
+
+  const bankMatch = subpath.match(/^question-banks\/(\d+)$/);
+  if (bankMatch) {
+    return { kind: "bank", bankId: Number(bankMatch[1]) };
+  }
+
+  const questionsMatch = subpath.match(/^question-banks\/(\d+)\/questions$/);
+  if (questionsMatch) {
+    return { kind: "questions", bankId: Number(questionsMatch[1]) };
+  }
+
+  return null;
+}
+
+async function loadCanvasCredentialsOrError(
+  userId: string,
+): Promise<CanvasIntegrationCredentials | Response> {
+  const integration = await getCanvasIntegrationWithDecryptedKey(userId);
+  if (!integration) {
+    return json({ success: false, error: "CANVAS_NOT_CONNECTED" }, 400);
+  }
+
+  return {
+    canvasUrl: integration.canvasUrl,
+    apiKey: integration.apiKey,
+    isTestMode: integration.isTestMode,
+  };
+}
+
+function parseCanvasCourseIdQuery(request: Request): { canvasCourseId: number } | Response {
+  const url = new URL(request.url);
+  const result = CanvasCourseIdQuerySchema.safeParse({
+    canvasCourseId: url.searchParams.get("canvasCourseId"),
+  });
+  if (!result.success) {
+    return json(
+      {
+        success: false,
+        error: "Invalid input",
+        details: result.error.flatten(),
+      },
+      400,
+    );
+  }
+
+  return result.data;
+}
+
+/** Canvas resource identifiers recorded on a read event — ids and paging only. */
+type CanvasReadDetails = Record<string, string | number>;
+
+type CanvasReadResource = {
+  entityType: string;
+  entityId: string;
+  entityLabel?: string | null;
+  details: CanvasReadDetails;
+};
+
+/**
+ * Emits the per-delegated-use security event #1084 requires for Canvas reads.
+ *
+ * These proxies open a socket to Canvas under the *caller's own* Canvas token on
+ * behalf of Question Maker, so each use is recorded with the actor and the Canvas
+ * resource that was read. Writes already log `CANVAS_QUIZ_WRITE`; this is the
+ * read half of that contract. Never records the token, the Canvas response body,
+ * or a raw error message — only the error class and, for Canvas API failures,
+ * the upstream status.
+ */
+async function auditedCanvasRead<T>(
+  actor: ReturnType<typeof getActorContext>,
+  requestContext: ReturnType<typeof getRequestContext>,
+  resource: CanvasReadResource,
+  read: () => Promise<T>,
+): Promise<T> {
+  try {
+    const data = await read();
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: "CANVAS_READ",
+        category: "CANVAS",
+        outcome: "SUCCESS",
+        entityType: resource.entityType,
+        entityId: resource.entityId,
+        entityLabel: resource.entityLabel ?? null,
+        details: resource.details,
+      }),
+    );
+    return data;
+  } catch (error) {
+    // Always present so the field is queryable; null when the failure did not
+    // come back from Canvas itself (a decrypt error, a dispatcher refusal, ...).
+    const canvasStatus = error instanceof CanvasApiError ? error.statusCode : null;
+    const failureDetails = {
+      ...resource.details,
+      errorType: error instanceof Error ? error.constructor.name : "Unknown",
+      canvasStatus,
+    };
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: "CANVAS_READ",
+        category: "CANVAS",
+        outcome: "FAILURE",
+        entityType: resource.entityType,
+        entityId: resource.entityId,
+        entityLabel: resource.entityLabel ?? null,
+        details: failureDetails,
+      }),
+    );
+    throw error;
+  }
+}
+
 async function handleCanvasRequest(request: Request): Promise<Response> {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ success: false, error: "UNAUTHORIZED" }, 401);
   }
@@ -54,6 +231,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
   const subpath = canvasSubpath(new URL(request.url).pathname);
   const userId = session.user.id;
   const requestContext = getRequestContext(request);
+  const actorContext = getActorContext(session.user);
 
   if (subpath === "link-roster") {
     return handleLinkRosterRequest(request, userId, session.user.role);
@@ -69,7 +247,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         entityType: "Canvas",
         entityId: userId,
         entityLabel: session.user.email ?? null,
-        ...(session.user.email ? { details: { email: session.user.email } } : {}),
+        details: session.user.email ? { email: session.user.email } : undefined,
       }),
     );
     return json({ success: false, error: "FORBIDDEN" }, 403);
@@ -110,6 +288,154 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         if (subpath === "courses") {
           const courses = await listCanvasCoursesWithSyncState(userId);
           return json({ success: true, data: { courses } });
+        }
+
+        {
+          const quizRoute = parseCanvasQuizSubpath(subpath);
+          if (quizRoute) {
+            const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+            if (credentialsOrError instanceof Response) {
+              return credentialsOrError;
+            }
+
+            const queryOrError = parseCanvasCourseIdQuery(request);
+            if (queryOrError instanceof Response) {
+              return queryOrError;
+            }
+            const { canvasCourseId } = queryOrError;
+
+            switch (quizRoute.kind) {
+              case "list": {
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizList",
+                    entityId: String(canvasCourseId),
+                    details: { canvasCourseId },
+                  },
+                  () => listCanvasQuizzes(credentialsOrError, canvasCourseId),
+                );
+                return json({ success: true, data });
+              }
+              case "quiz": {
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuiz",
+                    entityId: String(quizRoute.quizId),
+                    details: { canvasCourseId, quizId: quizRoute.quizId },
+                  },
+                  () => getCanvasQuiz(credentialsOrError, canvasCourseId, quizRoute.quizId),
+                );
+                return json({ success: true, data });
+              }
+              case "questions": {
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizQuestionList",
+                    entityId: String(quizRoute.quizId),
+                    details: { canvasCourseId, quizId: quizRoute.quizId },
+                  },
+                  () =>
+                    listCanvasQuizQuestions(credentialsOrError, canvasCourseId, quizRoute.quizId),
+                );
+                return json({ success: true, data });
+              }
+              case "question": {
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuizQuestion",
+                    entityId: String(quizRoute.questionId),
+                    details: {
+                      canvasCourseId,
+                      quizId: quizRoute.quizId,
+                      questionId: quizRoute.questionId,
+                    },
+                  },
+                  () =>
+                    getCanvasQuizQuestion(
+                      credentialsOrError,
+                      canvasCourseId,
+                      quizRoute.quizId,
+                      quizRoute.questionId,
+                    ),
+                );
+                return json({ success: true, data });
+              }
+            }
+          }
+        }
+
+        {
+          const bankRoute = parseCanvasQuestionBankSubpath(subpath);
+          if (bankRoute) {
+            const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+            if (credentialsOrError instanceof Response) {
+              return credentialsOrError;
+            }
+
+            switch (bankRoute.kind) {
+              case "list": {
+                const queryOrError = parseCanvasCourseIdQuery(request);
+                if (queryOrError instanceof Response) {
+                  return queryOrError;
+                }
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBankList",
+                    entityId: String(queryOrError.canvasCourseId),
+                    details: { canvasCourseId: queryOrError.canvasCourseId },
+                  },
+                  () => listCanvasQuestionBanks(credentialsOrError, queryOrError.canvasCourseId),
+                );
+                return json({ success: true, data });
+              }
+              case "bank": {
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBank",
+                    entityId: String(bankRoute.bankId),
+                    details: { bankId: bankRoute.bankId },
+                  },
+                  () => getCanvasQuestionBank(credentialsOrError, bankRoute.bankId),
+                );
+                return json({ success: true, data });
+              }
+              case "questions": {
+                const url = new URL(request.url);
+                const page = Math.max(1, Number(url.searchParams.get("page") || 1) || 1);
+                const perPage = Math.min(
+                  100,
+                  Math.max(1, Number(url.searchParams.get("perPage") || 100) || 100),
+                );
+                const data = await auditedCanvasRead(
+                  actorContext,
+                  requestContext,
+                  {
+                    entityType: "CanvasQuestionBankQuestionList",
+                    entityId: String(bankRoute.bankId),
+                    details: { bankId: bankRoute.bankId, page, perPage },
+                  },
+                  () =>
+                    listCanvasQuestionBankQuestions(credentialsOrError, bankRoute.bankId, {
+                      page,
+                      perPage,
+                    }),
+                );
+                return json({ success: true, data });
+              }
+            }
+          }
         }
 
         return json({ success: false, error: "NOT_FOUND" }, 404);
@@ -174,11 +500,14 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                 entityType: "Canvas",
                 entityId: userId,
                 entityLabel: session.user.email ?? null,
-                ...(session.user.email ? { details: { email: session.user.email } } : {}),
+                details: session.user.email ? { email: session.user.email } : undefined,
               }),
             );
             return json(
-              { success: false, error: "Sync was requested too recently. Please wait and try again." },
+              {
+                success: false,
+                error: "Sync was requested too recently. Please wait and try again.",
+              },
               429,
             );
           }
@@ -208,6 +537,111 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           return json({ success: true, data: syncResult });
         }
 
+        {
+          const quizRoute = parseCanvasQuizSubpath(subpath);
+          if (quizRoute?.kind === "list") {
+            let body: unknown;
+            try {
+              body = await request.json();
+            } catch {
+              return json({ success: false, error: "INVALID_JSON" }, 400);
+            }
+
+            const result = CreateCanvasQuizBodySchema.safeParse(body);
+            if (!result.success) {
+              return json(
+                {
+                  success: false,
+                  error: "Invalid input",
+                  details: result.error.flatten(),
+                },
+                400,
+              );
+            }
+
+            const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+            if (credentialsOrError instanceof Response) {
+              return credentialsOrError;
+            }
+
+            const data = await createCanvasQuiz(
+              credentialsOrError,
+              result.data.canvasCourseId,
+              result.data.quiz,
+            );
+
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "CANVAS_QUIZ_WRITE",
+                category: "CANVAS",
+                entityType: "CanvasQuiz",
+                entityId: String(data.id),
+                entityLabel: data.title,
+                details: {
+                  canvasCourseId: result.data.canvasCourseId,
+                  quizId: data.id,
+                },
+              }),
+            );
+
+            return json({ success: true, data });
+          }
+
+          if (quizRoute?.kind === "questions") {
+            let body: unknown;
+            try {
+              body = await request.json();
+            } catch {
+              return json({ success: false, error: "INVALID_JSON" }, 400);
+            }
+
+            const result = CreateCanvasQuizQuestionBodySchema.safeParse(body);
+            if (!result.success) {
+              return json(
+                {
+                  success: false,
+                  error: "Invalid input",
+                  details: result.error.flatten(),
+                },
+                400,
+              );
+            }
+
+            const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+            if (credentialsOrError instanceof Response) {
+              return credentialsOrError;
+            }
+
+            const data = await createCanvasQuizQuestion(
+              credentialsOrError,
+              result.data.canvasCourseId,
+              quizRoute.quizId,
+              result.data.question,
+            );
+
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "CANVAS_QUIZ_WRITE",
+                category: "CANVAS",
+                entityType: "CanvasQuizQuestion",
+                entityId: String(data.id),
+                entityLabel: data.question_name ?? null,
+                details: {
+                  canvasCourseId: result.data.canvasCourseId,
+                  quizId: quizRoute.quizId,
+                  questionId: data.id,
+                },
+              }),
+            );
+
+            return json({ success: true, data });
+          }
+        }
+
         return json({ success: false, error: "NOT_FOUND" }, 404);
       }
 
@@ -228,9 +662,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
             entityType: "CanvasIntegration",
             entityId: userId,
             entityLabel: existingIntegration?.canvasUrl ?? null,
-            ...(existingIntegration?.canvasUrl
-              ? { details: { canvasUrl: existingIntegration.canvasUrl } }
-              : {}),
+            details: existingIntegration?.canvasUrl
+              ? { canvasUrl: existingIntegration.canvasUrl }
+              : undefined,
           }),
         );
 
@@ -264,7 +698,18 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       return json({ success: false, error: error.message }, error.statusCode);
     }
     if (error instanceof CanvasApiError) {
-      const status = error.statusCode === 401 ? 400 : error.statusCode >= 500 ? 502 : 400;
+      // A Canvas 403 keeps its status and machine-readable code so the caller
+      // can recognize a per-resource permission failure, and an over-budget
+      // payload keeps its 413; everything else stays on the existing 400/502
+      // contract (a 401 is reported as a 400 "invalid token" to the caller).
+      const status =
+        error.statusCode === 403 || error.statusCode === 413
+          ? error.statusCode
+          : error.statusCode === 401
+            ? 400
+            : error.statusCode >= 500
+              ? 502
+              : 400;
       return json({ success: false, error: error.message }, status);
     }
     if (process.env.NODE_ENV === "production") {
@@ -290,10 +735,7 @@ async function handleLinkRosterRequest(
   }
 
   if (isCanvasLinkRosterRateLimited(userId)) {
-    return json(
-      { success: false, error: "Too many link attempts. Please try again later." },
-      429,
-    );
+    return json({ success: false, error: "Too many link attempts. Please try again later." }, 429);
   }
 
   let body: unknown;

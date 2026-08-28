@@ -7,24 +7,15 @@ import {
 
 describe("courseCodeLookupCandidates", () => {
   it("returns trimmed, compact, and spaced variants for a compact code", () => {
-    expect(courseCodeLookupCandidates("COSC121")).toEqual([
-      "COSC121",
-      "COSC 121",
-    ]);
+    expect(courseCodeLookupCandidates("COSC121")).toEqual(["COSC121", "COSC 121"]);
   });
 
   it("keeps an already-spaced code and still includes the compact form", () => {
-    expect(courseCodeLookupCandidates("  COSC 121  ")).toEqual([
-      "COSC 121",
-      "COSC121",
-    ]);
+    expect(courseCodeLookupCandidates("  COSC 121  ")).toEqual(["COSC 121", "COSC121"]);
   });
 
   it("preserves caller casing (case folding is done at the query layer)", () => {
-    expect(courseCodeLookupCandidates("cosc121")).toEqual([
-      "cosc121",
-      "cosc 121",
-    ]);
+    expect(courseCodeLookupCandidates("cosc121")).toEqual(["cosc121", "cosc 121"]);
   });
 
   it("dedupes when trim/compact/spaced collapse to the same string", () => {

@@ -15,15 +15,17 @@
  *   - ai-tutor forks the SAME rule per platform role instead: a platform
  *     INSTRUCTOR sees courses where they're the instructor-of-record
  *     (a separate relation, not the enrollment table); a platform STUDENT
- *     who additionally holds a TA enrollment on this course sees it in any
- *     publish state (TA-parity), a plain enrolled STUDENT only once
- *     published, otherwise nothing.
+ *     who additionally holds a TA enrollment OR a CourseInstructor row on
+ *     this course sees it in any publish state (TA/instructor-of-record
+ *     parity, #1386), a plain enrolled STUDENT only once published,
+ *     otherwise nothing.
  *
- * A platform STUDENT who holds Core enrollment-role INSTRUCTOR (or ai-tutor's
- * CourseInstructor row) is where the two forks disagree: visible in Core,
- * not in ai-tutor. Both `courseVisibleCore`/`courseVisibleAiTutor` below are
- * each correct for their own app, so no single-app test fails on this — it's
- * a cross-app product question, filed as #1386.
+ * #1386: a platform STUDENT holding Core enrollment-role INSTRUCTOR (or
+ * ai-tutor's CourseInstructor row) used to be where the two forks disagreed
+ * — visible in Core, not in ai-tutor, because ai-tutor's INSTRUCTOR branch
+ * was platform-role gated instead of keying off the CourseInstructor
+ * relation for a STUDENT too. Resolved by making ai-tutor's STUDENT fork
+ * also honor a CourseInstructor row, matching Core's enrollment-only rule.
  */
 
 export type RoleForkedListingRow = {
@@ -50,7 +52,7 @@ export function courseVisibleAiTutor(row: RoleForkedListingRow): boolean {
     return row.Enrollment === "instructor";
   }
   // PlatformRole === "STUDENT"
-  if (row.Enrollment === "ta") return true;
+  if (row.Enrollment === "ta" || row.Enrollment === "instructor") return true;
   if (row.Enrollment === "student") return row.Published === "yes";
   return false;
 }

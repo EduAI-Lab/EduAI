@@ -222,11 +222,11 @@ model Submission {
   activity         Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
   activityId       Int
   activityFeedback ActivityFeedback[]
+  // `userId` needs no index of its own: the attempt-number unique above already leads
+  // with it, so `GET /me/submissions` seeks on that (#1374).
 
+  @@unique([userId, activityId, attemptNumber])
   @@index([activityId])
-  // `GET /me/submissions` filters on `userId` alone; without this it is a seq scan
-  // plus sort over the largest table in the tree (#1374).
-  @@index([userId])
 }
 
 model ActivitySecondaryTopic {

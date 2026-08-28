@@ -133,13 +133,26 @@ const UNIT_ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
   },
 ];
 
-export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
+export const DASHBOARD_CONFIG = {
   ADMIN: {
-    statBuilder: ({ userTotal, usersLoading, activeCourseTotal, activeCoursesLoading, stats, statsLoading }) => [
+    statBuilder: ({
+      userTotal,
+      usersLoading,
+      activeCourseTotal,
+      activeCoursesLoading,
+      stats,
+      statsLoading,
+    }) => [
       { label: "Total users", value: usersLoading ? "—" : String(userTotal ?? 0) },
-      { label: "Active courses", value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0) },
+      {
+        label: "Active courses",
+        value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0),
+      },
       { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
-      { label: "Materials uploaded", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
+      {
+        label: "Materials uploaded",
+        value: statsLoading ? "—" : String(stats?.materialCount ?? 0),
+      },
     ],
     leftPanel: "quickActions",
     quickActions: ADMIN_QUICK_ACTIONS,
@@ -150,9 +163,19 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     }),
   },
   UNIT_ADMIN: {
-    statBuilder: ({ courseTotal, coursesLoading, activeCourseTotal, activeCoursesLoading, stats, statsLoading }) => [
+    statBuilder: ({
+      courseTotal,
+      coursesLoading,
+      activeCourseTotal,
+      activeCoursesLoading,
+      stats,
+      statsLoading,
+    }) => [
       { label: "Unit courses", value: coursesLoading ? "—" : String(courseTotal) },
-      { label: "Active courses", value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0) },
+      {
+        label: "Active courses",
+        value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0),
+      },
       { label: "Instructors", value: statsLoading ? "—" : String(stats?.instructorCount ?? 0) },
       { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
     ],
@@ -168,7 +191,10 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
       { label: "Courses teaching", value: coursesLoading ? "—" : String(courseTotal) },
       { label: "Students enrolled", value: statsLoading ? "—" : String(stats?.studentCount ?? 0) },
-      { label: "Materials uploaded", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
+      {
+        label: "Materials uploaded",
+        value: statsLoading ? "—" : String(stats?.materialCount ?? 0),
+      },
       { label: "AI interactions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
     ],
     leftPanel: "courses",
@@ -195,8 +221,14 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
   STUDENT: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
       { label: "Courses enrolled", value: coursesLoading ? "—" : String(courseTotal) },
-      { label: "AI sessions / week", value: statsLoading ? "—" : String(stats?.chatCountWeek ?? 0) },
-      { label: "Materials available", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
+      {
+        label: "AI sessions / week",
+        value: statsLoading ? "—" : String(stats?.chatCountWeek ?? 0),
+      },
+      {
+        label: "Materials available",
+        value: statsLoading ? "—" : String(stats?.materialCount ?? 0),
+      },
       { label: "Total sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
     ],
     leftPanel: "courses",
@@ -206,7 +238,7 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
       subheading: "Your AI-powered learning companion.",
     }),
   },
-};
+} satisfies Record<EffectiveRole, DashboardRoleConfig>;
 
 /**
  * Renders the dashboard for any role from the route loader's `DashboardData`

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 /** Default settle time for search-as-you-type. */
 export const DEFAULT_DEBOUNCE_MS = 300;

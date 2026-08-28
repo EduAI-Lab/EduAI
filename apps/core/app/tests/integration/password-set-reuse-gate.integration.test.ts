@@ -10,8 +10,9 @@
  * an unrelated, out-of-scope reason (no session, bad reset token, wrong
  * current password, an OAuth-only account already having a credential),
  * exactly like the real hook lets those requests fall through to their own
- * downstream handling. See TESTS.md for the known-drift row.
+ * downstream handling.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 
@@ -47,8 +48,12 @@ function uniqueEmail(prefix: string): string {
 const verificationIdentifiers: string[] = [];
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  return setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const setCookies =
+    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  return setCookies
+    .map((c) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
 }
 
 async function signUp(email: string, password: string): Promise<{ res: Response; cookie: string }> {
@@ -88,17 +93,6 @@ async function expectBlockedReuse(res: Response) {
   expect(await messageOf(res)).toBe(REUSE_MESSAGE);
 }
 
-/** Rows where observed behaviour diverges from the spec-derived oracle (filed as #1385, not fixed here). */
-function isKnownDrift(row: PasswordSetReuseGateRow): boolean {
-  // #1385: `setPassword` is a better-auth SERVER_ONLY endpoint
-  // (created via `createAuthEndpoint.serverOnly`, which "takes no path
-  // because it has no URL to be reached at"). The before-hook's
-  // `PASSWORD_SETTING_PATHS["/set-password"]` lookup keys off `ctx.path`,
-  // which is therefore never `"/set-password"` for a real `auth.api.setPassword()`
-  // call — the strength/reuse gate silently never runs on this path.
-  return row.Path === "set-password" && (row.Strength === "weak" || row.Reuse === "reused");
-}
-
 async function runRow(row: PasswordSetReuseGateRow) {
   const expected = passwordSetReuseGateOracle(row);
 
@@ -128,16 +122,19 @@ async function runRow(row: PasswordSetReuseGateRow) {
           ? "definitely-the-wrong-password"
           : undefined;
 
-    const body: Record<string, unknown> = { newPassword };
+    const body: JsonObject = {};
+    body.newPassword = newPassword;
     if (currentPassword !== undefined) body.currentPassword = currentPassword;
 
     const base = new Request("http://localhost/settings");
     const req = buildAuthSubRequest("/api/auth/change-password", base, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(row.Session === "present" ? { cookie } : {}),
-      },
+      // A header set to undefined would be sent as the literal string
+      // "undefined", so the anonymous rows must omit the key outright.
+      headers:
+        row.Session === "present"
+          ? { "Content-Type": "application/json", cookie }
+          : { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const res = await auth.handler(req);
@@ -236,12 +233,8 @@ afterAll(async () => {
 describe.each(rows.map((row, index) => [index, row] as const))(
   "password-set-reuse-gate PICT row #%i",
   (index, row) => {
-    const run = isKnownDrift(row) ? it.fails : it;
-    run(
-      `${row.Path}/${row.Strength}/${row.ResetToken}/${row.Session}/${row.CurrentPassword}/${row.Reuse} matches oracle`,
-      async () => {
-        await runRow(row);
-      },
-    );
+    it(`${row.Path}/${row.Strength}/${row.ResetToken}/${row.Session}/${row.CurrentPassword}/${row.Reuse} matches oracle`, async () => {
+      await runRow(row);
+    });
   },
 );

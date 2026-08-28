@@ -2,4 +2,31 @@ node_modules/
 **/node_modules/
 build/
 **/build/
+dist/
+**/dist/
+.turbo/
+**/.turbo/
 .git/
+
+# Never send local credentials or environment-specific configuration to a
+# Docker daemon. Public templates are deliberately retained.
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# Private keys and common credential payloads belong in BuildKit/runtime
+# secret mounts, never in an image build context.
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.jks
+**/.secrets
+**/.secrets/**
+**/secrets
+**/secrets/**
+**/credentials.json
+**/service-account*.json

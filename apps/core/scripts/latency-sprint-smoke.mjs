@@ -41,7 +41,7 @@ function skip(msg) {
 
 async function login() {
   if (!PASSWORD) {
-    throw new Error("Set CHAT_SMOKE_PASSWORD (seed default: EduAI2026! on dev)");
+    throw new Error("Set CHAT_SMOKE_PASSWORD to the explicit local seed password");
   }
   const body = new URLSearchParams({ email: EMAIL, password: PASSWORD });
   const res = await fetch(`${BASE}/auth/login`, {
@@ -142,7 +142,9 @@ async function checkSelectedModelUsed(cookie) {
   if (res.status !== 200) return fail(`chat-only HTTP ${res.status}`);
   const routed = res.headers.get("X-Routed-Model");
   if (routed) {
-    return fail(`X-Routed-Model=${routed} (server should use the selected model, not route elsewhere)`);
+    return fail(
+      `X-Routed-Model=${routed} (server should use the selected model, not route elsewhere)`,
+    );
   }
   return pass(`Selected model used with no tier override (${ms} ms)`);
 }

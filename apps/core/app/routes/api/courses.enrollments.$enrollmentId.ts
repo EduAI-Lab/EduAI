@@ -14,17 +14,20 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
   deactivateEnrollment,
   getEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -42,12 +45,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(400, { error: "COURSE_ID_AND_ENROLLMENT_ID_REQUIRED" });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return json(404, { error: "COURSE_NOT_FOUND" });
@@ -56,6 +59,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Manage tier: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C).
   if (!access || access.rank < 2) {
     return json(403, { error: "Forbidden" });
+  }
+
+  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+  if (
+    enrollmentGate !== "always" &&
+    enrollmentGate !== "never" &&
+    !(await getPolicy(enrollmentGate))
+  ) {
+    return denyByPolicy({
+      request,
+      policyKey: enrollmentGate,
+      user: session.user,
+      action: request.method === "PATCH" ? "enrollment.update" : "enrollment.remove",
+      courseId,
+    });
   }
 
   const target = await getEnrollment(courseId, enrollmentId);

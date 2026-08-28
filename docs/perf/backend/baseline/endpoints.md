@@ -111,78 +111,95 @@ and `/api/internal/*`. Tiers: **Public**, **Authenticated** (`requireAuth`),
 
 | Method | Path | Auth tier | Handler (file:line) |
 |--------|------|-----------|---------------------|
-| GET | /api/me | Authenticated | apps/extensions/ai-tutor/server/src/routes/authentication.js:12 |
-| POST | /api/logout | Public | apps/extensions/ai-tutor/server/src/routes/authentication.js:58 |
-| GET | /api/eduai/courses | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:81 |
-| GET | /api/courses | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:124 |
-| POST | /api/courses/import-external | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:250 |
-| POST | /api/courses/:courseId/sync-enrollments | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:286 |
-| GET | /api/courses/:courseId | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:314 |
-| POST | /api/courses | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:359 |
-| PATCH | /api/courses/:courseId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:366 |
-| POST | /api/courses/:courseId/import | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:419 |
-| PATCH | /api/courses/:courseId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:569 |
-| PATCH | /api/courses/:courseId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:614 |
-| GET | /api/courses/:courseId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:683 |
-| GET | /api/courses/:courseId/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:746 |
-| GET | /api/courses/:courseId/student-metrics | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:808 |
-| GET | /api/courses/:courseId/analytics | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:857 |
-| GET | /api/courses/:courseId/modules | Authenticated | apps/extensions/ai-tutor/server/src/routes/modules.js:41 |
-| POST | /api/courses/:courseId/modules | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:93 |
-| GET | /api/modules/:moduleId | Authenticated | apps/extensions/ai-tutor/server/src/routes/modules.js:130 |
-| PATCH | /api/modules/:moduleId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:178 |
-| PATCH | /api/modules/:moduleId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:224 |
-| DELETE | /api/modules/:moduleId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:274 |
-| GET | /api/modules/:moduleId/lessons | Authenticated | apps/extensions/ai-tutor/server/src/routes/lessons.js:9 |
-| POST | /api/modules/:moduleId/lessons | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:79 |
-| GET | /api/lessons/:lessonId | Authenticated | apps/extensions/ai-tutor/server/src/routes/lessons.js:116 |
-| PATCH | /api/lessons/:lessonId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:172 |
-| PATCH | /api/lessons/:lessonId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:231 |
-| DELETE | /api/lessons/:lessonId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:275 |
-| PATCH | /api/lessons/:lessonId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:316 |
-| GET | /api/lessons/:lessonId/activities | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:319 |
-| POST | /api/lessons/:lessonId/activities | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:411 |
-| PATCH | /api/activities/:activityId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:540 |
-| DELETE | /api/activities/:activityId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:805 |
-| POST | /api/questions/:id/answer | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:863 |
-| POST | /api/activities/:activityId/teach | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:978 |
-| POST | /api/activities/:activityId/guide | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1049 |
-| POST | /api/activities/:activityId/custom | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1119 |
-| GET | /api/activities/:activityId/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1197 |
-| GET | /api/activities/:activityId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1261 |
-| POST | /api/activities/:activityId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1328 |
-| GET | /api/me/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1430 |
-| GET | /api/me/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1450 |
-| GET | /api/activities/:activityId/chat-sessions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1471 |
-| GET | /api/activities/:activityId/chat-sessions/:chatId/messages | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1507 |
+| GET | /api/me | Authenticated | apps/extensions/ai-tutor/server/src/routes/authentication.js:19 |
+| POST | /api/logout | Public | apps/extensions/ai-tutor/server/src/routes/authentication.js:57 |
+| GET | /api/eduai/courses | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:160 |
+| GET | /api/courses | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:223 |
+| GET | /api/courses/facets | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:413 |
+| POST | /api/courses/import-external | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:496 |
+| POST | /api/courses/:courseId/sync-enrollments | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:549 |
+| GET | /api/courses/:courseId | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:596 |
+| POST | /api/courses | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:678 |
+| POST | /api/courses/:courseId/import | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:698 |
+| PATCH | /api/courses/:courseId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:869 |
+| PATCH | /api/courses/:courseId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/courses.js:924 |
+| GET | /api/courses/:courseId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:995 |
+| GET | /api/courses/:courseId/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:1058 |
+| GET | /api/courses/:courseId/student-metrics | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:1170 |
+| GET | /api/courses/:courseId/analytics | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:1225 |
+| GET | /api/me/dashboard-stats | Authenticated | apps/extensions/ai-tutor/server/src/routes/courses.js:1276 |
+| GET | /api/courses/:courseId/modules | Authenticated | apps/extensions/ai-tutor/server/src/routes/modules.js:50 |
+| POST | /api/courses/:courseId/modules | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:120 |
+| GET | /api/modules/:moduleId | Authenticated | apps/extensions/ai-tutor/server/src/routes/modules.js:176 |
+| PATCH | /api/modules/:moduleId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:224 |
+| PATCH | /api/modules/:moduleId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:277 |
+| DELETE | /api/modules/:moduleId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:333 |
+| PATCH | /api/modules/:moduleId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:373 |
+| GET | /api/modules/:moduleId/context | Authenticated | apps/extensions/ai-tutor/server/src/routes/modules.js:446 |
+| PATCH | /api/modules/:moduleId/position | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:527 |
+| PUT | /api/courses/:courseId/modules/order | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/modules.js:576 |
+| GET | /api/modules/:moduleId/lessons | Authenticated | apps/extensions/ai-tutor/server/src/routes/lessons.js:18 |
+| POST | /api/modules/:moduleId/lessons | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:103 |
+| GET | /api/lessons/:lessonId | Authenticated | apps/extensions/ai-tutor/server/src/routes/lessons.js:159 |
+| GET | /api/lessons/:lessonId/context | Authenticated | apps/extensions/ai-tutor/server/src/routes/lessons.js:231 |
+| PATCH | /api/lessons/:lessonId/position | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:332 |
+| PATCH | /api/lessons/:lessonId/publish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:384 |
+| PATCH | /api/lessons/:lessonId/unpublish | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:448 |
+| DELETE | /api/lessons/:lessonId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:496 |
+| PATCH | /api/lessons/:lessonId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:541 |
+| PUT | /api/modules/:moduleId/lessons/order | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/lessons.js:608 |
+| GET | /api/lessons/:lessonId/activities | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:385 |
+| POST | /api/lessons/:lessonId/activities | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:493 |
+| PATCH | /api/activities/:activityId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:638 |
+| DELETE | /api/activities/:activityId | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:911 |
+| POST | /api/activities/:activityId/duplicate | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:976 |
+| POST | /api/lessons/:lessonId/activities/import | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:1040 |
+| GET | /api/activities/importable | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:1125 |
+| POST | /api/questions/:id/answer | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1251 |
+| POST | /api/activities/:activityId/teach | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1357 |
+| POST | /api/activities/:activityId/guide | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1436 |
+| POST | /api/activities/:activityId/custom | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1514 |
+| GET | /api/activities/:activityId/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1596 |
+| PATCH | /api/activities/:activityId/submissions/:submissionId | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1669 |
+| GET | /api/activities/:activityId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1750 |
+| POST | /api/activities/:activityId/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1817 |
+| GET | /api/me/submissions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1919 |
+| GET | /api/me/feedback | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1939 |
+| GET | /api/activities/:activityId/chat-sessions | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:1960 |
+| GET | /api/activities/:activityId/chat-sessions/:chatId/messages | Authenticated | apps/extensions/ai-tutor/server/src/routes/activities.js:2003 |
+| PATCH | /api/activities/:activityId/position | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:2035 |
+| PUT | /api/lessons/:lessonId/activities/order | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/activities.js:2098 |
 | GET | /api/prompts | Authenticated + role(INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/prompts.js:42 |
 | POST | /api/prompts | Authenticated + role(INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/prompts.js:53 |
 | GET | /api/suggested-prompts | Authenticated | apps/extensions/ai-tutor/server/src/routes/suggested-prompts.js:10 |
-| GET | /api/courses/:courseId/topics | Authenticated | apps/extensions/ai-tutor/server/src/routes/topics.js:59 |
-| POST | /api/courses/:courseId/topics | Authenticated + role(INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/topics.js:99 |
-| POST | /api/courses/:courseId/topics/sync | Authenticated + role(INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/topics.js:156 |
-| POST | /api/courses/:courseId/topics/remap | Authenticated + role(INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/topics.js:214 |
-| GET | /api/ai-models | Authenticated | apps/extensions/ai-tutor/server/src/routes/ai-models.js:36 |
-| POST | /api/ai-models/validate-key | Authenticated | apps/extensions/ai-tutor/server/src/routes/ai-models.js:65 |
-| GET | /api/admin/users | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:46 |
-| PATCH | /api/admin/users/:userId/role | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:66 |
-| GET | /api/admin/courses | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:70 |
-| GET | /api/admin/courses/:courseId/enrollments | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:91 |
-| POST | /api/admin/courses/:courseId/enrollments | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:181 |
-| DELETE | /api/admin/courses/:courseId/enrollments/:userId | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:239 |
-| PATCH | /api/admin/courses/:courseId/enrollments/:userId/role | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:305 |
-| GET | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:378 |
-| PUT | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:396 |
-| DELETE | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:416 |
-| GET | /api/admin/settings/ai-model-policy | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:426 |
-| PUT | /api/admin/settings/ai-model-policy | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:447 |
-| POST | /api/admin/courses/:courseId/sync-enrollments | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:461 |
-| POST | /api/bug-reports | Authenticated | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:13 |
-| GET | /api/admin/bug-reports | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:27 |
-| PATCH | /api/admin/bug-reports/:bugReportId | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:38 |
-| DELETE | /api/internal/courses/:coreOfferingId | Service key | apps/extensions/ai-tutor/server/src/routes/internal.js:21 |
+| GET | /api/courses/:courseId/topics | Authenticated | apps/extensions/ai-tutor/server/src/routes/topics.js:172 |
+| POST | /api/courses/:courseId/topics | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/topics.js:244 |
+| POST | /api/courses/:courseId/topics/sync | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/topics.js:311 |
+| POST | /api/courses/:courseId/topics/remap | Authenticated + role(INSTRUCTOR,UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/topics.js:391 |
+| GET | /api/ai-models | Authenticated | apps/extensions/ai-tutor/server/src/routes/ai-models.js:44 |
+| POST | /api/ai-models/validate-key | Authenticated | apps/extensions/ai-tutor/server/src/routes/ai-models.js:72 |
+| GET | /api/ai-status | Authenticated | apps/extensions/ai-tutor/server/src/routes/ai-status.js:15 |
+| GET | /api/admin/users | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:58 |
+| PATCH | /api/admin/users/:userId/role | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:95 |
+| GET | /api/admin/courses | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:99 |
+| GET | /api/admin/courses/:courseId/enrollments | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:165 |
+| POST | /api/admin/courses/:courseId/enrollments | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:320 |
+| DELETE | /api/admin/courses/:courseId/enrollments/:userId | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:377 |
+| PATCH | /api/admin/courses/:courseId/enrollments/:userId/role | Authenticated + role(ADMIN,UNIT_ADMIN,INSTRUCTOR) | apps/extensions/ai-tutor/server/src/routes/admin.js:443 |
+| GET | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:521 |
+| PUT | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:539 |
+| DELETE | /api/admin/settings/eduai-api-key | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:559 |
+| GET | /api/admin/settings/ai-model-policy | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:569 |
+| PUT | /api/admin/settings/ai-model-policy | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:590 |
+| GET | /api/admin/ai-traces | Authenticated + role(UNIT_ADMIN,ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:623 |
+| POST | /api/admin/courses/:courseId/sync-enrollments | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/admin.js:749 |
+| POST | /api/bug-reports | Authenticated | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:14 |
+| GET | /api/admin/bug-reports | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:28 |
+| GET | /api/admin/bug-reports/:bugReportId | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:39 |
+| PATCH | /api/admin/bug-reports/:bugReportId | Authenticated + role(ADMIN) | apps/extensions/ai-tutor/server/src/routes/bug-reports.js:53 |
+| DELETE | /api/internal/courses/:coreOfferingId | Service key | apps/extensions/ai-tutor/server/src/routes/internal.js:26 |
 
-**apps/extensions/ai-tutor count: 70 method-endpoints (12 route modules).**
+**apps/extensions/ai-tutor count: 87 method-endpoints (13 route modules).**
 
 ## apps/extensions/question-maker (Express)
 
@@ -274,7 +291,7 @@ uses a service-key Bearer.
 
 ## Grand Total
 
-**232 method-endpoints across 67 route modules** (core 87 · ai-tutor 70 · question-maker 75).
+**249 method-endpoints across 68 route modules** (core 87 · ai-tutor 87 · question-maker 75).
 
 ### Notes / judgment calls
 

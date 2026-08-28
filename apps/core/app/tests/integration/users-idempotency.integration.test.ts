@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import prisma from "~/lib/prisma.server";
@@ -44,7 +45,7 @@ beforeEach(() => {
   } as never);
 });
 
-function postUser(body: Record<string, unknown>, idempotencyKey: string) {
+function postUser(body: JsonObject, idempotencyKey: string) {
   return handleUsersApiRequest(
     new Request("http://localhost/api/users", {
       method: "POST",
@@ -85,10 +86,7 @@ describe("POST /api/users — centralized idempotency (#828)", () => {
     expect(first.status).toBe(201);
     createdUserIds.push((await first.clone().json()).id);
 
-    const second = await postUser(
-      { email: `other-${email}`, name: "Bo", role: "STUDENT" },
-      key,
-    );
+    const second = await postUser({ email: `other-${email}`, name: "Bo", role: "STUDENT" }, key);
     expect(second.status).toBe(422);
     expect(await second.json()).toEqual({ error: "IDEMPOTENCY_KEY_MISMATCH" });
   });

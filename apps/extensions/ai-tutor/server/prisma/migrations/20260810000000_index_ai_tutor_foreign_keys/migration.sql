@@ -12,7 +12,6 @@
 --   ActivityStudentMetric.activityId  - trailing half of @@unique([userId, activityId])
 --   AiChatSession.activityId          - trailing in the existing (userId, ...) index
 --   ActivitySecondaryTopic.topicId    - trailing half of @@id([activityId, topicId])
---   CourseEnrollment.userId           - trailing half of @@id([courseOfferingId, userId])
 -- The composites are kept: they serve the per-user reads. The single-column indexes below
 -- serve the activity-scoped reads and the ON DELETE CASCADE / SET NULL integrity checks.
 --
@@ -22,10 +21,11 @@
 -- check never runs. Reasoning is recorded on the Activity model in schema.prisma so it is
 -- not re-derived later.
 --
--- Two user-scoped columns are indexed here even though they carry no FK (the User table is
--- owned by Core, so a pg_constraint audit cannot see them): Submission.userId and
--- CourseEnrollment.userId are the leading predicate of the "my submissions" and "my
--- courses" reads and of every course-access check.
+-- One user-scoped column is indexed here even though it carries no FK (the User table is
+-- owned by Core, so a pg_constraint audit cannot see it): CourseEnrollment.userId is the
+-- trailing half of @@id([courseOfferingId, userId]) and the leading predicate of the "my
+-- courses" read and of every course-access check. Submission.userId needs no index of its
+-- own: @@unique([userId, activityId, attemptNumber]) already leads with it.
 --
 -- No CREATE INDEX CONCURRENTLY: Prisma runs each migration inside a transaction, where it
 -- is not permitted, and nothing else in prisma/migrations uses it. At current volumes the
@@ -58,8 +58,7 @@ CREATE INDEX IF NOT EXISTS "ActivitySecondaryTopic_topicId_idx" ON "ActivitySeco
 -- scans Activity to look for referencing rows without this.
 CREATE INDEX IF NOT EXISTS "Activity_mainTopicId_idx" ON "Activity"("mainTopicId");
 
--- Per-user reads on Core-owned user ids (no FK, so invisible to the FK audit).
-CREATE INDEX IF NOT EXISTS "Submission_userId_idx" ON "Submission"("userId");
+-- Per-user read on a Core-owned user id (no FK, so invisible to the FK audit).
 CREATE INDEX IF NOT EXISTS "CourseEnrollment_userId_idx" ON "CourseEnrollment"("userId");
 
 -- Redundant: a strict leading prefix of AiChatSession_userId_activityId_mode_idx, so it

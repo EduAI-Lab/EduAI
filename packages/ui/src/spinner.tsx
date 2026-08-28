@@ -1,22 +1,22 @@
-import { IconLoader2 } from "@tabler/icons-react"
+import { IconLoader2 } from "@tabler/icons-react";
 
-import { cn } from "./utils"
+import { cn } from "./utils";
 
 const SIZE_CLASSES = {
   xs: "size-3",
   sm: "size-4",
   md: "size-5",
   lg: "size-6",
-} as const
+} as const;
 
 export interface SpinnerProps {
-  size?: keyof typeof SIZE_CLASSES
-  className?: string
+  size?: keyof typeof SIZE_CLASSES;
+  className?: string;
   /**
    * Accessible label. Omit inside a button that already states what it is
    * doing ("Saving…"); the icon is then decorative and hidden from AT.
    */
-  label?: string
+  label?: string;
 }
 
 /**
@@ -35,5 +35,5 @@ export function Spinner({ size = "sm", className, label }: SpinnerProps) {
       aria-label={label}
       aria-hidden={label ? undefined : true}
     />
-  )
+  );
 }

@@ -93,7 +93,8 @@ Canvas credentials are stored encrypted in the database rather than in these env
 
 ## Shared development server (s378)
 
-The shared host runs three node processes plus the local data services, and serves both extension
+The shared host runs four node processes (Core, the dedicated cron worker, and
+the two extension servers) plus the local data services, and serves both extension
 frontends as static files from Apache. It is also the normal
 place to test campus inference because cmps01 is reachable from s378, while it may not be reachable
 from a developer laptop.
@@ -120,15 +121,40 @@ git pull --ff-only origin development
 npm install
 npm run docker:dev:db
 npm run db:generate -w edu-ai
-npm run db:migrate:deploy -w question-maker-backend
+# Order matters for Canvas credential copy: Core schema first, then AI Tutor, then QM
+# (QM's migrate deploy copies tokens into Core before renaming its local table).
 cd apps/core && npx prisma migrate deploy
 cd ../extensions/ai-tutor/server && npx prisma migrate deploy
+cd ../../.. && npm run db:migrate:deploy -w question-maker-backend
 ```
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is
 useful before restarting the shared stack because it fails before traffic is sent to an incompatible
-schema. `go-live-build.sh` runs both of these plus Question Maker's, so a normal deploy does not
-need them run by hand.
+schema. `go-live-build.sh` runs Core → AI Tutor → Question Maker in that order, so a normal deploy
+does not need them run by hand. Production QM containers run baseline → canvas→Core copier →
+`prisma migrate deploy` from their startup command (the same sequence as
+`npm run db:migrate:deploy`) before starting the API — set `CORE_DATABASE_URL`,
+`QM_ENCRYPTION_KEY` / `CORE_ENCRYPTION_KEY` (or the respective `ENCRYPTION_KEY` values) in the
+container env whenever QM still has credential rows.
+
+### Canvas credentials: QM → Core (one-time)
+
+Question Maker no longer stores Canvas API tokens. Before QM's Prisma migrate renames
+`canvas_integrations` → `canvas_integrations_pre_core_backup`,
+both the QM container startup command and
+`npm run db:migrate:deploy -w question-maker-backend` run
+`scripts/migrate-canvas-integrations-to-core.mjs`, which:
+
+1. Reads rows from QM `canvas_integrations` (or the backup table if already renamed)
+2. Decrypts each `api_key` with **QM** `ENCRYPTION_KEY`
+3. Re-encrypts with **Core** `ENCRYPTION_KEY` (documented as a separate key in
+   [`docs/ENVIRONMENT.md`](ENVIRONMENT.md))
+4. Inserts into Core `canvas_integrations` only when Core has no row for that `userId`
+
+Dry-run: `npm run db:migrate:canvas-to-core -w question-maker-backend -- --dry-run`
+
+After verifying Core rows, ops may `DROP TABLE canvas_integrations_pre_core_backup` on the
+QM database. Leaving the backup is safe; dropping it is irreversible.
 
 ### Deploying a branch
 
@@ -150,14 +176,15 @@ branches survive, and Core's `isProd` gates (HSTS, strict nonce CSP) stay off.
 
 ### Process management
 
-Three system units under `infra/s378/systemd/`, owned by the `eduai-dev` group:
+Four system units under `infra/s378/systemd/`, owned by the `eduai-dev` group:
 
 | Unit | Process |
 |---|---|
 | `eduai-core.service` | Core on `3000` (SSR, `react-router-serve`) |
+| `eduai-cron-worker.service` | Dedicated Core cron scheduler and shell-job worker |
 | `eduai-aitutor-server.service` | AI Tutor API on `4000` |
 | `eduai-qm-backend.service` | Question Maker API on `8000` |
-| `eduai-dev.target` | All three services |
+| `eduai-dev.target` | All four services |
 
 Both extension frontends build to static files (`ssr: false`) and are served directly by Apache, so
 they have no unit and no port of their own.
@@ -177,7 +204,15 @@ systemctl status eduai-dev.target
 systemctl restart eduai-dev.target
 systemctl restart eduai-core
 journalctl -u eduai-core -f
+systemctl status eduai-cron-worker.service --no-pager
+journalctl -u eduai-cron-worker.service -n 50 --no-pager
 ```
+
+After deploying a change to `infra/cron/*.sh`, `go-live-build.sh` synchronizes
+those scripts into `/opt/eduai/cron` before restarting the worker. For a one-time
+upgrade from the old three-unit layout, run
+`bash infra/s378/go-live-systemd-install.sh` first; it creates the dedicated
+`eduai-cron` account, directories, env permissions, and worker unit.
 
 Restarting picks up a changed server-side `.env`, but a changed `VITE_`-prefixed value needs a full
 rebuild. Never start an app with `npm run dev` on s378 — it binds the same port the unit holds.
@@ -258,8 +293,13 @@ Configure Core on s378 to use the cmps01 HTTP endpoints:
 ```env
 OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<same value as cmps01's CMPS01_INTERNAL_KEY>"
 ```
+
+`VLLM_API_KEY` must be a real generated secret (`openssl rand -hex 32`), not the
+`vllm-local` placeholder — as soon as `VLLM_BASE_URL` points at cmps01, Core
+refuses to fall back to `vllm-local` even though s378 runs
+`NODE_ENV=development` (see #1115).
 
 Then restart Core and verify from `apps/core`:
 
@@ -276,7 +316,7 @@ For fleet variables and firewall caveats, see
 ### Smoke checks
 
 ```bash
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
 
 curl -fsS http://127.0.0.1:3000/ >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null

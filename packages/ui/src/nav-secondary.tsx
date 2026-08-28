@@ -1,25 +1,19 @@
-import * as React from "react"
-import { type Icon } from "@tabler/icons-react"
+import * as React from "react";
+import { type Icon } from "@tabler/icons-react";
 
-import {
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuItem,
-} from "./ui/sidebar"
+import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuItem } from "./ui/sidebar";
 
 export interface NavSecondaryItem {
-  title: string
-  url: string
-  icon: Icon
-  external?: boolean
+  title: string;
+  url: string;
+  icon: Icon;
+  external?: boolean;
 }
 
-export interface NavSecondaryProps
-  extends React.ComponentPropsWithoutRef<typeof SidebarGroup> {
-  items: NavSecondaryItem[]
-  currentPath: string
-  LinkComponent?: React.ElementType
+export interface NavSecondaryProps extends React.ComponentPropsWithoutRef<typeof SidebarGroup> {
+  items: NavSecondaryItem[];
+  currentPath: string;
+  LinkComponent?: React.ElementType;
 }
 
 export function NavSecondary({
@@ -35,16 +29,16 @@ export function NavSecondary({
           {items.map((item) => {
             const isActive =
               !item.external &&
-              (currentPath === item.url || currentPath.startsWith(item.url + "/"))
+              (currentPath === item.url || currentPath.startsWith(item.url + "/"));
             const linkClassName =
-              "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+              "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none";
             const linkStyle = {
               background: isActive ? "var(--color-sidebar-active)" : "transparent",
               color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
               fontWeight: isActive ? 500 : 400,
               transition: "background 120ms",
               paddingLeft: "16px",
-            } as const
+            } as const;
             const linkBody = (
               <>
                 {isActive && (
@@ -62,7 +56,7 @@ export function NavSecondary({
                 <item.icon size={16} strokeWidth={1.75} />
                 <span className="flex-1">{item.title}</span>
               </>
-            )
+            );
             return (
               <SidebarMenuItem key={item.title}>
                 {item.external ? (
@@ -73,14 +67,13 @@ export function NavSecondary({
                     rel="noopener noreferrer"
                     onMouseEnter={(e) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "var(--color-sidebar-hover)"
+                        (e.currentTarget as HTMLAnchorElement).style.background =
+                          "var(--color-sidebar-hover)";
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "transparent"
+                        (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
                       }
                     }}
                   >
@@ -95,14 +88,13 @@ export function NavSecondary({
                     style={linkStyle}
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLElement).style.background =
-                          "var(--color-sidebar-hover)"
+                        (e.currentTarget as HTMLElement).style.background =
+                          "var(--color-sidebar-hover)";
                       }
                     }}
                     onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLElement).style.background =
-                          "transparent"
+                        (e.currentTarget as HTMLElement).style.background = "transparent";
                       }
                     }}
                   >
@@ -110,10 +102,10 @@ export function NavSecondary({
                   </LinkComponent>
                 )}
               </SidebarMenuItem>
-            )
+            );
           })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
-  )
+  );
 }

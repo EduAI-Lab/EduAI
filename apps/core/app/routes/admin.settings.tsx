@@ -1,7 +1,8 @@
-import { Link, useLoaderData, redirect } from 'react-router'
-import type { LoaderFunctionArgs } from 'react-router'
+import { Link, useLoaderData, redirect } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
-import { CoreAppShell } from '~/components/layout/core-app-shell'
+import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { BedrockOverflowSettingsCard } from "~/components/settings/bedrock-overflow-settings";
 import {
   Card,
   CardContent,
@@ -20,10 +21,14 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from '@eduai/ui'
-import { usePolicies } from '~/hooks/api/use-policies'
-import { auth } from '~/lib/auth/server'
-import { getEnvironmentHealth } from '~/lib/environment-health.server'
+} from "@eduai/ui";
+import { apiFetch } from "~/hooks/api/config";
+import { usePolicies } from "~/hooks/api/use-policies";
+import { getEnvironmentHealth } from "~/lib/environment-health.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
+import { isBedrockTokenConfigured } from "~/lib/ai/routing/bedrock/overflow.server";
+import type { BedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings";
 
 /**
  * Permission groups for the admin settings UI, in display order. Each policy
@@ -32,73 +37,75 @@ import { getEnvironmentHealth } from '~/lib/environment-health.server'
  * for non-role-scoped switches like `chat.*` and `auth.*`.
  */
 const PERMISSION_GROUPS: {
-  id: string
-  title: string
-  description: string
-  match: (prefix: string) => boolean
+  id: string;
+  title: string;
+  description: string;
+  match: (prefix: string) => boolean;
 }[] = [
   {
-    id: 'instructors',
-    title: 'Instructors',
-    description: 'What users with the INSTRUCTOR role may do.',
-    match: (p) => p === 'instructors',
+    id: "instructors",
+    title: "Instructors",
+    description: "What users with the INSTRUCTOR role may do.",
+    match: (p) => p === "instructors",
   },
   {
-    id: 'students',
-    title: 'Students',
-    description: 'What users with the STUDENT role may do.',
-    match: (p) => p === 'students',
+    id: "students",
+    title: "Students",
+    description: "What users with the STUDENT role may do.",
+    match: (p) => p === "students",
   },
   {
-    id: 'tas',
-    title: 'Teaching Assistants',
-    description: 'What users with the TA role may do.',
-    match: (p) => p === 'tas',
+    id: "tas",
+    title: "Teaching Assistants",
+    description: "What users with the TA role may do.",
+    match: (p) => p === "tas",
   },
   {
-    id: 'unitAdmins',
-    title: 'Unit Admins',
-    description: 'What users with the UNIT_ADMIN role may do.',
-    match: (p) => p === 'unitAdmins',
+    id: "unitAdmins",
+    title: "Unit Admins",
+    description: "What users with the UNIT_ADMIN role may do.",
+    match: (p) => p === "unitAdmins",
   },
   {
-    id: 'general',
-    title: 'General',
-    description: 'Settings that apply to everyone, not just one role.',
+    id: "general",
+    title: "General",
+    description: "Settings that apply to everyone, not just one role.",
     match: () => true,
   },
-]
+];
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
-    return redirect('/auth/login')
+    return redirect("/auth/login");
   }
 
-  if (session.user.role !== 'ADMIN') {
-    return redirect('/dashboard')
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
   }
 
   return {
     user: session.user,
     environmentHealth: getEnvironmentHealth(),
-  }
+    bedrockSettings: await getBedrockOverflowSettings(),
+    bedrockTokenConfigured: isBedrockTokenConfigured(),
+  };
 }
 
 export default function AdminSettingsPage() {
-  const { user, environmentHealth } = useLoaderData<typeof loader>()
-  const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
+  const { user, environmentHealth, bedrockSettings, bedrockTokenConfigured } =
+    useLoaderData<typeof loader>();
+  const { policies, definitions, isLoading, error, setPolicy } = usePolicies();
 
   // Bucket each flag into the first group whose `match` passes, preserving the
   // PERMISSION_GROUPS order; drop empty groups so we never render a stray card.
   const groups = PERMISSION_GROUPS.map((group) => ({
     ...group,
     items: definitions.filter(
-      (def) =>
-        PERMISSION_GROUPS.find((g) => g.match(def.key.split('.')[0]))?.id === group.id,
+      (def) => PERMISSION_GROUPS.find((g) => g.match(def.key.split(".")[0]))?.id === group.id,
     ),
-  })).filter((group) => group.items.length > 0)
+  })).filter((group) => group.items.length > 0);
 
   return (
     <CoreAppShell
@@ -107,7 +114,9 @@ export default function AdminSettingsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -133,7 +142,9 @@ export default function AdminSettingsPage() {
 
             {error ? (
               <div className="px-4 lg:px-6">
-                <p className="text-destructive text-sm" role="alert">{error}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {error}
+                </p>
               </div>
             ) : null}
 
@@ -142,11 +153,21 @@ export default function AdminSettingsPage() {
                 <Alert variant="destructive">
                   <AlertTitle>Environment configuration is incomplete</AlertTitle>
                   <AlertDescription>
-                    Missing: {environmentHealth.missingKeys.join(', ')}. Add the key
-                    to this deployment&apos;s environment and restart the service.
+                    Missing: {environmentHealth.missingKeys.join(", ")}. Add the key to this
+                    deployment&apos;s environment and restart the service.
                   </AlertDescription>
                 </Alert>
               ) : null}
+              <BedrockOverflowSettingsCard
+                initialSettings={bedrockSettings}
+                tokenConfigured={bedrockTokenConfigured}
+                onSave={async (settings: BedrockOverflowSettings) => {
+                  await apiFetch("/api/admin/bedrock-settings", {
+                    method: "PATCH",
+                    body: JSON.stringify(settings),
+                  });
+                }}
+              />
               {isLoading ? (
                 <Card>
                   <CardContent className="pt-6">
@@ -170,7 +191,9 @@ export default function AdminSettingsPage() {
                       {group.items.map((def) => (
                         <div key={def.key} className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
-                            <Label htmlFor={def.key} className="text-base">{def.label}</Label>
+                            <Label htmlFor={def.key} className="text-base">
+                              {def.label}
+                            </Label>
                             <p className="text-muted-foreground text-sm">{def.description}</p>
                           </div>
                           <Switch
@@ -189,5 +212,5 @@ export default function AdminSettingsPage() {
         </div>
       </div>
     </CoreAppShell>
-  )
+  );
 }

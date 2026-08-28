@@ -2,10 +2,10 @@
  * API client for the assessment variant workflow (reference exams, assembly, AI review).
  * Routes: `/api/assessment-variant`.
  */
-import api from './api';
-import { apiKeyStorage } from './apiKeyStorage';
+import api from "./api";
+import { apiKeyStorage } from "./apiKeyStorage";
 
-export type StudyRole = 'reference_baseline' | 'generated_variant' | null;
+export type StudyRole = "reference_baseline" | "generated_variant" | null;
 
 export interface BlueprintSlot {
   order: number;
@@ -37,7 +37,7 @@ export interface BlueprintSnapshot {
 export interface AssembleVariantsResult {
   referenceAssessmentId: number;
   courseId: number;
-  assemblyMode?: 'metadata_similarity';
+  assemblyMode?: "metadata_similarity";
   createdAssessments: Array<{ id: number; name: string; type: string; semester: string }>;
   assemblyTimeMs: number;
   warnings: Array<{ slot: number; questionMetadataId: number; message: string }>;
@@ -53,6 +53,8 @@ export interface GeneratedVariantPreview {
   reasoningLevel: string | null;
   answer: string | null;
   choices: Array<{ letter?: string; text?: string }> | null;
+  selectAllThatApply?: boolean;
+  correctAnswers?: string[] | null;
   isAiGenerated: boolean;
   isDraft: boolean;
 }
@@ -102,7 +104,7 @@ export interface VariantAiReviewRow {
   exam_variant_composite_score_1to5_usability_adjusted: number | null;
   exam_variant_composite_score_0to100_usability_adjusted: number | null;
   exam_variant_distinctness_factor?: number | null;
-  usability: 'usable_as_is' | 'usable_with_edits' | 'unusable';
+  usability: "usable_as_is" | "usable_with_edits" | "unusable";
   brief_reason: string;
 }
 
@@ -143,10 +145,13 @@ export interface VariantAiReviewResult {
   perQuestion: VariantAiReviewRow[];
 }
 
-const apiBase = '/api/assessment-variant';
+const apiBase = "/api/assessment-variant";
 
 export const assessmentVariantService = {
-  async setStudyRole(assessmentId: number, studyRole: StudyRole): Promise<{ blueprintConfig?: unknown }> {
+  async setStudyRole(
+    assessmentId: number,
+    studyRole: StudyRole,
+  ): Promise<{ blueprintConfig?: unknown }> {
     const response = await api.patch(`${apiBase}/assessments/${assessmentId}/role`, { studyRole });
     return response.data.data;
   },
@@ -156,11 +161,13 @@ export const assessmentVariantService = {
     return response.data.data;
   },
 
-  async getBaselineVariantReadiness(assessmentId: number, courseId: number): Promise<BaselineVariantReadiness> {
-    const response = await api.get(
-      `${apiBase}/assessments/${assessmentId}/variant-readiness`,
-      { params: { courseId } }
-    );
+  async getBaselineVariantReadiness(
+    assessmentId: number,
+    courseId: number,
+  ): Promise<BaselineVariantReadiness> {
+    const response = await api.get(`${apiBase}/assessments/${assessmentId}/variant-readiness`, {
+      params: { courseId },
+    });
     return response.data.data;
   },
 
@@ -197,12 +204,12 @@ export const assessmentVariantService = {
     variantsToAdd?: number;
     variantPromptInstructions?: string | null;
   }): Promise<GenerateBankVariantsResult> {
-    const model = payload.model ?? 'vllm:qwen2.5-32b-instruct';
+    const model = payload.model ?? "vllm:qwen2.5-32b-instruct";
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/generate-bank-variants`, {
       ...payload,
       model,
-      apiKeys
+      apiKeys,
     });
     return response.data.data;
   },
@@ -214,15 +221,15 @@ export const assessmentVariantService = {
     model?: string;
     rubricText?: string;
   }): Promise<VariantAiReviewResult> {
-    const model = payload.model ?? 'vllm:qwen2.5-32b-instruct';
+    const model = payload.model ?? "vllm:qwen2.5-32b-instruct";
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/review-variant-ai`, {
       ...payload,
       model,
-      apiKeys
+      apiKeys,
     });
     return response.data.data;
-  }
+  },
 };
 
 export default assessmentVariantService;

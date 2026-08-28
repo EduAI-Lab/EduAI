@@ -4,21 +4,21 @@
  * / Application) in a single row, with the active stop highlighted and a one-line blurb
  * describing the cognitive task below.
  */
-import { cn } from '@eduai/ui';
-import type { ReasoningLevel } from '../../types/question';
+import { cn } from "@eduai/ui";
+import type { ReasoningLevel } from "../../types/question";
 
 interface ReasoningMeta {
   label: string;
   blurb: string;
 }
 
-const REASONING_LEVELS: ReasoningLevel[] = ['factual', 'analytical', 'application'];
+const REASONING_LEVELS: ReasoningLevel[] = ["factual", "analytical", "application"];
 
-const REASONING_META: Record<ReasoningLevel, ReasoningMeta> = {
-  factual: { label: 'Factual', blurb: 'Recall facts & definitions' },
-  analytical: { label: 'Analytical', blurb: 'Compare, break down & infer' },
-  application: { label: 'Application', blurb: 'Use ideas in new contexts' },
-};
+const REASONING_META = {
+  factual: { label: "Factual", blurb: "Recall facts & definitions" },
+  analytical: { label: "Analytical", blurb: "Compare, break down & infer" },
+  application: { label: "Application", blurb: "Use ideas in new contexts" },
+} satisfies Record<ReasoningLevel, ReasoningMeta>;
 
 interface ReasoningSelectorProps {
   value: ReasoningLevel;
@@ -27,10 +27,15 @@ interface ReasoningSelectorProps {
   id?: string;
 }
 
-export function ReasoningSelector({ value, onChange, disabled = false, id }: ReasoningSelectorProps) {
+export function ReasoningSelector({
+  value,
+  onChange,
+  disabled = false,
+  id,
+}: ReasoningSelectorProps) {
   const meta = REASONING_META[value];
   return (
-    <div className={cn('flex flex-col gap-1.5', disabled && 'opacity-60')}>
+    <div className={cn("flex flex-col gap-1.5", disabled && "opacity-60")}>
       <div
         id={id}
         role="radiogroup"
@@ -49,10 +54,10 @@ export function ReasoningSelector({ value, onChange, disabled = false, id }: Rea
               disabled={disabled}
               onClick={() => onChange(lvl)}
               className={cn(
-                'flex-1 whitespace-nowrap rounded-[5px] px-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed',
+                "flex-1 whitespace-nowrap rounded-[5px] px-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
                 active
-                  ? 'bg-primary font-semibold text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  ? "bg-primary font-semibold text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               {m.label}

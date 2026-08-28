@@ -84,7 +84,9 @@ async function main() {
     console.error("\nFix:");
     console.error("  1. Start sidecar ON cmps01: bash tools/energy-meter/deploy-cmps01.sh");
     console.error("  2. Route /energy via nginx on :8001: bash infra/cmps01/deploy-edge-proxy.sh");
-    console.error("  3. Set ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy in .env.research");
+    console.error(
+      "  3. Set ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy in .env.research",
+    );
     process.exit(1);
   }
 
@@ -118,7 +120,9 @@ async function main() {
   }
 
   const joules = probe.energyJoules ?? probe.joulesTotal;
-  console.log(`\nOK: sidecar ready (${joules.toFixed(4)} J in probe, source=${probe.source ?? "?"})`);
+  console.log(
+    `\nOK: sidecar ready (${joules.toFixed(4)} J in probe, source=${probe.source ?? "?"})`,
+  );
 }
 
 main().catch((e) => {

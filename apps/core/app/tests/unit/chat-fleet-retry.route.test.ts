@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Fleet Slice 2: fleetRetry: true success marker only after alternate host succeeds.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -29,6 +35,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("admin"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -99,7 +107,7 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -107,10 +115,18 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { streamText } from "ai";
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { action } from "~/routes/api/chat";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
+  FleetUnavailableError,
   resolveFleetHost,
   resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
@@ -132,7 +148,7 @@ const pick2 = {
   reason: "interactive-round-robin-retry",
 };
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -148,9 +164,15 @@ function makeRequest(body: object) {
 // `.getReader()` / `.cancel()` behave like production), not a bare async
 // generator. onChunk fires as a side effect of the stream being read, same
 // as the real SDK.
+/** One part of the SDK's `fullStream`, as this test feeds them through. */
+type StreamPart = { type?: string; text?: string; textDelta?: string; error?: unknown };
+
+/** What `onChunk` receives: the part, wrapped the way the SDK wraps it. */
+type StreamChunk = { chunk: StreamPart };
+
 function makeFullStream(
-  parts: unknown[],
-  onChunk?: (chunk: unknown) => void,
+  parts: StreamPart[],
+  onChunk?: (chunk: StreamChunk) => void,
 ): ReadableStream<unknown> {
   let cancelled = false;
   return new ReadableStream({
@@ -173,7 +195,7 @@ function makeFullStream(
   });
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -190,6 +212,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetAiAdmission();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   process.env.AI_MAX_INFLIGHT = "0";
   // Soft-timeout so a successful streamText mock does not hang on probe.wait().
@@ -243,8 +266,12 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(res.status).toBe(502);
 
     const body = await res.json();
-    expect(body.code).toBe("LLM_STREAM_FAILED");
-    expect(body.fleetRetry).toBe(false);
+    expect(body).toEqual({
+      error: "Provider request failed",
+      code: "PROVIDER_REQUEST_FAILED",
+      retryable: false,
+      provider: "vllm",
+    });
 
     const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
     expect(logMessages.some((m) => m.includes("retry attempt"))).toBe(true);
@@ -252,7 +279,24 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
 
     expect(streamText).toHaveBeenCalledTimes(2);
     expect(resolveFleetHostAfterFailure).toHaveBeenCalledTimes(1);
+  });
 
+  it("normalizes fleet model unavailability without leaking host details", async () => {
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError("No healthy server at http://private-fleet.internal"),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "Requested model is unavailable",
+      code: "MODEL_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+    expect(JSON.stringify(body)).not.toContain("private-fleet");
   });
 
   it("logs fleetRetry: true only after the alternate attempt succeeds", async () => {

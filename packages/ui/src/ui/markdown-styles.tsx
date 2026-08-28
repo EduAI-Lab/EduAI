@@ -1,5 +1,5 @@
-import { createContext, useContext, type ReactNode } from "react"
-import type { MarkdownStyleLoader } from "./lazy-streamdown"
+import { createContext, useContext, type ReactNode } from "react";
+import type { MarkdownStyleLoader } from "./lazy-streamdown";
 
 /**
  * App-supplied stylesheet loaders for the shared markdown renderer.
@@ -11,14 +11,12 @@ import type { MarkdownStyleLoader } from "./lazy-streamdown"
  */
 export type MarkdownStyles = {
   /** e.g. `() => import("katex/dist/katex.min.css")`. */
-  loadKatexStyles?: MarkdownStyleLoader
-}
+  loadKatexStyles?: MarkdownStyleLoader;
+};
 
-const EMPTY_MARKDOWN_STYLES: MarkdownStyles = {}
+const EMPTY_MARKDOWN_STYLES: MarkdownStyles = {};
 
-const MarkdownStylesContext = createContext<MarkdownStyles>(
-  EMPTY_MARKDOWN_STYLES
-)
+const MarkdownStylesContext = createContext<MarkdownStyles>(EMPTY_MARKDOWN_STYLES);
 
 export type MarkdownStylesProviderProps = {
   /**
@@ -26,25 +24,18 @@ export type MarkdownStylesProviderProps = {
    * the loader's identity keys the cached Streamdown variant, and a new one
    * each render would remount every math block.
    */
-  value: MarkdownStyles
-  children: ReactNode
-}
+  value: MarkdownStyles;
+  children: ReactNode;
+};
 
 /**
  * Without a provider, markdown still renders — math just renders unstyled.
  * Apps that render math are expected to supply `loadKatexStyles`.
  */
-export function MarkdownStylesProvider({
-  value,
-  children,
-}: MarkdownStylesProviderProps) {
-  return (
-    <MarkdownStylesContext.Provider value={value}>
-      {children}
-    </MarkdownStylesContext.Provider>
-  )
+export function MarkdownStylesProvider({ value, children }: MarkdownStylesProviderProps) {
+  return <MarkdownStylesContext.Provider value={value}>{children}</MarkdownStylesContext.Provider>;
 }
 
 export function useMarkdownStyles(): MarkdownStyles {
-  return useContext(MarkdownStylesContext)
+  return useContext(MarkdownStylesContext);
 }

@@ -184,13 +184,18 @@ const response = await axios.get('https://canvas.instructure.com/api/v1/courses'
 api_key: "aGVsbG8gd29ybGQ6MTIzNDU2Nzg5MA==:YWJjZGVmZ2hpams=:bW5vcHFyc3Q=:dXZ3eHl6MTIzNDU2Nzg5MA=="
 ```
 
-**In the code:**
+**In application memory:**
 ```javascript
-console.log(integration.apiKey);
-// Output: "1234~abcdefghijklmnopqrstuvwxyz"
+const integration = await getCanvasIntegration(userId);
+const response = await axios.get(`${integration.canvasUrl}/api/v1/courses`, {
+  headers: { Authorization: `Bearer ${integration.apiKey}` }
+});
 ```
 
-The encryption/decryption is completely transparent to developers!
+`getCanvasIntegration` decrypts the credential for immediate provider use. Treat that value as
+ephemeral secret material: never print it, attach it to diagnostics, serialize it into responses,
+or include it in an exception. Prisma does not provide automatic field getters; encryption and
+decryption are explicit in `canvasService.js`.
 
 ## Security Best Practices
 
@@ -346,4 +351,3 @@ If you have questions about encryption implementation:
 
 **Last Updated**: 2024
 **Maintained By**: Question Maker Development Team
-

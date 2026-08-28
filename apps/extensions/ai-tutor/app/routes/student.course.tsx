@@ -1,24 +1,34 @@
-import { useMemo } from 'react';
-import { useNavigate, useNavigation, useSearchParams } from 'react-router';
-import { IconFolders } from '@tabler/icons-react';
-import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from '@eduai/ui';
-import { ModuleCard } from '../components/courses/ModuleCard';
-import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import type { Course, Module } from '../lib/types';
-import type { Route } from './+types/student.course';
-import { useCourseTopics } from '../hooks/useCourseTopics';
-import api from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { PaginationControls } from '~/components/common/PaginationControls';
-import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+import { useMemo } from "react";
+import { useNavigate, useNavigation, useSearchParams } from "react-router";
+import { IconFolders } from "@tabler/icons-react";
+import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from "@eduai/ui";
+import { ModuleCard } from "../components/courses/ModuleCard";
+import {
+  accentForCourse,
+  courseCode,
+  courseName,
+  courseTerm,
+  courseYear,
+} from "../lib/course-display";
+import type { Course, Module } from "../lib/types";
+import type { Route } from "./+types/student.course";
+import { useCourseTopics } from "../hooks/useCourseTopics";
+import api from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
-    throw new Response('Invalid course id', { status: 400 });
+    throw new Response("Invalid course id", { status: 400 });
   }
 
   // #1207: the module grid is paged from the URL. It used to unwrap one bounded
@@ -50,6 +60,10 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
+  const { user } = useLocalUser();
+  // #1660: only set when the viewer is previewing (not a real STUDENT/TA of
+  // this course) — see StudentPreviewBanner for why this is purely a label.
+  const previewRole = resolvePreviewRole(user);
   const { course, modules, modulesTotal, page, pageSize } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
 
@@ -57,7 +71,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set('page', String(nextPage));
+        next.set("page", String(nextPage));
         return next;
       },
       { preventScrollReset: false },
@@ -67,22 +81,31 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const { topics, total: topicsTotal } = useCourseTopics(course?.id ?? null);
 
   useShellBreadcrumbs([
-    { label: 'Courses', href: '/student' },
+    { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
-      node: course?.id != null ? (
-        <CourseSwitcher
-          courseId={course.id}
-          basePath="/student"
-          currentTitle={course?.title || 'Course'}
-        />
-      ) : undefined,
+      label: course?.title || "Course",
+      node:
+        course?.id != null ? (
+          <CourseSwitcher
+            courseId={course.id}
+            basePath="/student"
+            currentTitle={course?.title || "Course"}
+          />
+        ) : undefined,
     },
   ]);
 
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={
+        previewRole ? (
+          <StudentPreviewBanner
+            role={previewRole}
+            exitHref={course?.id != null ? `/instructor/courses/${course.id}` : "/instructor"}
+          />
+        ) : null
+      }
       hero={
         <CourseHeroCard
           code={courseCode(course)}
@@ -97,12 +120,12 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
             ...(topicsTotal > topics.length ? [`+${topicsTotal - topics.length} more`] : []),
           ]}
           // #1207: count the whole course, not the loaded page.
-          topRightBadges={[`${modulesTotal} ${modulesTotal === 1 ? 'module' : 'modules'}`]}
+          topRightBadges={[`${modulesTotal} ${modulesTotal === 1 ? "module" : "modules"}`]}
         />
       }
     >
       {moduleList.length === 0 ? (
-        <Card className="mx-auto max-w-lg">
+        <Card className="mx-auto max-w-lg" data-tour="student-modules-empty">
           <EmptyState
             icon={<IconFolders size={22} aria-hidden="true" />}
             title="No modules available"
@@ -122,7 +145,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
               showProgress
               progress={module.progress}
               onClick={() => navigate(`/student/module/${module.id}`)}
-              dataTour={index === 0 ? 'student-module-card-first' : undefined}
+              dataTour={index === 0 ? "student-module-card-first" : undefined}
               dataTourRoute={index === 0 ? `/student/module/${module.id}` : undefined}
             />
           ))}
@@ -134,8 +157,14 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
         pageSize={pageSize}
         total={modulesTotal}
         onPageChange={goToPage}
-        disabled={navigation.state === 'loading'}
+        disabled={navigation.state === "loading"}
       />
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

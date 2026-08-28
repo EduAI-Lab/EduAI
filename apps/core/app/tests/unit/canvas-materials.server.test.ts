@@ -32,7 +32,12 @@ vi.mock("~/lib/canvas/client.server", () => ({
   listCanvasCourseFiles: vi.fn(),
   downloadCanvasFile: vi.fn(),
   computeCanvasFilePublishState: (
-    file: { hidden?: boolean; locked?: boolean; lock_at?: string | null; unlock_at?: string | null },
+    file: {
+      hidden?: boolean;
+      locked?: boolean;
+      lock_at?: string | null;
+      unlock_at?: string | null;
+    },
     now: Date = new Date(),
   ) => {
     if (file.hidden || file.locked) {
@@ -151,9 +156,7 @@ describe("discoverCanvasMaterialsForCourse", () => {
   });
 
   it("flags an unpublished Canvas file as not importable", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
 
     const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
 
@@ -204,16 +207,36 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]).toMatchObject({
       canvasFileId: "2002",
       displayName: "slides.pdf",
+      mimeType: "application/pdf",
       importStatus: "not_imported",
     });
   });
 
-  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
+  it("uses the supported extension when Canvas reports a conflicting text MIME", async () => {
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
+      {
+        ...CANVAS_FILE,
+        id: 2003,
+        display_name: "lecture.pdf",
+        filename: "lecture.pdf",
+        "content-type": "text/plain",
+      },
     ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]?.mimeType).toBe("application/pdf");
+  });
+
+  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
-      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
     ] as never);
 
     await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
@@ -223,11 +246,14 @@ describe("discoverCanvasMaterialsForCourse", () => {
   });
 
   it("sets unpublishedAt on a previously-imported material that becomes unpublished when recheckPublishState is opted into", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
-      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
     ] as never);
 
     await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
@@ -310,6 +336,11 @@ describe("syncSelectedCanvasMaterials", () => {
 
     expect(result.imported).toBe(1);
     expect(result.failed).toHaveLength(0);
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ fileSize: 5 }),
+      }),
+    );
     expect(processUploadedFile).toHaveBeenCalled();
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
   });
@@ -321,13 +352,13 @@ describe("syncSelectedCanvasMaterials", () => {
       canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
       deletedAt: null,
     } as never);
-    vi.mocked(processUploadedFile).mockRejectedValueOnce(new Error("PDF extraction worker was killed"));
+    vi.mocked(processUploadedFile).mockRejectedValueOnce(
+      new Error("PDF extraction worker was killed"),
+    );
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
-    expect(result.failed).toEqual([
-      expect.objectContaining({ canvasFileId: "1001" }),
-    ]);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "mat-existing" },
@@ -370,9 +401,7 @@ describe("syncSelectedCanvasMaterials", () => {
   });
 
   it("skips and reports an unpublished file without importing it", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
@@ -454,9 +483,7 @@ describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
   it("is idempotent when excluding an already-excluded file", async () => {
     vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
 
-    await expect(
-      excludeCanvasMaterial("user-1", "core-course-1", "1001"),
-    ).resolves.toBeUndefined();
+    await expect(excludeCanvasMaterial("user-1", "core-course-1", "1001")).resolves.toBeUndefined();
   });
 
   it("deletes the exclusion row on unexclude", async () => {

@@ -31,7 +31,10 @@ vi.mock("~/lib/logging.server", () => ({
 import { loader, action } from "~/routes/api/courses.id";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
+} from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { logAuditAction } from "~/lib/logging.server";
 
@@ -116,6 +119,106 @@ describe("GET /api/courses/:id", () => {
     } as never);
     const res = await loader(makeLoaderArgs());
     expect(res.status).toBe(200);
+  });
+
+  it("projects a student detail response with public teaching metadata but no private AI fields", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "student-1", role: "STUDENT" },
+    } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: {
+        id: "course-1",
+        code: "COSC 101",
+        name: "Algorithms",
+        description: "Public",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        isActive: true,
+        isPublished: true,
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+        endDate: null,
+        department: "COSC",
+        aiInstructions: "private prompt",
+        responseStyleTags: ["socratic"],
+        courseScopeGuardrailEnabled: true,
+        ragTopK: 8,
+        ragSimilarityThreshold: 0.7,
+        embeddingProvider: "local",
+        embeddingModel: "private-model",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        instructorId: "private-instructor",
+        externalSource: "canvas",
+        externalId: "private-canvas-id",
+        instructor: { id: "private-instructor", name: "Prof", email: "prof@example.edu" },
+      },
+      access: { level: "student", rank: 0 },
+    } as never);
+
+    const body = await (await loader(makeLoaderArgs())).json();
+    expect(body).toMatchObject({
+      id: "course-1",
+      code: "COSC 101",
+      hasAiConfig: true,
+      responseStyleTags: ["socratic"],
+      instructor: { name: "Prof", email: "prof@example.edu" },
+    });
+    for (const key of [
+      "aiInstructions",
+      "courseScopeGuardrailEnabled",
+      "ragTopK",
+      "ragSimilarityThreshold",
+      "embeddingProvider",
+      "embeddingModel",
+      "createdAt",
+      "updatedAt",
+      "instructorId",
+      "externalId",
+      "externalSource",
+    ]) {
+      expect(body).not.toHaveProperty(key);
+    }
+    expect(body.instructor).not.toHaveProperty("id");
+  });
+
+  it("keeps intentional staff configuration while still omitting embedding and timestamps", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instructor-1", role: "INSTRUCTOR" },
+    } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: {
+        id: "course-1",
+        code: "COSC 101",
+        name: "Algorithms",
+        isPublished: true,
+        aiInstructions: "private prompt",
+        responseStyleTags: ["concise"],
+        courseScopeGuardrailEnabled: true,
+        ragTopK: 8,
+        ragSimilarityThreshold: 0.7,
+        embeddingProvider: "local",
+        embeddingModel: "private-model",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        instructorId: "instructor-1",
+      },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+
+    const body = await (await loader(makeLoaderArgs())).json();
+    expect(body).toMatchObject({
+      aiInstructions: "private prompt",
+      responseStyleTags: ["concise"],
+      courseScopeGuardrailEnabled: true,
+      ragTopK: 8,
+      ragSimilarityThreshold: 0.7,
+      instructorId: "instructor-1",
+    });
+    expect(body).not.toHaveProperty("embeddingProvider");
+    expect(body).not.toHaveProperty("embeddingModel");
+    expect(body).not.toHaveProperty("createdAt");
+    expect(body).not.toHaveProperty("updatedAt");
   });
 });
 

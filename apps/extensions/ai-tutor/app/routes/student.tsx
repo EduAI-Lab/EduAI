@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { Link, redirect, useNavigation } from 'react-router';
-import type { ReactNode } from 'react';
-import { IconBooks, IconSearch } from '@tabler/icons-react';
+import { useMemo } from "react";
+import { Link, redirect, useNavigation } from "react-router";
+import type { ReactNode } from "react";
+import { IconBooks, IconSearch } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
@@ -10,24 +10,36 @@ import {
   PageHeading,
   buildTermFilterGroup,
   type CourseFilterGroup,
-} from '@eduai/ui';
-import type { Course } from '../lib/types';
-import type { Route } from './+types/student';
-import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import { useLocalUser } from '../hooks/useLocalUser';
-import api from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { PaginationControls } from '~/components/common/PaginationControls';
+} from "@eduai/ui";
+import type { Course } from "../lib/types";
+import type { Route } from "./+types/student";
+import {
+  accentForCourse,
+  courseCode,
+  courseName,
+  courseTerm,
+  courseYear,
+} from "../lib/course-display";
+import { useLocalUser } from "../hooks/useLocalUser";
+import api from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { PaginationControls } from "~/components/common/PaginationControls";
 import {
   MAX_COURSE_SEARCH_LENGTH,
   readCourseListSelection,
   useCourseListFilters,
-} from '~/lib/course-list-filters';
-import { loadCourseFacets } from '~/lib/course-facets';
+} from "~/lib/course-list-filters";
+import { loadCourseFacets } from "~/lib/course-facets";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
+  // #1660 review: the "Courses" breadcrumb/CourseSwitcher link on every
+  // student.course/module/lesson page points here — this route needs the
+  // same widened allow-list or a previewer's in-page navigation 404s.
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   // #1208: search, term and progress come from the URL and are applied
   // SERVER-side, so they span every enrolled course rather than the loaded page.
   // This route previously requested one unbounded-in-practice page and rendered
@@ -53,7 +65,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // `url.searchParams` so the search/filter params survive the redirect.
   const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
   if (selection.page > lastPage) {
-    url.searchParams.set('page', String(lastPage));
+    url.searchParams.set("page", String(lastPage));
     throw redirect(`${url.pathname}${url.search}`);
   }
 
@@ -72,16 +84,16 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
  *  product rather than two differently-voiced tools. */
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 /** First name only, same "Dr. First Last" edge case Core's greeting handles. */
 function firstNameOf(name: string | undefined): string | null {
   const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
   if (parts.length === 0) return null;
-  return parts.length === 3 && parts[0]!.endsWith('.') ? parts[1]! : parts[0]!;
+  return parts.length === 3 && parts[0]!.endsWith(".") ? parts[1]! : parts[0]!;
 }
 
 /** Progress surfaced as a single accent badge on the shared card, rather than a
@@ -89,7 +101,7 @@ function firstNameOf(name: string | undefined): string | null {
 function progressBadges(course: Course): string[] {
   const p = course.progress;
   if (!p || p.total <= 0 || p.completed <= 0) return [];
-  if (p.completed >= p.total) return ['Completed'];
+  if (p.completed >= p.total) return ["Completed"];
   return [`${Math.round(p.percentage)}% complete`];
 }
 
@@ -105,19 +117,19 @@ function progressBadges(course: Course): string[] {
  * that selected it.
  */
 export const PROGRESS_FILTER: CourseFilterGroup<Course> = {
-  id: 'progress',
-  label: 'Progress',
+  id: "progress",
+  label: "Progress",
   getValue: (course) => {
     const p = course.progress;
     if (!p || p.total <= 0) return null;
-    if (p.completed <= 0) return 'not-started';
-    if (p.completed >= p.total) return 'completed';
-    return 'in-progress';
+    if (p.completed <= 0) return "not-started";
+    if (p.completed >= p.total) return "completed";
+    return "in-progress";
   },
   options: [
-    { value: 'not-started', label: 'Not started' },
-    { value: 'in-progress', label: 'In progress' },
-    { value: 'completed', label: 'Completed' },
+    { value: "not-started", label: "Not started" },
+    { value: "in-progress", label: "In progress" },
+    { value: "completed", label: "Completed" },
   ],
 };
 
@@ -146,14 +158,17 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
     useCourseListFilters(selection);
 
-  useShellBreadcrumbs([{ label: 'Courses' }]);
+  useShellBreadcrumbs([{ label: "Courses" }]);
 
   const firstName = firstNameOf(user?.name);
-  const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : 'My courses';
-  const subheading = 'Continue where you left off or explore your courses.';
+  const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : "My courses";
+  const subheading = "Continue where you left off or explore your courses.";
+
+  const previewRole = resolvePreviewRole(user);
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      {previewRole && <StudentPreviewBanner role={previewRole} exitHref="/instructor" />}
       <div data-tour="student-dashboard-header">
         <PageHeading heading={heading} subheading={subheading} />
       </div>
@@ -245,8 +260,14 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         pageSize={pageSize}
         total={total}
         onPageChange={goToPage}
-        disabled={navigation.state === 'loading'}
+        disabled={navigation.state === "loading"}
       />
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

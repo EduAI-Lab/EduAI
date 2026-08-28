@@ -14,7 +14,6 @@ const navigationItems = [
 export function SiteNavigation({ currentPage }: SiteNavigationProps) {
   const navigate = useNavigate();
 
-
   return (
     <nav className="bg-card/50 backdrop-blur-sm border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -28,7 +27,7 @@ export function SiteNavigation({ currentPage }: SiteNavigationProps) {
                   "inline-flex items-center px-1 pt-1 text-sm font-medium border-b-2",
                   currentPage === item.name.toLowerCase()
                     ? "border-green-500 text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-muted hover:text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-muted hover:text-foreground",
                 )}
               >
                 {item.name}

@@ -175,7 +175,12 @@ Submission: Submit a single file named assignment4.py. Late submissions follow t
 async function main() {
   loadEnvFile();
 
-  console.log("Embedding provider:", process.env.EMBEDDING_PROVIDER, "/ dim:", process.env.EMBEDDING_DIMENSION);
+  console.log(
+    "Embedding provider:",
+    process.env.EMBEDDING_PROVIDER,
+    "/ dim:",
+    process.env.EMBEDDING_DIMENSION,
+  );
   console.log("Checking for existing eval course…");
 
   const existing = await prisma.course.findFirst({

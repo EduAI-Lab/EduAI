@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy } from "~/lib/policy.server";
 
@@ -55,13 +55,17 @@ export type ListChatsOptions = {
 function extractText(content: Prisma.JsonValue | null | undefined): string | null {
   if (!content) return null;
   if (typeof content === "string") return content.trim() || null;
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
+  if (typeof content === "object" && !Array.isArray(content)) {
+    const obj = content;
     if (typeof obj.content === "string" && obj.content.trim()) return obj.content.trim();
     if (Array.isArray(obj.parts)) {
       const text = obj.parts
-        .filter((p): p is { type: string; text: string } =>
-          !!p && typeof p === "object" && (p as any).type === "text" && typeof (p as any).text === "string",
+        .filter(
+          (p): p is { type: string; text: string } =>
+            !!p &&
+            typeof p === "object" &&
+            (p as any).type === "text" &&
+            typeof (p as any).text === "string",
         )
         .map((p) => p.text)
         .join(" ")
@@ -152,7 +156,7 @@ export async function resolveChatReadAccess(
   let authorized = isOwner || viewer.role === "ADMIN";
 
   if (!authorized && chat.courseId) {
-    const { access } = await resolveCourseAccessWithCourse(viewer, chat.courseId);
+    const { access } = await resolveCourseAccessGate(viewer, chat.courseId);
     const gate = courseChatViewPolicyKey(access?.level ?? null);
     const gateOpen = gate === "always" || (gate !== "never" && (await getPolicy(gate)));
     if (gateOpen) {
@@ -186,16 +190,10 @@ export async function listChats(
   const { courseId, userId, scope, limit = 30 } = options;
 
   const visibility =
-    scope === "own"
-      ? { userId: viewer.id }
-      : await buildChatVisibilityFilter(viewer);
+    scope === "own" ? { userId: viewer.id } : await buildChatVisibilityFilter(viewer);
 
   const where: Prisma.ChatWhereInput = {
-    AND: [
-      visibility,
-      ...(courseId ? [{ courseId }] : []),
-      ...(userId ? [{ userId }] : []),
-    ],
+    AND: [visibility, ...(courseId ? [{ courseId }] : []), ...(userId ? [{ userId }] : [])],
   };
 
   const chats = await prisma.chat.findMany({

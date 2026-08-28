@@ -9,12 +9,10 @@
  * choice carries across the Core, AI Tutor, and Question Maker apps via the
  * shared storage key. Read/write theme through `useTheme` from `@eduai/ui`.
  */
+import type { PreferenceUpdates } from "~/lib/user-preferences";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import {
-  DEFAULT_UI_PREFERENCES,
-  type UiDensity,
-} from "~/lib/ui-preferences";
+import { DEFAULT_UI_PREFERENCES, type UiDensity } from "~/lib/ui-preferences";
 
 type UiPreferencesContextValue = {
   motionReduced: boolean;
@@ -25,7 +23,7 @@ type UiPreferencesContextValue = {
 
 const UiPreferencesContext = createContext<UiPreferencesContextValue | null>(null);
 
-function persistPreferencePatch(body: Record<string, unknown>) {
+function persistPreferencePatch(body: PreferenceUpdates) {
   fetch("/api/preferences", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

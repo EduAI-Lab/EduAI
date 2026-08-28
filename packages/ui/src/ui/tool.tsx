@@ -1,148 +1,140 @@
-"use client"
+"use client";
 
-import { Button } from "./button"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./collapsible"
-import { cn } from "../utils"
+import { Button } from "./button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./collapsible";
+import { cn } from "../utils";
 import {
   IconCircleCheck,
   IconChevronDown,
   IconLoader2,
   IconSettings,
   IconCircleX,
-} from "@tabler/icons-react"
-import { useState } from "react"
+} from "@tabler/icons-react";
+import { useState } from "react";
+import type { JsonObject, JsonValue } from "@eduai/types";
 
 export type ToolPart = {
-  type: string
-  state:
-    | "input-streaming"
-    | "input-available"
-    | "output-available"
-    | "output-error"
-  input?: Record<string, unknown>
-  output?: Record<string, unknown>
-  toolCallId?: string
-  errorText?: string
-}
+  type: string;
+  state: "input-streaming" | "input-available" | "output-available" | "output-error";
+  /**
+   * A tool call's arguments and result, as the model and the tool exchanged
+   * them: JSON objects this component only renders, never interprets.
+   */
+  input?: JsonObject;
+  output?: JsonObject;
+  toolCallId?: string;
+  errorText?: string;
+};
 
 export type ToolProps = {
-  toolPart: ToolPart
-  displayName?: string
-  defaultOpen?: boolean
-  className?: string
-}
+  toolPart: ToolPart;
+  displayName?: string;
+  defaultOpen?: boolean;
+  className?: string;
+};
 
 const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolProps) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  const { state, input, output, toolCallId } = toolPart
+  const { state, input, output, toolCallId } = toolPart;
 
   const writeFailed =
     output &&
     typeof output === "object" &&
     ("writeSucceeded" in output
       ? output.writeSucceeded === false
-      : "error" in output && Boolean((output as { error?: unknown }).error))
+      : "error" in output && Boolean((output as { error?: unknown }).error));
 
-  const effectiveState = writeFailed ? "output-error" : state
+  const effectiveState = writeFailed ? "output-error" : state;
 
   const getStateIcon = () => {
     switch (effectiveState) {
       case "input-streaming":
-        return <IconLoader2 className="h-4 w-4 animate-spin text-blue-500" />
+        return <IconLoader2 className="h-4 w-4 animate-spin text-blue-500" />;
       case "input-available":
-        return <IconSettings className="h-4 w-4 text-orange-500" />
+        return <IconSettings className="h-4 w-4 text-orange-500" />;
       case "output-available":
-        return <IconCircleCheck className="h-4 w-4 text-green-500" />
+        return <IconCircleCheck className="h-4 w-4 text-green-500" />;
       case "output-error":
-        return <IconCircleX className="h-4 w-4 text-red-500" />
+        return <IconCircleX className="h-4 w-4 text-red-500" />;
       default:
-        return <IconSettings className="text-muted-foreground h-4 w-4" />
+        return <IconSettings className="text-muted-foreground h-4 w-4" />;
     }
-  }
+  };
 
   const getStateBadge = () => {
-    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium"
+    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
     switch (effectiveState) {
       case "input-streaming":
         return (
           <span
             className={cn(
               baseClasses,
-              "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+              "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
             )}
           >
             Processing
           </span>
-        )
+        );
       case "input-available":
         return (
           <span
             className={cn(
               baseClasses,
-              "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+              "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
             )}
           >
             Ready
           </span>
-        )
+        );
       case "output-available":
         return (
           <span
             className={cn(
               baseClasses,
-              "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
             )}
           >
             Completed
           </span>
-        )
+        );
       case "output-error":
         return (
           <span
             className={cn(
               baseClasses,
-              "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
             )}
           >
             {writeFailed ? "Write failed" : "Error"}
           </span>
-        )
+        );
       default:
         return (
           <span
             className={cn(
               baseClasses,
-              "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400"
+              "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
             )}
           >
             Pending
           </span>
-        )
+        );
     }
-  }
+  };
 
-  const formatValue = (value: unknown): string => {
-    if (value === null) return "null"
-    if (value === undefined) return "undefined"
-    if (typeof value === "string") return value
+  const formatValue = (value: JsonValue | undefined): string => {
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+    if (typeof value === "string") return value;
     if (typeof value === "object") {
-      return JSON.stringify(value, null, 2)
+      return JSON.stringify(value, null, 2);
     }
-    return String(value)
-  }
+    return String(value);
+  };
 
   return (
-    <div
-      className={cn(
-        "border-border mt-3 overflow-hidden rounded-lg border",
-        className
-      )}
-    >
+    <div className={cn("border-border mt-3 overflow-hidden rounded-lg border", className)}>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -151,9 +143,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
           >
             <div className="flex items-center gap-2">
               {getStateIcon()}
-              <span className="font-mono text-sm font-medium">
-                {displayName ?? toolPart.type}
-              </span>
+              <span className="font-mono text-sm font-medium">{displayName ?? toolPart.type}</span>
               {getStateBadge()}
             </div>
             <IconChevronDown className={cn("h-4 w-4", isOpen && "rotate-180")} />
@@ -162,15 +152,13 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
         <CollapsibleContent
           className={cn(
             "border-border border-t",
-            "data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden"
+            "data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden",
           )}
         >
           <div className="bg-background space-y-3 p-3">
             {input && Object.keys(input).length > 0 && (
               <div>
-                <h4 className="text-muted-foreground mb-2 text-sm font-medium">
-                  Input
-                </h4>
+                <h4 className="text-muted-foreground mb-2 text-sm font-medium">Input</h4>
                 <div className="bg-background rounded border p-2 font-mono text-sm">
                   {Object.entries(input).map(([key, value]) => (
                     <div key={key} className="mb-1">
@@ -184,13 +172,9 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
 
             {output && (
               <div>
-                <h4 className="text-muted-foreground mb-2 text-sm font-medium">
-                  Output
-                </h4>
+                <h4 className="text-muted-foreground mb-2 text-sm font-medium">Output</h4>
                 <div className="bg-background max-h-60 overflow-auto rounded border p-2 font-mono text-sm">
-                  <pre className="whitespace-pre-wrap">
-                    {formatValue(output)}
-                  </pre>
+                  <pre className="whitespace-pre-wrap">{formatValue(output)}</pre>
                 </div>
               </div>
             )}
@@ -205,9 +189,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
             )}
 
             {state === "input-streaming" && (
-              <div className="text-muted-foreground text-sm">
-                Processing tool call...
-              </div>
+              <div className="text-muted-foreground text-sm">Processing tool call...</div>
             )}
 
             {toolCallId && (
@@ -219,7 +201,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
         </CollapsibleContent>
       </Collapsible>
     </div>
-  )
-}
+  );
+};
 
-export { Tool }
+export { Tool };

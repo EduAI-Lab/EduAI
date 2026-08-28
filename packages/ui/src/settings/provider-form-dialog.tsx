@@ -7,13 +7,7 @@
  */
 import { useState, useEffect } from "react";
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
@@ -107,9 +101,7 @@ export function ProviderFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>
-            {provider ? "Edit Provider" : "Create Provider"}
-          </DialogTitle>
+          <DialogTitle>{provider ? "Edit Provider" : "Create Provider"}</DialogTitle>
           <DialogDescription>
             {provider
               ? "Update the provider configuration."
@@ -124,9 +116,7 @@ export function ProviderFormDialog({
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="openai"
                 required
               />
@@ -137,9 +127,7 @@ export function ProviderFormDialog({
               <Input
                 id="displayName"
                 value={formData.displayName}
-                onChange={(e) =>
-                  setFormData({ ...formData, displayName: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                 placeholder="OpenAI"
                 required
               />
@@ -151,9 +139,7 @@ export function ProviderFormDialog({
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Advanced AI models including GPT-4..."
               required
             />
@@ -165,9 +151,7 @@ export function ProviderFormDialog({
               <Input
                 id="defaultBaseUrl"
                 value={formData.defaultBaseUrl}
-                onChange={(e) =>
-                  setFormData({ ...formData, defaultBaseUrl: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, defaultBaseUrl: e.target.value })}
                 placeholder="https://api.openai.com/v1"
               />
             </div>
@@ -177,9 +161,7 @@ export function ProviderFormDialog({
               <Input
                 id="envVarName"
                 value={formData.envVarName}
-                onChange={(e) =>
-                  setFormData({ ...formData, envVarName: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, envVarName: e.target.value })}
                 placeholder="OPENAI_API_KEY"
               />
             </div>
@@ -190,9 +172,7 @@ export function ProviderFormDialog({
               <Switch
                 id="requiresApiKey"
                 checked={formData.requiresApiKey}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, requiresApiKey: checked })
-                }
+                onCheckedChange={(checked) => setFormData({ ...formData, requiresApiKey: checked })}
               />
               <Label htmlFor="requiresApiKey">Requires API Key</Label>
             </div>
@@ -201,25 +181,17 @@ export function ProviderFormDialog({
               <Switch
                 id="isActive"
                 checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
               />
               <Label htmlFor="isActive">Active</Label>
             </div>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">
-              {provider ? "Update" : "Create"} Provider
-            </Button>
+            <Button type="submit">{provider ? "Update" : "Create"} Provider</Button>
           </div>
         </form>
       </DialogContent>

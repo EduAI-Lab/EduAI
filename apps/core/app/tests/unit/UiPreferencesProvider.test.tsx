@@ -7,8 +7,7 @@ import {
 } from "~/components/assistive/ui-preferences-provider";
 
 function Consumer() {
-  const { motionReduced, density, setMotionReduced, setDensity } =
-    useUiPreferences();
+  const { motionReduced, density, setMotionReduced, setDensity } = useUiPreferences();
   return (
     <div>
       <span data-testid="motion">{motionReduced ? "on" : "off"}</span>
@@ -24,10 +23,7 @@ function Consumer() {
 }
 
 beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response("{}", { status: 200 })),
-  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
   document.documentElement.classList.remove("light", "dark");
   document.documentElement.removeAttribute("data-reduce-motion");
   document.documentElement.removeAttribute("data-density");
@@ -43,10 +39,7 @@ afterEach(() => {
 describe("UiPreferencesProvider", () => {
   it("does not set non-default html hooks when defaults are used", () => {
     render(
-      <UiPreferencesProvider
-        initialMotionReduced={false}
-        initialDensity="comfortable"
-      >
+      <UiPreferencesProvider initialMotionReduced={false} initialDensity="comfortable">
         <Consumer />
       </UiPreferencesProvider>,
     );
@@ -57,10 +50,7 @@ describe("UiPreferencesProvider", () => {
 
   it("sets html hooks for non-default motion and density", () => {
     render(
-      <UiPreferencesProvider
-        initialMotionReduced={true}
-        initialDensity="compact"
-      >
+      <UiPreferencesProvider initialMotionReduced={true} initialDensity="compact">
         <Consumer />
       </UiPreferencesProvider>,
     );
@@ -71,10 +61,7 @@ describe("UiPreferencesProvider", () => {
 
   it("persists motion and density via PATCH /api/preferences", () => {
     render(
-      <UiPreferencesProvider
-        initialMotionReduced={false}
-        initialDensity="comfortable"
-      >
+      <UiPreferencesProvider initialMotionReduced={false} initialDensity="comfortable">
         <Consumer />
       </UiPreferencesProvider>,
     );

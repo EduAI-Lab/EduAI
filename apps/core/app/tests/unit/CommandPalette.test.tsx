@@ -15,7 +15,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { CommandPalette } from "~/components/command/command-palette";
 import type { User } from "~/lib/auth/types";
 
-const asUser = (role: string) => ({ role, name: "Admin" }) as unknown as User;
+const asUser = (role: string) => ({ role, name: "Admin" }) as User;
 
 function renderPalette(role = "ADMIN") {
   const router = createMemoryRouter(
@@ -107,7 +107,9 @@ describe("CommandPalette", () => {
     });
 
     // One search request for three keystrokes, on top of the lazy load.
-    await vi.waitFor(() => expect(courseUrls().filter((u) => u.includes("search="))).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(courseUrls().filter((u) => u.includes("search="))).toHaveLength(1),
+    );
   });
 
   it("keeps the loaded courses when a search request fails", async () => {

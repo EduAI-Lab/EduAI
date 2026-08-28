@@ -126,11 +126,7 @@ describe("NavUser", () => {
     const onLogout = vi.fn();
     render(
       <SidebarProvider>
-        <NavUser
-          user={mockUser}
-          onLogout={onLogout}
-          logoutLabel="Sign Out"
-        />
+        <NavUser user={mockUser} onLogout={onLogout} logoutLabel="Sign Out" />
       </SidebarProvider>,
     );
     expect(screen.getByText("Alice Smith")).toBeInTheDocument();

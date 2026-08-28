@@ -25,7 +25,13 @@
  */
 
 export type SsrfIpv6ClassifyRow = {
-  AddressForm: "loopback" | "link-local" | "unique-local" | "global" | "ipv4-mapped" | "unspecified";
+  AddressForm:
+    | "loopback"
+    | "link-local"
+    | "unique-local"
+    | "global"
+    | "ipv4-mapped"
+    | "unspecified";
   ZoneId: "none" | "present";
   Bracketed: "yes" | "no";
   MappedEncoding: "dotted" | "hex";

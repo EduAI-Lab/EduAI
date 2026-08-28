@@ -16,7 +16,7 @@ const LEGACY_FLAT = /^S(\d+)-(on|off)\.md$/;
 const CONDITION_SUBDIR = /^S(\d+)-(.+)\.md$/;
 const CONDITION_DIRS = ["baseline", "assist-prompt-only", "assist-oversight"];
 
-const TURN_SHAPE = {
+const TURN_PROFILE = {
   "S1.t1": { expectFullStructure: true, label: "tutoring answer" },
   "S2.t1": { expectFullStructure: true, label: "step ladder" },
   "S2.t2": { expectFullStructure: false, label: "redirect / one-topic boundary" },
@@ -28,15 +28,18 @@ const TURN_SHAPE = {
 };
 
 function evaluateContextualPass(turnRef, metrics, assistantText) {
-  const shape = TURN_SHAPE[turnRef];
-  if (!shape) return { expectedShape: "unknown", contextualPass: null };
-  if (shape.expectFullStructure) {
-    return { expectedShape: shape.label, contextualPass: isStructuralCompliancePass(metrics) };
+  const profile = TURN_PROFILE[turnRef];
+  if (!profile) return { expectedResponseProfile: "unknown", contextualPass: null };
+  if (profile.expectFullStructure) {
+    return {
+      expectedResponseProfile: profile.label,
+      contextualPass: isStructuralCompliancePass(metrics),
+    };
   }
   const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(assistantText);
   const overStructured = metrics.topSummary && metrics.wordCount > 60;
   return {
-    expectedShape: shape.label,
+    expectedResponseProfile: profile.label,
     contextualPass: !overStructured && (hasRedirectCue || !metrics.topSummary),
   };
 }
@@ -51,7 +54,7 @@ function parseTranscriptMd(content, scenarioId, mode) {
     const turnRef = `${scenarioId}.t${turn}`;
     const metrics = computeAdhdResponseMetrics(assistantText);
     const structuralPass = isStructuralCompliancePass(metrics);
-    const { expectedShape, contextualPass } = evaluateContextualPass(
+    const { expectedResponseProfile, contextualPass } = evaluateContextualPass(
       turnRef,
       metrics,
       assistantText,
@@ -63,7 +66,7 @@ function parseTranscriptMd(content, scenarioId, mode) {
       turnRef,
       metrics,
       structuralPass,
-      expectedShape,
+      expectedResponseProfile,
       contextualPass,
     });
   }

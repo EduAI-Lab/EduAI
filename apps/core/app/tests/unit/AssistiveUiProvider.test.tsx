@@ -1,23 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import {
-  AssistiveUiProvider,
-  useAssistiveUi,
-} from "~/components/assistive/assistive-ui-provider";
+import { AssistiveUiProvider, useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 
 function Consumer() {
   const { assistive, setAssistive } = useAssistiveUi();
-  return (
-    <button onClick={() => setAssistive(!assistive)}>{assistive ? "on" : "off"}</button>
-  );
+  return <button onClick={() => setAssistive(!assistive)}>{assistive ? "on" : "off"}</button>;
 }
 
 beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response("{}", { status: 200 })),
-  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
 });
 
 afterEach(() => {
@@ -62,7 +54,9 @@ describe("AssistiveUiProvider", () => {
         body: JSON.stringify({ assistDefault: true }),
       }),
     );
-    const assistiveCall = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/assistive-events");
+    const assistiveCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => url === "/api/assistive-events");
     expect(assistiveCall).toBeDefined();
     const assistiveBody = JSON.parse(String(assistiveCall![1]?.body));
     expect(assistiveBody).toMatchObject({
@@ -90,7 +84,9 @@ describe("AssistiveUiProvider", () => {
         body: JSON.stringify({ assistDefault: false }),
       }),
     );
-    const assistiveCall = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/assistive-events");
+    const assistiveCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => url === "/api/assistive-events");
     expect(assistiveCall).toBeDefined();
     const assistiveBody = JSON.parse(String(assistiveCall![1]?.body));
     expect(assistiveBody).toMatchObject({

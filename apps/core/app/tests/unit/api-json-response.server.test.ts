@@ -43,7 +43,9 @@ describe("formatApiError", () => {
   });
 
   it("maps a missing findFirst model to a generate + migrate hint", () => {
-    const result = formatApiError(new TypeError("Cannot read properties of undefined (reading 'findFirst')"));
+    const result = formatApiError(
+      new TypeError("Cannot read properties of undefined (reading 'findFirst')"),
+    );
     expect(result.error).toContain("missing generated models");
     expect(result.hint).toContain("prisma migrate deploy");
   });

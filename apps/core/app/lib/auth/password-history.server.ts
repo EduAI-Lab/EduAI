@@ -32,10 +32,7 @@ export async function isPasswordReused({
 
   const currentHash = userWithAccount?.accounts[0]?.password ?? null;
 
-  const hashes = [
-    ...historyRows.map((r) => r.passwordHash),
-    ...(currentHash ? [currentHash] : []),
-  ];
+  const hashes = [...historyRows.map((r) => r.passwordHash), ...(currentHash ? [currentHash] : [])];
 
   for (const hash of hashes) {
     if (await verify({ password: candidate, hash })) {

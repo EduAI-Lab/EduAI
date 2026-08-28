@@ -1,6 +1,27 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+          const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+          const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+          const role =
+            instructor && allowedRoles.includes("INSTRUCTOR")
+              ? "INSTRUCTOR"
+              : (enrollment?.role ?? (allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null));
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? "allowed" : "denied", role };
+        },
+      ),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,
@@ -10,18 +31,25 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
 // `department` is Core-owned (#1072 step 4) — `isCourseAdmin`'s self-resolve
 // path fetches it live via `fetchCoreCourseSafe`.
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+  return {
+    ...actual,
+    fetchCoreCourseSafe: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
+  };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import {
+  fetchCoreCourseSafe,
+  listEduAiCourseEnrollmentsServiceKey,
+} from "../../src/services/eduaiClient.js";
 
-describe('Course analytics routes (#310)', () => {
+describe("Course analytics routes (#310)", () => {
   let prof;
   let seed;
   let profApp;
@@ -38,8 +66,8 @@ describe('Course analytics routes (#310)', () => {
     // Create a second lesson and two activities for richer test data
     const lesson2 = await prisma.lesson.create({
       data: {
-        title: 'Lesson 2',
-        contentMd: '',
+        title: "Lesson 2",
+        contentMd: "",
         position: 1,
         isPublished: true,
         moduleId: seed.module.id,
@@ -48,7 +76,7 @@ describe('Course analytics routes (#310)', () => {
 
     activity1 = await prisma.activity.create({
       data: {
-        instructionsMd: 'Q1',
+        instructionsMd: "Q1",
         position: 0,
         lessonId: seed.lesson.id,
         mainTopicId: seed.topic.id,
@@ -56,7 +84,7 @@ describe('Course analytics routes (#310)', () => {
     });
     activity2 = await prisma.activity.create({
       data: {
-        instructionsMd: 'Q2',
+        instructionsMd: "Q2",
         position: 0,
         lessonId: lesson2.id,
         mainTopicId: seed.topic.id,
@@ -69,10 +97,15 @@ describe('Course analytics routes (#310)', () => {
       const student = makeStudent();
       students.push(student);
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+        data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
       await prisma.submission.create({
-        data: { userId: student.id, activityId: activity1.id, attemptNumber: 1, isCorrect: i === 0 },
+        data: {
+          userId: student.id,
+          activityId: activity1.id,
+          attemptNumber: 1,
+          isCorrect: i === 0,
+        },
       });
       await prisma.activityStudentMetric.create({
         data: {
@@ -107,15 +140,15 @@ describe('Course analytics routes (#310)', () => {
 
   // ── GET /api/courses/:id/submissions ──────────────────────────────
 
-  describe('GET /api/courses/:id/submissions', () => {
-    it('INSTRUCTOR sees all submissions in the course', async () => {
+  describe("GET /api/courses/:id/submissions", () => {
+    it("INSTRUCTOR sees all submissions in the course", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(3);
       expect(res.body[0]).toMatchObject({ activityId: activity1.id });
     });
 
-    it('filterable by activityId', async () => {
+    it("filterable by activityId", async () => {
       const res = await request(profApp)
         .get(`/api/courses/${seed.course.id}/submissions`)
         .query({ activityId: activity1.id });
@@ -123,7 +156,7 @@ describe('Course analytics routes (#310)', () => {
       expect(res.body).toHaveLength(3);
     });
 
-    it('filterable by studentId', async () => {
+    it("filterable by studentId", async () => {
       const res = await request(profApp)
         .get(`/api/courses/${seed.course.id}/submissions`)
         .query({ studentId: students[0].id });
@@ -132,10 +165,10 @@ describe('Course analytics routes (#310)', () => {
       expect(res.body[0].userId).toBe(students[0].id);
     });
 
-    it('TA can list submissions', async () => {
+    it("TA can list submissions", async () => {
       const ta = makeTA();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
       });
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/submissions`);
@@ -143,25 +176,25 @@ describe('Course analytics routes (#310)', () => {
       expect(res.body).toHaveLength(3);
     });
 
-    it('ADMIN can list submissions', async () => {
+    it("ADMIN can list submissions", async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
       const res = await request(adminApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(200);
     });
 
-    it('UNIT_ADMIN in authorized department can list submissions', async () => {
+    it("UNIT_ADMIN in authorized department can list submissions", async () => {
       vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
         id: seed.course.coreOfferingId,
-        department: 'COSC',
+        department: "COSC",
       });
-      const ua = makeUnitAdmin(['COSC']);
+      const ua = makeUnitAdmin(["COSC"]);
       const uaApp = await createApp({ mockUser: ua });
       const res = await request(uaApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(200);
     });
 
-    it('student cannot list course submissions', async () => {
+    it("student cannot list course submissions", async () => {
       const studentApp = await createApp({ mockUser: students[0] });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(403);
@@ -170,8 +203,8 @@ describe('Course analytics routes (#310)', () => {
 
   // ── GET /api/courses/:id/student-metrics ─────────────────────────
 
-  describe('GET /api/courses/:id/student-metrics', () => {
-    it('INSTRUCTOR sees aggregated per-student metrics', async () => {
+  describe("GET /api/courses/:id/student-metrics", () => {
+    it("INSTRUCTOR sees aggregated per-student metrics", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(3);
@@ -185,17 +218,17 @@ describe('Course analytics routes (#310)', () => {
       });
     });
 
-    it('TA can access student-metrics (read parity, #938)', async () => {
+    it("TA can access student-metrics (read parity, #938)", async () => {
       const ta = makeTA();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
       });
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/student-metrics`);
       expect(res.status).toBe(200);
     });
 
-    it('ADMIN can access student-metrics', async () => {
+    it("ADMIN can access student-metrics", async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
       const res = await request(adminApp).get(`/api/courses/${seed.course.id}/student-metrics`);
@@ -203,17 +236,85 @@ describe('Course analytics routes (#310)', () => {
       expect(res.body).toHaveLength(3);
     });
 
-    it('student cannot access student-metrics', async () => {
+    it("student cannot access student-metrics", async () => {
       const studentApp = await createApp({ mockUser: students[0] });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/student-metrics`);
       expect(res.status).toBe(403);
+    });
+
+    it("resolves Core display names, so the table isn't a wall of raw ids", async () => {
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        { id: "e1", studentId: students[0].id, studentName: "Ada Lovelace" },
+      ]);
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.find((m) => m.userId === students[0].id).studentName).toBe("Ada Lovelace");
+      // Unknown ids degrade to null rather than failing the read.
+      expect(res.body.find((m) => m.userId === students[1].id).studentName).toBeNull();
+    });
+
+    it("still answers when Core cannot be reached", async () => {
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockRejectedValue(new Error("core down"));
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(3);
+      expect(res.body[0].studentName).toBeNull();
+    });
+
+    it("follows a manual grade override instead of freezing at submit time", async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const submission = await prisma.submission.findFirst({
+        where: { userId: students[1].id, activityId: activity1.id },
+      });
+
+      // students[1] submitted incorrectly; an admin overrides it to correct.
+      const patch = await request(adminApp)
+        .patch(`/api/activities/${activity1.id}/submissions/${submission.id}`)
+        .send({ isCorrect: true });
+      expect(patch.status).toBe(200);
+
+      const metrics = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+      expect(metrics.body.find((m) => m.userId === students[1].id)).toMatchObject({
+        submissionCount: 1,
+        correctSubmissionCount: 1,
+        incorrectSubmissionCount: 0,
+      });
+
+      const analytics = await request(profApp).get(`/api/courses/${seed.course.id}/analytics`);
+      expect(analytics.body.find((a) => a.activityId === activity1.id)).toMatchObject({
+        correctSubmissionCount: 2,
+        incorrectSubmissionCount: 1,
+      });
+    });
+
+    it("follows an override back to ungraded", async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const submission = await prisma.submission.findFirst({
+        where: { userId: students[0].id, activityId: activity1.id },
+      });
+
+      const patch = await request(adminApp)
+        .patch(`/api/activities/${activity1.id}/submissions/${submission.id}`)
+        .send({ isCorrect: null, score: null });
+      expect(patch.status).toBe(200);
+
+      const metrics = await request(profApp).get(`/api/courses/${seed.course.id}/student-metrics`);
+      expect(metrics.body.find((m) => m.userId === students[0].id)).toMatchObject({
+        submissionCount: 1,
+        correctSubmissionCount: 0,
+        incorrectSubmissionCount: 0,
+      });
     });
   });
 
   // ── GET /api/courses/:id/analytics ───────────────────────────────
 
-  describe('GET /api/courses/:id/analytics', () => {
-    it('INSTRUCTOR sees per-activity analytics', async () => {
+  describe("GET /api/courses/:id/analytics", () => {
+    it("INSTRUCTOR sees per-activity analytics", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/analytics`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -225,17 +326,17 @@ describe('Course analytics routes (#310)', () => {
       });
     });
 
-    it('TA can access analytics (read parity, #938)', async () => {
+    it("TA can access analytics (read parity, #938)", async () => {
       const ta = makeTA();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
       });
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/analytics`);
       expect(res.status).toBe(200);
     });
 
-    it('ADMIN can access analytics', async () => {
+    it("ADMIN can access analytics", async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
       const res = await request(adminApp).get(`/api/courses/${seed.course.id}/analytics`);
@@ -243,7 +344,7 @@ describe('Course analytics routes (#310)', () => {
       expect(res.body).toHaveLength(2);
     });
 
-    it('student cannot access analytics', async () => {
+    it("student cannot access analytics", async () => {
       const studentApp = await createApp({ mockUser: students[0] });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/analytics`);
       expect(res.status).toBe(403);
@@ -252,36 +353,36 @@ describe('Course analytics routes (#310)', () => {
 
   // ── GET /me/submissions and /me/feedback (own-resource §310) ─────
 
-  describe('GET /me/submissions — own-resource fallback', () => {
-    it('student can see their own submissions', async () => {
+  describe("GET /me/submissions — own-resource fallback", () => {
+    it("student can see their own submissions", async () => {
       const studentApp = await createApp({ mockUser: students[0] });
-      const res = await request(studentApp).get('/api/me/submissions');
+      const res = await request(studentApp).get("/api/me/submissions");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].userId).toBe(students[0].id);
     });
 
-    it('student can see own submissions even after enrollment is removed', async () => {
+    it("student can see own submissions even after enrollment is removed", async () => {
       // Remove enrollment to simulate inactive student
       await prisma.courseEnrollment.deleteMany({
         where: { userId: students[0].id, courseOfferingId: seed.course.id },
       });
       const studentApp = await createApp({ mockUser: students[0] });
-      const res = await request(studentApp).get('/api/me/submissions');
+      const res = await request(studentApp).get("/api/me/submissions");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
 
-    it('returns empty array when student has no submissions', async () => {
+    it("returns empty array when student has no submissions", async () => {
       const student = makeStudent();
       const studentApp = await createApp({ mockUser: student });
-      const res = await request(studentApp).get('/api/me/submissions');
+      const res = await request(studentApp).get("/api/me/submissions");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(0);
     });
   });
 
-  describe('GET /me/feedback — own-resource fallback', () => {
+  describe("GET /me/feedback — own-resource fallback", () => {
     beforeEach(async () => {
       // Seed a submission first (required by feedback), then feedback
       await prisma.activityFeedback.create({
@@ -289,34 +390,34 @@ describe('Course analytics routes (#310)', () => {
           userId: students[0].id,
           activityId: activity1.id,
           rating: 4,
-          note: 'Good activity',
+          note: "Good activity",
         },
       });
     });
 
-    it('student can see their own feedback', async () => {
+    it("student can see their own feedback", async () => {
       const studentApp = await createApp({ mockUser: students[0] });
-      const res = await request(studentApp).get('/api/me/feedback');
+      const res = await request(studentApp).get("/api/me/feedback");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].userId).toBe(students[0].id);
       expect(res.body[0].rating).toBe(4);
     });
 
-    it('student can see own feedback even after enrollment is removed', async () => {
+    it("student can see own feedback even after enrollment is removed", async () => {
       await prisma.courseEnrollment.deleteMany({
         where: { userId: students[0].id, courseOfferingId: seed.course.id },
       });
       const studentApp = await createApp({ mockUser: students[0] });
-      const res = await request(studentApp).get('/api/me/feedback');
+      const res = await request(studentApp).get("/api/me/feedback");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
 
-    it('returns empty array when student has no feedback', async () => {
+    it("returns empty array when student has no feedback", async () => {
       const student = makeStudent();
       const studentApp = await createApp({ mockUser: student });
-      const res = await request(studentApp).get('/api/me/feedback');
+      const res = await request(studentApp).get("/api/me/feedback");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(0);
     });

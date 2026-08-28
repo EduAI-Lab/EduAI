@@ -61,13 +61,17 @@ const EXPECTED_INDEXED_FKS = [
 const DELIBERATELY_UNINDEXED_FKS = ['Activity.promptTemplateId'];
 
 /**
- * Per-user reads on columns the FK audit structurally cannot see: `userId` is a Core CUID
- * with no local FK (Core owns the User table), so `pg_constraint` has no row for it. Both
- * are the leading predicate of a hot read — `GET /me/submissions`, and the "my courses"
- * list plus every `enrollments: { some: { userId } }` access check — and both trail their
- * table's key, so without these they are seq scans (#1374).
+ * Per-user reads on a column the FK audit structurally cannot see: `userId` is a Core CUID
+ * with no local FK (Core owns the User table), so `pg_constraint` has no row for it. It is
+ * the leading predicate of the "my courses" list and of every `enrollments: { some: { userId } }`
+ * access check, and it trails `@@id([courseOfferingId, userId])`, so without this it is a
+ * seq scan (#1374).
+ *
+ * `Submission.userId` is deliberately absent: it leads
+ * `@@unique([userId, activityId, attemptNumber])`, so `GET /me/submissions` already seeks
+ * on that and a standalone index would only duplicate it on every insert.
  */
-const EXPECTED_NON_FK_INDEXES = ['CourseEnrollment_userId_idx', 'Submission_userId_idx'];
+const EXPECTED_NON_FK_INDEXES = ['CourseEnrollment_userId_idx'];
 
 /**
  * FK columns that must keep riding an existing leading PK/unique WITHOUT acquiring a
@@ -142,7 +146,7 @@ describe('foreign key indexes (integration)', () => {
     await prisma.$disconnect();
   });
 
-  it('leaves exactly the two documented FKs unindexed, and nothing else', async () => {
+  it('leaves exactly the one documented FK unindexed, and nothing else', async () => {
     expect(await findUnindexedForeignKeys()).toEqual(DELIBERATELY_UNINDEXED_FKS);
   });
 
@@ -192,15 +196,30 @@ describe('foreign key indexes (integration)', () => {
     ]);
   });
 
-  it('indexes the per-user columns the FK audit cannot see', async () => {
+  it('indexes the per-user column the FK audit cannot see, and no redundant twin', async () => {
     // `userId` carries no FK anywhere in this schema (Core owns User), so every other
     // assertion in this file is blind to it while these are the hottest per-user reads.
+    // `Submission_userId_idx` must NOT be here: the attempt-number unique leads with
+    // `userId`, so a standalone index is pure write cost.
     const rows = await prisma.$queryRaw`
       SELECT indexname FROM pg_indexes
       WHERE schemaname = 'public'
         AND indexname IN ('Submission_userId_idx', 'CourseEnrollment_userId_idx')
     `;
     expect(rows.map((r) => r.indexname).toSorted()).toEqual(EXPECTED_NON_FK_INDEXES);
+
+    const submissionUserIdReads = await prisma.$queryRaw`
+      SELECT indexrelid::regclass::text AS index_name
+      FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+      WHERE i.indrelid = '"Submission"'::regclass
+        AND i.indpred IS NULL
+        AND i.indisvalid
+        AND a.attname = 'userId'
+    `;
+    expect(submissionUserIdReads.map((r) => r.index_name)).toEqual([
+      'Submission_userId_activityId_attemptNumber_key',
+    ]);
   });
 
   it('keeps the FK columns that ride a leading PK/unique, without giving them their own', async () => {

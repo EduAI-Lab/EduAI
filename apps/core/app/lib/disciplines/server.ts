@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 /**
  * Disciplines ("units" / UBCO subject codes, §541).
@@ -13,7 +14,7 @@ import { auth } from "~/lib/auth/server";
  * don't hit the DB on every course create / keystroke.
  */
 
-const json = (body: unknown, status = 200) =>
+const json = (body: JsonResponseBody, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" } as const,
@@ -71,7 +72,7 @@ export async function areValidDisciplineCodes(codes: string[]): Promise<boolean>
 
 /** GET /api/disciplines — full list (code + name), ordered by code. */
 export async function listDisciplines(request: Request): Promise<Response> {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return unauthorized();
 
   if (listCache && listCache.expiresAt > Date.now()) {

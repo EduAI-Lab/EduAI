@@ -11,11 +11,7 @@ export type ReEmbedJobResponse = {
   errorMessage: string | null;
 };
 
-const TERMINAL_STATUSES = new Set<ReEmbedJobResponse["status"]>([
-  "COMPLETED",
-  "PARTIAL",
-  "FAILED",
-]);
+const TERMINAL_STATUSES = new Set<ReEmbedJobResponse["status"]>(["COMPLETED", "PARTIAL", "FAILED"]);
 
 export function isReEmbedJobTerminal(status: ReEmbedJobResponse["status"]): boolean {
   return TERMINAL_STATUSES.has(status);

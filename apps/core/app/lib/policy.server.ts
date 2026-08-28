@@ -33,12 +33,7 @@ import {
 
 // Re-export the registry surface so existing `~/lib/policy.server` importers
 // (and the admin UI) keep working unchanged.
-export {
-  POLICY_FLAGS,
-  POLICY_KEYS,
-  isPolicyKey,
-  getPolicyDefinitions,
-} from "~/lib/policy-flags";
+export { POLICY_FLAGS, POLICY_KEYS, isPolicyKey, getPolicyDefinitions } from "~/lib/policy-flags";
 export type { PolicyKey, PolicyMap } from "~/lib/policy-flags";
 
 const KEY_PREFIX = "policy.";
@@ -88,11 +83,7 @@ export async function getPolicy(key: PolicyKey): Promise<boolean> {
 }
 
 /** Persist an override for a flag and invalidate the cache (live effect). */
-export async function setPolicy(
-  key: PolicyKey,
-  value: boolean,
-  updatedBy: string,
-): Promise<void> {
+export async function setPolicy(key: PolicyKey, value: boolean, updatedBy: string): Promise<void> {
   await prisma.systemConfig.upsert({
     where: { key: KEY_PREFIX + key },
     create: {
@@ -138,10 +129,12 @@ export type PolicyDenialInput = {
  * log-write latency. This is the single source of truth for denial logging.
  */
 export function logPolicyDenial(input: PolicyDenialInput): void {
+  // Denials raised outside a request (jobs, scripts) carry no route/IP context.
+  const requestContext = input.request ? getRequestContext(input.request) : undefined;
   fireAndForget(
     logSecurityEvent({
       ...getActorContext(input.user),
-      ...(input.request ? getRequestContext(input.request) : {}),
+      ...requestContext,
       actionCode: "POLICY_DENIED",
       outcome: "DENIED",
       entityType: input.courseId ? "Course" : "Policy",

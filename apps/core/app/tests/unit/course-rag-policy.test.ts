@@ -38,9 +38,7 @@ describe("shouldInjectCourseRag", () => {
   });
 
   it("returns true when needsCourseRag is true", () => {
-    expect(
-      shouldInjectCourseRag({ hasCourse: true, courseRagNeeded: true, hits: [] }),
-    ).toBe(true);
+    expect(shouldInjectCourseRag({ hasCourse: true, courseRagNeeded: true, hits: [] })).toBe(true);
   });
 
   it("returns false for greetings with weak hits", () => {
@@ -72,8 +70,6 @@ describe("shouldInjectCourseRag", () => {
   it("honours CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE", () => {
     process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE = "1";
     expect(isHybridRagAlwaysWithCourse()).toBe(true);
-    expect(
-      shouldInjectCourseRag({ hasCourse: true, courseRagNeeded: false, hits: [] }),
-    ).toBe(true);
+    expect(shouldInjectCourseRag({ hasCourse: true, courseRagNeeded: false, hits: [] })).toBe(true);
   });
 });

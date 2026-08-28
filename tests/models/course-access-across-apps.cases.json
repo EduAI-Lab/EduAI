@@ -1,0 +1,191 @@
+[
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-STUDENT",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrollment": "none",
+    "CourseState": "deleted",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "unpublished",
+    "UnitMatch": "null-dept",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrollment": "inactive",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "TA",
+    "Enrollment": "active-TA",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "TA",
+    "Enrollment": "active-TA",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-STUDENT",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrollment": "active-INSTRUCTOR",
+    "CourseState": "deleted",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrollment": "active-INSTRUCTOR",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-TA",
+    "CourseState": "deleted",
+    "UnitMatch": "in-unit",
+    "TaWidening": "STUDENT-with-TA-enrollment"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "out-of-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "TA",
+    "Enrollment": "inactive",
+    "CourseState": "deleted",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "deleted",
+    "UnitMatch": "out-of-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "TA",
+    "Enrollment": "none",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-STUDENT",
+    "CourseState": "deleted",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "unpublished",
+    "UnitMatch": "out-of-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-TA",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "STUDENT-with-TA-enrollment"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "null-dept",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrollment": "none",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "inactive",
+    "CourseState": "unpublished",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "CourseState": "deleted",
+    "UnitMatch": "null-dept",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrollment": "active-INSTRUCTOR",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrollment": "none",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "plain-STUDENT"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrollment": "active-TA",
+    "CourseState": "published",
+    "UnitMatch": "in-unit",
+    "TaWidening": "STUDENT-with-TA-enrollment"
+  }
+]

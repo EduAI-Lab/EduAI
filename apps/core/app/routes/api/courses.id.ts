@@ -1,15 +1,23 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
+import { serializeCourseForApi } from "~/lib/courses/dto.server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import prisma from "~/lib/prisma.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+
+/** A course row as this endpoint answers with it: the query's shape, plus the
+ * instructor the student payload attaches when the query did not include one. */
+type CourseWithInstructor = Awaited<ReturnType<typeof getCourse>> & {
+  instructor?: { name: string; email: string } | null;
+};
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -32,13 +40,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify(course), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(course, { audience: "service", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -58,14 +69,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify(course), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(course, { audience: "staff", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   // §5: viewing course details requires a course relationship; students
   // additionally require the course to be published.
+  //
+  // Wide row on purpose: the success path serializes the whole course to the
+  // client, so a narrow projection would silently drop response fields.
   const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
 
   if (!course) {
@@ -82,10 +99,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return new Response(JSON.stringify(course), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  const audience = access.level === "student" ? "student" : "staff";
+  // The student payload gains an `instructor` the staff query already includes.
+  let responseCourse: CourseWithInstructor = course;
+  if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
+    const instructor = await prisma.user.findUnique({
+      where: { id: course.instructorId },
+      select: { name: true, email: true },
+    });
+    responseCourse = { ...responseCourse, instructor };
+  }
+  return new Response(
+    JSON.stringify(
+      serializeCourseForApi(responseCourse, {
+        audience,
+        detail: true,
+      }),
+    ),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -99,7 +134,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const requestContext = getRequestContext(request);
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   switch (request.method) {
     case "PATCH": {
@@ -109,8 +144,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .json()
         .then((body) => UpdateCourseSchema.safeParse(body))
         .catch(() => null);
-      const requestedFields =
-        validated && validated.success ? Object.keys(validated.data) : [];
+      const requestedFields = validated && validated.success ? Object.keys(validated.data) : [];
 
       const response = await updateCourse(request, courseId);
 
@@ -127,8 +161,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? requestedFields.filter((field) => {
                 if (field === "instructorId")
                   return updated.instructorId === validated.data.instructorId;
-                if (field === "department")
-                  return updated.department === validated.data.department;
+                if (field === "department") return updated.department === validated.data.department;
                 return true;
               })
             : requestedFields;

@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { JsonObject } from "~/lib/json-value";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
@@ -9,14 +10,14 @@ const PrismaClientKnownRequestErrorMock = vi.hoisted(
   () =>
     class PrismaClientKnownRequestError extends Error {
       code: string;
-      meta?: Record<string, unknown>;
+      meta?: JsonObject;
 
       constructor(
         message: string,
         options: {
           code: string;
           clientVersion?: string;
-          meta?: Record<string, unknown>;
+          meta?: JsonObject;
         },
       ) {
         super(message);
@@ -35,11 +36,12 @@ const prismaMock = vi.hoisted(() => {
     deleteMany: vi.fn(),
     count: vi.fn(),
   };
+  // The post-enqueue snapshot reads position + depth inside one REPEATABLE
+  // READ transaction; the mock runs that callback against this same client.
+  const txClient = { aiJob };
   return {
     aiJob,
-    // The post-enqueue snapshot reads position + depth inside one REPEATABLE
-    // READ transaction; the mock runs that callback against the same client.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: typeof txClient) => T) => fn(txClient)),
   };
 });
 
@@ -61,9 +63,23 @@ vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn(),
 }));
+// Exercise the dormant enqueue implementation in isolation. Production entry
+// points are covered separately and always fail closed pre-MVP.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
+}));
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
+import { resetFleetRegistryCache } from "~/lib/ai/routing/fleet/registry";
+
+// resolveQueueName() (via heavyFleetConfigured()) reads fleet.config.json
+// first, falling back to VLLM_FLEET_HEAVY_URL only when no config file is
+// present (see resolve-pool.server.ts). Without pointing FLEET_CONFIG_PATH
+// at a file that doesn't exist, a real fleet.config.json on disk (e.g. a
+// developer's local copy for eduai-dev) would silently override these
+// tests' env-var-driven queue selection.
+const NONEXISTENT_CONFIG_PATH = "./__no-such-fleet-config__.json";
 
 const job: JobPayload = {
   kind: "question-generation",
@@ -93,9 +109,13 @@ function stubCounts({ ahead, depth }: { ahead: number; depth: number }) {
   );
 }
 
+const originalFleetConfigPath = process.env.FLEET_CONFIG_PATH;
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
+  resetFleetRegistryCache();
   prismaMock.aiJob.create.mockResolvedValue({
     id: "aijob_1",
     type: "background",
@@ -110,6 +130,12 @@ beforeEach(() => {
   // count includes it. `{ ahead: 0, depth: 0 }` would be an impossible snapshot.
   stubCounts({ ahead: 0, depth: 1 });
   queueAdd.mockResolvedValue({ id: "bull_1" });
+});
+
+afterEach(() => {
+  if (originalFleetConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+  else process.env.FLEET_CONFIG_PATH = originalFleetConfigPath;
+  resetFleetRegistryCache();
 });
 
 describe("enqueue", () => {
@@ -154,7 +180,11 @@ describe("enqueue", () => {
   it("enqueues interactive work at high priority", async () => {
     await enqueue({ ...job, type: "interactive" });
     expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
-    expect(queueAdd).toHaveBeenCalledWith("question-generation", expect.anything(), expect.objectContaining({ priority: 1 }));
+    expect(queueAdd).toHaveBeenCalledWith(
+      "question-generation",
+      expect.anything(),
+      expect.objectContaining({ priority: 1 }),
+    );
   });
 
   it("passes idempotencyKey through as the BullMQ jobId", async () => {

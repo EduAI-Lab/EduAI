@@ -2,7 +2,10 @@
  * Question API client handling CRUD, AI generation/extraction, variant ops, and ordering.
  * Provides typed responses to keep UI code lean and focused on rendering.
  */
-import api from './api';
+import type { JsonValue } from "@eduai/types";
+
+import api, { type QueryParams } from "./api";
+import type { ProviderApiKeys } from "./apiKeyStorage";
 import {
   Question,
   QuestionCreate,
@@ -11,19 +14,30 @@ import {
   QuestionStats,
   QuestionVariant,
   QuestionDifficulty,
+  QuestionType,
   ReasoningLevel,
   ExtractedQuestion,
-  MCQChoice
-} from '../types/question';
+  MCQChoice,
+} from "../types/question";
 
 /** Normalizes backend variant payload into frontend QuestionVariant shape. */
 const mapVariant = (variant: any): QuestionVariant => ({
   id: variant.id,
   questionText: variant.questionText,
-  difficulty: variant.difficulty ?? 'medium',
+  difficulty: variant.difficulty ?? "medium",
   reasoningLevel: variant.reasoningLevel ?? variant.reasoning_level ?? undefined,
   answer: variant.answer ?? null,
-  choices: Array.isArray(variant.choices) ? variant.choices : (variant.choices ? [variant.choices] : null),
+  choices: Array.isArray(variant.choices)
+    ? variant.choices
+    : variant.choices
+      ? [variant.choices]
+      : null,
+  selectAllThatApply: Boolean(variant.selectAllThatApply ?? variant.select_all_that_apply),
+  correctAnswers: Array.isArray(variant.correctAnswers)
+    ? variant.correctAnswers
+    : Array.isArray(variant.correct_answers)
+      ? variant.correct_answers
+      : null,
   questionMetadataId: variant.questionMetadataId ?? variant.question_metadata_id ?? undefined,
   assessmentId: variant.assessmentId ?? null,
   secondaryTopicsId: Array.isArray(variant.secondaryTopicsId)
@@ -44,10 +58,10 @@ const mapVariant = (variant: any): QuestionVariant => ({
         name: variant.assessment.name,
         type: variant.assessment.type,
         semester: variant.assessment.semester,
-        createdAt: variant.assessment.createdAt ?? '',
-        updatedAt: variant.assessment.updatedAt ?? ''
+        createdAt: variant.assessment.createdAt ?? "",
+        updatedAt: variant.assessment.updatedAt ?? "",
       }
-    : undefined
+    : undefined,
 });
 
 /** Normalizes backend question payload into frontend Question shape. */
@@ -64,10 +78,10 @@ const mapQuestion = (item: any): Question => ({
     ? {
         id: item.course.id,
         name: item.course.name,
-        code: item.course.code
+        code: item.course.code,
       }
     : undefined,
-  variants: Array.isArray(item.variants) ? item.variants.map(mapVariant) : []
+  variants: Array.isArray(item.variants) ? item.variants.map(mapVariant) : [],
 });
 
 export type PaginatedList<T> = {
@@ -84,19 +98,19 @@ const SERVER_MAX_LIST_LIMIT = 200;
 const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
-function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): PaginatedList<T> {
+function unwrapPaginatedList<T>(data: JsonValue, mapItem: (row: any) => T): PaginatedList<T> {
   if (Array.isArray(data)) {
     const items = data.map(mapItem);
     return { items, total: items.length, limit: items.length, offset: 0 };
   }
-  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+  if (data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)) {
     const page = data as { items: any[]; total?: number; limit?: number; offset?: number };
     const items = page.items.map(mapItem);
     return {
       items,
-      total: typeof page.total === 'number' ? page.total : items.length,
-      limit: typeof page.limit === 'number' ? page.limit : items.length,
-      offset: typeof page.offset === 'number' ? page.offset : 0,
+      total: typeof page.total === "number" ? page.total : items.length,
+      limit: typeof page.limit === "number" ? page.limit : items.length,
+      offset: typeof page.offset === "number" ? page.offset : 0,
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };
@@ -126,7 +140,7 @@ async function fetchAllPages<T>(
   if (maxItems === MAX_FETCH_ALL && all.length >= MAX_FETCH_ALL && all.length < total) {
     throw new Error(
       `Result set has ${total} rows, exceeding the ${MAX_FETCH_ALL}-row fetch-all safety cap. ` +
-        'Use getQuestionsPage() with explicit pagination instead of fetching all rows.',
+        "Use getQuestionsPage() with explicit pagination instead of fetching all rows.",
     );
   }
 
@@ -135,37 +149,41 @@ async function fetchAllPages<T>(
 
 export const questionService = {
   /** Fetches one page of questions with pagination metadata (#1040). */
-  async getQuestionsPage(options: {
-    courseId?: number;
-    search?: string;
-    types?: string[];
-    difficulties?: string[];
-    reasoningLevels?: string[];
-    aiGenerated?: 'all' | 'ai' | 'not-ai';
-    draftStatus?: 'all' | 'draft' | 'reviewed';
-    sortBy?: 'newest' | 'oldest' | 'type';
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<PaginatedList<Question>> {
-    const params: Record<string, unknown> = {};
+  async getQuestionsPage(
+    options: {
+      courseId?: number;
+      questionBankId?: string;
+      search?: string;
+      types?: string[];
+      difficulties?: string[];
+      reasoningLevels?: string[];
+      aiGenerated?: "all" | "ai" | "not-ai";
+      draftStatus?: "all" | "draft" | "reviewed";
+      sortBy?: "newest" | "oldest" | "type";
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<PaginatedList<Question>> {
+    const params: QueryParams = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
+    if (options.questionBankId !== undefined) params.questionBankId = options.questionBankId;
     if (options.search !== undefined) params.search = options.search;
-    if (options.types?.length) params.types = options.types.join(',');
-    if (options.difficulties?.length) params.difficulties = options.difficulties.join(',');
+    if (options.types?.length) params.types = options.types.join(",");
+    if (options.difficulties?.length) params.difficulties = options.difficulties.join(",");
     if (options.reasoningLevels?.length) {
-      params.reasoningLevels = options.reasoningLevels.join(',');
+      params.reasoningLevels = options.reasoningLevels.join(",");
     }
-    if (options.aiGenerated && options.aiGenerated !== 'all') {
+    if (options.aiGenerated && options.aiGenerated !== "all") {
       params.aiGenerated = options.aiGenerated;
     }
-    if (options.draftStatus && options.draftStatus !== 'all') {
+    if (options.draftStatus && options.draftStatus !== "all") {
       params.draftStatus = options.draftStatus;
     }
-    if (options.sortBy && options.sortBy !== 'newest') params.sortBy = options.sortBy;
+    if (options.sortBy && options.sortBy !== "newest") params.sortBy = options.sortBy;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;
 
-    const response = await api.get('/api/questions', { params });
+    const response = await api.get("/api/questions", { params });
     return unwrapPaginatedList(response.data.data, mapQuestion);
   },
 
@@ -175,18 +193,21 @@ export const questionService = {
    * - With a larger `limit`, or no limit: page-loops until all matching rows (or the
    *   requested cap) are loaded — fixes silent 50-cap and avoids silent clamp at 200.
    */
-  async getQuestions(options: {
-    courseId?: number;
-    search?: string;
-    types?: string[];
-    difficulties?: string[];
-    reasoningLevels?: string[];
-    aiGenerated?: 'all' | 'ai' | 'not-ai';
-    draftStatus?: 'all' | 'draft' | 'reviewed';
-    sortBy?: 'newest' | 'oldest' | 'type';
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Question[]> {
+  async getQuestions(
+    options: {
+      courseId?: number;
+      questionBankId?: string;
+      search?: string;
+      types?: string[];
+      difficulties?: string[];
+      reasoningLevels?: string[];
+      aiGenerated?: "all" | "ai" | "not-ai";
+      draftStatus?: "all" | "draft" | "reviewed";
+      sortBy?: "newest" | "oldest" | "type";
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<Question[]> {
     if (
       options.limit !== undefined &&
       options.limit > 0 &&
@@ -196,11 +217,7 @@ export const questionService = {
       return page.items;
     }
 
-    const {
-      limit: _ignoredLimit,
-      offset: startOffset,
-      ...filterOptions
-    } = options;
+    const { limit: _ignoredLimit, offset: startOffset, ...filterOptions } = options;
 
     return fetchAllPages(
       (offset, limit) =>
@@ -224,7 +241,7 @@ export const questionService = {
 
   /** Creates a question and returns the normalized result. */
   async createQuestion(question: QuestionCreate): Promise<Question> {
-    const response = await api.post('/api/questions', question);
+    const response = await api.post("/api/questions", question);
     return mapQuestion(response.data.data);
   },
 
@@ -240,35 +257,45 @@ export const questionService = {
   },
 
   /** Creates a variant for a question and returns normalized data. */
-  async createVariant(questionId: number, payload: {
-    questionText: string;
-    difficulty?: QuestionDifficulty;
-    reasoningLevel?: 'factual' | 'analytical' | 'application';
-    assessmentId?: number;
-    secondaryTopicsId?: string[];
-    answer?: string | null;
-    choices?: MCQChoice[] | null;
-    referenceId?: number;
-    isAiGenerated?: boolean;
-    isDraft?: boolean;
-  }): Promise<QuestionVariant> {
+  async createVariant(
+    questionId: number,
+    payload: {
+      questionText: string;
+      difficulty?: QuestionDifficulty;
+      reasoningLevel?: "factual" | "analytical" | "application";
+      assessmentId?: number;
+      secondaryTopicsId?: string[];
+      answer?: string | null;
+      choices?: MCQChoice[] | null;
+      selectAllThatApply?: boolean;
+      correctAnswers?: string[] | null;
+      referenceId?: number;
+      isAiGenerated?: boolean;
+      isDraft?: boolean;
+    },
+  ): Promise<QuestionVariant> {
     const response = await api.post(`/api/questions/${questionId}/variants`, payload);
     return mapVariant(response.data.data);
   },
 
   /** Updates a variant by ID. */
-  async updateVariant(variantId: number, payload: {
-    questionText?: string;
-    difficulty?: QuestionDifficulty;
-    reasoningLevel?: ReasoningLevel;
-    assessmentId?: number;
-    secondaryTopicsId?: string[];
-    answer?: string | null;
-    choices?: MCQChoice[] | null;
-    referenceId?: number;
-    isAiGenerated?: boolean;
-    isDraft?: boolean;
-  }): Promise<QuestionVariant> {
+  async updateVariant(
+    variantId: number,
+    payload: {
+      questionText?: string;
+      difficulty?: QuestionDifficulty;
+      reasoningLevel?: ReasoningLevel;
+      assessmentId?: number;
+      secondaryTopicsId?: string[];
+      answer?: string | null;
+      choices?: MCQChoice[] | null;
+      selectAllThatApply?: boolean;
+      correctAnswers?: string[] | null;
+      referenceId?: number;
+      isAiGenerated?: boolean;
+      isDraft?: boolean;
+    },
+  ): Promise<QuestionVariant> {
     const response = await api.put(`/api/questions/variants/${variantId}`, payload);
     return mapVariant(response.data.data);
   },
@@ -291,34 +318,41 @@ export const questionService = {
 
   /** Calls legacy AI generate endpoint to produce draft question metadata. */
   async generateQuestions(params: QuestionGenerationParams): Promise<QuestionMetadata[]> {
-    const response = await api.post('/api/questions/generate', params);
+    const response = await api.post("/api/questions/generate", params);
     return response.data.data;
   },
 
   /** Approves generated questions and saves them to the question bank. */
   async approveQuestions(questions: QuestionMetadata[], courseId?: number): Promise<Question[]> {
-    const response = await api.post('/api/questions/approve', { questions, courseId });
+    const response = await api.post("/api/questions/approve", { questions, courseId });
     return (response.data.data || []).map(mapQuestion);
   },
 
   /** Returns aggregate question/variant stats for the current user (optional course scope). */
-  async getQuestionStats(options: { courseId?: number } = {}): Promise<QuestionStats & {
-    totalVariants?: number;
-    typeStats?: Array<{ type: string; count: number | string }>;
-    aiCount?: number;
-    humanCount?: number;
-    reviewedCount?: number;
-    usedTopicIds?: string[];
-  }> {
-    const params: Record<string, unknown> = {};
+  async getQuestionStats(options: { courseId?: number } = {}): Promise<
+    QuestionStats & {
+      totalVariants?: number;
+      typeStats?: Array<{ type: QuestionType; count: number | string }>;
+      aiCount?: number;
+      humanCount?: number;
+      reviewedCount?: number;
+      usedTopicIds?: string[];
+    }
+  > {
+    const params: QueryParams = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
-    const response = await api.get('/api/questions/stats', { params });
+    const response = await api.get("/api/questions/stats", { params });
     return response.data.data;
   },
 
   /** Extracts questions from OCR text via backend AI service. */
-  async extractQuestionsFromText(payload: { text: string; courseId: number; model?: string; apiKeys?: Record<string, any> }): Promise<ExtractedQuestion[]> {
-    const response = await api.post('/api/questions/extract', payload);
+  async extractQuestionsFromText(payload: {
+    text: string;
+    courseId: number;
+    model?: string;
+    apiKeys?: ProviderApiKeys;
+  }): Promise<ExtractedQuestion[]> {
+    const response = await api.post("/api/questions/extract", payload);
     return response.data.data || [];
   },
 
@@ -333,11 +367,11 @@ export const questionService = {
       name: string;
     };
   }): Promise<{ questions: Question[]; assessmentId: number | null }> {
-    const response = await api.post('/api/questions/extract/save', payload);
+    const response = await api.post("/api/questions/extract/save", payload);
     const data = response.data.data;
     return {
       questions: (data.questions || []).map(mapQuestion),
-      assessmentId: data.assessmentId || null
+      assessmentId: data.assessmentId || null,
     };
-  }
+  },
 };

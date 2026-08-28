@@ -20,6 +20,7 @@ import { loader, action } from "~/routes/api/me";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const PROFILE = {
   id: "u1",
@@ -34,16 +35,15 @@ const PROFILE = {
   updatedAt: new Date("2026-01-01"),
 };
 
-function makeArgs(method = "GET", body?: unknown, headers?: Record<string, string>) {
+function makeArgs(method = "GET", body?: RouteRequestBody, headers?: Record<string, string>) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json", ...headers },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/me", {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/me", init),
     params: {},
     context: {} as never,
   } as any;

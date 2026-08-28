@@ -12,10 +12,10 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 25;
@@ -26,12 +26,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Course ID is required" }, 400);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return json({ error: "COURSE_NOT_FOUND" }, 404);
   }
@@ -43,7 +43,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const q = url.searchParams.get("q")?.trim() || null;
   const rawLimit = Number(url.searchParams.get("limit"));
   const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(MAX_LIMIT, Math.floor(rawLimit)) : DEFAULT_LIMIT;
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(MAX_LIMIT, Math.floor(rawLimit))
+      : DEFAULT_LIMIT;
   // "ta" excludes users already an active TA in this course; the default
   // ("enrolled") excludes anyone with any active enrollment — used by the
   // "add student" picker so an existing TA/instructor can't be re-added as a
@@ -60,14 +62,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       role: "STUDENT",
       isActive: true,
       enrollments: { none: enrollmentNone },
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { email: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      // Without a search term the candidate list is unfiltered; `undefined` is
+      // Prisma's "no constraint".
+      OR: q
+        ? [
+            { name: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+          ]
+        : undefined,
     },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },

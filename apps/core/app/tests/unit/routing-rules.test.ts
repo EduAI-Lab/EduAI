@@ -1,9 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import {
-  isShortFactualPrompt,
-  matchPhase1Rules,
-  routingDefaultTier,
-} from "~/lib/ai/routing/rules";
+import { isShortFactualPrompt, matchPhase1Rules, routingDefaultTier } from "~/lib/ai/routing/rules";
 
 const baseCtx = {
   prompt: "Explain the midterm grading rubric in detail.",
@@ -33,12 +29,12 @@ describe("matchPhase1Rules", () => {
   });
 
   it("rule 3: who-won / what-was prompts use tier 1 when short", () => {
-    expect(
-      matchPhase1Rules({ ...baseCtx, prompt: "Who won the 2026 world cup?" }).rule,
-    ).toBe("rule3_short_factual_tier_1");
-    expect(
-      matchPhase1Rules({ ...baseCtx, prompt: "What was the final score?" }).rule,
-    ).toBe("rule3_short_factual_tier_1");
+    expect(matchPhase1Rules({ ...baseCtx, prompt: "Who won the 2026 world cup?" }).rule).toBe(
+      "rule3_short_factual_tier_1",
+    );
+    expect(matchPhase1Rules({ ...baseCtx, prompt: "What was the final score?" }).rule).toBe(
+      "rule3_short_factual_tier_1",
+    );
   });
 
   it("rule 3b: course + courseRagNeeded uses tier 1 even without RAG hits", () => {
@@ -244,14 +240,17 @@ describe("matchPhase1Rules", () => {
       },
     ] as const;
 
-    it.each(underRoutePrompts)("$id routes to tier 3 via $expectedRule", ({ prompt, ctx, expectedRule }) => {
-      const match = matchPhase1Rules({
-        ...baseCtx,
-        prompt,
-        ...ctx,
-      });
-      expect(match.rule).toBe(expectedRule);
-      expect(match.pick).toMatchObject({ kind: "exactTier", tier: 3 });
-    });
+    it.each(underRoutePrompts)(
+      "$id routes to tier 3 via $expectedRule",
+      ({ prompt, ctx, expectedRule }) => {
+        const match = matchPhase1Rules({
+          ...baseCtx,
+          prompt,
+          ...ctx,
+        });
+        expect(match.rule).toBe(expectedRule);
+        expect(match.pick).toMatchObject({ kind: "exactTier", tier: 3 });
+      },
+    );
   });
 });

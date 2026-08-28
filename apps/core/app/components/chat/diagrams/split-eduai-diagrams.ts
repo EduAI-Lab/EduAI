@@ -2,14 +2,8 @@
  * Split assistant markdown into prose vs `eduai-diagram` fenced widgets.
  */
 
-import {
-  parseEduaiDiagramBody,
-  type EduaiDiagramPayload,
-} from "~/lib/ai/eduai-diagram-payload";
-import {
-  EDUAI_DIAGRAM_FENCE_GLOBAL,
-  hasEduaiDiagramFence,
-} from "~/lib/ai/eduai-diagram-type";
+import { parseEduaiDiagramBody, type EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
+import { EDUAI_DIAGRAM_FENCE_GLOBAL, hasEduaiDiagramFence } from "~/lib/ai/eduai-diagram-type";
 
 export type EduaiDiagramSegment =
   | { kind: "markdown"; text: string }

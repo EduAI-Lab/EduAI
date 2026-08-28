@@ -6,13 +6,14 @@
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { saveUserPreference } from "~/lib/user-preferences.server";
 import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -36,7 +37,7 @@ function rowToResponse(row: {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -64,7 +65,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(405, { error: "Method not allowed" });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

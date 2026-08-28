@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    // The backend is 100% JavaScript — there is not a single `.ts` file in it,
+    // so unlike `ai-tutor-server` (which typechecks its `prisma/**/*.ts` seeds)
+    // there is no TypeScript surface to check. `checkJs` is off because turning
+    // it on reports 72 errors here (1103 with `strict`), which is a code change,
+    // not a toolchain change. With it off the gate still parses every module,
+    // resolves every import against its `@types`, and fails on syntax errors —
+    // enough to make `typecheck` a real command in this workspace instead of a
+    // silently-skipped one. #1278 owns flipping `checkJs` on and fixing the
+    // fallout.
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.js", "scripts/**/*.js", "tests/**/*.js"],
+  "exclude": ["node_modules"]
+}

@@ -13,7 +13,7 @@
  * Related: `app/components/common/PaginationControls.tsx`,
  * `app/components/common/ListSearchInput.tsx`, `app/lib/api.ts` (`ListParams`).
  */
-import { redirect } from 'react-router';
+import { redirect } from "react-router";
 
 /**
  * Mirror of the server's `MAX_SEARCH_LENGTH` (`server/src/utils/pagination.js`),
@@ -46,10 +46,9 @@ export interface ListUrlParams {
  */
 export function parseListUrlParams(request: Request): ListUrlParams {
   const url = new URL(request.url);
-  const requestedPage = Number(url.searchParams.get('page'));
-  const page =
-    Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
-  const search = (url.searchParams.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH);
+  const requestedPage = Number(url.searchParams.get("page"));
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, MAX_SEARCH_LENGTH);
   return { page, search };
 }
 
@@ -71,7 +70,7 @@ export function redirectPastEnd(
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   if (page <= lastPage) return;
   const url = new URL(request.url);
-  url.searchParams.set('page', String(lastPage));
+  url.searchParams.set("page", String(lastPage));
   throw redirect(`${url.pathname}${url.search}`);
 }
 
