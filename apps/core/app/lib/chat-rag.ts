@@ -4,6 +4,7 @@ import {
   truncateToMaxChars,
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
 } from "~/lib/ai/tool-output-limits";
+import { findRelevantContent } from "~/lib/ai/embedding";
 
 // Re-export the shared tool-output limits so existing importers (and tests) that
 // reach for them via `~/lib/chat-rag` keep working after the extraction (#260).
@@ -628,4 +629,39 @@ export function capRagHitsForTool(hits: HybridRagHit[]): HybridRagHit[] {
     ...h,
     content: wrapUntrustedReferenceContent(truncateToMaxChars(h.content, maxChars)),
   }));
+}
+
+export type CourseMaterialSearchResult =
+  | { relevantContent: HybridRagHit[]; count: number }
+  | { error: string };
+
+/**
+ * Shared body of a "search this course's materials" RAG tool: retrieve, cap
+ * for a tool result, and fail closed (a typed error, never a thrown
+ * exception) on any retrieval error. `courseId` is a parameter rather than
+ * resolved here — each caller keeps its own "which course, and is one even
+ * selected" gating (ambient effectiveCourseId for learning chat's
+ * getInformation vs. explicit courseId/courseCode resolution for admin
+ * chat's searchCourseMaterials, #1658); only the retrieval call itself was
+ * duplicated near-verbatim across three call sites (#1658 review).
+ */
+export async function runCourseMaterialSearchTool(
+  question: string,
+  courseId: string,
+  restrictToStudentVisible: boolean = false,
+): Promise<CourseMaterialSearchResult> {
+  try {
+    const hits = await findRelevantContent(
+      question,
+      courseId,
+      HYBRID_RAG_MAX_CHUNKS,
+      undefined,
+      restrictToStudentVisible,
+    );
+    const capped = capRagHitsForTool(hits);
+    return { relevantContent: capped, count: capped.length };
+  } catch (error) {
+    console.error("Error finding relevant content:", error);
+    return { error: "Failed to search course materials" };
+  }
 }

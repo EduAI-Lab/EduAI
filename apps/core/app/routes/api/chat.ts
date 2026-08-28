@@ -126,6 +126,7 @@ import {
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
+  pickCoreAdminChatTools,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
@@ -1858,7 +1859,18 @@ export async function action({ request }: ActionFunctionArgs) {
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
-      // Leave room for the ~17 admin tool schemas on small context models.
+      // #1665 review: the full admin registry is 63 tool() entries —
+      // estimateToolDefinitionTokens(63) alone (~26.7k tokens) already
+      // exceeds the seeded 16k vLLM admin model's context window, and still
+      // eats most of a 32k window once system prompt/history/reserve are
+      // added. Below that, send only ADMIN_CORE_TOOL_NAMES — the same
+      // read+common-write set the default admin system prompt already
+      // documents to the model (chat-mode.ts) — so small-context admin chat
+      // stays usable instead of unconditionally failing ADMIN_CONTEXT_TOO_LARGE.
+      // Larger-context models (OpenAI/Gemini rows) keep the full registry.
+      const effectiveAdminTools = contextWindow <= 32_768 ? pickCoreAdminChatTools(tools) : tools;
+
+      // Leave room for the admin tool schemas on small context models.
       const adminSessionBudget =
         contextWindow <= 16_384
           ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
@@ -1917,7 +1929,7 @@ export async function action({ request }: ActionFunctionArgs) {
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
         maxSteps: adminMaxSteps,
-        tools,
+        tools: effectiveAdminTools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
@@ -2207,8 +2219,11 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     // Re-cap after composeSecurityPrompt so the security block is included, and
-    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
-    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
+    // reserve room for admin tool JSON schemas (a flat 512 allowance under-counts
+    // the real registry and blows small windows: ContextWindowExceededError).
+    // `toolCount` below reflects whatever was actually attached to
+    // streamConfig.tools — the trimmed ADMIN_CORE_TOOL_NAMES set on small
+    // windows, or the full registry above 32k (see effectiveAdminTools above).
     if (chatMode === "admin" && adminContextWindow != null && adminDesiredMaxOutput != null) {
       const systemChars = z.string().safeParse(streamConfig.system).success
         ? String(streamConfig.system).length
