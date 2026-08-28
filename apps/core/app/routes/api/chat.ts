@@ -126,6 +126,7 @@ import {
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
+  pickCoreAdminChatTools,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
@@ -1925,6 +1926,17 @@ export async function action({ request }: ActionFunctionArgs) {
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
+      // #1665 review: the full admin registry is 63 tool() entries —
+      // estimateToolDefinitionTokens(63) alone (~26.7k tokens) already
+      // exceeds the seeded 16k vLLM admin model's context window, and still
+      // eats most of a 32k window once system prompt/history/reserve are
+      // added. Below that, send only ADMIN_CORE_TOOL_NAMES — the same
+      // read+common-write set the default admin system prompt already
+      // documents to the model (chat-mode.ts) — so small-context admin chat
+      // stays usable instead of unconditionally failing ADMIN_CONTEXT_TOO_LARGE.
+      // Larger-context models (OpenAI/Gemini rows) keep the full registry.
+      const effectiveAdminTools = contextWindow <= 32_768 ? pickCoreAdminChatTools(tools) : tools;
+
       const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
       // History is trimmed by the token-based budget at the unified recompute
@@ -1972,7 +1984,7 @@ export async function action({ request }: ActionFunctionArgs) {
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
         maxSteps: adminMaxSteps,
-        tools,
+        tools: effectiveAdminTools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };

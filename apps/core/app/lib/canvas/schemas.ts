@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE } from "./student-number";
+import { jsonObjectSchema } from "~/lib/json-value";
 
 function normalizeCanvasUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -89,3 +90,23 @@ export type {
   CanvasMaterialDiscoverItem,
   SyncCanvasMaterialsResult,
 } from "@eduai/types";
+
+export const CanvasCourseIdQuerySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+});
+
+export type CanvasCourseIdQuery = z.infer<typeof CanvasCourseIdQuerySchema>;
+
+export const CreateCanvasQuizBodySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+  quiz: jsonObjectSchema,
+});
+
+export type CreateCanvasQuizBody = z.infer<typeof CreateCanvasQuizBodySchema>;
+
+export const CreateCanvasQuizQuestionBodySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+  question: jsonObjectSchema,
+});
+
+export type CreateCanvasQuizQuestionBody = z.infer<typeof CreateCanvasQuizQuestionBodySchema>;

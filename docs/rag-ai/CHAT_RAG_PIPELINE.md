@@ -6,6 +6,8 @@
 
 This document describes how a user prompt flows through **`POST /api/chat`** ([`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)) and how retrieval-augmented generation (RAG) is triggered relative to **`findRelevantContent`** ([`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts)). RAG context caps live in [`chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts).
 
+Both **learning chat** (`chatMode: "learning"`, sections 1–7 below) and **admin chat** (`chatMode: "admin"`, §3.C) hit the same route and the same retrieval core, but resolve "which course" differently and share only the retrieval body, not the surrounding tool. See §3.C for the admin branch.
+
 ## Diagram
 
 ```mermaid
@@ -26,11 +28,20 @@ flowchart TB
     A8 -->|no| A9["400 Missing required fields"]
     A8 -->|yes| A10["createAIProviderRegistry → languageModel"]
     A11["appendMessages: persist new rows"]
+    A12{"chatMode?"}
   end
 
-  subgraph branch["Branch: modelSupportsTools (DB)"]
+  subgraph branch["Branch: modelSupportsTools (DB) — learning chat"]
     B1["supportsTools = true"]
     B2["supportsTools = false"]
+  end
+
+  subgraph adminrag["Admin chat — createAdminChatTools (§3.C)"]
+    AD1["tools = full 63-tool registry, or<br/>ADMIN_CORE_TOOL_NAMES subset on ≤32k windows"]
+    AD2["searchCourseMaterials(courseId | courseCode, question)<br/>explicit per-call course, no ambient effectiveCourseId"]
+    AD3["resolveAdminCourseId → resolved courseId"]
+    AD4["runCourseMaterialSearchTool(question, courseId,<br/>restrictToStudentVisible) — always false for ADMIN role"]
+    AD1 --> AD2 --> AD3 --> AD4
   end
 
   subgraph hybrid["Hybrid path — no tools"]
@@ -72,14 +83,18 @@ flowchart TB
   end
 
   client --> entry
-  A10 --> A11 --> branch
+  A10 --> A11 --> A12
+  A12 -->|"learning"| branch
+  A12 -->|"admin"| adminrag
   branch --> B1 --> toolpath
   branch --> B2 --> hybrid
   H4 --> ragcore
   P3 --> ragcore
+  AD4 --> ragcore
   ingest -.->|"indexes"| R2
   hybrid --> ST["streamText"]
   toolpath --> ST
+  adminrag --> ST
   ST --> out
 ```
 
@@ -90,6 +105,7 @@ flowchart TB
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
 - **Similarity threshold** applies to both retrieval paths: chunks must clear the vector cosine floor before ranking. Defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`; per-course `ragSimilarityThreshold` overrides when set.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
+- **Admin chat's `searchCourseMaterials`** (#1658, §3.C) reuses `findRelevantContent` + `capRagHitsForTool` via the shared **`runCourseMaterialSearchTool`** helper (`chat-rag.ts`) — same retrieval body as learning chat's `getInformation`, but course resolution and visibility differ; see §3.C.
 
 ## Code references
 
@@ -104,6 +120,9 @@ flowchart TB
 | Chat debug logging | [`apps/core/app/lib/chat-api-log.ts`](../../apps/core/app/lib/chat-api-log.ts) |
 | Web tools | [`apps/core/app/lib/ai/tools/`](../../apps/core/app/lib/ai/tools/) |
 | Provider registry | [`apps/core/app/lib/ai/providers.ts`](../../apps/core/app/lib/ai/providers.ts) |
+| Admin chat tools (`searchCourseMaterials`, §3.C) | [`apps/core/app/lib/agent-tools/create-admin-chat-tools.ts`](../../apps/core/app/lib/agent-tools/create-admin-chat-tools.ts) |
+| Admin course resolution | [`apps/core/app/lib/agent-tools/admin-context.server.ts`](../../apps/core/app/lib/agent-tools/admin-context.server.ts) |
+| Admin context-budget helpers | [`apps/core/app/lib/ai/providers.server.ts`](../../apps/core/app/lib/ai/providers.server.ts) |
 
 ---
 
@@ -160,6 +179,16 @@ RAG is **not** one pipeline. It branches on `getChatModelCapabilities(model).sup
 - On retrieval error, falls back to default system (no excerpts)
 
 **Summary:** both paths prefetch on course-scoped chat; excerpts inject when the smart gate passes. `getInformation` is supplemental on the tool path only.
+
+### C. Admin chat path (`chatMode: "admin"`) — `searchCourseMaterials`
+
+Admin chat (`/admin/chat`, ADMIN session only, [`create-admin-chat-tools.ts`](../../apps/core/app/lib/agent-tools/create-admin-chat-tools.ts)) never enters the tool-vs-hybrid split above — `routes/api/chat.ts` branches on `chatMode` before that split (see the `chatMode?` node in the diagram) and always uses tool-calling. Its RAG tool differs from learning chat's `getInformation` in three ways:
+
+1. **Explicit course, not ambient context.** Learning chat resolves RAG against `effectiveCourseId` from the session/UI course selector — there's always exactly one course in scope. Admin chat is platform-wide with no UI course filter, so `searchCourseMaterials` takes `courseId` or `courseCode` as tool call parameters; the model must name a course. Resolution goes through **`resolveAdminCourseId`** — the same helper every other course-scoped admin tool uses (`listCourseEnrollments`, `listCourseTopics`, …) — which also accepts a `fallbackCourseId` (the UI's `effectiveCourseId`, when the admin has one selected) before erroring if no course can be resolved.
+2. **Shared retrieval body, separate gating.** Once a `courseId` is resolved, both `getInformation` and `searchCourseMaterials` call the same **`runCourseMaterialSearchTool(question, courseId, restrictToStudentVisible)`** in `chat-rag.ts` — `findRelevantContent` (chunk cap `HYBRID_RAG_MAX_CHUNKS`) capped for a tool result via `capRagHitsForTool`, fails closed with a typed `{ error }` (never throws) on retrieval failure. Only "which course, and is one even selected" is duplicated per caller (#1658 review) — the retrieval/error-handling body is not.
+3. **Visibility is a pass-through, not a role check.** `restrictToStudentVisible` (excludes hidden/scheduled materials, #839) comes from `ChatToolContext.restrictToStudentVisible`, set once in `routes/api/chat.ts` as `courseAccess?.level === "student"`. ADMIN-role callers never resolve to a `"student"` access level, so `searchCourseMaterials` always passes `restrictToStudentVisible: false` — admins can search a course's full material set, including anything hidden from students.
+
+**Tool budget:** the full admin registry (63 tools) does not fit the seeded 16k-context admin model's token budget (`estimateToolDefinitionTokens`, `providers.server.ts`); `routes/api/chat.ts` sends only `ADMIN_CORE_TOOL_NAMES` (which includes `searchCourseMaterials`) on ≤32k-context models, the full registry otherwise. See `docs/AGENT_READINESS.md` and `chat-admin-registry-budget.test.ts`.
 
 ### RAG caps (constants in `chat-rag.ts`)
 

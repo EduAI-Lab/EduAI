@@ -94,6 +94,22 @@ describe("CourseFeedbackPanel", () => {
     expect(await screen.findByText("Could not load feedback.")).toBeInTheDocument();
   });
 
+  // Clear emptied both inputs but left the validation message standing, so the
+  // panel described a malformed Activity ID the reader could see was gone.
+  it("clears the validation error along with the filter inputs", async () => {
+    render(<CourseFeedbackPanel courseId={7} />);
+    await screen.findByText("Helpful hints");
+
+    fireEvent.change(screen.getByLabelText("Activity ID"), { target: { value: "abc" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(screen.getByText("Activity ID must be a number.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(screen.queryByText("Activity ID must be a number.")).toBeNull();
+    expect(screen.getByLabelText("Activity ID")).toHaveValue("");
+  });
+
   it("ignores an older in-flight response when a newer filter request finishes first", async () => {
     let resolveSlow!: (rows: ActivityFeedbackRow[]) => void;
     const slowRequest = new Promise<ActivityFeedbackRow[]>((resolve) => {
