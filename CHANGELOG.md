@@ -23,6 +23,10 @@
 
 ## [Week 17 — August 17–23, 2026]
 
+### Fixed
+
+- [core] fix: Production login at `my.eduai.ok.ubc.ca` looped back to `/login` right after a successful sign-in. `COOKIE_DOMAIN` had widened across deployments (`.eduai.ok.ubc.ca` → `.ok.ubc.ca`), but the login route's legacy-cookie cleanup only expired the host-only and exact-hostname scopes, never the intermediate `.eduai.ok.ubc.ca` scope — so a browser still holding that stale cookie could have it shadow the freshly issued `.ok.ubc.ca` session on the very next request. `appendLegacySessionCookieDeletions` now expires the known legacy scopes, including the broader `.ok.ubc.ca` scope on rollback, while preserving the freshly-issued domain. Closes #1677. (@superbolt08, 2026-08-26) — #PR
+
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
