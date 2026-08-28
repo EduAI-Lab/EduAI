@@ -27,12 +27,17 @@ vi.mock("~/lib/routing-model-settings.server", () => ({
   getRoutingModelSettings: vi.fn(),
 }));
 
+vi.mock("~/lib/assist-model-settings.server", () => ({
+  getAssistModelId: vi.fn(),
+}));
+
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
+import { getAssistModelId } from "~/lib/assist-model-settings.server";
 import {
   loadChatBaseData,
   loadChatBaseDataForUser,
@@ -145,25 +150,27 @@ describe("loadChatBaseDataForUser", () => {
       autoLlmEnabled: false,
       autoRulesEnabled: false,
     } as never);
+    vi.mocked(getAssistModelId).mockResolvedValue(null);
     vi.mocked(prisma.aIModel.findMany).mockResolvedValue([] as never);
     vi.mocked(getAccessibleCourseCodes).mockResolvedValue(["COSC 101"] as never);
     vi.mocked(getUserPreference).mockResolvedValue(PREFERENCES as never);
   });
 
-  it("issues the three independent reads concurrently", async () => {
+  it("issues the four independent reads concurrently", async () => {
     const tracker = makeConcurrencyTracker();
     vi.mocked(getRoutingModelSettings).mockImplementation(
       tracker.track({ autoLlmEnabled: false, autoRulesEnabled: false }) as never,
     );
+    vi.mocked(getAssistModelId).mockImplementation(tracker.track(null) as never);
     vi.mocked(prisma.aIModel.findMany).mockImplementation(tracker.track([]) as never);
     vi.mocked(getAccessibleCourseCodes).mockImplementation(tracker.track(["COSC 101"]) as never);
 
     const pending = loadChatBaseDataForUser(USER);
     await Promise.resolve();
 
-    // Asserted while all three are still held: a serial rewrite peaks at 1 and
+    // Asserted while all four are still held: a serial rewrite peaks at 1 and
     // fails here, rather than deadlocking on the drain below.
-    expect(tracker.maxInFlight).toBe(3);
+    expect(tracker.maxInFlight).toBe(4);
 
     await tracker.drain();
     await pending;
@@ -218,6 +225,14 @@ describe("loadChatBaseDataForUser", () => {
     ]);
   });
 
+  it("includes the configured Assist model id for chat requests", async () => {
+    vi.mocked(getAssistModelId).mockResolvedValue("openai:gpt-4o");
+
+    const data = await loadChatBaseDataForUser(USER);
+
+    expect(data.assistModelId).toBe("openai:gpt-4o");
+  });
+
   it("is what loadChatBaseData composes with the session lookup", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: USER } as never);
 
@@ -246,6 +261,7 @@ describe("loadChatBaseDataForUser", () => {
     // The parallel block must stay behind the auth guard: an unauthenticated
     // caller costs zero queries.
     expect(getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(getAssistModelId).not.toHaveBeenCalled();
     expect(prisma.aIModel.findMany).not.toHaveBeenCalled();
     expect(getAccessibleCourseCodes).not.toHaveBeenCalled();
     expect(getUserPreference).not.toHaveBeenCalled();

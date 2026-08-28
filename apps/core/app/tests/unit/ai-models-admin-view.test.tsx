@@ -90,6 +90,9 @@ function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdmin
         routingModelSettings={defaultRoutingModelSettings()}
         routingModelDefinitions={routingModelSettingDefinitions()}
         onToggleRoutingModel={vi.fn()}
+        assistModelId={null}
+        onSetAssistModel={vi.fn().mockResolvedValue(null)}
+        assistModelSettingError={null}
         fleetServers={[]}
         fleetConfigured={false}
         fleetSource="environment"
@@ -342,6 +345,16 @@ describe("AiModelsAdminView", () => {
         );
       });
       consoleError.mockRestore();
+    });
+
+    it("opens the AI Assist model editor", async () => {
+      renderView();
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit Assist model" }));
+
+      expect(
+        await screen.findByRole("heading", { name: "Configure AI Assist model" }),
+      ).toBeInTheDocument();
     });
   });
 

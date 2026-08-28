@@ -10,8 +10,11 @@ describe("RoutingModelsTable", () => {
       <RoutingModelsTable
         definitions={routingModelSettingDefinitions()}
         settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
         onToggle={vi.fn()}
         onEdit={vi.fn()}
+        onEditAssist={vi.fn()}
       />,
     );
 
@@ -32,8 +35,11 @@ describe("RoutingModelsTable", () => {
       <RoutingModelsTable
         definitions={routingModelSettingDefinitions()}
         settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
         onToggle={onToggle}
         onEdit={vi.fn()}
+        onEditAssist={vi.fn()}
       />,
     );
 
@@ -47,8 +53,11 @@ describe("RoutingModelsTable", () => {
       <RoutingModelsTable
         definitions={routingModelSettingDefinitions()}
         settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
         onToggle={vi.fn()}
         onEdit={onEdit}
+        onEditAssist={vi.fn()}
       />,
     );
 

@@ -20,15 +20,21 @@ import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing
 type RoutingModelsTableProps = {
   definitions: RoutingModelSettingDefinition[];
   settings: RoutingModelSettings;
+  assistModelId: string | null;
+  assistModelName: string | null;
   onToggle: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
   onEdit: () => void;
+  onEditAssist: () => void;
 };
 
 export function RoutingModelsTable({
   definitions,
   settings,
+  assistModelId,
+  assistModelName,
   onToggle,
   onEdit,
+  onEditAssist,
 }: RoutingModelsTableProps) {
   return (
     <div className="space-y-2">
@@ -57,6 +63,36 @@ export function RoutingModelsTable({
           <p className="mt-1 text-muted-foreground">
             It estimates what each request needs and selects the best available group.
           </p>
+        </div>
+      </div>
+      <div className="rounded-md border p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <IconRoute className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="font-medium">AI Assist model</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Used when Assistive mode is enabled. When configured, Auto uses this model; an
+                explicitly selected chat model remains in control.
+              </p>
+              <p className="mt-2 text-sm">
+                <span className="text-muted-foreground">Current:</span>{" "}
+                <span className="font-medium">
+                  {assistModelName ?? (assistModelId ? assistModelId : "Use selected chat model")}
+                </span>
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onEditAssist}
+            aria-label="Edit Assist model"
+          >
+            <IconEdit className="mr-2 h-4 w-4" />
+            Edit Assist model
+          </Button>
         </div>
       </div>
       <div className="rounded-md border">

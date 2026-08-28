@@ -6,6 +6,7 @@ import {
   AutoRoutingConfigDialog,
   type AutoRoutingSelection,
 } from "~/components/admin/auto-routing-config-dialog";
+import { AssistModelConfigDialog } from "~/components/admin/assist-model-config-dialog";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
@@ -74,6 +75,9 @@ export type AiModelsAdminViewProps = {
   routingModelSettings: RoutingModelSettings;
   routingModelDefinitions: RoutingModelSettingDefinition[];
   onToggleRoutingModel: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
+  assistModelId: string | null;
+  onSetAssistModel: (modelId: string | null) => Promise<string | null>;
+  assistModelSettingError: string | null;
   fleetServers: FleetServerConfig[];
   fleetConfigured: boolean;
   fleetSource: "file" | "environment";
@@ -109,6 +113,9 @@ export function AiModelsAdminView({
   routingModelSettings,
   routingModelDefinitions,
   onToggleRoutingModel,
+  assistModelId,
+  onSetAssistModel,
+  assistModelSettingError,
   fleetServers,
   fleetConfigured,
   fleetSource,
@@ -135,6 +142,10 @@ export function AiModelsAdminView({
   const [autoRoutingModels, setAutoRoutingModels] = useState<AIModel[]>([]);
   const [fetchingAutoRoutingModels, setFetchingAutoRoutingModels] = useState(false);
   const [autoRoutingError, setAutoRoutingError] = useState<string | null>(null);
+  const [assistModelDialogOpen, setAssistModelDialogOpen] = useState(false);
+  const [assistModels, setAssistModels] = useState<AIModel[]>([]);
+  const [fetchingAssistModels, setFetchingAssistModels] = useState(false);
+  const [assistModelsError, setAssistModelsError] = useState<string | null>(null);
 
   const ollamaProvider = useMemo(
     () => providers.find((provider) => provider.name === "ollama" && provider.isActive),
@@ -354,6 +365,26 @@ export function AiModelsAdminView({
     }
   };
 
+  const handleEditAssistModel = async () => {
+    setAssistModelDialogOpen(true);
+    setFetchingAssistModels(true);
+    setAssistModelsError(null);
+    try {
+      setAssistModels(await fetchAllModels());
+    } catch (err) {
+      setAssistModelsError(
+        err instanceof Error ? err.message : "Failed to load models for AI Assist",
+      );
+    } finally {
+      setFetchingAssistModels(false);
+    }
+  };
+
+  const assistModel = assistModels.find(
+    (model) => `${model.provider.name}:${model.modelId}` === assistModelId,
+  );
+  const assistModelName = assistModel?.name ?? null;
+
   const handleSaveAutoRouting = async ({ smallModelIds, largeModelIds }: AutoRoutingSelection) => {
     const small = new Set(smallModelIds);
     const large = new Set(largeModelIds);
@@ -456,8 +487,11 @@ export function AiModelsAdminView({
                     <RoutingModelsTable
                       definitions={routingModelDefinitions}
                       settings={routingModelSettings}
+                      assistModelId={assistModelId}
+                      assistModelName={assistModelName}
                       onToggle={handleToggleRoutingModel}
                       onEdit={() => void handleEditAutoRouting()}
+                      onEditAssist={() => void handleEditAssistModel()}
                     />
 
                     {(syncMessage || ollamaError || vllmError) && (
@@ -608,6 +642,18 @@ export function AiModelsAdminView({
         loading={fetchingAutoRoutingModels}
         error={autoRoutingError}
         onSave={handleSaveAutoRouting}
+      />
+
+      <AssistModelConfigDialog
+        open={assistModelDialogOpen}
+        onOpenChange={setAssistModelDialogOpen}
+        models={assistModels}
+        selectedModelId={assistModelId}
+        loading={fetchingAssistModels}
+        error={assistModelSettingError ?? assistModelsError}
+        onSave={async (modelId) => {
+          await onSetAssistModel(modelId);
+        }}
       />
 
       <ProviderFormDialog
