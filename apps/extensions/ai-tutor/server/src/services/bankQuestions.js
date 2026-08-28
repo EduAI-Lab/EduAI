@@ -30,6 +30,23 @@ import { listCourseTestableQuestions, listEduAiCourseTopics } from "./eduaiClien
  */
 const MAX_CORE_PAGES_PER_CALL = 10;
 
+/**
+ * Core's own `limit` bounds, mirrored from `boundedInteger(limit, 100, 1, 500)`
+ * in apps/core/app/lib/questions/server.ts. They have to be mirrored rather
+ * than assumed: a page is judged full by comparing its length against the size
+ * asked for, so requesting a size Core will not honour makes a full page look
+ * short and ends the scan early (#1652 review).
+ */
+const CORE_LIMIT_MAX = 500;
+const CORE_LIMIT_MIN = 1;
+const CORE_LIMIT_FALLBACK = 100;
+
+/** The size Core will actually honour for a requested `limit`. */
+function coreEffectiveLimit(limit) {
+  if (!Number.isFinite(limit)) return CORE_LIMIT_FALLBACK;
+  return Math.min(CORE_LIMIT_MAX, Math.max(CORE_LIMIT_MIN, Math.floor(limit)));
+}
+
 /** An activity stores one `correctIndex`, so neither of these has a faithful form here. */
 function isUsableBankQuestion(question) {
   return question.type !== "LA" && question.selectAllThatApply !== true;
@@ -51,22 +68,34 @@ function isUsableBankQuestion(question) {
 export async function listBankQuestions(coreOfferingId, { topicId, limit = 20, offset = 0 } = {}) {
   const topicsPromise = listEduAiCourseTopics(coreOfferingId);
 
+  // Every length comparison below is against what Core will honour, never the
+  // raw request.
+  const effectiveLimit = coreEffectiveLimit(limit);
+
   const rawQuestions = [];
   let nextOffset = offset;
   let pagesRead = 0;
   let coreHasMorePages = true;
   let stoppedMidPage = false;
 
-  while (rawQuestions.length < limit && pagesRead < MAX_CORE_PAGES_PER_CALL && coreHasMorePages) {
+  while (
+    rawQuestions.length < effectiveLimit &&
+    pagesRead < MAX_CORE_PAGES_PER_CALL &&
+    coreHasMorePages
+  ) {
     const page =
-      (await listCourseTestableQuestions(coreOfferingId, { topicId, limit, offset: nextOffset })) ??
+      (await listCourseTestableQuestions(coreOfferingId, {
+        topicId,
+        limit: effectiveLimit,
+        offset: nextOffset,
+      })) ??
       [];
     pagesRead += 1;
     // A short page is Core's own end-of-list signal.
-    coreHasMorePages = page.length === limit;
+    coreHasMorePages = page.length === effectiveLimit;
 
     for (const question of page) {
-      if (rawQuestions.length === limit) {
+      if (rawQuestions.length === effectiveLimit) {
         stoppedMidPage = true;
         break;
       }

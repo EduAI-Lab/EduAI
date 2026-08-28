@@ -495,8 +495,14 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         },
       );
     } catch (error: unknown) {
+      // The server explains a lost race (409 VARIANT_STATE_CHANGED) in its
+      // `error` field; axios's own message is only "Request failed with status
+      // code 409", which tells the author nothing about what to do next.
+      const serverMessage = (error as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error;
       const message =
-        error instanceof Error ? error.message : "Could not update the sharing choice.";
+        serverMessage ??
+        (error instanceof Error ? error.message : "Could not update the sharing choice.");
       toast.error("Could not update sharing", { description: message });
     } finally {
       setIsTogglingTestable(false);

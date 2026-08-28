@@ -194,3 +194,53 @@ describe("listBankQuestions page filling", () => {
     expect(result.hasMore).toBe(true);
   });
 });
+
+/**
+ * Core clamps `limit` into [1, 500] and falls back to 100 when it is not a
+ * finite number (`boundedInteger(limit, 100, 1, 500)` in
+ * apps/core/app/lib/questions/server.ts). Asking Core for more than it will
+ * ever return and then comparing the page against the *requested* size makes a
+ * full page look short, which reads as "that is the end of the bank" and hides
+ * every remaining question (#1652 review).
+ */
+describe("listBankQuestions Core limit clamping", () => {
+  const sa = (id) => ({ id, type: "SA", content: id, topicId: null, choices: null, answer: "x" });
+  const page = (n, prefix) => Array.from({ length: n }, (_, i) => sa(`${prefix}${i}`));
+
+  it("still reports hasMore when Core clamps an over-max limit to 500", async () => {
+    // Core honours 500, not the 501 that was asked for.
+    listCourseTestableQuestions.mockResolvedValue(page(500, "a"));
+
+    const result = await listBankQuestions("core-course-1", { limit: 501 });
+
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("asks Core for at most the 500 rows it will honour", async () => {
+    listCourseTestableQuestions.mockResolvedValue(page(500, "a"));
+
+    await listBankQuestions("core-course-1", { limit: 501 });
+
+    expect(listCourseTestableQuestions.mock.calls[0][1]).toMatchObject({ limit: 500 });
+  });
+
+  it("treats a limit below Core's minimum as the single row Core returns", async () => {
+    listCourseTestableQuestions.mockResolvedValue(page(1, "a"));
+
+    const result = await listBankQuestions("core-course-1", { limit: 0 });
+
+    expect(listCourseTestableQuestions.mock.calls[0][1]).toMatchObject({ limit: 1 });
+    expect(result.questions.map((q) => q.id)).toEqual(["a0"]);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("uses Core's own fallback when the limit is not a finite number", async () => {
+    listCourseTestableQuestions.mockResolvedValue(page(100, "a"));
+
+    const result = await listBankQuestions("core-course-1", { limit: Number.NaN });
+
+    expect(listCourseTestableQuestions.mock.calls[0][1]).toMatchObject({ limit: 100 });
+    expect(result.questions).toHaveLength(100);
+    expect(result.hasMore).toBe(true);
+  });
+});

@@ -20,6 +20,8 @@ const {
   mockDeleteVariant,
   mockVariantsFindOne,
   mockVariantsUpdate,
+  mockApplyShareChoice,
+  mockClearCoreLink,
   mockQuestionFindOne,
   mockEnrollments,
   mockPatchTestable,
@@ -31,6 +33,8 @@ const {
   mockDeleteVariant: vi.fn().mockResolvedValue(true),
   mockVariantsFindOne: vi.fn(),
   mockVariantsUpdate: vi.fn(),
+  mockApplyShareChoice: vi.fn(),
+  mockClearCoreLink: vi.fn(),
   mockQuestionFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
   mockPatchTestable: vi.fn(),
@@ -58,6 +62,8 @@ vi.mock("../../src/services/questionService.js", () => ({
   updateVariant: mockUpdateVariant,
   deleteVariant: mockDeleteVariant,
   getVariantsByQuestion: vi.fn(),
+  applyVariantShareChoice: mockApplyShareChoice,
+  clearVariantCoreLinkIfUnchanged: mockClearCoreLink,
 }));
 
 vi.mock("../../src/services/coreWiringService.js", () => ({
@@ -406,6 +412,7 @@ describe("share-with-extensions stays in step with Core (#1555)", () => {
       questionMetadata: { type: "SA", course: COURSE },
     });
     mockPatchTestable.mockResolvedValue({ id: "cuid-q1", testable: true });
+    mockApplyShareChoice.mockResolvedValue({ applied: true, variant: { id: 42 } });
 
     const res = await request(app)
       .patch("/api/questions/variants/42/testable")
@@ -413,10 +420,56 @@ describe("share-with-extensions stays in step with Core (#1555)", () => {
       .send({ testable: true });
 
     expect(res.status).toBe(200);
-    expect(mockVariantsUpdate).toHaveBeenCalledWith({
-      where: { id: 42 },
-      data: { shareWithExtensions: true },
+    // The write is conditional on the row still being the approved variant
+    // linked to the question Core just patched (#1652 review).
+    expect(mockApplyShareChoice).toHaveBeenCalledWith(42, COURSE.userId, "cuid-q1", true);
+  });
+
+  it("does not leave a question shared in Core when the row changed under the write", async () => {
+    // A concurrent un-review lands between the Core patch and the local write.
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
     });
+    mockPatchTestable.mockResolvedValue({ id: "cuid-q1", testable: true });
+    mockApplyShareChoice.mockResolvedValue({ applied: false, reason: "state_changed" });
+
+    const res = await request(app)
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
+      .send({ testable: true });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("VARIANT_STATE_CHANGED");
+    // The Core write is undone rather than left asserting a choice that was
+    // never persisted locally.
+    expect(mockPatchTestable).toHaveBeenLastCalledWith("cuid-q1", false);
+  });
+
+  it("drops a stale Core link only while it still points at the missing question", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
+    });
+    // Core reports the question gone.
+    mockPatchTestable.mockResolvedValue(null);
+    mockClearCoreLink.mockResolvedValue({ applied: true });
+
+    const res = await request(app)
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
+      .send({ testable: true });
+
+    expect(res.status).toBe(404);
+    expect(mockClearCoreLink).toHaveBeenCalledWith(42, COURSE.userId, "cuid-q1");
   });
 
   it("an approved variant stays locked to the post-approval switch, not the edit form", async () => {

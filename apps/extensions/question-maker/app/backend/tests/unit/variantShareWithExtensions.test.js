@@ -133,6 +133,9 @@ describe("updateVariant share-with-extensions", () => {
       isInstructorPlus: true,
       accessLevel: "instructor",
       requestUserId: "u1",
+      // The route withdraws the Core question before un-reviewing, and the
+      // fence refuses to clear a link that was not withdrawn (#1652 review).
+      withdrawnCoreQuestionId: "cuid-q1",
     });
 
     expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(false);
@@ -169,6 +172,7 @@ describe("unreviewing withdraws the share choice (#1555)", () => {
       isInstructorPlus: true,
       accessLevel: "instructor",
       requestUserId: "u1",
+      withdrawnCoreQuestionId: "cuid-q1",
     });
 
     expect(variantsUpdate.mock.calls[0][0].data.shareWithExtensions).toBe(false);

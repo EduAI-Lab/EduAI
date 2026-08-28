@@ -1469,6 +1469,25 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     // #1080 un-review: reopening a reviewed variant back to draft must clear
     // its Core link so the next approval re-pushes a fresh copy.
     const unreviewing = variant.isDraft === false && nextIsDraft === true;
+
+    // The withdrawal that precedes this write is decided from a pre-fence
+    // snapshot, so it can be about a different Core row than the one actually
+    // linked here — or about no row at all, when the snapshot was still
+    // draft/unlinked and a concurrent approval published in the meantime.
+    // Clearing a link nobody withdrew would strand a `testable=true` Core
+    // question that AI Tutor keeps serving with no local row left to point at
+    // it. Refuse instead; the caller retries against fresh state (#1652
+    // review).
+    if (
+      unreviewing &&
+      variant.coreQuestionId &&
+      variant.coreQuestionId !== (mutationContext.withdrawnCoreQuestionId ?? null)
+    ) {
+      throw variantLocked(
+        "UNREVIEW_STATE_CHANGED",
+        "This question was published to EduAI while your change was in flight, so it was not un-reviewed. Please try again.",
+      );
+    }
     // The draft state this write lands in — the caller's when it supplies one,
     // otherwise the state the row is already in.
     const resultingIsDraft = nextIsDraft !== undefined ? nextIsDraft : variant.isDraft === true;
@@ -1680,6 +1699,88 @@ export const rollbackVariantApproval = async (variantId, userId, snapshot) => {
       // otherwise a failed publish leaves a draft flagged as shared, and the
       // next approval republishes without a fresh opt-in (#1652 review).
       data: { isDraft: true, shareWithExtensions: false },
+      include: variantSnapshotInclude,
+    });
+    return { applied: true, variant };
+  });
+};
+
+/**
+ * Records the author's sharing choice only while the row is still the approved,
+ * linked variant the Core write was about.
+ *
+ * The testable endpoint patches Core first and then writes here, so a
+ * concurrent un-review can land in between. Persisting unconditionally would
+ * flag a draft as shared, or re-assert sharing for a Core question that was
+ * just withdrawn. The caller compensates on `applied: false` (#1652 review).
+ */
+export const applyVariantShareChoice = async (
+  variantId,
+  userId,
+  expectedCoreQuestionId,
+  testable,
+) => {
+  const parsedVariantId = Number(variantId);
+  const existing = await prisma.variants.findFirst({
+    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+    select: { id: true, questionMetadataId: true },
+  });
+
+  if (!existing) return { applied: false, reason: "not_found" };
+
+  return withQuestionMutationFence(existing.questionMetadataId, async (db) => {
+    const current = await db.variants.findFirst({
+      where: { id: existing.id, questionMetadata: { course: { userId } } },
+      include: variantSnapshotInclude,
+    });
+
+    if (!current) return { applied: false, reason: "not_found" };
+
+    // Both halves matter: still reviewed, and still the same Core row.
+    if (current.isDraft !== false || current.coreQuestionId !== expectedCoreQuestionId) {
+      return { applied: false, reason: "state_changed", variant: current };
+    }
+
+    const variant = await db.variants.update({
+      where: { id: current.id },
+      data: { shareWithExtensions: testable },
+      include: variantSnapshotInclude,
+    });
+    return { applied: true, variant };
+  });
+};
+
+/**
+ * Drops the Core link only if it still points at the question Core reported
+ * gone, so a concurrent re-approval's fresh link is not discarded.
+ */
+export const clearVariantCoreLinkIfUnchanged = async (
+  variantId,
+  userId,
+  expectedCoreQuestionId,
+) => {
+  const parsedVariantId = Number(variantId);
+  const existing = await prisma.variants.findFirst({
+    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+    select: { id: true, questionMetadataId: true },
+  });
+
+  if (!existing) return { applied: false, reason: "not_found" };
+
+  return withQuestionMutationFence(existing.questionMetadataId, async (db) => {
+    const current = await db.variants.findFirst({
+      where: { id: existing.id, questionMetadata: { course: { userId } } },
+      include: variantSnapshotInclude,
+    });
+
+    if (!current) return { applied: false, reason: "not_found" };
+    if (current.coreQuestionId !== expectedCoreQuestionId) {
+      return { applied: false, reason: "state_changed", variant: current };
+    }
+
+    const variant = await db.variants.update({
+      where: { id: current.id },
+      data: { coreQuestionId: null, shareWithExtensions: false },
       include: variantSnapshotInclude,
     });
     return { applied: true, variant };

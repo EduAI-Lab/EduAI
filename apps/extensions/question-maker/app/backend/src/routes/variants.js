@@ -24,8 +24,9 @@ import {
   updateVariant,
   deleteVariant,
   getVariantsByQuestion,
+  applyVariantShareChoice,
+  clearVariantCoreLinkIfUnchanged,
 } from "../services/questionService.js";
-import { prisma } from "../config/database.js";
 import { patchQuestionTestableOnCore } from "../services/coreApiService.js";
 import { VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from "../services/coreWiringService.js";
 import {
@@ -271,6 +272,7 @@ router.put(
       // for a question that is no longer reviewed (#1652 review). Disabling it
       // is idempotent, so a stale snapshot at worst repeats a withdrawal that
       // already happened.
+      let withdrawnCoreQuestionId = null;
       if (isDraft === true && current.isDraft === false && current.coreQuestionId) {
         const withdrawal = await withdrawVariantFromCore(current.coreQuestionId);
         if (withdrawal.outcome === "failed") {
@@ -281,6 +283,7 @@ router.put(
               "Could not withdraw this question from EduAI, so it was left reviewed. Please retry.",
           });
         }
+        withdrawnCoreQuestionId = current.coreQuestionId;
       }
 
       const variant = await updateVariant(
@@ -305,6 +308,9 @@ router.put(
           isInstructorPlus,
           accessLevel: access.level,
           requestUserId: req.user.id,
+          // Lets the fence reject an un-review whose withdrawal was decided
+          // against a link that is no longer the current one (#1652 review).
+          withdrawnCoreQuestionId,
         },
       );
 
@@ -359,20 +365,55 @@ router.patch(
           .json({ success: false, error: "Variant has not been pushed to Core yet" });
       }
 
+      // `req.variant` is a pre-fence snapshot, so everything below is written
+      // conditionally: Core is patched first, then the local row is updated
+      // only while it is still the approved variant linked to the question that
+      // was patched. A concurrent un-review otherwise leaves a draft flagged as
+      // shared, or re-enables a Core question that was just withdrawn (#1652
+      // review).
       const result = await patchQuestionTestableOnCore(variant.coreQuestionId, testable);
 
       if (result === null) {
-        await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
+        await clearVariantCoreLinkIfUnchanged(
+          variant.id,
+          req.qmCourse.userId,
+          variant.coreQuestionId,
+        );
         return res.status(404).json({ success: false, error: "QUESTION_NOT_FOUND" });
       }
 
       // Record the same choice locally (#1555): the authoring checkbox reads
       // this column, so leaving it behind would show a stale answer to the very
       // next person who opens the question.
-      await prisma.variants.update({
-        where: { id: variant.id },
-        data: { shareWithExtensions: testable },
-      });
+      const applied = await applyVariantShareChoice(
+        variant.id,
+        req.qmCourse.userId,
+        variant.coreQuestionId,
+        testable,
+      );
+
+      if (!applied.applied) {
+        // The row moved on under us. Undo the Core write so the question is not
+        // left shared on the strength of a choice that was never persisted; a
+        // concurrent un-review's own withdrawal makes this a no-op.
+        if (testable) {
+          const compensation = await withdrawVariantFromCore(variant.coreQuestionId);
+          if (compensation.outcome === "failed") {
+            return res.status(502).json({
+              success: false,
+              code: "CORE_SHARE_COMPENSATION_FAILED",
+              error:
+                "This question changed while your sharing choice was in flight, and EduAI could not be reverted. Please retry.",
+            });
+          }
+        }
+        return res.status(409).json({
+          success: false,
+          code: "VARIANT_STATE_CHANGED",
+          error:
+            "This question changed while your sharing choice was in flight, so it was not applied. Please reopen it and try again.",
+        });
+      }
 
       res.json({ success: true, data: result });
     } catch (error) {
