@@ -212,6 +212,51 @@ describe("reviveStoredMessage", () => {
     expect(revived).not.toHaveProperty("metadata");
   });
 
+  it("preserves a recorded Assist mode across reload, distinguishing true/false from legacy-absent (#1671)", () => {
+    const assistOn = reviveStoredMessage({
+      messageId: "m11",
+      role: "assistant",
+      content: {
+        id: "m11",
+        role: "assistant",
+        content: "answer",
+        metadata: { adhdAssist: true },
+      },
+    });
+    const assistOff = reviveStoredMessage({
+      messageId: "m12",
+      role: "assistant",
+      content: {
+        id: "m12",
+        role: "assistant",
+        content: "answer",
+        metadata: { adhdAssist: false },
+      },
+    });
+    const legacyRow = reviveStoredMessage({
+      messageId: "m13",
+      role: "assistant",
+      content: { id: "m13", role: "assistant", content: "answer" },
+    });
+
+    expect(assistOn.metadata).toEqual({ adhdAssist: true });
+    // A stored `false` must survive as `false`, not be dropped like an
+    // absent value would be — otherwise the consuming layout couldn't tell
+    // "Assist was off" apart from "this row predates the field".
+    expect(assistOff.metadata).toEqual({ adhdAssist: false });
+    expect(legacyRow).not.toHaveProperty("metadata");
+  });
+
+  it("does not restore the Assist flag on non-assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m14",
+      role: "user",
+      content: { content: "question", metadata: { adhdAssist: true } },
+    });
+
+    expect(revived).not.toHaveProperty("metadata");
+  });
+
   it("preserves both resolved-model and course-scope-redirect metadata together", () => {
     const revived = reviveStoredMessage({
       messageId: "m10",

@@ -330,6 +330,49 @@ describe("loadChatTranscript", () => {
     ]);
   });
 
+  it("restores each message's own recorded Assist mode through transcript hydration (#1671 review)", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue(CHAT_ACCESS);
+    vi.mocked(getChatMessages).mockResolvedValue([
+      {
+        messageId: "assistant-on",
+        role: "assistant",
+        content: {
+          id: "assistant-on",
+          role: "assistant",
+          content: "Step 1...",
+          metadata: { adhdAssist: true },
+        },
+      },
+      {
+        messageId: "assistant-off",
+        role: "assistant",
+        content: {
+          id: "assistant-off",
+          role: "assistant",
+          content: "Plain answer.",
+          metadata: { adhdAssist: false },
+        },
+      },
+      {
+        messageId: "assistant-legacy",
+        role: "assistant",
+        content: { id: "assistant-legacy", role: "assistant", content: "Pre-#1671 row." },
+      },
+    ]);
+
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
+
+    // Reload must be able to tell "recorded on", "recorded off", and "no
+    // recorded value" apart — collapsing any two of these back into the live
+    // toggle default is the exact bug #1671 filed.
+    expect(result?.messages).toEqual([
+      expect.objectContaining({ id: "assistant-on", metadata: { adhdAssist: true } }),
+      expect.objectContaining({ id: "assistant-off", metadata: { adhdAssist: false } }),
+      expect.objectContaining({ id: "assistant-legacy" }),
+    ]);
+    expect(result?.messages[2]).not.toHaveProperty("metadata");
+  });
+
   it("marks oversight reads as non-editable", async () => {
     vi.mocked(resolveChatReadAccess).mockResolvedValue({
       ...CHAT_ACCESS,
