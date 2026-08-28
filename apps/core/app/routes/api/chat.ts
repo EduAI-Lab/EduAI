@@ -661,15 +661,15 @@ function clientAbortResponse(): Response {
  * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
+  // Declared outside the error boundary (assigned deep inside it, below) so the
+  // boundary's `headers` thunk can still echo X-Chat-Id when an exception outside
+  // the explicit provider-failure gates fires after the user's message has
+  // already been persisted (#1621 review) — otherwise the client can't resume the
+  // same thread on retry even though nothing was lost server-side.
+  let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
   return withErrorResponse(
     async () => {
       const requestStartMs = Date.now();
-      // Declared outside the try block (assigned inside, below) so the outer
-      // catch-all can still echo X-Chat-Id when an exception outside the
-      // explicit provider-failure gates fires after the user's message has
-      // already been persisted (#1621 review) — otherwise the client can't
-      // resume the same thread on retry even though nothing was lost server-side.
-      let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
       const activeRequestId = request.headers.get("X-EduAI-Request-Id")?.trim() || null;
       try {
         const { response: apiKeyGuard, session: apiKeySession } =
@@ -3419,25 +3419,26 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         }
       } catch (error) {
+        // A client hang-up is not a server failure and has its own 499-style
+        // response, so it is still answered here rather than mapped.
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
+        // Everything else escapes to `withErrorResponse`, which owns the status,
+        // the uniform `{ error: "CODE" }` envelope and the structured 5xx log —
+        // a hand-written body here would skip both (#1560). The `X-Chat-Id`
+        // echo the retry path depends on (#1621) is preserved by the `headers`
+        // thunk on the boundary below, which reads the same `chat` binding.
         console.error("Chat API error:", providerErrorDiagnostic(error));
-        // The user's message may already be persisted onto `chat` by the time an
-        // unhandled exception reaches here (#1621 review) — echo its id so a
-        // client retry continues that thread instead of spawning another one.
-        if (chat?.id) {
-          return new Response(JSON.stringify({ error: "Internal server error" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json", "X-Chat-Id": chat.id },
-          });
-        }
-        return new Response(JSON.stringify({ error: "Internal server error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+        throw error;
       }
     },
-    { request },
+    {
+      request,
+      // The user's message may already be persisted onto `chat` by the time an
+      // unhandled exception reaches the boundary (#1621 review) — echo its id so
+      // a client retry continues that thread instead of spawning another one.
+      headers: () => ({ "X-Chat-Id": chat?.id }),
+    },
   );
 }

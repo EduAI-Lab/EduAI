@@ -538,7 +538,7 @@ describe("syncSelectedCanvasMaterials", () => {
   it("resolves a provisional-checksum create race (P2002 on create) as a skip", async () => {
     vi.mocked(prisma.courseMaterial.findFirst)
       .mockResolvedValueOnce(null) // existing
-      .mockResolvedValueOnce({ id: "mat-other" } as never); // concurrent winner confirmed
+      .mockResolvedValueOnce({ id: "mat-other", status: "PROCESSING" } as never); // healthy winner
     vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
@@ -564,6 +564,24 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.skipped).toBe(0);
     expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
     expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
+  // #1495: the concurrent owner existing is not enough — if the importer that
+  // claimed the provisional row then died, that row is FAILED and there is no
+  // usable copy of the file, so skipping here would report success over missing
+  // content. Mirrors the finalize path's healthy-winner check.
+  it("reports failure when the create P2002 concurrent owner is itself FAILED", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce({ id: "mat-other", status: "FAILED" } as never); // owner is FAILED
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(processUploadedFile).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
   // #1495: a non-duplicate failure on the finalize write must mark the row

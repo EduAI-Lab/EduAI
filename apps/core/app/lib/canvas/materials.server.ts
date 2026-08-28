@@ -339,20 +339,22 @@ export async function importSingleCanvasFile(
       // provisional `canvas-pending:<id>` checksum. The pre-check saw no row
       // because both raced past it — the unique constraint is the real guard.
       // Defer to the winner (the concurrent import of this same `externalId`) and
-      // skip this loser rather than surface a raw P2002 — but confirm the winner
-      // is actually there first. If it vanished (rolled back after the collision),
-      // there is no import in flight to finish this file, so surface it as failed
-      // instead of a silent skip. `#1495`
+      // skip this loser rather than surface a raw P2002 — but only to a *healthy*
+      // winner, matching the finalize path's check. If the winner vanished (rolled
+      // back after the collision) or is itself `FAILED` (its importer died after
+      // claiming the provisional row), there is no usable import in flight to
+      // finish this file, so surface it as failed instead of reporting a skip that
+      // hides missing content. `#1495`
       if (isChecksumConflict(error)) {
         const winner = await prisma.courseMaterial.findFirst({
           where: { courseId, externalSource: CANVAS_EXTERNAL_SOURCE, externalId: canvasFileId },
-          select: { id: true },
+          select: { id: true, status: true },
         });
-        if (winner) {
+        if (winner && winner.status !== "FAILED") {
           return "skipped-not-modified";
         }
         throw new Error(
-          "Concurrent Canvas import collided but left no in-flight material; retry the sync",
+          "Concurrent Canvas import collided but left no usable material; retry the sync",
         );
       }
       throw error;

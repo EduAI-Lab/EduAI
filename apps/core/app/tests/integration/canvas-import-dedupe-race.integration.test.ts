@@ -167,4 +167,44 @@ describe("#1495 Canvas import dedupe — real unique-index races", () => {
     });
     expect(loser?.status).toBe("FAILED");
   });
+
+  it("provisional-create conflict with a FAILED owner is reported, not silently skipped", async () => {
+    // The competing importer claims `canvas-pending:<id>` and then dies, so the
+    // row that won the index is FAILED. Skipping here would report success while
+    // the course ends up with no usable copy of the file, so this import must be
+    // surfaced as failed instead. The winning row is created inside the race
+    // window — after this import's `existing` pre-check, before its own create —
+    // by hanging it off the download boundary, which is the only mock that sits
+    // between the two.
+    // Nothing resets mocks between tests here, so the "backed off before doing
+    // any extraction work" assertion below needs a clean call log.
+    vi.mocked(processUploadedFile).mockClear();
+    vi.mocked(downloadCanvasFile).mockImplementationOnce(async () => {
+      await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: "Dead provisional owner",
+          mimeType: "text/plain",
+          fileSize: 5,
+          checksum: "canvas-pending:4401",
+          status: "FAILED",
+          uploadedBy: userId,
+          externalSource: "canvas",
+          externalId: "4401",
+        },
+      });
+      return new Uint8Array(Buffer.from("hello"));
+    });
+
+    await expect(importFile(canvasFile(4401, "dead.txt"))).rejects.toThrow();
+
+    // Only the dead owner remains, and nothing is stranded in PROCESSING.
+    const rows = await prisma.courseMaterial.findMany({ where: { courseId, externalId: "4401" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("FAILED");
+    expect(await prisma.courseMaterial.count({ where: { courseId, status: "PROCESSING" } })).toBe(
+      0,
+    );
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
 });

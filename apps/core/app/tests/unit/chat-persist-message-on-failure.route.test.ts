@@ -124,6 +124,13 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+// The #1279 boundary logs every mapped 5xx; stub the persistence side so the
+// assertion reads the call rather than reaching for a database.
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: (promise: Promise<unknown>) => void promise,
+  logSystemError: vi.fn(async () => undefined),
+}));
+
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode failure paths stay admitted.
@@ -137,6 +144,7 @@ import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/
 import { resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { logSystemError } from "~/lib/logging.server";
 
 const NEW_CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -255,7 +263,11 @@ describe("#1561 — user message survives a provider-gate failure", () => {
   // through to the outer catch-all instead. The user's message is already
   // persisted by then — the response must still carry X-Chat-Id, or a retry
   // spawns another orphaned chat despite nothing actually being lost.
-  it("returns X-Chat-Id from the outer catch-all when an unrouted exception fires after persistence", async () => {
+  // #1560: the unrouted exception now escapes to the shared `withErrorResponse`
+  // boundary instead of being converted in the route, so it takes the uniform
+  // `{ error: "CODE" }` envelope and gets structured 5xx logging — while the
+  // #1621 X-Chat-Id echo is preserved through the boundary's `headers` thunk.
+  it("returns X-Chat-Id from the error boundary when an unrouted exception fires after persistence", async () => {
     vi.mocked(resolveFleetHost).mockRejectedValue(new Error("boom: not a FleetUnavailableError"));
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -263,7 +275,10 @@ describe("#1561 — user message survives a provider-gate failure", () => {
     errorSpy.mockRestore();
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal server error" });
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+    expect(vi.mocked(logSystemError)).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "API", statusCode: 500 }),
+    );
 
     expect(prisma.chat.create).toHaveBeenCalledTimes(1);
     expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(1);
