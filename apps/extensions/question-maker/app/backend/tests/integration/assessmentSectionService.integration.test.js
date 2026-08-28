@@ -186,6 +186,37 @@ describeDb("assessmentSectionService (integration)", () => {
       const reloadedV = await prisma.variants.findUnique({ where: { id: v.id } });
       expect(reloadedV.assessmentId).toBeNull();
     });
+
+    it("keeps the assessment link on a variant still placed in another section of the same assessment", async () => {
+      const doomed = await svc.createAssessmentSection(assessmentId, USER.id, { name: "Doomed" });
+      const survivor = await svc.createAssessmentSection(assessmentId, USER.id, {
+        name: "Survivor",
+      });
+
+      // `shared` sits in both sections, `only` sits in the deleted one alone.
+      const shared = await makeVariant("Shared?");
+      const only = await makeVariant("Only?");
+      await svc.addVariantToSection(doomed.id, USER.id, shared.id);
+      await svc.addVariantToSection(survivor.id, USER.id, shared.id);
+      await svc.addVariantToSection(doomed.id, USER.id, only.id);
+
+      await svc.deleteAssessmentSection(doomed.id, USER.id);
+
+      const reloadedShared = await prisma.variants.findUnique({ where: { id: shared.id } });
+      const reloadedOnly = await prisma.variants.findUnique({ where: { id: only.id } });
+      expect(reloadedShared.assessmentId).toBe(assessmentId);
+      expect(reloadedOnly.assessmentId).toBeNull();
+    });
+
+    it("has an index on variants.assessment_id, which the sweep filters on alone", async () => {
+      // Without this the assessment-wide clear degrades to a sequential scan over the whole
+      // question bank, which would undo the point of #1371 on the delete path.
+      const rows = await prisma.$queryRaw`
+        SELECT indexdef FROM pg_indexes
+        WHERE tablename = 'variants' AND indexdef LIKE '%(assessment_id%'
+      `;
+      expect(rows.length).toBeGreaterThan(0);
+    });
   });
 
   describe("checkQuestionInAssessments / removeQuestionFromAllSections", () => {
