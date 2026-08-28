@@ -6,7 +6,7 @@
  * same transaction as the delete, and that the sweep is not narrowed by an id list read
  * before the delete (which would miss a variant linked in during that window).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sectionFindFirst = vi.fn();
 const sectionDelete = vi.fn();
@@ -19,19 +19,19 @@ const callOrder = [];
 const tx = {
   assessmentSections: {
     delete: (...args) => {
-      callOrder.push('delete');
+      callOrder.push("delete");
       return sectionDelete(...args);
     },
   },
   variants: {
     updateMany: (...args) => {
-      callOrder.push('updateMany');
+      callOrder.push("updateMany");
       return variantsUpdateMany(...args);
     },
   },
 };
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     assessments: { findFirst: vi.fn() },
     assessmentSections: { findFirst: sectionFindFirst, delete: sectionDelete },
@@ -44,11 +44,9 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-const { deleteAssessmentSection } = await import(
-  '../../src/services/assessmentSectionService.js'
-);
+const { deleteAssessmentSection } = await import("../../src/services/assessmentSectionService.js");
 
-describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
+describe("deleteAssessmentSection (#1371 batched orphan clearing)", () => {
   beforeEach(() => {
     sectionFindFirst.mockReset();
     sectionDelete.mockReset();
@@ -65,8 +63,8 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
     variantsUpdateMany.mockResolvedValue({ count: 0 });
   });
 
-  it('clears the assessment link only on variants no longer placed in that assessment', async () => {
-    await expect(deleteAssessmentSection('5', 42)).resolves.toBe(true);
+  it("clears the assessment link only on variants no longer placed in that assessment", async () => {
+    await expect(deleteAssessmentSection("5", 42)).resolves.toBe(true);
 
     expect(sectionDelete).toHaveBeenCalledWith({ where: { id: 5 } });
 
@@ -82,7 +80,7 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
     });
   });
 
-  it('sweeps the assessment rather than an id list read before the delete', async () => {
+  it("sweeps the assessment rather than an id list read before the delete", async () => {
     await deleteAssessmentSection(5, 42);
 
     // Collecting this section's variant ids up front and sweeping only those would miss a
@@ -90,26 +88,26 @@ describe('deleteAssessmentSection (#1371 batched orphan clearing)', () => {
     // its link but the id never reaches the sweep, leaving a stale `assessmentId`. The
     // read must not come back, and the where clause must carry no `id` filter.
     expect(sectionVariantsFindMany).not.toHaveBeenCalled();
-    expect(variantsUpdateMany.mock.calls[0][0].where).not.toHaveProperty('id');
+    expect(variantsUpdateMany.mock.calls[0][0].where).not.toHaveProperty("id");
   });
 
-  it('clears after the delete, so the cascade has already removed this section links', async () => {
+  it("clears after the delete, so the cascade has already removed this section links", async () => {
     await deleteAssessmentSection(5, 42);
 
-    expect(callOrder).toEqual(['delete', 'updateMany']);
+    expect(callOrder).toEqual(["delete", "updateMany"]);
   });
 
-  it('rejects a section in a course the route was not authorized for', async () => {
-    await expect(deleteAssessmentSection(5, 42, 99)).rejects.toThrow('Section not found');
+  it("rejects a section in a course the route was not authorized for", async () => {
+    await expect(deleteAssessmentSection(5, 42, 99)).rejects.toThrow("Section not found");
 
     expect(sectionDelete).not.toHaveBeenCalled();
     expect(variantsUpdateMany).not.toHaveBeenCalled();
   });
 
-  it('throws when the section does not belong to the user', async () => {
+  it("throws when the section does not belong to the user", async () => {
     sectionFindFirst.mockResolvedValue(null);
 
-    await expect(deleteAssessmentSection(5, 42)).rejects.toThrow('Section not found');
+    await expect(deleteAssessmentSection(5, 42)).rejects.toThrow("Section not found");
 
     expect(sectionDelete).not.toHaveBeenCalled();
     expect(variantsUpdateMany).not.toHaveBeenCalled();

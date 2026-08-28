@@ -3,18 +3,21 @@
  * AI Tutor must forward Core's course CUID (`course.coreOfferingId` → body.courseId)
  * on EduAI chat calls, not only a courseCode that may fail exact lookup.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
+    // `serviceAuthHeader` sends the env `EDUAI_API_KEY`, not this override;
+    // the stub is kept so any `getEffectiveEduAiApiKey` read stays deterministic.
+    systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     promptTemplate: {
-      findUnique: vi.fn().mockResolvedValue({ systemPrompt: 'Be a helpful tutor.' }),
+      findUnique: vi.fn().mockResolvedValue({ systemPrompt: "Be a helpful tutor." }),
     },
   },
 }));
 
-vi.mock('../../src/services/eduaiClient.js', () => ({
-  getEduAiCompletionUrl: () => 'http://mock-eduai/api/completion',
+vi.mock("../../src/services/eduaiClient.js", () => ({
+  getEduAiCompletionUrl: () => "http://mock-eduai/api/completion",
 }));
 
 const originalFetch = global.fetch;
@@ -28,92 +31,92 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('getCoreCourseId wiring helper (#1021)', () => {
-  it('returns trimmed coreOfferingId when the offering is linked', async () => {
-    const { getCoreCourseId } = await import('../../src/utils/coreCourseId.js');
-    expect(getCoreCourseId({ coreOfferingId: '  cuid-core-cosc121  ' })).toBe('cuid-core-cosc121');
+describe("getCoreCourseId wiring helper (#1021)", () => {
+  it("returns trimmed coreOfferingId when the offering is linked", async () => {
+    const { getCoreCourseId } = await import("../../src/utils/coreCourseId.js");
+    expect(getCoreCourseId({ coreOfferingId: "  cuid-core-cosc121  " })).toBe("cuid-core-cosc121");
   });
 
-  it('returns null for missing, blank, or non-string coreOfferingId', async () => {
-    const { getCoreCourseId } = await import('../../src/utils/coreCourseId.js');
+  it("returns null for missing, blank, or non-string coreOfferingId", async () => {
+    const { getCoreCourseId } = await import("../../src/utils/coreCourseId.js");
     expect(getCoreCourseId({})).toBeNull();
     expect(getCoreCourseId({ coreOfferingId: null })).toBeNull();
-    expect(getCoreCourseId({ coreOfferingId: '   ' })).toBeNull();
+    expect(getCoreCourseId({ coreOfferingId: "   " })).toBeNull();
     expect(getCoreCourseId({ coreOfferingId: 42 })).toBeNull();
   });
 
-  it('exposes trimNonEmpty for shared callEduAI / wiring trim', async () => {
-    const { trimNonEmpty } = await import('../../src/utils/coreCourseId.js');
-    expect(trimNonEmpty('  abc  ')).toBe('abc');
-    expect(trimNonEmpty('   ')).toBeNull();
+  it("exposes trimNonEmpty for shared callEduAI / wiring trim", async () => {
+    const { trimNonEmpty } = await import("../../src/utils/coreCourseId.js");
+    expect(trimNonEmpty("  abc  ")).toBe("abc");
+    expect(trimNonEmpty("   ")).toBeNull();
     expect(trimNonEmpty(null)).toBeNull();
   });
 });
 
-describe('callEduAI courseId pass-through (#1021)', () => {
-  it('includes courseId and courseCode on the EduAI chat body when linked', async () => {
+describe("callEduAI courseId pass-through (#1021)", () => {
+  it("includes courseId and courseCode on the EduAI chat body when linked", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+      json: () => Promise.resolve({ content: "Here is a hint.", chatId: "chat-1" }),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: false,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
-      courseCode: 'COSC 121',
-      courseId: 'cuid-core-cosc121',
+      cookie: "session=abc",
+      apiKey: "test-key",
+      courseCode: "COSC 121",
+      courseId: "cuid-core-cosc121",
     });
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [, opts] = global.fetch.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.courseId).toBe('cuid-core-cosc121');
-    expect(body.courseCode).toBe('COSC 121');
+    expect(body.courseId).toBe("cuid-core-cosc121");
+    expect(body.courseCode).toBe("COSC 121");
   });
 
-  it('omits courseId from the payload when the offering is unlinked', async () => {
+  it("omits courseId from the payload when the offering is unlinked", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+      json: () => Promise.resolve({ content: "Here is a hint.", chatId: "chat-1" }),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: false,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
-      courseCode: 'COSC 121',
+      cookie: "session=abc",
+      apiKey: "test-key",
+      courseCode: "COSC 121",
     });
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(body).not.toHaveProperty('courseId');
-    expect(body.courseCode).toBe('COSC 121');
+    expect(body).not.toHaveProperty("courseId");
+    expect(body.courseCode).toBe("COSC 121");
   });
 
-  it('forwards courseId on supervisor EduAI calls in dual-loop mode', async () => {
+  it("forwards courseId on supervisor EduAI calls in dual-loop mode", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
           content: JSON.stringify({
             approved: true,
-            reason: 'ok',
-            feedbackToTutor: '',
-            safeResponseToStudent: '',
+            reason: "ok",
+            feedbackToTutor: "",
+            safeResponseToStudent: "",
           }),
-          chatId: 'chat-1',
+          chatId: "chat-1",
         }),
     });
 
@@ -125,7 +128,7 @@ describe('callEduAI courseId pass-through (#1021)', () => {
       if (callCount === 1) {
         return {
           ok: true,
-          json: async () => ({ content: 'Tutor draft hint.', chatId: 'chat-1' }),
+          json: async () => ({ content: "Tutor draft hint.", chatId: "chat-1" }),
         };
       }
       return {
@@ -133,86 +136,86 @@ describe('callEduAI courseId pass-through (#1021)', () => {
         json: async () => ({
           content: JSON.stringify({
             approved: true,
-            reason: 'ok',
-            feedbackToTutor: '',
-            safeResponseToStudent: '',
+            reason: "ok",
+            feedbackToTutor: "",
+            safeResponseToStudent: "",
           }),
-          chatId: 'chat-1',
+          chatId: "chat-1",
         }),
       };
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: true,
       maxSupervisorIterations: 1,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
-      courseCode: 'COSC 121',
-      courseId: 'cuid-core-cosc121',
-      supervisorModelId: 'google:gemini-2.5-flash',
+      cookie: "session=abc",
+      apiKey: "test-key",
+      courseCode: "COSC 121",
+      courseId: "cuid-core-cosc121",
+      supervisorModelId: "google:gemini-2.5-flash",
     });
 
     expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(2);
     for (const [, opts] of global.fetch.mock.calls) {
       const body = JSON.parse(opts.body);
-      expect(body.courseId).toBe('cuid-core-cosc121');
-      expect(body.courseCode).toBe('COSC 121');
+      expect(body.courseId).toBe("cuid-core-cosc121");
+      expect(body.courseCode).toBe("COSC 121");
     }
   });
 
-  it('trims whitespace-padded courseId/courseCode before sending', async () => {
+  it("trims whitespace-padded courseId/courseCode before sending", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+      json: () => Promise.resolve({ content: "Here is a hint.", chatId: "chat-1" }),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: false,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
-      courseCode: '  COSC 121  ',
-      courseId: '  cuid-core-cosc121  ',
+      cookie: "session=abc",
+      apiKey: "test-key",
+      courseCode: "  COSC 121  ",
+      courseId: "  cuid-core-cosc121  ",
     });
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(body.courseId).toBe('cuid-core-cosc121');
-    expect(body.courseCode).toBe('COSC 121');
+    expect(body.courseId).toBe("cuid-core-cosc121");
+    expect(body.courseCode).toBe("COSC 121");
   });
 
-  it('omits whitespace-only courseId from the payload', async () => {
+  it("omits whitespace-only courseId from the payload", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+      json: () => Promise.resolve({ content: "Here is a hint.", chatId: "chat-1" }),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: false,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
-      courseCode: 'COSC 121',
-      courseId: '   ',
+      cookie: "session=abc",
+      apiKey: "test-key",
+      courseCode: "COSC 121",
+      courseId: "   ",
     });
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(body).not.toHaveProperty('courseId');
-    expect(body.courseCode).toBe('COSC 121');
+    expect(body).not.toHaveProperty("courseId");
+    expect(body.courseCode).toBe("COSC 121");
   });
 });

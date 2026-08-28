@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
@@ -21,16 +22,13 @@ vi.mock("~/lib/canvas/client.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import {
-  listCanvasCourseStudents,
-  listCanvasCourseTas,
-} from "~/lib/canvas/client.server";
+import { listCanvasCourseStudents, listCanvasCourseTas } from "~/lib/canvas/client.server";
 import { syncCourseRoster } from "~/lib/canvas/roster.server";
 
 const credentials = { canvasBaseUrl: "https://canvas.test", apiToken: "tok" } as never;
 const SYNC_STARTED_AT = new Date("2026-07-25T00:00:00.000Z");
 
-function baseInput(overrides: Record<string, unknown> = {}) {
+function baseInput(overrides: JsonObject = {}) {
   return {
     credentials,
     coreCourseId: "course-1",
@@ -102,9 +100,7 @@ describe("syncCourseRoster", () => {
   // before the deactivation sweep, so prior active rows survive until a later
   // successful sync.
   it("does not deactivate any rows when the roster fetch throws", async () => {
-    vi.mocked(listCanvasCourseStudents).mockRejectedValue(
-      new Error("Canvas 500"),
-    );
+    vi.mocked(listCanvasCourseStudents).mockRejectedValue(new Error("Canvas 500"));
     vi.mocked(listCanvasCourseTas).mockResolvedValue([] as never);
 
     await expect(syncCourseRoster(baseInput())).rejects.toThrow("Canvas 500");

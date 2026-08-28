@@ -1,42 +1,49 @@
-import express from 'express';
-import cors from 'cors';
-import { requireAuth } from './middleware/auth.js';
+import express from "express";
+import compression from "compression";
+import cors from "cors";
+import { requireAuth } from "./middleware/auth.js";
+import { requireSameOriginMutation } from "./middleware/csrf.js";
 
-import authRoutes from './routes/authentication.js';
-import courseRoutes from './routes/courses.js';
-import moduleRoutes from './routes/modules.js';
-import lessonRoutes from './routes/lessons.js';
-import activityRoutes from './routes/activities.js';
-import promptRoutes from './routes/prompts.js';
-import topicRoutes from './routes/topics.js';
-import aiModelRoutes from './routes/ai-models.js';
-import adminRoutes from './routes/admin.js';
-import suggestedPromptRoutes from './routes/suggested-prompts.js';
-import bugReportRoutes from './routes/bug-reports.js';
-import aiStatusRoutes from './routes/ai-status.js';
-import internalRoutes from './routes/internal.js';
-import { corsOptions } from './config/cors.js';
-import { prisma } from './config/database.js';
+import authRoutes from "./routes/authentication.js";
+import courseRoutes from "./routes/courses.js";
+import moduleRoutes from "./routes/modules.js";
+import lessonRoutes from "./routes/lessons.js";
+import activityRoutes from "./routes/activities.js";
+import promptRoutes from "./routes/prompts.js";
+import topicRoutes from "./routes/topics.js";
+import aiModelRoutes from "./routes/ai-models.js";
+import adminRoutes from "./routes/admin.js";
+import suggestedPromptRoutes from "./routes/suggested-prompts.js";
+import bugReportRoutes from "./routes/bug-reports.js";
+import aiStatusRoutes from "./routes/ai-status.js";
+import internalRoutes from "./routes/internal.js";
+import { corsOptions } from "./config/cors.js";
+import { prisma } from "./config/database.js";
 
 function isAllowedAdminPath(path) {
   return (
-    path === '/me' ||
-    path.startsWith('/me/') ||
-    path.startsWith('/admin/') ||
-    path === '/ai-models' ||
-    path.startsWith('/ai-models/') ||
-    path === '/bug-reports' ||
+    path === "/me" ||
+    path.startsWith("/me/") ||
+    path.startsWith("/admin/") ||
+    path === "/ai-models" ||
+    path.startsWith("/ai-models/") ||
+    path === "/bug-reports" ||
+    // Prompt templates carry system prompts, temperature and topP — platform
+    // configuration of the same kind as the AI loop policy under /admin, so an
+    // ADMIN is not acting as an instructor by reading or writing them.
+    path === "/prompts" ||
+    path.startsWith("/prompts/") ||
     // Admins share the instructor Courses dashboard, so they need the course
     // list itself plus topic endpoints (the lesson builder calls these). Course-
     // nested resources under /courses/, /modules/, /lessons/, /activities/ are
     // already covered below.
-    path === '/courses' ||
-    path === '/topics' ||
-    path.startsWith('/topics/') ||
-    path.startsWith('/modules/') ||
-    path.startsWith('/lessons/') ||
-    path.startsWith('/courses/') ||
-    path.startsWith('/activities/')
+    path === "/courses" ||
+    path === "/topics" ||
+    path.startsWith("/topics/") ||
+    path.startsWith("/modules/") ||
+    path.startsWith("/lessons/") ||
+    path.startsWith("/courses/") ||
+    path.startsWith("/activities/")
   );
 }
 
@@ -52,32 +59,50 @@ export async function createApp(options = {}) {
   const app = express();
 
   app.use(cors(corsOptions));
+  app.use("/api", requireSameOriginMutation);
 
   // JSON parser for our own routes
   app.use(express.json());
 
+  // gzip every response above the default 1kb threshold. The content-tree
+  // payloads (course -> module -> lesson -> activity) and lesson `contentMd`
+  // markdown bodies are highly compressible text, and instructors refetch the
+  // tree on every navigation.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        // Nothing streams today, but keep gzip off event-streams so a future
+        // SSE endpoint can't silently buffer behind the compressor. Express
+        // appends `; charset=utf-8`, so match the prefix, not the exact value.
+        const type = String(res.getHeader("Content-Type") || "");
+        if (type.startsWith("text/event-stream")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
+
   // Health check endpoint
-  app.get('/api/health', async (req, res) => {
+  app.get("/api/health", async (req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e) });
+    } catch {
+      res.status(503).json({ ok: false, error: "Database unavailable" });
     }
   });
 
   // Session middleware: real (Core session validation) or mock (tests)
   if (options.mockUser) {
-    app.use('/api', (req, _res, next) => {
+    app.use("/api", (req, _res, next) => {
       req.user = options.mockUser;
       next();
     });
   } else {
-    app.use('/api', (req, res, next) => {
-      if (req.path === '/health') return next();
-      if (req.method === 'POST' && req.path === '/logout') return next();
+    app.use("/api", (req, res, next) => {
+      if (req.path === "/health") return next();
+      if (req.method === "POST" && req.path === "/logout") return next();
       // Server-to-server (Core → AI Tutor); authenticated by requireServiceKey instead.
-      if (req.path.startsWith('/internal/')) return next();
+      if (req.path.startsWith("/internal/")) return next();
       return requireAuth(req, res, next);
     });
   }
@@ -85,38 +110,38 @@ export async function createApp(options = {}) {
   // Admins are intentionally isolated to admin-only endpoints.
   // UNIT_ADMINs can reach /admin/courses/* (enrollment management) but not
   // /admin/settings/* or /admin/users* (system config / user management).
-  app.use('/api', (req, res, next) => {
-    if (req.path === '/health') return next();
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/health") return next();
     // AI-service status is available to every authenticated role (incl. admins),
     // so exempt it from the admin-only path isolation below.
-    if (req.path === '/ai-status') return next();
+    if (req.path === "/ai-status") return next();
     if (!req.user) return next();
-    if (req.user.role === 'ADMIN') {
+    if (req.user.role === "ADMIN") {
       if (isAllowedAdminPath(req.path)) return next();
-      return res.status(403).json({ error: 'Admins can only access admin endpoints' });
+      return res.status(403).json({ error: "Admins can only access admin endpoints" });
     }
-    if (req.user.role === 'UNIT_ADMIN') {
-      if (req.path.startsWith('/admin/settings') || req.path.startsWith('/admin/users')) {
-        return res.status(403).json({ error: 'Unit admins cannot access system configuration' });
+    if (req.user.role === "UNIT_ADMIN") {
+      if (req.path.startsWith("/admin/settings") || req.path.startsWith("/admin/users")) {
+        return res.status(403).json({ error: "Unit admins cannot access system configuration" });
       }
     }
     next();
   });
 
   // Mount route modules
-  app.use('/api', authRoutes);
-  app.use('/api', courseRoutes);
-  app.use('/api', moduleRoutes);
-  app.use('/api', lessonRoutes);
-  app.use('/api', activityRoutes);
-  app.use('/api', promptRoutes);
-  app.use('/api', topicRoutes);
-  app.use('/api', aiModelRoutes);
-  app.use('/api', adminRoutes);
-  app.use('/api', suggestedPromptRoutes);
-  app.use('/api', bugReportRoutes);
-  app.use('/api', aiStatusRoutes);
-  app.use('/api', internalRoutes);
+  app.use("/api", authRoutes);
+  app.use("/api", courseRoutes);
+  app.use("/api", moduleRoutes);
+  app.use("/api", lessonRoutes);
+  app.use("/api", activityRoutes);
+  app.use("/api", promptRoutes);
+  app.use("/api", topicRoutes);
+  app.use("/api", aiModelRoutes);
+  app.use("/api", adminRoutes);
+  app.use("/api", suggestedPromptRoutes);
+  app.use("/api", bugReportRoutes);
+  app.use("/api", aiStatusRoutes);
+  app.use("/api", internalRoutes);
 
   return app;
 }

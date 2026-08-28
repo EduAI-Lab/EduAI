@@ -32,6 +32,7 @@ import {
   revokeInvitation,
   resendInvitation,
 } from "~/lib/invitations/service.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 // The `unitAdmins.canInvite` flag gate now lives inside `requireInviter`, so the
 // routes only ever see "admitted" or "denied". `asInviter` simulates an admitted
@@ -54,7 +55,7 @@ function getReq() {
   return { request: new Request("http://localhost/api/invitations") } as never;
 }
 
-function postReq(body: unknown) {
+function postReq(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/invitations", {
       method: "POST",
@@ -81,7 +82,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listInvitations).mockResolvedValue([]);
   vi.mocked(createInvitation).mockResolvedValue(CREATED as never);
-  vi.mocked(revokeInvitation).mockResolvedValue({ ok: true, invitation: CREATED.invitation } as never);
+  vi.mocked(revokeInvitation).mockResolvedValue({
+    ok: true,
+    invitation: CREATED.invitation,
+  } as never);
   vi.mocked(resendInvitation).mockResolvedValue(CREATED as never);
 });
 
@@ -139,10 +143,10 @@ describe("POST /api/invitations", () => {
     asInviter("UNIT_ADMIN", "me");
     const res = await action(postReq({ email: "prof@ubc.ca", role: "INSTRUCTOR" }));
     expect(res.status).toBe(201);
-    expect(createInvitation).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "INSTRUCTOR" }),
-      { id: "me", name: "Inviter" },
-    );
+    expect(createInvitation).toHaveBeenCalledWith(expect.objectContaining({ role: "INSTRUCTOR" }), {
+      id: "me",
+      name: "Inviter",
+    });
   });
 
   it("UNIT_ADMIN may invite a STUDENT", async () => {

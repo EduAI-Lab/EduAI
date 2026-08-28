@@ -1,14 +1,15 @@
 // @vitest-environment node
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => {
   const aiJob = { count: vi.fn() };
+  // getQueueSnapshot runs both reads on a transaction client; the mock hands
+  // the callback this same client so the count assertions still apply.
+  const txClient = { aiJob };
   return {
     aiJob,
-    // getQueueSnapshot runs both reads on a transaction client; the mock hands
-    // the callback this same client so the count assertions still apply.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: typeof txClient) => T) => fn(txClient)),
   };
 });
 
@@ -22,11 +23,28 @@ import {
   QueueFullError,
 } from "~/lib/queue/queue-stats.server";
 import { QUEUE_CHAT, QUEUE_HEAVY } from "~/lib/queue/resolve-pool.server";
+import { resetFleetRegistryCache } from "~/lib/ai/routing/fleet/registry";
+
+// resolveQueueName() (via heavyFleetConfigured()) reads fleet.config.json
+// first, falling back to VLLM_FLEET_HEAVY_URL only when no config file is
+// present. Without pointing FLEET_CONFIG_PATH at a file that doesn't exist,
+// a real fleet.config.json on disk would silently override these tests'
+// env-var-driven queue-fallback assertions below.
+const NONEXISTENT_CONFIG_PATH = "./__no-such-fleet-config__.json";
+const originalFleetConfigPath = process.env.FLEET_CONFIG_PATH;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
+  resetFleetRegistryCache();
   prismaMock.aiJob.count.mockResolvedValue(0);
+});
+
+afterEach(() => {
+  if (originalFleetConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+  else process.env.FLEET_CONFIG_PATH = originalFleetConfigPath;
+  resetFleetRegistryCache();
 });
 
 // PENDING rows only count while plausibly in Redis: bullJobId persisted, or
@@ -105,9 +123,7 @@ describe("getQueuePosition", () => {
   it("only counts earlier interactive jobs for an interactive job (nothing outranks it)", async () => {
     prismaMock.aiJob.count.mockResolvedValueOnce(0);
 
-    await expect(
-      getQueuePosition({ ...pendingBackground, type: "interactive" }),
-    ).resolves.toBe(1);
+    await expect(getQueuePosition({ ...pendingBackground, type: "interactive" })).resolves.toBe(1);
 
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
       where: {

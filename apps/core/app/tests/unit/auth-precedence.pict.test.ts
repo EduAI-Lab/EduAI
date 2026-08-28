@@ -66,19 +66,21 @@ function mockUser(id: string, role: string, isActive: boolean): MockUser {
   };
 }
 
-const KEY_USERS: Record<string, MockUser> = {
-  "valid-admin-active": mockUser("key-admin-active", "ADMIN", true),
-  "valid-admin-inactive": mockUser("key-admin-inactive", "ADMIN", false),
-  "valid-nonadmin": mockUser("key-student", "STUDENT", true),
-};
+// Maps because the key is the token/cookie string a PICT row supplies: an
+// unlisted one has to miss, which is how "no such user" is expressed.
+const KEY_USERS = new Map<string, MockUser>([
+  ["valid-admin-active", mockUser("key-admin-active", "ADMIN", true)],
+  ["valid-admin-inactive", mockUser("key-admin-inactive", "ADMIN", false)],
+  ["valid-nonadmin", mockUser("key-student", "STUDENT", true)],
+]);
 
-const COOKIE_USERS: Record<string, MockUser> = {
-  "admin-active": mockUser("cookie-admin-active", "ADMIN", true),
-  "admin-inactive": mockUser("cookie-admin-inactive", "ADMIN", false),
-  nonadmin: mockUser("cookie-student", "STUDENT", true),
-};
+const COOKIE_USERS = new Map<string, MockUser>([
+  ["admin-active", mockUser("cookie-admin-active", "ADMIN", true)],
+  ["admin-inactive", mockUser("cookie-admin-inactive", "ADMIN", false)],
+  ["nonadmin", mockUser("cookie-student", "STUDENT", true)],
+]);
 
-const ALL_USERS = [...Object.values(KEY_USERS), ...Object.values(COOKIE_USERS)];
+const ALL_USERS = [...KEY_USERS.values(), ...COOKIE_USERS.values()];
 
 function setUpMocks(row: AuthPrecedenceRow) {
   vi.mocked(prisma.user.findUnique).mockImplementation((({ where }: any) => {
@@ -92,7 +94,7 @@ function setUpMocks(row: AuthPrecedenceRow) {
   if (row.CookieState === "none") {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
   } else {
-    const user = COOKIE_USERS[row.CookieState];
+    const user = COOKIE_USERS.get(row.CookieState);
     vi.mocked(auth.api.getSession).mockResolvedValue({ user } as never);
   }
 
@@ -103,7 +105,8 @@ function setUpMocks(row: AuthPrecedenceRow) {
       key: null,
     } as never);
   } else if (row.KeyState !== "none") {
-    const user = KEY_USERS[row.KeyState];
+    const user = KEY_USERS.get(row.KeyState);
+    if (!user) throw new Error(`no fixture user for key state ${row.KeyState}`);
     vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
       valid: true,
       error: null,

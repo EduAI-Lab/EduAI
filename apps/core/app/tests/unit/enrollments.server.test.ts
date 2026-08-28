@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     enrollment: {
       findFirst: vi.fn(),
       count: vi.fn(),
@@ -13,8 +14,19 @@ const prismaMock = vi.hoisted(() => {
   };
   return {
     user: { findUnique: vi.fn() },
-    enrollment: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    enrollment: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
+    // The mutation helpers pass a callback; `getCourseEnrollmentsPage` passes an array
+    // of promises. Support both so one mock serves every caller in this file.
+    $transaction: vi.fn(async <T>(arg: Promise<T>[] | ((t: typeof tx) => Promise<T>)) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(tx),
+    ),
     __tx: tx,
   };
 });
@@ -29,6 +41,10 @@ import {
   deactivateEnrollment,
   requiredRankForEnrollmentRole,
   canAddEnrollmentRole,
+  isEnrollmentRole,
+  getCourseEnrollmentForUser,
+  getCourseEnrollments,
+  getCourseEnrollmentsPage,
 } from "~/lib/courses/enrollments.server";
 
 const tx = prismaMock.__tx;
@@ -115,7 +131,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("rejects demoting the LAST active instructor with 409 (#305)", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(1);
     const result = await updateEnrollmentRole("c1", "e1", { role: "STUDENT" });
@@ -129,7 +148,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("allows demotion when another active instructor remains", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "STUDENT" });
@@ -139,7 +161,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("skips the floor check when promoting TO instructor", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "INSTRUCTOR" });
     const result = await updateEnrollmentRole("c1", "e1", { role: "INSTRUCTOR" });
@@ -149,7 +174,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("promotes STUDENT to TA without a floor check", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "TA" });
     const result = await updateEnrollmentRole("c1", "e1", { role: "TA" });
@@ -172,7 +200,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("rejects deactivating the LAST active instructor with 409 — no ADMIN override", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(1);
     const result = await deactivateEnrollment("c1", "e1");
@@ -186,7 +217,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("deactivates an instructor when another active instructor remains", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
@@ -200,7 +234,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("deactivates a STUDENT without a floor check", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
     const result = await deactivateEnrollment("c1", "e1");
@@ -210,11 +247,114 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("skips the floor check for an already-inactive instructor enrollment", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: false,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: false,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
     const result = await deactivateEnrollment("c1", "e1");
     expect(result.status).toBe("204");
     expect(tx.enrollment.count).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #1369: these two readers switched from `include` to an explicit `select`. The shape they
+ * ask Prisma for IS the contract with `mapEnrollment`, so assert on the query argument
+ * rather than on a hand-written fixture that could drift from what the DB returns.
+ */
+const EXPECTED_SELECT = {
+  id: true,
+  userId: true,
+  role: true,
+  enrolledAt: true,
+  isActive: true,
+  user: { select: { email: true, name: true, studentId: true } },
+};
+
+describe("isEnrollmentRole", () => {
+  it("accepts the three enrollment roles and rejects anything else", () => {
+    expect(isEnrollmentRole("STUDENT")).toBe(true);
+    expect(isEnrollmentRole("TA")).toBe(true);
+    expect(isEnrollmentRole("INSTRUCTOR")).toBe(true);
+    expect(isEnrollmentRole("ADMIN")).toBe(false);
+    expect(isEnrollmentRole(null)).toBe(false);
+    expect(isEnrollmentRole(3)).toBe(false);
+  });
+});
+
+describe("getCourseEnrollments (#1369 select narrowing)", () => {
+  it("selects only the columns the mapper reads, unfiltered and ordered by enrolledAt", async () => {
+    const rows = [{ id: "e1" }, { id: "e2" }];
+    prismaMock.enrollment.findMany.mockResolvedValue(rows);
+
+    const result = await getCourseEnrollments("c1");
+
+    expect(result).toBe(rows);
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg).toEqual({
+      where: { courseId: "c1" },
+      select: EXPECTED_SELECT,
+      orderBy: { enrolledAt: "asc" },
+    });
+    // The AI Tutor full-sync contract: no `include`, no isActive filter, no limit.
+    expect(arg).not.toHaveProperty("include");
+    expect(arg).not.toHaveProperty("take");
+  });
+});
+
+describe("getCourseEnrollmentForUser", () => {
+  it("uses the course/user unique key and the roster response projection", async () => {
+    const enrollment = { id: "e1" };
+    prismaMock.enrollment.findUnique.mockResolvedValue(enrollment);
+
+    await expect(getCourseEnrollmentForUser("c1", "u1")).resolves.toBe(enrollment);
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledWith({
+      where: { courseId_userId: { courseId: "c1", userId: "u1" } },
+      select: EXPECTED_SELECT,
+    });
+  });
+});
+
+describe("getCourseEnrollmentsPage (#1369 select narrowing)", () => {
+  it("takes limit + 1 without a cursor and reports nextCursor when a further page exists", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([{ id: "e1" }, { id: "e2" }, { id: "e3" }]);
+    prismaMock.enrollment.count.mockResolvedValue(9);
+
+    const result = await getCourseEnrollmentsPage("c1", { cursor: null, limit: 2 });
+
+    expect(result.page).toEqual([{ id: "e1" }, { id: "e2" }]);
+    expect(result.nextCursor).toBe("e2");
+    expect(result.total).toBe(9);
+
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg.select).toEqual(EXPECTED_SELECT);
+    expect(arg).not.toHaveProperty("include");
+    expect(arg.where).toEqual({ courseId: "c1", role: "STUDENT", isActive: true });
+    expect(arg.orderBy).toEqual([{ enrolledAt: "asc" }, { id: "asc" }]);
+    expect(arg.take).toBe(3);
+    // No cursor passed, so Prisma must not receive a `cursor`/`skip` pair.
+    expect(arg).not.toHaveProperty("cursor");
+    expect(arg).not.toHaveProperty("skip");
+    expect(prismaMock.enrollment.count).toHaveBeenCalledWith({
+      where: { courseId: "c1", role: "STUDENT", isActive: true },
+    });
+  });
+
+  it("resumes after the cursor row and returns a null nextCursor on the last page", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([{ id: "e4" }]);
+    prismaMock.enrollment.count.mockResolvedValue(4);
+
+    const result = await getCourseEnrollmentsPage("c1", { cursor: "e3", limit: 2 });
+
+    expect(result.page).toEqual([{ id: "e4" }]);
+    expect(result.nextCursor).toBeNull();
+    expect(result.total).toBe(4);
+
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg.select).toEqual(EXPECTED_SELECT);
+    expect(arg.cursor).toEqual({ id: "e3" });
+    expect(arg.skip).toBe(1);
   });
 });

@@ -25,9 +25,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 const EMBEDDING_DIMENSION = 1024;
-const FIXED_EMBEDDING = vi.hoisted(() =>
-  Array.from({ length: 1024 }, (_, i) => (i + 1) * 0.0001),
-);
+const FIXED_EMBEDDING = vi.hoisted(() => Array.from({ length: 1024 }, (_, i) => (i + 1) * 0.0001));
 const SEEDED_CHUNK_CONTENT = "seeded chunk content";
 
 vi.mock("ai", () => ({
@@ -42,7 +40,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import { loader } from "~/routes/api/courses.materials.$";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
 import { seedMaterial, seedMaterialChunkWithEmbedding } from "../helpers/materials";
 import { seedTestDisciplines } from "../helpers/disciplines";
@@ -66,11 +64,11 @@ type Path = (typeof PATHS)[number];
 // (helpers/disciplines.ts) — `department` is an FK to Discipline.code.
 const DEPARTMENT = "COSC";
 
-const ENROLLMENT_ROLE: Partial<Record<MaterialVisibilityRow["Role"], "INSTRUCTOR" | "TA" | "STUDENT">> = {
+const ENROLLMENT_ROLE = {
   INSTRUCTOR: "INSTRUCTOR",
   TA: "TA",
   STUDENT: "STUDENT",
-};
+} satisfies Partial<Record<MaterialVisibilityRow["Role"], "INSTRUCTOR" | "TA" | "STUDENT">>;
 
 type SeededRow = {
   courseId: string;
@@ -183,7 +181,7 @@ async function observeRest(row: MaterialVisibilityRow, seeded: SeededRow): Promi
 /**
  * RAG adapter for both `rag-hybrid` and `rag-sql`: `RAG_HYBRID_BM25` selects
  * the branch inside `findRelevantContent`. The caller-side course-access gate
- * is resolved via the same production `resolveCourseAccessWithCourse` used by
+ * is resolved via the same production `resolveCourseAccessGate` used by
  * chat.ts and asserted unconditionally, for every row — that alone is enough
  * to catch a regression in access resolution for an unenrolled/anonymous
  * caller, which is the scenario worth guarding.
@@ -202,11 +200,15 @@ async function observeRest(row: MaterialVisibilityRow, seeded: SeededRow): Promi
  * world-builder always publishes), so unlike chat.ts's real gate this
  * doesn't also check `course.isPublished`.
  */
-async function observeRag(row: MaterialVisibilityRow, seeded: SeededRow, path: Path): Promise<boolean> {
+async function observeRag(
+  row: MaterialVisibilityRow,
+  seeded: SeededRow,
+  path: Path,
+): Promise<boolean> {
   process.env.RAG_HYBRID_BM25 = path === "rag-hybrid" ? "1" : "";
 
   const access = seeded.user
-    ? (await resolveCourseAccessWithCourse(seeded.user, seeded.courseId)).access
+    ? (await resolveCourseAccessGate(seeded.user, seeded.courseId)).access
     : null;
 
   const hasAccess = access !== null;
@@ -234,10 +236,15 @@ describe.each(rows.map((row, index) => ({ row: row as MaterialVisibilityRow, ind
       const observed = {} as Record<Path, boolean>;
       for (const path of PATHS) {
         const seeded = await buildRow(row);
-        observed[path] = path === "rest" ? await observeRest(row, seeded) : await observeRag(row, seeded, path);
+        observed[path] =
+          path === "rest" ? await observeRest(row, seeded) : await observeRag(row, seeded, path);
       }
       const expectedVisible = materialVisibilityOracle(row).outcome === "visible";
-      expect(observed).toEqual({ rest: expectedVisible, "rag-hybrid": expectedVisible, "rag-sql": expectedVisible });
+      expect(observed).toEqual({
+        rest: expectedVisible,
+        "rag-hybrid": expectedVisible,
+        "rag-sql": expectedVisible,
+      });
     });
   },
 );

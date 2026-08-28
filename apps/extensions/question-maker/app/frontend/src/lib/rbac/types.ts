@@ -1,8 +1,8 @@
 /** Platform roles that may enter Question Maker (app gate). */
-export type QmPlatformRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR';
+export type QmPlatformRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR";
 
 /** Course-scoped access level — mirrors backend courseAccess.js ranks. */
-export type QmCourseAccess = 'admin' | 'unit' | 'instructor' | 'ta' | null;
+export type QmCourseAccess = "admin" | "unit" | "instructor" | "ta" | null;
 
 export type QmUser = {
   id: string;
@@ -10,15 +10,15 @@ export type QmUser = {
   authorizedUnits?: string[];
 };
 
-export type QmRoleView = 'admin' | 'unit-admin' | 'instructor';
+export type QmRoleView = "admin" | "unit-admin" | "instructor";
 
 export type QmNavItemKey =
-  | 'dashboard'
-  | 'courses'
-  | 'library'
-  | 'help'
-  | 'bug-reports'
-  | 'back-to-eduai';
+  | "dashboard"
+  | "courses"
+  | "library"
+  | "help"
+  | "bug-reports"
+  | "back-to-eduai";
 
 export type QmNavItem = {
   key: QmNavItemKey;

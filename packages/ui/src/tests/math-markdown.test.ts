@@ -18,14 +18,11 @@ describe("normalizeMathMarkdown", () => {
   });
 
   it("converts existing inline $math$ to $$...$$ delimiters", () => {
-    expect(normalizeMathMarkdown("Already $x^2$ formatted.")).toBe(
-      "Already $$x^2$$ formatted.",
-    );
+    expect(normalizeMathMarkdown("Already $x^2$ formatted.")).toBe("Already $$x^2$$ formatted.");
   });
 
   it("leaves currency amounts in prose unchanged", () => {
-    const input =
-      "The subscription costs $9.99 per month and the premium plan is $19.";
+    const input = "The subscription costs $9.99 per month and the premium plan is $19.";
     expect(normalizeMathMarkdown(input)).toBe(input);
   });
 
@@ -63,7 +60,9 @@ describe("normalizeMathMarkdown", () => {
     const input =
       "3. **Divide every term by $a$ to normalize the coefficient of $x^2$:** x^2 + $\\frac{b}{a}$x = -$\\frac{c}{a}$";
     const result = normalizeMathMarkdown(input);
-    expect(result).toContain("3. **Divide every term by $$a$$ to normalize the coefficient of $$x^2$$:**");
+    expect(result).toContain(
+      "3. **Divide every term by $$a$$ to normalize the coefficient of $$x^2$$:**",
+    );
     expect(result).toContain("x^2 + \\frac{b}{a}x");
     expect(result).toContain("- \\frac{c}{a}");
     expect(result).toContain("$$");
@@ -79,8 +78,7 @@ describe("normalizeMathMarkdown", () => {
   });
 
   it("does not emit stray $$ around superscripts on a\\left lines", () => {
-    const input =
-      "a\\left(x + \\frac{b}{2a}\\right)^2 - a\\left(\\frac{b}{2a}\\right)^2 = - c";
+    const input = "a\\left(x + \\frac{b}{2a}\\right)^2 - a\\left(\\frac{b}{2a}\\right)^2 = - c";
     const result = normalizeMathMarkdown(input);
     expect(result).toContain("$$");
     expect(result).toContain("\\right)^2");

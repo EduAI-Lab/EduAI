@@ -9,35 +9,33 @@
  *
  * Requires TEST_DATABASE_URL (skips otherwise, same as the other DB suites).
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
-vi.mock('../../src/services/coreApiService.js', () => ({
+vi.mock("../../src/services/coreApiService.js", () => ({
   listCoursesFromCore: vi.fn(),
   getCourseEnrollmentsFromCore: vi.fn(),
 }));
 
-vi.mock('../../src/services/topicSyncService.js', () => ({
+vi.mock("../../src/services/topicSyncService.js", () => ({
   syncTopicsFromCoreForCourse: vi.fn().mockResolvedValue(0),
 }));
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const CORE_COURSE_ID = 'core-concurrency-1';
+const CORE_COURSE_ID = "core-concurrency-1";
 
-describeDb('auto-import Practice Exam concurrency', () => {
+describeDb("auto-import Practice Exam concurrency", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let importTaughtCoursesFromCore;
   let listCoursesFromCore, getCourseEnrollmentsFromCore;
 
   beforeAll(async () => {
-    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import('../helpers/testDb.js'));
-    ({ importTaughtCoursesFromCore } = await import(
-      '../../src/services/importTaughtCoursesService.js'
-    ));
-    ({ listCoursesFromCore, getCourseEnrollmentsFromCore } = await import(
-      '../../src/services/coreApiService.js'
-    ));
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import("../helpers/testDb.js"));
+    ({ importTaughtCoursesFromCore } =
+      await import("../../src/services/importTaughtCoursesService.js"));
+    ({ listCoursesFromCore, getCourseEnrollmentsFromCore } =
+      await import("../../src/services/coreApiService.js"));
     await connectTestDatabase();
   });
 
@@ -45,20 +43,20 @@ describeDb('auto-import Practice Exam concurrency', () => {
     await truncateTestDatabase();
     await prisma.user.createMany({
       data: [
-        { id: 'inst-a', email: 'a@test.com', name: 'Instructor A' },
-        { id: 'inst-b', email: 'b@test.com', name: 'Instructor B' },
+        { id: "inst-a", email: "a@test.com", name: "Instructor A" },
+        { id: "inst-b", email: "b@test.com", name: "Instructor B" },
       ],
     });
 
     // #1041: `listCoursesFromCore` returns a plain array of courses now — the
     // paging envelope is unwrapped inside coreApiService.
     listCoursesFromCore.mockResolvedValue([
-      { id: CORE_COURSE_ID, callerEnrollmentRole: 'INSTRUCTOR' },
+      { id: CORE_COURSE_ID, callerEnrollmentRole: "INSTRUCTOR" },
     ]);
     getCourseEnrollmentsFromCore.mockResolvedValue({
       enrollments: [
-        { studentId: 'inst-a', role: 'INSTRUCTOR', isActive: true },
-        { studentId: 'inst-b', role: 'INSTRUCTOR', isActive: true },
+        { studentId: "inst-a", role: "INSTRUCTOR", isActive: true },
+        { studentId: "inst-b", role: "INSTRUCTOR", isActive: true },
       ],
     });
   });
@@ -67,10 +65,10 @@ describeDb('auto-import Practice Exam concurrency', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('two co-instructors importing concurrently produce one anchor and ONE Practice Exam', async () => {
+  it("two co-instructors importing concurrently produce one anchor and ONE Practice Exam", async () => {
     const [resultA, resultB] = await Promise.all([
-      importTaughtCoursesFromCore('inst-a', 'INSTRUCTOR', 'session=a'),
-      importTaughtCoursesFromCore('inst-b', 'INSTRUCTOR', 'session=b'),
+      importTaughtCoursesFromCore("inst-a", "INSTRUCTOR", "session=a"),
+      importTaughtCoursesFromCore("inst-b", "INSTRUCTOR", "session=b"),
     ]);
 
     // Exactly one anchor row for the Core course (unique core_course_id; the
@@ -81,7 +79,7 @@ describeDb('auto-import Practice Exam concurrency', () => {
     // The regression: both callers saw "no Practice Exam yet" and both
     // created one. The advisory lock serializes the check-then-create.
     const exams = await prisma.assessments.findMany({
-      where: { courseId: anchors[0].id, name: 'Practice Exam' },
+      where: { courseId: anchors[0].id, name: "Practice Exam" },
     });
     expect(exams).toHaveLength(1);
 
@@ -91,15 +89,15 @@ describeDb('auto-import Practice Exam concurrency', () => {
     expect((resultA.imported ?? 0) + (resultB.imported ?? 0)).toBe(1);
   });
 
-  it('repeated sequential imports never add a second Practice Exam', async () => {
-    await importTaughtCoursesFromCore('inst-a', 'INSTRUCTOR', 'session=a');
-    await importTaughtCoursesFromCore('inst-b', 'INSTRUCTOR', 'session=b');
-    await importTaughtCoursesFromCore('inst-a', 'INSTRUCTOR', 'session=a');
+  it("repeated sequential imports never add a second Practice Exam", async () => {
+    await importTaughtCoursesFromCore("inst-a", "INSTRUCTOR", "session=a");
+    await importTaughtCoursesFromCore("inst-b", "INSTRUCTOR", "session=b");
+    await importTaughtCoursesFromCore("inst-a", "INSTRUCTOR", "session=a");
 
     const anchors = await prisma.course.findMany({ where: { coreCourseId: CORE_COURSE_ID } });
     expect(anchors).toHaveLength(1);
     const exams = await prisma.assessments.findMany({
-      where: { courseId: anchors[0].id, name: 'Practice Exam' },
+      where: { courseId: anchors[0].id, name: "Practice Exam" },
     });
     expect(exams).toHaveLength(1);
   });

@@ -1,9 +1,6 @@
 /** Env upper bound for tool-path completion tokens (1024–128_000). */
 export function toolMaxOutputTokensEnvCap(): number {
-  return Math.min(
-    128_000,
-    Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 8192),
-  );
+  return Math.min(128_000, Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 8192));
 }
 
 /**

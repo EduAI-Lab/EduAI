@@ -29,23 +29,24 @@ vi.mock("~/lib/request-context.server", () => ({
   getRequestContext: vi.fn(() => ({ routePath: "/api/routing-model-settings" })),
 }));
 
-import {
-  action,
-  loader,
-} from "~/routes/api/routing-model-settings";
+import { action, loader } from "~/routes/api/routing-model-settings";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const settings = {
   autoLlmEnabled: true,
   autoRulesEnabled: false,
 };
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
+  // A GET carries no body at all, so neither the body nor its content type is
+  // set unless the caller passed one.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/routing-model-settings", {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
+    request: new Request("http://localhost/api/routing-model-settings", init),
     params: {},
     context: {} as never,
   } as any;
@@ -93,35 +94,21 @@ describe("routing model settings API", () => {
   });
 
   it("persists a valid routing switch update and returns fresh settings", async () => {
-    const res = await action(
-      makeArgs("PATCH", { key: "autoRulesEnabled", value: true }),
-    );
+    const res = await action(makeArgs("PATCH", { key: "autoRulesEnabled", value: true }));
 
     expect(res.status).toBe(200);
-    expect(mocks.setRoutingModelSetting).toHaveBeenCalledWith(
-      "autoRulesEnabled",
-      true,
-      "admin-1",
-    );
+    expect(mocks.setRoutingModelSetting).toHaveBeenCalledWith("autoRulesEnabled", true, "admin-1");
     expect(mocks.fireAndForget).toHaveBeenCalledOnce();
     await expect(res.json()).resolves.toEqual({ settings });
   });
 
   it("rejects unsupported methods, malformed input, and unknown keys", async () => {
     expect((await action(makeArgs("POST", {}))).status).toBe(405);
+    expect((await action(makeArgs("PATCH", { key: "autoLlmEnabled", value: "yes" }))).status).toBe(
+      400,
+    );
     expect(
-      (
-        await action(
-          makeArgs("PATCH", { key: "autoLlmEnabled", value: "yes" }),
-        )
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await action(
-          makeArgs("PATCH", { key: "unknownRoutingMode", value: true }),
-        )
-      ).status,
+      (await action(makeArgs("PATCH", { key: "unknownRoutingMode", value: true }))).status,
     ).toBe(404);
     expect(mocks.setRoutingModelSetting).not.toHaveBeenCalled();
   });

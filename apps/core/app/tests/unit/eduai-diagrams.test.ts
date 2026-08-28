@@ -21,11 +21,9 @@ gradient-descent
 **Next?** More?`;
 
     const parts = splitEduaiDiagrams(input);
-    expect(
-      parts.some(
-        (p) => p.kind === "diagram" && p.payload.typeId === "gradient-descent",
-      ),
-    ).toBe(true);
+    expect(parts.some((p) => p.kind === "diagram" && p.payload.typeId === "gradient-descent")).toBe(
+      true,
+    );
     expect(parts.filter((p) => p.kind === "markdown").length).toBeGreaterThanOrEqual(2);
     const joinedMd = parts
       .filter((p): p is { kind: "markdown"; text: string } => p.kind === "markdown")

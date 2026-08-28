@@ -39,6 +39,7 @@ import { auth } from "~/lib/auth/server";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import prisma from "~/lib/prisma.server";
 import { handleAiProvidersApiRequest } from "~/lib/api/ai-providers-api.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const PROVIDER_ROW = {
   id: "provider-1",
@@ -49,7 +50,7 @@ const PROVIDER_ROW = {
   isActive: true,
 };
 
-function request(method: string, path = "/api/ai-providers", body?: unknown) {
+function request(method: string, path = "/api/ai-providers", body?: RouteRequestBody) {
   return new Request(`http://core.test${path}`, {
     method,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -79,7 +80,9 @@ describe("GET /api/ai-providers", () => {
   });
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
     const response = await handleAiProvidersApiRequest(
       request("GET", "/api/ai-providers?page=1&pageSize=25"),
@@ -113,9 +116,13 @@ describe("POST /api/ai-providers", () => {
   };
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
-    const response = await handleAiProvidersApiRequest(request("POST", "/api/ai-providers", validBody));
+    const response = await handleAiProvidersApiRequest(
+      request("POST", "/api/ai-providers", validBody),
+    );
     expect(response.status).toBe(403);
   });
 
@@ -129,7 +136,9 @@ describe("POST /api/ai-providers", () => {
   it("creates the provider, invalidates the tier cache, and returns 201", async () => {
     vi.mocked(prisma.aIProvider.create).mockResolvedValue(PROVIDER_ROW as never);
 
-    const response = await handleAiProvidersApiRequest(request("POST", "/api/ai-providers", validBody));
+    const response = await handleAiProvidersApiRequest(
+      request("POST", "/api/ai-providers", validBody),
+    );
     expect(response.status).toBe(201);
     expect(await body(response)).toEqual(PROVIDER_ROW);
     expect(invalidateTierModelCache).toHaveBeenCalled();
@@ -138,7 +147,9 @@ describe("POST /api/ai-providers", () => {
   it("409s a duplicate name (P2002)", async () => {
     vi.mocked(prisma.aIProvider.create).mockRejectedValue({ code: "P2002" });
 
-    const response = await handleAiProvidersApiRequest(request("POST", "/api/ai-providers", validBody));
+    const response = await handleAiProvidersApiRequest(
+      request("POST", "/api/ai-providers", validBody),
+    );
     expect(response.status).toBe(409);
   });
 
@@ -155,12 +166,16 @@ describe("PATCH /api/ai-providers/:id", () => {
   const patchBody = { displayName: "Renamed" };
 
   it("400s without a provider id in the path", async () => {
-    const response = await handleAiProvidersApiRequest(request("PATCH", "/api/ai-providers/", patchBody));
+    const response = await handleAiProvidersApiRequest(
+      request("PATCH", "/api/ai-providers/", patchBody),
+    );
     expect(response.status).toBe(400);
   });
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
     const response = await handleAiProvidersApiRequest(
       request("PATCH", "/api/ai-providers/provider-1", patchBody),
@@ -176,7 +191,10 @@ describe("PATCH /api/ai-providers/:id", () => {
   });
 
   it("updates the provider, invalidates the tier cache, and returns 200", async () => {
-    vi.mocked(prisma.aIProvider.update).mockResolvedValue({ ...PROVIDER_ROW, displayName: "Renamed" } as never);
+    vi.mocked(prisma.aIProvider.update).mockResolvedValue({
+      ...PROVIDER_ROW,
+      displayName: "Renamed",
+    } as never);
 
     const response = await handleAiProvidersApiRequest(
       request("PATCH", "/api/ai-providers/provider-1", patchBody),
@@ -220,16 +238,22 @@ describe("DELETE /api/ai-providers/:id", () => {
   });
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
-    const response = await handleAiProvidersApiRequest(request("DELETE", "/api/ai-providers/provider-1"));
+    const response = await handleAiProvidersApiRequest(
+      request("DELETE", "/api/ai-providers/provider-1"),
+    );
     expect(response.status).toBe(403);
   });
 
   it("deletes the provider, invalidates the tier cache, and returns 204", async () => {
     vi.mocked(prisma.aIProvider.delete).mockResolvedValue(PROVIDER_ROW as never);
 
-    const response = await handleAiProvidersApiRequest(request("DELETE", "/api/ai-providers/provider-1"));
+    const response = await handleAiProvidersApiRequest(
+      request("DELETE", "/api/ai-providers/provider-1"),
+    );
     expect(response.status).toBe(204);
     expect(invalidateTierModelCache).toHaveBeenCalled();
   });
@@ -237,14 +261,18 @@ describe("DELETE /api/ai-providers/:id", () => {
   it("404s when the provider no longer exists (P2025)", async () => {
     vi.mocked(prisma.aIProvider.delete).mockRejectedValue({ code: "P2025" });
 
-    const response = await handleAiProvidersApiRequest(request("DELETE", "/api/ai-providers/provider-1"));
+    const response = await handleAiProvidersApiRequest(
+      request("DELETE", "/api/ai-providers/provider-1"),
+    );
     expect(response.status).toBe(404);
   });
 
   it("409s deleting a provider that still has models (P2003)", async () => {
     vi.mocked(prisma.aIProvider.delete).mockRejectedValue({ code: "P2003" });
 
-    const response = await handleAiProvidersApiRequest(request("DELETE", "/api/ai-providers/provider-1"));
+    const response = await handleAiProvidersApiRequest(
+      request("DELETE", "/api/ai-providers/provider-1"),
+    );
     expect(response.status).toBe(409);
   });
 

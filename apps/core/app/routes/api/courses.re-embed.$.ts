@@ -1,11 +1,11 @@
 import type { ActionFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
-import { serializeReEmbedJob, startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { serializeReEmbedJob, startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function readIdempotencyKey(request: Request): Promise<string | undefined> {
   const headerKey = request.headers.get("Idempotency-Key")?.trim();
@@ -30,7 +30,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -50,10 +50,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return jsonResponse({ error: "Course not found or access denied" }, 404);
     }
 
-    const { job, created, keyHonored } = await startReEmbedJob(courseId, { idempotencyKey });
+    const { job, created, keyHonored } = await startOrResumeReEmbedJob(courseId, {
+      idempotencyKey,
+    });
 
-    // Only a freshly-started job is a "created" event; reusing an active /
-    // idempotent job is a no-op and must not be logged as a creation.
+    // Only a freshly-started job is a "created" event; reusing an active job is
+    // a no-op and must not be logged as a creation.
     if (created) {
       fireAndForget(
         logAuditAction({
@@ -63,7 +65,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           category: "AI_CONFIG",
           entityType: "ReEmbedJob",
           entityId: job.id,
-          details: { courseId, ...(idempotencyKey ? { idempotencyKey } : {}) },
+          details: { courseId, idempotencyKey: idempotencyKey || undefined },
         }),
       );
     }
@@ -76,8 +78,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         // False only when the caller supplied an Idempotency-Key that could
         // not be attached because the active job already belongs to a
         // different key (#1269 review) — the job above is still correct,
-        // but a later retry on the caller's own key will not find it.
-        ...(idempotencyKey ? { keyHonored } : {}),
+        // but a later retry on the caller's own key will not find it. A caller
+        // that sent no key gets no verdict, so the field is absent for them.
+        keyHonored: idempotencyKey ? keyHonored : undefined,
       },
       created ? 202 : 200,
     );

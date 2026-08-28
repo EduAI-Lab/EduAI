@@ -15,30 +15,29 @@ export const ROUTING_MODEL_SETTING_DEFINITIONS = {
   },
 } as const;
 
-export type RoutingModelSettingKey =
-  keyof typeof ROUTING_MODEL_SETTING_DEFINITIONS;
+export type RoutingModelSettingKey = keyof typeof ROUTING_MODEL_SETTING_DEFINITIONS;
 
-export type RoutingModelSettings = Record<RoutingModelSettingKey, boolean>;
+/**
+ * Every routing toggle and whether it is on. Spelled as a mapped type over the
+ * known keys rather than an open dictionary: there are exactly these settings,
+ * and a caller may read any of them without checking it exists.
+ */
+export type RoutingModelSettings = { [K in RoutingModelSettingKey]: boolean };
 
-export function isRoutingModelSettingKey(
-  value: string,
-): value is RoutingModelSettingKey {
+export function isRoutingModelSettingKey(value: string): value is RoutingModelSettingKey {
   return value in ROUTING_MODEL_SETTING_DEFINITIONS;
 }
 
 export function defaultRoutingModelSettings(): RoutingModelSettings {
   return {
     autoLlmEnabled: ROUTING_MODEL_SETTING_DEFINITIONS.autoLlmEnabled.default,
-    autoRulesEnabled:
-      ROUTING_MODEL_SETTING_DEFINITIONS.autoRulesEnabled.default,
+    autoRulesEnabled: ROUTING_MODEL_SETTING_DEFINITIONS.autoRulesEnabled.default,
   };
 }
 
 export function routingModelSettingDefinitions() {
-  return Object.entries(ROUTING_MODEL_SETTING_DEFINITIONS).map(
-    ([key, definition]) => ({
-      key: key as RoutingModelSettingKey,
-      ...definition,
-    }),
-  );
+  return Object.entries(ROUTING_MODEL_SETTING_DEFINITIONS).map(([key, definition]) => ({
+    key: key as RoutingModelSettingKey,
+    ...definition,
+  }));
 }

@@ -71,7 +71,9 @@ describe("EmptyState", () => {
   });
 
   it("applies custom className", () => {
-    const { container } = render(<EmptyState title="No materials yet" className="my-custom-class" />);
+    const { container } = render(
+      <EmptyState title="No materials yet" className="my-custom-class" />,
+    );
     expect(container.querySelector(".my-custom-class")).toBeInTheDocument();
   });
 });

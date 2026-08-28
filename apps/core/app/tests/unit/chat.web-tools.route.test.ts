@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -11,7 +12,7 @@ vi.mock("ai", async (importOriginal) => {
       toDataStreamResponse: ({ headers }: { headers: Record<string, string> }) =>
         new Response("ok", { status: 200, headers }),
     })),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -23,7 +24,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -45,7 +49,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
   },
 }));
@@ -60,11 +64,12 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -76,7 +81,7 @@ function makeArgs(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "u-1", role: "user", content: "hi" }],
     model: "vllm:test-model",
@@ -100,14 +105,20 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 } as never);
   // Default: general (non-course) chat owned by the caller.
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-    id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null,
+    id: CHAT_ID,
+    userId: "u1",
+    adhdAssist: false,
+    systemPrompt: null,
   } as never);
   // Course-context backfill (tagging an existing chat with its course) calls
   // chat.update; echo the patched row so the chat stays resolved on that path.
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) =>
-      ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...(args.data ?? {}) })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
+    id: CHAT_ID,
+    userId: "u1",
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 });
 
 afterEach(() => {
@@ -121,7 +132,9 @@ function webHeader(res: Response) {
 
 describe("chat.webToolsEnabled master switch", () => {
   it("web tools absent for an instructor when the master is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
     // #657: chat is course-scoped — give the instructor a course context.
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
@@ -134,7 +147,9 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools present for a non-student when the master is on", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "instructor", rank: 2 } as never,
@@ -146,13 +161,18 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools absent for a student when the master is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "s1", role: "STUDENT" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-      id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
+      id: CHAT_ID,
+      userId: "s1",
+      adhdAssist: false,
+      systemPrompt: null,
     } as never);
     policy({ "chat.webToolsEnabled": false });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));
@@ -161,13 +181,18 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools present for a student when the master is on (students follow the master)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "s1", role: "STUDENT" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-      id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
+      id: CHAT_ID,
+      userId: "s1",
+      adhdAssist: false,
+      systemPrompt: null,
     } as never);
     policy({ "chat.webToolsEnabled": true });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));

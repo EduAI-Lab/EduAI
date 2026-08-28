@@ -9,9 +9,7 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 describe("ChatWelcome — rendering", () => {
   it("renders the welcome heading", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
-    expect(
-      screen.getByRole("heading", { name: /course chat/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /course chat/i })).toBeInTheDocument();
   });
 
   it("shows the model name when selectedModelInfo is provided", () => {
@@ -25,12 +23,7 @@ describe("ChatWelcome — rendering", () => {
   });
 
   it("shows course context when selectedCourseCode is provided", () => {
-    render(
-      <ChatWelcome
-        selectedCourseCode="COSC 101"
-        onSelectPrompt={vi.fn()}
-      />,
-    );
+    render(<ChatWelcome selectedCourseCode="COSC 101" onSelectPrompt={vi.fn()} />);
     expect(screen.getByText(/ask about cosc 101/i)).toBeInTheDocument();
   });
 

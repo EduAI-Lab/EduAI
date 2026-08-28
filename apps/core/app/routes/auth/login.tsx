@@ -1,22 +1,101 @@
-import { Form, useActionData, useLoaderData, redirect } from "react-router"
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
+import { useActionData, useLoaderData, redirect } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { LoginForm } from "~/components/login-form"
-import { DemoLoginButtons } from "~/components/auth/demo-login-buttons"
-import { signInSchema, type SignInInput } from "~/lib/auth"
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
-import { auth } from "~/lib/auth/server"
-import { validateRedirectUrl } from "~/lib/auth/guards.server"
-import { getPolicy } from "~/lib/policy.server"
-import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
-import { getActorContext, getRequestContext } from "~/lib/request-context.server"
+import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
+import { LoginForm } from "~/components/login-form";
+import { signInSchema, type SignInInput } from "~/lib/auth";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
+import { auth, authBaseURL } from "~/lib/auth/server";
+import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
+import { validateRedirectUrl } from "~/lib/auth/guards.server";
+import { getPolicy } from "~/lib/policy.server";
+import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server";
+
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+function formBodyErrorResponse(cause: unknown): Response | null {
+  if (cause instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (cause instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: cause.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
+/** Cookie scopes used by the two deployed EduAI environments before this fix. */
+const LEGACY_SESSION_COOKIE_DOMAINS = [".eduai.ok.ubc.ca", ".ok.ubc.ca"] as const;
+
+/**
+ * Remove legacy session cookies after issuing the configured cross-subdomain
+ * cookie. Cookies with the same name but different Domain attributes coexist,
+ * and browsers can send an older, more-specific cookie first; that token can
+ * therefore mask the newly-created shared session on /dashboard.
+ *
+ * The derived cleanup covers narrower parent scopes between the current host
+ * and the configured domain. The explicit list also covers rollback from the
+ * broad production domain (`.ok.ubc.ca`) to the dev/previous production
+ * domain (`.eduai.ok.ubc.ca`), which the current-domain walk cannot see.
+ */
+function appendLegacySessionCookieDeletions(headers: Headers): void {
+  const configuredDomain = resolveAuthCookieDomain();
+  if (!configuredDomain) return;
+
+  const cookieName = authBaseURL.startsWith("https://")
+    ? "__Secure-better-auth.session_token"
+    : "better-auth.session_token";
+  const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
+  const attributes = `Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`;
+
+  // The original deployment created a host-only cookie. Expire that exact
+  // scope first.
+  headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
+
+  const hostname = new URL(authBaseURL).hostname.toLowerCase();
+  const labels = hostname.split(".");
+  const configuredHost = configuredDomain.replace(/^\./, "").toLowerCase();
+  const domains = new Set<string>();
+
+  // Expire every parent-domain scope from the exact hostname up to (but not
+  // including) the currently configured COOKIE_DOMAIN.
+  for (let i = 0; i < labels.length - 1; i += 1) {
+    const candidate = labels.slice(i).join(".");
+    if (candidate === configuredHost) break;
+    domains.add(i === 0 ? candidate : `.${candidate}`);
+  }
+
+  // Also expire known broader scopes so a COOKIE_DOMAIN rollback cannot leave
+  // an older, less-specific token competing with the freshly-issued cookie.
+  for (const legacyDomain of LEGACY_SESSION_COOKIE_DOMAINS) {
+    if (hostname.endsWith(legacyDomain)) domains.add(legacyDomain);
+  }
+
+  domains.delete(`.${configuredHost}`);
+  for (const domainAttr of domains) {
+    headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${domainAttr}`);
+  }
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = validateRedirectUrl(url.searchParams.get("redirect"));
   const forceReauth = url.searchParams.get("force") === "1";
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   // Extensions redirect here with force=1 when Core has a host-only session cookie
   // that is not sent to other *.eduai.ok.ubc.ca subdomains. Skip auto-redirect so
@@ -28,17 +107,43 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+  let demoPassword: string | null = null;
+  if (isLocalDemoEnabled()) {
+    try {
+      demoPassword = getLocalSeedPassword();
+    } catch {
+      // Fail closed when local demo mode is enabled without a configured seed
+      // password. The normal login page remains available.
+    }
+  }
 
-  return { redirectTo, allowRegistration, forceReauth };
+  return {
+    redirectTo,
+    allowRegistration,
+    forceReauth,
+    // Demo credentials are available only for an explicitly configured local
+    // deployment with a caller-supplied seed password. This is evaluated on the
+    // server so production never renders the controls or receives the password.
+    showDemoLogin: demoPassword !== null,
+    demoPassword,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
-  const formData = Object.fromEntries(await request.formData());
-  const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
+  const redirectTo = validateRedirectUrl(String(values.redirectTo || ""));
   const input = {
-    email: String(formData.email || ""),
-    password: String(formData.password || ""),
+    email: String(values.email || ""),
+    password: String(values.password || ""),
   };
 
   const result = signInSchema.safeParse(input);
@@ -55,18 +160,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     // Do not forward session cookies — stale tokens after logout break re-login.
-    const authRequest = buildAuthSubRequest(
-      "/api/auth/sign-in/email",
-      request,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: input.email,
-          password: input.password,
-        }),
-      },
-    );
+    const authRequest = buildAuthSubRequest("/api/auth/sign-in/email", request, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: input.email,
+        password: input.password,
+      }),
+    });
 
     const response = await auth.handler(authRequest);
 
@@ -95,6 +196,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
+    appendLegacySessionCookieDeletions(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
@@ -110,8 +212,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // from the freshly-issued cookies so a successful login is never logged as
     // anonymous if better-auth's response shape changes.
     if (!signedInUser) {
-      const setCookies =
-        typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+      const setCookies = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
       const cookieHeader = setCookies
         .map((cookie) => cookie.split(";")[0])
         .filter(Boolean)
@@ -161,15 +262,20 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function LoginPage() {
-  const actionData = useActionData() as {
-    fieldErrors?: Partial<Record<keyof SignInInput, string>>;
-    formError?: string;
-  } | undefined;
-  const { redirectTo, allowRegistration, forceReauth } = useLoaderData() as {
-    redirectTo: string;
-    allowRegistration: boolean;
-    forceReauth: boolean;
-  };
+  const actionData = useActionData() as
+    | {
+        fieldErrors?: Partial<Record<keyof SignInInput, string>>;
+        formError?: string;
+      }
+    | undefined;
+  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
+    useLoaderData() as {
+      redirectTo: string;
+      allowRegistration: boolean;
+      forceReauth: boolean;
+      showDemoLogin: boolean;
+      demoPassword: string | null;
+    };
 
   return (
     <div
@@ -177,7 +283,10 @@ export default function LoginPage() {
       style={{ background: "var(--muted)" }}
     >
       {/* Gold top bar */}
-      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+      <div
+        className="fixed top-0 left-0 right-0 h-[3px] z-10"
+        style={{ background: "var(--gold)" }}
+      />
 
       {/* Logo */}
       <div className="flex items-center gap-2 mb-7">
@@ -185,21 +294,41 @@ export default function LoginPage() {
           className="w-9 h-9 rounded-[9px] flex items-center justify-center"
           style={{ background: "var(--primary)" }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+          >
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
         <span className="text-xl font-bold text-primary-text">EduAI</span>
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+      <div
+        className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg"
+        style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
+      >
         {forceReauth && (
           <p className="text-sm text-muted-foreground mb-4 text-center">
             Sign in again so your session works across EduAI apps on this server.
           </p>
         )}
-        <Form method="post">
+        {/*
+         * Auth handlers return Set-Cookie headers. A full document submission
+         * ensures the browser applies those headers before following the
+         * redirect; React Router's single-fetch action transition can otherwise
+         * render dashboard loaders without the newly-created session cookie.
+         */}
+        <form method="post">
           <input type="hidden" name="redirectTo" value={redirectTo} />
           {actionData?.formError && (
             <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
@@ -209,12 +338,16 @@ export default function LoginPage() {
             isLoading={false}
             allowRegistration={allowRegistration}
           />
-        </Form>
+        </form>
 
-        <DemoLoginButtons redirectTo={redirectTo} />
+        {showDemoLogin && demoPassword && (
+          <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />
+        )}
       </div>
 
-      <p className="mt-5 text-xs text-muted-foreground">University of British Columbia · EduAI Platform</p>
+      <p className="mt-5 text-xs text-muted-foreground">
+        University of British Columbia · EduAI Platform
+      </p>
     </div>
-  )
+  );
 }

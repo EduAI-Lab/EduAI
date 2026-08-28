@@ -26,7 +26,7 @@ describe("MaterialStatusIcon", () => {
 
   it("falls back to a muted file icon for an unknown status", () => {
     const { container } = render(
-      <MaterialStatusIcon status={"SOMETHING_ELSE" as unknown as MaterialStatus} />,
+      <MaterialStatusIcon status={"SOMETHING_ELSE" as MaterialStatus} />,
     );
     const icon = container.querySelector("svg");
     expect(icon).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("MaterialStatusChip", () => {
 
   it("falls back to 'Unknown' for an unrecognized status", () => {
     const { getByText } = render(
-      <MaterialStatusChip status={"SOMETHING_ELSE" as unknown as MaterialStatus} />,
+      <MaterialStatusChip status={"SOMETHING_ELSE" as MaterialStatus} />,
     );
     expect(getByText("Unknown")).toBeInTheDocument();
   });

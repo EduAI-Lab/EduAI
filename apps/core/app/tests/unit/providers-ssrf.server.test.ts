@@ -2,17 +2,29 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+/**
+ * What the provider registry hands an SDK factory: the credentials and endpoint
+ * for one provider. Only these fields are ever asserted on.
+ */
+type ProviderFactoryOptions = { apiKey?: string; baseURL?: string };
+
+/**
+ * The registry map `createProviderRegistry` is built from: a provider id to the
+ * factory result the SDK mock above returned for it.
+ */
+type ProviderRegistryInput = Record<string, ReturnType<typeof vi.fn>>;
+
 const { createOllamaMock, createOpenAIMock } = vi.hoisted(() => ({
-  createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createOllamaMock: vi.fn((_opts: ProviderFactoryOptions) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: ProviderFactoryOptions) => vi.fn()),
 }));
 
 vi.mock("ollama-ai-provider", () => ({
-  createOllama: (opts: Record<string, unknown>) => createOllamaMock(opts),
+  createOllama: (opts: ProviderFactoryOptions) => createOllamaMock(opts),
 }));
 
 vi.mock("@ai-sdk/openai", () => ({
-  createOpenAI: (opts: Record<string, unknown>) => createOpenAIMock(opts),
+  createOpenAI: (opts: ProviderFactoryOptions) => createOpenAIMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
@@ -20,13 +32,16 @@ vi.mock("@ai-sdk/google", () => ({
 }));
 
 vi.mock("ai", () => ({
-  createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
+  createProviderRegistry: (providers: ProviderRegistryInput) => ({ __providers: providers }),
 }));
 
-import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { createAIProviderRegistry, listEnabledRegistryProviders } from "~/lib/ai/providers";
 
 const originalOllamaUrl = process.env.OLLAMA_BASE_URL;
 const originalVllmUrl = process.env.VLLM_BASE_URL;
+const originalVllmEmbeddingUrl = process.env.VLLM_EMBEDDING_BASE_URL;
+const originalVllmApiKey = process.env.VLLM_API_KEY;
+const originalNodeEnv = process.env.NODE_ENV;
 
 afterEach(() => {
   createOllamaMock.mockClear();
@@ -35,6 +50,12 @@ afterEach(() => {
   else process.env.OLLAMA_BASE_URL = originalOllamaUrl;
   if (originalVllmUrl === undefined) delete process.env.VLLM_BASE_URL;
   else process.env.VLLM_BASE_URL = originalVllmUrl;
+  if (originalVllmEmbeddingUrl === undefined) delete process.env.VLLM_EMBEDDING_BASE_URL;
+  else process.env.VLLM_EMBEDDING_BASE_URL = originalVllmEmbeddingUrl;
+  if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
+  else process.env.VLLM_API_KEY = originalVllmApiKey;
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
 });
 
 describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
@@ -64,6 +85,10 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
 
   it("ignores a malicious client-supplied vllm baseUrl and falls back to the server default", () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    // VLLM_BASE_URL being set now disables the vllm-local fallback (#1268);
+    // this test is about the SSRF baseURL guard, not key resolution, so give
+    // it a real key rather than relying on the dev default.
+    process.env.VLLM_API_KEY = "test-key";
 
     createAIProviderRegistry({
       vllm: { isEnabled: true, baseUrl: "http://169.254.169.254/latest/meta-data" },
@@ -82,5 +107,120 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
     });
 
     expect(createOllamaMock).toHaveBeenCalledWith(expect.objectContaining({ headers: {} }));
+  });
+
+  it("does not forward the deployment vLLM key to a client-supplied URL", () => {
+    process.env.VLLM_API_KEY = "deployment-vllm-secret";
+    createAIProviderRegistry({
+      vllm: { isEnabled: true, baseUrl: "http://127.0.0.1:8001" },
+    });
+
+    expect(createOpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: expect.not.stringContaining("deployment-vllm-secret") }),
+    );
+  });
+
+  it("redacts rejected provider URL userinfo, query, and fragment from logs", () => {
+    process.env.NODE_ENV = "production";
+    process.env.OLLAMA_BASE_URL = "http://ollama.internal.example.edu:11434/api";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const canary = "provider-url-secret-canary";
+
+    createAIProviderRegistry({
+      ollama: {
+        isEnabled: true,
+        baseUrl: `http://user:${canary}@127.0.0.1:9999/private?token=${canary}#${canary}`,
+      },
+    });
+
+    expect(errorSpy.mock.calls.flat().join(" ")).not.toContain(canary);
+    errorSpy.mockRestore();
+  });
+});
+
+describe("listEnabledRegistryProviders vllm key gate (#1268 review)", () => {
+  it("excludes vllm when enabled but no key is available anywhere (production)", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).not.toContain("vllm");
+  });
+
+  it("includes vllm when the user settings supply an apiKey", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({
+      vllm: { isEnabled: true, apiKey: "real-secret" },
+    });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("includes vllm when VLLM_API_KEY is set in the environment", () => {
+    process.env.VLLM_API_KEY = "real-secret";
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("falls back to the dev default key outside production, matching createAIProviderRegistry", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "development";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("excludes vllm when not enabled, regardless of key availability", () => {
+    process.env.VLLM_API_KEY = "real-secret";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: false } });
+
+    expect(ids).not.toContain("vllm");
+  });
+
+  it("keeps provider availability in lock-step with the registry across eligibility edges (#1568 review)", () => {
+    // Regression for the drift the review flagged: listEnabledRegistryProviders
+    // once reported vllm on `clientVllmUrlSupplied` alone, so the chat preflight
+    // could pass and registry.languageModel("vllm:…") then fail. Both now derive
+    // from resolveVllmRegistration, so membership and registration must never
+    // disagree — including when the SSRF guard rejects the client base URL and
+    // when no key is available.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.NODE_ENV = "production";
+    const scenarios = [
+      // key present, client URL rejected → falls back to deployment default
+      {
+        env: { VLLM_API_KEY: "k" },
+        settings: { vllm: { isEnabled: true, baseUrl: "http://169.254.169.254/meta" } },
+      },
+      // no key anywhere → ineligible
+      { env: {}, settings: { vllm: { isEnabled: true } } },
+      // user key, loopback client URL → eligible
+      {
+        env: {},
+        settings: { vllm: { isEnabled: true, apiKey: "u", baseUrl: "http://127.0.0.1:8001" } },
+      },
+    ];
+
+    for (const { env, settings } of scenarios) {
+      delete process.env.VLLM_BASE_URL;
+      delete process.env.VLLM_API_KEY;
+      Object.assign(process.env, env);
+      createOpenAIMock.mockClear();
+
+      const listed = listEnabledRegistryProviders(settings).includes("vllm");
+      createAIProviderRegistry(settings);
+      const registered = createOpenAIMock.mock.calls.length > 0;
+
+      expect(listed).toBe(registered);
+    }
+    errorSpy.mockRestore();
   });
 });

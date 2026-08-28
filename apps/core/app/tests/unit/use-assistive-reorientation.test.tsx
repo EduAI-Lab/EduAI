@@ -28,9 +28,7 @@ function Harness({
 
 describe("useAssistiveReorientation", () => {
   beforeEach(() => {
-    vi.spyOn(assistiveEventsClient, "postAssistiveClientEvent").mockImplementation(
-      () => undefined,
-    );
+    vi.spyOn(assistiveEventsClient, "postAssistiveClientEvent").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -38,9 +36,7 @@ describe("useAssistiveReorientation", () => {
   });
 
   it("records re_orientation on pointerdown", () => {
-    render(
-      <Harness enabled adhdAssist chatId="chat-1" epoch={1} />,
-    );
+    render(<Harness enabled adhdAssist chatId="chat-1" epoch={1} />);
 
     window.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 
@@ -54,9 +50,7 @@ describe("useAssistiveReorientation", () => {
   });
 
   it("ignores programmatic focusin on the chat composer", () => {
-    render(
-      <Harness enabled adhdAssist chatId="chat-1" epoch={1} />,
-    );
+    render(<Harness enabled adhdAssist chatId="chat-1" epoch={1} />);
 
     const input = document.getElementById(CHAT_MESSAGE_INPUT_ID);
     input?.focus();
@@ -66,15 +60,11 @@ describe("useAssistiveReorientation", () => {
   });
 
   it("records re_orientation on focusin to other controls", () => {
-    render(
-      <Harness enabled adhdAssist={false} chatId={null} epoch={1} />,
-    );
+    render(<Harness enabled adhdAssist={false} chatId={null} epoch={1} />);
 
     const toggle = document.querySelector("button");
     toggle?.focus();
-    toggle?.dispatchEvent(
-      new FocusEvent("focusin", { bubbles: true }),
-    );
+    toggle?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
     expect(assistiveEventsClient.postAssistiveClientEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -88,9 +78,7 @@ describe("useAssistiveReorientation", () => {
 
 describe("useAssistiveReorientation epoch gating", () => {
   beforeEach(() => {
-    vi.spyOn(assistiveEventsClient, "postAssistiveClientEvent").mockImplementation(
-      () => undefined,
-    );
+    vi.spyOn(assistiveEventsClient, "postAssistiveClientEvent").mockImplementation(() => undefined);
   });
 
   afterEach(() => {

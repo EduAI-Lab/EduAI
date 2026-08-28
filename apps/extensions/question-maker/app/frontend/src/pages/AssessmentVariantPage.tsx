@@ -6,42 +6,73 @@
  *   4. AI review  — score the variant exam's equivalence to the baseline.
  * Only the active step renders, so the flow reads top-to-bottom one decision at a time.
  */
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Spinner } from '@eduai/ui';
-import { useNavigate, useSearchParams, useParams } from 'react-router';
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Spinner } from "@eduai/ui";
+import { useNavigate, useSearchParams, useParams } from "react-router";
 import {
-  IconArrowLeft, IconArrowRight, IconBook, IconCircleCheck, IconClipboardList, IconHistory,
-  IconSparkles, IconTrash, IconUpload, IconCircleX, IconFileText, IconScale,
-} from '@tabler/icons-react';
+  IconArrowLeft,
+  IconArrowRight,
+  IconBook,
+  IconCircleCheck,
+  IconClipboardList,
+  IconHistory,
+  IconSparkles,
+  IconTrash,
+  IconUpload,
+  IconCircleX,
+  IconFileText,
+  IconScale,
+} from "@tabler/icons-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import {
-  Button, Textarea, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent,
-  DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge,
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Separator, cn,
-} from '@eduai/ui';
-import { PermissionGate } from '@eduai/ui';
-import { Tooltip } from '@/components/ui/tooltip';
-import { useCourses } from '../hooks/useCourses';
-import { courseService } from '../services/courseService';
-import assessmentService from '../services/assessmentService';
-import assessmentVariantService, { type BaselineVariantReadiness, type GenerateBankVariantsResult } from '../services/assessmentVariantService';
-import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
-import { QuestionUploadDialog } from '../components/question-bank/QuestionUploadDialog';
-import { GeneratedVariantsReviewDialog } from '../components/assessments/GeneratedVariantsReviewDialog';
-import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import type { Assessment, Course, Question } from '../types/question';
-import type { Topic } from '../types/topic';
-import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
-import { toast } from 'sonner';
+  Button,
+  Textarea,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  ScrollArea,
+  Badge,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  Separator,
+  cn,
+} from "@eduai/ui";
+import { PermissionGate } from "@eduai/ui";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useCourses } from "../hooks/useCourses";
+import { courseService } from "../services/courseService";
+import assessmentService from "../services/assessmentService";
+import assessmentVariantService, {
+  type BaselineVariantReadiness,
+  type GenerateBankVariantsResult,
+} from "../services/assessmentVariantService";
+import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
+import { QuestionUploadDialog } from "../components/question-bank/QuestionUploadDialog";
+import { GeneratedVariantsReviewDialog } from "../components/assessments/GeneratedVariantsReviewDialog";
+import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
+import type { Assessment, Course, Question } from "../types/question";
+import type { Topic } from "../types/topic";
+import { buildAiReviewDocxBlob } from "../utils/aiReviewExportDocx";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { useAiReviewHistory, type AiReviewHistoryItem } from "../hooks/use-ai-review-history";
+import { AI_REVIEW_HISTORY_MAX_ITEMS } from "../services/aiReviewHistoryStorage";
+import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
+import { toast } from "sonner";
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
-  'Number of reviewed variants for this question in the bank. Draft variants are not included.';
-const AI_REVIEW_HISTORY_KEY = 'assessmentVariant.aiReview.history.v1';
-const AI_REVIEW_HISTORY_MAX_ITEMS = 40;
+  "Number of reviewed variants for this question in the bank. Draft variants are not included.";
 
 const DEFAULT_AI_JUDGE_RUBRIC = `Conceptual equivalence (1-5)
 Score 5: The variant assesses the same concept and reasoning process as the original.
@@ -95,46 +126,13 @@ function variantStatusTooltip(minRequired: number): string {
 }
 
 function formatUsabilityLabel(value: string): string {
-  if (value === 'usable_as_is') return 'Usable as-is';
-  if (value === 'usable_with_edits') return 'Usable with edits';
-  if (value === 'unusable') return 'Unusable';
-  return value.replaceAll('_', ' ');
+  if (value === "usable_as_is") return "Usable as-is";
+  if (value === "usable_with_edits") return "Usable with edits";
+  if (value === "unusable") return "Unusable";
+  return value.replaceAll("_", " ");
 }
 
 type AiReviewResult = Awaited<ReturnType<typeof assessmentVariantService.reviewVariantWithAi>>;
-
-interface AiReviewHistoryItem {
-  id: string;
-  createdAt: string;
-  courseId: number;
-  baselineAssessmentId: number;
-  baselineName: string;
-  variantAssessmentId: number;
-  variantName: string;
-  model: string;
-  result: AiReviewResult;
-}
-
-function loadAiReviewHistoryFromStorage(): AiReviewHistoryItem[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(AI_REVIEW_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as AiReviewHistoryItem[];
-    return Array.isArray(parsed) ? parsed.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAiReviewHistoryToStorage(items: AiReviewHistoryItem[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(AI_REVIEW_HISTORY_KEY, JSON.stringify(items.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS)));
-  } catch {
-    // Ignore storage write failures and continue.
-  }
-}
 
 function isToday(date: Date): boolean {
   const now = new Date();
@@ -155,12 +153,19 @@ function isYesterday(date: Date): boolean {
   );
 }
 
-function groupAiReviewHistory(items: AiReviewHistoryItem[]): {
+/** AI review history split into the three buckets the panel renders. */
+type AiReviewHistoryGroups = {
   today: AiReviewHistoryItem[];
   yesterday: AiReviewHistoryItem[];
   earlier: AiReviewHistoryItem[];
-} {
-  const out = { today: [] as AiReviewHistoryItem[], yesterday: [] as AiReviewHistoryItem[], earlier: [] as AiReviewHistoryItem[] };
+};
+
+function groupAiReviewHistory(items: AiReviewHistoryItem[]): AiReviewHistoryGroups {
+  const out = {
+    today: [] as AiReviewHistoryItem[],
+    yesterday: [] as AiReviewHistoryItem[],
+    earlier: [] as AiReviewHistoryItem[],
+  };
   for (const item of items) {
     const d = new Date(item.createdAt);
     if (isToday(d)) out.today.push(item);
@@ -173,7 +178,7 @@ function groupAiReviewHistory(items: AiReviewHistoryItem[]): {
 function downloadTextFile(filename: string, content: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
@@ -191,7 +196,7 @@ function collectQuestionMetadataIdsFromAssessment(assessment: Assessment): numbe
     const links = [...(s.sectionVariants ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
     for (const link of links) {
       const mid = link.variant?.questionMetadataId ?? link.variant?.questionMetadata?.id;
-      if (typeof mid === 'number' && Number.isFinite(mid) && !seen.has(mid)) {
+      if (typeof mid === "number" && Number.isFinite(mid) && !seen.has(mid)) {
         seen.add(mid);
         out.push(mid);
       }
@@ -211,10 +216,14 @@ async function loadAssessmentDetail(assessmentId: number): Promise<Assessment> {
 export function AssessmentVariantPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { courseId: routeCourseIdParam, assessmentId: routeAssessmentIdParam } = useParams<{ courseId?: string; assessmentId?: string }>();
+  const { courseId: routeCourseIdParam, assessmentId: routeAssessmentIdParam } = useParams<{
+    courseId?: string;
+    assessmentId?: string;
+  }>();
   // Support both nested route params and query params for backward compatibility
-  const courseIdParam = routeCourseIdParam || searchParams.get('courseId');
-  const baselineAssessmentIdParam = routeAssessmentIdParam || searchParams.get('baselineAssessmentId');
+  const courseIdParam = routeCourseIdParam || searchParams.get("courseId");
+  const baselineAssessmentIdParam =
+    routeAssessmentIdParam || searchParams.get("baselineAssessmentId");
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -223,12 +232,14 @@ export function AssessmentVariantPage() {
   );
   const [topics, setTopics] = useState<Topic[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [baselineAssessmentId, setBaselineAssessmentId] = useState<string>('');
+  const [baselineAssessmentId, setBaselineAssessmentId] = useState<string>("");
   const [examUploadOpen, setExamUploadOpen] = useState(false);
   const [canvasImportOpen, setCanvasImportOpen] = useState(false);
   const [generatingVariants, setGeneratingVariants] = useState(false);
-  const [variantGenMode, setVariantGenMode] = useState<'all' | 'missing' | null>(null);
-  const [variantReviewResult, setVariantReviewResult] = useState<GenerateBankVariantsResult | null>(null);
+  const [variantGenMode, setVariantGenMode] = useState<"all" | "missing" | null>(null);
+  const [variantReviewResult, setVariantReviewResult] = useState<GenerateBankVariantsResult | null>(
+    null,
+  );
   const [variantReviewOpen, setVariantReviewOpen] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [lastAssembled, setLastAssembled] = useState<Array<{ id: number; name: string }>>([]);
@@ -236,17 +247,16 @@ export function AssessmentVariantPage() {
   const [variantModel, setVariantModel] = useState(FALLBACK_GENERATION_MODEL);
   const [variantReadiness, setVariantReadiness] = useState<BaselineVariantReadiness | null>(null);
   const [variantReadinessLoading, setVariantReadinessLoading] = useState(false);
-  const [variantUserPrompt, setVariantUserPrompt] = useState('');
+  const [variantUserPrompt, setVariantUserPrompt] = useState("");
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
-  const [aiReviewBaselineId, setAiReviewBaselineId] = useState<string>('');
-  const [aiReviewVariantId, setAiReviewVariantId] = useState<string>('');
+  const [aiReviewBaselineId, setAiReviewBaselineId] = useState<string>("");
+  const [aiReviewVariantId, setAiReviewVariantId] = useState<string>("");
   const [aiReviewModel, setAiReviewModel] = useState(FALLBACK_GENERATION_MODEL);
   const [aiReviewRubricOpen, setAiReviewRubricOpen] = useState(false);
   const [aiReviewRubricText, setAiReviewRubricText] = useState(DEFAULT_AI_JUDGE_RUBRIC);
   const [aiReviewResult, setAiReviewResult] = useState<AiReviewResult | null>(null);
   const [aiReviewHistoryOpen, setAiReviewHistoryOpen] = useState(false);
-  const [aiReviewHistory, setAiReviewHistory] = useState<AiReviewHistoryItem[]>([]);
-  const [aiReviewHistoryReady, setAiReviewHistoryReady] = useState(false);
+  const { items: aiReviewHistory, setItems: setAiReviewHistory } = useAiReviewHistory();
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
@@ -268,7 +278,7 @@ export function AssessmentVariantPage() {
       return;
     }
     if (courseIdParam && Number.isFinite(Number(courseIdParam)) && Number(courseIdParam) > 0) {
-      setBaselineAssessmentId('');
+      setBaselineAssessmentId("");
     }
   }, [courseIdParam, baselineAssessmentIdParam]);
 
@@ -278,7 +288,7 @@ export function AssessmentVariantPage() {
         const models = await eduaiService.listModels();
         setAvailableModels(models);
       } catch (error) {
-        console.error('Failed to load EduAI models for assessment variant workflow page', error);
+        console.error("Failed to load EduAI models for assessment variant workflow page", error);
         setAvailableModels([]);
       }
     };
@@ -294,7 +304,7 @@ export function AssessmentVariantPage() {
 
   useEffect(() => {
     if (!baselineAssessmentId) {
-      setAiReviewBaselineId('');
+      setAiReviewBaselineId("");
       return;
     }
     setAiReviewBaselineId((prev) => prev || baselineAssessmentId);
@@ -306,16 +316,6 @@ export function AssessmentVariantPage() {
     if (hasSelected) return;
     setAiReviewModel(pickPreferredGenerationModel(availableModels));
   }, [availableModels, aiReviewModel]);
-
-  useEffect(() => {
-    setAiReviewHistory(loadAiReviewHistoryFromStorage());
-    setAiReviewHistoryReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!aiReviewHistoryReady) return;
-    saveAiReviewHistoryToStorage(aiReviewHistory);
-  }, [aiReviewHistory, aiReviewHistoryReady]);
 
   const loadTopics = useCallback(async (courseId: number) => {
     const t = await courseService.getCourseTopics(courseId);
@@ -341,7 +341,7 @@ export function AssessmentVariantPage() {
       const data = await assessmentVariantService.getBaselineVariantReadiness(refId, cid);
       setVariantReadiness(data);
     } catch (e) {
-      console.warn('Variant readiness check failed', e);
+      console.warn("Variant readiness check failed", e);
       setVariantReadiness(null);
     } finally {
       setVariantReadinessLoading(false);
@@ -358,7 +358,7 @@ export function AssessmentVariantPage() {
       setAssessments([]);
       // Avoid wiping baseline from ?baselineAssessmentId=… before course list hydrates.
       if (!baselineAssessmentIdParam && !courseIdParam) {
-        setBaselineAssessmentId('');
+        setBaselineAssessmentId("");
       }
       return;
     }
@@ -368,19 +368,22 @@ export function AssessmentVariantPage() {
 
   const baselineAssessment = useMemo(
     () => assessments.find((a) => a.id.toString() === baselineAssessmentId),
-    [assessments, baselineAssessmentId]
+    [assessments, baselineAssessmentId],
   );
 
-  const handleExamQuestionsSaved = async (_questions: Question[], meta?: { assessmentId: number | null }) => {
+  const handleExamQuestionsSaved = async (
+    _questions: Question[],
+    meta?: { assessmentId: number | null },
+  ) => {
     setExamUploadOpen(false);
     if (selectedCourse?.id) await loadAssessments(selectedCourse.id);
     if (meta?.assessmentId) {
       setBaselineAssessmentId(String(meta.assessmentId));
     }
-    toast('Baseline exam saved', {
-        description: meta?.assessmentId
-        ? 'Selected as the current baseline. Mark it as reference, then generate variants.'
-        : 'Select the assessment below.',
+    toast("Baseline exam saved", {
+      description: meta?.assessmentId
+        ? "Selected as the current baseline. Mark it as reference, then generate variants."
+        : "Select the assessment below.",
     });
   };
 
@@ -388,32 +391,34 @@ export function AssessmentVariantPage() {
     setCanvasImportOpen(false);
     setBaselineAssessmentId(String(result.assessmentId));
     if (selectedCourse?.id) await loadAssessments(selectedCourse.id);
-    toast('Imported from Canvas', {
-        description: `"${result.assessmentName}" — mark as reference, then generate variants.`,
+    toast("Imported from Canvas", {
+      description: `"${result.assessmentName}" — mark as reference, then generate variants.`,
     });
   };
 
   const markBaseline = async () => {
     const id = Number(baselineAssessmentId);
     if (!id) {
-      toast.error('Select a baseline exam first');
+      toast.error("Select a baseline exam first");
       return;
     }
     try {
-      await assessmentVariantService.setStudyRole(id, 'reference_baseline');
+      await assessmentVariantService.setStudyRole(id, "reference_baseline");
       await loadAssessments(selectedCourse!.id);
-      toast('Marked as reference baseline');
+      toast("Marked as reference baseline");
     } catch (e: unknown) {
-      toast.error('Failed', {
-          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
+      toast.error("Failed", {
+        description:
+          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "Try again.",
       });
     }
   };
 
-  const generateVariantsFromBaseline = async (mode: 'all' | 'missing') => {
+  const generateVariantsFromBaseline = async (mode: "all" | "missing") => {
     const refId = Number(baselineAssessmentId);
     if (!selectedCourse?.id || !refId) {
-      toast.error('Select a course and baseline exam first');
+      toast.error("Select a course and baseline exam first");
       return;
     }
     setGeneratingVariants(true);
@@ -423,24 +428,27 @@ export function AssessmentVariantPage() {
       const detail = await loadAssessmentDetail(refId);
       const allQuestionIds = collectQuestionMetadataIdsFromAssessment(detail);
       if (allQuestionIds.length === 0) {
-        toast.error('No questions found', {
-            description: 'Add questions to the baseline exam (sections with variants), then try again.',
+        toast.error("No questions found", {
+          description:
+            "Add questions to the baseline exam (sections with variants), then try again.",
         });
         return;
       }
 
       let questionIds: number[];
-      if (mode === 'all') {
+      if (mode === "all") {
         questionIds = allQuestionIds;
       } else {
-        const needingIds = variantReadiness?.slots.filter((s) => !s.ready).map((s) => s.questionMetadataId) ?? [];
+        const needingIds =
+          variantReadiness?.slots.filter((s) => !s.ready).map((s) => s.questionMetadataId) ?? [];
         questionIds = needingIds;
       }
 
       if (questionIds.length === 0) {
-        toast('Nothing to generate', {
-            description: mode === 'missing'
-              ? 'No questions are missing variants right now.'
+        toast("Nothing to generate", {
+          description:
+            mode === "missing"
+              ? "No questions are missing variants right now."
               : `Each base question already has at least ${variantReadiness?.minRequiredNonDraft ?? 2} variants (reviewed only). Continue to assembly.`,
         });
         return;
@@ -451,7 +459,7 @@ export function AssessmentVariantPage() {
         questionIds,
         model: variantModel,
         variantsToAdd: 1,
-        variantPromptInstructions: variantUserPrompt.trim() ? variantUserPrompt.trim() : null
+        variantPromptInstructions: variantUserPrompt.trim() ? variantUserPrompt.trim() : null,
       });
       // The endpoint returns HTTP 200 even when every question fails AI generation
       // (per-question errors are collected, not thrown). Report the real created
@@ -460,15 +468,15 @@ export function AssessmentVariantPage() {
         result.results?.reduce((sum, r) => sum + (r.createdVariantIds?.length ?? 0), 0) ?? 0;
       const failed = result.errors?.length ?? 0;
       if (result.errors?.length) {
-        console.warn('Assessment variant workflow: generateBankVariants errors', result.errors);
+        console.warn("Assessment variant workflow: generateBankVariants errors", result.errors);
       }
 
       if (createdCount === 0) {
-        toast.error('No variants were generated', {
-            description: failed
+        toast.error("No variants were generated", {
+          description: failed
             ? `All ${failed} generation attempt(s) failed (details in console). Check the selected AI model / EduAI configuration and try again.`
-            : 'The AI returned no new variants. Try again or choose another model.',
-            duration: Infinity,
+            : "The AI returned no new variants. Try again or choose another model.",
+          duration: Infinity,
         });
       } else {
         // Generated variants are DRAFTS — open the review modal so the instructor can
@@ -476,13 +484,15 @@ export function AssessmentVariantPage() {
         setVariantReviewResult(result);
         setVariantReviewOpen(true);
         toast(`${createdCount} draft variant(s) generated`, {
-            description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ''}`,
+          description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ""}`,
         });
       }
     } catch (e: unknown) {
-      toast.error('Variant generation failed', {
-          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Check EduAI configuration.',
-          duration: Infinity,
+      toast.error("Variant generation failed", {
+        description:
+          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "Check EduAI configuration.",
+        duration: Infinity,
       });
     } finally {
       setGeneratingVariants(false);
@@ -506,10 +516,10 @@ export function AssessmentVariantPage() {
     variantSlotsReadyCount > 0 &&
     variantSlotsNeedingCount > 0;
 
-  const variantGenerateAllDisabled = !baselineAssessmentId || !selectedCourse?.id || generatingVariants;
+  const variantGenerateAllDisabled =
+    !baselineAssessmentId || !selectedCourse?.id || generatingVariants;
 
-  const showMissingOnlyGenerate =
-    variantHasMixedReadiness && !variantReadinessLoading;
+  const showMissingOnlyGenerate = variantHasMixedReadiness && !variantReadinessLoading;
 
   const variantGenerateMissingDisabled =
     !baselineAssessmentId ||
@@ -522,7 +532,7 @@ export function AssessmentVariantPage() {
   const assembleStructureMatchedExams = async () => {
     const refId = Number(baselineAssessmentId);
     if (!selectedCourse?.id || !refId) {
-      toast.error('Select a course and baseline exam');
+      toast.error("Select a course and baseline exam");
       return;
     }
     setAssembling(true);
@@ -530,26 +540,28 @@ export function AssessmentVariantPage() {
       const result = await assessmentVariantService.assembleEquivalentExams({
         referenceAssessmentId: refId,
         courseId: selectedCourse.id,
-        examLabels: ['Variant exam'],
-        namePrefix: baselineAssessment?.name ?? 'Variant exam',
-        includeDrafts: true
+        examLabels: ["Variant exam"],
+        namePrefix: baselineAssessment?.name ?? "Variant exam",
+        includeDrafts: true,
       });
       setLastAssembled(result.createdAssessments.map((a) => ({ id: a.id, name: a.name })));
       const firstId = result.createdAssessments[0]?.id;
       if (firstId != null) {
         setAiReviewVariantId(String(firstId));
       }
-      toast('Variant exam assembled', {
-          description: `${result.examCount} exam(s) in ${result.assemblyTimeMs} ms — same structure as baseline (different variants per slot when available).`,
+      toast("Variant exam assembled", {
+        description: `${result.examCount} exam(s) in ${result.assemblyTimeMs} ms — same structure as baseline (different variants per slot when available).`,
       });
       if (result.warnings?.length) {
-        console.warn('Assembly warnings', result.warnings);
+        console.warn("Assembly warnings", result.warnings);
       }
       await loadAssessments(selectedCourse.id);
     } catch (e: unknown) {
-      toast.error('Assembly failed', {
-          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Need enough distinct variants per baseline slot (at least one alternate per question, reviewed non-drafts unless drafts are allowed).',
-          duration: Infinity,
+      toast.error("Assembly failed", {
+        description:
+          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "Need enough distinct variants per baseline slot (at least one alternate per question, reviewed non-drafts unless drafts are allowed).",
+        duration: Infinity,
       });
     } finally {
       setAssembling(false);
@@ -561,11 +573,11 @@ export function AssessmentVariantPage() {
     const baselineId = Number(aiReviewBaselineId || baselineAssessmentId);
     const variantId = Number(aiReviewVariantId);
     if (!cid || !baselineId || !variantId) {
-      toast.error('Select baseline, variant exam, and course first');
+      toast.error("Select baseline, variant exam, and course first");
       return;
     }
     if (baselineId === variantId) {
-      toast.error('Variant exam must be different from baseline');
+      toast.error("Variant exam must be different from baseline");
       return;
     }
 
@@ -576,11 +588,13 @@ export function AssessmentVariantPage() {
         variantAssessmentId: variantId,
         courseId: cid,
         model: aiReviewModel,
-        rubricText: aiReviewRubricText.trim()
+        rubricText: aiReviewRubricText.trim(),
       });
       setAiReviewResult(result);
-      const baselineName = assessments.find((a) => a.id === baselineId)?.name ?? `Assessment #${baselineId}`;
-      const variantName = assessments.find((a) => a.id === variantId)?.name ?? `Assessment #${variantId}`;
+      const baselineName =
+        assessments.find((a) => a.id === baselineId)?.name ?? `Assessment #${baselineId}`;
+      const variantName =
+        assessments.find((a) => a.id === variantId)?.name ?? `Assessment #${variantId}`;
       const historyItem: AiReviewHistoryItem = {
         id: `ai-review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         createdAt: new Date().toISOString(),
@@ -590,15 +604,17 @@ export function AssessmentVariantPage() {
         variantAssessmentId: variantId,
         variantName,
         model: aiReviewModel,
-        result
+        result,
       };
       setAiReviewHistory((prev) => [historyItem, ...prev].slice(0, AI_REVIEW_HISTORY_MAX_ITEMS));
-      toast('AI review complete', {
-          description: `Compared ${result.comparedSlots} slot(s). See the results below.`,
+      toast("AI review complete", {
+        description: `Compared ${result.comparedSlots} slot(s). See the results below.`,
       });
     } catch (e: unknown) {
-      toast.error('AI review failed', {
-          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
+      toast.error("AI review failed", {
+        description:
+          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "Try again.",
       });
     } finally {
       setAiReviewLoading(false);
@@ -606,14 +622,19 @@ export function AssessmentVariantPage() {
   };
 
   const aiReviewBaselineEffectiveId = aiReviewBaselineId || baselineAssessmentId;
-  const aiReviewCandidates = assessments.filter((a) => a.id.toString() !== aiReviewBaselineEffectiveId);
+  const aiReviewCandidates = assessments.filter(
+    (a) => a.id.toString() !== aiReviewBaselineEffectiveId,
+  );
   const aiReviewDisabled =
     aiReviewLoading || !selectedCourse?.id || !aiReviewBaselineEffectiveId || !aiReviewVariantId;
   const aiReviewBaselineName =
-    assessments.find((a) => a.id.toString() === aiReviewBaselineEffectiveId)?.name ?? 'Baseline exam';
+    assessments.find((a) => a.id.toString() === aiReviewBaselineEffectiveId)?.name ??
+    "Baseline exam";
   const aiReviewVariantName =
-    assessments.find((a) => a.id.toString() === aiReviewVariantId)?.name ?? 'Variant exam';
-  const aiReviewHistoryForCourse = aiReviewHistory.filter((h) => !selectedCourse?.id || h.courseId === selectedCourse.id);
+    assessments.find((a) => a.id.toString() === aiReviewVariantId)?.name ?? "Variant exam";
+  const aiReviewHistoryForCourse = aiReviewHistory.filter(
+    (h) => !selectedCourse?.id || h.courseId === selectedCourse.id,
+  );
   const aiReviewHistoryGroups = groupAiReviewHistory(aiReviewHistoryForCourse);
 
   const loadAiReviewFromHistory = (item: AiReviewHistoryItem) => {
@@ -646,12 +667,15 @@ export function AssessmentVariantPage() {
               className="w-full text-left"
               onClick={() => loadAiReviewFromHistory(item)}
             >
-              <p className="font-medium text-foreground">{item.baselineName} vs {item.variantName}</p>
+              <p className="font-medium text-foreground">
+                {item.baselineName} vs {item.variantName}
+              </p>
               <p className="text-muted-foreground">
                 {new Date(item.createdAt).toLocaleString()} · {item.model}
               </p>
               <p className="text-muted-foreground">
-                Slots: {item.result.comparedSlots} · Unusable: {item.result.usabilityCounts.unusable}
+                Slots: {item.result.comparedSlots} · Unusable:{" "}
+                {item.result.usabilityCounts.unusable}
               </p>
             </button>
             <div className="mt-2 flex items-center justify-end gap-2">
@@ -672,64 +696,72 @@ export function AssessmentVariantPage() {
 
   const exportAiReviewJson = () => {
     if (!aiReviewResult) return;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadTextFile(
       `ai-review-${aiReviewResult.baselineAssessmentId}-vs-${aiReviewResult.variantAssessmentId}-${stamp}.json`,
       JSON.stringify(aiReviewResult, null, 2),
-      'application/json;charset=utf-8'
+      "application/json;charset=utf-8",
     );
   };
 
   const exportAiReviewWord = async () => {
     if (!aiReviewResult) return;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = `ai-review-${aiReviewResult.baselineAssessmentId}-vs-${aiReviewResult.variantAssessmentId}-${stamp}.docx`;
     try {
-      const blob = await buildAiReviewDocxBlob(aiReviewResult, aiReviewBaselineName, aiReviewVariantName);
+      const blob = await buildAiReviewDocxBlob(
+        aiReviewResult,
+        aiReviewBaselineName,
+        aiReviewVariantName,
+      );
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast('Export started', { description: 'AI review downloaded as a Word document (.docx).' });
+      toast("Export started", { description: "AI review downloaded as a Word document (.docx)." });
     } catch {
-      toast.error('Export failed', { description: 'Could not build the Word file. Please try again.' });
+      toast.error("Export failed", {
+        description: "Could not build the Word file. Please try again.",
+      });
     }
   };
 
-  const baselineMarked = baselineAssessment?.blueprintConfig?.studyRole === 'reference_baseline';
+  const baselineMarked = baselineAssessment?.blueprintConfig?.studyRole === "reference_baseline";
 
   const wizardSteps = [
     {
-      id: 'vstep-1',
-      label: 'Baseline',
-      caption: 'Pick the reference exam',
+      id: "vstep-1",
+      label: "Baseline",
+      caption: "Pick the reference exam",
       icon: IconClipboardList,
       done: baselineMarked,
     },
     {
-      id: 'vstep-2',
-      label: 'Generate',
-      caption: 'AI variants per question',
+      id: "vstep-2",
+      label: "Generate",
+      caption: "AI variants per question",
       icon: IconSparkles,
       done: Boolean(
-        variantReadiness && variantReadiness.slots.length > 0 && variantReadiness.slots.every((s) => s.ready),
+        variantReadiness &&
+        variantReadiness.slots.length > 0 &&
+        variantReadiness.slots.every((s) => s.ready),
       ),
     },
     {
-      id: 'vstep-3',
-      label: 'Assemble',
-      caption: 'Build a parallel exam',
+      id: "vstep-3",
+      label: "Assemble",
+      caption: "Build a parallel exam",
       icon: IconFileText,
       done: lastAssembled.length > 0,
     },
     {
-      id: 'vstep-4',
-      label: 'AI review',
-      caption: 'Score equivalence',
+      id: "vstep-4",
+      label: "AI review",
+      caption: "Score equivalence",
       icon: IconScale,
       done: aiReviewResult != null,
     },
@@ -741,7 +773,7 @@ export function AssessmentVariantPage() {
     } else if (courseIdParam) {
       navigate(`/courses/${courseIdParam}?tab=assessments`);
     } else {
-      navigate('/courses');
+      navigate("/courses");
     }
   };
 
@@ -763,13 +795,17 @@ export function AssessmentVariantPage() {
               </Button>
               <div className="flex items-center gap-2">
                 <IconSparkles className="h-6 w-6 text-primary-text" />
-                <h1 className="text-lg font-semibold tracking-tight text-foreground">Assessment variants</h1>
+                <h1 className="text-lg font-semibold tracking-tight text-foreground">
+                  Assessment variants
+                </h1>
               </div>
             </div>
             {selectedCourse && (
               <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm">
                 <IconBook className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="truncate font-medium text-foreground">{selectedCourse.code || '—'}</span>
+                <span className="truncate font-medium text-foreground">
+                  {selectedCourse.code || "—"}
+                </span>
                 <span className="truncate text-muted-foreground">{selectedCourse.name}</span>
               </div>
             )}
@@ -783,32 +819,42 @@ export function AssessmentVariantPage() {
                 <Fragment key={step.id}>
                   {i > 0 && (
                     <div className="flex flex-1 items-center" aria-hidden>
-                      <span className={cn('h-px w-full', wizardSteps[i - 1].done ? 'bg-success-500' : 'bg-border')} />
+                      <span
+                        className={cn(
+                          "h-px w-full",
+                          wizardSteps[i - 1].done ? "bg-success-500" : "bg-border",
+                        )}
+                      />
                     </div>
                   )}
                   <button
                     type="button"
                     onClick={() => setCurrentStep(i)}
-                    aria-current={active ? 'step' : undefined}
+                    aria-current={active ? "step" : undefined}
                     className={cn(
-                      'flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors',
-                      active ? 'bg-primary/10' : 'hover:bg-muted',
+                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors",
+                      active ? "bg-primary/10" : "hover:bg-muted",
                     )}
                   >
                     <span
                       className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors',
+                        "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors",
                         step.done
-                          ? 'bg-success-100 text-success-700'
+                          ? "bg-success-100 text-success-700"
                           : active
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground',
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground",
                       )}
                     >
                       {step.done ? <IconCircleCheck className="size-5" /> : i + 1}
                     </span>
                     <span className="hidden min-w-0 flex-col sm:flex">
-                      <span className={cn('truncate text-sm font-medium', active ? 'text-foreground' : 'text-muted-foreground')}>
+                      <span
+                        className={cn(
+                          "truncate text-sm font-medium",
+                          active ? "text-foreground" : "text-muted-foreground",
+                        )}
+                      >
                         {step.label}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">{step.caption}</span>
@@ -825,10 +871,12 @@ export function AssessmentVariantPage() {
             {currentStep === 0 && (
               <section className="space-y-4">
                 <div className="space-y-1">
-                  <h2 className="text-base font-semibold text-foreground">Baseline reference exam</h2>
+                  <h2 className="text-base font-semibold text-foreground">
+                    Baseline reference exam
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    Choose the exam that defines the structure and answers. Everything later mirrors this one. Don’t have
-                    it in the bank yet? Import it first.
+                    Choose the exam that defines the structure and answers. Everything later mirrors
+                    this one. Don’t have it in the bank yet? Import it first.
                   </p>
                 </div>
                 <Card>
@@ -842,7 +890,13 @@ export function AssessmentVariantPage() {
                           disabled={!selectedCourse?.id || assessments.length === 0}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder={assessments.length === 0 ? 'No assessments — import one below' : 'Select assessment'} />
+                            <SelectValue
+                              placeholder={
+                                assessments.length === 0
+                                  ? "No assessments — import one below"
+                                  : "Select assessment"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
                             {assessments.map((a) => (
@@ -860,7 +914,11 @@ export function AssessmentVariantPage() {
                             Reference set
                           </div>
                         ) : (
-                          <Button type="button" onClick={markBaseline} disabled={!baselineAssessmentId}>
+                          <Button
+                            type="button"
+                            onClick={markBaseline}
+                            disabled={!baselineAssessmentId}
+                          >
                             Mark as reference
                           </Button>
                         )}
@@ -875,20 +933,30 @@ export function AssessmentVariantPage() {
                       </span>
                       <div className="flex flex-wrap gap-3">
                         <PermissionGate allow={canManageAssessment}>
-                          <Button type="button" variant="secondary" disabled={!selectedCourse?.id} onClick={() => setExamUploadOpen(true)}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={!selectedCourse?.id}
+                            onClick={() => setExamUploadOpen(true)}
+                          >
                             <IconUpload className="mr-2 h-4 w-4" />
                             OCR upload
                           </Button>
                         </PermissionGate>
                         <PermissionGate allow={canManageCanvas}>
-                          <Button type="button" variant="outline" disabled={!selectedCourse?.id} onClick={() => setCanvasImportOpen(true)}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!selectedCourse?.id}
+                            onClick={() => setCanvasImportOpen(true)}
+                          >
                             Import from Canvas
                           </Button>
                         </PermissionGate>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        OCR creates an assessment from an uploaded paper; Canvas pulls an existing quiz. Either becomes
-                        selectable above.
+                        OCR creates an assessment from an uploaded paper; Canvas pulls an existing
+                        quiz. Either becomes selectable above.
                       </p>
                     </div>
                   </CardContent>
@@ -902,14 +970,19 @@ export function AssessmentVariantPage() {
                 <div className="space-y-1">
                   <h2 className="text-base font-semibold text-foreground">Generate variants</h2>
                   <p className="text-sm text-muted-foreground">
-                    Give every base question at least one AI variant. Run <strong className="font-medium text-foreground">all questions</strong>{' '}
-                    for a full pass, or <strong className="font-medium text-foreground">missing only</strong> to fill the gaps without touching ready slots.
+                    Give every base question at least one AI variant. Run{" "}
+                    <strong className="font-medium text-foreground">all questions</strong> for a
+                    full pass, or{" "}
+                    <strong className="font-medium text-foreground">missing only</strong> to fill
+                    the gaps without touching ready slots.
                   </p>
                 </div>
                 <Card>
                   <CardContent className="space-y-4 pt-6">
                     {!baselineAssessmentId && (
-                      <p className="text-sm text-muted-foreground">Select a baseline assessment in step 1 to check variant readiness.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Select a baseline assessment in step 1 to check variant readiness.
+                      </p>
                     )}
                     {baselineAssessmentId && selectedCourse?.id && (
                       <>
@@ -925,17 +998,21 @@ export function AssessmentVariantPage() {
                               <div className="flex items-start gap-2 rounded-md border border-success-500 bg-success-100 px-3 py-2 text-sm text-success-700">
                                 <IconCircleCheck className="mt-0.5 h-4 w-4 shrink-0" />
                                 <span>
-                                  All {variantReadiness.slots.length} base question(s) have at least{' '}
-                                  {variantReadiness.minRequiredNonDraft} variants. You can proceed to assembly.
+                                  All {variantReadiness.slots.length} base question(s) have at least{" "}
+                                  {variantReadiness.minRequiredNonDraft} variants. You can proceed
+                                  to assembly.
                                 </span>
                               </div>
                             ) : (
                               <div className="rounded-md border border-warning-500 bg-warning-100 px-3 py-2 text-sm text-warning-700">
-                                <strong className="font-medium">{variantSlotsNeedingCount}</strong> base question(s) still need an
-                                extra variant. Run generation to add one AI variant each for those slots.
+                                <strong className="font-medium">{variantSlotsNeedingCount}</strong>{" "}
+                                base question(s) still need an extra variant. Run generation to add
+                                one AI variant each for those slots.
                                 {variantHasMixedReadiness && (
                                   <span className="mt-1 block">
-                                    Some questions are already ready — use <strong className="font-medium">missing only</strong> below to skip them.
+                                    Some questions are already ready — use{" "}
+                                    <strong className="font-medium">missing only</strong> below to
+                                    skip them.
                                   </span>
                                 )}
                               </div>
@@ -948,7 +1025,11 @@ export function AssessmentVariantPage() {
                                       <th className="p-2 font-medium">#</th>
                                       <th className="p-2 font-medium">Question</th>
                                       <th className="p-2 font-medium">
-                                        <Tooltip content={REVIEWED_VARIANTS_TOOLTIP} multiline side="top">
+                                        <Tooltip
+                                          content={REVIEWED_VARIANTS_TOOLTIP}
+                                          multiline
+                                          side="top"
+                                        >
                                           <span className="cursor-help border-b border-dotted border-current">
                                             Variants
                                           </span>
@@ -956,31 +1037,48 @@ export function AssessmentVariantPage() {
                                       </th>
                                       <th className="p-2 font-medium">
                                         <Tooltip
-                                          content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
+                                          content={variantStatusTooltip(
+                                            variantReadiness.minRequiredNonDraft,
+                                          )}
                                           multiline
                                           side="top"
                                         >
-                                          <span className="cursor-help border-b border-dotted border-current">Status</span>
+                                          <span className="cursor-help border-b border-dotted border-current">
+                                            Status
+                                          </span>
                                         </Tooltip>
                                       </th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {variantReadiness.slots.map((row) => (
-                                      <tr key={row.questionMetadataId} className="border-b border-border/60">
+                                      <tr
+                                        key={row.questionMetadataId}
+                                        className="border-b border-border/60"
+                                      >
                                         <td className="p-2">{row.order}</td>
                                         <td className="p-2">
-                                          <span className="line-clamp-2" title={row.description ?? undefined}>
-                                            {row.description?.trim() || 'Untitled question'}
+                                          <span
+                                            className="line-clamp-2"
+                                            title={row.description ?? undefined}
+                                          >
+                                            {row.description?.trim() || "Untitled question"}
                                           </span>
                                           {row.questionType && (
-                                            <span className="text-xs text-muted-foreground"> · {row.questionType}</span>
+                                            <span className="text-xs text-muted-foreground">
+                                              {" "}
+                                              · {row.questionType}
+                                            </span>
                                           )}
                                         </td>
-                                        <td className="p-2 tabular-nums">{row.nonDraftVariantCount}</td>
+                                        <td className="p-2 tabular-nums">
+                                          {row.nonDraftVariantCount}
+                                        </td>
                                         <td className="p-2">
                                           <Tooltip
-                                            content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
+                                            content={variantStatusTooltip(
+                                              variantReadiness.minRequiredNonDraft,
+                                            )}
                                             multiline
                                             side="top"
                                           >
@@ -990,7 +1088,8 @@ export function AssessmentVariantPage() {
                                               </span>
                                             ) : (
                                               <span className="inline-flex cursor-help items-center gap-1 border-b border-dotted border-current text-warning-700">
-                                                <IconCircleX className="h-3.5 w-3.5" /> Needs variant
+                                                <IconCircleX className="h-3.5 w-3.5" /> Needs
+                                                variant
                                               </span>
                                             )}
                                           </Tooltip>
@@ -1008,8 +1107,14 @@ export function AssessmentVariantPage() {
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-1.5">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
-                        <Select value={variantModel} onValueChange={setVariantModel} disabled={generatingVariants}>
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          AI model
+                        </span>
+                        <Select
+                          value={variantModel}
+                          onValueChange={setVariantModel}
+                          disabled={generatingVariants}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select model" />
                           </SelectTrigger>
@@ -1032,7 +1137,10 @@ export function AssessmentVariantPage() {
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <label htmlFor="variant-ai-prompt" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <label
+                          htmlFor="variant-ai-prompt"
+                          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                        >
                           Optional instructions for the AI
                         </label>
                         <Textarea
@@ -1053,9 +1161,9 @@ export function AssessmentVariantPage() {
                           variant="default"
                           className="sm:flex-1"
                           disabled={variantGenerateAllDisabled}
-                          onClick={() => void generateVariantsFromBaseline('all')}
+                          onClick={() => void generateVariantsFromBaseline("all")}
                         >
-                          {generatingVariants && variantGenMode === 'all' ? (
+                          {generatingVariants && variantGenMode === "all" ? (
                             <>
                               <Spinner className="mr-2" />
                               Generating…
@@ -1073,9 +1181,9 @@ export function AssessmentVariantPage() {
                             variant="outline"
                             className="sm:flex-1"
                             disabled={variantGenerateMissingDisabled}
-                            onClick={() => void generateVariantsFromBaseline('missing')}
+                            onClick={() => void generateVariantsFromBaseline("missing")}
                           >
-                            {generatingVariants && variantGenMode === 'missing' ? (
+                            {generatingVariants && variantGenMode === "missing" ? (
                               <>
                                 <Spinner className="mr-2" />
                                 Generating…
@@ -1091,17 +1199,18 @@ export function AssessmentVariantPage() {
                       </div>
                     </PermissionGate>
 
-                    {variantReviewResult && variantReviewResult.results.some((r) => r.createdVariants.length > 0) && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setVariantReviewOpen(true)}
-                      >
-                        <IconSparkles className="mr-2 h-4 w-4" />
-                        Review last generated drafts
-                      </Button>
-                    )}
+                    {variantReviewResult &&
+                      variantReviewResult.results.some((r) => r.createdVariants.length > 0) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setVariantReviewOpen(true)}
+                        >
+                          <IconSparkles className="mr-2 h-4 w-4" />
+                          Review last generated drafts
+                        </Button>
+                      )}
                   </CardContent>
                 </Card>
               </section>
@@ -1113,8 +1222,9 @@ export function AssessmentVariantPage() {
                 <div className="space-y-1">
                   <h2 className="text-base font-semibold text-foreground">Assemble variant exam</h2>
                   <p className="text-sm text-muted-foreground">
-                    Builds one assessment with the same ordering and base question per slot as the baseline, picking
-                    alternate variants so wording differs from the reference when possible.
+                    Builds one assessment with the same ordering and base question per slot as the
+                    baseline, picking alternate variants so wording differs from the reference when
+                    possible.
                   </p>
                 </div>
                 <Card>
@@ -1158,7 +1268,7 @@ export function AssessmentVariantPage() {
                                   }
                                 >
                                   {a.name}
-                                </button>{' '}
+                                </button>{" "}
                                 <span className="text-muted-foreground">#{a.id}</span>
                               </li>
                             ))}
@@ -1178,15 +1288,22 @@ export function AssessmentVariantPage() {
                   <div className="space-y-1">
                     <h2 className="text-base font-semibold text-foreground">AI review</h2>
                     <p className="text-sm text-muted-foreground">
-                      Uses the selected model as a judge to score each aligned slot against your rubric for validity and
-                      credibility.
+                      Uses the selected model as a judge to score each aligned slot against your
+                      rubric for validity and credibility.
                     </p>
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setAiReviewHistoryOpen(true)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAiReviewHistoryOpen(true)}
+                  >
                     <IconHistory className="mr-1.5 h-4 w-4" />
                     History
                     {aiReviewHistoryForCourse.length > 0 && (
-                      <span className="ml-1.5 text-muted-foreground">({aiReviewHistoryForCourse.length})</span>
+                      <span className="ml-1.5 text-muted-foreground">
+                        ({aiReviewHistoryForCourse.length})
+                      </span>
                     )}
                   </Button>
                 </div>
@@ -1194,8 +1311,14 @@ export function AssessmentVariantPage() {
                   <CardContent className="space-y-4 pt-6">
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Baseline exam</span>
-                        <Select value={aiReviewBaselineEffectiveId} onValueChange={setAiReviewBaselineId} disabled={!selectedCourse?.id}>
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Baseline exam
+                        </span>
+                        <Select
+                          value={aiReviewBaselineEffectiveId}
+                          onValueChange={setAiReviewBaselineId}
+                          disabled={!selectedCourse?.id}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select baseline exam" />
                           </SelectTrigger>
@@ -1209,8 +1332,14 @@ export function AssessmentVariantPage() {
                         </Select>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Exam variant</span>
-                        <Select value={aiReviewVariantId} onValueChange={setAiReviewVariantId} disabled={!selectedCourse?.id}>
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Exam variant
+                        </span>
+                        <Select
+                          value={aiReviewVariantId}
+                          onValueChange={setAiReviewVariantId}
+                          disabled={!selectedCourse?.id}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select exam variant" />
                           </SelectTrigger>
@@ -1224,8 +1353,14 @@ export function AssessmentVariantPage() {
                         </Select>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
-                        <Select value={aiReviewModel} onValueChange={setAiReviewModel} disabled={aiReviewLoading}>
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          AI model
+                        </span>
+                        <Select
+                          value={aiReviewModel}
+                          onValueChange={setAiReviewModel}
+                          disabled={aiReviewLoading}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select model" />
                           </SelectTrigger>
@@ -1251,7 +1386,11 @@ export function AssessmentVariantPage() {
 
                     <PermissionGate allow={canRunAiReview}>
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" onClick={() => setAiReviewRubricOpen(true)}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setAiReviewRubricOpen(true)}
+                        >
                           Edit rubric
                         </Button>
                         <Button type="button" onClick={runAiReview} disabled={aiReviewDisabled}>
@@ -1273,7 +1412,11 @@ export function AssessmentVariantPage() {
                     {aiReviewResult && (
                       <div className="space-y-4 rounded-lg border bg-card p-4 text-sm">
                         <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" onClick={() => void exportAiReviewWord()}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void exportAiReviewWord()}
+                          >
                             Export Word (.docx)
                           </Button>
                           <Button type="button" variant="outline" onClick={exportAiReviewJson}>
@@ -1281,49 +1424,52 @@ export function AssessmentVariantPage() {
                           </Button>
                         </div>
                         <p className="text-muted-foreground">
-                          Compared {aiReviewResult.comparedSlots} aligned slot(s). Baseline slots: {aiReviewResult.baselineSlotCount}
-                          , variant slots: {aiReviewResult.variantSlotCount}.
+                          Compared {aiReviewResult.comparedSlots} aligned slot(s). Baseline slots:{" "}
+                          {aiReviewResult.baselineSlotCount}, variant slots:{" "}
+                          {aiReviewResult.variantSlotCount}.
                         </p>
 
                         <p className="text-xs text-muted-foreground">
-                          Review time:{' '}
-                          {typeof aiReviewResult.reviewTimeMs === 'number' ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1) : 'n/a'}s
+                          Review time:{" "}
+                          {typeof aiReviewResult.reviewTimeMs === "number"
+                            ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1)
+                            : "n/a"}
+                          s
                         </p>
 
                         <div className="rounded border bg-muted p-3">
                           <p className="text-sm font-semibold text-foreground">
-                            Overall variant score:{' '}
-                            {typeof aiReviewResult.examVariantScoreFinal0to100 === 'number'
+                            Overall variant score:{" "}
+                            {typeof aiReviewResult.examVariantScoreFinal0to100 === "number"
                               ? aiReviewResult.examVariantScoreFinal0to100.toFixed(0)
-                              : 'n/a'}{' '}
+                              : "n/a"}{" "}
                             / 100
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Base (rubric-only):{' '}
-                            {typeof aiReviewResult.examVariantScoreBase0to100 === 'number'
+                            Base (rubric-only):{" "}
+                            {typeof aiReviewResult.examVariantScoreBase0to100 === "number"
                               ? aiReviewResult.examVariantScoreBase0to100.toFixed(0)
-                              : 'n/a'}{' '}
-                            · Usable questions:{' '}
-                            {typeof aiReviewResult.usableQuestionPercentage === 'number'
+                              : "n/a"}{" "}
+                            · Usable questions:{" "}
+                            {typeof aiReviewResult.usableQuestionPercentage === "number"
                               ? aiReviewResult.usableQuestionPercentage.toFixed(0)
-                              : 'n/a'}
+                              : "n/a"}
                             %
-                            <br />
-                            · Distinctness:{' '}
-                            {typeof aiReviewResult.distinctnessAverage1to5 === 'number'
+                            <br />· Distinctness:{" "}
+                            {typeof aiReviewResult.distinctnessAverage1to5 === "number"
                               ? aiReviewResult.distinctnessAverage1to5.toFixed(2)
-                              : 'n/a'}
-                            /5 (factor{' '}
-                            {typeof aiReviewResult.distinctnessFactorAvg === 'number'
+                              : "n/a"}
+                            /5 (factor{" "}
+                            {typeof aiReviewResult.distinctnessFactorAvg === "number"
                               ? aiReviewResult.distinctnessFactorAvg.toFixed(2)
-                              : 'n/a'}
+                              : "n/a"}
                             )
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Total score calculation:{' '}
-                            {typeof aiReviewResult.totalScoreCalculationSummary === 'string'
+                            Total score calculation:{" "}
+                            {typeof aiReviewResult.totalScoreCalculationSummary === "string"
                               ? aiReviewResult.totalScoreCalculationSummary
-                              : 'n/a'}
+                              : "n/a"}
                           </p>
                         </div>
 
@@ -1331,45 +1477,45 @@ export function AssessmentVariantPage() {
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Concept</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.conceptual_equivalence === 'number'
+                              {typeof aiReviewResult.averages.conceptual_equivalence === "number"
                                 ? aiReviewResult.averages.conceptual_equivalence.toFixed(2)
-                                : 'n/a'}
+                                : "n/a"}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Difficulty</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.difficulty_similarity === 'number'
+                              {typeof aiReviewResult.averages.difficulty_similarity === "number"
                                 ? aiReviewResult.averages.difficulty_similarity.toFixed(2)
-                                : 'n/a'}
+                                : "n/a"}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Structure</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.structural_validity === 'number'
+                              {typeof aiReviewResult.averages.structural_validity === "number"
                                 ? aiReviewResult.averages.structural_validity.toFixed(2)
-                                : 'n/a'}
+                                : "n/a"}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Answer</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.answer_correctness === 'number'
+                              {typeof aiReviewResult.averages.answer_correctness === "number"
                                 ? aiReviewResult.averages.answer_correctness.toFixed(2)
-                                : 'n/a'}
+                                : "n/a"}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Topic</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.topic_alignment === 'number'
+                              {typeof aiReviewResult.averages.topic_alignment === "number"
                                 ? aiReviewResult.averages.topic_alignment.toFixed(2)
-                                : 'n/a'}
+                                : "n/a"}
                               /5
                             </div>
                           </div>
@@ -1378,26 +1524,30 @@ export function AssessmentVariantPage() {
                         <div className="rounded border bg-card p-3">
                           <p className="text-sm font-semibold">Instructor summary</p>
                           <p className="text-xs text-muted-foreground">
-                            {aiReviewResult.overallSummary?.summaryText ?? 'n/a'}
+                            {aiReviewResult.overallSummary?.summaryText ?? "n/a"}
                           </p>
                           <div className="mt-2 text-xs">
                             <p>
-                              <span className="font-medium">Strengths:</span>{' '}
-                              {aiReviewResult.overallSummary?.strengths?.join('; ') ?? 'n/a'}
+                              <span className="font-medium">Strengths:</span>{" "}
+                              {aiReviewResult.overallSummary?.strengths?.join("; ") ?? "n/a"}
                             </p>
                             <p>
-                              <span className="font-medium">Weaknesses:</span>{' '}
-                              {aiReviewResult.overallSummary?.weaknesses?.join('; ') ?? 'n/a'}
+                              <span className="font-medium">Weaknesses:</span>{" "}
+                              {aiReviewResult.overallSummary?.weaknesses?.join("; ") ?? "n/a"}
                             </p>
                           </div>
                         </div>
 
                         <div className="grid gap-2 sm:grid-cols-3">
-                          <div className="rounded border bg-muted p-2">Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}</div>
+                          <div className="rounded border bg-muted p-2">
+                            Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}
+                          </div>
                           <div className="rounded border bg-muted p-2">
                             Usable w/ edits: {aiReviewResult.usabilityCounts.usable_with_edits}
                           </div>
-                          <div className="rounded border bg-muted p-2">Unusable: {aiReviewResult.usabilityCounts.unusable}</div>
+                          <div className="rounded border bg-muted p-2">
+                            Unusable: {aiReviewResult.usabilityCounts.unusable}
+                          </div>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full min-w-[820px] border-collapse text-left text-xs">
@@ -1405,27 +1555,42 @@ export function AssessmentVariantPage() {
                               <tr className="border-b">
                                 <th className="p-2">Slot</th>
                                 <th className="p-2">
-                                  <Tooltip content="How well the variant preserves the same concept and reasoning intent as the original." side="top">
+                                  <Tooltip
+                                    content="How well the variant preserves the same concept and reasoning intent as the original."
+                                    side="top"
+                                  >
                                     <span>Concept</span>
                                   </Tooltip>
                                 </th>
                                 <th className="p-2">
-                                  <Tooltip content="How similar the variant’s difficulty level is to the original question." side="top">
+                                  <Tooltip
+                                    content="How similar the variant’s difficulty level is to the original question."
+                                    side="top"
+                                  >
                                     <span>Difficulty</span>
                                   </Tooltip>
                                 </th>
                                 <th className="p-2">
-                                  <Tooltip content="Whether the variant is internally valid and unambiguous." side="top">
+                                  <Tooltip
+                                    content="Whether the variant is internally valid and unambiguous."
+                                    side="top"
+                                  >
                                     <span>Structure</span>
                                   </Tooltip>
                                 </th>
                                 <th className="p-2">
-                                  <Tooltip content="Whether the provided answer is correct and the distractors/solution are consistent with that answer." side="top">
+                                  <Tooltip
+                                    content="Whether the provided answer is correct and the distractors/solution are consistent with that answer."
+                                    side="top"
+                                  >
                                     <span>Answer</span>
                                   </Tooltip>
                                 </th>
                                 <th className="p-2">
-                                  <Tooltip content="Whether the variant matches the same course topic." side="top">
+                                  <Tooltip
+                                    content="Whether the variant matches the same course topic."
+                                    side="top"
+                                  >
                                     <span>Topic</span>
                                   </Tooltip>
                                 </th>
@@ -1443,14 +1608,17 @@ export function AssessmentVariantPage() {
                             </thead>
                             <tbody>
                               {aiReviewResult.perQuestion.map((row) => (
-                                <tr key={`${row.slot}-${row.variantVariantId}`} className="border-b border-border">
+                                <tr
+                                  key={`${row.slot}-${row.variantVariantId}`}
+                                  className="border-b border-border"
+                                >
                                   <td className="p-2">{row.slot}</td>
-                                  <td className="p-2">{row.conceptual_equivalence ?? '-'}</td>
-                                  <td className="p-2">{row.difficulty_similarity ?? '-'}</td>
-                                  <td className="p-2">{row.structural_validity ?? '-'}</td>
-                                  <td className="p-2">{row.answer_correctness ?? '-'}</td>
-                                  <td className="p-2">{row.topic_alignment ?? '-'}</td>
-                                  <td className="p-2">{row.distinctness ?? '-'}</td>
+                                  <td className="p-2">{row.conceptual_equivalence ?? "-"}</td>
+                                  <td className="p-2">{row.difficulty_similarity ?? "-"}</td>
+                                  <td className="p-2">{row.structural_validity ?? "-"}</td>
+                                  <td className="p-2">{row.answer_correctness ?? "-"}</td>
+                                  <td className="p-2">{row.topic_alignment ?? "-"}</td>
+                                  <td className="p-2">{row.distinctness ?? "-"}</td>
                                   <td className="p-2">{formatUsabilityLabel(row.usability)}</td>
                                   <td className="p-2">{row.brief_reason}</td>
                                 </tr>
@@ -1481,7 +1649,10 @@ export function AssessmentVariantPage() {
               Step {currentStep + 1} of {wizardSteps.length} · {wizardSteps[currentStep].label}
             </span>
             {currentStep < lastStepIndex ? (
-              <Button type="button" onClick={() => setCurrentStep((s) => Math.min(lastStepIndex, s + 1))}>
+              <Button
+                type="button"
+                onClick={() => setCurrentStep((s) => Math.min(lastStepIndex, s + 1))}
+              >
                 Continue
                 <IconArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
@@ -1501,7 +1672,9 @@ export function AssessmentVariantPage() {
               <SheetTitle className="flex items-center gap-2 text-base">
                 <IconHistory className="h-4 w-4" />
                 AI review history
-                <span className="text-sm font-normal text-muted-foreground">({aiReviewHistoryForCourse.length})</span>
+                <span className="text-sm font-normal text-muted-foreground">
+                  ({aiReviewHistoryForCourse.length})
+                </span>
               </SheetTitle>
               <SheetDescription className="text-left">
                 Previous AI reviews for this course. Click one to reload its result.
@@ -1518,12 +1691,14 @@ export function AssessmentVariantPage() {
             <ScrollArea className="flex-1 px-4 py-3">
               <div className="space-y-4">
                 {aiReviewHistoryForCourse.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No previous AI reviews for this course yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No previous AI reviews for this course yet.
+                  </p>
                 ) : (
                   <>
-                    {renderAiReviewHistoryGroup('Today', aiReviewHistoryGroups.today)}
-                    {renderAiReviewHistoryGroup('Yesterday', aiReviewHistoryGroups.yesterday)}
-                    {renderAiReviewHistoryGroup('Earlier', aiReviewHistoryGroups.earlier)}
+                    {renderAiReviewHistoryGroup("Today", aiReviewHistoryGroups.today)}
+                    {renderAiReviewHistoryGroup("Yesterday", aiReviewHistoryGroups.yesterday)}
+                    {renderAiReviewHistoryGroup("Earlier", aiReviewHistoryGroups.earlier)}
                   </>
                 )}
               </div>
@@ -1567,7 +1742,8 @@ export function AssessmentVariantPage() {
                 <DialogHeader>
                   <DialogTitle>AI review rubric</DialogTitle>
                   <DialogDescription>
-                    Customize the rubric passed to AI judge. Keep dimensions + scoring language explicit for consistent JSON.
+                    Customize the rubric passed to AI judge. Keep dimensions + scoring language
+                    explicit for consistent JSON.
                   </DialogDescription>
                 </DialogHeader>
                 <Textarea
@@ -1576,7 +1752,11 @@ export function AssessmentVariantPage() {
                   className="min-h-[360px] font-mono text-xs"
                 />
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setAiReviewRubricText(DEFAULT_AI_JUDGE_RUBRIC)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAiReviewRubricText(DEFAULT_AI_JUDGE_RUBRIC)}
+                  >
                     Reset default rubric
                   </Button>
                   <Button type="button" onClick={() => setAiReviewRubricOpen(false)}>

@@ -35,11 +35,15 @@ describe("JobPayloadSchema", () => {
 
   it("rejects count outside 1..100", () => {
     expect(() => JobPayloadSchema.parse({ ...base, input: { ...base.input, count: 0 } })).toThrow();
-    expect(() => JobPayloadSchema.parse({ ...base, input: { ...base.input, count: 101 } })).toThrow();
+    expect(() =>
+      JobPayloadSchema.parse({ ...base, input: { ...base.input, count: 101 } }),
+    ).toThrow();
   });
 
   it("rejects a non-integer count", () => {
-    expect(() => JobPayloadSchema.parse({ ...base, input: { ...base.input, count: 2.5 } })).toThrow();
+    expect(() =>
+      JobPayloadSchema.parse({ ...base, input: { ...base.input, count: 2.5 } }),
+    ).toThrow();
   });
 
   it("rejects an invalid type", () => {

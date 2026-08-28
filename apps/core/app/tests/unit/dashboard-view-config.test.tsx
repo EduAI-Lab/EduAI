@@ -13,10 +13,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MemoryRouter } from "react-router";
 
-import {
-  DASHBOARD_CONFIG,
-  DashboardBody,
-} from "~/components/dashboard/dashboard-view-config";
+import { DASHBOARD_CONFIG, DashboardBody } from "~/components/dashboard/dashboard-view-config";
 import type { DashboardData } from "~/lib/dashboard/dashboard-data.server";
 
 const baseCtx = {

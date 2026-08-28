@@ -2,13 +2,8 @@
  * Prev/next bar for server-paginated QM lists (#1040 review).
  * Uses @eduai/ui Pagination primitives; hidden when the full set fits on one page.
  */
-import {
-  Button,
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-} from '@eduai/ui';
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { Button, Pagination, PaginationContent, PaginationItem } from "@eduai/ui";
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 
 export const DEFAULT_LIST_PAGE_SIZE = 50;
 
@@ -27,7 +22,7 @@ export function ListPaginationBar({
   limit,
   offset,
   onPageChange,
-  itemLabel = 'items',
+  itemLabel = "items",
   className,
 }: ListPaginationBarProps) {
   if (total <= 0 || limit <= 0 || total <= limit) return null;
@@ -39,14 +34,14 @@ export function ListPaginationBar({
 
   return (
     <div
-      className={`flex flex-wrap items-center justify-between gap-3 ${className ?? ''}`}
+      className={`flex flex-wrap items-center justify-between gap-3 ${className ?? ""}`}
       data-testid="list-pagination-bar"
     >
       <p className="text-sm text-muted-foreground">
-        Showing{' '}
+        Showing{" "}
         <span className="font-medium text-foreground">
           {from}–{to}
-        </span>{' '}
+        </span>{" "}
         of <span className="font-medium text-foreground">{total}</span> {itemLabel}
       </p>
       <Pagination className="mx-0 w-auto">

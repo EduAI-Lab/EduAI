@@ -33,9 +33,7 @@ describe("estimateTurnEnergy", () => {
   });
 
   it("prefers complete split usage over a conflicting total", () => {
-    expect(estimateTurnEnergy({ ...baseInput, totalTokens: 999 }).energyJoules).toBe(
-      15,
-    );
+    expect(estimateTurnEnergy({ ...baseInput, totalTokens: 999 }).energyJoules).toBe(15);
   });
 
   it("returns null energy and carbon when the model has no energy constant", () => {

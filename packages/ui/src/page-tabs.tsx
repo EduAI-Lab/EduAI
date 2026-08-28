@@ -1,13 +1,13 @@
-import * as React from "react"
-import * as TabsPrimitive from "@radix-ui/react-tabs"
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
 
-export type PageTabsProps = React.ComponentProps<typeof TabsPrimitive.Root>
-export type PageTabsListProps = React.ComponentProps<typeof TabsPrimitive.List>
-export type PageTabsTriggerProps = React.ComponentProps<typeof TabsPrimitive.Trigger>
-export type PageTabsContentProps = React.ComponentProps<typeof TabsPrimitive.Content>
+export type PageTabsProps = React.ComponentProps<typeof TabsPrimitive.Root>;
+export type PageTabsListProps = React.ComponentProps<typeof TabsPrimitive.List>;
+export type PageTabsTriggerProps = React.ComponentProps<typeof TabsPrimitive.Trigger>;
+export type PageTabsContentProps = React.ComponentProps<typeof TabsPrimitive.Content>;
 
 export function PageTabs({ ...props }: PageTabsProps) {
-  return <TabsPrimitive.Root {...props} />
+  return <TabsPrimitive.Root {...props} />;
 }
 
 export function PageTabsList({ className, ...props }: PageTabsListProps) {
@@ -16,7 +16,7 @@ export function PageTabsList({ className, ...props }: PageTabsListProps) {
       className={`flex gap-0.5 overflow-x-auto border-b border-border mb-5 font-sans${className ? ` ${className}` : ""}`}
       {...props}
     />
-  )
+  );
 }
 
 export function PageTabsTrigger({ className, ...props }: PageTabsTriggerProps) {
@@ -48,10 +48,12 @@ export function PageTabsTrigger({ className, ...props }: PageTabsTriggerProps) {
         // disabled
         "disabled:cursor-not-allowed disabled:opacity-50",
         className,
-      ].filter(Boolean).join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
       {...props}
     />
-  )
+  );
 }
 
 export function PageTabsContent({ className, ...props }: PageTabsContentProps) {
@@ -60,5 +62,5 @@ export function PageTabsContent({ className, ...props }: PageTabsContentProps) {
       className={`outline-none${className ? ` ${className}` : ""}`}
       {...props}
     />
-  )
+  );
 }

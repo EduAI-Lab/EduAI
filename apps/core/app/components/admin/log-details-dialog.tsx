@@ -1,20 +1,16 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@eduai/ui";
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
 
 type LogDetailsDialogProps = {
   title: string;
-  row: Record<string, unknown> | null;
+  row: JsonObject | null;
   onClose: () => void;
 };
 
 /**
  * Safely serializes structured log data so details are rendered as inert text.
  */
-function toSafeJson(value: unknown) {
+function toSafeJson(value: JsonValue | null) {
   try {
     return JSON.stringify(value, null, 2);
   } catch {

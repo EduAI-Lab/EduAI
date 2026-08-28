@@ -3,7 +3,17 @@ import { IconEdit, IconTrash, IconPlus, IconCloud, IconServer } from "@tabler/ic
 import { Button } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@eduai/ui";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 
 type AIProvider = {
@@ -39,7 +49,7 @@ type AIModel = {
   createdAt: string;
   updatedAt: string;
   providerId: string;
-  provider: Omit<AIProvider, 'models' | '_count'>;
+  provider: Omit<AIProvider, "models" | "_count">;
 };
 
 export interface AIModelsTableProps {
@@ -143,7 +153,9 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               <TableCell>
                 <div className="text-sm">
                   <div>In: {formatPrice(model.inputPricing)}</div>
-                  <div className="text-muted-foreground">Out: {formatPrice(model.outputPricing)}</div>
+                  <div className="text-muted-foreground">
+                    Out: {formatPrice(model.outputPricing)}
+                  </div>
                 </div>
               </TableCell>
               <TableCell>
@@ -167,22 +179,13 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               </TableCell>
               <TableCell>
                 <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={model.isActive}
-                    onCheckedChange={() => onToggleActive(model)}
-                  />
-                  <span className="text-sm">
-                    {model.isActive ? "Active" : "Inactive"}
-                  </span>
+                  <Switch checked={model.isActive} onCheckedChange={() => onToggleActive(model)} />
+                  <span className="text-sm">{model.isActive ? "Active" : "Inactive"}</span>
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEdit(model)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => onEdit(model)}>
                     <IconEdit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
@@ -195,7 +198,8 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete Model</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to delete "{model.name}"? This action cannot be undone.
+                          Are you sure you want to delete "{model.name}"? This action cannot be
+                          undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

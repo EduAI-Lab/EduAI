@@ -1,4 +1,4 @@
-import type { TermCode } from "../../lib/term"
+import type { TermCode } from "../../lib/term";
 
 /**
  * Shared month-boundary test vectors for UBC term derivation (#1010).
@@ -20,4 +20,4 @@ export const UBC_TERM_BOUNDARY_CASES: readonly (readonly [iso: string, expected:
   ["2026-05-15T12:00:00Z", "S1"],
   ["2026-07-15T12:00:00Z", "S2"],
   ["2026-09-15T12:00:00Z", "W1"],
-]
+];

@@ -43,10 +43,14 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
-Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+Core and its extensions use the shared EduAI graduation-cap mark for in-app branding and browser-tab favicons. The canonical SVG assets live in each app's `public/` directory so they remain available to static hosting and deployments.
+
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
 Core conversations are pinned to a single course so their history and RAG context cannot mix across courses. Selecting another course from an existing conversation starts a fresh chat with that course selected.
+
+Async AI jobs expose `GET /api/ai-jobs/:jobId` for owner-scoped status polling. The response includes a live `queuePosition` and an advisory time-to-completion `etaSeconds` derived from worker-sized waves and recent completions in the job's persisted pool; the estimate is null until that pool has usable timing history.
 
 Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
 
@@ -86,6 +90,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
+| [`end-to-end-user-workflows/README.md`](docs/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
 
 ## Changelog
 
@@ -117,6 +122,8 @@ CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
+**Long-output response caps** (`#152`): detected long-output requests default to `1200` output tokens, or `600` when ADHD Assist is enabled. Override these positive-integer limits with `CHAT_LONG_OUTPUT_MAX_TOKENS` and `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` in `apps/core/.env`. The cap never increases the model/provider's existing output limit. If a response reaches this cap, chat shows a durable **Continue** action.
+
 ## Mobile responsiveness audit (`#805`)
 
 Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and sidebar `aria-expanded`/`aria-controls` wiring:
@@ -131,7 +138,7 @@ Requires Core, AI Tutor, and Question Maker dev servers already running locally 
 
 The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
 
-Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
+Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `EDUAI_LOCAL_SEED_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
 
 ## Route-scoped chat stylesheet (EduAI Core, `#1222`)
 
@@ -158,7 +165,16 @@ npm run dev
 
 On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
 
-**Seeded dev accounts** — all share password `EduAI2026!`
+**Local fixture password** — before starting Core or running a seed, generate a unique password for this disposable local database and export it as `EDUAI_LOCAL_SEED_PASSWORD`:
+
+```bash
+export EDUAI_LOCAL_SEED_PASSWORD="$(openssl rand -base64 24)"
+npm run dev
+```
+
+Keep this value local and use the same shell/environment for local tools that sign in as a seeded account. The seed refuses to run without this explicit local-only secret and the required loopback/development settings; never copy it to a shared or production system.
+
+**Seeded dev accounts** — all use the local-only value in `EDUAI_LOCAL_SEED_PASSWORD`
 
 | Role | Email | Name |
 | --- | --- | --- |
@@ -184,6 +200,8 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 **Service API key (`EDUAI_API_KEY`)**
 
 AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+
+Core applies the same Redis-backed sliding-window limit to `/api/chat` and `/api/completion`; see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for configuration, identity, response, and Redis-fallback semantics.
 
 You must set the **same value** in all three services:
 
@@ -226,12 +244,102 @@ Leave either unset in an environment where that extension isn't running — the 
 
 ```bash
 npm run build        # Build all apps (Turborepo caches outputs)
-npm run lint         # Lint all apps
-npm run test         # All tests across all apps (unit + integration)
-npm run test:all     # Unit + integration tests
+npm run lint         # Lint every workspace, then the non-workspace directories
+npm run test         # All tests across all apps (unit + integration), via Turborepo
+npm run test:unit    # Unit suites only, via Turborepo
+npm run test:integration # Integration suites only, via Turborepo
+npm run test:docker  # The same suites inside Docker (see "Running Tests")
 npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
+
+## Lint, format and typecheck (`#1275`, `#1276`)
+
+The same six commands work at the repo root and inside any workspace. At the
+root they fan out through Turborepo; inside a workspace they act on that
+workspace alone.
+
+```bash
+npm run lint          # oxlint — fails on errors, reports warnings
+npm run lint:fix      # oxlint --fix (auto-fixable rules only)
+npm run format        # oxfmt — rewrites files
+npm run format:check  # oxfmt --check — reports without writing
+npm run typecheck     # tsc — every workspace carries a tsconfig
+npm run test          # vitest
+```
+
+Configuration lives in exactly two files, both at the repo root:
+[`.oxlintrc.json`](.oxlintrc.json) and [`.oxfmtrc.json`](.oxfmtrc.json). oxlint
+and oxfmt resolve their config by walking up from the working directory, so
+workspaces do not carry their own copies and there is nothing to keep in sync.
+Change a rule in one place and every app follows.
+
+A few things worth knowing before you touch the setup:
+
+- **Errors gate, warnings do not.** oxlint exits non-zero only on errors, and
+  the `Lint & Typecheck` CI job inherits that. The repo still carries roughly
+  900 warnings; burning them down belongs to `#1277`, `#1278` and `#1279`.
+- **JavaScript-only workspaces typecheck with `checkJs` off.** The Question
+  Maker backend, the question-maker extension root and the example extension
+  contain no TypeScript at all, so their `tsconfig.json` runs `tsc` over the
+  `.js` sources with `allowJs` on and `checkJs` off: imports and syntax are
+  checked, JS types are not. Turning `checkJs` on reports 72 errors in the QM
+  backend alone (1103 with `strict`) — a code change, not a toolchain one, and
+  `#1278`'s to make. What matters here is that `turbo run typecheck` no longer
+  silently skips those three workspaces.
+- **`no-console` is off on purpose.** The server-path policy is `#1277`'s to
+  set, via `overrides` in the shared config.
+- **Formatting is enforced.** The repo was swept with `oxfmt --write` in one
+  isolated commit (1482 files), and `format:check` runs in the
+  `Lint & Typecheck` CI job. The sweep commit is listed in
+  [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it;
+  run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the
+  same behaviour locally. GitHub applies the file automatically. Every SHA in
+  that file is checked for resolvability by the `Validate blame-ignore revs` CI
+  step, so a rebase that mints a new SHA fails loudly instead of quietly leaving
+  `git blame` pointed at the sweep forever.
+- **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump
+  can change its output, and a floating range would let a fresh install reformat
+  files the swept tree considers clean — putting CI at odds with what you get
+  locally. Bumping it is a deliberate commit that re-runs the sweep.
+- **oxfmt is not idempotent in a single pass.** During the sweep, some files
+  under `question-maker-backend` still failed `--check` after the first
+  `--write`. If you re-run it wholesale, loop until `--check` is clean rather
+  than trusting one pass.
+- **Do not assert on source formatting in source-text tests.** A few tests read a
+  source file and assert on its literal text; three in
+  `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes
+  around import specifiers and went red in the sweep. Quotes are only the case
+  that bit us — spacing, line breaks and trailing commas are all the formatter's
+  to decide, and `printWidth` can move any of them. Assert on the thing you mean
+  (that the import exists) with a regex loose enough that reformatting the line
+  cannot change the answer.
+- **A pre-commit hook runs oxfmt and oxlint on staged files**, installed by
+  lefthook via the root `prepare` script. Use `git commit --no-verify` to bypass
+  it, or `npx lefthook run pre-commit` to run it by hand.
+- **The format scripts pass `.`, not a list of directories.** `ignorePatterns`
+  in `.oxfmtrc.json` already scopes oxfmt to JavaScript and TypeScript, so
+  checking the whole repo takes well under a second and cannot miss a new
+  top-level directory. A hand-maintained directory list would go stale the first
+  time someone adds one.
+- **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats
+  Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to
+  own. Without those entries in `ignorePatterns`, `oxfmt .` reflows all 151
+  tracked Markdown files (including
+  `CHANGELOG.md`, which merges under a union driver — reflowing it would break
+  that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such
+  as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a
+  `--font-sans` declaration in `packages/ui/src/styles/base.css` across lines,
+  which is valid CSS but fails `self-hosted-font.test.ts`. Those extensions are
+  therefore in `ignorePatterns`. Removing them from that list is a decision, not
+  a cleanup.
+- **The two tools exclude paths differently, and the mismatch is deliberate.**
+  Where a workspace contains a nested workspace — ai-tutor over `server/`,
+  question-maker over `app/` — the lint scripts use `oxlint . --ignore-pattern
+  server` while the format scripts use `oxfmt . '!server'`. oxfmt rejects
+  `--ignore-pattern` outright ("not expected in this context"), and oxlint
+  ignores a bare `'!server'` positional and walks the directory anyway. Keep
+  each tool on its own form; making them match breaks one of them.
 
 **Fleet routing smoke tests (Core)**
 
@@ -342,11 +450,39 @@ From the monorepo root:
 
 #### Run everything
 ```bash
-npm run test:all           # all unit + integration suites
-npm run test:unit          # all unit suites only
-npm run test:integration   # all integration suites only
-npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
+npm run test:docker              # all unit + integration suites, in Docker
+npm run test:docker:unit         # all unit suites only, in Docker
+npm run test:docker:integration  # all integration suites only, in Docker
+npm run test:e2e                 # all e2e suites (Playwright, full stack in Docker)
 ```
+
+`test:e2e` boots the whole stack, which is slow when you only care about one
+app. `E2E_SUITES` narrows both the containers it starts and the specs it runs —
+`all` (default), `core`, `ai-tutor`, `question-maker`, `cross-service`, or a
+comma-separated list:
+
+```bash
+E2E_SUITES=ai-tutor npm run test:e2e
+```
+
+The e2e stack publishes ports 3000/3001/4000 (and 5173/8000 for Question
+Maker), so stop any local `npm run dev` servers first — Docker will otherwise
+start the containers with those ports unpublished and the run will silently hit
+your dev servers instead.
+
+#### Two runners, one naming scheme
+
+`test`, `test:unit` and `test:integration` are the same three commands
+everywhere: at the root they fan out through Turborepo, inside a workspace they
+run that workspace's vitest directly, and CI
+(`.github/workflows/pr-tests.yml`) invokes the same Turborepo tasks. The
+Docker path keeps the identical suite split under a `test:docker*` prefix, so
+picking a runner is a prefix choice rather than a difference in what the bare
+names mean.
+
+Before `#1276` the root `test:unit` / `test:integration` scripts ran the Docker
+path while root `test` ran Turborepo, so the same name meant a different runner
+depending on which of the three you typed.
 
 ### Coverage
 

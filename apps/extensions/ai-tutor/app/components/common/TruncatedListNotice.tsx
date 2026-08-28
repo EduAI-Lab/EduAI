@@ -7,34 +7,40 @@
  * anything was missing. Renders nothing when the list is complete, so it costs
  * nothing on the common path.
  */
-import { IconInfoCircle } from '@tabler/icons-react';
+import { IconInfoCircle } from "@tabler/icons-react";
 
 export function TruncatedListNotice({
   shown,
   total,
   /** Plural noun for the items, e.g. "courses". */
-  noun = 'courses',
+  noun = "courses",
   /** Where the full, searchable list lives. */
   action,
   className,
 }: {
-  shown: number;
-  total: number;
+  /**
+   * Both are optional because the guard below deliberately handles a loader
+   * that has not resolved a count yet — typing them as required `number` made
+   * that branch unreachable on paper while it still ran in practice.
+   */
+  shown: number | undefined;
+  total: number | undefined;
   noun?: string;
   action?: string;
   className?: string;
 }) {
+  if (total === undefined || shown === undefined) return null;
   if (!Number.isFinite(total) || !Number.isFinite(shown) || total <= shown) return null;
 
   return (
     <p
-      className={`flex items-center gap-1.5 text-xs text-muted-foreground ${className ?? ''}`}
+      className={`flex items-center gap-1.5 text-xs text-muted-foreground ${className ?? ""}`}
       data-testid="truncated-list-notice"
     >
       <IconInfoCircle className="size-3.5 shrink-0" aria-hidden="true" />
       <span>
         Showing {shown.toLocaleString()} of {total.toLocaleString()} {noun}
-        {action ? ` — ${action}` : ''}
+        {action ? ` — ${action}` : ""}
       </span>
     </p>
   );

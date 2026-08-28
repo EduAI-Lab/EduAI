@@ -13,7 +13,7 @@
 | Check | Notes |
 |-------|--------|
 | Build / branch | Record git SHA or PR (#751 chat UX, #752 courses UX) |
-| Login | `student1@eduai.local` / `EduAI2026!` (or participant account) |
+| Login | `student1@eduai.local` / the local-only value of `EDUAI_LOCAL_SEED_PASSWORD` (or participant account) |
 | Model | Same model for entire session (e.g. Gemini 2.5 Flash) |
 | Assist counterbalance | Half **OFF→ON**, half **ON→OFF** |
 | Qualtrics | Pre-link + post-link ready; participant ID matches spreadsheet |

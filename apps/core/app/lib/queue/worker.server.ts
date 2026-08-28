@@ -1,22 +1,19 @@
+import type { SupportedProvider } from "~/lib/ai/provider-types";
 import { Prisma } from "@prisma/client";
-import {
-  Worker,
-  type ConnectionOptions,
-  type Job,
-  type WorkerOptions,
-} from "bullmq";
+import { Worker, type ConnectionOptions, type Job, type WorkerOptions } from "bullmq";
 import { runCompletion } from "~/lib/ai/completion.server";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
-import {
-  JobPayloadSchema,
-  type JobPayload,
-  type QueuedJobPayload,
-} from "./job-schema";
+import { assertAiJobQueueEnabled } from "./availability.server";
+import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
-import { QUEUE_CHAT, type QueueName } from "./resolve-pool.server";
+import { type QueueName } from "./resolve-pool.server";
+import { workerConcurrency } from "./concurrency.server";
+
+export { workerConcurrency } from "./concurrency.server";
 
 const DEFAULT_WORKER_MODEL = "vllm:qwen2.5-32b-instruct";
 const DEFAULT_AI_JOB_TIMEOUT_MS = 120_000;
@@ -45,30 +42,33 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 export function aiJobTimeoutMs(): number {
-  return positiveInt(
-    process.env.AI_JOB_EXECUTION_TIMEOUT_MS,
-    DEFAULT_AI_JOB_TIMEOUT_MS,
-  );
+  return positiveInt(process.env.AI_JOB_EXECUTION_TIMEOUT_MS, DEFAULT_AI_JOB_TIMEOUT_MS);
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message || error.name;
+function formatError(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message || cause.name;
   }
-  if (typeof error === "string") {
-    return error;
+  if (typeof cause === "string") {
+    return cause;
   }
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(cause);
   } catch {
     return "Unknown AI job failure";
   }
 }
 
-function serverApiKeys(model: string): Record<string, {
-  isEnabled: boolean;
-  apiKey?: string;
-}> {
+/**
+ * Server-held provider credentials for a queued job. Keyed by provider id
+ * because the job names its model as `provider:model`, and only that provider's
+ * entry is ever filled in.
+ */
+type ServerProviderKeys = {
+  [K in SupportedProvider]?: { isEnabled: boolean; apiKey?: string };
+};
+
+function serverApiKeys(model: string): ServerProviderKeys {
   if (model.startsWith("openai:") && process.env.OPENAI_API_KEY) {
     return {
       openai: {
@@ -112,10 +112,7 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
     );
     return decision.modelId;
   } catch (error) {
-    console.error(
-      "[ai-job-worker] Auto model routing failed; using worker fallback",
-      error,
-    );
+    console.error("[ai-job-worker] Auto model routing failed; using worker fallback", error);
     return DEFAULT_WORKER_MODEL;
   }
 }
@@ -128,7 +125,9 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
 export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobResult> {
   switch (payload.kind) {
     case "question-generation": {
+      const requestStartMs = Date.now();
       const model = await resolveWorkerModel(payload);
+      const prompt = payload.input.prompt;
       const completion = await runCompletion({
         model,
         apiKeys: serverApiKeys(model),
@@ -138,7 +137,7 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
         messages: [
           {
             role: "user",
-            content: payload.input.prompt,
+            content: prompt,
           },
         ],
         streaming: false,
@@ -151,6 +150,35 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
       }
       if (completion.streaming) {
         throw new Error("AI job completion unexpectedly returned a stream");
+      }
+
+      // Mirrors chat.ts's persistTurnTelemetry: background AiJob completions
+      // (question-generation via runCompletion) previously never wrote an
+      // AIInteraction row, so the admin Servers tab's per-server/per-model
+      // stats (which only ever queried AIInteraction) silently excluded all
+      // async Question Maker traffic — a completed CMPS03 job, for example,
+      // wouldn't move CMPS03's totals at all. Wrapped in its own try/catch
+      // (on top of persistAiInteractionTelemetry's own internal one) so a
+      // telemetry failure can never fail the job or its result — the job's
+      // primary output already succeeded by this point.
+      try {
+        await persistAiInteractionTelemetry({
+          userId: payload.userId,
+          courseId: payload.courseId ?? null,
+          resolvedModelId: completion.body.model,
+          query: prompt,
+          responseText: completion.body.content,
+          usage: completion.body.usage,
+          finishReason: completion.body.finishReason,
+          durationMs: Date.now() - requestStartMs,
+          wasAuto: isAutoRoutingModelId(payload.requestedModel ?? ""),
+          routingTier: null,
+          routerVersion: null,
+          routerFeatures: null,
+          serverId: completion.internal.fleetServerId,
+        });
+      } catch (err) {
+        console.error("[ai-job-worker] telemetry write failed", err);
       }
 
       return {
@@ -191,9 +219,7 @@ export async function processAiJob(
   const bullJobId = String(job.id);
 
   const aiJobId =
-    "aiJobId" in job.data && typeof job.data.aiJobId === "string"
-      ? job.data.aiJobId
-      : null;
+    "aiJobId" in job.data && typeof job.data.aiJobId === "string" ? job.data.aiJobId : null;
   const select = {
     id: true,
     status: true,
@@ -226,13 +252,8 @@ export async function processAiJob(
         : `No AiJob row for ${queueName}/${bullJobId}`,
     );
   }
-  if (
-    row.queueName !== queueName ||
-    (row.bullJobId !== null && row.bullJobId !== bullJobId)
-  ) {
-    throw new Error(
-      `AiJob ${row.id} does not belong to ${queueName}/${bullJobId}`,
-    );
+  if (row.queueName !== queueName || (row.bullJobId !== null && row.bullJobId !== bullJobId)) {
+    throw new Error(`AiJob ${row.id} does not belong to ${queueName}/${bullJobId}`);
   }
   if (row.status === "CANCELLED") {
     return { skipped: true, reason: "cancelled" };
@@ -279,7 +300,7 @@ export async function processAiJob(
       where: { id: row.id, status: "RUNNING" },
       data: {
         status: "COMPLETED",
-        result: result as unknown as Prisma.InputJsonValue,
+        result: result as Prisma.InputJsonValue,
         errorMessage: null,
         completedAt: new Date(),
       },
@@ -324,27 +345,18 @@ export async function processAiJob(
   }
 }
 
-function parseConcurrency(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-export function workerConcurrency(queueName: QueueName): number {
-  return queueName === QUEUE_CHAT
-    ? parseConcurrency(process.env.AI_JOB_CHAT_CONCURRENCY, 8)
-    : parseConcurrency(process.env.AI_JOB_HEAVY_CONCURRENCY, 1);
-}
-
 export function createAiJobWorker(
   queueName: QueueName,
   options: Partial<WorkerOptions> = {},
   execute: ExecuteAiJob = executeAiJobPayload,
 ): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
+  assertAiJobQueueEnabled();
+
   const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
     (job) => processAiJob(job, queueName, execute),
     {
-      connection: redis as unknown as ConnectionOptions,
+      connection: redis as ConnectionOptions,
       concurrency: workerConcurrency(queueName),
       ...options,
     },
@@ -354,18 +366,13 @@ export function createAiJobWorker(
     console.error(`[ai-job-worker:${queueName}] worker error`, error);
   });
   worker.on("failed", (job, error) => {
-    console.error(
-      `[ai-job-worker:${queueName}] job ${job?.id ?? "unknown"} failed`,
-      error,
-    );
+    console.error(`[ai-job-worker:${queueName}] job ${job?.id ?? "unknown"} failed`, error);
   });
   return worker;
 }
 
-export function startAiJobWorkers(): Worker<
-  JobPayload | QueuedJobPayload,
-  AiJobWorkerOutcome
->[] {
+export function startAiJobWorkers(): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[] {
+  assertAiJobQueueEnabled();
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }
 

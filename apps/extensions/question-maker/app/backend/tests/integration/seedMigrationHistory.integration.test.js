@@ -15,23 +15,23 @@
  *
  * Requires TEST_DATABASE_URL (skips otherwise, same as the other DB suites).
  */
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { runPrismaMigrateDeploy } from '../helpers/prismaCli.js';
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { runPrismaMigrateDeploy } from "../helpers/prismaCli.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const backendRoot = resolve(__dirname, '../..');
+const backendRoot = resolve(__dirname, "../..");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-describeDb('seed truncation preserves Prisma migration history', () => {
+describeDb("seed truncation preserves Prisma migration history", () => {
   let connectTestDatabase, truncateTestDatabase, prisma, truncateAllTables;
 
   beforeAll(async () => {
-    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import('../helpers/testDb.js'));
-    ({ truncateAllTables } = await import('../../src/utils/truncateAllTables.js'));
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import("../helpers/testDb.js"));
+    ({ truncateAllTables } = await import("../../src/utils/truncateAllTables.js"));
     await connectTestDatabase();
     await truncateTestDatabase();
   });
@@ -40,9 +40,13 @@ describeDb('seed truncation preserves Prisma migration history', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('leaves _prisma_migrations intact while clearing application tables', async () => {
+  it("leaves _prisma_migrations intact while clearing application tables", async () => {
     await prisma.user.create({
-      data: { id: 'seed-history-user', email: 'seed-history@test.com', name: 'Seed History Tester' },
+      data: {
+        id: "seed-history-user",
+        email: "seed-history@test.com",
+        name: "Seed History Tester",
+      },
     });
 
     const before = await prisma.$queryRaw`SELECT count(*)::int AS count FROM "_prisma_migrations"`;
@@ -57,7 +61,7 @@ describeDb('seed truncation preserves Prisma migration history', () => {
     expect(userCount).toBe(0);
   });
 
-  it('survives a simulated restart (prisma migrate deploy re-run) after seeding', async () => {
+  it("survives a simulated restart (prisma migrate deploy re-run) after seeding", async () => {
     await truncateAllTables(prisma);
 
     expect(() =>

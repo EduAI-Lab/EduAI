@@ -3,9 +3,7 @@ import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from "~/lib/auth/password-policy";
 
 /** A password field that must satisfy the UBC strength policy (#339). */
-const strongPassword = z
-  .string()
-  .refine(isStrongPassword, { message: PASSWORD_POLICY_MESSAGE });
+const strongPassword = z.string().refine(isStrongPassword, { message: PASSWORD_POLICY_MESSAGE });
 
 export const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -13,40 +11,47 @@ export const signInSchema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
-export const signUpSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Please enter a valid email address"),
-  password: strongPassword,
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-}).refine((data) => isUbcEmail(data.email), {
-  message: UBC_EMAIL_MESSAGE,
-  path: ["email"],
-});
+export const signUpSchema = z
+  .object({
+    name: z.string().min(2, "Name must be at least 2 characters"),
+    email: z.string().email("Please enter a valid email address"),
+    password: strongPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  })
+  .refine((data) => isUbcEmail(data.email), {
+    message: UBC_EMAIL_MESSAGE,
+    path: ["email"],
+  });
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 });
 
-export const resetPasswordSchema = z.object({
-  password: strongPassword,
-  confirmPassword: z.string(),
-  token: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+export const resetPasswordSchema = z
+  .object({
+    password: strongPassword,
+    confirmPassword: z.string(),
+    token: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: strongPassword,
-  confirmPassword: z.string(),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: strongPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
 
 export const updateProfileSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),

@@ -32,29 +32,20 @@ describe("StatCard", () => {
 
   it("renders trend label when provided", () => {
     render(
-      <StatCard
-        label="Monthly Active Users"
-        value="5,200"
-        trend={12}
-        trendLabel="vs last month"
-      />
+      <StatCard label="Monthly Active Users" value="5,200" trend={12} trendLabel="vs last month" />,
     );
     expect(screen.getByText("vs last month")).toBeInTheDocument();
   });
 
   it("does not render trend badge when trend is undefined", () => {
-    const { container } = render(
-      <StatCard label="Total Users" value="10,000" />
-    );
+    const { container } = render(<StatCard label="Total Users" value="10,000" />);
     const trendBadge = container.querySelector("span");
     // The component should not have a trend badge span when trend is undefined
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 
   it("applies custom style to the card", () => {
-    const { container } = render(
-      <StatCard label="Test" value="100" style={{ padding: "20px" }} />
-    );
+    const { container } = render(<StatCard label="Test" value="100" style={{ padding: "20px" }} />);
     const card = container.querySelector("div");
     expect(card).toHaveStyle({ padding: "20px" });
   });

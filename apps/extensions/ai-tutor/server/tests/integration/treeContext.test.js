@@ -8,25 +8,24 @@
  * the prev/next links, and the rule that a student's ordinals count only the
  * siblings they can actually see.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import {
-  makeProfessor,
-  makeStudent,
-  truncateAll,
-  seedMinimalCourse,
-  prisma,
-} from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
-describe('Tree context endpoints (#1207)', () => {
+describe("Tree context endpoints (#1207)", () => {
   let prof;
   let seed;
   let profApp;
@@ -40,6 +39,14 @@ describe('Tree context endpoints (#1207)', () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
+        const effectiveRole = allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
+        const allowed = allowedRoles.includes(effectiveRole);
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
+      },
+    );
   });
 
   async function addModule(position, { isPublished = true, title = `M${position}` } = {}) {
@@ -50,20 +57,20 @@ describe('Tree context endpoints (#1207)', () => {
 
   async function addLesson(moduleId, position, { isPublished = true } = {}) {
     return prisma.lesson.create({
-      data: { title: `L${position}`, contentMd: '', position, isPublished, moduleId },
+      data: { title: `L${position}`, contentMd: "", position, isPublished, moduleId },
     });
   }
 
   async function enrollStudent() {
     const student = makeStudent();
     await prisma.courseEnrollment.create({
-      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
     });
     return student;
   }
 
-  describe('GET /lessons/:lessonId/context', () => {
-    it('returns 1-based ordinals for a middle lesson in a middle module', async () => {
+  describe("GET /lessons/:lessonId/context", () => {
+    it("returns 1-based ordinals for a middle lesson in a middle module", async () => {
       const module2 = await addModule(1);
       await addModule(2);
       const l0 = await addLesson(module2.id, 0);
@@ -83,7 +90,7 @@ describe('Tree context endpoints (#1207)', () => {
       });
     });
 
-    it('reports no prev for the first lesson and no next for the last', async () => {
+    it("reports no prev for the first lesson and no next for the last", async () => {
       const l1 = await addLesson(seed.module.id, 1);
 
       const first = await request(profApp).get(`/api/lessons/${seed.lesson.id}/context`);
@@ -97,7 +104,7 @@ describe('Tree context endpoints (#1207)', () => {
       expect(last.body.nextLessonId).toBeNull();
     });
 
-    it('is correct past the tree page size, which is what #1207 fixes', async () => {
+    it("is correct past the tree page size, which is what #1207 fixes", async () => {
       // The client page size is 25; a findIndex over one page scored -1 here.
       for (let i = 1; i <= 30; i += 1) {
         // eslint-disable-next-line no-await-in-loop
@@ -114,7 +121,7 @@ describe('Tree context endpoints (#1207)', () => {
       expect(res.body.lessonTotal).toBe(31);
     });
 
-    it('breaks position ties by id, matching the list endpoint ordering', async () => {
+    it("breaks position ties by id, matching the list endpoint ordering", async () => {
       // `position` has no unique constraint, so duplicates are possible.
       const a = await addLesson(seed.module.id, 5);
       const b = await addLesson(seed.module.id, 5);
@@ -128,7 +135,7 @@ describe('Tree context endpoints (#1207)', () => {
       expect(resB.body.prevLessonId).toBe(a.id);
     });
 
-    it('counts only published siblings for a student', async () => {
+    it("counts only published siblings for a student", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       // Unpublished lessons sit before the target; the instructor sees them,
@@ -149,7 +156,7 @@ describe('Tree context endpoints (#1207)', () => {
       expect(asProf.body.lessonTotal).toBe(4);
     });
 
-    it('403s a student asking about an unpublished lesson', async () => {
+    it("403s a student asking about an unpublished lesson", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       const hidden = await addLesson(seed.module.id, 1, { isPublished: false });
@@ -158,25 +165,25 @@ describe('Tree context endpoints (#1207)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('403s a user with no relationship to the course', async () => {
+    it("403s a user with no relationship to the course", async () => {
       const outsiderApp = await createApp({ mockUser: makeStudent() });
       const res = await request(outsiderApp).get(`/api/lessons/${seed.lesson.id}/context`);
       expect(res.status).toBe(403);
     });
 
-    it('404s for a lesson that does not exist', async () => {
-      const res = await request(profApp).get('/api/lessons/99999999/context');
+    it("404s for a lesson that does not exist", async () => {
+      const res = await request(profApp).get("/api/lessons/99999999/context");
       expect(res.status).toBe(404);
     });
 
-    it('400s for a non-numeric lesson id', async () => {
-      const res = await request(profApp).get('/api/lessons/abc/context');
+    it("400s for a non-numeric lesson id", async () => {
+      const res = await request(profApp).get("/api/lessons/abc/context");
       expect(res.status).toBe(400);
     });
   });
 
-  describe('GET /modules/:moduleId/context', () => {
-    it('returns the module ordinal and course total', async () => {
+  describe("GET /modules/:moduleId/context", () => {
+    it("returns the module ordinal and course total", async () => {
       await addModule(1);
       const module3 = await addModule(2);
 
@@ -186,7 +193,7 @@ describe('Tree context endpoints (#1207)', () => {
       expect(res.body).toEqual({ moduleOrdinal: 3, moduleTotal: 3 });
     });
 
-    it('counts only published modules for a student', async () => {
+    it("counts only published modules for a student", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       await addModule(1, { isPublished: false });
@@ -196,7 +203,49 @@ describe('Tree context endpoints (#1207)', () => {
       expect(res.body).toEqual({ moduleOrdinal: 2, moduleTotal: 2 });
     });
 
-    it('403s a student asking about an unpublished module', async () => {
+    it("fails closed when Core cannot authorize direct module context", async () => {
+      const student = await enrollStudent();
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "unavailable",
+        role: null,
+      });
+
+      const res = await request(await createApp({ mockUser: student })).get(
+        `/api/modules/${seed.module.id}/context`,
+      );
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
+    });
+
+    it("denies direct module context to a stale instructor demoted to Core TA", async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "denied",
+        role: "TA",
+      });
+
+      const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.moduleOrdinal).toBeUndefined();
+    });
+
+    it("fails closed when Core cannot authorize direct instructor module context", async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "unavailable",
+        role: null,
+      });
+
+      const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("COURSE_AUTH_UNAVAILABLE");
+    });
+
+    it("403s a student asking about an unpublished module", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       const hidden = await addModule(1, { isPublished: false });
@@ -205,8 +254,8 @@ describe('Tree context endpoints (#1207)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('404s for a module that does not exist', async () => {
-      const res = await request(profApp).get('/api/modules/99999999/context');
+    it("404s for a module that does not exist", async () => {
+      const res = await request(profApp).get("/api/modules/99999999/context");
       expect(res.status).toBe(404);
     });
   });

@@ -20,12 +20,15 @@ import { middleware } from "~/root";
 import { auth } from "~/lib/auth/server";
 import { isPasswordExpiredForUser } from "~/lib/auth/password-expiry.server";
 
+/** The single field the password-expiry middleware reads off its args. */
+type MiddlewareArgs = { request: Request };
+
 const passwordExpiryMiddleware = middleware[1] as (
-  args: { request: Request },
+  args: MiddlewareArgs,
   next: () => Promise<Response>,
 ) => Promise<Response>;
 
-function makeArgs(path: string): { request: Request } {
+function makeArgs(path: string): MiddlewareArgs {
   return { request: new Request(`http://localhost${path}`) };
 }
 
@@ -42,9 +45,7 @@ describe("root middleware — password expiry on /api/* (AUTH-06)", () => {
     const res = await passwordExpiryMiddleware(makeArgs("/api/chat"), next);
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual(
-      expect.objectContaining({ error: "PASSWORD_EXPIRED" }),
-    );
+    expect(await res.json()).toEqual(expect.objectContaining({ error: "PASSWORD_EXPIRED" }));
     expect(next).not.toHaveBeenCalled();
   });
 

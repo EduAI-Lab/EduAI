@@ -1,4 +1,4 @@
-import type { AppTourDefinition, TourContextState } from './tour-types';
+import type { AppTourDefinition, TourContextState } from "./tour-types";
 
 function selectedLessonRoute(context: TourContextState) {
   return context.selectedLessonRoute;
@@ -12,149 +12,231 @@ function selectedModuleRoute(context: TourContextState) {
   return context.selectedModuleRoute;
 }
 
-export const tourDefinitions: Record<AppTourDefinition['id'], AppTourDefinition> = {
-  'student-journey': {
-    id: 'student-journey',
-    completionKey: 'aitutor:tour:completed:student-journey',
+export const tourDefinitions = {
+  "student-journey": {
+    id: "student-journey",
+    completionKey: "aitutor:tour:completed:student-journey",
     steps: [
       {
-        id: 'student-journey-nav',
-        title: 'Let’s get you to your first lesson',
-        description: 'This quick tour shows you how to open a course, work through a lesson, and get help when you are stuck.',
+        id: "student-journey-nav",
+        title: "Let’s get you to your first lesson",
+        description:
+          "This quick tour shows you how to open a course, work through a lesson, and get help when you are stuck.",
         target: '[data-tour="nav-take-tour"]',
-        route: '/student',
-        side: 'bottom',
-        align: 'end',
+        route: "/student",
+        side: "bottom",
+        align: "end",
       },
       {
-        id: 'student-journey-dashboard',
-        title: 'This is your home base',
-        description: 'Your courses live here, along with your progress so you can jump back in without hunting around.',
+        id: "student-journey-dashboard",
+        title: "This is your home base",
+        description:
+          "Your courses live here, along with your progress so you can jump back in without hunting around.",
         target: '[data-tour="student-dashboard-header"]',
-        route: '/student',
-        side: 'bottom',
+        route: "/student",
+        side: "bottom",
       },
       {
-        id: 'student-journey-course',
-        title: 'Pick a course to continue',
-        description: 'Each card opens a course. We will use the first one here to walk through the learning flow.',
+        id: "student-journey-course",
+        title: "Pick a course to continue",
+        description:
+          "Each card opens a course. We will use the first one here to walk through the learning flow.",
         target: '[data-tour="student-course-card-first"]',
-        route: '/student',
-        side: 'right',
-        storeRouteFromTarget: 'selectedCourseRoute',
+        route: "/student",
+        side: "right",
+        storeRouteFromTarget: "selectedCourseRoute",
       },
       {
-        id: 'student-journey-module',
-        title: 'Courses are split into modules',
-        description: 'Modules break the material into manageable chunks. We will open the first one to keep moving.',
+        id: "student-journey-module",
+        title: "Courses are split into modules",
+        description:
+          "Modules break the material into manageable chunks. We will open the first one to keep moving.",
         target: '[data-tour="student-module-card-first"]',
+        emptyTarget: '[data-tour="student-modules-empty"]',
         route: selectedCourseRoute,
-        side: 'right',
-        storeRouteFromTarget: 'selectedModuleRoute',
+        side: "right",
+        storeRouteFromTarget: "selectedModuleRoute",
       },
       {
-        id: 'student-journey-lesson-card',
-        title: 'Lessons are where the real work happens',
-        description: 'A lesson contains the questions, progress, and AI support tools you will use most often.',
+        id: "student-journey-lesson-card",
+        title: "Lessons are where the real work happens",
+        description:
+          "A lesson contains the questions, progress, and AI support tools you will use most often.",
         target: '[data-tour="student-lesson-card-first"]',
+        emptyTarget: '[data-tour="student-lessons-empty"]',
         route: selectedModuleRoute,
-        side: 'right',
-        storeRouteFromTarget: 'selectedLessonRoute',
+        side: "right",
+        storeRouteFromTarget: "selectedLessonRoute",
       },
       {
-        id: 'student-journey-progress',
-        title: 'Track your progress here',
-        description: 'This shows where you are in the lesson and how many questions you have already solved.',
+        id: "student-journey-progress",
+        title: "Track your progress here",
+        description:
+          "This shows where you are in the lesson and how many questions you have already solved.",
         target: '[data-tour="student-lesson-progress"]',
         route: selectedLessonRoute,
-        side: 'bottom',
+        side: "bottom",
       },
       {
-        id: 'student-journey-question',
-        title: 'Read the current question here',
-        description: 'Topic tags help you see what concept the activity is really testing.',
+        id: "student-journey-question",
+        title: "Read the current question here",
+        description: "Topic tags help you see what concept the activity is really testing.",
         target: '[data-tour="student-question-card"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
       {
-        id: 'student-journey-answer',
-        title: 'Submit your answer here',
-        description: 'Some questions are multiple choice and some are typed, but this is always where you respond.',
+        id: "student-journey-answer",
+        title: "Submit your answer here",
+        description:
+          "Some questions are multiple choice and some are typed, but this is always where you respond.",
         target: '[data-tour="student-answer-card"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
       {
-        id: 'student-journey-guide',
-        title: 'Use Guide me when you are stuck',
-        description: 'It is designed to nudge you forward with hints and guidance instead of just handing over the answer.',
+        id: "student-journey-guide",
+        title: "Use Guide me when you are stuck",
+        description:
+          "It is designed to nudge you forward with hints and guidance instead of just handing over the answer.",
         target: '[data-tour="student-guide-button"]',
         route: selectedLessonRoute,
-        side: 'top',
+        side: "top",
       },
       {
-        id: 'student-journey-ai',
-        title: 'This is your AI Study Buddy',
-        description: 'Use it for explanations, hints, and topic-focused help. You can always come back to this tour later from the top bar.',
+        id: "student-journey-ai",
+        title: "This is your AI Study Buddy",
+        description:
+          "Use it for explanations, hints, and topic-focused help. You can always come back to this tour later from the top bar.",
         target: '[data-tour="student-ai-chat"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
     ],
   },
-  'student-lesson-help': {
-    id: 'student-lesson-help',
-    completionKey: 'aitutor:tour:completed:student-lesson-help',
+  /**
+   * Unit-administrator orientation.
+   *
+   * The two student tours are written in the learner's voice and would
+   * misdescribe this role's app, which is why a unit admin used to be offered
+   * no tour at all. This one is staff-voiced and walks the two screens the role
+   * actually lives on — the unit dashboard and the unit-scoped course list.
+   *
+   * It deliberately stops at the course list rather than driving into a course:
+   * the destination depends on which courses the unit has, and a tour that
+   * stalls on an empty unit is worse than one that hands over at the door.
+   */
+  "unit-admin-orientation": {
+    id: "unit-admin-orientation",
+    completionKey: "aitutor:tour:completed:unit-admin-orientation",
     steps: [
       {
-        id: 'student-lesson-breadcrumb',
-        title: 'You can always climb back up a level',
-        description: 'Use these breadcrumbs to jump back to the module or course without losing track of where you are.',
+        id: "unit-admin-intro",
+        title: "A quick tour of your unit",
+        description:
+          "This walks you through the rollup on this page, the drafts waiting on you, and where your unit's courses live. You can restart it from here at any time.",
+        target: '[data-tour="nav-take-tour"]',
+        route: "/dashboard",
+        side: "bottom",
+        align: "end",
+      },
+      {
+        id: "unit-admin-stats",
+        title: "Your unit at a glance",
+        description:
+          "Every course in your authorized units, split by published and draft. These counts cover the whole unit, not just the courses listed below.",
+        target: '[data-tour="dashboard-stats"]',
+        route: "/dashboard",
+        side: "bottom",
+      },
+      {
+        id: "unit-admin-needs-attention",
+        title: "Drafts waiting on you",
+        description:
+          "Courses your unit hasn't published yet. Publish one straight from here, or open it first to check its content. Publishing a course doesn't publish its modules and lessons — those stay hidden until you publish them individually.",
+        target: '[data-tour="dashboard-needs-attention"]',
+        route: "/dashboard",
+        side: "left",
+      },
+      {
+        id: "unit-admin-quick-actions",
+        title: "Shortcuts to the rest",
+        description:
+          "Jump to your course list, the next draft, or your own settings. Courses themselves are created in EduAI Core, not here.",
+        target: '[data-tour="dashboard-quick-actions"]',
+        route: "/dashboard",
+        side: "top",
+      },
+      {
+        id: "unit-admin-course-list",
+        title: "Every course in your units",
+        description:
+          "Search, filter by term or status, and open any course to manage its modules, lessons and activities. Courses outside your authorized units never appear here.",
+        // No `emptyTarget`: this anchor wraps the list view itself, so it is
+        // present whether the unit has courses, none, or only filtered-out ones.
+        target: '[data-tour="staff-course-list"]',
+        route: "/instructor",
+        side: "top",
+      },
+    ],
+  },
+  "student-lesson-help": {
+    id: "student-lesson-help",
+    completionKey: "aitutor:tour:completed:student-lesson-help",
+    steps: [
+      {
+        id: "student-lesson-breadcrumb",
+        title: "You can always climb back up a level",
+        description:
+          "Use these breadcrumbs to jump back to the module or course without losing track of where you are.",
         target: '[data-tour="student-lesson-breadcrumb"]',
         route: selectedLessonRoute,
-        side: 'bottom',
+        side: "bottom",
       },
       {
-        id: 'student-lesson-progress',
-        title: 'Lesson progress stays visible',
-        description: 'You can quickly see which question you are on and how much of the lesson is complete.',
+        id: "student-lesson-progress",
+        title: "Lesson progress stays visible",
+        description:
+          "You can quickly see which question you are on and how much of the lesson is complete.",
         target: '[data-tour="student-lesson-progress"]',
         route: selectedLessonRoute,
-        side: 'bottom',
+        side: "bottom",
       },
       {
-        id: 'student-lesson-question',
-        title: 'This is the question prompt',
-        description: 'Read the prompt carefully before you answer. The topic tags help you spot what concept matters most.',
+        id: "student-lesson-question",
+        title: "This is the question prompt",
+        description:
+          "Read the prompt carefully before you answer. The topic tags help you spot what concept matters most.",
         target: '[data-tour="student-question-card"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
       {
-        id: 'student-lesson-answer',
-        title: 'Answer here',
-        description: 'Use this area to type or select your answer, then submit when you are ready.',
+        id: "student-lesson-answer",
+        title: "Answer here",
+        description: "Use this area to type or select your answer, then submit when you are ready.",
         target: '[data-tour="student-answer-card"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
       {
-        id: 'student-lesson-guide',
-        title: 'Need help without spoilers?',
-        description: 'Guide me is the fastest way to get unstuck while still doing the thinking yourself.',
+        id: "student-lesson-guide",
+        title: "Need help without spoilers?",
+        description:
+          "Guide me is the fastest way to get unstuck while still doing the thinking yourself.",
         target: '[data-tour="student-guide-button"]',
         route: selectedLessonRoute,
-        side: 'top',
+        side: "top",
       },
       {
-        id: 'student-lesson-ai',
-        title: 'The AI sidebar stays with you while you work',
-        description: 'Use it for hints, explanations, and follow-up questions as you move through the lesson.',
+        id: "student-lesson-ai",
+        title: "The AI sidebar stays with you while you work",
+        description:
+          "Use it for hints, explanations, and follow-up questions as you move through the lesson.",
         target: '[data-tour="student-ai-chat"]',
         route: selectedLessonRoute,
-        side: 'left',
+        side: "left",
       },
     ],
   },
-};
+} satisfies Record<AppTourDefinition["id"], AppTourDefinition>;

@@ -3,7 +3,7 @@
  * PATCH /api/courses/:id/rag-settings — update chat scope and/or RAG tuning.
  *
  * Auth: caller must have instructor-or-above access to the target course
- * (`resolveCourseAccessWithCourse`, rank >= 2 — ADMIN, UNIT_ADMIN of the
+ * (rank >= 2 — ADMIN, UNIT_ADMIN of the
  * course's department, or the course's own INSTRUCTOR). TAs and students
  * never see or set these values.
  *
@@ -13,14 +13,15 @@
  */
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import {
-  getCourseRagSettings,
-  invalidateCourseRagSettingsCache,
-} from "~/lib/courses/server";
+  canManageCourseRagSettings,
+  resolveCourseAccessGate,
+  resolveCourseAccessWithCourse,
+} from "~/lib/auth/course-access.server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { UpdateCourseRagSettingsSchema } from "~/lib/courses/schemas";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 // ---------------------------------------------------------------------------
 // GET
@@ -34,7 +35,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -42,17 +43,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
-    session.user,
-    courseId,
-  );
+  // Wide row: the response echoes `course.courseScopeGuardrailEnabled`, which
+  // is outside GATE_COURSE_SELECT.
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (!access || access.rank < 2) {
+  if (!canManageCourseRagSettings(access)) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
@@ -98,7 +98,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -127,17 +127,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (!access || access.rank < 2) {
+  if (!canManageCourseRagSettings(access)) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },

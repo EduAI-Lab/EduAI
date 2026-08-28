@@ -5,13 +5,119 @@
  * `POST /api/sessions/validate` endpoint and populates `req.user`.
  */
 
-import { getPolicy } from '../services/policyService.js';
-import { resolveCoreCourseById } from '../services/courseResolver.js';
+import { getPolicy } from "../services/policyService.js";
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  resolveLiveCoreCourseById,
+} from "../services/liveCoursePrincipal.js";
+import { isIP } from "node:net";
 
-const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(["STUDENT", "INSTRUCTOR", "TA", "ADMIN", "UNIT_ADMIN"]);
+const DEFAULT_CORE_AUTH_TIMEOUT_MS = 5_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+class CoreAuthTimeoutError extends Error {
+  constructor(timeoutMs, options) {
+    super(`Core authentication request timed out after ${timeoutMs}ms`, options);
+    this.name = "CoreAuthTimeoutError";
+    this.code = "CORE_AUTH_TIMEOUT";
+  }
+}
+
+function getCoreAuthTimeoutMs() {
+  const configured = Number(process.env.CORE_AUTH_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_CORE_AUTH_TIMEOUT_MS;
+  return Math.min(Math.trunc(configured), MAX_TIMER_DELAY_MS);
+}
+
+/**
+ * Fetch a Core authentication endpoint with a finite deadline. When an outer
+ * request exposes a cancellation signal, preserve it alongside the deadline
+ * rather than replacing it.
+ */
+export async function fetchCoreAuth(input, init = {}, callerSignal) {
+  const timeoutMs = getCoreAuthTimeoutMs();
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
+
+  try {
+    return await fetch(input, { ...init, signal });
+  } catch (error) {
+    if (timeoutSignal.aborted && !callerSignal?.aborted) {
+      throw new CoreAuthTimeoutError(timeoutMs, { cause: error });
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch Core on behalf of an Express request without using `req.signal`.
+ * Node aborts that signal when a fully-read request body closes, which is a
+ * normal lifecycle event for POST requests and must not cancel authentication.
+ * Express' `aborted` event is reserved for a premature client disconnect.
+ *
+ * The plain `req.signal` fallback keeps the helper usable by small unit-test
+ * request doubles that do not expose EventEmitter methods.
+ */
+export async function fetchCoreAuthForRequest(req, input, init = {}) {
+  if (typeof req?.once !== "function") {
+    return fetchCoreAuth(input, init, req?.signal);
+  }
+
+  const caller = new AbortController();
+  const abortForDisconnect = () => {
+    if (!caller.signal.aborted) {
+      caller.abort(new DOMException("Client disconnected", "AbortError"));
+    }
+  };
+
+  if (req.aborted) abortForDisconnect();
+  else req.once("aborted", abortForDisconnect);
+
+  try {
+    return await fetchCoreAuth(input, init, caller.signal);
+  } finally {
+    if (typeof req.off === "function") req.off("aborted", abortForDisconnect);
+    else req.removeListener?.("aborted", abortForDisconnect);
+  }
+}
+
+export function isCoreAuthTimeoutError(error) {
+  return error?.code === "CORE_AUTH_TIMEOUT";
+}
 
 function normalizeRole(role) {
-  return VALID_ROLES.has(role) ? role : 'STUDENT';
+  return VALID_ROLES.has(role) ? role : "STUDENT";
+}
+
+/**
+ * Apache appends the real socket peer as the rightmost XFF entry. Ignore all
+ * client-supplied prefix entries; fall back to Express' socket peer when the
+ * proxy header is missing or malformed.
+ */
+export function deriveOriginalClientIp(req) {
+  const forwarded =
+    typeof req?.headers?.["x-forwarded-for"] === "string"
+      ? req.headers["x-forwarded-for"]
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .at(-1)
+      : null;
+  if (forwarded && isIP(forwarded)) return forwarded;
+
+  const socketIp = req?.socket?.remoteAddress?.trim();
+  return socketIp && isIP(socketIp) ? socketIp : null;
+}
+
+function coreSessionHeaders(req, cookie) {
+  const headers = { cookie };
+  const serviceKey = process.env.EDUAI_API_KEY?.trim();
+  if (serviceKey) headers.authorization = `Bearer ${serviceKey}`;
+  const clientIp = deriveOriginalClientIp(req);
+  if (clientIp) headers["x-eduai-client-ip"] = clientIp;
+  return headers;
 }
 
 /**
@@ -24,27 +130,51 @@ function normalizeRole(role) {
  * `req.user` is set to `{ id, email, name, image, role }` on success.
  */
 export async function requireAuth(req, res, next) {
+  const cookie = req.headers.cookie?.trim();
+  if (!cookie) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
   try {
-    const response = await fetch(`${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`, {
-      method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
-    });
+    const response = await fetchCoreAuthForRequest(
+      req,
+      `${process.env.CORE_URL || "http://localhost:3000"}/api/sessions/validate`,
+      {
+        method: "POST",
+        headers: coreSessionHeaders(req, cookie),
+      },
+    );
 
     if (response.status === 429) {
-      const retryAfter = response.headers?.get?.('retry-after') ?? null;
-      if (retryAfter != null) res.set('Retry-After', retryAfter);
-      return res.status(429).json({ error: 'Rate limited', retryAfter });
+      const retryAfter = response.headers?.get?.("retry-after") ?? null;
+      if (retryAfter != null) res.set("Retry-After", retryAfter);
+      return res.status(429).json({ error: "Rate limited", retryAfter });
+    }
+
+    if (response.status === 401) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    if (response.status === 403) {
+      return res.status(403).json({ error: "Authentication forbidden" });
+    }
+
+    if (response.status === 408 || response.status === 504) {
+      return res.status(504).json({ error: "Authentication service timed out" });
     }
 
     if (!response.ok) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(503).json({ error: "Authentication service unavailable" });
     }
 
     const { user } = await response.json();
     req.user = { ...user, role: normalizeRole(user.role) };
     next();
-  } catch {
-    res.status(401).json({ error: 'Authentication required' });
+  } catch (error) {
+    if (isCoreAuthTimeoutError(error)) {
+      return res.status(504).json({ error: "Authentication service timed out" });
+    }
+    return res.status(503).json({ error: "Authentication service unavailable" });
   }
 }
 
@@ -59,12 +189,12 @@ export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: "Authentication required" });
     }
     if (!roles.includes(req.user.role)) {
       return res
         .status(403)
-        .json({ error: `One of the following roles required: ${roles.join(', ')}` });
+        .json({ error: `One of the following roles required: ${roles.join(", ")}` });
     }
     next();
   };
@@ -82,14 +212,14 @@ export const requireRoles = requireRole;
  */
 export function requireInstructorPolicy(flagKey) {
   return async (req, res, next) => {
-    if (req.user?.role !== 'INSTRUCTOR') {
+    if (req.user?.role !== "INSTRUCTOR") {
       return next();
     }
     const allowed = await getPolicy(flagKey).catch(() => false);
     if (!allowed) {
       return res
         .status(403)
-        .json({ error: 'Instructors are not permitted to perform this action' });
+        .json({ error: "Instructors are not permitted to perform this action" });
     }
     next();
   };
@@ -109,14 +239,14 @@ export function requireInstructorPolicy(flagKey) {
  * `courseResolver.js`.
  */
 export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
-  if (user?.role !== 'UNIT_ADMIN') return false;
+  if (user?.role !== "UNIT_ADMIN") return false;
   if (!Array.isArray(user.authorizedUnits) || user.authorizedUnits.length === 0) return false;
 
   let coreCourse = resolvedCoreCourse;
   if (coreCourse === undefined) {
     const coreOfferingId = course?.coreOfferingId ?? null;
     if (!coreOfferingId) return false;
-    ({ course: coreCourse } = await resolveCoreCourseById(coreOfferingId));
+    ({ course: coreCourse } = await resolveLiveCoreCourseById(coreOfferingId));
   }
 
   return coreCourse?.department != null && user.authorizedUnits.includes(coreCourse.department);
@@ -129,12 +259,15 @@ export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
  * the `resolvedCoreCourse` fast path.
  */
 export async function isCourseAdmin(user, course, resolvedCoreCourse) {
-  if (user?.role === 'ADMIN') return true;
+  if (user?.role === "ADMIN") return true;
+  if (!["INSTRUCTOR", "UNIT_ADMIN"].includes(user?.role)) return false;
+
+  // CourseInstructor is a synchronization mirror, not authority. Resolve the
+  // effective principal against Core before allowing any staff-only read or
+  // write. The optional Core course is still used for the fast UNIT_ADMIN
+  // department path; the principal helper performs the exact live instructor
+  // fallback when that path does not match.
   if (await isUnitAdminForCourse(user, course, resolvedCoreCourse)) return true;
-  if (
-    (user?.role === 'INSTRUCTOR' || user?.role === 'UNIT_ADMIN') &&
-    course?.instructors?.some((i) => i.userId === user.id)
-  )
-    return true;
-  return false;
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  return isAllowedLiveCourseStaffPrincipal(principal);
 }

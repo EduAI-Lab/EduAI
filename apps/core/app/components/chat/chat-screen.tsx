@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -10,28 +11,14 @@ import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
 import { ChatHistoryRail } from "~/components/chat/chat-history-rail";
 import { ChatPrivacyNoticeDialog } from "~/components/chat/chat-privacy-notice-dialog";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
-import type {
-  ChatCourseOption,
-  ChatModelOption,
-} from "~/components/chat/chat-view-types";
+import type { ChatCourseOption, ChatModelOption } from "~/components/chat/chat-view-types";
+import { useApiKeys } from "~/hooks/use-api-keys";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import { useChatHistory } from "~/hooks/api/use-chat-history";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
-import {
-  Button,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@eduai/ui";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@eduai/ui";
+import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@eduai/ui";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
@@ -47,6 +34,10 @@ import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
+
+type LongOutputMessageMetadata = {
+  hitLongOutputCap?: boolean;
+};
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -77,7 +68,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
-  const { courses } = useCourses({ pageSize: 200 });
+  // Facets are only consumed by the course-list filter toolbar, so skip them.
+  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -92,20 +84,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
-    return navigatedModel &&
-      chatModels.some((model) => model.id === navigatedModel)
+    return navigatedModel && chatModels.some((model) => model.id === navigatedModel)
       ? navigatedModel
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ??
-      searchParams.get("courseCode") ??
-      lastCourseCode ??
-      null,
+    editableTranscript?.chat.courseCode ?? searchParams.get("courseCode") ?? lastCourseCode ?? null,
   );
-  const [chatId, setChatId] = useState<string | null>(
-    editableTranscript?.chat.id ?? null,
-  );
+  const [chatId, setChatId] = useState<string | null>(editableTranscript?.chat.id ?? null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(
     editableTranscript?.chat.systemPrompt ?? null,
   );
@@ -122,9 +108,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // is read via focusModeRef at those call sites (see below) to avoid a
   // stale-closure revert (#1244); selectedModel is read directly since the
   // model selector is disabled while a request is in flight.
-  const [focusMode, setFocusMode] = useState(
-    Boolean(navigationState?.focusMode),
-  );
+  const [focusMode, setFocusMode] = useState(Boolean(navigationState?.focusMode));
   // onFinish/handleSystemPromptSave fire after the user may have toggled Focus
   // Mode mid-response; a ref keeps the replace-navigation below reading the
   // live value instead of whatever was true when that callback was bound (#1244).
@@ -135,72 +119,106 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   /** Persisted/header registry ids keyed by their assistant message id. */
-  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
-    Record<string, string>
-  >(() => {
-    const hydrated: Record<string, string> = {};
-    for (const message of editableTranscript?.messages ?? []) {
-      const id =
-        typeof message.id === "string" && message.id.trim().length > 0
-          ? message.id
-          : null;
-      const resolvedModelId = resolvedModelIdFromMessage(message);
-      if (id && resolvedModelId) hydrated[id] = resolvedModelId;
-    }
-    return hydrated;
-  });
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<Record<string, string>>(
+    () => {
+      const hydrated: Record<string, string> = {};
+      for (const message of editableTranscript?.messages ?? []) {
+        const id =
+          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const resolvedModelId = resolvedModelIdFromMessage(message);
+        if (id && resolvedModelId) hydrated[id] = resolvedModelId;
+      }
+      return hydrated;
+    },
+  );
   /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
-  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
-    string | null
-  >(null);
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<string | null>(null);
   /**
    * Whether each assistant message's request was sent with an auto mode
    * selected, keyed by message id — captured at send time so switching the
    * selector afterward doesn't retroactively change older messages' labels.
    */
-  const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<
-    Record<string, boolean>
-  >(() => {
-    const hydrated: Record<string, boolean> = {};
-    for (const message of editableTranscript?.messages ?? []) {
-      const id =
-        typeof message.id === "string" && message.id.trim().length > 0
-          ? message.id
-          : null;
-      if (id && resolvedModelIdFromMessage(message)) {
-        hydrated[id] = wasAutoRoutedFromMessage(message);
+  const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<Record<string, boolean>>(
+    () => {
+      const hydrated: Record<string, boolean> = {};
+      for (const message of editableTranscript?.messages ?? []) {
+        const id =
+          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        if (id && resolvedModelIdFromMessage(message)) {
+          hydrated[id] = wasAutoRoutedFromMessage(message);
+        }
       }
-    }
-    return hydrated;
-  });
+      return hydrated;
+    },
+  );
   const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
+  /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
+  /**
+   * Session-only cache of the last message's content per Assist variant, keyed
+   * by message id then "true"/"false" — avoids re-hitting the model every time
+   * the user flips the toggle back and forth on the same response.
+   */
+  const assistVariantCacheRef = useRef<Record<string, Partial<Record<"true" | "false", string>>>>(
+    {},
+  );
+  /**
+   * Synchronous in-flight guard for the regenerate call below — a ref (not
+   * `regeneratingMessageId` state) because a rapid second toggle click can
+   * fire before React commits the re-render that disables the Assist button,
+   * so a state read at that point would still see the pre-click value.
+   */
+  const regeneratingRef = useRef(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
+  const promptSubmitInFlightRef = useRef(false);
   const pendingNavigateChatId = useRef<string | null>(null);
+  // ChatScreen creates the CurrentUserIdProvider below this hook, inside
+  // CoreAppShell. Pass the loader-owned user id explicitly so this instance
+  // and the nested ChatInput instance address the same module-level key store.
+  // Otherwise they alternate between the anonymous and authenticated owners,
+  // repeatedly resetting the store until React trips its update-depth guard.
+  const { getValidApiKeys } = useApiKeys(user.id);
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
-  const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
-    useChatHistory({ scope: "own", limit: 50 });
+  const {
+    chats,
+    isLoading: historyLoading,
+    error: historyError,
+    refresh: refreshHistory,
+  } = useChatHistory({ scope: "own", limit: 50 });
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
+  const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(() => {
+    const cappedIds = new Set<string>();
+
+    for (const message of editableTranscript?.messages ?? []) {
+      const metadata = message.metadata as LongOutputMessageMetadata | undefined;
+
+      if (
+        typeof message.id === "string" &&
+        message.id.trim().length > 0 &&
+        message.role === "assistant" &&
+        metadata?.hitLongOutputCap === true
+      ) {
+        cappedIds.add(message.id);
+      }
+    }
+
+    return cappedIds;
+  });
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
-      prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
+      prefsFetcher.submit(updates, {
+        method: "post",
+        encType: "application/json",
+      });
     },
     [prefsFetcher],
-  );
-
-  const handleAssistiveChange = useCallback(
-    (checked: boolean) => {
-      setAdhdAssist(checked);
-      // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
-      setAssistive(checked);
-    },
-    [setAssistive],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
@@ -221,7 +239,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // route is keyed by chatId, so switching chats remounts and re-seeds.
   useEffect(() => {
     if (editableTranscript) {
-      setAssistive(Boolean(editableTranscript.chat.adhdAssist), { silent: true });
+      setAssistive(Boolean(editableTranscript.chat.adhdAssist), {
+        silent: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -275,8 +295,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   useEffect(() => {
     if (availableCourses.length === 0) return;
     const isValid =
-      selectedCourseCode !== null &&
-      availableCourses.some((c) => c.code === selectedCourseCode);
+      selectedCourseCode !== null && availableCourses.some((c) => c.code === selectedCourseCode);
     if (!isValid) setSelectedCourseCode(availableCourses[0].code);
   }, [selectedCourseCode, availableCourses]);
 
@@ -296,82 +315,212 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     handleSubmit,
     isLoading,
     stop,
+    append,
     setMessages,
     setInput,
   } = useChat({
-      api: "/api/chat",
-      // Seed the composer from the route loader's transcript (DB is the source of
-      // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
-      initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
-      // Persist stable client message ids to the server. Without this, AI SDK v4
-      // strips `id` from the request body, so the server stamps a fresh UUID for
-      // every user message on every turn — defeating the (chatId, messageId)
-      // dedup and re-saving the entire user history each turn (chat-history dup bug).
-      sendExtraMessageFields: true,
-      body: requestMetadata,
-      // #487: send only the latest turn to the server, not the full history.
-      // Spreads requestBody (carrying the stable message id from
-      // sendExtraMessageFields) so dedup + latest-turn-only both hold.
-      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
-        ...(requestBody ?? requestMetadata),
-        chatMode: "learning",
-        messages: messages.slice(-1),
-      }),
-      onResponse: async (response) => {
-        const routedHeader = response.headers.get("X-Routed-Model")?.trim();
-        const routed =
-          routedHeader && routedHeader.length > 0 ? routedHeader : null;
-        pendingRoutedRegistryIdRef.current = routed;
-        setStreamingRoutedRegistryId(routed);
-        // The selector is disabled while a request is in flight, so this
-        // still reflects what was selected when the request was sent.
-        const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
-        pendingWasAutoRoutedRef.current = wasAutoRouted;
-        setStreamingWasAutoRouted(wasAutoRouted);
+    api: "/api/chat",
+    // Seed the composer from the route loader's transcript (DB is the source of
+    // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
+    initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
+    // Persist stable client message ids to the server. Without this, AI SDK v4
+    // strips `id` from the request body, so the server stamps a fresh UUID for
+    // every user message on every turn — defeating the (chatId, messageId)
+    // dedup and re-saving the entire user history each turn (chat-history dup bug).
+    sendExtraMessageFields: true,
+    body: requestMetadata,
+    // #487: send only the latest turn to the server, not the full history.
+    // Spreads requestBody (carrying the stable message id from
+    // sendExtraMessageFields) so dedup + latest-turn-only both hold.
+    experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+      ...(requestBody ?? requestMetadata),
+      chatMode: "learning",
+      messages: messages.slice(-1),
+    }),
+    onResponse: async (response) => {
+      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+      const routed = routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      pendingRoutedRegistryIdRef.current = routed;
+      setStreamingRoutedRegistryId(routed);
+      // The selector is disabled while a request is in flight, so this
+      // still reflects what was selected when the request was sent.
+      const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
+      pendingWasAutoRoutedRef.current = wasAutoRouted;
+      setStreamingWasAutoRouted(wasAutoRouted);
 
-        await logChatApiResponse(response, "learning-chat");
-        const chatIdHeader = response.headers.get("X-Chat-Id");
-        if (chatIdHeader && !chatId) {
-          setChatId(chatIdHeader);
-          pendingNavigateChatId.current = chatIdHeader;
-          void refreshHistory();
-        }
-        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
-        if (webToolsHeader !== null) {
-          setWebToolsEnabled(webToolsHeader === "1");
-        }
-      },
-      onFinish: (message) => {
-        const routed = pendingRoutedRegistryIdRef.current;
-        if (message.role === "assistant" && routed) {
-          setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
-          setWasAutoRoutedByMessageId((prev) => ({
-            ...prev,
-            [message.id]: pendingWasAutoRoutedRef.current,
-          }));
-        }
-        pendingRoutedRegistryIdRef.current = null;
-        pendingWasAutoRoutedRef.current = false;
-        setStreamingRoutedRegistryId(null);
-        setStreamingWasAutoRouted(false);
+      await logChatApiResponse(response, "learning-chat");
+      const chatIdHeader = response.headers.get("X-Chat-Id");
+      if (chatIdHeader && !chatId) {
+        setChatId(chatIdHeader);
+        pendingNavigateChatId.current = chatIdHeader;
+        void refreshHistory();
+      }
+      const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+      if (webToolsHeader !== null) {
+        setWebToolsEnabled(webToolsHeader === "1");
+      }
+    },
+    onFinish: (message) => {
+      // Server-owned source of truth for the Continue button.
+      const hitLongOutputCap =
+        message.role === "assistant" &&
+        message.annotations?.some(
+          (annotation) =>
+            annotation !== null &&
+            typeof annotation === "object" &&
+            !Array.isArray(annotation) &&
+            (annotation as JsonObject).hitLongOutputCap === true,
+        );
 
-        const id = pendingNavigateChatId.current;
-        if (id && location.pathname === "/chat") {
-          pendingNavigateChatId.current = null;
-          navigate(`/chat/${id}`, {
-            replace: true,
-            state: { focusMode: focusModeRef.current, selectedModel },
-          });
+      if (hitLongOutputCap) {
+        setCappedMessageIds((current) => {
+          const next = new Set(current);
+          next.add(message.id);
+          return next;
+        });
+      }
+
+      // Preserve the routed-model metadata added on development.
+      const routed = pendingRoutedRegistryIdRef.current;
+      if (message.role === "assistant" && routed) {
+        setRoutedModelByMessageId((prev) => ({
+          ...prev,
+          [message.id]: routed,
+        }));
+        setWasAutoRoutedByMessageId((prev) => ({
+          ...prev,
+          [message.id]: pendingWasAutoRoutedRef.current,
+        }));
+      }
+
+      pendingRoutedRegistryIdRef.current = null;
+      pendingWasAutoRoutedRef.current = false;
+      setStreamingRoutedRegistryId(null);
+      setStreamingWasAutoRouted(false);
+
+      const id = pendingNavigateChatId.current;
+
+      if (id && location.pathname === "/chat") {
+        pendingNavigateChatId.current = null;
+        navigate(`/chat/${id}`, {
+          replace: true,
+          state: { focusMode: focusModeRef.current, selectedModel },
+        });
+      }
+    },
+    onError: (error) => {
+      logChatUseChatError(error, "learning-chat");
+      pendingRoutedRegistryIdRef.current = null;
+      pendingWasAutoRoutedRef.current = false;
+      setStreamingRoutedRegistryId(null);
+      setStreamingWasAutoRouted(false);
+    },
+  });
+
+  // #1246: toggling Assist while the latest response is already on screen
+  // re-generates that response's actual content (not just its display styling)
+  // for the target mode — reusing the server's normal composeSystemPrompt/
+  // oversight pipeline via a read-only `regenerateOnly` request. In-memory
+  // only (no cross-reload persistence needed): both variants are cached per
+  // message id so flipping back and forth doesn't re-hit the model every time.
+  // Any other case (no messages yet, still streaming, or no chat saved yet)
+  // falls back to the prior cosmetic-only toggle unchanged.
+  const handleAssistiveChange = useCallback(
+    (checked: boolean) => {
+      const lastMessage = messages[messages.length - 1];
+      const canRegenerate = !isLoading && lastMessage?.role === "assistant" && Boolean(chatId);
+
+      if (!canRegenerate) {
+        setAdhdAssist(checked);
+        // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
+        setAssistive(checked);
+        return;
+      }
+
+      // A rapid second click can fire before assistBusy re-renders the toggle
+      // as disabled — ignore it rather than starting an overlapping regenerate.
+      if (regeneratingRef.current) return;
+      regeneratingRef.current = true;
+
+      void (async () => {
+        const cacheKey = checked ? "true" : "false";
+        const cached = assistVariantCacheRef.current[lastMessage.id]?.[cacheKey];
+        let lastUserMessage: (typeof messages)[number] | undefined;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "user") {
+            lastUserMessage = messages[i];
+            break;
+          }
         }
-      },
-      onError: (error) => {
-        logChatUseChatError(error, "learning-chat");
-        pendingRoutedRegistryIdRef.current = null;
-        pendingWasAutoRoutedRef.current = false;
-        setStreamingRoutedRegistryId(null);
-        setStreamingWasAutoRouted(false);
-      },
-    });
+
+        try {
+          let content = cached;
+          if (content === undefined && lastUserMessage) {
+            setRegeneratingMessageId(lastMessage.id);
+            const response = await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...requestMetadata,
+                systemPrompt: undefined,
+                adhdAssist: checked,
+                regenerateOnly: true,
+                streaming: false,
+                // A fresh, preview-only id — the persisted id would collide with
+                // the already-stored user turn server-side, so mergeMessages
+                // drops it as a duplicate and the model never sees a new last
+                // message to regenerate against (#1365 review).
+                messages: [{ ...lastUserMessage, id: `preview-${crypto.randomUUID()}` }],
+              }),
+            });
+            if (!response.ok) {
+              throw new Error(`Regenerate failed with ${response.status}`);
+            }
+            const data = await response.json();
+            const rawContent = typeof data.content === "string" ? data.content : undefined;
+            content = rawContent?.trim() ? rawContent : undefined;
+            if (!content) {
+              throw new Error("Regenerate returned empty content");
+            }
+            assistVariantCacheRef.current[lastMessage.id] = {
+              ...assistVariantCacheRef.current[lastMessage.id],
+              [cacheKey]: content,
+            };
+          }
+
+          if (content !== undefined) {
+            const resolvedContent = content;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === lastMessage.id
+                  ? {
+                      ...m,
+                      content: resolvedContent,
+                      // Keep any tool-invocation/citation parts from the original
+                      // reply — only the text part reflects the regenerated content.
+                      parts: [
+                        ...(m.parts ?? []).filter((part) => part.type !== "text"),
+                        { type: "text", text: resolvedContent },
+                      ],
+                    }
+                  : m,
+              ),
+            );
+            // Only commit the mode switch once the displayed content actually
+            // matches it — a failed regenerate (below) leaves both unchanged.
+            setAdhdAssist(checked);
+            setAssistive(checked);
+          }
+        } catch (error) {
+          console.error("Failed to regenerate response for Assist toggle:", error);
+        } finally {
+          regeneratingRef.current = false;
+          setRegeneratingMessageId(null);
+        }
+      })();
+    },
+    [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
+  );
 
   const handleCourseChange = useCallback(
     (code: string | null) => {
@@ -427,6 +576,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
+      // Share the chip's in-flight guard: a chip's `append` sets the ref
+      // synchronously but `isLoading` only flips on the next render, so an
+      // Enter/Send fired in that window would otherwise submit a second
+      // concurrent request. Bail while a chip submit is still settling.
+      if (promptSubmitInFlightRef.current) {
+        e.preventDefault();
+        return;
+      }
       if (!chatId) {
         postAssistiveClientEvent({
           eventType: "task_initiation",
@@ -453,6 +610,23 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     [adhdAssist, chatId, handleSubmit],
   );
 
+  const handleContinue = useCallback(
+    async (messageId: string) => {
+      setCappedMessageIds((current) => {
+        const next = new Set(current);
+        next.delete(messageId);
+        return next;
+      });
+
+      await append({
+        role: "user",
+        content:
+          "Continue the previous response from where it stopped. Do not repeat content already provided.",
+      });
+    },
+    [append],
+  );
+
   useEffect(() => {
     const finishedLoading = wasLoadingRef.current && !isLoading;
     wasLoadingRef.current = isLoading;
@@ -468,9 +642,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     });
   }, [assistive, isLoading, messages]);
 
-  const selectedModelInfo = chatModels.find(
-    (model) => model.id === selectedModel,
-  );
+  const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
 
   // Route is the source of truth: selecting history navigates to /chat/:chatId
   // (loader hydrates the transcript) instead of mutating composer state in place.
@@ -529,22 +701,59 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     }
   };
 
-  const handlePromptSelect = (prompt: string) => {
-    const inputEvent = {
-      target: { value: prompt },
-      currentTarget: { value: prompt },
-    } as React.ChangeEvent<HTMLInputElement>;
+  const handlePromptSelect = useCallback(
+    (prompt: string) => {
+      const text = prompt.trim();
+      if (!text) return;
+      // Re-entrancy guard: without it, clicking a chip twice (or a second chip)
+      // before the request settles fires a second submit. The old rAF round-trip
+      // through handleInputChange resolved each deferred submit against whatever
+      // `input` held when its callback ran, so a chip click could submit the
+      // user's already-typed text. Submit the known prompt string directly via
+      // `append` instead, gated on in-flight state.
+      if (isLoading || promptSubmitInFlightRef.current) return;
+      promptSubmitInFlightRef.current = true;
+      // AI SDK v4's `append` doesn't clear the composer the way `handleSubmit`
+      // did. Clear any typed-but-unsent draft here — otherwise it lingers, Send
+      // re-enables once the chip request settles, and the next submit fires the
+      // stale draft as an unintended extra turn.
+      setInput("");
 
-    handleInputChange(inputEvent);
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-    requestAnimationFrame(() => {
-      const formEvent = {
-        preventDefault: () => {},
-        currentTarget: {} as HTMLFormElement,
-      } as React.FormEvent<HTMLFormElement>;
-      onSubmit(formEvent);
-    });
-  };
+      void append({ role: "user", content: text })
+        .catch((error) => {
+          // AI SDK surfaces request failures through onError, but handle a
+          // rejected `append` explicitly so it never becomes an unhandled
+          // rejection — and the in-flight guard is still released via finally.
+          console.error("Failed to submit suggested prompt", error);
+        })
+        .finally(() => {
+          promptSubmitInFlightRef.current = false;
+        });
+    },
+    [adhdAssist, append, chatId, isLoading, setInput],
+  );
 
   const sharedViewProps = {
     chatModels,
@@ -560,6 +769,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
     assistive,
     onAssistiveChange: handleAssistiveChange,
+    assistBusy: regeneratingMessageId !== null,
     focusMode,
     onFocusModeChange: setFocusMode,
     systemPrompt,
@@ -573,6 +783,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     disabledReason,
     routedModelByMessageId,
     streamingRoutedRegistryId,
+    cappedMessageIds,
+    onContinue: handleContinue,
     wasAutoRoutedByMessageId,
     streamingWasAutoRouted,
   };
@@ -609,13 +821,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           <ChatCourseScopedView {...sharedViewProps} />
         </div>
       </div>
-      <ChatHistoryPanel
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        {...historyListProps}
-      />
+      <ChatHistoryPanel open={historyOpen} onOpenChange={setHistoryOpen} {...historyListProps} />
       {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
-      <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
+      <Sheet
+        open={readOnlyTranscript !== null}
+        onOpenChange={(open) => {
+          if (!open) setReadOnlyTranscript(null);
+        }}
+      >
         <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
           <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
             <SheetTitle className="text-[15px]">

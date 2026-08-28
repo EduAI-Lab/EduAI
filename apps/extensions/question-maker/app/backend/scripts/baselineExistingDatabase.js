@@ -23,10 +23,10 @@
  * Idempotent: once `_prisma_migrations` exists (baselined or fresh), this is a
  * no-op on every subsequent deploy.
  */
-import { spawnSync } from 'child_process';
-import { prisma } from '../src/config/database.js';
+import { spawnSync } from "child_process";
+import { prisma } from "../src/config/database.js";
 
-const INIT_MIGRATION = '20260723215902_init';
+const INIT_MIGRATION = "20260723215902_init";
 
 async function tableExists(tableName) {
   const rows = await prisma.$queryRaw`
@@ -37,35 +37,39 @@ async function tableExists(tableName) {
 }
 
 async function main() {
-  const alreadyTracked = await tableExists('_prisma_migrations');
+  const alreadyTracked = await tableExists("_prisma_migrations");
   if (alreadyTracked) {
-    console.log('[baseline] _prisma_migrations already present, nothing to baseline.');
+    console.log("[baseline] _prisma_migrations already present, nothing to baseline.");
     return;
   }
 
-  const preExisting = await tableExists('users');
+  const preExisting = await tableExists("users");
   if (!preExisting) {
-    console.log('[baseline] No prior schema found, nothing to baseline (fresh database).');
+    console.log("[baseline] No prior schema found, nothing to baseline (fresh database).");
     return;
   }
 
-  console.log(`[baseline] Pre-existing Sequelize-managed database detected. Resolving ${INIT_MIGRATION} as applied...`);
-  const result = spawnSync('npx', ['prisma', 'migrate', 'resolve', '--applied', INIT_MIGRATION], {
-    stdio: 'inherit',
+  console.log(
+    `[baseline] Pre-existing Sequelize-managed database detected. Resolving ${INIT_MIGRATION} as applied...`,
+  );
+  const result = spawnSync("npx", ["prisma", "migrate", "resolve", "--applied", INIT_MIGRATION], {
+    stdio: "inherit",
     shell: true,
     env: process.env,
   });
 
   if (result.status !== 0) {
-    throw new Error(`prisma migrate resolve --applied ${INIT_MIGRATION} failed (exit ${result.status})`);
+    throw new Error(
+      `prisma migrate resolve --applied ${INIT_MIGRATION} failed (exit ${result.status})`,
+    );
   }
 
-  console.log('[baseline] Baseline complete. Remaining migrations will apply normally.');
+  console.log("[baseline] Baseline complete. Remaining migrations will apply normally.");
 }
 
 main()
   .catch((error) => {
-    console.error('[baseline] Failed:', error);
+    console.error("[baseline] Failed:", error);
     process.exitCode = 1;
   })
   .finally(async () => {

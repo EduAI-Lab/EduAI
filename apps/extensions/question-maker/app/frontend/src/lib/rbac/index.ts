@@ -1,6 +1,13 @@
-export type { QmCourseAccess, QmNavItem, QmNavItemKey, QmPlatformRole, QmRoleView, QmUser } from './types';
-export { QM_AUTHORIZED_ROLES, canAccessQm } from './roles';
-export { resolvePlatformCourseAccess, isAuthoringAccess } from './resolve-course-access';
+export type {
+  QmCourseAccess,
+  QmNavItem,
+  QmNavItemKey,
+  QmPlatformRole,
+  QmRoleView,
+  QmUser,
+} from "./types";
+export { QM_AUTHORIZED_ROLES, canAccessQm } from "./roles";
+export { resolvePlatformCourseAccess, isAuthoringAccess } from "./resolve-course-access";
 export {
   canApproveVariant,
   canCreateQuestion,
@@ -15,18 +22,18 @@ export {
   canTriageBugReports,
   canUseVariantWorkflow,
   canViewAssessment,
-} from './permissions';
+} from "./permissions";
 export {
   canShowAssessmentWriteNav,
   getFooterNavForUser,
   getNavForUser,
   getNavSecondaryForUser,
   getRoleViewLabel,
-} from './nav';
+} from "./nav";
 export {
   formatCourseAccessLevel,
   formatCourseRelationship,
   getCourseRelationship,
   shouldShowAccessBadge,
   shouldShowRelationshipBadge,
-} from './course-labels';
+} from "./course-labels";

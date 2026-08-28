@@ -4,6 +4,7 @@
  * These helpers isolate storage/query rules so route actions can log accountability events
  * without duplicating pagination, filtering, and security-category conventions.
  */
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
 
@@ -62,11 +63,8 @@ export type SecurityLogListParams = Omit<AuditLogListParams, "category" | "inclu
 
 export type AuditLogRow = Awaited<ReturnType<typeof prisma.auditLog.findFirst>>;
 
-function buildAuditLogWhere(
-  params: AuditLogListParams,
-  opts: { forceSecurityCategory: boolean }
-) {
-  const where: Record<string, unknown> = {};
+function buildAuditLogWhere(params: AuditLogListParams, opts: { forceSecurityCategory: boolean }) {
+  const where: Prisma.AuditLogWhereInput = {};
 
   // Security tab queries are always hard-scoped to SECURITY so caller mistakes cannot leak tabs.
   if (opts.forceSecurityCategory) {
@@ -104,9 +102,11 @@ function buildAuditLogWhere(
   }
 
   if (params.dateFrom || params.dateTo) {
+    // An `undefined` bound is Prisma's "no constraint", so an open-ended range
+    // states both ends rather than omitting one.
     where.createdAt = {
-      ...(params.dateFrom ? { gte: params.dateFrom } : {}),
-      ...(params.dateTo ? { lte: params.dateTo } : {}),
+      gte: params.dateFrom ?? undefined,
+      lte: params.dateTo ?? undefined,
     };
   }
 
@@ -137,7 +137,7 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
 }
 
 export async function createSecurityLog(
-  input: Omit<CreateAuditLogInput, "category"> & { actionCode: string }
+  input: Omit<CreateAuditLogInput, "category"> & { actionCode: string },
 ): Promise<void> {
   // SECURITY is enforced here so callers cannot accidentally misclassify auth/abuse telemetry.
   await createAuditLog({
@@ -147,7 +147,7 @@ export async function createSecurityLog(
 }
 
 export async function listAuditLogs(
-  params: AuditLogListParams
+  params: AuditLogListParams,
 ): Promise<{ rows: AuditLogRow[]; total: number }> {
   const { safePageSize, skip } = normalizePagination(params.page, params.pageSize);
   const where = buildAuditLogWhere(params, { forceSecurityCategory: false });
@@ -168,7 +168,7 @@ export async function listAuditLogs(
 }
 
 export async function listSecurityLogs(
-  params: SecurityLogListParams
+  params: SecurityLogListParams,
 ): Promise<{ rows: AuditLogRow[]; total: number }> {
   const { safePageSize, skip } = normalizePagination(params.page, params.pageSize);
   const where = buildAuditLogWhere(params, { forceSecurityCategory: true });

@@ -38,9 +38,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function statusLabel(
-  status: CanvasMaterialDiscoverItem["importStatus"],
-): string {
+function statusLabel(status: CanvasMaterialDiscoverItem["importStatus"]): string {
   switch (status) {
     case "not_imported":
       return "Not imported";
@@ -73,9 +71,7 @@ function formatSyncResultSummary(result: SyncCanvasMaterialsResult): string {
   return parts.length > 0 ? parts.join(", ") : "No changes";
 }
 
-function syncResultTone(
-  result: SyncCanvasMaterialsResult,
-): "success" | "warning" | "error" {
+function syncResultTone(result: SyncCanvasMaterialsResult): "success" | "warning" | "error" {
   if (result.failed.length > 0) return "error";
   if (result.imported > 0 || result.updated > 0) return "success";
   return "warning";
@@ -115,9 +111,7 @@ export function CanvasMaterialSyncDialog({
             items
               .filter(
                 (file) =>
-                  file.importStatus === "not_imported" &&
-                  file.isPublished &&
-                  !file.isExcluded,
+                  file.importStatus === "not_imported" && file.isPublished && !file.isExcluded,
               )
               .map((f) => f.canvasFileId),
           ),
@@ -167,10 +161,9 @@ export function CanvasMaterialSyncDialog({
       }
       await loadFiles({ clearResult: false, silent: true });
     } catch {
-      toast.error(
-        file.isExcluded ? "Failed to un-exclude file" : "Failed to exclude file",
-        { description: "Please try again." },
-      );
+      toast.error(file.isExcluded ? "Failed to un-exclude file" : "Failed to exclude file", {
+        description: "Please try again.",
+      });
     } finally {
       setExcludingId(null);
     }
@@ -213,8 +206,8 @@ export function CanvasMaterialSyncDialog({
         <DialogHeader>
           <DialogTitle>Sync materials from Canvas</DialogTitle>
           <DialogDescription>
-            Select course files to import into EduAI for chat and RAG. Only
-            supported document types are shown (PDF, DOCX, PPTX, TXT, MD).
+            Select course files to import into EduAI for chat and RAG. Only supported document types
+            are shown (PDF, DOCX, PPTX, TXT, MD).
           </DialogDescription>
         </DialogHeader>
 
@@ -244,26 +237,16 @@ export function CanvasMaterialSyncDialog({
                   <Checkbox
                     checked={selectedIds.has(file.canvasFileId)}
                     disabled={!isSelectable}
-                    onCheckedChange={(checked) =>
-                      toggleFile(file.canvasFileId, checked === true)
-                    }
+                    onCheckedChange={(checked) => toggleFile(file.canvasFileId, checked === true)}
                     className="mt-0.5"
                   />
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
-                    <span className="text-sm font-medium truncate">
-                      {file.displayName}
-                    </span>
+                    <span className="text-sm font-medium truncate">{file.displayName}</span>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>{formatFileSize(file.sizeBytes)}</span>
-                      <Badge variant="outline">
-                        {statusLabel(file.importStatus)}
-                      </Badge>
-                      {!file.isPublished && (
-                        <Badge variant="outline">Not published</Badge>
-                      )}
-                      {file.isExcluded && (
-                        <Badge variant="outline">Excluded</Badge>
-                      )}
+                      <Badge variant="outline">{statusLabel(file.importStatus)}</Badge>
+                      {!file.isPublished && <Badge variant="outline">Not published</Badge>}
+                      {file.isExcluded && <Badge variant="outline">Excluded</Badge>}
                     </div>
                   </div>
                   <Button
@@ -293,16 +276,14 @@ export function CanvasMaterialSyncDialog({
               resultTone === "error"
                 ? "rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
                 : resultTone === "success"
-                ? "rounded-md border border-green-600/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/30 dark:text-green-100"
-                : "rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+                  ? "rounded-md border border-green-600/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/30 dark:text-green-100"
+                  : "rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
             }
             role="status"
           >
             <p className="font-medium">Sync complete: {resultSummary}</p>
             {result?.failed.map((failure) => {
-              const file = files.find(
-                (item) => item.canvasFileId === failure.canvasFileId,
-              );
+              const file = files.find((item) => item.canvasFileId === failure.canvasFileId);
               return (
                 <p key={failure.canvasFileId} className="mt-1 text-xs">
                   {file?.displayName ?? failure.canvasFileId}: {failure.message}
@@ -310,9 +291,7 @@ export function CanvasMaterialSyncDialog({
               );
             })}
             {result?.skippedItems.map((skipped) => {
-              const file = files.find(
-                (item) => item.canvasFileId === skipped.canvasFileId,
-              );
+              const file = files.find((item) => item.canvasFileId === skipped.canvasFileId);
               return (
                 <p key={skipped.canvasFileId} className="mt-1 text-xs">
                   {file?.displayName ?? skipped.canvasFileId}: skipped —{" "}
@@ -324,17 +303,10 @@ export function CanvasMaterialSyncDialog({
         )}
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={syncing}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={syncing}>
             Close
           </Button>
-          <Button
-            onClick={() => void handleSync()}
-            disabled={syncing || selectedIds.size === 0}
-          >
+          <Button onClick={() => void handleSync()} disabled={syncing || selectedIds.size === 0}>
             {syncing ? (
               <>
                 <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />

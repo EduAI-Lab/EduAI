@@ -8,17 +8,17 @@ export const authClient = createAuthClient({
     inferAdditionalFields({
       user: {
         role: {
-        type: "string",
-        defaultValue: "STUDENT",
-        required: false,
-        returned: true,
-      },
-      isActive: {
-        type: "boolean",
-        defaultValue: true,
-        required: false,
-        returned: true,
-      },
+          type: "string",
+          defaultValue: "STUDENT",
+          required: false,
+          returned: true,
+        },
+        isActive: {
+          type: "boolean",
+          defaultValue: true,
+          required: false,
+          returned: true,
+        },
       },
     }),
   ],

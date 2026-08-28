@@ -85,8 +85,7 @@ const TOOL_CAPABLE_WEB_PICK: PickSpec = {
   tieBreak: "carbon",
 };
 
-const WEB_LOOKUP_PATTERN =
-  /^(look up|find a recent|find the current)\b/i;
+const WEB_LOOKUP_PATTERN = /^(look up|find a recent|find the current)\b/i;
 
 // Explicit "search the web"/"browse the web"/"google" phrasing is an
 // unambiguous request for a live web tool regardless of the topic that
@@ -133,8 +132,7 @@ const CODE_ARTIFACT_VERB_PATTERN =
 const ISA_ASSEMBLY_PATTERN =
   /\b(?:mips|x86|arm)\s+assembly\b|\bassembly\b.{0,20}\b(?:for|that|code)\b|\bregister\s+\$/i;
 
-const COMPLEX_CODE_PATTERN =
-  /\bwrite a\b.{0,40}\bfunction\b.{0,40}\b(iteratively|recursively)\b/i;
+const COMPLEX_CODE_PATTERN = /\bwrite a\b.{0,40}\bfunction\b.{0,40}\b(iteratively|recursively)\b/i;
 
 const REFACTOR_USE_EFFECT_PATTERN =
   /\buseeffect\b[\s\S]{0,120}\boutline a refactor\b|\boutline a refactor\b[\s\S]{0,120}\buseeffect\b/i;
@@ -146,7 +144,10 @@ const RAG_REASONING_PATTERN =
 const DISTINCT_ENUMERATION_PATTERN =
   /\b(name|list|give|identify)\b.{0,40}\b(two|2|three|3)\b.{0,40}\bdistinct\b/i;
 
-function routingRagStrongSimilarity(): number {
+/** Exported so llm-classifier.ts can apply the same RAG-strength threshold
+ * the rule stack uses for `rule4_strong_rag_tier_1` — see
+ * `tierFromLlmClassification`'s RAG-aware de-escalation branch. */
+export function routingRagStrongSimilarity(): number {
   const raw = process.env.ROUTING_RAG_STRONG_SIM;
   if (raw === undefined || raw === "") return 0.8;
   const n = Number(raw);
@@ -234,10 +235,7 @@ export function isComplexReasoningPrompt(prompt: string, lower: string): boolean
 
 /** Strong-RAG hits that still need tier 3 for reasoning quality (not retrieval alone). */
 export function needsRagReasoningEscalation(lower: string): boolean {
-  return (
-    RAG_REASONING_PATTERN.test(lower) ||
-    COMPLEX_REASONING_PATTERN.test(lower)
-  );
+  return RAG_REASONING_PATTERN.test(lower) || COMPLEX_REASONING_PATTERN.test(lower);
 }
 
 /** Course RAG prompts asking for multiple distinct items — 7B often under-lists. */
@@ -245,7 +243,14 @@ export function needsDistinctEnumerationEscalation(lower: string): boolean {
   return DISTINCT_ENUMERATION_PATTERN.test(lower);
 }
 
-function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
+/** Exported so llm-classifier.ts's tierFromLlmClassification can apply the
+ * exact same strong-RAG definition the rule stack uses for
+ * `rule4_strong_rag_tier_1`, instead of re-deriving the predicate by hand —
+ * see the "auto-llm tier drift" investigation this was written to prevent
+ * from recurring. */
+export function hasStrongRagHit(
+  ctx: Pick<Phase1RouterContext, "ragTopSimilarity" | "ragChunkCount">,
+): boolean {
   const top1 = ctx.ragTopSimilarity;
   const chunks = ctx.ragChunkCount;
   return top1 != null && chunks != null && chunks >= 1 && top1 >= routingRagStrongSimilarity();

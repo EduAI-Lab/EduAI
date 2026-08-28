@@ -1,8 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 
-import { findRelevantContent } from "~/lib/ai/embedding";
-import { capRagHitsForTool, HYBRID_RAG_MAX_CHUNKS } from "~/lib/chat-rag";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import { fetchPage, webSearch } from "~/lib/ai/tools";
 import type { ChatToolContext } from "./chat-mode";
 
@@ -22,23 +21,7 @@ export function createLearningChatTools(ctx: ChatToolContext) {
           return { error: "No course selected for RAG search" };
         }
 
-        try {
-          const relevantContent = await findRelevantContent(
-            question,
-            effectiveCourseId,
-            HYBRID_RAG_MAX_CHUNKS,
-            undefined,
-            restrictToStudentVisible ?? false,
-          );
-          const capped = capRagHitsForTool(relevantContent);
-          return {
-            relevantContent: capped,
-            count: capped.length,
-          };
-        } catch (error) {
-          console.error("Error finding relevant content:", error);
-          return { error: "Failed to search course materials" };
-        }
+        return runCourseMaterialSearchTool(question, effectiveCourseId, restrictToStudentVisible);
       },
     }),
     webSearch,

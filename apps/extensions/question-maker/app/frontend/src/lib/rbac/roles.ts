@@ -1,4 +1,4 @@
-export const QM_AUTHORIZED_ROLES = ['INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN'] as const;
+export const QM_AUTHORIZED_ROLES = ["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"] as const;
 
 export type QmAuthorizedRole = (typeof QM_AUTHORIZED_ROLES)[number];
 

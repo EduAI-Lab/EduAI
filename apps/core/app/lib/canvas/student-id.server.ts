@@ -1,6 +1,11 @@
 import { createHmac } from "node:crypto";
 
-import { decrypt, encrypt, isEncrypted, CanvasCredentialDecryptError } from "~/lib/canvas/encryption";
+import {
+  decrypt,
+  encrypt,
+  isEncrypted,
+  CanvasCredentialDecryptError,
+} from "~/lib/canvas/encryption";
 
 /** Normalizes a student number / Canvas sis_user_id for comparison. */
 export function normalizeStudentId(value: string | null | undefined): string | null {
@@ -46,20 +51,20 @@ export function readStoredStudentId(stored: string | null | undefined): string |
   }
 }
 
-export function prepareStudentIdStorage(normalizedStudentId: string): {
-  studentId: string;
-  studentIdLookup: string;
-} {
+/** The pair a student id is stored as: the ciphertext, and its lookup digest. */
+export type StoredStudentId = { studentId: string; studentIdLookup: string };
+
+export function prepareStudentIdStorage(normalizedStudentId: string): StoredStudentId {
   return {
     studentId: encryptStudentIdForStorage(normalizedStudentId),
     studentIdLookup: studentIdLookupKey(normalizedStudentId),
   };
 }
 
-export function clearStudentIdStorage(): {
-  studentId: null;
-  studentIdLookup: null;
-} {
+/** The same pair, cleared — what an update writes to drop a stored student id. */
+export type ClearedStudentId = { studentId: null; studentIdLookup: null };
+
+export function clearStudentIdStorage(): ClearedStudentId {
   return {
     studentId: null,
     studentIdLookup: null,
@@ -102,10 +107,10 @@ export function studentIdsMatchFilter(normalizedStudentIds: string[]) {
 }
 
 /** Encrypts a normalized Canvas sis_user_id for roster staging at rest. */
-export function prepareRosterSisUserIdStorage(normalizedStudentId: string): {
-  sisUserId: string;
-  sisUserIdLookup: string;
-} {
+/** The same pair under the roster-staging column names. */
+export type StoredRosterSisUserId = { sisUserId: string; sisUserIdLookup: string };
+
+export function prepareRosterSisUserIdStorage(normalizedStudentId: string): StoredRosterSisUserId {
   const prepared = prepareStudentIdStorage(normalizedStudentId);
   return {
     sisUserId: prepared.studentId,
@@ -113,10 +118,10 @@ export function prepareRosterSisUserIdStorage(normalizedStudentId: string): {
   };
 }
 
-export function clearRosterSisUserIdStorage(): {
-  sisUserId: null;
-  sisUserIdLookup: null;
-} {
+/** The roster-staging pair, cleared. */
+export type ClearedRosterSisUserId = { sisUserId: null; sisUserIdLookup: null };
+
+export function clearRosterSisUserIdStorage(): ClearedRosterSisUserId {
   return {
     sisUserId: null,
     sisUserIdLookup: null,
@@ -144,9 +149,7 @@ export function rosterSisUserIdMatchForUser(input: {
     return {
       OR: [
         { sisUserIdLookup: input.studentIdLookup },
-        ...(normalizedStudentId
-          ? [{ sisUserId: normalizedStudentId, sisUserIdLookup: null }]
-          : []),
+        ...(normalizedStudentId ? [{ sisUserId: normalizedStudentId, sisUserIdLookup: null }] : []),
       ],
     };
   }

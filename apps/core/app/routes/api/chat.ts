@@ -1,14 +1,25 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { ZodError } from "zod";
-import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
+import { z, ZodError } from "zod";
+import { createDataStreamResponse, formatDataStreamPart, StreamData, streamText } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
+import {
+  classifyProviderFailure,
+  classifyPublicProviderError,
+  createProviderFailure,
+  isProviderAbortError,
+  providerFailureBody,
+  providerFailureHeaders,
+  providerErrorDiagnostic,
+  type ProviderFailure,
+} from "~/lib/ai/provider-errors.server";
 import {
   activeRouterVersion,
   parseRouterMode,
@@ -23,6 +34,7 @@ import {
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
@@ -32,11 +44,14 @@ import {
 } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { createStreamStartupProbe } from "~/lib/ai/routing/fleet/probe-stream";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import {
-  buildFleetRouterFeatures,
-  parseWorkloadFeature,
-} from "~/lib/ai/routing/fleet/types";
+import { buildFleetRouterFeatures, parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
 import { parseJobType, type FleetPick } from "~/lib/ai/routing/fleet/types";
+import {
+  enableBedrockOnSettings,
+  isClientRequestedBedrockModel,
+  tryActivateBedrockOverflow,
+  type BedrockOverflowActivation,
+} from "~/lib/ai/routing/bedrock/overflow.server";
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
@@ -47,18 +62,16 @@ import {
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
-  ESTIMATED_CHARS_PER_TOKEN,
+  resolveSessionCharBudgetForModel,
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
-import {
-  composeSystemPrompt,
-  resolveEffectiveAdhdAssist,
-} from "~/lib/ai/adhd-assist";
+import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import {
   buildCourseResponseStylePrompt,
   appendCourseStyleToSystemPrompt,
 } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
+import { capTokensForLongOutputIntent, didHitAppliedLongOutputCap } from "~/lib/ai/long-output-cap";
 import {
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
@@ -69,11 +82,9 @@ import {
   type CourseScopeContext,
   type CourseScopeVerdict,
 } from "~/lib/ai/course-scope-guardrail";
+import { buildChatToolRegistry, buildToolCallingSystemPrompt } from "~/lib/ai/chat-tools";
 import {
-  buildChatToolRegistry,
-  buildToolCallingSystemPrompt,
-} from "~/lib/ai/chat-tools";
-import {
+  appendCustomInstructions,
   composeSecurityPrompt,
   filterIncomingClientMessages,
   sanitizeSystemPrompt,
@@ -87,6 +98,7 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
@@ -102,47 +114,29 @@ import {
   pickCourseIdByCandidatePriority,
 } from "~/lib/courses/course-code-candidates";
 import { getCourseTopicNamesCached } from "~/lib/courses/server";
-import {
-  resolveCourseAccessWithCourse,
-  type AccessLevel,
-} from "~/lib/auth/course-access.server";
-import {
-  enforceAdminIfApiKey,
-  requireServiceKey,
-} from "~/lib/auth/guards.server";
+import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
-import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
-import { auth } from "~/lib/auth/server";
+import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
-import {
-  getActorContext,
-  getRequestContext,
-} from "~/lib/request-context.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
+  pickCoreAdminChatTools,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
-import {
-  enqueueQuestionGeneration,
-  isEnqueueRequested,
-} from "~/lib/queue/chat-producer.server";
+import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
-import {
-  clientApiKeysBodySchema,
-  toUserProviderSettings,
-} from "~/lib/chat-api-keys.schema";
+import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
-import {
-  shouldInjectCourseRag,
-  shouldPrefetchCourseRag,
-} from "~/lib/ai/course-rag-policy";
+import { shouldInjectCourseRag, shouldPrefetchCourseRag } from "~/lib/ai/course-rag-policy";
 import {
   buildCappedRagContextText,
   buildEmptyCourseRagBlock,
@@ -154,6 +148,7 @@ import {
   LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  resolveMaxDigestSourceMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
@@ -163,6 +158,12 @@ import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
 } from "~/lib/chat/chat-message-metadata";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  readBoundedChatJson,
+  resolveChatInputLimits,
+  validateChatBody,
+} from "~/lib/chat-input.server";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -170,10 +171,9 @@ function autoRoutingHeaders(
   wasAuto: boolean,
   routerVersion?: string | null,
   fleetServerId?: string | null,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "X-Routed-Model": resolvedModelId,
-  };
+) {
+  const headers: Record<string, string> = {};
+  headers["X-Routed-Model"] = resolvedModelId;
   if (wasAuto) {
     if (routingTier != null) {
       headers["X-Routing-Tier"] = String(routingTier);
@@ -196,11 +196,72 @@ function usageProviderOptions(providerId: string) {
   return undefined;
 }
 
-function resolveAutoRouting(model: string | undefined): {
+/**
+ * The request fields this route reads by name, decoded once `validateChatBody`
+ * has cleared the size limits. Every field is independently recoverable: a
+ * client sending the wrong type for one field must not fail the whole turn, it
+ * simply reads as absent, exactly as the hand-written checks did before.
+ *
+ * Fields the route inspects for *presence* (`adhdAssist`, `systemPrompt`) are
+ * still read off the raw body, since "sent as null" and "not sent" differ there.
+ */
+const chatRequestSchema = z
+  .object({
+    model: z.string().optional().catch(undefined),
+    courseId: z.string().optional().catch(undefined),
+    courseCode: z.string().optional().catch(undefined),
+    chatId: z.string().optional().catch(undefined),
+    // Any non-string, like any string other than "admin", is a learning chat.
+    chatMode: z.string().optional().catch(undefined),
+    systemPrompt: z.string().optional().catch(undefined),
+    proxyUser: z
+      .object({
+        provider: z.string().optional().catch(undefined),
+        id: z.string().optional().catch(undefined),
+        email: z.string().optional().catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
+  })
+  .passthrough();
+
+/**
+ * Token counts as the AI SDK and the OpenAI-compatible providers spell them.
+ * `coalesceTokenUsage` picks between the spellings; this only has to decode the
+ * vendor object into named numbers first, and read a missing or malformed count
+ * as absent rather than dropping the whole usage report.
+ */
+const tokenUsageSchema = z
+  .object({
+    promptTokens: z.number().optional().catch(undefined),
+    inputTokens: z.number().optional().catch(undefined),
+    prompt_tokens: z.number().optional().catch(undefined),
+    completionTokens: z.number().optional().catch(undefined),
+    outputTokens: z.number().optional().catch(undefined),
+    completion_tokens: z.number().optional().catch(undefined),
+    totalTokens: z.number().optional().catch(undefined),
+    total_tokens: z.number().optional().catch(undefined),
+  })
+  .catch({});
+
+type ChatTokenUsage = z.infer<typeof tokenUsageSchema>;
+
+/**
+ * The registry keys models as `provider:model`. Splitting and rejoining proves
+ * that shape to the type system without asserting it.
+ */
+function toRegistryModelId(modelId: string): RegistryModelId {
+  const [providerId, ...rest] = modelId.split(":");
+  return `${providerId}:${rest.join(":")}`;
+}
+
+type AutoRoutingDecision = {
   routeWithAuto: boolean;
   modeOverride?: RouterMode;
   requestedAuto: string | null;
-} {
+};
+
+function resolveAutoRouting(model: string | undefined): AutoRoutingDecision {
   if (model === undefined || model === "auto") {
     return { routeWithAuto: true, requestedAuto: model ?? "auto" };
   }
@@ -214,11 +275,33 @@ function resolveAutoRouting(model: string | undefined): {
   return { routeWithAuto: false, requestedAuto: null };
 }
 
-const TOOL_MAX_STEPS = Math.min(
-  32,
-  Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
-);
-type GenericMessage = Record<string, any>;
+const TOOL_MAX_STEPS = Math.min(32, Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12));
+/**
+ * A chat turn as it travels through this route.
+ *
+ * The client payload, a revived DB row and an AI SDK response message all decode
+ * into this envelope. Only the fields this route reads are named; everything else
+ * a provider or client attaches passes through untouched, because the whole
+ * message is what gets persisted and replayed to the model.
+ */
+const chatMessageSchema = z
+  .object({
+    id: z.string().optional(),
+    role: z.string().optional(),
+    content: z.unknown(),
+    parts: z.unknown(),
+  })
+  .passthrough();
+
+type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+/** An id or role that survives a round-trip: present, and not just whitespace. */
+const presentTextSchema = z.string().trim().min(1);
+
+const isPresentText = (value: string | undefined): value is string =>
+  value !== undefined && presentTextSchema.safeParse(value).success;
+
+type RegistryModelId = `${string}:${string}`;
 
 type StoredMessageRecord = {
   messageId: string;
@@ -232,9 +315,6 @@ type ProxyUserPayload = {
   email?: string;
 };
 
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0;
-
 /**
  * Normalizes arbitrary incoming message payloads so downstream code can rely on
  * `id` and `role` being present. If a client omits `id`, we stamp one here so
@@ -244,21 +324,12 @@ const isNonEmptyString = (value: unknown): value is string =>
  * sending it. This enables optimistic UI updates and allows the server to
  * deduplicate retries safely.
  */
-function normalizeMessage(message: unknown): GenericMessage | null {
-  if (!message || typeof message !== "object") {
+function normalizeMessage(message: ChatMessage): ChatMessage | null {
+  if (!isPresentText(message.role)) {
     return null;
   }
 
-  const normalized = { ...(message as GenericMessage) };
-  if (!isNonEmptyString(normalized.role)) {
-    return null;
-  }
-
-  if (!isNonEmptyString(normalized.id)) {
-    normalized.id = randomUUID();
-  }
-
-  return normalized;
+  return isPresentText(message.id) ? message : { ...message, id: randomUUID() };
 }
 
 /**
@@ -266,12 +337,14 @@ function normalizeMessage(message: unknown): GenericMessage | null {
  * always stores the original JSON, but `messageId`/`role` are kept separately as
  * an escape hatch if the payload ever changes shape.
  */
-function reviveStoredMessage(record: StoredMessageRecord): GenericMessage {
-  if (record.content && typeof record.content === "object") {
-    const parsed = record.content as GenericMessage;
-    const id = isNonEmptyString(parsed.id) ? parsed.id : record.messageId;
-    const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
-    return { ...parsed, id, role };
+function reviveStoredMessage(record: StoredMessageRecord): ChatMessage {
+  const stored = chatMessageSchema.safeParse(record.content);
+  if (stored.success) {
+    return {
+      ...stored.data,
+      id: presentTextSchema.safeParse(stored.data.id).success ? stored.data.id : record.messageId,
+      role: presentTextSchema.safeParse(stored.data.role).success ? stored.data.role : record.role,
+    };
   }
 
   return {
@@ -286,24 +359,17 @@ function reviveStoredMessage(record: StoredMessageRecord): GenericMessage {
  * This lets clients resend the latest user turn without worrying about the
  * server duplicating history.
  */
-function mergeMessages(
-  stored: GenericMessage[],
-  incoming: GenericMessage[],
-): GenericMessage[] {
+function mergeMessages(stored: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   if (incoming.length === 0) {
     return stored;
   }
 
-  const seenIds = new Set(
-    stored
-      .map((message) => (isNonEmptyString(message.id) ? message.id : null))
-      .filter(isNonEmptyString),
-  );
+  const seenIds = new Set(stored.map((message) => message.id).filter(isPresentText));
 
   const merged = [...stored];
 
   for (const message of incoming) {
-    if (!isNonEmptyString(message.id)) {
+    if (!isPresentText(message.id)) {
       continue;
     }
     if (seenIds.has(message.id)) {
@@ -317,8 +383,8 @@ function mergeMessages(
 }
 
 /** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
-function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
-  const systemChars = typeof system === "string" ? system.length : 0;
+function llmPromptSizeHints(system: string | undefined, messages: ChatMessage[]) {
+  const systemChars = system?.length ?? 0;
   let messageTextChars = 0;
   for (const m of messages) {
     // Count what the model actually receives (incl. tool-call/result payloads),
@@ -344,13 +410,33 @@ export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): n
 }
 
 /** Serializes a message object to JSON, handling circular references. */
-function serializeMessage(message: GenericMessage): Prisma.JsonValue {
+function serializeMessage(message: ChatMessage): Prisma.InputJsonValue {
   try {
-    return structuredClone(message) as Prisma.JsonValue;
+    // SAFETY: a structured clone of an already-JSON-decoded message is plain
+    // JSON data, so the clone is by construction a `Prisma.InputJsonValue`.
+    return structuredClone(message) as Prisma.InputJsonValue;
   } catch {
-    return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+    // A circular reference is the only way to get here; the JSON round-trip
+    // drops it and returns plain JSON data, which needs no assertion.
+    return JSON.parse(JSON.stringify(message));
   }
 }
+
+/**
+ * Assistant content as the AI SDK writes it: already-plain text, or an array of
+ * typed parts where only the `text` parts carry anything renderable.
+ */
+const assistantTextSchema = z.union([
+  z.string(),
+  z.array(z.unknown()).transform((parts) =>
+    parts
+      .flatMap((part) => {
+        const textPart = z.object({ type: z.literal("text"), text: z.string() }).safeParse(part);
+        return textPart.success ? [textPart.data.text] : [];
+      })
+      .join("\n"),
+  ),
+]);
 
 /**
  * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
@@ -358,24 +444,24 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
  * field is empty. Keeps persisted assistant content as a string so chat history
  * restore renders real markdown instead of a blank bubble or raw JSON.
  */
-function extractAssistantText(messages: GenericMessage[] | undefined): string {
+function extractAssistantText(messages: ChatMessage[] | undefined): string {
   if (!messages?.length) return "";
-  const collectText = (content: unknown): string => {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter((p): p is GenericMessage => !!p && typeof p === "object")
-        .filter((p) => p.type === "text" && typeof p.text === "string")
-        .map((p) => p.text as string)
-        .join("\n");
-    }
-    return "";
+  const collectText = (content: ChatMessage["content"]): string => {
+    const text = assistantTextSchema.safeParse(content);
+    return text.success ? text.data : "";
   };
   return messages
     .filter((m) => m.role === "assistant")
     .map((m) => collectText(m.content))
     .filter((t) => t.length > 0)
     .join("\n");
+}
+
+/** Prisma reports a unique-constraint collision as error code `P2002`. */
+const prismaErrorSchema = z.object({ code: z.string() }).catch({ code: "" });
+
+function isUniqueConstraintViolation(cause: unknown): boolean {
+  return prismaErrorSchema.parse(cause).code === "P2002";
 }
 
 /**
@@ -431,9 +517,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     );
   }
   if (!(await getPolicy("auth.allowPublicRegistration"))) {
-    throw new Error(
-      "Cannot create a new proxy identity while public registration is disabled",
-    );
+    throw new Error("Cannot create a new proxy identity while public registration is disabled");
   }
 
   let user: User;
@@ -447,12 +531,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       },
     });
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
+    if (isUniqueConstraintViolation(error)) {
       // The email already belongs to an existing EduAI account. Refuse to
       // bind an external identity onto it — that is exactly the AUTH-01
       // escalation path this fix closes.
@@ -471,12 +550,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       },
     });
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
+    if (isUniqueConstraintViolation(error)) {
       const mapping = await prisma.externalUser.findUnique({
         where: {
           provider_externalUserId: {
@@ -496,35 +570,62 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   return user;
 }
 
-function formatStreamError(error: unknown): string {
-  if (error instanceof Error) {
-    const message = error.message || error.name;
-    if (message.includes("Invalid arguments for tool")) {
-      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
-    }
-    return message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown stream error";
-  }
+/**
+ * Free-form request context attached to a rejection or stream-error log line.
+ * It is a `JsonObject` because every trace is serialized straight to stdout —
+ * the same contract the router bags this file forwards already carry.
+ */
+type ChatTrace = JsonObject;
+
+/**
+ * Router and telemetry bags are logged verbatim and never interpreted, so one
+ * JSON round-trip is what makes them JSON-shaped — no assertion required, and
+ * anything unserializable is dropped here rather than at the log call.
+ */
+function asTrace<T extends object>(values: T): ChatTrace {
+  return JSON.parse(JSON.stringify(values));
 }
 
-function logStreamError(error: unknown, trace: Record<string, unknown>): void {
+function formatStreamError(cause: unknown): string {
+  return classifyPublicProviderError(cause, "stream").message;
+}
+
+function logStreamError(cause: unknown, trace: ChatTrace): void {
   console.error("[chat-api] stream error", {
-    error: formatStreamError(error),
+    error: formatStreamError(cause),
     trace,
-    raw: error,
+    diagnostic: providerErrorDiagnostic(cause),
   });
 }
 
-function isClientAbort(error: unknown, signal: AbortSignal): boolean {
+// `chatId` is a required, explicitly-typed parameter (not read out of the
+// free-form `trace` bag) so a call site that forgets to pass it is a compile
+// error, not a silently-missing X-Chat-Id header on a future gate (#1621
+// review) — pass `null` explicitly for the rare case there's genuinely no
+// chat yet.
+function rejectProviderFailure(
+  failure: ProviderFailure,
+  chatId: string | null,
+  trace: ChatTrace,
+): Response {
+  const headers = providerFailureHeaders(failure);
+  // Surface the chat id back to the client (X-Chat-Id, read in onResponse)
+  // even on a provider failure, so a retry continues the same thread instead
+  // of spawning another orphaned "New conversation" row (#1561).
+  if (chatId) {
+    headers["X-Chat-Id"] = chatId;
+  }
+  return chatApiReject(failure.status, providerFailureBody(failure), trace, headers);
+}
+
+function providerStreamErrorMessage(provider: string, cause: unknown, trace: ChatTrace): string {
+  logStreamError(cause, trace);
+  return JSON.stringify(providerFailureBody(classifyProviderFailure(provider, cause)));
+}
+
+function isClientAbort(cause: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
-  return error instanceof Error && error.name === "AbortError";
+  return isProviderAbortError(cause);
 }
 
 /** Empty response when the client cancelled (e.g. stop button / fetch abort). */
@@ -546,22 +647,28 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   const requestStartMs = Date.now();
+  // Declared outside the try block (assigned inside, below) so the outer
+  // catch-all can still echo X-Chat-Id when an exception outside the
+  // explicit provider-failure gates fires after the user's message has
+  // already been persisted (#1621 review) — otherwise the client can't
+  // resume the same thread on retry even though nothing was lost server-side.
+  let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
   try {
-    const { response: apiKeyGuard, session: apiKeySession } =
-      await enforceAdminIfApiKey(request);
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    let session =
-      apiKeySession ??
-      (await auth.api.getSession({ headers: request.headers }));
+    let session = apiKeySession ?? (await getRequestSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
       isServiceKeyCaller = true;
+      // SAFETY: a service-key caller has no database session, so this stands in
+      // for one. Only `session.user.{id,role}` is read past this point, and both
+      // are set here; the assertion just borrows the session type's shape.
       session = {
         user: { id: "service", name: "Service", role: "ADMIN" },
-      } as unknown as typeof session;
+      } as typeof session;
     }
 
     if (!session?.user) {
@@ -571,13 +678,43 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const body = await request.json();
-    const rawMessages: unknown[] = Array.isArray(body.messages)
-      ? body.messages
-      : [];
-    let model = typeof body.model === "string" ? body.model.trim() : undefined;
+    const chatInputLimits = resolveChatInputLimits();
+    const bodyResult = await readBoundedChatJson(request, chatInputLimits.maxBodyBytes);
+    if (!bodyResult.ok) {
+      return new Response(JSON.stringify({ error: bodyResult.error }), {
+        status: bodyResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const validationResult = validateChatBody(bodyResult.body, chatInputLimits);
+    if (!validationResult.ok) {
+      return new Response(JSON.stringify({ error: validationResult.error }), {
+        status: validationResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const body = validationResult.body;
+    const request_ = chatRequestSchema.parse(body);
+    const rawMessages: JsonValue[] = validationResult.messages;
+    let model = request_.model?.trim();
     if (model === "") {
       model = undefined;
+    }
+
+    // Bedrock is overflow-only (#1441). A client-supplied bedrock:* model
+    // would bypass both the local-capacity gate and the global cost cap.
+    if (isClientRequestedBedrockModel(model)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+          code: "BEDROCK_NOT_SELECTABLE",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (model === "auto-hybrid") {
@@ -613,8 +750,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: "Routing model disabled",
-          details:
-            "The selected Auto routing mode is disabled in Admin → AI Models.",
+          details: "The selected Auto routing mode is disabled in Admin → AI Models.",
         }),
         {
           status: 400,
@@ -639,17 +775,31 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const autoRouting = resolveAutoRouting(model);
     const routeWithAuto = autoRouting.routeWithAuto;
-    const courseId =
-      typeof body.courseId === "string" ? body.courseId : undefined;
-    const courseCode =
-      typeof body.courseCode === "string" ? body.courseCode : undefined;
-    const streaming =
-      body.streaming === undefined ? true : Boolean(body.streaming);
+    const courseId = request_.courseId;
+    const courseCode = request_.courseCode;
+    // #1246: re-generate the last turn's response under a different ADHD Assist
+    // policy for in-place preview (toggling Assist swaps content, not just
+    // styling). Always non-streaming and never persists anything — it requires
+    // an existing owned chatId (validated below) and reuses that chat's normal
+    // course/RAG/model context, just with `adhdAssist` overridden for this call.
+    const regenerateOnly = body.regenerateOnly === true;
+    const streaming = regenerateOnly
+      ? false
+      : body.streaming === undefined
+        ? true
+        : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
-    const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
-    const chatMode = parseChatMode(body.chatMode);
+    const chatId = request_.chatId;
+    const chatMode = parseChatMode(request_.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
+
+    if (regenerateOnly && !chatId) {
+      return new Response(JSON.stringify({ error: "regenerateOnly requires an existing chatId" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     chatApiTrace("request received", {
       chatMode,
@@ -664,25 +814,16 @@ export async function action({ request }: ActionFunctionArgs) {
       userId: session.user.id,
       userRole: session.user.role,
     });
-    const proxyUserPayload =
-      body.proxyUser && typeof body.proxyUser === "object"
-        ? (body.proxyUser as ProxyUserPayload)
-        : null;
+    const proxyUserPayload: ProxyUserPayload | null = request_.proxyUser ?? null;
     const workloadFeature = parseWorkloadFeature(body.routingContext);
 
-    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(
-      body,
-      "adhdAssist",
-    );
+    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
 
-    const hasSystemPromptField = Object.prototype.hasOwnProperty.call(
-      body,
-      "systemPrompt",
-    );
+    const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
-    if (typeof body.systemPrompt === "string") {
-      trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
+    if (request_.systemPrompt !== undefined) {
+      trimmedSystemPrompt = sanitizeSystemPrompt(request_.systemPrompt);
     } else if (body.systemPrompt === null) {
       trimmedSystemPrompt = null;
     }
@@ -690,13 +831,10 @@ export async function action({ request }: ActionFunctionArgs) {
     let actingUser = session.user;
     if (proxyUserPayload) {
       if (!apiKeySession) {
-        return new Response(
-          JSON.stringify({ error: "proxyUser requires admin API key access" }),
-          {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
+        return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       try {
@@ -723,7 +861,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (
       chatMode === "admin" &&
-      (isServiceKeyCaller || actingUser.role !== UserRole.ADMIN)
+      (isServiceKeyCaller ||
+        actingUser.role !== UserRole.ADMIN ||
+        // Re-check isActive against the DB (#1571): a deactivated admin's live
+        // session must not retain admin chat-tools access until it expires.
+        !(await isActiveAdminUser(actingUser.id)))
     ) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
@@ -731,42 +873,44 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // #987: cap LLM completion requests per real end-user. Keyed by
-    // actingUser.id (post-proxy-resolution) so AI Tutor's proxied traffic is
-    // metered per underlying student, not lumped under the shared "service"
-    // caller id. Pure server-to-server calls with no proxyUser stay
-    // unmetered here — they're already gated by the EDUAI_API_KEY secret.
-    if (actingUser.id !== "service") {
-      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
-      const chatRateWindowMs = parseEnvInt(
-        process.env.CHAT_RATE_WINDOW_MS,
-        60_000,
+    // #987/#1113: meter every authenticated caller before provider work. The
+    // acting user is final here, so approved proxy traffic remains per-user
+    // while direct service-key traffic shares a stable non-secret bucket.
+    const { limit: chatRateLimit, windowMs: chatRateWindowMs } = getChatRateLimitConfig();
+    const rateLimit = await checkRateLimit(
+      `chat:${actingUser.id}`,
+      chatRateLimit,
+      chatRateWindowMs,
+    );
+    if (rateLimit.limited) {
+      const requestContext = getRequestContext(request);
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+          ...requestContext,
+          actionCode: "RATE_LIMIT_EXCEEDED",
+          outcome: "DENIED",
+          entityType: "Chat",
+          details: { userId: actingUser.id },
+        }),
       );
-      if (
-        isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)
-      ) {
-        const requestContext = getRequestContext(request);
-        fireAndForget(
-          logSecurityEvent({
-            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
-            ...requestContext,
-            actionCode: "RATE_LIMIT_EXCEEDED",
-            outcome: "DENIED",
-            entityType: "Chat",
-            details: { userId: actingUser.id },
-          }),
-        );
-        return new Response(JSON.stringify({ error: "Too Many Requests" }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      return chatApiReject(
+        429,
+        { error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter },
+        { chatMode, userId: actingUser.id },
+        { "Retry-After": String(rateLimit.retryAfter) },
+      );
     }
 
+    // The client's turns enter the route here: decode each one, then normalize
+    // what decoded. Anything that is not a message-shaped object is dropped.
     const normalizedIncomingMessages = filterIncomingClientMessages(
-      rawMessages
-        .map((m) => normalizeMessage(m))
-        .filter((m): m is GenericMessage => m !== null),
+      rawMessages.flatMap((raw) => {
+        const decoded = chatMessageSchema.safeParse(raw);
+        if (!decoded.success) return [];
+        const normalized = normalizeMessage(decoded.data);
+        return normalized === null ? [] : [normalized];
+      }),
     );
 
     // Resolve course code to internal ID when needed.
@@ -776,7 +920,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Single findMany keeps candidate priority without N round-trips; case is
     // insensitive so "cosc121" still resolves.
     let resolvedCourseId: string | null = null;
-    if (courseCode && typeof courseCode === "string") {
+    if (courseCode) {
       try {
         const candidates = courseCodeLookupCandidates(courseCode);
         if (candidates.length > 0) {
@@ -797,7 +941,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Load the owned chat up front so a follow-up turn that sends a `chatId`
     // but no `courseId`/`courseCode` can inherit the course from the persisted
     // chat row, instead of failing COURSE_REQUIRED below (#685 review).
-    let chat = null;
+    // (`chat` itself is declared above the try block — see the comment there.)
     if (chatId) {
       chat = await prisma.chat.findFirst({
         where: { id: chatId, userId: actingUser.id },
@@ -832,19 +976,14 @@ export async function action({ request }: ActionFunctionArgs) {
     // names a *different* course, reject — silently switching would split the
     // chat's RAG context and message history across courses (#685 review).
     const requestedCourseId = resolvedCourseId || courseId || null;
-    if (
-      chat?.courseId &&
-      requestedCourseId &&
-      requestedCourseId !== chat.courseId
-    ) {
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
       return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const effectiveCourseId =
-      resolvedCourseId || courseId || chat?.courseId || null;
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
 
     // #657: the global "general assistant" chat was removed — every interactive
     // chat is now course-scoped. Server-to-server callers (admin API key /
@@ -887,10 +1026,10 @@ export async function action({ request }: ActionFunctionArgs) {
       courseScopeGuardrailEnabled: boolean;
     } | null = null;
     if (effectiveCourseId) {
-      const { course, access } = await resolveCourseAccessWithCourse(
-        actingUser,
-        effectiveCourseId,
-      );
+      // Wide row on purpose: the prompt context below reads `name`, `code`,
+      // `description`, `responseStyleTags`, `aiInstructions` and
+      // `courseScopeGuardrailEnabled` — all outside GATE_COURSE_SELECT.
+      const { course, access } = await resolveCourseAccessWithCourse(actingUser, effectiveCourseId);
       if (!course) {
         return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
           status: 404,
@@ -927,12 +1066,31 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
+    // §19 (#1606): a custom system prompt no longer REPLACES the EduAI base
+    // prompt for browser callers — it is appended as a subordinate block, so a
+    // learner can express a preference without deleting the assistant's
+    // identity, the instructor's configured response style, or the
+    // course-scope guardrail.
+    //
+    // Replace stays on the sessionless service-key path only
+    // (`isServiceKeyCaller`). Those callers are already ephemeral and skip
+    // course-scope, so replace and the rest of that contract stay aligned.
+    // An admin API-key session is a real persisted chat — it layers, same as
+    // a browser. A Bearer header on a real user session does NOT flip this
+    // either; that hybrid used to replace the base while still persisting
+    // to the learner chat.
+    //
+    // AI Tutor and Question Maker do not use this route. They POST to
+    // /api/completion, which has no EduAI course default and uses the
+    // supplied systemPrompt as-is.
+    const replacesBasePrompt = isServiceKeyCaller;
+
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
     // return a durable job id instead of streaming. Placed after the same course
     // access gate as sync chat so an enqueue can never bypass authz. Normal chat
     // skips this entirely; the dispatch worker (#168) drains it later.
-    if (isEnqueueRequested(body)) {
+    if (isEnqueueRequested()) {
       try {
         const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
           body,
@@ -993,7 +1151,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const ephemeral = isServiceKeyCaller;
 
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField && !ephemeral) {
+    // regenerateOnly is a read-only content preview (#1246) — must never write
+    // any field onto the chat, not just adhdAssist (review on #1365).
+    if (hasSystemPromptField && !ephemeral && !regenerateOnly) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -1018,6 +1178,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // course was selected (e.g. user picked the course mid-conversation).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       chat &&
       effectiveCourseId &&
       chat.courseId !== effectiveCourseId &&
@@ -1029,8 +1190,11 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    // regenerateOnly always sets adhdAssist to request a one-off override — must
+    // never persist it as the chat's new stored default (#1246).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       hasAdhdAssistField &&
       chat &&
       chat.adhdAssist !== adhdAssist
@@ -1041,8 +1205,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const shouldCreateChat =
-      normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
+    const shouldCreateChat = normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
 
     if (!chat && !shouldCreateChat) {
       return new Response(
@@ -1073,13 +1236,16 @@ export async function action({ request }: ActionFunctionArgs) {
     // Stateless callers get an in-memory chat stub (id: null) so downstream code
     // can read systemPrompt/adhdAssist without persisting anything.
     if (ephemeral && !chat) {
+      // SAFETY: a stateless turn has no chat row, so this stub stands in for
+      // one. `id: null` marks it as unpersisted, and downstream code reads only
+      // the five fields set here; the assertion borrows the row type's shape.
       chat = {
         id: null,
         userId: actingUser.id,
         courseId: effectiveCourseId,
         systemPrompt: trimmedSystemPrompt,
         adhdAssist,
-      } as unknown as NonNullable<typeof chat>;
+      } as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {
@@ -1087,26 +1253,30 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!chat) {
-      return new Response(
-        JSON.stringify({ error: "Unable to resolve chat context" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      return new Response(JSON.stringify({ error: "Unable to resolve chat context" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Fetch only the slice of history we plan to send back to the LLM. Stateless
     // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords =
+    // The load ceiling is a memory-safety bound, not the real context cap (the
+    // token budget is — #1639). Count the full stored history so any turns older
+    // than the loaded slice are disclosed in the digest marker rather than
+    // silently dropped before the digest ever sees them (#1643).
+    const [totalStoredCount, recentMessageRecords] =
       ephemeral || !chat.id
-        ? []
-        : await prisma.chatMessage.findMany({
-            where: { chatId: chat.id },
-            orderBy: { position: "desc" },
-            take: maxContextMessages,
-          });
+        ? [0, []]
+        : await Promise.all([
+            prisma.chatMessage.count({ where: { chatId: chat.id } }),
+            prisma.chatMessage.findMany({
+              where: { chatId: chat.id },
+              orderBy: { position: "desc" },
+              take: maxContextMessages,
+            }),
+          ]);
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -1116,32 +1286,77 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
+    // Turns older than the verbatim window still carry content a "summarize
+    // everything" request needs. Load that older span (bounded, memory-safe) and
+    // pass its extracted text to the digest so its old/middle topics are
+    // summarized rather than disclosed only as a count (#1643). Only the turns
+    // beyond even this span stay a bare count.
+    const olderTurnsBeyondWindow = Math.max(0, totalStoredCount - storedMessages.length);
+    let priorOlderEntries: { role: string; text: string }[] = [];
+    let loadedOlderCount = 0;
+    if (olderTurnsBeyondWindow > 0 && chat.id && !ephemeral) {
+      const olderRecords = await prisma.chatMessage.findMany({
+        where: { chatId: chat.id },
+        orderBy: { position: "desc" },
+        skip: storedMessages.length,
+        take: resolveMaxDigestSourceMessages(),
+        select: { messageId: true, role: true, content: true },
+      });
+      loadedOlderCount = olderRecords.length;
+      priorOlderEntries = olderRecords
+        .reverse()
+        .map((record) => ({
+          role: record.role,
+          text: extractMessageText(
+            reviveStoredMessage({
+              messageId: record.messageId,
+              role: record.role,
+              content: record.content,
+            }),
+          )
+            .replace(/\s+/g, " ")
+            .trim(),
+        }))
+        .filter((entry) => entry.text.length > 0);
+    }
+
     chatApiDebug("chat history loaded", {
       chatId: chat.id,
       storedCount: storedMessages.length,
+      priorOlderLoaded: priorOlderEntries.length,
       incomingCount: normalizedIncomingMessages.length,
     });
 
-    const mergedMessages = mergeMessages(
-      storedMessages,
-      normalizedIncomingMessages,
-    );
+    const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
     const trimmedMessages =
       mergedMessages.length > maxContextMessages
         ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
+    // Older turns cut before the digest sees them as *content*: those beyond the
+    // digest-source span (loaded above into priorOlderEntries) plus those the
+    // tail-slice dropped. The digest folds this into its omission marker so
+    // nothing is lost silently (#1643); the span it loaded is summarized, not
+    // merely counted. storedMessages omits the current incoming turn(s), so the
+    // loaded count can never exceed the stored total.
+    const priorOmittedCount =
+      Math.max(0, olderTurnsBeyondWindow - loadedOlderCount) +
+      (mergedMessages.length - trimmedMessages.length);
+
     chatApiDebug("chat history merged", {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
       maxContextMessages,
+      totalStoredCount,
+      priorOmittedCount,
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    let modelMessages = prepareBoundedSessionContext(
-      capToolResultsInMessages(trimmedMessages),
-    );
+    let modelMessages = prepareBoundedSessionContext(capToolResultsInMessages(trimmedMessages), {
+      priorOmittedCount,
+      priorOlderEntries,
+    });
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -1158,21 +1373,14 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!routeWithAuto && !model) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      return new Response(JSON.stringify({ error: "Missing required fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    const lastUserMessageForRouting = [...trimmedMessages]
-      .reverse()
-      .find((m) => m.role === "user");
-    const lastUserMessageTextForRouting = extractMessageText(
-      lastUserMessageForRouting,
-    );
+    const lastUserMessageForRouting = [...trimmedMessages].reverse().find((m) => m.role === "user");
+    const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
     const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
     // Scan from the end for the last user-role index directly, instead of
     // relying on the reverse().find() above returning the same object
@@ -1197,21 +1405,16 @@ export async function action({ request }: ActionFunctionArgs) {
         ? trimmedMessages
             .slice(0, lastUserMessageIndex)
             .slice(-MAX_COURSE_SCOPE_HISTORY_TURNS)
-            .filter(
-              (message) =>
-                message.role === "user" || message.role === "assistant",
-            )
-            .map((message) => ({
-              role: message.role as CourseScopeConversationTurn["role"],
-              content: extractMessageText(message),
-            }))
+            .flatMap((message): CourseScopeConversationTurn[] => {
+              const role = message.role;
+              return role === "user" || role === "assistant"
+                ? [{ role, content: extractMessageText(message) }]
+                : [];
+            })
             .filter((turn) => turn.content.trim().length > 0)
         : [];
     const hasCourse = Boolean(effectiveCourseId);
-    const courseRagNeeded = needsCourseRag(
-      lastUserMessageTextForRouting,
-      hasCourse,
-    );
+    const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
     const courseScopeContext: CourseScopeContext | null = effectiveCourse
       ? {
           courseName: effectiveCourse.name,
@@ -1226,12 +1429,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // image-bearing browser turns explicitly instead of retaining a hidden
     // multimodal path that the supported product cannot produce.
     // Admin/service-key integrations retain the existing multimodal routing.
-    if (
-      imagesPresent &&
-      courseScopeContext &&
-      !isServiceKeyCaller &&
-      chatMode !== "admin"
-    ) {
+    if (imagesPresent && courseScopeContext && !isServiceKeyCaller && chatMode !== "admin") {
       return new Response(
         JSON.stringify({
           error: "IMAGE_MESSAGE_UNSUPPORTED",
@@ -1280,11 +1478,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragContextTokenEstimate: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
-    if (
-      routeWithAuto &&
-      effectiveCourseId &&
-      lastUserMessageTextForRouting.trim().length > 0
-    ) {
+    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1292,18 +1486,19 @@ export async function action({ request }: ActionFunctionArgs) {
           HYBRID_RAG_MAX_CHUNKS,
           undefined,
           restrictRagToStudentVisible,
+          { signal: request.signal },
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
         ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
-        chatApiDebug("Router RAG prefetch failed", { err });
+        chatApiDebug("Router RAG prefetch failed", { err: formatStreamError(err) });
       }
     }
 
     let wasAuto = false;
     let routingTier: 1 | 2 | 3 | null = null;
-    let routerContext: Record<string, unknown> | null = null;
+    let routerContext: ChatTrace | null = null;
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
@@ -1315,9 +1510,7 @@ export async function action({ request }: ActionFunctionArgs) {
       // know the picked model yet: vLLM forces the tool-less hybrid path
       // unless `VLLM_CHAT_TOOLS=1`, regardless of which tier gets picked.
       const toolsEffectivelyAvailable =
-        chatMode !== "admin" &&
-        (await webToolsEnabledPromise) &&
-        isEffectiveToolCallingAvailable();
+        chatMode !== "admin" && (await webToolsEnabledPromise) && isEffectiveToolCallingAvailable();
       const routingContext = {
         courseId: effectiveCourseId,
         courseCode: courseCode ?? null,
@@ -1333,20 +1526,15 @@ export async function action({ request }: ActionFunctionArgs) {
         decision = await resolveRoutedModel(
           lastUserMessageTextForRouting,
           routingContext,
-          autoRouting.modeOverride
-            ? { modeOverride: autoRouting.modeOverride }
-            : undefined,
+          autoRouting.modeOverride ? { modeOverride: autoRouting.modeOverride } : undefined,
         );
       } catch (error) {
         const fallbackReason = formatStreamError(error);
         chatApiDebug("Auto routing failed; falling back to rules", {
-          err: error,
+          err: fallbackReason,
           requestedAuto: autoRouting.requestedAuto,
         });
-        decision = await resolveRoutedModelRules(
-          lastUserMessageTextForRouting,
-          routingContext,
-        );
+        decision = await resolveRoutedModelRules(lastUserMessageTextForRouting, routingContext);
         decision.features.fallbackReason = fallbackReason;
       }
       model = decision.modelId;
@@ -1356,13 +1544,10 @@ export async function action({ request }: ActionFunctionArgs) {
         ...decision.features,
         requestedAuto: autoRouting.requestedAuto,
       };
-      resolvedRouterVersion =
-        typeof decision.features.routerVersion === "string"
-          ? decision.features.routerVersion
-          : activeRouterVersion(
-              autoRouting.modeOverride ??
-                parseRouterMode(process.env.ROUTER_MODE),
-            );
+      const declaredRouterVersion = z.string().safeParse(decision.features.routerVersion);
+      resolvedRouterVersion = declaredRouterVersion.success
+        ? declaredRouterVersion.data
+        : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
       chatApiDebug("Auto routing resolved model", {
         resolvedModelId: decision.modelId,
         routingTier: decision.tier,
@@ -1371,9 +1556,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const resolvedModelId = model!;
-    const parsedModel = parseModelIdentifier(resolvedModelId);
-    if (!parsedModel) {
+    let resolvedModelId = model!;
+    const initialParsedModel = parseModelIdentifier(resolvedModelId);
+    if (!initialParsedModel) {
       return new Response(
         JSON.stringify({
           error:
@@ -1385,6 +1570,8 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+    let parsedModel = initialParsedModel;
+    let telemetryServerId: string | null = null;
 
     // Auto routing already enforces `requireImages` centrally (finalizePick
     // in router.ts). An explicitly-chosen model (`routeWithAuto === false`,
@@ -1409,6 +1596,87 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Persist the user's message(s) now — the request has already cleared
+    // every structural/content validation gate above (course-scope image
+    // support, model image-capability), so anything that fails from here on
+    // (fleet/provider availability, the model call itself) is an
+    // infrastructure failure, not a bad request. A provider/availability
+    // failure must not silently discard what the user typed and leave
+    // behind an empty, unrecoverable "New conversation" row (#1561).
+    const existingMessageIds = new Set(
+      storedMessages.map((message) => message.id).filter(isPresentText),
+    );
+    const appendMessages = async (messages: ChatMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
+      if (!messages.length) return;
+
+      const rows: Prisma.ChatMessageCreateManyInput[] = [];
+
+      for (const message of messages) {
+        if (!isPresentText(message.role) || !isPresentText(message.id)) {
+          continue;
+        }
+
+        if (existingMessageIds.has(message.id)) {
+          continue;
+        }
+
+        const messageToPersist =
+          message.role === "assistant"
+            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
+            : message;
+
+        rows.push({
+          chatId: chat!.id,
+          messageId: message.id,
+          role: message.role,
+          content: serializeMessage(messageToPersist),
+        });
+
+        existingMessageIds.add(message.id);
+      }
+
+      if (rows.length > 0) {
+        await prisma.chatMessage.createMany({
+          data: rows,
+          skipDuplicates: true,
+        });
+      }
+    };
+
+    // Persist only client-authored turns (user messages) that remain in the
+    // bounded model context. The assistant reply is owned by `onFinish`/the
+    // awaited path below, which stores it once under a server id. Clients resend
+    // their whole `useChat` transcript every turn, and their assistant copies
+    // carry client-generated ids that never match the server id — persisting
+    // those here is what duplicated history on restore. Discarding incoming
+    // turns that were already trimmed from this request also prevents a caller
+    // from turning a single bounded POST into an unbounded storage write.
+    const persistableMessageIds = new Set(
+      trimmedMessages.map((message) => message.id).filter(isPresentText),
+    );
+    await appendMessages(
+      normalizedIncomingMessages.filter(
+        (message) =>
+          message.role !== "assistant" &&
+          isPresentText(message.id) &&
+          persistableMessageIds.has(message.id),
+      ),
+    );
+
+    // Shared trace fields for the provider/model-availability gates below —
+    // each only varies by `stage`, and building it here means chatId can't
+    // be forgotten at a future gate the way a hand-copied literal could.
+    const providerGateTrace = (stage: string) =>
+      asTrace({
+        chatMode,
+        userId: actingUser.id,
+        model: resolvedModelId,
+        stage,
+      });
+
     let fleetPick: FleetPick | null = null;
     if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
       try {
@@ -1426,43 +1694,33 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       } catch (err) {
         if (err instanceof FleetUnavailableError) {
-          return new Response(
-            JSON.stringify({
-              error: "No healthy vLLM fleet server available",
-              details: err.message,
-            }),
-            {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
-            },
+          return rejectProviderFailure(
+            createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE"),
+            chat?.id ?? null,
+            providerGateTrace("fleet-resolution"),
           );
         }
         throw err;
       }
     }
 
-    routerContext = {
-      ...(routerContext ?? {}),
+    routerContext = asTrace({
+      ...routerContext,
       ...buildFleetRouterFeatures(workloadFeature, fleetPick),
-    };
+    });
 
     // Service key callers (AI Tutor, QM) have no real User row to look up DB
     // settings for (actingUser.id is the synthetic "service" id), so they
     // must still pass apiKeys in the body, same as before the DB migration.
     // Regular users' keys are always loaded from the DB.
-    let providerSettingsBase: Awaited<
-      ReturnType<typeof getUserProviderSettings>
-    >;
+    let providerSettingsBase: Awaited<ReturnType<typeof getUserProviderSettings>>;
     let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
     if (isServiceKeyCaller) {
-      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
-        return new Response(
-          JSON.stringify({ error: "Missing required fields" }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
+      if (!z.record(z.string(), z.unknown()).safeParse(body.apiKeys).success) {
+        return new Response(JSON.stringify({ error: "Missing required fields" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       const apiKeysParsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
       if (!apiKeysParsed.success) {
@@ -1493,103 +1751,40 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
-      const envHint =
-        parsedModel.providerId === "vllm"
-          ? "VLLM_BASE_URL"
-          : parsedModel.providerId === "ollama"
-            ? "OLLAMA_BASE_URL"
-            : "provider API key";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider ? "PROVIDER_UNAVAILABLE" : "INVALID_PROVIDER_CONFIG",
+        ),
+        chat?.id ?? null,
+        providerGateTrace("provider-configuration"),
       );
     }
-
-    const existingMessageIds = new Set(
-      storedMessages.map((message) => message.id).filter(isNonEmptyString),
-    );
-    const appendMessages = async (messages: GenericMessage[]) => {
-      // Stateless callers never persist messages (no chat row / no real user).
-      if (ephemeral || !chat?.id) return;
-      if (!messages.length) return;
-
-      const rows: Prisma.ChatMessageCreateManyInput[] = [];
-
-      for (const message of messages) {
-        if (!isNonEmptyString(message.role) || !isNonEmptyString(message.id)) {
-          continue;
-        }
-
-        if (existingMessageIds.has(message.id)) {
-          continue;
-        }
-
-        const messageToPersist =
-          message.role === "assistant"
-            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
-            : message;
-
-        rows.push({
-          chatId: chat!.id,
-          messageId: message.id,
-          role: message.role,
-          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
-        });
-
-        existingMessageIds.add(message.id);
-      }
-
-      if (rows.length > 0) {
-        await prisma.chatMessage.createMany({
-          data: rows,
-          skipDuplicates: true,
-        });
-      }
-    };
 
     let registry = createAIProviderRegistry(validatedApiKeys);
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
-      const envVar =
-        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
-        }),
-        {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        },
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider ? "PROVIDER_UNAVAILABLE" : "INVALID_PROVIDER_CONFIG",
+        ),
+        chat?.id ?? null,
+        providerGateTrace("provider-registry"),
       );
     }
-
-    // Persist only client-authored turns (user messages). The assistant reply is
-    // owned by `onFinish`/the awaited path below, which stores it once under a
-    // server id. Clients resend their whole `useChat` transcript every turn, and
-    // their assistant copies carry client-generated ids that never match the
-    // server id — persisting those here is what duplicated history on restore.
-    await appendMessages(
-      normalizedIncomingMessages.filter(
-        (message) => message.role !== "assistant",
-      ),
-    );
 
     // Course-scope guardrail: resolve the classifier promise kicked off
     // earlier (alongside the RAG prefetch) and short-circuit before touching
     // the fleet admission slot, energy sidecar, or streamText() at all.
-    const courseScopeVerdict = courseScopeCheckPromise
-      ? await courseScopeCheckPromise
-      : null;
+    const courseScopeVerdict = courseScopeCheckPromise ? await courseScopeCheckPromise : null;
     if (courseScopeVerdict?.blocked) {
-      const redirectText = buildCourseScopeRedirectMessage(
-        effectiveCourse?.name ?? null,
-      );
+      const redirectText = buildCourseScopeRedirectMessage(effectiveCourse?.name ?? null);
       await appendMessages([
         withCourseScopeRedirectMetadata({
           id: randomUUID(),
@@ -1606,14 +1801,11 @@ export async function action({ request }: ActionFunctionArgs) {
       // createDataStreamResponse return in this route so a redirected turn's
       // client model badge/routing telemetry isn't blank — that read as an
       // indistinguishable-from-failure routing gap otherwise.
-      const redirectHeaders: Record<string, string> = {
-        ...autoRoutingHeaders(
-          resolvedModelId,
-          routingTier,
-          wasAuto,
-          resolvedRouterVersion,
-        ),
-      };
+      const redirectHeaders: Record<string, string> = {};
+      Object.assign(
+        redirectHeaders,
+        autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
+      );
       if (chat.id) {
         redirectHeaders["X-Chat-Id"] = chat.id;
       }
@@ -1622,9 +1814,7 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: redirectHeaders,
           execute: (dataStream) => {
             dataStream.write(formatDataStreamPart("text", redirectText));
-            dataStream.write(
-              formatDataStreamPart("finish_message", { finishReason: "stop" }),
-            );
+            dataStream.write(formatDataStreamPart("finish_message", { finishReason: "stop" }));
           },
         });
       }
@@ -1655,27 +1845,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let aiModel;
     try {
-      aiModel = registry.languageModel(resolvedModelId);
+      aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
     } catch (err: unknown) {
-      const available =
-        typeof err === "object" &&
-        err !== null &&
-        "availableProviders" in err &&
-        Array.isArray(
-          (err as { availableProviders?: string[] }).availableProviders,
-        )
-          ? (err as { availableProviders: string[] }).availableProviders.join(
-              ", ",
-            )
-          : enabledProviders.join(", ");
-      return new Response(
-        JSON.stringify({
-          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
-        }),
-        {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        },
+      return rejectProviderFailure(
+        classifyProviderFailure(parsedModel.providerId, err),
+        chat?.id ?? null,
+        providerGateTrace("model-resolution"),
       );
     }
 
@@ -1694,9 +1869,18 @@ export async function action({ request }: ActionFunctionArgs) {
     // later (outside the branch) for debug logging and the
     // X-Web-Tools-Enabled response header.
     let webToolsEnabled: boolean;
-    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
-    let adminContextWindow: number | undefined;
+    /** Admin's desired completion cap, re-applied after composeSecurityPrompt expands `system`. */
     let adminDesiredMaxOutput: number | undefined;
+
+    // Model-derived inputs for the token-based history budget (#1639), set in
+    // both the admin and non-admin branches so the digest triggers on the actual
+    // context window — everything sharing it (system + RAG + tool schemas +
+    // reserved output) is reserved before history — instead of a fixed char cap.
+    let budgetContextWindow: number | undefined;
+    let budgetFillRatio: number | null = null;
+    let budgetToolCount = 0;
+    let budgetReserveToolSteps = false;
+    let budgetToolResultCap: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -1738,36 +1922,33 @@ export async function action({ request }: ActionFunctionArgs) {
       // 16k windows: tool schemas + multi-step list payloads leave little room.
       // Cap completion aggressively; mid-turn tool results are reserved separately.
       const desiredMaxOutput = Math.min(
-        resolveMaxOutputTokens(
-          activeChatModel?.maxTokens,
-          parsedModel.providerId,
-        ),
+        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
-      // Leave room for the ~17 admin tool schemas on small context models.
-      const adminSessionBudget =
-        contextWindow <= 16_384
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
-          : contextWindow <= 32_768
-            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
-            : undefined;
+      // #1665 review: the full admin registry is 63 tool() entries —
+      // estimateToolDefinitionTokens(63) alone (~26.7k tokens) already
+      // exceeds the seeded 16k vLLM admin model's context window, and still
+      // eats most of a 32k window once system prompt/history/reserve are
+      // added. Below that, send only ADMIN_CORE_TOOL_NAMES — the same
+      // read+common-write set the default admin system prompt already
+      // documents to the model (chat-mode.ts) — so small-context admin chat
+      // stays usable instead of unconditionally failing ADMIN_CONTEXT_TOO_LARGE.
+      // Larger-context models (OpenAI/Gemini rows) keep the full registry.
+      const effectiveAdminTools = contextWindow <= 32_768 ? pickCoreAdminChatTools(tools) : tools;
 
       const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
-      modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
-        adminSessionBudget
-          ? {
-              charBudget: adminSessionBudget,
-              recentCount: 3,
-              digestMaxChars: toolResultCapChars,
-            }
-          : undefined,
-      );
-
-      adminContextWindow = contextWindow;
+      // History is trimmed by the token-based budget at the unified recompute
+      // after composeSecurityPrompt (#1639), once the final system prompt + tool
+      // schemas are known. Admin reserves the ~17 tool JSON schemas + mid-turn
+      // tool-step payloads, replacing the old fixed 0.12/0.25 char fractions.
       adminDesiredMaxOutput = desiredMaxOutput;
+      budgetContextWindow = contextWindow;
+      budgetFillRatio = activeChatModel?.contextFillRatio ?? null;
+      budgetToolCount = Object.keys(tools).length;
+      budgetReserveToolSteps = true;
+      budgetToolResultCap = toolResultCapChars;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -1775,7 +1956,6 @@ export async function action({ request }: ActionFunctionArgs) {
         supportsTools,
         contextWindow,
         desiredMaxOutput,
-        adminSessionBudget: adminSessionBudget ?? null,
         dbMaxTokens: activeChatModel?.maxTokens ?? null,
         chatId: chat?.id ?? null,
       });
@@ -1794,8 +1974,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
-      const adminMaxSteps =
-        contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
+      const adminMaxSteps = contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
 
       // Provisional maxTokens — final cap runs after composeSecurityPrompt below
       // so the security block and tool schemas are included in the budget.
@@ -1805,7 +1984,7 @@ export async function action({ request }: ActionFunctionArgs) {
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
         maxSteps: adminMaxSteps,
-        tools,
+        tools: effectiveAdminTools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
@@ -1849,6 +2028,7 @@ export async function action({ request }: ActionFunctionArgs) {
             HYBRID_RAG_MAX_CHUNKS,
             undefined,
             restrictRagToStudentVisible,
+            { signal: request.signal },
           );
           return { hits };
         } catch (error) {
@@ -1873,10 +2053,21 @@ export async function action({ request }: ActionFunctionArgs) {
       supportsTools = modelCapabilities.supportsTools;
       effectiveForceHybridRag =
         forceHybridRag ||
-        (parsedModel.providerId === "vllm" &&
-          process.env.VLLM_CHAT_TOOLS !== "1");
+        (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
       useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
+
+      // Token-based history budget inputs (#1639); the digest recompute after
+      // composeSecurityPrompt uses the final system prompt (RAG already folded
+      // into `system` on this path, so it is counted via systemChars — not
+      // reserved twice). Small vLLM windows keep a tighter verbatim tail.
+      budgetContextWindow = resolveModelContextWindow(
+        modelCapabilities.maxTokens,
+        parsedModel.providerId,
+      );
+      budgetFillRatio = modelCapabilities.contextFillRatio ?? null;
+      budgetToolCount = useToolCalling ? Object.keys(tools).length : 0;
+      budgetReserveToolSteps = useToolCalling;
 
       const courseStyleBlock = effectiveCourse
         ? buildCourseResponseStylePrompt(
@@ -1904,9 +2095,17 @@ ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the use
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
       const defaultCourseSystemPrompt = [
-        appendCourseStyleToSystemPrompt(
-          resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
-          courseStyleBlock,
+        appendCustomInstructions(
+          appendCourseStyleToSystemPrompt(
+            // Sessionless service-key prompts still REPLACE the base:
+            // structured JSON generation cannot carry a tutor persona
+            // above it. Admin API-key and browser sessions layer (#1606).
+            replacesBasePrompt
+              ? (resolvedSystemPrompt ?? eduAiCourseDefaultPrompt)
+              : eduAiCourseDefaultPrompt,
+            courseStyleBlock,
+          ),
+          replacesBasePrompt ? null : resolvedSystemPrompt,
         ),
         courseScopePolicyBlock,
       ]
@@ -1927,8 +2126,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
           return chatApiReject(
             503,
             {
-              error:
-                "Course materials could not be searched right now. Please try again shortly.",
+              error: "Course materials could not be searched right now. Please try again shortly.",
               code: classifyRagRetrievalError(courseRagResult.error),
             },
             { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
@@ -1983,15 +2181,21 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = [
-          appendCourseStyleToSystemPrompt(
-            resolvedSystemPrompt ??
-              `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const eduAiToolBasePrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`,
-            courseStyleBlock,
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
+
+        const baseSystemPrompt = [
+          appendCustomInstructions(
+            appendCourseStyleToSystemPrompt(
+              replacesBasePrompt
+                ? (resolvedSystemPrompt ?? eduAiToolBasePrompt)
+                : eduAiToolBasePrompt,
+              courseStyleBlock,
+            ),
+            replacesBasePrompt ? null : resolvedSystemPrompt,
           ),
           courseScopePolicyBlock,
         ]
@@ -2037,15 +2241,34 @@ ${buildEmptyCourseRagBlock()}`;
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
+
+    const maxTokensBeforeLongOutputCap = streamConfig.maxTokens;
+    const longOutputCap = capTokensForLongOutputIntent({
+      prompt: lastUserText,
+      currentMaxTokens: streamConfig.maxTokens,
+      adhdAssist: effectiveAdhdAssist,
+    });
+
+    streamConfig.maxTokens = longOutputCap.maxTokens;
+
+    let longOutputCapApplied =
+      longOutputCap.isLongOutputIntent && longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
+    const didHitLongOutputCap = (usage: ChatTokenUsage): boolean => {
+      const completionTokens = coalesceTokenUsage(usage).completionTokens;
+
+      return didHitAppliedLongOutputCap({
+        capApplied: longOutputCapApplied,
+        maxTokens: streamConfig.maxTokens,
+        completionTokens,
+      });
+    };
+
     const priorAssistantText = extractMessageText(
-      [...trimmedMessages]
-        .reverse()
-        .find((message) => message.role === "assistant"),
+      [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
     );
 
     let adhdProfile: AdhdTurnProfile | undefined;
-    let adhdProfileRequirements:
-      ReturnType<typeof getProfileRequirements> | undefined;
+    let adhdProfileRequirements: ReturnType<typeof getProfileRequirements> | undefined;
 
     if (effectiveAdhdAssist) {
       adhdProfile = resolveAdhdTurnProfile({
@@ -2062,70 +2285,135 @@ ${buildEmptyCourseRagBlock()}`;
       }),
     );
 
-    // Re-cap after composeSecurityPrompt so the security block is included, and
-    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
-    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
-    if (
-      chatMode === "admin" &&
-      adminContextWindow != null &&
-      adminDesiredMaxOutput != null
-    ) {
-      const systemChars =
-        typeof streamConfig.system === "string"
-          ? streamConfig.system.length
-          : 0;
+    // Token-based history budget (#1639): now that the final system prompt (RAG
+    // + security + ADHD blocks) and tool schemas are known, digest older turns so
+    // the assembled input fits within `ratio × contextWindow`. Everything else
+    // sharing the input allowance is reserved first; history takes the rest.
+    // Runs for every mode with a resolved window — the fixed-char default at the
+    // early call above is only a fallback when the window is unknown.
+    if (budgetContextWindow != null) {
+      const budgetSystemChars = z.string().safeParse(streamConfig.system).success
+        ? String(streamConfig.system).length
+        : 0;
+      const historyCharBudget = resolveSessionCharBudgetForModel({
+        contextWindow: budgetContextWindow,
+        perModelRatio: budgetFillRatio,
+        systemChars: budgetSystemChars,
+        toolCount: budgetToolCount,
+        reserveToolSteps: budgetReserveToolSteps,
+      });
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, budgetToolResultCap),
+        {
+          charBudget: historyCharBudget,
+          recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
+          digestMaxChars: budgetToolResultCap,
+          priorOmittedCount,
+          priorOlderEntries,
+        },
+      );
+      streamConfig.messages = modelMessages;
+    }
+
+    // Re-cap the completion after composeSecurityPrompt so the security block +
+    // tool JSON schemas are inside the budget (the old flat 512 under-counted
+    // ~17 admin tools and blew 16k windows: ContextWindowExceededError). Applied
+    // to every mode so output always fits `contextWindow − input`; only admin
+    // hard-rejects an over-budget prompt — its tool schemas can be unshrinkable,
+    // whereas other modes have already had history digested to fit.
+    if (budgetContextWindow != null) {
+      const parsedStreamMaxTokens = z.number().safeParse(streamConfig.maxTokens);
+      const desiredMaxOutput =
+        adminDesiredMaxOutput ?? (parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 256);
+      const systemChars = z.string().safeParse(streamConfig.system).success
+        ? String(streamConfig.system).length
+        : 0;
       let messageChars = 0;
       for (const message of modelMessages) {
         messageChars += estimateMessageCharsForModel(message);
       }
-      const toolCount =
-        streamConfig.tools && typeof streamConfig.tools === "object"
-          ? Object.keys(streamConfig.tools).length
-          : 0;
+      const declaredTools = z.record(z.string(), z.unknown()).safeParse(streamConfig.tools);
+      const toolCount = declaredTools.success ? Object.keys(declaredTools.data).length : 0;
       const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
-      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const toolStepReserve = budgetReserveToolSteps
+        ? estimateAdminToolStepReserve(budgetContextWindow)
+        : 0;
       const estimatedInputTokens =
         estimateTokensFromChars(systemChars + messageChars) +
         toolDefinitionTokens +
         toolStepReserve;
 
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow: adminContextWindow,
+      const contextFitMaxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         toolDefinitionTokens: 0,
         safetyBuffer: 512,
         minOutput: 256,
       });
 
+      if (chatMode === "admin") {
+        streamConfig.maxTokens = contextFitMaxTokens;
+        if (longOutputCap.isLongOutputIntent) {
+          const adminContextMaxTokens = streamConfig.maxTokens;
+          streamConfig.maxTokens = Math.min(adminContextMaxTokens, longOutputCap.maxTokens);
+          longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+        }
+      } else {
+        // Non-admin already applied the long-output cap earlier; only tighten the
+        // completion so it still fits the window after history was digested —
+        // never loosen it, so the long-output flag/value are left intact.
+        const current = parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 0;
+        streamConfig.maxTokens = Math.min(current, contextFitMaxTokens);
+      }
+
       chatApiTrace("max output tokens capped", {
-        contextWindow: adminContextWindow,
+        chatMode,
+        contextWindow: budgetContextWindow,
         estimatedInputTokens,
         toolCount,
         toolDefinitionTokens,
         toolStepReserve,
-        desiredMaxOutput: adminDesiredMaxOutput,
+        desiredMaxOutput,
         effectiveMaxTokens: streamConfig.maxTokens,
         systemChars,
         messageChars,
       });
 
+      // Final fit check for EVERY mode: history has already been digested toward
+      // the budget and the completion capped into the remaining space, so if the
+      // prompt still does not fit, the fixed prompt itself (system + RAG + tool
+      // schemas + the irreducible current turn) exceeds the window. Fail closed
+      // with a clear 400 rather than send an over-context request the provider
+      // would reject with a raw ContextWindowExceededError (#1643).
       if (
         !promptFitsContextWindow({
-          contextWindow: adminContextWindow,
+          contextWindow: budgetContextWindow,
           estimatedInputTokens,
           maxOutputTokens: streamConfig.maxTokens,
           safetyBuffer: 256,
         })
       ) {
+        if (chatMode === "admin") {
+          return chatApiReject(
+            400,
+            {
+              error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+              code: "ADMIN_CONTEXT_TOO_LARGE",
+              estimatedInputTokens,
+              contextWindow: budgetContextWindow,
+              toolCount,
+            },
+            { model, chatId: chat?.id ?? null },
+          );
+        }
         return chatApiReject(
           400,
           {
-            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
-            code: "ADMIN_CONTEXT_TOO_LARGE",
+            error: `This conversation is too long for the selected model's ${budgetContextWindow}-token context window. Start a new chat or pick a model with a larger context window.`,
+            code: "CONTEXT_TOO_LARGE",
             estimatedInputTokens,
-            contextWindow: adminContextWindow,
-            toolCount,
+            contextWindow: budgetContextWindow,
           },
           { model, chatId: chat?.id ?? null },
         );
@@ -2144,8 +2432,7 @@ ${buildEmptyCourseRagBlock()}`;
       isAdhdOversightEnabled() &&
       (adhdProfileRequirements?.runDean ?? true);
     const adhdWordCap =
-      adhdProfileRequirements?.wordCap ??
-      resolveAdhdResponseWordCap(lastUserText);
+      adhdProfileRequirements?.wordCap ?? resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -2163,18 +2450,19 @@ ${buildEmptyCourseRagBlock()}`;
         profileStructuralPass?: boolean;
       },
     ) => {
+      // regenerateOnly is a read-only content preview (#1246) — never logs
+      // compliance telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
       const metrics = computeAdhdResponseMetrics(trimmed, {
         wordCap: adhdWordCap,
       });
       const profileStructuralPass =
-        adhdProfile != null
-          ? isProfileStructuralPass(metrics, adhdProfile, trimmed)
-          : undefined;
+        adhdProfile != null ? isProfileStructuralPass(metrics, adhdProfile, trimmed) : undefined;
       void recordResponseComplianceEvent({
         userId: actingUser.id,
-        chatId: chat.id,
+        chatId: chat!.id,
         adhdAssist: effectiveAdhdAssist,
         assistantText: trimmed,
         extras: {
@@ -2212,6 +2500,8 @@ ${buildEmptyCourseRagBlock()}`;
       forceHybridRag: effectiveForceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
+      longOutputIntent: longOutputCap.isLongOutputIntent,
+      effectiveMaxTokens: streamConfig.maxTokens,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
@@ -2223,8 +2513,27 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    const needsAdmission =
-      parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
+    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+      resolvedModelId = overflow.resolvedModelId;
+      const nextParsed = parseModelIdentifier(resolvedModelId);
+      if (!nextParsed) {
+        throw new Error(`Invalid Bedrock overflow model id: ${resolvedModelId}`);
+      }
+      parsedModel = nextParsed;
+      model = resolvedModelId;
+      telemetryServerId = overflow.serverId;
+      fleetPick = null;
+      validatedApiKeys = enableBedrockOnSettings(validatedApiKeys);
+      registry = createAIProviderRegistry(validatedApiKeys);
+      aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
+      streamConfig.model = aiModel;
+      routerContext = {
+        ...routerContext,
+        bedrockOverflow: true,
+      };
+    };
+
+    const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
     let admissionWaitedMs = 0;
     if (needsAdmission) {
@@ -2237,19 +2546,30 @@ ${buildEmptyCourseRagBlock()}`;
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
-          return new Response(
-            JSON.stringify({
-              error:
-                "Server busy — too many concurrent AI requests. Try again shortly.",
-              code: "AI_ADMISSION_TIMEOUT",
-            }),
-            {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
+          const overflow = await tryActivateBedrockOverflow({
+            userId: actingUser.id,
+          });
+          if (overflow) {
+            applyBedrockOverflow(overflow);
+            chatApiTrace("bedrock overflow after admission timeout", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+            });
+          } else {
+            return new Response(
+              JSON.stringify({
+                error: "Server busy — too many concurrent AI requests. Try again shortly.",
+                code: "AI_ADMISSION_TIMEOUT",
+              }),
+              {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
     const releaseAdmission = () => {
@@ -2259,9 +2579,19 @@ ${buildEmptyCourseRagBlock()}`;
       }
     };
     const admissionHeaders = (): Record<string, string> =>
-      admissionWaitedMs > 0
-        ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
-        : {};
+      admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
+
+    /** Headers for the non-streaming JSON turn: content type, admission, fleet. */
+    const jsonResponseHeaders = () => {
+      const headers: Record<string, string> = {};
+      headers["Content-Type"] = "application/json";
+      Object.assign(headers, admissionHeaders());
+      const fleetServerId = telemetryServerId ?? fleetPick?.serverId;
+      if (fleetServerId) {
+        headers["X-Fleet-Server"] = fleetServerId;
+      }
+      return headers;
+    };
 
     const persistTurnTelemetry = async (params: {
       responseText: string;
@@ -2274,6 +2604,9 @@ ${buildEmptyCourseRagBlock()}`;
         | undefined;
       finishReason: string;
     }) => {
+      // regenerateOnly is a read-only content preview (#1246) — never
+      // persists routing/sustainability telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       await persistAiInteractionTelemetry({
         userId: actingUser.id,
         courseId: effectiveCourseId,
@@ -2287,25 +2620,32 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
+        serverId: telemetryServerId ?? fleetPick?.serverId ?? null,
+        chatId: chat?.id ?? null,
       });
     };
 
-    const fleetStreamProbeMs = parseEnvInt(
-      process.env.FLEET_STREAM_PROBE_MS,
-      10_000,
-    );
+    const fleetStreamProbeMs = parseEnvInt(process.env.FLEET_STREAM_PROBE_MS, 10_000);
     // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
     // connection/startup failures throw from runStreamText and Slice 2 can retry.
     // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
-    const shouldProbeFleetStream =
-      Boolean(fleetPick) && parsedModel.providerId === "vllm";
+    let shouldProbeFleetStream = Boolean(fleetPick) && parsedModel.providerId === "vllm";
 
     const runStreamText = async () => {
       const probe = shouldProbeFleetStream
         ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
         : null;
+      const streamData = streaming && !needsOversight ? new StreamData() : null;
 
-      const result = streamText({
+      // The AI SDK returns synchronously, but several compatible adapters and
+      // long-standing route tests return a promise. Normalizing both shapes
+      // here also keeps rejected/aborted startup promises inside the existing
+      // retry and AbortError handling path.
+      const result = await streamText({
+        // SAFETY: `streamConfig` is assembled field by field above out of the
+        // AI SDK's own values (model, messages, tools, sampling settings); the
+        // assertion only re-states that assembly, which the accumulating object
+        // type cannot carry on its own.
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
@@ -2327,15 +2667,12 @@ ${buildEmptyCourseRagBlock()}`;
               if (!streaming) {
                 return;
               }
-              const normalizedUsage = coalesceTokenUsage(
-                usage as Record<string, unknown> | undefined,
-              );
+              const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
               await persistTurnTelemetry({
                 responseText: text ?? "",
                 usage: {
                   promptTokens: normalizedUsage.promptTokens ?? undefined,
-                  completionTokens:
-                    normalizedUsage.completionTokens ?? undefined,
+                  completionTokens: normalizedUsage.completionTokens ?? undefined,
                   totalTokens: normalizedUsage.totalTokens ?? undefined,
                 },
                 finishReason: String(finishReason ?? "stop"),
@@ -2345,26 +2682,31 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
-              const assistantText =
-                text || extractAssistantText(response?.messages);
+              streamData?.appendMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+              });
+              void streamData?.close();
+              const assistantText = text || extractAssistantText(response?.messages);
               if (assistantText) {
                 await appendMessages([
                   {
                     id: randomUUID(),
                     role: "assistant",
                     content: assistantText,
+                    metadata: {
+                      finishReason,
+                      hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                    },
                   },
                 ]).catch((err) => {
-                  console.error(
-                    "[chat-api] failed to persist streaming assistant message",
-                    err,
-                  );
+                  console.error("[chat-api] failed to persist streaming assistant message", err);
                 });
               }
             },
         onError: ({ error }) => {
           logStreamError(error, streamTrace);
           probe?.hooks.signalError(error);
+          void streamData?.close();
         },
       });
 
@@ -2404,13 +2746,14 @@ ${buildEmptyCourseRagBlock()}`;
           void pump;
         }
       }
-      return result;
+      return { result, streamData };
     };
 
     let result;
+    let liveStreamData: StreamData | null = null;
     let fleetRetry = false;
     try {
-      result = await runStreamText();
+      ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
         releaseAdmission();
@@ -2434,7 +2777,7 @@ ${buildEmptyCourseRagBlock()}`;
               nextPick.baseUrl,
             );
             registry = createAIProviderRegistry(validatedApiKeys);
-            aiModel = registry.languageModel(resolvedModelId);
+            aiModel = registry.languageModel(toRegistryModelId(resolvedModelId));
             streamConfig.model = aiModel;
             console.log("[fleet] retry attempt", {
               from: failedPick.serverId,
@@ -2447,11 +2790,11 @@ ${buildEmptyCourseRagBlock()}`;
               previousServerId: failedPick.serverId,
               fleetRetryAttempt: true,
             });
-            result = await runStreamText();
+            ({ result, streamData: liveStreamData } = await runStreamText());
             // #876 success marker — only after the alternate attempt succeeds.
             fleetRetry = true;
             routerContext = {
-              ...(routerContext ?? {}),
+              ...routerContext,
               ...buildFleetRouterFeatures(workloadFeature, fleetPick),
               fleetRetry: true,
             };
@@ -2461,49 +2804,45 @@ ${buildEmptyCourseRagBlock()}`;
               model: resolvedModelId,
             });
           } else {
-            throw error;
+            const overflow = await tryActivateBedrockOverflow({
+              userId: actingUser.id,
+            });
+            if (!overflow) {
+              throw error;
+            }
+            applyBedrockOverflow(overflow);
+            shouldProbeFleetStream = false;
+            releaseAdmission();
+            chatApiTrace("bedrock overflow after fleet exhausted", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+              previousServerId: failedPick.serverId,
+            });
+            ({ result, streamData: liveStreamData } = await runStreamText());
           }
         } catch (retryError) {
           releaseAdmission();
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
           }
-          if (chatMode === "admin") {
-            logStreamError(retryError, streamTrace);
-            const hint =
-              parsedModel.providerId === "vllm"
-                ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-                : "";
-            return chatApiReject(
-              502,
-              {
-                error: `LLM stream failed: ${formatStreamError(retryError)}.${hint}`,
-                code: "LLM_STREAM_FAILED",
-                fleetRetry,
-              },
-              streamTrace,
-            );
-          }
-          throw retryError;
+          logStreamError(retryError, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, retryError),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "stream-startup", fleetRetry },
+          );
         }
       } else {
         releaseAdmission();
-        if (chatMode === "admin") {
-          logStreamError(error, streamTrace);
-          const hint =
-            parsedModel.providerId === "vllm"
-              ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-              : "";
-          return chatApiReject(
-            502,
-            {
-              error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-              code: "LLM_STREAM_FAILED",
-            },
-            streamTrace,
-          );
-        }
-        throw error;
+        logStreamError(error, streamTrace);
+        return rejectProviderFailure(
+          classifyProviderFailure(parsedModel.providerId, error),
+          streamTrace.chatId,
+          {
+            ...streamTrace,
+            stage: "stream-startup",
+          },
+        );
       }
     }
 
@@ -2515,9 +2854,13 @@ ${buildEmptyCourseRagBlock()}`;
       let sources: Awaited<typeof result.sources> | undefined;
       let reasoning: Awaited<typeof result.reasoning> | undefined;
       let response: Awaited<typeof result.response> | undefined;
+      let oversightStage: "provider" | "application" = "provider";
 
       try {
-        await result.consumeStream();
+        // `consumeStream` is an SDK convenience, not part of every compatible
+        // provider result. The result promises below are sufficient when it is
+        // absent.
+        await result.consumeStream?.();
 
         const consumed = await Promise.all([
           result.text,
@@ -2544,19 +2887,20 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
               priorAssistantText,
               toolsUsed: adhdToolsUsed,
+              onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
+        oversightStage = "application";
 
         finalText = audited.text || draft;
-        const normalizedOversightUsage = coalesceTokenUsage(
-          usage as Record<string, unknown> | undefined,
-        );
+        const normalizedOversightUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: finalText,
           usage: {
             promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-            completionTokens:
-              normalizedOversightUsage.completionTokens ?? undefined,
+            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
             totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
           },
           finishReason: String(finishReason ?? "stop"),
@@ -2574,21 +2918,26 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         const persistOverseenAssistantMessages = async (text: string) => {
-          const toPersist = buildOverseenAssistantMessagesToPersist(
-            response?.messages,
-            text,
-          );
-          if (toPersist.length > 0) {
-            await appendMessages(toPersist);
+          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+
+          const messagesWithMetadata: ChatMessage[] = toPersist.map((message) => ({
+            ...chatMessageSchema.parse(message),
+            metadata: {
+              finishReason,
+              hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+            },
+          }));
+
+          if (messagesWithMetadata.length > 0) {
+            await appendMessages(messagesWithMetadata);
           }
         };
 
         if (streaming) {
-          const headers: Record<string, string> = {
-            "Content-Encoding": "none",
-            "Transfer-Encoding": "chunked",
-            Connection: "keep-alive",
-          };
+          const headers: Record<string, string> = {};
+          headers["Content-Encoding"] = "none";
+          headers["Transfer-Encoding"] = "chunked";
+          headers["Connection"] = "keep-alive";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
@@ -2600,7 +2949,7 @@ ${buildEmptyCourseRagBlock()}`;
               routingTier,
               wasAuto,
               resolvedRouterVersion,
-              fleetPick?.serverId ?? null,
+              telemetryServerId ?? fleetPick?.serverId ?? null,
             ),
           );
 
@@ -2613,6 +2962,11 @@ ${buildEmptyCourseRagBlock()}`;
               if (finalText) {
                 dataStream.write(formatDataStreamPart("text", finalText));
               }
+
+              dataStream.writeMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+              });
+
               dataStream.write(
                 formatDataStreamPart("finish_message", {
                   finishReason: finishReason ?? "stop",
@@ -2631,6 +2985,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2640,27 +2995,26 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...admissionHeaders(),
-              ...(fleetPick?.serverId
-                ? { "X-Fleet-Server": fleetPick.serverId }
-                : {}),
-            },
-          },
+          { status: 200, headers: jsonResponseHeaders() },
         );
       } catch (error) {
         releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
-        console.error("Error in ADHD oversight response:", error);
+        if (oversightStage === "provider") {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, error),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "oversight-provider" },
+          );
+        }
+        console.error("Error in ADHD oversight response:", providerErrorDiagnostic(error));
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            code: "ADHD_OVERSIGHT_FAILED",
           }),
           {
             status: 500,
@@ -2671,12 +3025,11 @@ ${buildEmptyCourseRagBlock()}`;
     }
 
     if (streaming) {
-      const headers: Record<string, string> = {
-        "Content-Encoding": "none",
-        "Transfer-Encoding": "chunked",
-        Connection: "keep-alive",
-        ...admissionHeaders(),
-      };
+      const headers: Record<string, string> = {};
+      headers["Content-Encoding"] = "none";
+      headers["Transfer-Encoding"] = "chunked";
+      headers["Connection"] = "keep-alive";
+      Object.assign(headers, admissionHeaders());
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -2688,65 +3041,72 @@ ${buildEmptyCourseRagBlock()}`;
           routingTier,
           wasAuto,
           resolvedRouterVersion,
-          fleetPick?.serverId ?? null,
+          telemetryServerId ?? fleetPick?.serverId ?? null,
         ),
       );
       const release = admissionRelease;
       admissionRelease = null;
-      return withAdmissionRelease(
-        result.toDataStreamResponse({
-          headers,
-          ...(chatMode === "admin"
-            ? {
-                getErrorMessage: (error) => {
-                  logStreamError(error, streamTrace);
-                  const base = formatStreamError(error);
-                  if (parsedModel.providerId === "vllm") {
-                    return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-                  }
-                  return base;
-                },
-              }
-            : {}),
-        }),
-        release,
-      );
+      const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {
+        headers,
+        // HTTP status/headers are immutable after this 200 stream begins.
+        // Publish the same stable provider body through the AI SDK's stream
+        // error channel instead of pretending a late failure can be a 502.
+        getErrorMessage: (error) =>
+          providerStreamErrorMessage(parsedModel.providerId, error, streamTrace),
+      };
+      if (liveStreamData) {
+        dataStreamOptions.data = liveStreamData;
+      }
+      return withAdmissionRelease(result.toDataStreamResponse(dataStreamOptions), release);
     } else {
+      let providerResultResolved = false;
       try {
-        await result.consumeStream();
+        // Some compatible providers expose only the result promises and omit
+        // this optional SDK convenience method.
+        await result.consumeStream?.();
 
-        const [text, usage, finishReason, sources, reasoning, response] =
-          await Promise.all([
-            result.text,
-            result.usage,
-            result.finishReason,
-            result.sources,
-            result.reasoning,
-            result.response,
-          ]);
+        const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+        providerResultResolved = true;
 
         if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter(
-            (message) => message.role === "assistant",
-          );
+          const assistantMessages: ChatMessage[] = response.messages
+            .filter((message) => message.role === "assistant")
+            .map((message) => ({
+              ...chatMessageSchema.parse(message),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+              },
+            }));
+
           await appendMessages(assistantMessages);
         } else {
-          const assistantText =
-            text || extractAssistantText(response?.messages);
+          const assistantText = text || extractAssistantText(response?.messages);
           if (assistantText) {
             await appendMessages([
               {
                 id: randomUUID(),
                 role: "assistant",
                 content: assistantText,
+                metadata: {
+                  finishReason,
+                  hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                },
               },
             ]);
           }
         }
 
-        const normalizedUsage = coalesceTokenUsage(
-          usage as Record<string, unknown> | undefined,
-        );
+        const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: text ?? "",
           usage: {
@@ -2772,6 +3132,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2781,27 +3142,28 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...admissionHeaders(),
-              ...(fleetPick?.serverId
-                ? { "X-Fleet-Server": fleetPick.serverId }
-                : {}),
-            },
-          },
+          { status: 200, headers: jsonResponseHeaders() },
         );
       } catch (error) {
         releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
-        console.error("Error in non-streaming response:", error);
+        if (!providerResultResolved) {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderFailure(parsedModel.providerId, error),
+            streamTrace.chatId,
+            { ...streamTrace, stage: "non-streaming-provider" },
+          );
+        }
+        console.error("[chat-api] non-streaming response finalization failed", {
+          trace: streamTrace,
+          diagnostic: providerErrorDiagnostic(error),
+        });
         return new Response(
           JSON.stringify({
-            error: "Failed to generate non-streaming response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            error: "Failed to finalize non-streaming response",
           }),
           {
             status: 500,
@@ -2814,7 +3176,16 @@ ${buildEmptyCourseRagBlock()}`;
     if (isClientAbort(error, request.signal)) {
       return clientAbortResponse();
     }
-    console.error("Chat API error:", error);
+    console.error("Chat API error:", providerErrorDiagnostic(error));
+    // The user's message may already be persisted onto `chat` by the time an
+    // unhandled exception reaches here (#1621 review) — echo its id so a
+    // client retry continues that thread instead of spawning another one.
+    if (chat?.id) {
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", "X-Chat-Id": chat.id },
+      });
+    }
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

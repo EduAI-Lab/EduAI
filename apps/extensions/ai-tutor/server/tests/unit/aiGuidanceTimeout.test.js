@@ -7,18 +7,21 @@
  * `EDUAI_CALL_TIMEOUT_MS` is read once at module load, so the module is
  * re-imported fresh (via `vi.resetModules`) with a tiny timeout stubbed in.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
+    // `serviceAuthHeader` sends the env `EDUAI_API_KEY`, not this override;
+    // the stub is kept so any `getEffectiveEduAiApiKey` read stays deterministic.
+    systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     promptTemplate: {
-      findUnique: vi.fn().mockResolvedValue({ systemPrompt: 'Be a helpful tutor.' }),
+      findUnique: vi.fn().mockResolvedValue({ systemPrompt: "Be a helpful tutor." }),
     },
   },
 }));
 
-vi.mock('../../src/services/eduaiClient.js', () => ({
-  getEduAiCompletionUrl: () => 'http://mock-eduai/api/completion',
+vi.mock("../../src/services/eduaiClient.js", () => ({
+  getEduAiCompletionUrl: () => "http://mock-eduai/api/completion",
 }));
 
 const originalTimeout = process.env.EDUAI_CALL_TIMEOUT_MS;
@@ -26,7 +29,7 @@ const originalFetch = global.fetch;
 
 beforeEach(() => {
   vi.resetModules();
-  process.env.EDUAI_CALL_TIMEOUT_MS = '10';
+  process.env.EDUAI_CALL_TIMEOUT_MS = "10";
 });
 
 afterEach(() => {
@@ -36,18 +39,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('callEduAI timeout (#999)', () => {
-  it('surfaces a friendly timeout message when the EduAI call never resolves', async () => {
+describe("callEduAI timeout (#999)", () => {
+  it("surfaces a friendly timeout message when the EduAI call never resolves", async () => {
     // Simulate a hung upstream request: never resolves on its own, only
     // reacts to the AbortSignal firing — same shape as a real stalled fetch.
     global.fetch = vi.fn(
       (_url, opts) =>
         new Promise((_resolve, reject) => {
-          opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+          opts.signal.addEventListener("abort", () => reject(opts.signal.reason));
         }),
     );
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     // The internal `return`-without-`await` chain (supervisedGenerate ->
     // generateWithSupervisor -> generateGuideResponse) means the rejection
@@ -58,68 +61,68 @@ describe('callEduAI timeout (#999)', () => {
     // rejection shape here rather than a resolved fallback object.
     await expect(
       generateGuideResponse({
-        activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-        knowledgeLevel: 'beginner',
-        message: 'I am stuck',
+        activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+        knowledgeLevel: "beginner",
+        message: "I am stuck",
         studentAnswer: null,
         dualLoopEnabled: false,
-        cookie: 'session=abc',
-        apiKey: 'test-key',
+        cookie: "session=abc",
+        apiKey: "test-key",
       }),
     ).rejects.toMatchObject({
-      message: 'The AI study buddy took too long to respond. Please try again.',
+      message: "The AI study buddy took too long to respond. Please try again.",
       status: 504,
-      code: 'TIMEOUT',
+      code: "TIMEOUT",
     });
   });
 
-  it('does not time out a fast-resolving call', async () => {
+  it("does not time out a fast-resolving call", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+      json: () => Promise.resolve({ content: "Here is a hint.", chatId: "chat-1" }),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     const result = await generateGuideResponse({
-      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-      knowledgeLevel: 'beginner',
-      message: 'I am stuck',
+      activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+      knowledgeLevel: "beginner",
+      message: "I am stuck",
       studentAnswer: null,
       dualLoopEnabled: false,
-      cookie: 'session=abc',
-      apiKey: 'test-key',
+      cookie: "session=abc",
+      apiKey: "test-key",
     });
 
-    expect(result.message).toBe('Here is a hint.');
-    expect(result.trace.finalOutcome).toBe('single_pass');
+    expect(result.message).toBe("Here is a hint.");
+    expect(result.trace.finalOutcome).toBe("single_pass");
   });
 
-  it('does not retry when Retry-After consumes the remaining timeout', async () => {
-    process.env.EDUAI_CALL_TIMEOUT_MS = '300';
+  it("does not retry when Retry-After consumes the remaining timeout", async () => {
+    process.env.EDUAI_CALL_TIMEOUT_MS = "300";
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 503,
-      headers: new Headers({ 'Retry-After': '120' }),
-      text: () => Promise.resolve('Upstream unavailable'),
+      headers: new Headers({ "Retry-After": "120" }),
+      text: () => Promise.resolve("Upstream unavailable"),
     });
 
-    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
 
     await expect(
       generateGuideResponse({
-        activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
-        knowledgeLevel: 'beginner',
-        message: 'I am stuck',
+        activity: { mainTopic: { name: "Recursion" }, answer: "42" },
+        knowledgeLevel: "beginner",
+        message: "I am stuck",
         studentAnswer: null,
         dualLoopEnabled: false,
-        cookie: 'session=abc',
-        apiKey: 'test-key',
+        cookie: "session=abc",
+        apiKey: "test-key",
       }),
     ).rejects.toMatchObject({
-      message: 'The AI study buddy took too long to respond. Please try again.',
+      message: "The AI study buddy took too long to respond. Please try again.",
       status: 504,
-      code: 'TIMEOUT',
+      code: "TIMEOUT",
     });
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });

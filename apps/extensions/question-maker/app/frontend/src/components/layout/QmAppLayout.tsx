@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router';
-import { Outlet } from 'react-router';
+import { type ReactNode } from "react";
+import { Link, useLocation, useSearchParams } from "react-router";
+import { Outlet } from "react-router";
 import {
   AppShell,
   ThemeToggle,
@@ -13,7 +13,8 @@ import {
   Button,
   CommandSearchButton,
   AIServiceIndicators,
-} from '@eduai/ui';
+  NavSecondary,
+} from "@eduai/ui";
 import {
   IconBooks,
   IconBug,
@@ -23,35 +24,39 @@ import {
   IconHelpCircle,
   IconRoute,
   type Icon,
-} from '@tabler/icons-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useQmLayout, QmLayoutProvider } from '@/components/layout/QmLayoutContext';
-import { ProfileCoursesDialog } from '@/components/profile/ProfileCoursesDialog';
-import { useCourses } from '@/hooks/useCourses';
-import { useAiServicesStatus } from '@/hooks/useAiServicesStatus';
-import { useGuidedTour } from '@/contexts/GuidedTourContext';
-import { useBugReport } from '@/contexts/BugReportContext';
-import { getNavForUser, getNavSecondaryForUser } from '@/lib/rbac/nav';
-import type { QmNavItemKey } from '@/lib/rbac/types';
-import { Tooltip } from '@/components/ui/tooltip';
-import { CourseSwitcher } from '@/components/layout/CourseSwitcher';
-import { CommandPalette } from '@/components/command/CommandPalette';
-import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
+} from "@tabler/icons-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
+import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
+import { useCourses } from "@/hooks/useCourses";
+import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useGuidedTour } from "@/contexts/GuidedTourContext";
+import { useBugReport } from "@/contexts/BugReportContext";
+import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
+import type { QmNavItemKey } from "@/lib/rbac/types";
+import { Tooltip } from "@/components/ui/tooltip";
+import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
+import { CommandPalette } from "@/components/command/CommandPalette";
+import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
+import { toast } from "sonner";
 
-const ROUTE_TITLES: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/courses': 'Courses',
-  '/library': 'Question Library',
-  '/settings': 'Settings',
-  '/help': 'Help',
-  '/admin/bug-reports': 'Bug reports',
-};
+// A `Map` because the key is whatever path the router is on: an unlisted
+// route falls back to the app name rather than reading `undefined` off a
+// dictionary that claimed to have every string.
+const ROUTE_TITLES = new Map<string, string>([
+  ["/dashboard", "Dashboard"],
+  ["/courses", "Courses"],
+  ["/library", "Question Library"],
+  ["/settings", "Settings"],
+  ["/help", "Help"],
+  ["/admin/bug-reports", "Bug reports"],
+]);
 
 function resolveTitle(pathname: string): string {
-  if (pathname.startsWith('/courses/') && pathname !== '/courses') {
-    return 'Course workspace';
+  if (pathname.startsWith("/courses/") && pathname !== "/courses") {
+    return "Course workspace";
   }
-  return ROUTE_TITLES[pathname] ?? 'Question Maker';
+  return ROUTE_TITLES.get(pathname) ?? "Question Maker";
 }
 
 /**
@@ -59,7 +64,7 @@ function resolveTitle(pathname: string): string {
  * course switcher) and a single page label everywhere else. Deep routes (composer,
  * builder, variants) add a third crumb; on a workspace tab the tab bar shows it.
  */
-function WorkspaceBreadcrumb({ pathname, tab }: { pathname: string; tab: string | null }) {
+function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
 
@@ -75,12 +80,15 @@ function WorkspaceBreadcrumb({ pathname, tab }: { pathname: string; tab: string 
     );
   }
 
+  // Deep routes add one current-page crumb (same pattern as assessment builder).
+  // Return to the workspace tab via the page's "Back to …" control, not a Banks/Assessments crumb.
   let sub: string | null = null;
-  if (/\/questions\/new$/.test(pathname)) sub = 'New question';
-  else if (/\/questions\/[^/]+\/edit$/.test(pathname)) sub = 'Edit question';
-  else if (/\/questions\/[^/]+\/variant$/.test(pathname)) sub = 'New variant';
-  else if (/\/assessments\/[^/]+\/variants$/.test(pathname)) sub = 'Variants';
-  else if (/\/assessments\/[^/]+$/.test(pathname)) sub = 'Assessment builder';
+  if (pathname.endsWith("/questions/new")) sub = "New question";
+  else if (/\/questions\/[^/]+\/edit$/.test(pathname)) sub = "Edit question";
+  else if (/\/questions\/[^/]+\/variant$/.test(pathname)) sub = "New variant";
+  else if (/\/assessments\/[^/]+\/variants$/.test(pathname)) sub = "Variants";
+  else if (/\/assessments\/[^/]+$/.test(pathname)) sub = "Assessment builder";
+  else if (/\/banks\/[^/]+$/.test(pathname)) sub = "Question bank";
 
   return (
     <Breadcrumb>
@@ -107,14 +115,14 @@ function WorkspaceBreadcrumb({ pathname, tab }: { pathname: string; tab: string 
   );
 }
 
-const NAV_ICONS: Record<QmNavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
-  'bug-reports': IconBug,
-  'back-to-eduai': IconBooks,
-};
+  "bug-reports": IconBug,
+  "back-to-eduai": IconBooks,
+} satisfies Record<QmNavItemKey, Icon>;
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
 const qmLogo = (
@@ -125,12 +133,14 @@ const qmLogo = (
         width: 28,
         height: 28,
         borderRadius: 7,
-        background: 'var(--primary)',
+        background: "var(--primary)",
       }}
     >
       <IconBooks className="size-4 text-[var(--gold)]" strokeWidth={1.75} />
     </div>
-    <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>Question Maker</span>
+    <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>
+      Question Maker
+    </span>
   </>
 );
 
@@ -143,12 +153,19 @@ function QmAppLayoutInner() {
   const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
+  const handleLogout = () => {
+    void logout().catch(() => {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    });
+  };
 
   const handleGuidedTourClick = () => {
     if (guidedTourHandler) {
       guidedTourHandler();
     } else {
-      startTour('main');
+      startTour("main");
     }
   };
 
@@ -166,6 +183,13 @@ function QmAppLayoutInner() {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   // The question composer relies on a page-level sticky action bar. AppShell's
   // default `<main>` is `overflow-auto`, which makes it the sticky containing
   // block — but it never actually scrolls (the document does), so any sticky
@@ -173,38 +197,41 @@ function QmAppLayoutInner() {
   // Drop `overflow-auto` on the composer routes so the bar sticks to the
   // viewport; main clips nothing here anyway.
   const isComposerRoute =
-    pathname.endsWith('/questions/new') || /\/questions\/[^/]+\/edit$/.test(pathname);
+    pathname.endsWith("/questions/new") || /\/questions\/[^/]+\/edit$/.test(pathname);
 
   return (
     <AppShell
-      mainClassName={isComposerRoute ? 'min-w-0 flex-1' : undefined}
+      mainClassName={isComposerRoute ? "min-w-0 flex-1" : undefined}
       sidebar={{
         logo: qmLogo,
-        logoHref: '/dashboard',
+        logoHref: "/dashboard",
         navMain,
         navSecondary,
+        footerLeading: (
+          <NavSecondary items={navFooter} currentPath={pathname} LinkComponent={Link} />
+        ),
         currentPath: pathname,
         LinkComponent: Link,
         launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
         user: user
           ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
-          : { name: 'Guest', email: '', role: 'GUEST' },
+          : { name: "Guest", email: "", role: "GUEST" },
         navUser: user
           ? {
               items: [
                 {
-                  label: 'Settings',
-                  href: '/settings',
+                  label: "Settings",
+                  href: "/settings",
                   icon: <IconSettings size={15} strokeWidth={1.75} />,
                 },
               ],
               LinkComponent: Link,
-              onLogout: logout,
+              onLogout: handleLogout,
             }
           : undefined,
       }}
       title={resolveTitle(pathname)}
-      breadcrumbs={<WorkspaceBreadcrumb pathname={pathname} tab={searchParams.get('tab')} />}
+      breadcrumbs={<WorkspaceBreadcrumb pathname={pathname} />}
       headerActions={
         <>
           <CommandSearchButton eventName="qm:open-command" />
@@ -217,7 +244,13 @@ function QmAppLayoutInner() {
           </div>
           <div className="relative">
             <Tooltip content="Walk through the app with a guided tour" side="bottom">
-              <Button variant="ghost" size="icon" className="size-9" onClick={handleGuidedTourClick} aria-label="Guided tour">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9"
+                onClick={handleGuidedTourClick}
+                aria-label="Guided tour"
+              >
                 <IconRoute className="size-4" />
               </Button>
             </Tooltip>
@@ -270,6 +303,13 @@ export function QmAppLayout() {
 /** Sidebar shell for access-denied and other minimal states. */
 export function QmAccessShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const handleLogout = () => {
+    void logout().catch(() => {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    });
+  };
 
   const navMain = getNavForUser(user).map((item) => ({
     title: item.title,
@@ -285,21 +325,34 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   return (
     <QmLayoutProvider>
       <AppShell
         sidebar={{
           logo: qmLogo,
-          logoHref: '/dashboard',
+          logoHref: "/dashboard",
           navMain,
           navSecondary,
-          currentPath: '/',
+          footerLeading: <NavSecondary items={navFooter} currentPath="/" LinkComponent={Link} />,
+          currentPath: "/",
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
           user: user
-            ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
-            : { name: 'Guest', email: '', role: 'GUEST' },
-          navUser: user ? { items: [], onLogout: logout } : undefined,
+            ? {
+                name: user.name ?? user.email,
+                email: user.email,
+                image: user.image,
+                role: user.role,
+              }
+            : { name: "Guest", email: "", role: "GUEST" },
+          navUser: user ? { items: [], onLogout: handleLogout } : undefined,
         }}
         title="Question Maker"
       >

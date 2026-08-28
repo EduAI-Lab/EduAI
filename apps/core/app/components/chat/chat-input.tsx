@@ -1,11 +1,4 @@
-import {
-  Button,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  cn,
-} from "@eduai/ui";
+import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, cn } from "@eduai/ui";
 import {
   IconSettings,
   IconBooks,
@@ -16,6 +9,7 @@ import {
   IconBrain,
   IconFocusCentered,
   IconBooksOff,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -65,6 +59,8 @@ interface ChatInputProps {
   showCourseSelector?: boolean;
   adhdAssist?: boolean;
   onAdhdAssistChange?: (v: boolean) => void;
+  /** True while the latest response is being re-generated for the toggled Assist mode (#1246). */
+  assistBusy?: boolean;
   focusMode?: boolean;
   onFocusModeChange?: (v: boolean) => void;
   assistiveHighlight?: boolean;
@@ -76,8 +72,7 @@ interface ChatInputProps {
 const TOOLBAR_CHIP =
   "inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border/50 bg-background/80 px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:border-border hover:bg-muted hover:text-foreground";
 
-const TOOLBAR_CHIP_ACTIVE =
-  "border-border bg-muted text-foreground";
+const TOOLBAR_CHIP_ACTIVE = "border-border bg-muted text-foreground";
 
 /** Solid accent fill — accent-foreground is light, so never pair it with bg-accent/10. */
 const TOOLBAR_TOGGLE_ACTIVE =
@@ -99,6 +94,7 @@ export function ChatInput({
   showCourseSelector = true,
   adhdAssist = false,
   onAdhdAssistChange,
+  assistBusy = false,
   focusMode = false,
   onFocusModeChange,
   assistiveHighlight = false,
@@ -107,12 +103,8 @@ export function ChatInput({
   disabledReason,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const {
-    apiKeys,
-    isProviderConfigured,
-    updateProviderSettings,
-    removeProviderSettings,
-  } = useApiKeys();
+  const { apiKeys, isProviderConfigured, updateProviderSettings, removeProviderSettings } =
+    useApiKeys();
 
   const handleValueChange = (value: string) => {
     const event = {
@@ -131,11 +123,13 @@ export function ChatInput({
   };
 
   const selectedCourseLabel = selectedCourseId
-    ? (availableCourses.find((c) => c.code === selectedCourseId)?.code ??
-      selectedCourseId)
+    ? (availableCourses.find((c) => c.code === selectedCourseId)?.code ?? selectedCourseId)
     : null;
 
-  const canSend = !isLoading && !disabledReason && input.trim().length > 0;
+  // A regenerate-in-flight preview must block a normal send too — otherwise
+  // the send uses the pre-toggle mode while the preview can later flip it,
+  // leaving the new answer and the toggle out of sync (#1365 review).
+  const canSend = !isLoading && !assistBusy && !disabledReason && input.trim().length > 0;
   const controlsDisabled = !!disabledReason;
   const motionReduced = useMotionReducedPreference();
   const chipPress = motionReduced
@@ -148,13 +142,10 @@ export function ChatInput({
         <div className="mx-auto max-w-3xl px-4 pb-4 pt-3 md:px-6">
           {disabledReason === "no-courses" && (
             <div className="mb-2.5 flex items-start gap-2 rounded-xl bg-muted/60 p-3">
-              <IconBooksOff
-                size={16}
-                className="mt-0.5 flex-shrink-0 text-muted-foreground"
-              />
+              <IconBooksOff size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">
-                Chat is disabled — you are not enrolled in any courses. Once
-                you're enrolled in a course, you can start chatting.
+                Chat is disabled — you are not enrolled in any courses. Once you're enrolled in a
+                course, you can start chatting.
               </span>
             </div>
           )}
@@ -177,11 +168,9 @@ export function ChatInput({
               <PromptInputTextarea
                 id={CHAT_MESSAGE_INPUT_ID}
                 placeholder={
-                  selectedCourseLabel
-                    ? `Ask about ${selectedCourseLabel}…`
-                    : "Ask anything…"
+                  selectedCourseLabel ? `Ask about ${selectedCourseLabel}…` : "Ask anything…"
                 }
-                disabled={isLoading || !!disabledReason}
+                disabled={isLoading || assistBusy || !!disabledReason}
                 className="max-h-[120px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-[15px] text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
               />
             </PromptInput>
@@ -207,27 +196,15 @@ export function ChatInput({
                         <IconChevronDown size={10} stroke={2.5} />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      side="top"
-                      className="min-w-[220px]"
-                    >
+                    <DropdownMenuContent align="start" side="top" className="min-w-[220px]">
                       {availableCourses.map((course) => (
                         <DropdownMenuItem
                           key={course.code}
                           onSelect={() => setSelectedCourseId(course.code)}
-                          className={
-                            selectedCourseId === course.code
-                              ? "bg-primary/5"
-                              : ""
-                          }
+                          className={selectedCourseId === course.code ? "bg-primary/5" : ""}
                         >
-                          <span className="mr-1 font-semibold">
-                            {course.code}
-                          </span>
-                          <span className="truncate text-muted-foreground">
-                            — {course.name}
-                          </span>
+                          <span className="mr-1 font-semibold">{course.code}</span>
+                          <span className="truncate text-muted-foreground">— {course.name}</span>
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
@@ -248,18 +225,12 @@ export function ChatInput({
                       <IconChevronDown size={10} stroke={2.5} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    side="top"
-                    className="min-w-[200px]"
-                  >
+                  <DropdownMenuContent align="start" side="top" className="min-w-[200px]">
                     {chatModels.map((model) => (
                       <DropdownMenuItem
                         key={model.id}
                         onSelect={() => setSelectedModel(model.id)}
-                        className={
-                          selectedModel === model.id ? "bg-primary/5" : ""
-                        }
+                        className={selectedModel === model.id ? "bg-primary/5" : ""}
                       >
                         <span className="font-semibold">{model.name}</span>
                         <span className="ml-1.5 text-[11px] text-muted-foreground">
@@ -271,10 +242,7 @@ export function ChatInput({
                 </DropdownMenu>
 
                 {(onAdhdAssistChange || onFocusModeChange) && (
-                  <span
-                    aria-hidden
-                    className="mx-0.5 h-4 w-px shrink-0 bg-border/60"
-                  />
+                  <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border/60" />
                 )}
 
                 {onAdhdAssistChange && (
@@ -283,8 +251,9 @@ export function ChatInput({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          disabled={controlsDisabled}
+                          disabled={controlsDisabled || assistBusy}
                           aria-pressed={adhdAssist}
+                          aria-busy={assistBusy}
                           aria-label="Assistive mode"
                           onClick={() => onAdhdAssistChange(!adhdAssist)}
                           className={cn(
@@ -293,14 +262,19 @@ export function ChatInput({
                             adhdAssist && TOOLBAR_TOGGLE_ACTIVE,
                           )}
                         >
-                          <IconBrain size={12} stroke={2} />
+                          {assistBusy ? (
+                            <IconLoader2 size={12} stroke={2} className="animate-spin" />
+                          ) : (
+                            <IconBrain size={12} stroke={2} />
+                          )}
                           <span className="hidden sm:inline">Assist</span>
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px]">
                         <p>
-                          Formats AI responses for improved focus and
-                          readability.
+                          {assistBusy
+                            ? "Re-generating the response for this mode…"
+                            : "Formats AI responses for improved focus and readability."}
                         </p>
                       </TooltipContent>
                     </Tooltip>

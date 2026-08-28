@@ -20,7 +20,7 @@
  *   `server/prisma/schema.prisma`.
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /**
  * Convert raw engagement signals into the coarse difficulty label shown to instructors.
@@ -41,7 +41,7 @@ export function calculateDifficulty({
   const normalizedStudentCount = Math.max(studentCount || 0, 1);
   const helpPerStudent = helpRequestCount / normalizedStudentCount;
   const incorrectRate = submissionCount > 0 ? incorrectSubmissionCount / submissionCount : 0;
-  const ratingPenalty = typeof averageRating === 'number' ? (5 - averageRating) / 4 : 0;
+  const ratingPenalty = typeof averageRating === "number" ? (5 - averageRating) / 4 : 0;
 
   // These coefficients are a product-policy dial: incorrect answers dominate,
   // help-seeking is a secondary signal, and ratings only nudge the result.
@@ -50,7 +50,7 @@ export function calculateDifficulty({
     Math.min(100, Math.round(helpPerStudent * 15 + incorrectRate * 45 + ratingPenalty * 25)),
   );
 
-  const difficultyLabel = difficultyScore >= 65 ? 'HIGH' : difficultyScore >= 35 ? 'MEDIUM' : 'LOW';
+  const difficultyLabel = difficultyScore >= 65 ? "HIGH" : difficultyScore >= 35 ? "MEDIUM" : "LOW";
 
   return { difficultyScore, difficultyLabel };
 }
@@ -188,6 +188,44 @@ export async function recordSubmissionMetrics({ userId, activityId, isCorrect })
         submissionCount: 1,
         incorrectSubmissionCount: isCorrect ? 0 : 1,
         correctSubmissionCount: isCorrect ? 1 : 0,
+      },
+    });
+
+    return recalculateActivityAnalytics(tx, activityId);
+  });
+}
+
+/**
+ * Re-derive one student's submission counters from the `Submission` rows
+ * themselves, then refresh the aggregate.
+ *
+ * Why: `recordSubmissionMetrics` above only ever *increments*, at submit time.
+ * A manual grade override (`PATCH /activities/:id/submissions/:id`) rewrites a
+ * `Submission.isCorrect` after the fact, which left Analytics disagreeing with
+ * the Submissions tab about the same course. Recomputing from the canonical
+ * rows — rather than nudging the counters — also self-heals any earlier drift.
+ * `helpRequestCount` is untouched: it has no `Submission` to derive from.
+ */
+export async function resyncSubmissionMetrics({ userId, activityId }) {
+  return prisma.$transaction(async (tx) => {
+    const submissions = await tx.submission.findMany({
+      where: { userId, activityId },
+      select: { isCorrect: true },
+    });
+
+    const submissionCount = submissions.length;
+    const correctSubmissionCount = submissions.filter((s) => s.isCorrect === true).length;
+    const incorrectSubmissionCount = submissions.filter((s) => s.isCorrect === false).length;
+
+    await tx.activityStudentMetric.upsert({
+      where: { userId_activityId: { userId, activityId } },
+      update: { submissionCount, correctSubmissionCount, incorrectSubmissionCount },
+      create: {
+        userId,
+        activityId,
+        submissionCount,
+        correctSubmissionCount,
+        incorrectSubmissionCount,
       },
     });
 

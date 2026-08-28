@@ -11,20 +11,22 @@ import {
   DropdownMenuItem,
   questionStatus,
   variantLabel,
-} from '@eduai/ui';
-import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
+} from "@eduai/ui";
+import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from "@eduai/ui";
 
-import { IconCopy, IconDots } from '@tabler/icons-react';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
-import { markCorrectChoices } from '@/lib/mcq';
-import type { QuestionVariantEntry, QuestionType } from '../../types/question';
+import { IconCopy, IconDots, IconTrash } from "@tabler/icons-react";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { formatCourseAccessLevel } from "@/lib/rbac/course-labels";
+import { markCorrectChoices } from "@/lib/mcq";
+import type { QuestionVariantEntry, QuestionType } from "../../types/question";
 
 interface QuestionCardProps {
   entry: QuestionVariantEntry;
   questionNumber: number;
   onView: (entry: QuestionVariantEntry) => void;
   onCreateVariant: (entry: QuestionVariantEntry) => void;
+  /** Optional bank action — shown in the kebab when provided. */
+  onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
   /**
    * 1-based ordinal of this variant among its question's variants (the primary/base
    * variant is excluded). Resolved by the caller, which sees the full variant list.
@@ -35,11 +37,11 @@ interface QuestionCardProps {
   compact?: boolean;
 }
 
-const TYPE_LABELS: Record<QuestionType, string> = {
-  MCQ: 'Multiple Choice',
-  SA: 'Short Answer',
-  LA: 'Long Answer',
-};
+const TYPE_LABELS = {
+  MCQ: "Multiple Choice",
+  SA: "Short Answer",
+  LA: "Long Answer",
+} satisfies Record<QuestionType, string>;
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
@@ -55,6 +57,7 @@ export const QuestionCard = ({
   questionNumber,
   onView,
   onCreateVariant,
+  onRemoveFromBank,
   variantNumber,
   compact = false,
 }: QuestionCardProps) => {
@@ -64,7 +67,7 @@ export const QuestionCard = ({
   const canWriteInCourse = hasCourseAccess && !accessLoading;
   const { variant } = entry;
 
-  const difficulty = variant.difficulty ?? 'medium';
+  const difficulty = variant.difficulty ?? "medium";
   const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
   const isVariant = variant.referenceId != null;
   // A variant always belongs to the same question as its base (shared questionId), so
@@ -74,14 +77,17 @@ export const QuestionCard = ({
     ? variantLabel({ referenceId: entry.questionId, variantNumber })
     : `Question #${entry.questionId}`;
   const topics = [primaryTopicLabel, ...(entry.secondaryTopicNames ?? [])];
-  if (access === 'ta') topics.push(`${formatCourseAccessLevel('ta')} · own edits only`);
+  if (access === "ta") topics.push(`${formatCourseAccessLevel("ta")} · own edits only`);
 
   const isAi = Boolean(entry.isAiGenerated || variant.isAiGenerated);
 
   const choices: QuestionCardChoice[] | undefined =
-    entry.questionType === 'MCQ' && variant.choices
+    entry.questionType === "MCQ" && variant.choices
       ? (() => {
-          const correctFlags = markCorrectChoices(variant.answer, variant.choices);
+          const correctFlags = markCorrectChoices(variant.answer, variant.choices ?? [], {
+            selectAllThatApply: variant.selectAllThatApply,
+            correctAnswers: variant.correctAnswers,
+          });
           return variant.choices.map((choice, i) => ({
             letter: choice.letter,
             text: choice.text,
@@ -91,18 +97,30 @@ export const QuestionCard = ({
       : undefined;
 
   const canCreateVariant = canCreateQuestion && canWriteInCourse;
-  const menu = canCreateVariant ? (
+  const showMenu = canCreateVariant || Boolean(onRemoveFromBank);
+  const menu = showMenu ? (
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Question actions"
         className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(e) => e.stopPropagation()}
       >
         <IconDots className="size-[18px]" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
-          <IconCopy className="size-4" /> Create variant
-        </DropdownMenuItem>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {canCreateVariant && (
+          <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
+            <IconCopy className="size-4" /> Create variant
+          </DropdownMenuItem>
+        )}
+        {onRemoveFromBank && (
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={() => onRemoveFromBank(entry)}
+          >
+            <IconTrash className="size-4" /> Remove from bank
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : undefined;
@@ -110,8 +128,8 @@ export const QuestionCard = ({
   return (
     <QuestionPreviewCard
       onClick={() => onView(entry)}
-      size={compact ? 'compact' : 'default'}
-      className={compact ? 'h-full' : undefined}
+      size={compact ? "compact" : "default"}
+      className={compact ? "h-full" : undefined}
       type={TYPE_LABELS[entry.questionType]}
       difficulty={capitalize(difficulty)}
       difficultyLevel={difficulty as UiDifficulty}
@@ -120,7 +138,7 @@ export const QuestionCard = ({
       status={questionStatus(!!entry.isDraft)}
       question={variant.questionText}
       choices={choices}
-      answer={choices ? undefined : variant.answer ?? undefined}
+      answer={choices ? undefined : (variant.answer ?? undefined)}
       topics={topics}
       updatedLabel={formatUpdated(variant.updatedAt ?? variant.createdAt)}
       menu={menu}

@@ -3,15 +3,7 @@
 // Integration tests for /api/courses/:id/rag-settings.
 // Real Postgres; auth mocked at the module level.
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  afterAll,
-  beforeEach,
-} from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import prisma from "~/lib/prisma.server";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -19,13 +11,8 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 import { loader, action } from "~/routes/api/courses.id.rag-settings";
-import {
-  seedUser,
-  seedCourse,
-  enroll,
-  mockSession,
-  cleanupRbac,
-} from "../helpers/rbac";
+import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 let instructorId: string;
 let studentId: string;
@@ -63,11 +50,7 @@ function getArgs(id: string) {
   } as any;
 }
 
-function patchArgs(
-  id: string,
-  body: unknown,
-  user: { id: string; role: string },
-) {
+function patchArgs(id: string, body: RouteRequestBody, user: { id: string; role: string }) {
   mockSession(user);
   return {
     request: new Request(`http://localhost/api/courses/${id}/rag-settings`, {
@@ -123,14 +106,11 @@ describe("GET /api/courses/:id/rag-settings", () => {
 describe("PATCH /api/courses/:id/rag-settings", () => {
   it("returns 401 when unauthenticated", async () => {
     const res = await action({
-      request: new Request(
-        `http://localhost/api/courses/${courseId}/rag-settings`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ragTopK: 5 }),
-        },
-      ),
+      request: new Request(`http://localhost/api/courses/${courseId}/rag-settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ragTopK: 5 }),
+      }),
       params: { id: courseId },
       context: {} as never,
     } as any);
@@ -147,11 +127,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
   it("returns 403 for an instructor with no relationship to the course (IDOR)", async () => {
     const outsider = await seedUser({ role: "INSTRUCTOR" });
     const res = await action(
-      patchArgs(
-        courseId,
-        { ragTopK: 5 },
-        { id: outsider.id, role: "INSTRUCTOR" },
-      ),
+      patchArgs(courseId, { ragTopK: 5 }, { id: outsider.id, role: "INSTRUCTOR" }),
     );
     expect(res.status).toBe(403);
 
@@ -226,11 +202,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
 
   it("returns 422 for out-of-range values", async () => {
     const res = await action(
-      patchArgs(
-        courseId,
-        { ragTopK: 99 },
-        { id: instructorId, role: "INSTRUCTOR" },
-      ),
+      patchArgs(courseId, { ragTopK: 99 }, { id: instructorId, role: "INSTRUCTOR" }),
     );
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -239,11 +211,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
 
   it("returns 404 for an unknown course", async () => {
     const res = await action(
-      patchArgs(
-        "missing-course",
-        { ragTopK: 4 },
-        { id: instructorId, role: "INSTRUCTOR" },
-      ),
+      patchArgs("missing-course", { ragTopK: 4 }, { id: instructorId, role: "INSTRUCTOR" }),
     );
     expect(res.status).toBe(404);
   });

@@ -1,80 +1,112 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router'
-import { IconPlus, IconBook } from '@tabler/icons-react'
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Link } from "react-router";
+import { IconPlus, IconBook } from "@tabler/icons-react";
 import {
   Button,
-  Card, CardContent,
+  Card,
+  CardContent,
   CourseCard,
   CourseListView,
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
   Input,
   Label,
   PageHeading,
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
   defaultColorIndexForCourse,
-} from '@eduai/ui'
-import { TERM_CODES, termName, termFromDate, termInfoFromDate } from '@eduai/ui'
-import { useDisciplines } from '~/hooks/api/use-disciplines'
-import { DepartmentCombobox } from '~/components/courses/department-combobox'
-import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
-import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
-import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
+} from "@eduai/ui";
+import { TERM_CODES, termName, termFromDate, termInfoFromDate } from "@eduai/ui";
+import type { CourseListSection } from "@eduai/ui";
+import { useDisciplines } from "~/hooks/api/use-disciplines";
+import { DepartmentCombobox } from "~/components/courses/department-combobox";
+import type {
+  Course,
+  CreateCourseInput,
+  UpdateCourseInput,
+  CourseFilters,
+} from "~/hooks/api/use-courses";
+import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
+import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
   getCourseDisplayName,
   resolveCourseAccentColor,
-  type CourseCardPreference,
-} from '~/lib/courses/course-card-preferences'
+} from "~/lib/courses/course-card-preferences";
 import {
   PolicyTooltip,
   usePolicyGate,
   DEFAULT_POLICY_DISABLED_MESSAGE,
   type PolicyKey,
-} from '~/components/policy/policy-gate'
+} from "~/components/policy/policy-gate";
 
 interface Instructor {
-  id: string
-  name: string | null
-  email: string
+  id: string;
+  name: string | null;
+  email: string;
 }
 
 /** Effective role this view is rendered for — one config/branch per role (#1087 Group A). */
-export type CoursesRole = 'admin' | 'unit-admin' | 'instructor' | 'mixed'
+export type CoursesRole = "admin" | "unit-admin" | "instructor" | "mixed";
 
-interface MutableRoleProps {
-  courses: Course[]
-  instructors?: Instructor[]
-  onCreateCourse: (data: CreateCourseInput) => Promise<void>
-  onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
-  onDeleteCourse: (id: string) => Promise<void>
-  onPublishToggle: (id: string, publish: boolean) => Promise<void>
+interface MutableRoleProps extends ControlledListProps {
+  courses: Course[];
+  instructors?: Instructor[];
+  onCreateCourse: (data: CreateCourseInput) => Promise<void>;
+  onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>;
+  onDeleteCourse: (id: string) => Promise<void>;
+  onPublishToggle: (id: string, publish: boolean) => Promise<void>;
 }
 
 interface AdminViewProps extends MutableRoleProps {
-  role: 'admin'
+  role: "admin";
 }
 
 interface UnitAdminViewProps extends MutableRoleProps {
-  role: 'unit-admin'
+  role: "unit-admin";
   /** Already filtered to this unit's courses by the route. */
-  authorizedUnits: string[]
+  authorizedUnits: string[];
 }
 
 interface InstructorViewProps extends MutableRoleProps {
-  role: 'instructor'
+  role: "instructor";
 }
 
-interface MixedViewProps {
-  role: 'mixed'
-  courses: Course[]
-  taCourseIds: string[]
-  enrolledCourseIds: string[]
+interface MixedViewProps extends ControlledListProps {
+  role: "mixed";
+  courses: Course[];
+  taCourseIds: string[];
+  instructorCourseIds: string[];
+  enrolledCourseIds: string[];
 }
 
-export type CoursesViewProps = AdminViewProps | UnitAdminViewProps | InstructorViewProps | MixedViewProps
+/** Controlled (server-driven) list state threaded from `useCourses` (#1263). */
+interface ControlledListProps {
+  search: string;
+  onSearchChange: (value: string) => void;
+  selectedFilters: CourseFilters;
+  onFilterChange: (groupId: string, values: string[]) => void;
+  availableValues: Record<string, string[]>;
+  total: number;
+  onClearAll: () => void;
+}
+
+export type CoursesViewProps =
+  | AdminViewProps
+  | UnitAdminViewProps
+  | InstructorViewProps
+  | MixedViewProps;
 
 /**
  * Shared per-role config for the parts of the list that are purely
@@ -85,49 +117,54 @@ export type CoursesViewProps = AdminViewProps | UnitAdminViewProps | InstructorV
  * per-role render branch below instead of being forced into this shape.
  */
 interface CardActionConfig {
-  showPublish: boolean
-  publishPolicyFlag?: PolicyKey
-  showEdit: boolean
-  showDelete: boolean
-  deletePolicyFlag?: PolicyKey
+  showPublish: boolean;
+  publishPolicyFlag?: PolicyKey;
+  showEdit: boolean;
+  showDelete: boolean;
+  deletePolicyFlag?: PolicyKey;
 }
 
 interface RoleListConfig {
-  heading: string
+  heading: string;
   /** Department filter uses friendly labels (admin/unit-admin) vs raw codes (instructor). */
-  departmentOptionLabel: boolean
-  cardActions: CardActionConfig
+  departmentOptionLabel: boolean;
+  cardActions: CardActionConfig;
 }
 
-export const COURSES_ROLE_CONFIG: Record<'admin' | 'unit-admin' | 'instructor', RoleListConfig> = {
+export const COURSES_ROLE_CONFIG = {
   admin: {
-    heading: 'Courses',
+    heading: "Courses",
     departmentOptionLabel: true,
     cardActions: { showPublish: true, showEdit: true, showDelete: true },
   },
-  'unit-admin': {
-    heading: 'Courses',
+  "unit-admin": {
+    heading: "Courses",
     departmentOptionLabel: true,
     // §2 / issue #807: delete stays visible, greyed when the policy is off.
-    cardActions: { showPublish: true, showEdit: true, showDelete: true, deletePolicyFlag: 'unitAdmins.canDeleteCourses' },
+    cardActions: {
+      showPublish: true,
+      showEdit: true,
+      showDelete: true,
+      deletePolicyFlag: "unitAdmins.canDeleteCourses",
+    },
   },
   instructor: {
-    heading: 'My Courses',
+    heading: "My Courses",
     departmentOptionLabel: false,
     // §2 / issue #807: keep publish & delete visible but greyed-out when the
     // instructor's policy flag is off, so the missing action reads as "admin
     // turned this off", not a bug.
     cardActions: {
       showPublish: true,
-      publishPolicyFlag: 'instructors.canPublishCourses',
+      publishPolicyFlag: "instructors.canPublishCourses",
       showEdit: true,
       showDelete: true,
-      deletePolicyFlag: 'instructors.canDeleteCourses',
+      deletePolicyFlag: "instructors.canDeleteCourses",
     },
   },
-}
+} satisfies Record<"admin" | "unit-admin" | "instructor", RoleListConfig>;
 
-const NO_RESULTS_TEXT = 'No courses match your search.'
+const NO_RESULTS_TEXT = "No courses match your search.";
 
 function NoResultsCard() {
   return (
@@ -137,19 +174,19 @@ function NoResultsCard() {
         <p className="text-muted-foreground">{NO_RESULTS_TEXT}</p>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export function CoursesView(props: CoursesViewProps) {
   switch (props.role) {
-    case 'admin':
-      return <AdminCoursesBody {...props} />
-    case 'unit-admin':
-      return <UnitAdminCoursesBody {...props} />
-    case 'instructor':
-      return <InstructorCoursesBody {...props} />
-    case 'mixed':
-      return <MixedCoursesBody {...props} />
+    case "admin":
+      return <AdminCoursesBody {...props} />;
+    case "unit-admin":
+      return <UnitAdminCoursesBody {...props} />;
+    case "instructor":
+      return <InstructorCoursesBody {...props} />;
+    case "mixed":
+      return <MixedCoursesBody {...props} />;
   }
 }
 
@@ -157,69 +194,87 @@ export function CoursesView(props: CoursesViewProps) {
 // Admin
 // ---------------------------------------------------------------------------
 
-function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: AdminViewProps) {
-  const config = COURSES_ROLE_CONFIG.admin
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editingCourse, setEditingCourse] = useState<Course | null>(null)
-  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
-  const [createDept, setCreateDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()))
-  const [selectedInstructor, setSelectedInstructor] = useState<string>('')
-  const [editDept, setEditDept] = useState<string>('')
-  const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
+function AdminCoursesBody({
+  courses,
+  instructors = [],
+  onCreateCourse,
+  onEditCourse,
+  onDeleteCourse,
+  onPublishToggle,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
+}: AdminViewProps) {
+  const config = COURSES_ROLE_CONFIG.admin;
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
+  const [createDept, setCreateDept] = useState<string>("");
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const [selectedInstructor, setSelectedInstructor] = useState<string>("");
+  const [editDept, setEditDept] = useState<string>("");
+  const {
+    options: departmentOptions,
+    getLabel: getDepartmentLabel,
+    loading: deptLoading,
+  } = useDisciplines();
 
   useEffect(() => {
-    setEditDept(editingCourse?.department ?? '')
-  }, [editingCourse])
+    setEditDept(editingCourse?.department ?? "");
+  }, [editingCourse]);
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once the dialog is fully closed.
   useEffect(() => {
     if (!editingCourse) {
-      document.body.style.pointerEvents = ''
+      document.body.style.pointerEvents = "";
     }
-  }, [editingCourse])
+  }, [editingCourse]);
 
   useEffect(() => {
     if (!deletingCourse) {
-      document.body.style.pointerEvents = ''
+      document.body.style.pointerEvents = "";
     }
-  }, [deletingCourse])
+  }, [deletingCourse]);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const codeSuffix = (fd.get('codeSuffix') as string).trim()
-    const code = `${createDept} ${codeSuffix}`
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const codeSuffix = (fd.get("codeSuffix") as string).trim();
+    const code = `${createDept} ${codeSuffix}`;
     await onCreateCourse({
-      name: fd.get('name') as string,
+      name: fd.get("name") as string,
       code,
-      section: fd.get('section') as string,
+      section: fd.get("section") as string,
       term: selectedTerm,
-      year: parseInt(fd.get('year') as string),
-      startDate: fd.get('startDate') as string,
+      year: parseInt(fd.get("year") as string),
+      startDate: fd.get("startDate") as string,
       department: createDept,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
-    })
-    setCreateDept('')
-    setSelectedTerm(termFromDate(new Date()))
-    setSelectedInstructor('')
-    setCreateOpen(false)
-  }
+    });
+    setCreateDept("");
+    setSelectedTerm(termFromDate(new Date()));
+    setSelectedInstructor("");
+    setCreateOpen(false);
+  };
 
   const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!editingCourse) return
-    const fd = new FormData(e.currentTarget)
+    e.preventDefault();
+    if (!editingCourse) return;
+    const fd = new FormData(e.currentTarget);
     await onEditCourse(editingCourse.id, {
-      name: fd.get('name') as string,
-      code: fd.get('code') as string,
+      name: fd.get("name") as string,
+      code: fd.get("code") as string,
       department: editDept || null,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
-    })
-    setEditingCourse(null)
-  }
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+    });
+    setEditingCourse(null);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -236,12 +291,19 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create new course</DialogTitle>
-              <DialogDescription>Create a new course for the current academic term.</DialogDescription>
+              <DialogDescription>
+                Create a new course for the current academic term.
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="create-name">Course name</Label>
-                <Input id="create-name" name="name" placeholder="Introduction to Computer Science" required />
+                <Input
+                  id="create-name"
+                  name="name"
+                  placeholder="Introduction to Computer Science"
+                  required
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="create-dept">Course Code</Label>
@@ -256,9 +318,15 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
                 <Label htmlFor="create-code">Course number</Label>
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
-                    {createDept || '—'}
+                    {createDept || "—"}
                   </span>
-                  <Input id="create-code" name="codeSuffix" placeholder="101" className="font-mono" required />
+                  <Input
+                    id="create-code"
+                    name="codeSuffix"
+                    placeholder="101"
+                    className="font-mono"
+                    required
+                  />
                 </div>
                 {createDept && (
                   <p className="text-xs text-muted-foreground">
@@ -280,10 +348,14 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
                 <div className="grid gap-2">
                   <Label>Term</Label>
                   <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {TERM_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                        <SelectItem key={code} value={code}>
+                          {termName(code)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -291,16 +363,25 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
                 <div className="grid gap-2">
                   <Label>Year</Label>
                   {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
-                  <Input name="year" type="number" defaultValue={termInfoFromDate(new Date()).year} required />
+                  <Input
+                    name="year"
+                    type="number"
+                    defaultValue={termInfoFromDate(new Date()).year}
+                    required
+                  />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label>Instructor</Label>
                 <Select value={selectedInstructor} onValueChange={setSelectedInstructor} required>
-                  <SelectTrigger><SelectValue placeholder="Select instructor" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select instructor" />
+                  </SelectTrigger>
                   <SelectContent>
                     {instructors.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>{i.name ?? i.email}</SelectItem>
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.name ?? i.email}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -310,8 +391,12 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
                 <Textarea name="aiInstructions" rows={2} />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={!selectedInstructor || !createDept}>Create course</Button>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!selectedInstructor || !createDept}>
+                  Create course
+                </Button>
               </div>
             </form>
           </DialogContent>
@@ -331,6 +416,13 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
             optionLabel: getDepartmentLabel,
           }),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
@@ -377,17 +469,23 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
           <DialogHeader>
             <DialogTitle>Delete course</DialogTitle>
             <DialogDescription>
-              Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
+              Delete{" "}
+              <strong>
+                {deletingCourse?.code} — {deletingCourse?.name}
+              </strong>
+              ? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingCourse(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeletingCourse(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               onClick={async () => {
                 if (deletingCourse) {
-                  await onDeleteCourse(deletingCourse.id)
-                  setDeletingCourse(null)
+                  await onDeleteCourse(deletingCourse.id);
+                  setDeletingCourse(null);
                 }
               }}
             >
@@ -400,7 +498,9 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
       {/* Edit dialog */}
       <Dialog open={!!editingCourse} onOpenChange={(open) => !open && setEditingCourse(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit course</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit course</DialogTitle>
+          </DialogHeader>
           {editingCourse && (
             <form onSubmit={handleEdit} className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -423,10 +523,16 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
               </div>
               <div className="grid gap-2">
                 <Label>AI instructions</Label>
-                <Textarea name="aiInstructions" defaultValue={editingCourse.aiInstructions} rows={2} />
+                <Textarea
+                  name="aiInstructions"
+                  defaultValue={editingCourse.aiInstructions}
+                  rows={2}
+                />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>
+                  Cancel
+                </Button>
                 <Button type="submit">Save changes</Button>
               </div>
             </form>
@@ -434,7 +540,7 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -449,100 +555,119 @@ function UnitAdminCoursesBody({
   onEditCourse,
   onDeleteCourse,
   onPublishToggle,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
 }: UnitAdminViewProps) {
-  const config = COURSES_ROLE_CONFIG['unit-admin']
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editingCourse, setEditingCourse] = useState<Course | null>(null)
-  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
-  const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
+  const config = COURSES_ROLE_CONFIG["unit-admin"];
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
+  const {
+    options: departmentOptions,
+    getLabel: getDepartmentLabel,
+    loading: deptLoading,
+  } = useDisciplines();
   // Only show departments that are in the user's authorized units. Memoized so
   // the array keeps a stable ref across renders (it feeds effect deps below).
-  const authorizedUnitSet = useMemo(() => new Set(authorizedUnits), [authorizedUnits])
+  const authorizedUnitSet = useMemo(() => new Set(authorizedUnits), [authorizedUnits]);
   const authorizedDepts = useMemo(
     () => departmentOptions.filter((d) => authorizedUnitSet.has(d.code)),
     [departmentOptions, authorizedUnitSet],
-  )
-  const { isEnabled } = usePolicyGate()
+  );
+  const { isEnabled } = usePolicyGate();
   // §2 / issue #807: keep the delete control visible but greyed-out when
   // unitAdmins.canDeleteCourses is off (mirrors the deleteCourse 403), so the
   // disabled state reads as an admin choice rather than a missing feature.
   const canDelete = config.cardActions.deletePolicyFlag
     ? isEnabled(config.cardActions.deletePolicyFlag)
-    : true
-  const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()))
-  const [selectedInstructor, setSelectedInstructor] = useState<string>('')
-  const [editDept, setEditDept] = useState<string>('')
+    : true;
+  const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? "");
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const [selectedInstructor, setSelectedInstructor] = useState<string>("");
+  const [editDept, setEditDept] = useState<string>("");
 
   useEffect(() => {
-    setEditDept(editingCourse?.department ?? '')
-  }, [editingCourse])
+    setEditDept(editingCourse?.department ?? "");
+  }, [editingCourse]);
 
   // Default the create-form department to the first authorized unit once the
   // disciplines list has loaded (the list is fetched async, §541).
   useEffect(() => {
     if (!selectedDept && authorizedDepts.length > 0) {
-      setSelectedDept(authorizedDepts[0].code)
+      setSelectedDept(authorizedDepts[0].code);
     }
-  }, [authorizedDepts, selectedDept])
+  }, [authorizedDepts, selectedDept]);
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once the dialog is fully closed.
   useEffect(() => {
     if (!editingCourse) {
-      document.body.style.pointerEvents = ''
+      document.body.style.pointerEvents = "";
     }
-  }, [editingCourse])
+  }, [editingCourse]);
 
   useEffect(() => {
     if (!deletingCourse) {
-      document.body.style.pointerEvents = ''
+      document.body.style.pointerEvents = "";
     }
-  }, [deletingCourse])
+  }, [deletingCourse]);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const dept = selectedDept
-    const codeSuffix = (fd.get('codeSuffix') as string).trim()
-    const code = dept ? `${dept} ${codeSuffix}` : codeSuffix
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const dept = selectedDept;
+    const codeSuffix = (fd.get("codeSuffix") as string).trim();
+    const code = dept ? `${dept} ${codeSuffix}` : codeSuffix;
     await onCreateCourse({
-      name: fd.get('name') as string,
+      name: fd.get("name") as string,
       code,
-      section: fd.get('section') as string,
+      section: fd.get("section") as string,
       term: selectedTerm,
-      year: parseInt(fd.get('year') as string),
-      startDate: fd.get('startDate') as string,
+      year: parseInt(fd.get("year") as string),
+      startDate: fd.get("startDate") as string,
       department: dept || undefined,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
-    })
-    setSelectedTerm(termFromDate(new Date()))
-    setSelectedInstructor('')
-    setCreateOpen(false)
-  }
+    });
+    setSelectedTerm(termFromDate(new Date()));
+    setSelectedInstructor("");
+    setCreateOpen(false);
+  };
 
   const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!editingCourse) return
-    const fd = new FormData(e.currentTarget)
+    e.preventDefault();
+    if (!editingCourse) return;
+    const fd = new FormData(e.currentTarget);
     await onEditCourse(editingCourse.id, {
-      name: fd.get('name') as string,
-      code: fd.get('code') as string,
+      name: fd.get("name") as string,
+      code: fd.get("code") as string,
       department: editDept || null,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
-    })
-    setEditingCourse(null)
-  }
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+    });
+    setEditingCourse(null);
+  };
 
-  const unitLabel = authorizedDepts.length > 0
-    ? authorizedDepts.map((d) => `${d.label} (${d.code})`).join(', ')
-    : authorizedUnits.join(', ') || '—'
+  const unitLabel =
+    authorizedDepts.length > 0
+      ? authorizedDepts.map((d) => `${d.label} (${d.code})`).join(", ")
+      : authorizedUnits.join(", ") || "—";
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <PageHeading heading={config.heading} subheading={<>Managing: <span className="font-medium">{unitLabel}</span></>} />
+        <PageHeading
+          heading={config.heading}
+          subheading={
+            <>
+              Managing: <span className="font-medium">{unitLabel}</span>
+            </>
+          }
+        />
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
@@ -561,7 +686,12 @@ function UnitAdminCoursesBody({
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="ua-name">Course name</Label>
-                <Input id="ua-name" name="name" placeholder="Introduction to Computer Science" required />
+                <Input
+                  id="ua-name"
+                  name="name"
+                  placeholder="Introduction to Computer Science"
+                  required
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="ua-dept">Course Code</Label>
@@ -588,7 +718,7 @@ function UnitAdminCoursesBody({
                 <Label htmlFor="ua-code">Course number</Label>
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
-                    {selectedDept || authorizedDepts[0]?.code || '—'}
+                    {selectedDept || authorizedDepts[0]?.code || "—"}
                   </span>
                   <Input
                     id="ua-code"
@@ -599,7 +729,10 @@ function UnitAdminCoursesBody({
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  The full course code will be e.g. <span className="font-mono">{selectedDept || authorizedDepts[0]?.code || 'DEPT'} 101</span>
+                  The full course code will be e.g.{" "}
+                  <span className="font-mono">
+                    {selectedDept || authorizedDepts[0]?.code || "DEPT"} 101
+                  </span>
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -616,10 +749,14 @@ function UnitAdminCoursesBody({
                 <div className="grid gap-2">
                   <Label>Term</Label>
                   <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {TERM_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                        <SelectItem key={code} value={code}>
+                          {termName(code)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -627,16 +764,25 @@ function UnitAdminCoursesBody({
                 <div className="grid gap-2">
                   <Label>Year</Label>
                   {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
-                  <Input name="year" type="number" defaultValue={termInfoFromDate(new Date()).year} required />
+                  <Input
+                    name="year"
+                    type="number"
+                    defaultValue={termInfoFromDate(new Date()).year}
+                    required
+                  />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label>Instructor</Label>
                 <Select value={selectedInstructor} onValueChange={setSelectedInstructor} required>
-                  <SelectTrigger><SelectValue placeholder="Select instructor" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select instructor" />
+                  </SelectTrigger>
                   <SelectContent>
                     {instructors.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>{i.name ?? i.email}</SelectItem>
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.name ?? i.email}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -646,7 +792,9 @@ function UnitAdminCoursesBody({
                 <Textarea name="aiInstructions" rows={2} />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
                 <Button
                   type="submit"
                   disabled={!selectedInstructor || (authorizedDepts.length > 1 && !selectedDept)}
@@ -672,6 +820,13 @@ function UnitAdminCoursesBody({
             optionLabel: getDepartmentLabel,
           }),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
@@ -723,17 +878,23 @@ function UnitAdminCoursesBody({
           <DialogHeader>
             <DialogTitle>Delete course</DialogTitle>
             <DialogDescription>
-              Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
+              Delete{" "}
+              <strong>
+                {deletingCourse?.code} — {deletingCourse?.name}
+              </strong>
+              ? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingCourse(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeletingCourse(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               onClick={async () => {
                 if (deletingCourse) {
-                  await onDeleteCourse(deletingCourse.id)
-                  setDeletingCourse(null)
+                  await onDeleteCourse(deletingCourse.id);
+                  setDeletingCourse(null);
                 }
               }}
             >
@@ -746,7 +907,9 @@ function UnitAdminCoursesBody({
       {/* Edit dialog */}
       <Dialog open={!!editingCourse} onOpenChange={(open) => !open && setEditingCourse(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit course</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit course</DialogTitle>
+          </DialogHeader>
           {editingCourse && (
             <form onSubmit={handleEdit} className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -768,10 +931,16 @@ function UnitAdminCoursesBody({
               </div>
               <div className="grid gap-2">
                 <Label>AI instructions</Label>
-                <Textarea name="aiInstructions" defaultValue={editingCourse.aiInstructions} rows={2} />
+                <Textarea
+                  name="aiInstructions"
+                  defaultValue={editingCourse.aiInstructions}
+                  rows={2}
+                />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>
+                  Cancel
+                </Button>
                 <Button type="submit">Save changes</Button>
               </div>
             </form>
@@ -779,76 +948,89 @@ function UnitAdminCoursesBody({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Instructor
 // ---------------------------------------------------------------------------
 
-function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: InstructorViewProps) {
-  const config = COURSES_ROLE_CONFIG.instructor
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editingCourse, setEditingCourse] = useState<Course | null>(null)
-  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
-  const [selectedDept, setSelectedDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()))
-  const { options: departmentOptions, loading: deptLoading } = useDisciplines()
+function InstructorCoursesBody({
+  courses,
+  onCreateCourse,
+  onEditCourse,
+  onDeleteCourse,
+  onPublishToggle,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
+}: InstructorViewProps) {
+  const config = COURSES_ROLE_CONFIG.instructor;
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
+  const [selectedDept, setSelectedDept] = useState<string>("");
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()));
+  const { options: departmentOptions, loading: deptLoading } = useDisciplines();
 
-  const { isEnabled } = usePolicyGate()
+  const { isEnabled } = usePolicyGate();
   // Mirror the backend policy gates. Instead of hiding controls an admin turned
   // off (which reads as a bug — issue #807), we keep them visible but greyed-out
   // with a tooltip. While policies load these report enabled, so an admin-on
   // control never flickers to disabled.
-  const canCreate = isEnabled('instructors.canCreateCourses')
+  const canCreate = isEnabled("instructors.canCreateCourses");
   const canPublish = config.cardActions.publishPolicyFlag
     ? isEnabled(config.cardActions.publishPolicyFlag)
-    : true
+    : true;
   const canDelete = config.cardActions.deletePolicyFlag
     ? isEnabled(config.cardActions.deletePolicyFlag)
-    : true
+    : true;
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once no dialog is open.
   useEffect(() => {
     if (!editingCourse && !deletingCourse) {
-      document.body.style.pointerEvents = ''
+      document.body.style.pointerEvents = "";
     }
-  }, [editingCourse, deletingCourse])
+  }, [editingCourse, deletingCourse]);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const codeSuffix = (fd.get('codeSuffix') as string).trim()
-    const code = selectedDept ? `${selectedDept} ${codeSuffix}` : codeSuffix
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const codeSuffix = (fd.get("codeSuffix") as string).trim();
+    const code = selectedDept ? `${selectedDept} ${codeSuffix}` : codeSuffix;
     await onCreateCourse({
-      name: fd.get('name') as string,
+      name: fd.get("name") as string,
       code,
-      section: fd.get('section') as string,
+      section: fd.get("section") as string,
       term: selectedTerm,
-      year: parseInt(fd.get('year') as string),
-      startDate: fd.get('startDate') as string,
+      year: parseInt(fd.get("year") as string),
+      startDate: fd.get("startDate") as string,
       department: selectedDept || undefined,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
       // The server auto-enrolls the requesting instructor as the course
       // instructor, so no explicit assignment is needed here.
       instructorUserIds: [],
-    })
-    setSelectedDept('')
-    setSelectedTerm(termFromDate(new Date()))
-    setCreateOpen(false)
-  }
+    });
+    setSelectedDept("");
+    setSelectedTerm(termFromDate(new Date()));
+    setCreateOpen(false);
+  };
 
   const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!editingCourse) return
-    const fd = new FormData(e.currentTarget)
+    e.preventDefault();
+    if (!editingCourse) return;
+    const fd = new FormData(e.currentTarget);
     await onEditCourse(editingCourse.id, {
-      name: fd.get('name') as string,
-      aiInstructions: (fd.get('aiInstructions') as string) || undefined,
-    })
-    setEditingCourse(null)
-  }
+      name: fd.get("name") as string,
+      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+    });
+    setEditingCourse(null);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -880,7 +1062,12 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
               <form onSubmit={handleCreate} className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="ins-name">Course name</Label>
-                  <Input id="ins-name" name="name" placeholder="Introduction to Computer Science" required />
+                  <Input
+                    id="ins-name"
+                    name="name"
+                    placeholder="Introduction to Computer Science"
+                    required
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="ins-dept">Course Code</Label>
@@ -896,7 +1083,7 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
                   <Label htmlFor="ins-code">Course number</Label>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
-                      {selectedDept || '—'}
+                      {selectedDept || "—"}
                     </span>
                     <Input
                       id="ins-code"
@@ -921,10 +1108,14 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
                   <div className="grid gap-2">
                     <Label>Term</Label>
                     <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         {TERM_CODES.map((code) => (
-                          <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                          <SelectItem key={code} value={code}>
+                            {termName(code)}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -932,7 +1123,12 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
                   <div className="grid gap-2">
                     <Label>Year</Label>
                     {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
-                    <Input name="year" type="number" defaultValue={termInfoFromDate(new Date()).year} required />
+                    <Input
+                      name="year"
+                      type="number"
+                      defaultValue={termInfoFromDate(new Date()).year}
+                      required
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
@@ -940,7 +1136,9 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
                   <Textarea name="aiInstructions" rows={2} />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                    Cancel
+                  </Button>
                   <Button type="submit">Create course</Button>
                 </div>
               </form>
@@ -953,13 +1151,24 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
         courses={courses}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
-        getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
+        getTermInfo={(course) => ({
+          term: course.term,
+          year: course.year,
+          startDate: course.startDate,
+        })}
         getSearchText={(course) => `${course.name} ${course.code}`}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
           buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
           buildDepartmentFilterGroup<Course>((c) => c.department),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
@@ -1017,17 +1226,23 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
           <DialogHeader>
             <DialogTitle>Delete course</DialogTitle>
             <DialogDescription>
-              Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
+              Delete{" "}
+              <strong>
+                {deletingCourse?.code} — {deletingCourse?.name}
+              </strong>
+              ? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingCourse(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeletingCourse(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               onClick={async () => {
                 if (deletingCourse) {
-                  await onDeleteCourse(deletingCourse.id)
-                  setDeletingCourse(null)
+                  await onDeleteCourse(deletingCourse.id);
+                  setDeletingCourse(null);
                 }
               }}
             >
@@ -1039,7 +1254,9 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
 
       <Dialog open={!!editingCourse} onOpenChange={(open) => !open && setEditingCourse(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit course</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit course</DialogTitle>
+          </DialogHeader>
           {editingCourse && (
             <form onSubmit={handleEdit} className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -1048,10 +1265,17 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-ai">AI instructions</Label>
-                <Textarea id="edit-ai" name="aiInstructions" defaultValue={editingCourse.aiInstructions} rows={2} />
+                <Textarea
+                  id="edit-ai"
+                  name="aiInstructions"
+                  defaultValue={editingCourse.aiInstructions}
+                  rows={2}
+                />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>
+                  Cancel
+                </Button>
                 <Button type="submit">Save changes</Button>
               </div>
             </form>
@@ -1059,122 +1283,160 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Mixed (TA-assisting + enrolled) — read-only, dual-section
+// Mixed (TA-assisting + enrolled) — read-only, single controlled list (#1263)
 // ---------------------------------------------------------------------------
 
-function MixedCourseSection({
-  heading,
-  subheading,
+function MixedCoursesBody({
   courses,
-  extraBadges,
-  getCoursePreference,
-  setCoursePreference,
-}: {
-  heading: string
-  subheading: string
-  courses: Course[]
-  extraBadges: string[]
-  getCoursePreference: (courseId: string) => CourseCardPreference | undefined
-  setCoursePreference: (courseId: string, update: CourseCardPreference | null) => void
-}) {
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeading heading={heading} subheading={subheading} />
-      <CourseListView<Course>
-        courses={courses}
-        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-        getKey={(course) => course.id}
-        getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
-        getSearchText={(course) => `${course.name} ${course.code}`}
-        filterGroups={[
-          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
-          buildDepartmentFilterGroup<Course>((c) => c.department),
-          buildStatusFilterGroup<Course>((c) => c.isPublished),
-        ]}
-        noResultsState={<NoResultsCard />}
-        renderCard={(course) => {
-          const preference = getCoursePreference(course.id)
-          const accentColor = resolveCourseAccentColor(course.id, preference)
-          const displayName = getCourseDisplayName(course.name, preference)
-          return (
-            <CourseCard
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              displayName={displayName}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              extraBadges={extraBadges}
-              colorIndex={defaultColorIndexForCourse(course.id)}
-              accentColor={accentColor}
-              heroAction={
-                <CourseCardCustomizePopover
-                  courseName={course.name}
-                  courseCode={course.code}
-                  preference={preference}
-                  onApply={(update) => setCoursePreference(course.id, update)}
-                />
-              }
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-            />
-          )
-        }}
-      />
-    </div>
-  )
-}
+  taCourseIds,
+  instructorCourseIds,
+  enrolledCourseIds,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
+}: MixedViewProps) {
+  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences();
 
-function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedViewProps) {
-  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
-  const assisting = courses.filter((c) => taCourseIds.includes(c.id))
-  const enrolled = courses.filter(
-    (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
-  )
-
-  if (assisting.length === 0 && enrolled.length === 0) {
-    return (
-      <div className="flex flex-col gap-6">
-        <PageHeading heading="My Courses" subheading="Your courses" />
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">You have no courses yet.</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  // Presentation-only split: the backend already scoped `courses` to what the
+  // caller may see. Every visible course must land in exactly one section:
+  //   - `teaching` — active INSTRUCTOR enrollment (e.g. a non-platform-instructor
+  //     user such as a STUDENT-platform grad TA holding an INSTRUCTOR enrollment).
+  //   - `assisting` — active TA enrollment.
+  //   - `enrolled` — active STUDENT enrollment, published only (the backend only
+  //     grants STUDENT access to published courses, so the draft filter is a
+  //     defensive presentation rule, not an authorization check).
+  // A course held under multiple roles resolves to the highest-priority bucket
+  // (teaching > assisting > enrolled), so it is never dropped into a no-section
+  // body while `total` still reports it.
+  //
+  // Deferred (review #1535): the pre-#1263 mixed view rendered each role as its
+  // own uncontrolled list with per-term "Current/Upcoming/Previous" sub-headings
+  // and item counts. `CourseListView` only supports a flat section list, so
+  // restoring per-term sub-grouping under each role would require nested sections
+  // in the shared UI package — out of scope for #1263 and tracked separately.
+  const groupSections = useCallback(
+    (list: Course[]): CourseListSection<Course>[] => {
+      const teaching = list.filter((c) => instructorCourseIds.includes(c.id));
+      const assisting = list.filter(
+        (c) => !instructorCourseIds.includes(c.id) && taCourseIds.includes(c.id),
+      );
+      const enrolled = list.filter(
+        (c) =>
+          !instructorCourseIds.includes(c.id) &&
+          !taCourseIds.includes(c.id) &&
+          enrolledCourseIds.includes(c.id) &&
+          c.isPublished,
+      );
+      const sections: CourseListSection<Course>[] = [];
+      if (teaching.length > 0) {
+        sections.push({
+          key: "teaching",
+          title: "Courses You Are Teaching",
+          headerVariant: "simple",
+          items: teaching,
+        });
+      }
+      if (assisting.length > 0) {
+        sections.push({
+          key: "assisting",
+          title: "Courses You Are Assisting In",
+          headerVariant: "simple",
+          items: assisting,
+        });
+      }
+      if (enrolled.length > 0) {
+        sections.push({
+          key: "enrolled",
+          title: "Courses You Are Enrolled In",
+          headerVariant: "simple",
+          items: enrolled,
+        });
+      }
+      return sections;
+    },
+    [taCourseIds, instructorCourseIds, enrolledCourseIds],
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      {assisting.length > 0 && (
-        <MixedCourseSection
-          heading="Courses You Are Assisting In"
-          subheading="Courses where you are a TA"
-          courses={assisting}
-          extraBadges={['TA']}
-          getCoursePreference={getCoursePreference}
-          setCoursePreference={setCoursePreference}
-        />
-      )}
-      {enrolled.length > 0 && (
-        <MixedCourseSection
-          heading="Courses You Are Enrolled In"
-          subheading="Courses you are taking as a student"
-          courses={enrolled}
-          extraBadges={['Enrolled']}
-          getCoursePreference={getCoursePreference}
-          setCoursePreference={setCoursePreference}
-        />
-      )}
-    </div>
-  )
+    <CourseListView<Course>
+      courses={courses}
+      gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+      getKey={(course) => course.id}
+      getTermInfo={(course) => ({
+        term: course.term,
+        year: course.year,
+        startDate: course.startDate,
+      })}
+      getSearchText={(course) => `${course.name} ${course.code}`}
+      groupSections={groupSections}
+      filterGroups={[
+        buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+        buildDepartmentFilterGroup<Course>((c) => c.department),
+        buildStatusFilterGroup<Course>((c) => c.isPublished),
+      ]}
+      searchValue={search}
+      onSearchChange={onSearchChange}
+      selectedFilters={selectedFilters}
+      onFilterChange={onFilterChange}
+      availableValues={availableValues}
+      totalCount={total}
+      onClearAll={onClearAll}
+      emptyState={
+        <div className="flex flex-col gap-6">
+          <PageHeading heading="My Courses" subheading="Your courses" />
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">You have no courses yet.</p>
+            </CardContent>
+          </Card>
+        </div>
+      }
+      noResultsState={<NoResultsCard />}
+      renderCard={(course) => {
+        const preference = getCoursePreference(course.id);
+        const accentColor = resolveCourseAccentColor(course.id, preference);
+        const displayName = getCourseDisplayName(course.name, preference);
+        const extraBadges = instructorCourseIds.includes(course.id)
+          ? ["Instructor"]
+          : taCourseIds.includes(course.id)
+            ? ["TA"]
+            : ["Enrolled"];
+        return (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            displayName={displayName}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            extraBadges={extraBadges}
+            colorIndex={defaultColorIndexForCourse(course.id)}
+            accentColor={accentColor}
+            heroAction={
+              <CourseCardCustomizePopover
+                courseName={course.name}
+                courseCode={course.code}
+                preference={preference}
+                onApply={(update) => setCoursePreference(course.id, update)}
+              />
+            }
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+          />
+        );
+      }}
+    />
+  );
 }

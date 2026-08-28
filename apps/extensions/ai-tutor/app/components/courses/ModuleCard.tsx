@@ -21,8 +21,8 @@
  * one. When the backend adds these fields, pass them through and the rows
  * appear automatically.
  */
-import type { KeyboardEvent, ReactNode } from 'react';
-import { IconBooks } from '@tabler/icons-react';
+import type { KeyboardEvent, ReactNode } from "react";
+import { IconBooks } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
@@ -30,11 +30,11 @@ import {
   StatusBadge,
   courseThemeVars,
   type CourseAccentColor,
-} from '@eduai/ui';
-import { ProgressBarFromData } from '../ProgressBar';
-import { cn } from '~/lib/utils';
-import { titleName } from '~/lib/course-title';
-import type { Progress } from '~/lib/types';
+} from "@eduai/ui";
+import { ProgressBarFromData } from "../ProgressBar";
+import { cn } from "~/lib/utils";
+import { titleName } from "~/lib/course-title";
+import type { Progress } from "~/lib/types";
 
 export interface ModuleCardProps {
   /** Module title — clamped to 2 lines. */
@@ -84,25 +84,29 @@ export function ModuleCard({
   dataTourRoute,
 }: ModuleCardProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onClick();
     }
   };
 
   const hasMeta = lessonCount !== undefined || updatedLabel;
-  const orderLabel = String(index + 1).padStart(2, '0');
+  const orderLabel = String(index + 1).padStart(2, "0");
   const hasStatus = isPublished !== undefined || Boolean(actions);
 
   return (
     <Card
       hoverable
       role="button"
+      // Without an explicit name, the card's accessible name is computed from
+      // its contents — which include the kebab's "More options" label, so the
+      // card announced (and matched by-role as) the menu it contains.
+      aria-label={`Module: ${titleName(title)}`}
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        "group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className,
       )}
       style={courseThemeVars(accentColor)}
@@ -114,7 +118,7 @@ export function ModuleCard({
         className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
         style={{
           background:
-            'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+            "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
         }}
         aria-hidden="true"
       />
@@ -124,7 +128,7 @@ export function ModuleCard({
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-2 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black leading-none tabular-nums"
-        style={{ color: 'color-mix(in oklch, var(--course-accent) 10%, transparent)' }}
+        style={{ color: "color-mix(in oklch, var(--course-accent) 10%, transparent)" }}
       >
         {orderLabel}
       </span>
@@ -136,16 +140,19 @@ export function ModuleCard({
             <span
               className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
               style={{
-                background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                color: 'var(--course-accent)',
-                boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                color: "var(--course-accent)",
+                boxShadow:
+                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
               }}
             >
               {orderLabel}
             </span>
             <span
               className="text-[11px] font-bold uppercase tracking-[0.16em]"
-              style={{ color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))' }}
+              style={{
+                color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
+              }}
             >
               Module
             </span>
@@ -169,7 +176,9 @@ export function ModuleCard({
           {titleName(title)}
         </h3>
         {description ? (
-          <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+          <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+            {description}
+          </p>
         ) : null}
       </CardHeader>
 
@@ -180,7 +189,7 @@ export function ModuleCard({
               {lessonCount !== undefined && (
                 <span className="inline-flex items-center gap-1.5">
                   <IconBooks size={14} aria-hidden="true" />
-                  {lessonCount} {lessonCount === 1 ? 'lesson' : 'lessons'}
+                  {lessonCount} {lessonCount === 1 ? "lesson" : "lessons"}
                 </span>
               )}
               {updatedLabel && <span>{updatedLabel}</span>}

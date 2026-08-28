@@ -21,6 +21,7 @@ import { loader, action } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { listOwnBugReports, createBugReport } from "~/lib/bug-reports/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(query = "?mine=true") {
   return {
@@ -30,7 +31,7 @@ function makeLoaderArgs(query = "?mine=true") {
   } as never;
 }
 
-function makeActionArgs(body: unknown, headers: Record<string, string> = {}) {
+function makeActionArgs(body: RouteRequestBody, headers: Record<string, string> = {}) {
   return {
     request: new Request("http://localhost/api/bug-reports", {
       method: "POST",
@@ -75,7 +76,10 @@ describe("GET /api/bug-reports", () => {
 describe("POST /api/bug-reports (action)", () => {
   it("returns 422 for invalid JSON", async () => {
     const args = {
-      request: new Request("http://localhost/api/bug-reports", { method: "POST", body: "not json" }),
+      request: new Request("http://localhost/api/bug-reports", {
+        method: "POST",
+        body: "not json",
+      }),
       params: {},
       context: {} as never,
     } as never;
@@ -139,7 +143,9 @@ describe("POST /api/bug-reports (action)", () => {
 
   it("goes through the service-key path for a Bearer-authenticated CORE call", async () => {
     vi.mocked(createBugReport).mockResolvedValue({ ok: true, report: { id: "bug-2" } } as never);
-    const res = await action(makeActionArgs({ description: "bug" }, { Authorization: "Bearer svc" }));
+    const res = await action(
+      makeActionArgs({ description: "bug" }, { Authorization: "Bearer svc" }),
+    );
     expect(res.status).toBe(201);
     expect(requireServiceKey).toHaveBeenCalled();
     expect(auth.api.getSession).not.toHaveBeenCalled();

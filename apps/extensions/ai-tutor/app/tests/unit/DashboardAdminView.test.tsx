@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { MemoryRouter } from 'react-router';
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { MemoryRouter } from "react-router";
 
-import { DashboardAdminView } from '~/components/dashboard/DashboardAdminView';
-import type { AdminBugReportRow, AdminUserPage, Course } from '~/lib/types';
+import { DashboardAdminView } from "~/components/dashboard/DashboardAdminView";
+import type { AdminBugReportRow, AdminUserPage, Course } from "~/lib/types";
 
 /**
  * #1041: Core's user list is one page now, so the admin dashboard can no longer
@@ -12,14 +12,14 @@ import type { AdminBugReportRow, AdminUserPage, Course } from '~/lib/types';
  * counts come from `stats` (not the page length), that "Other" can't go
  * negative, and that a missing envelope degrades to zeroes rather than throwing.
  */
-const courses = [
-  { id: 1, code: 'CPSC 101', name: 'Intro', isPublished: true },
-  { id: 2, code: 'CPSC 201', name: 'Data', isPublished: false },
-] as unknown as Course[];
+const courses: Course[] = [
+  { id: 1, code: "CPSC 101", title: "Intro", isPublished: true },
+  { id: 2, code: "CPSC 201", title: "Data", isPublished: false },
+];
 
 const bugReports: AdminBugReportRow[] = [];
 
-function makeUserPage(stats: AdminUserPage['stats'], data: unknown[] = []): AdminUserPage {
+function makeUserPage(stats: AdminUserPage["stats"], data: unknown[] = []): AdminUserPage {
   return { data, total: stats?.total ?? 0, page: 1, pageSize: 25, stats } as AdminUserPage;
 }
 
@@ -40,29 +40,28 @@ function renderView(overrides: Partial<React.ComponentProps<typeof DashboardAdmi
   );
 }
 
-describe('DashboardAdminView', () => {
-  it('reads the platform user total from stats, not from the loaded page length', () => {
+describe("DashboardAdminView", () => {
+  it("reads the platform user total from stats, not from the loaded page length", () => {
     // One row loaded, 500 platform-wide — the old `.length` read would show 1.
     renderView({
-      adminUsers: makeUserPage(
-        { total: 500, active: 480, byRole: { STUDENT: 400 } },
-        [{ id: 'u1' }],
-      ),
+      adminUsers: makeUserPage({ total: 500, active: 480, byRole: { STUDENT: 400 } }, [
+        { id: "u1" },
+      ]),
     });
 
-    expect(screen.getByText('Platform users')).toBeInTheDocument();
+    expect(screen.getByText("Platform users")).toBeInTheDocument();
     // Rendered in both the stat tile and the donut centre.
-    expect(screen.getAllByText('500').length).toBeGreaterThan(0);
+    expect(screen.getAllByText("500").length).toBeGreaterThan(0);
   });
 
-  it('renders the role donut from the byRole rollup', () => {
+  it("renders the role donut from the byRole rollup", () => {
     renderView();
 
-    expect(screen.getByText('Users by role')).toBeInTheDocument();
-    expect(screen.getAllByText('500').length).toBeGreaterThan(0);
+    expect(screen.getByText("Users by role")).toBeInTheDocument();
+    expect(screen.getAllByText("500").length).toBeGreaterThan(0);
   });
 
-  it('counts UNIT_ADMIN alongside INSTRUCTOR', () => {
+  it("counts UNIT_ADMIN alongside INSTRUCTOR", () => {
     const { container } = renderView({
       adminUsers: makeUserPage({
         total: 100,
@@ -72,11 +71,11 @@ describe('DashboardAdminView', () => {
     });
 
     // 25 + 15 instructors, 60 students, so nothing is left over for "Other".
-    expect(container.textContent).toContain('Instructors');
-    expect(screen.getByText('Users by role')).toBeInTheDocument();
+    expect(container.textContent).toContain("Instructors");
+    expect(screen.getByText("Users by role")).toBeInTheDocument();
   });
 
-  it('never renders a negative Other bucket when the role counts exceed the total', () => {
+  it("never renders a negative Other bucket when the role counts exceed the total", () => {
     // A stats rollup can lag the total; Math.max(0, …) keeps the donut sane.
     const { container } = renderView({
       adminUsers: makeUserPage({
@@ -86,17 +85,17 @@ describe('DashboardAdminView', () => {
       }),
     });
 
-    expect(container.textContent).not.toContain('-35');
+    expect(container.textContent).not.toContain("-35");
   });
 
-  it('falls back to zeroed stats when the user envelope is absent', () => {
+  it("falls back to zeroed stats when the user envelope is absent", () => {
     renderView({ adminUsers: null });
 
     // No users yet rather than a crash on `stats.byRole`.
-    expect(screen.getByText('No users yet.')).toBeInTheDocument();
+    expect(screen.getByText("No users yet.")).toBeInTheDocument();
   });
 
-  it('prefers the server dashboardStats rollup over client-derived counts', () => {
+  it("prefers the server dashboardStats rollup over client-derived counts", () => {
     renderView({
       dashboardStats: {
         totalCourses: 42,
@@ -109,7 +108,7 @@ describe('DashboardAdminView', () => {
     // #1043: the rollup feeds both the "Total courses" stat card and the
     // publish-status donut center (which used to count the courses array), so
     // 42 legitimately renders twice now — pin both rather than a single match.
-    expect(screen.getAllByText('42')).toHaveLength(2);
-    expect(screen.getByText('999')).toBeInTheDocument();
+    expect(screen.getAllByText("42")).toHaveLength(2);
+    expect(screen.getByText("999")).toBeInTheDocument();
   });
 });

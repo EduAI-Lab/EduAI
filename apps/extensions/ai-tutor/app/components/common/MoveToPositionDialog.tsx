@@ -13,7 +13,7 @@
  *
  * Related: `app/lib/list-params.ts` (`absoluteOrdinal`), `app/lib/api.ts`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   Button,
   Dialog,
@@ -24,7 +24,7 @@ import {
   DialogTitle,
   Input,
   Label,
-} from '@eduai/ui';
+} from "@eduai/ui";
 
 export type MoveToPositionDialogProps = {
   open: boolean;
@@ -60,8 +60,7 @@ export function MoveToPositionDialog({
   }, [open, currentPosition]);
 
   const parsed = Number(value);
-  const valid =
-    value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= total;
+  const valid = value.trim() !== "" && Number.isInteger(parsed) && parsed >= 1 && parsed <= total;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,7 +85,7 @@ export function MoveToPositionDialog({
             disabled={submitting}
             onChange={(event) => setValue(event.target.value)}
           />
-          {!valid && value.trim() !== '' ? (
+          {!valid && value.trim() !== "" ? (
             <p className="text-sm text-destructive">Enter a number between 1 and {total}.</p>
           ) : null}
         </div>
@@ -106,7 +105,7 @@ export function MoveToPositionDialog({
             // The API takes a 0-based ordinal; the UI speaks 1-based.
             onClick={() => onSubmit(parsed - 1)}
           >
-            {submitting ? 'Moving…' : 'Move'}
+            {submitting ? "Moving…" : "Move"}
           </Button>
         </DialogFooter>
       </DialogContent>

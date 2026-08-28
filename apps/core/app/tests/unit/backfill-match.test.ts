@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  indexInteractions,
-  takeMatch,
-} from "../../../scripts/research/backfill-match.mjs";
+import { indexInteractions, takeMatch } from "../../../scripts/research/backfill-match.mjs";
 
 describe("backfill takeMatch", () => {
   it("matches userId::query when userId is present", () => {

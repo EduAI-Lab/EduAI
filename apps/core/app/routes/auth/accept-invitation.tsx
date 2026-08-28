@@ -1,34 +1,60 @@
-import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router"
-import { IconStack2 } from "@tabler/icons-react"
-import { useState } from "react"
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
+import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import { IconStack2 } from "@tabler/icons-react";
+import { useState } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
-import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
-import { PasswordRequirements } from "~/components/password-requirements"
-import { fireAndForget, logAuditAction } from "~/lib/logging.server"
-import { getActorContext, getRequestContext } from "~/lib/request-context.server"
-import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
+import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas";
+import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server";
+import { PasswordRequirements } from "~/components/password-requirements";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server";
 
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Administrator",
-  UNIT_ADMIN: "Unit Administrator",
-  INSTRUCTOR: "Instructor",
-  STUDENT: "Student",
-};
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
-const ERROR_MESSAGES: Record<string, string> = {
-  MISSING_TOKEN: "This invitation link is missing its token.",
-  INVALID_TOKEN: "This invitation link is invalid.",
-  INVITATION_USED: "This invitation has already been used.",
-  INVITATION_REVOKED: "This invitation was cancelled. Ask an administrator to send a new one.",
-  INVITATION_EXPIRED: "This invitation has expired. Ask an administrator to send a new one.",
-  USER_EXISTS: "An account already exists for this email. Try logging in instead.",
-  SIGNUP_FAILED: "We couldn't create your account. Please try again.",
-};
+function formBodyErrorResponse(cause: unknown): Response | null {
+  if (cause instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (cause instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: cause.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
+// A `Map` because the role arrives as a string on the invitation payload.
+const ROLE_LABELS = new Map<string, string>([
+  ["ADMIN", "Administrator"],
+  ["UNIT_ADMIN", "Unit Administrator"],
+  ["INSTRUCTOR", "Instructor"],
+  ["STUDENT", "Student"],
+]);
+
+// A `Map` because the code comes back from the API: an unrecognised one
+// falls back to the generic message.
+const ERROR_MESSAGES = new Map<string, string>([
+  ["MISSING_TOKEN", "This invitation link is missing its token."],
+  ["INVALID_TOKEN", "This invitation link is invalid."],
+  ["INVITATION_USED", "This invitation has already been used."],
+  ["INVITATION_REVOKED", "This invitation was cancelled. Ask an administrator to send a new one."],
+  ["INVITATION_EXPIRED", "This invitation has expired. Ask an administrator to send a new one."],
+  ["USER_EXISTS", "An account already exists for this email. Try logging in instead."],
+  ["SIGNUP_FAILED", "We couldn't create your account. Please try again."],
+]);
 
 function friendlyError(code: string): string {
-  return ERROR_MESSAGES[code] ?? "Something went wrong with this invitation.";
+  return ERROR_MESSAGES.get(code) ?? "Something went wrong with this invitation.";
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -48,12 +74,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
-  const formData = Object.fromEntries(await request.formData());
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
   const input = {
-    token: String(formData.token || ""),
-    name: String(formData.name || ""),
-    password: String(formData.password || ""),
-    confirmPassword: String(formData.confirmPassword || ""),
+    token: String(values.token || ""),
+    name: String(values.name || ""),
+    password: String(values.password || ""),
+    confirmPassword: String(values.confirmPassword || ""),
   };
 
   const parsed = acceptInvitationSchema.safeParse(input);
@@ -140,8 +174,8 @@ export default function AcceptInvitationPage() {
                   <h1 className="text-2xl font-bold">Accept your invitation</h1>
                   <p className="text-muted-foreground text-sm">
                     You've been invited to join EduAI as{" "}
-                    <strong>{ROLE_LABELS[data.role] ?? data.role}</strong>. Set a
-                    password to activate your account.
+                    <strong>{ROLE_LABELS.get(data.role) ?? data.role}</strong>. Set a password to
+                    activate your account.
                   </p>
                 </div>
 
@@ -247,5 +281,5 @@ export default function AcceptInvitationPage() {
         />
       </div>
     </div>
-  )
+  );
 }

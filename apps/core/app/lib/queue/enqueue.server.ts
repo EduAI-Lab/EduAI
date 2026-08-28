@@ -16,26 +16,30 @@ import {
 } from "./queue-stats.server";
 import { getQueue } from "./queues.server";
 import { priorityFor, resolveQueueName, type QueueName } from "./resolve-pool.server";
+import { assertAiJobQueueEnabled } from "./availability.server";
 import { isInfrastructureError, toQueueUnavailable } from "./errors.server";
 
 /** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
-function isBullJobIdConflict(error: unknown): boolean {
+function isBullJobIdConflict(cause: unknown): boolean {
   return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    (error.meta?.target as string[] | undefined)?.includes("bullJobId") === true
+    cause instanceof Prisma.PrismaClientKnownRequestError &&
+    cause.code === "P2002" &&
+    (cause.meta?.target as string[] | undefined)?.includes("bullJobId") === true
   );
 }
+
+/** BullMQ retry policy for an AI job: how many attempts, and how they back off. */
+export type AiJobRetryOptions = {
+  attempts: number;
+  backoff: { type: "exponential"; delay: number };
+};
 
 function positiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function aiJobRetryOptions(): {
-  attempts: number;
-  backoff: { type: "exponential"; delay: number };
-} {
+export function aiJobRetryOptions(): AiJobRetryOptions {
   return {
     attempts: positiveInt(process.env.AI_JOB_ATTEMPTS, 3),
     backoff: {
@@ -185,7 +189,11 @@ async function markAiJobEnqueueFailed(
  * from the status endpoint (#917).
  */
 export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
-  // 1. Validate (throws ZodError → 400 at the route).
+  // This generic seam is guarded independently of every current call site so a
+  // future import cannot accidentally bypass the pre-MVP feature disable.
+  assertAiJobQueueEnabled();
+
+  // 1. Validate (throws on failure → 400 at the route).
   const payload = JobPayloadSchema.parse(job);
 
   // 2. Resolve target queue + priority from the fleet pool for `type` (shim).
@@ -228,7 +236,13 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   // 5. Create the AiJob row as PENDING (payload = the validated job). For a
   //    keyed job, bullJobId is set to the idempotencyKey right here — see the
   //    docstring above for why.
-  let aiJob: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null };
+  let aiJob: {
+    id: string;
+    type: JobType;
+    status: string;
+    createdAt: Date;
+    queueName: string | null;
+  };
   try {
     aiJob = await prisma.aiJob.create({
       data: {
@@ -240,7 +254,9 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
         userId: payload.userId,
         courseId: payload.courseId ?? null,
         queueName,
-        ...(payload.idempotencyKey ? { bullJobId: payload.idempotencyKey } : {}),
+        // Without an idempotency key the row takes the column default; the
+        // unique index must not see an empty string standing in for "none".
+        bullJobId: payload.idempotencyKey || undefined,
       },
       select: { id: true, type: true, status: true, createdAt: true, queueName: true },
     });

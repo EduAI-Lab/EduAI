@@ -1,0 +1,128 @@
+[
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "course-field",
+    "Auth": "session-cookie",
+    "CoreState": "present",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "course-field",
+    "Auth": "session-cookie",
+    "CoreState": "present",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "enrollment-role",
+    "Auth": "session-cookie",
+    "CoreState": "core-down-5xx",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "publish-state",
+    "Auth": "service-key",
+    "CoreState": "present",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "topic",
+    "Auth": "service-key",
+    "CoreState": "absent-404",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "course-field",
+    "Auth": "service-key",
+    "CoreState": "core-down-5xx",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "enrollment-role",
+    "Auth": "session-cookie",
+    "CoreState": "present",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "topic",
+    "Auth": "session-cookie",
+    "CoreState": "soft-deleted",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "material",
+    "Auth": "service-key",
+    "CoreState": "soft-deleted",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "publish-state",
+    "Auth": "session-cookie",
+    "CoreState": "absent-404",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "material",
+    "Auth": "session-cookie",
+    "CoreState": "present",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "enrollment-role",
+    "Auth": "session-cookie",
+    "CoreState": "absent-404",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "course-field",
+    "Auth": "session-cookie",
+    "CoreState": "absent-404",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "material",
+    "Auth": "session-cookie",
+    "CoreState": "core-down-5xx",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "material",
+    "Auth": "service-key",
+    "CoreState": "absent-404",
+    "CallerEnrolled": "yes"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "topic",
+    "Auth": "service-key",
+    "CoreState": "present",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "ai-tutor",
+    "DataKind": "topic",
+    "Auth": "service-key",
+    "CoreState": "core-down-5xx",
+    "CallerEnrolled": "no"
+  },
+  {
+    "Ext": "question-maker",
+    "DataKind": "publish-state",
+    "Auth": "session-cookie",
+    "CoreState": "core-down-5xx",
+    "CallerEnrolled": "yes"
+  }
+]

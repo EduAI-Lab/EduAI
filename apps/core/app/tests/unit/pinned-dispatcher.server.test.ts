@@ -19,7 +19,7 @@ type LookupResult =
   | { address: string | { address: string; family: number }[]; family?: number };
 
 function invokeLookup(hostname: string, options: { all?: boolean }): Promise<LookupResult> {
-  const lookup = createPinnedLookup() as unknown as (
+  const lookup = createPinnedLookup() as (
     hostname: string,
     options: { all?: boolean },
     callback: (
@@ -48,7 +48,10 @@ describe("createPinnedLookup", () => {
 
     const result = await invokeLookup("canvas.ubc.ca", { all: true });
 
-    expect(result).toEqual({ address: [{ address: "93.184.216.34", family: 4 }], family: undefined });
+    expect(result).toEqual({
+      address: [{ address: "93.184.216.34", family: 4 }],
+      family: undefined,
+    });
   });
 
   it("returns (address, family) when called without all", async () => {

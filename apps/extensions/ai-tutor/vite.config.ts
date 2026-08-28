@@ -1,13 +1,13 @@
-import { reactRouter } from '@react-router/dev/vite';
-import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import { reactRouter } from "@react-router/dev/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   server: {
     port: 3001,
     // Explicit hosts only — avoid `allowedHosts: true` (DNS rebinding risk).
-    allowedHosts: ['localhost', '127.0.0.1', 'dev.aitutor.eduai.ok.ubc.ca'],
+    allowedHosts: ["localhost", "127.0.0.1", "dev.aitutor.eduai.ok.ubc.ca"],
   },
   plugins: [tsconfigPaths(), tailwindcss(), reactRouter()],
   resolve: {
@@ -17,9 +17,9 @@ export default defineConfig({
     // multi-second-per-page cold start locally. The `.mjs` barrel is a single
     // pre-flattened module.
     alias: {
-      '@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
+      "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
     },
-    dedupe: ['react-router', 'react', 'react-dom'],
+    dedupe: ["react-router", "react", "react-dom"],
   },
   // Pre-bundle the hot dependencies at server startup so Vite never has to
   // discover and transform them lazily during a first client-side navigation
@@ -30,20 +30,20 @@ export default defineConfig({
   // visit.
   optimizeDeps: {
     include: [
-      'react',
-      'react-dom',
-      'react-dom/client',
-      '@tabler/icons-react',
-      'shiki',
-      'marked',
-      'react-markdown',
-      'react-day-picker',
-      'embla-carousel-react',
-      'cmdk',
-      'vaul',
-      'input-otp',
-      'sonner',
-      'next-themes',
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "@tabler/icons-react",
+      "shiki",
+      "marked",
+      "react-markdown",
+      "react-day-picker",
+      "embla-carousel-react",
+      "cmdk",
+      "vaul",
+      "input-otp",
+      "sonner",
+      "next-themes",
     ],
   },
 });

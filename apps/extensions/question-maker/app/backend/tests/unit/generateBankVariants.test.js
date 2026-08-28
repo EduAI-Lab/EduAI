@@ -9,7 +9,7 @@
  * - isAiGenerated=true and isDraft=true are set on all generated variants (drafts pending review)
  * - referenceId is set to the primary variant's id
  */
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // ---- hoisted mocks ---------------------------------------------------------
 const {
@@ -25,75 +25,73 @@ const {
   mockGenerateQuestions: vi.fn(),
   mockCourseFindOne: vi.fn(),
   mockTopicsFindAll: vi.fn().mockResolvedValue([]),
-  // Defaults to an empty batch so a test that forgets to prime it takes the
-  // question-not-found path instead of dying on `metas.map` of undefined.
+  // The service prefetches every requested question in one batched read, so the
+  // mock resolves an array of the metadata rows visible for that course. Defaults
+  // to an empty batch so a test that forgets to prime it takes the not-found path.
   mockMetaFindMany: vi.fn().mockResolvedValue([]),
   mockVariantCreate: vi.fn(),
   mockVariantUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
 }));
 
-vi.mock('../../src/services/eduaiService.js', () => ({
+vi.mock("../../src/services/eduaiService.js", () => ({
   default: {
     isConfigured: mockIsConfigured,
     generateQuestions: mockGenerateQuestions,
   },
 }));
 
-vi.mock('../../src/config/settings.js', () => {
+vi.mock("../../src/config/settings.js", () => {
   const cfg = {
     port: 8000,
-    nodeEnv: 'test',
-    databaseUrl: 'postgresql://test:test@localhost:5432/test',
-    coreUrl: 'http://core.test',
-    extensionUrl: 'http://localhost:8000',
-    encryptionKey: 'test-encryption-key-32bytes!!!!!',
-    corsOrigins: ['*'],
-    groqApiKey: '',
-    openaiApiKey: '',
-    deepseekApiKey: '',
-    eduaiApiUrl: 'https://eduai.ok.ubc.ca',
-    eduaiApiKey: 'test-service-key',
+    nodeEnv: "test",
+    databaseUrl: "postgresql://test:test@localhost:5432/test",
+    coreUrl: "http://core.test",
+    extensionUrl: "http://localhost:8000",
+    encryptionKey: "test-encryption-key-32bytes!!!!!",
+    corsOrigins: ["*"],
+    groqApiKey: "",
+    openaiApiKey: "",
+    deepseekApiKey: "",
+    eduaiApiUrl: "https://eduai.ok.ubc.ca",
+    eduaiApiKey: "test-service-key",
     eduaiIgnoredCourseCodes: [],
     defaultNumQuestions: 15,
     maxQuestions: 50,
     rateLimitWindowMs: 900000,
     rateLimitMax: 1000,
-    logLevel: 'silent',
+    logLevel: "silent",
   };
   return { config: cfg, default: cfg };
 });
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: { findFirst: mockCourseFindOne },
     topics: { findMany: mockTopicsFindAll },
-    // The service prefetches every requested question in one batched read, so the
-    // mock resolves an array of the metadata rows visible for that course.
     questionMetadata: { findMany: mockMetaFindMany },
     variants: { create: mockVariantCreate, updateMany: mockVariantUpdateMany },
   },
 }));
 
-const { generateBankVariantsForQuestions } = await import(
-  '../../src/services/assessmentVariantService.js'
-);
+const { generateBankVariantsForQuestions } =
+  await import("../../src/services/assessmentVariantService.js");
 
 // ---------------------------------------------------------------------------
 
-const USER_ID = 'cuid-user-1';
-const COURSE = { id: 1, code: 'CS 101', name: 'Intro to CS' };
+const USER_ID = "cuid-user-1";
+const COURSE = { id: 1, code: "CS 101", name: "Intro to CS" };
 const BASE_PARAMS = { courseId: 1, questionIds: [10], variantsToAdd: 1 };
 
-function makeMeta({ id = 10, type = 'SA', variants = [] } = {}) {
+function makeMeta({ id = 10, type = "SA", variants = [] } = {}) {
   return { id, type, courseId: 1, variants };
 }
 
 function makePrimaryVariant(overrides = {}) {
   return {
     id: 100,
-    questionText: 'What is recursion?',
-    difficulty: 'medium',
-    reasoningLevel: 'factual',
+    questionText: "What is recursion?",
+    difficulty: "medium",
+    reasoningLevel: "factual",
     choices: null,
     secondaryTopicsId: [],
     ...overrides,
@@ -101,7 +99,16 @@ function makePrimaryVariant(overrides = {}) {
 }
 
 function makeGeneratedQuestion(overrides = {}) {
-  return [{ content: 'New variant text', difficulty: 'medium', reasoning_level: 'factual', answer: null, choices: null, ...overrides }];
+  return [
+    {
+      content: "New variant text",
+      difficulty: "medium",
+      reasoning_level: "factual",
+      answer: null,
+      choices: null,
+      ...overrides,
+    },
+  ];
 }
 
 beforeEach(() => {
@@ -116,56 +123,72 @@ beforeEach(() => {
 
 // ---------------------------------------------------------------------------
 
-describe('generateBankVariantsForQuestions — validation guards', () => {
-  it('throws when courseId is missing', async () => {
-    await expect(
-      generateBankVariantsForQuestions(USER_ID, { questionIds: [10] })
-    ).rejects.toThrow(/courseId.*required|required/i);
+describe("generateBankVariantsForQuestions — validation guards", () => {
+  it("throws when courseId is missing", async () => {
+    await expect(generateBankVariantsForQuestions(USER_ID, { questionIds: [10] })).rejects.toThrow(
+      /courseId.*required|required/i,
+    );
   });
 
-  it('throws when questionIds is empty', async () => {
+  it("throws when questionIds is empty", async () => {
     await expect(
-      generateBankVariantsForQuestions(USER_ID, { courseId: 1, questionIds: [] })
+      generateBankVariantsForQuestions(USER_ID, { courseId: 1, questionIds: [] }),
     ).rejects.toThrow(/required/i);
   });
 
-  it('throws when questionIds is not an array', async () => {
+  it("throws when questionIds is not an array", async () => {
     await expect(
-      generateBankVariantsForQuestions(USER_ID, { courseId: 1, questionIds: 10 })
+      generateBankVariantsForQuestions(USER_ID, { courseId: 1, questionIds: 10 }),
     ).rejects.toThrow(/required/i);
   });
 
-  it('throws when the course is not found', async () => {
+  it("throws when the course is not found", async () => {
     mockCourseFindOne.mockResolvedValueOnce(null);
-    await expect(
-      generateBankVariantsForQuestions(USER_ID, BASE_PARAMS)
-    ).rejects.toThrow(/course not found/i);
+    await expect(generateBankVariantsForQuestions(USER_ID, BASE_PARAMS)).rejects.toThrow(
+      /course not found/i,
+    );
   });
 
-  it('throws when eduaiService is not configured', async () => {
+  it("throws when eduaiService is not configured", async () => {
     mockIsConfigured.mockReturnValueOnce(false);
-    await expect(
-      generateBankVariantsForQuestions(USER_ID, BASE_PARAMS)
-    ).rejects.toThrow(/not configured/i);
+    await expect(generateBankVariantsForQuestions(USER_ID, BASE_PARAMS)).rejects.toThrow(
+      /not configured/i,
+    );
   });
 });
 
 // ---------------------------------------------------------------------------
 
-describe('generateBankVariantsForQuestions — per-question orchestration', () => {
-  it('records an error (does not throw) when a question is not found in the DB', async () => {
-    // The batched read returns no row for the id, i.e. it does not exist or is not
-    // visible for this course.
+describe("generateBankVariantsForQuestions — per-question orchestration", () => {
+  it("stops bank fanout immediately after an upstream 429", async () => {
+    const rateLimited = new Error("upstream body must stay private");
+    rateLimited.statusCode = 429;
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockRejectedValueOnce(rateLimited);
+
+    await expect(
+      generateBankVariantsForQuestions(USER_ID, {
+        courseId: 1,
+        questionIds: [10, 20],
+        variantsToAdd: 1,
+      }),
+    ).rejects.toMatchObject({ statusCode: 429 });
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(1);
+    expect(mockMetaFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("records an error (does not throw) when a question is not found in the DB", async () => {
     mockMetaFindMany.mockResolvedValueOnce([]);
 
-    const { results, errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
     expect(errors).toHaveLength(1);
     expect(errors[0].questionId).toBe(10);
     expect(errors[0].error).toMatch(/not found|no variants/i);
   });
 
-  it('records an error when a question has no variants in the DB', async () => {
+  it("records an error when a question has no variants in the DB", async () => {
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [] })]);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -174,17 +197,20 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     expect(errors[0].questionId).toBe(10);
   });
 
-  it('promotes the first (primary) variant to isDraft=false before calling AI', async () => {
+  it("promotes the first (primary) variant to isDraft=false before calling AI", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
-    expect(mockVariantUpdateMany).toHaveBeenCalledWith({ where: { id: 100 }, data: { isDraft: false } });
+    expect(mockVariantUpdateMany).toHaveBeenCalledWith({
+      where: { id: 100 },
+      data: { isDraft: false },
+    });
   });
 
-  it('records a per-question error when the primary variant was deleted mid-batch', async () => {
+  it("records a per-question error when the primary variant was deleted mid-batch", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     // The prefetched snapshot went stale — the row is gone, so updateMany matches nothing.
@@ -201,19 +227,23 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     expect(errors[0].error).toMatch(/removed during generation/i);
   });
 
-  it('calls generateQuestions once per variantsToAdd iteration', async () => {
+  it("calls generateQuestions once per variantsToAdd iteration", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions
       .mockResolvedValueOnce(makeGeneratedQuestion())
       .mockResolvedValueOnce(makeGeneratedQuestion());
 
-    await generateBankVariantsForQuestions(USER_ID, { courseId: 1, questionIds: [10], variantsToAdd: 2 });
+    await generateBankVariantsForQuestions(USER_ID, {
+      courseId: 1,
+      questionIds: [10],
+      variantsToAdd: 2,
+    });
 
     expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
   });
 
-  it('creates a variant with isAiGenerated=true and isDraft=true (draft pending review)', async () => {
+  it("creates a variant with isAiGenerated=true and isDraft=true (draft pending review)", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
@@ -225,7 +255,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     });
   });
 
-  it('returns full createdVariants payloads for in-place review', async () => {
+  it("returns full createdVariants payloads for in-place review", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
@@ -233,11 +263,11 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     const { results } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
     expect(results[0].createdVariants).toEqual([
-      expect.objectContaining({ id: 200, questionMetadataId: 10, isDraft: true })
+      expect.objectContaining({ id: 200, questionMetadataId: 10, isDraft: true }),
     ]);
   });
 
-  it('sets referenceId to the primary variant id on the created variant', async () => {
+  it("sets referenceId to the primary variant id on the created variant", async () => {
     const primary = makePrimaryVariant({ id: 777 });
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
@@ -249,17 +279,19 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     });
   });
 
-  it('continues processing remaining questions after one fails — does not abort the batch', async () => {
-    // qid 10 → absent from the batched read (error); qid 20 → present (result)
+  it("continues processing remaining questions after one fails — does not abort the batch", async () => {
+    // qid 10 → not found (error); qid 20 → found (result)
+    // One batched read for both ids: 10 is absent from the result (not found or not
+    // visible for this course), 20 comes back.
     mockMetaFindMany.mockResolvedValueOnce([
-      makeMeta({ id: 20, variants: [makePrimaryVariant()] })
+      makeMeta({ id: 20, variants: [makePrimaryVariant()] }),
     ]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     const { results, errors } = await generateBankVariantsForQuestions(USER_ID, {
       courseId: 1,
       questionIds: [10, 20],
-      variantsToAdd: 1
+      variantsToAdd: 1,
     });
 
     // The failed question lands in errors; the successful one lands in results
@@ -270,40 +302,80 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     expect(results).toHaveLength(1);
     expect(results[0].questionId).toBe(20);
   });
+
+  it.each([
+    [
+      "provider",
+      () =>
+        mockGenerateQuestions.mockRejectedValueOnce(
+          new Error("SECRET_PROVIDER_BODY?api_key=canary"),
+        ),
+    ],
+    [
+      "database",
+      () => {
+        mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
+        mockVariantCreate.mockRejectedValueOnce(new Error("SECRET_DB_URL"));
+      },
+    ],
+  ])("redacts unexpected %s failures from results and logs", async (_source, arrangeFailure) => {
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    arrangeFailure();
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        questionId: 10,
+        iteration: 1,
+        error: "Variant generation failed",
+      }),
+    ]);
+    const logged = JSON.stringify(logSpy.mock.calls);
+    expect(logged).not.toContain("SECRET_PROVIDER_BODY");
+    expect(logged).not.toContain("api_key");
+    expect(logged).not.toContain("SECRET_DB_URL");
+    logSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
 
-describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
-  it('triggers a retry call when the model returns the wrong number of MCQ choices', async () => {
+describe("generateBankVariantsForQuestions — MCQ choice-count retry", () => {
+  it("triggers a retry call when the model returns the wrong number of MCQ choices", async () => {
     const choices = [
-      { letter: 'A', text: 'First' },
-      { letter: 'B', text: 'Second' },
-      { letter: 'C', text: 'Third' }
+      { letter: "A", text: "First" },
+      { letter: "B", text: "Second" },
+      { letter: "C", text: "Third" },
     ];
     const primary = makePrimaryVariant({
       choices,
-      difficulty: 'easy',
-      reasoningLevel: 'factual'
+      difficulty: "easy",
+      reasoningLevel: "factual",
     });
-    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: 'MCQ', variants: [primary] })]);
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: "MCQ", variants: [primary] })]);
 
     // First call returns only 1 choice (wrong count) → retry
     mockGenerateQuestions
-      .mockResolvedValueOnce([{
-        content: 'MCQ wrong count',
-        difficulty: 'easy',
-        reasoning_level: 'factual',
-        answer: 'A',
-        choices: [{ letter: 'A', text: 'Only one' }]
-      }])
-      .mockResolvedValueOnce([{
-        content: 'MCQ correct count',
-        difficulty: 'easy',
-        reasoning_level: 'factual',
-        answer: 'A',
-        choices
-      }]);
+      .mockResolvedValueOnce([
+        {
+          content: "MCQ wrong count",
+          difficulty: "easy",
+          reasoning_level: "factual",
+          answer: "A",
+          choices: [{ letter: "A", text: "Only one" }],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          content: "MCQ correct count",
+          difficulty: "easy",
+          reasoning_level: "factual",
+          answer: "A",
+          choices,
+        },
+      ]);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
@@ -311,16 +383,24 @@ describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('records an error when the retry still returns the wrong MCQ choice count', async () => {
+  it("records an error when the retry still returns the wrong MCQ choice count", async () => {
     const choices = [
-      { letter: 'A', text: 'One' },
-      { letter: 'B', text: 'Two' },
-      { letter: 'C', text: 'Three' }
+      { letter: "A", text: "One" },
+      { letter: "B", text: "Two" },
+      { letter: "C", text: "Three" },
     ];
     const primary = makePrimaryVariant({ choices });
-    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: 'MCQ', variants: [primary] })]);
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: "MCQ", variants: [primary] })]);
 
-    const wrongCount = [{ content: 'X', difficulty: 'medium', reasoning_level: 'factual', answer: 'A', choices: [{ letter: 'A', text: 'Only' }] }];
+    const wrongCount = [
+      {
+        content: "X",
+        difficulty: "medium",
+        reasoning_level: "factual",
+        answer: "A",
+        choices: [{ letter: "A", text: "Only" }],
+      },
+    ];
     mockGenerateQuestions.mockResolvedValue(wrongCount);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -329,7 +409,7 @@ describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
     expect(errors[0].questionId).toBe(10);
   });
 
-  it('records an error (not a throw) when the AI returns no content', async () => {
+  it("records an error (not a throw) when the AI returns no content", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce([{ content: null }]);

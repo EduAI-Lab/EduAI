@@ -1,5 +1,7 @@
 // @vitest-environment node
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -12,12 +14,13 @@ vi.mock("ai", async (importOriginal) => {
         write: (part: string) => {
           chunks.push(part);
         },
+        writeMessageAnnotation: vi.fn(),
       };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -46,7 +49,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -72,12 +78,12 @@ vi.mock("~/lib/ai/embedding", async (importOriginal) => {
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
-	    course: { findFirst: vi.fn() },
-	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
-	  },
-	}));
+    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
+    course: { findFirst: vi.fn() },
+    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  },
+}));
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
@@ -86,12 +92,12 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
-	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-	import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-	import { invalidatePolicyCache } from "~/lib/policy.server";
-	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
-	import prisma from "~/lib/prisma.server";
+import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { invalidatePolicyCache } from "~/lib/policy.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const USER_ID = "user-1";
@@ -103,7 +109,7 @@ const OVERSEEN = `**Top summary**
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -132,7 +138,7 @@ function mockStreamResult(args: {
   text: string;
   messages?: Array<{ id: string; role: string; content: unknown }>;
 }) {
-  vi.mocked(streamText).mockResolvedValue({
+  vi.mocked(streamText).mockReturnValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve(args.text),
     usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -162,7 +168,7 @@ function mockPriorAssistant(text: string) {
   ] as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
     model: "vllm:test-model",
@@ -176,10 +182,10 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-	  resetRateLimitsForTests();
-	  process.env.VLLM_BASE_URL = "http://localhost:8001";
-	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
-	  invalidatePolicyCache();
+  resetRateLimitsForTests();
+  process.env.VLLM_BASE_URL = "http://localhost:8001";
+  process.env.ADHD_ASSIST_OVERSIGHT = "true";
+  invalidatePolicyCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },
@@ -193,10 +199,10 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-	  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
-	  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
-	  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
-	});
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+});
 
 afterEach(() => {
   if (originalVllm === undefined) delete process.env.VLLM_BASE_URL;
@@ -208,7 +214,33 @@ function lastPersistedRows() {
   return Array.isArray(data) ? data : data ? [data] : [];
 }
 
+function allPersistedRows() {
+  return vi.mocked(prisma.chatMessage.createMany).mock.calls.flatMap(([args]) => {
+    if (!args) return [];
+    const data = args.data;
+    return Array.isArray(data) ? data : [data];
+  });
+}
+
 describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
+  it("persists a non-streaming assistant response exactly once", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: DRAFT,
+      messages: [{ id: "assistant-final", role: "assistant", content: DRAFT }],
+    });
+
+    const res = await action(makeArgs(baseBody({ streaming: false })));
+    expect(res.status).toBe(200);
+
+    const assistantRows = allPersistedRows().filter((row) => row.role === "assistant");
+    expect(assistantRows).toHaveLength(1);
+    expect(assistantRows[0]).toMatchObject({
+      messageId: "assistant-final",
+      role: "assistant",
+    });
+  });
+
   it("persists tool-step assistant messages with overseen final content (non-streaming)", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
@@ -221,10 +253,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(body.content).toContain("**Next?**");
 
     expect(prisma.chatMessage.createMany).toHaveBeenCalled();
+
+    expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(2);
+
     const persisted = lastPersistedRows();
     expect(persisted).toHaveLength(2);
-    expect(persisted[0]).toMatchObject({ messageId: "tool-step", role: "assistant" });
-    expect(persisted[1]).toMatchObject({ messageId: "final-step", role: "assistant" });
+    expect(persisted[0]).toMatchObject({
+      messageId: "tool-step",
+      role: "assistant",
+    });
+    expect(persisted[1]).toMatchObject({
+      messageId: "final-step",
+      role: "assistant",
+    });
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Top summary**");
     expect(persisted[0]?.content).toMatchObject({
       metadata: { resolvedModelId: "vllm:test-model" },
@@ -256,14 +297,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     mockAuditResult();
     vi.mocked(prisma.chatMessage.createMany)
       .mockResolvedValueOnce({ count: 1 })
-      .mockRejectedValueOnce(new Error("db down"));
+      .mockRejectedValueOnce(
+        new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+      );
 
     const res = await action(makeArgs(baseBody({ streaming: true })));
     expect(res.status).toBe(500);
 
     const body = await res.json();
     expect(body.error).toBe("Failed to generate overseen response");
-    expect(body.details).toContain("db down");
+    expect(body.code).toBe("ADHD_OVERSIGHT_FAILED");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
   });
 
   it("skips oversight when ADHD_ASSIST_OVERSIGHT is disabled", async () => {
@@ -309,9 +355,7 @@ describe("POST /api/chat — compliance telemetry on the non-streaming path", ()
       systemPrompt: null,
     } as never);
 
-    const res = await action(
-      makeArgs(baseBody({ streaming: false, adhdAssist: false })),
-    );
+    const res = await action(makeArgs(baseBody({ streaming: false, adhdAssist: false })));
     expect(res.status).toBe(200);
 
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();

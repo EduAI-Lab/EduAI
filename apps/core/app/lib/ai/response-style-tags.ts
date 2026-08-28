@@ -121,10 +121,7 @@ export function resolveResponseStyleTags(tagIds: string[] | null | undefined): R
 }
 
 /** Whether the course has any AI behaviour configuration applied. */
-export function courseHasAiConfig(
-  tagIds: string[],
-  aiInstructions?: string | null,
-): boolean {
+export function courseHasAiConfig(tagIds: string[], aiInstructions?: string | null): boolean {
   return tagIds.length > 0 || Boolean(aiInstructions?.trim());
 }
 
@@ -141,7 +138,9 @@ export function buildCourseResponseStylePrompt(
 
   if (tags.length > 0) {
     const lines = tags.map((t) => `- **${t.label}**: ${t.promptSnippet}`);
-    parts.push(`## Course response style\nFollow these instructor preferences:\n${lines.join("\n")}`);
+    parts.push(
+      `## Course response style\nFollow these instructor preferences:\n${lines.join("\n")}`,
+    );
   }
 
   const trimmed = customInstructions?.trim();

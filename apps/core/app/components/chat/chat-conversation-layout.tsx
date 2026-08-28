@@ -15,6 +15,7 @@ import {
   resolveMessageHighlightRole,
 } from "~/components/assistive/active-highlight";
 import { cn } from "~/lib/utils";
+import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle?: string;
@@ -44,6 +45,7 @@ export function ChatConversationLayout({
   adhdAssist,
   assistive,
   onAssistiveChange,
+  assistBusy,
   focusMode,
   onFocusModeChange,
   webToolsEnabled,
@@ -58,6 +60,8 @@ export function ChatConversationLayout({
   disabledReason,
   routedModelByMessageId = {},
   streamingRoutedRegistryId = null,
+  cappedMessageIds,
+  onContinue,
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
@@ -100,7 +104,13 @@ export function ChatConversationLayout({
             </p>
           </div>
         )}
-        <div className="h-full min-h-0 overflow-y-auto overscroll-contain scrollbar-hover scroll-smooth">
+        {/* #1320: overflow-x-hidden is required alongside overflow-y-auto --
+            per spec, an axis left unset next to a non-"visible" sibling axis
+            computes to "auto" (not "visible"), so wide message content (an
+            eduai-diagram widget wider than its intended max-w-3xl column)
+            silently opened a horizontal scroll region here instead of
+            wrapping/shrinking, effectively rendering it off-screen. */}
+        <div className={CHAT_SCROLL_PANE_CLASS}>
           <div
             className={cn(
               "px-4 md:px-6",
@@ -115,8 +125,8 @@ export function ChatConversationLayout({
                 )}
               >
                 <p className="text-center text-xs text-muted-foreground">
-                  Instructors, teaching assistants, and platform admins can view this
-                  course chat history.
+                  Instructors, teaching assistants, and platform admins can view this course chat
+                  history.
                 </p>
               </div>
             )}
@@ -168,13 +178,12 @@ export function ChatConversationLayout({
                         message={message as Message}
                         isStreaming={isStreamingMessage}
                         answeredByLabel={answeredByLabel}
-                        highlightRole={resolveMessageHighlightRole(
-                          index,
-                          messages,
-                          assistive,
-                        )}
+                        highlightRole={resolveMessageHighlightRole(index, messages, assistive)}
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={adhdAssist}
+                        showContinue={cappedMessageIds?.has(message.id) ?? false}
+                        onContinue={onContinue ? () => onContinue(message.id) : undefined}
+                        continueDisabled={isLoading}
                       />
                     );
                   })}
@@ -215,6 +224,7 @@ export function ChatConversationLayout({
         showCourseSelector={showCourseSelector}
         adhdAssist={adhdAssist}
         onAdhdAssistChange={onAssistiveChange}
+        assistBusy={assistBusy}
         focusMode={focusMode}
         onFocusModeChange={onFocusModeChange}
         assistiveHighlight={assistive}

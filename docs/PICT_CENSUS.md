@@ -4,7 +4,9 @@ Single source of truth for which platform surfaces are worth covering with PICT-
 combinatorial tests, and which are not. Referenced by the PICT parent issue and every model
 sub-issue.
 
-**Status:** census complete (3 sweep passes, all application logic swept). Nothing built yet.
+**Status:** census complete (3 sweep passes, all application logic swept). Models are being built
+incrementally against this inventory; see each region's tier table for what's landed. S8 (ai-tutor
+services) and S9 (QM assessments + QM/ai-tutor leftover routes) are fully built as of #1187/#1188.
 **Origin:** issue #1127.
 
 ---
@@ -75,7 +77,7 @@ implemented independently in 2–3 places, and the implementations have diverged
 
 | Rule | Independent implementations |
 |---|---|
-| Per-course RBAC resolve | Core (Prisma) · QM (Sequelize) · ai-tutor |
+| Per-course RBAC resolve | Core (Prisma) · QM (Prisma, migrated from Sequelize by #1122) · ai-tutor (Prisma) |
 | Canvas base-URL validation | Core `client.server.ts` · QM `canvasUrlGuard.js` |
 | Material visibility | REST read · hybrid-BM25 RAG · SQL RAG |
 | Progress denominators | 3 functions in one file, 3 different publish filters |
@@ -201,7 +203,7 @@ Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200,
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `course-access-across-apps` ⭐ | 6 | Core `lib/courses/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
+| `course-access-across-apps` ⭐ | 5 | Core `lib/auth/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
 
 ```
 effective_access(user, app, course) =
@@ -214,20 +216,23 @@ apps. The floor is allowed to differ: QM excludes STUDENT (`QUESTION_MAKER_ROLES
 STUDENT as first-class, Core is full. Without the split, an intentional floor difference is
 indistinguishable from an accidental RBAC divergence.
 
+`App` is **not** a model dimension — it is an adapter parameter. Every generated row is replayed
+through all three adapters (`×3`) so Core, QM, and AI Tutor receive identical shared inputs. The
+QM role floor is applied only when the adapter passes `app === "question-maker"` to the oracle.
+
 ```
 Role:        ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT
-App:         core, ai-tutor, question-maker
 Enrollment:  none, inactive, active-INSTRUCTOR, active-TA, active-STUDENT
-CourseState: present, deleted, published, unpublished
+CourseState: deleted, published, unpublished
 UnitMatch:   in-unit, out-of-unit, null-dept
 TaWidening:  plain-STUDENT, STUDENT-with-TA-enrollment
 
-IF [App] = "question-maker" THEN [Role] in {"ADMIN","UNIT_ADMIN","INSTRUCTOR","TA"};
 # UnitMatch is only meaningful for UNIT_ADMIN — constrain, or the table wastes rows
 ```
 
 Cost: three per-app adapters (separate codebases, different ORMs, different harnesses). Model and
-oracle are single-sourced; only the world-builders differ.
+oracle are single-sourced; only the world-builders differ. Each adapter replays the full case
+table.
 
 ### S3 — Core AI / RAG / chat
 
@@ -380,7 +385,7 @@ Confirmed thin, not modelled: agent-readiness (static data table), disciplines (
 | `ai-chat-gate` | 6 | `routes/activities.js:210` (publish gate :228, mode dispatch :270-289) | **BUILD** |
 | `trace-oversight-gate` | 5 | `routes/admin.js:497-610` | **BUILD** |
 | `difficulty-banding` | 5 | `services/activityAnalytics.js:34` | **BUILD** |
-| `progress-denominators` ⭐ | 4 | `services/progressCalculation.js:8,53,95,185` | **BUILD** |
+| `progress-denominators` ⭐ | 3 (was 4) | `services/progressCalculation.js:8,53,95,185` | **BUILD** |
 | `lesson-modules-view` ⭐ | 3 | `routes/activities.js:388` + `routes/modules.js:42` | **BUILD** |
 | `enrollment-reconcile` | 4 | `services/enrollmentSync.js:33` | DEFER |
 | `enrolled-mirror-prune` | 4 | `services/importTaughtCoursesService.js:267` | DEFER |
@@ -413,12 +418,40 @@ files — 3-dim, promoted on the drift override.
 `trace-oversight-gate`: on a Core outage a UNIT_ADMIN sees nothing — a silent blackout the oracle
 should assert deliberately rather than leave undefined.
 
+**Built (#1187).** All five models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a
+world-builder in `apps/extensions/ai-tutor/server/tests/{integration,unit}/<name>.pict.test.js`.
+Notes for implementers reading this later:
+
+- `progress-denominators` re-tiers from 4 dims to 3 (`LessonPublished`, `ModulePublished`,
+  `AttemptPattern`): `Scope` (course/module/lesson) turned out to belong in the world-builder's
+  cross-product, not as a PICT factor, for the same reason `Path` isn't one in `material-visibility`
+  — as a factor it would route each row to exactly one implementation, never comparing two scopes
+  against the same seeded activity. The model *did* fail before the fix, confirming the census's
+  "one of these would fail today": `calculateLessonProgress` had no publish filter at all, and
+  `calculateModuleProgress` never checked its own module's `isPublished`, so the same activity could
+  count at one scope and not another. Both were fixed to share one predicate (`lesson.isPublished AND
+  lesson.module.isPublished`). The completion-stickiness question was decided (not inherited):
+  completion is now sticky — any submission ever correct counts, permanently, matching a typical LMS
+  progress model, rather than latest-attempt-only (which could make progress decrease).
+- `lesson-modules-view`: confirmed the `hasElevatedAccess` formula is currently identical in both
+  files; the model is a regression lock against future drift, not evidence of a present bug.
+- `trace-oversight-gate`: the asymmetric fail-soft is exactly as documented in the handler's own doc
+  comment — asserted, not discovered.
+- `ai-chat-gate`: reading the handler surfaced that `POST /teach` and `/guide` never check
+  `enableTeachMode`/`enableGuideMode` (only `/custom` checks its own enable flag) — a student can
+  invoke a mode an instructor disabled for that activity. Not modelled or fixed here; filed as its own
+  bug (see § below). The chatId "session-ownership" lookup is similarly non-enforcing (the DB query
+  scopes by `userId` but the result is discarded — the caller-supplied `chatId` is reused regardless);
+  also filed separately, also not modelled here (see § below).
+- `difficulty-banding`: the null-rating/perfect-rating equivalence is asserted as a deliberate
+  simplification of a documented, coarse heuristic — not a defect.
+
 ### S9 — QM assessments + QM/ai-tutor leftover routes
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
 | `ai-judge-scoring` | 8 | `services/assessmentVariantService.js:994,1195-1283` | **BUILD** |
-| `generate-questions` | 8 | QM `routes/eduai.js:97` | **BUILD** |
+| `generate-questions` | 9 | QM `routes/eduai.js` | **BUILD** |
 | `metadata-similarity-assembly` | 6 | `assessmentVariantService.js:446,488` + `assessmentVariantMetadataScoring.js:5` | **BUILD** |
 | `variant-lifecycle-put` | 5 | `routes/variants.js:138` (gate :148-179) | **BUILD** |
 | `validateContextAndAccess` | 5 | ai-tutor `routes/bugReports.js:144` | **BUILD** |
@@ -440,6 +473,50 @@ the oracle must state explicitly.
 `variant-lifecycle-put`: approve/lock/TA-own, a nine-field `aiTagOnly` allowlist (`:156-166`), and
 un-review must clear `coreQuestionId` (#312 / #1080).
 
+**Built (#1188).** All six models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a
+world-builder under `apps/extensions/question-maker/app/backend/tests/{integration,unit}/`. The
+"Cost note" from the parent issue ("these are Sequelize-backed with a separate test harness") is
+stale — QM completed its Sequelize→Prisma migration in #1122, so QM's harness is Prisma-backed same as
+Core and ai-tutor now, though still a fully separate schema/DB per app. Notes for implementers reading
+this later:
+
+- `ai-judge-scoring`: each of the five rubric dimensions got its own Low/High PICT value specifically
+  so pairwise coverage would catch a swapped composite weight (0.24 vs 0.19) between any two
+  dimensions. `normalizeUsability`'s unknown → unusable mapping is asserted explicitly. The usability
+  multiplier turned out to have two different gates on the same value — unconditional on the
+  per-question adjusted score, toggle-gated (`applyUsabilityPenalty`) on the exam-level final score —
+  both asserted as distinct outcomes.
+- `variant-lifecycle-put`: confirmed by reading `updateVariant` that un-reviewing (isDraft
+  false→true) already clears `coreQuestionId` correctly (the `unreviewing` flag) — not re-modelled,
+  since it's a service-layer concern below this route's own gate. Building the model surfaced that the
+  TA-own-only check only runs in the DRAFT branch: a TA who does not own an APPROVED variant can still
+  retag its `isAiGenerated` field via the aiTagOnly path, since that path has no ownership check at
+  all. Filed as its own bug, not fixed here (see § below).
+- `metadata-similarity-assembly`: the 100/50/25/10-vs-75 asymmetry (topic alone qualifies; type +
+  difficulty + reasoning without topic also qualifies) is asserted directly; the "already-used, rescued
+  by a fallback candidate" path is the real assembly-level behavior beyond pure scoring.
+- `extractQuestionsWithEduAI`: confirmed a chunk whose retry also comes up empty aborts the *entire*
+  extraction, discarding any already-extracted questions from earlier chunks rather than returning a
+  partial result — asserted as current behavior, not filed as a bug (arguably correct: a partial,
+  silently-incomplete extraction could be worse than a clear failure).
+
+**Findings from #1187/#1188 filed as their own bugs, not fixed in either PR:**
+
+- ai-tutor: `POST /activities/:id/teach` and `/guide` never check `enableTeachMode`/`enableGuideMode`
+  (only `/custom` checks its own flag) — issue #1411.
+- ai-tutor: the AI chat session "ownership" check (`existingSession`, scoped by `userId`) is computed
+  but never acted on — the caller-supplied `chatId` is reused regardless of whether it resolved to the
+  caller's own session — issue #1412.
+- QM: a TA who does not own an approved variant can still toggle its `isAiGenerated` tag via the
+  aiTagOnly allowlist, since that path has no ownership check (unlike the draft-edit path) — issue
+  #1413.
+- Infra: `scripts/pict-gen.mjs` regenerates non-deterministic row tables for at least
+  `import-reconcile` and `material-visibility` — re-running it against the pinned Docker image produces
+  a different (still pairwise-valid) row set each time, contradicting the documented byte-for-byte
+  pinning guarantee. Likely caused by their `.seed.tsv` sidecars referencing parameter names no longer
+  in the current `.pict` models (`pict-gen` prints "Seeding Warning: Parameter X not found in the
+  model. Skipping..." for both) — issue #1414.
+
 Confirmed thin, not modelled: ai-tutor systemSettings / policyService / eduaiAuth; QM modelCatalog /
 authService / extractionUtils / courseCodeUtils — all ≤2 dims.
 
@@ -459,7 +536,9 @@ authService / extractionUtils / courseCodeUtils — all ≤2 dims.
 | `normalizeTerm` | 3 | `packages/ui/src/lib/term.ts` ~100 | DROP |
 | `ext↔ext` | — | extensions hold zero refs to each other | **assert-only** |
 
-`cross-ext-read` is validated against pict 3.7.4: 82 combos → **17 rows**.
+`cross-ext-read` is validated against pict 3.7.4: 82 combos → **18 rows** (#1189 regen; was 17 under an earlier constraint snapshot). Seed rows (`cross-ext-read.seed.tsv`) pin the silent-omission cells (`course-field` + `session-cookie` + `present` + not enrolled) for both extensions.
+
+`material` DataKind: no AT/QM materials client today — extension adapters `it.skip` those rows; Core soft-delete filtering remains covered by `material-visibility` (#1180).
 
 ```
 Ext:            ai-tutor, question-maker
@@ -478,11 +557,14 @@ is the leak class) · course-field over cookie while not enrolled → null (the 
 trap**) · `enrollment-role` → role if enrolled else null · else resolved.
 
 `cross-ext-push`: accept / 401 / 403 / 409-adopt (`P2002`) / 503; a draft must **not** sync; POST is
-cookie-only and never service-key.
+cookie-only and never service-key. Seed rows pin valid `201` fresh and `adopt-p2002` success paths.
+QM adapter covers the client push path; Core adapter runs the real `POST /api/questions` action.
 
 The client-gate models are a distinct pattern: the client predicates are authored as literal "UI
-mirror of the backend 403 gate," and **TA is the consistently divergent cell**. The model runs one
-oracle against both the client predicate and the backend gate — any disagreement is the bug.
+mirror of the backend 403 gate," and **TA is the consistently divergent cell** (delete-material).
+`manage-rag` also diverges for **unit** (backend `rank >= 2` includes unit; client is admin|instructor
+only). The model runs one oracle against both the client predicate and the backend gate — any
+disagreement is the bug (`it.fails` on the divergent side).
 
 `ext↔ext` needs no model. Extensions hold zero references to each other; they link only through Core
 (`coreOfferingId` / `coreCourseId`) and nav URLs (`extension-urls.ts`). Write a static test that greps

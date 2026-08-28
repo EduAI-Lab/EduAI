@@ -207,9 +207,14 @@ describe("paginatedResponse", () => {
   });
 
   it("merges filter-independent aggregates from `extra` alongside the envelope", async () => {
-    const response = paginatedResponse([], 0, { page: 1, pageSize: 25 }, {
-      stats: { total: 142, active: 130, byRole: {} },
-    });
+    const response = paginatedResponse(
+      [],
+      0,
+      { page: 1, pageSize: 25 },
+      {
+        stats: { total: 142, active: 130, byRole: {} },
+      },
+    );
 
     const body = await bodyOf(response);
     // `total` tracks the caller's filters; `stats` deliberately does not.
