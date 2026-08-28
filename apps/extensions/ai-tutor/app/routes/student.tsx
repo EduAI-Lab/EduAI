@@ -23,6 +23,8 @@ import {
 import { useLocalUser } from "../hooks/useLocalUser";
 import api from "~/lib/api";
 import { requireClientUser } from "~/lib/client-auth";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import {
@@ -34,7 +36,10 @@ import { loadCourseFacets } from "~/lib/course-facets";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
-  await requireClientUser(["STUDENT", "TA"]);
+  // #1660 review: the "Courses" breadcrumb/CourseSwitcher link on every
+  // student.course/module/lesson page points here — this route needs the
+  // same widened allow-list or a previewer's in-page navigation 404s.
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   // #1208: search, term and progress come from the URL and are applied
   // SERVER-side, so they span every enrolled course rather than the loaded page.
   // This route previously requested one unbounded-in-practice page and rendered
@@ -159,8 +164,11 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : "My courses";
   const subheading = "Continue where you left off or explore your courses.";
 
+  const previewRole = resolvePreviewRole(user);
+
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      {previewRole && <StudentPreviewBanner role={previewRole} exitHref="/instructor" />}
       <div data-tour="student-dashboard-header">
         <PageHeading heading={heading} subheading={subheading} />
       </div>

@@ -229,6 +229,11 @@ Real Canvas instructor credentials are **stored in the database, AES-256-GCM enc
 (keyed by `ENCRYPTION_KEY` above) — see `docs/CANVAS.md` and
 `apps/core/app/lib/canvas/encryption.ts`. They are not env vars.
 
+Core and Question Maker use **separate** `ENCRYPTION_KEY` values. The one-time QM→Core
+credential copy (`npm run db:migrate:canvas-to-core -w question-maker-backend`) decrypts
+under QM's key and re-encrypts under Core's before inserting into Core — see
+[`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
+
 The only genuine Canvas *environment* variables in the repo are dev-only, read by
 `apps/core/scripts/seed_local_canvas.sh` for seeding a local Canvas instance and not loaded
 by the app itself:

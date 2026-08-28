@@ -8,11 +8,15 @@
  * access rather than a department filter that happens to agree.
  *
  * Two different answers, deliberately:
- *   - In the browser every refusal — wrong role for a route, a record this
- *     instructor may not see, or a URL matching nothing — resolves to the same
- *     generic in-shell 404 (`NotFoundState`), with the sidebar and header still
- *     mounted. The sameness is the point: the app must never confirm that a
- *     record exists to someone who cannot see it.
+ *   - In the browser every refusal — wrong role for a route (`/admin`), a
+ *     record this instructor may not see (including a `/student/*` preview of
+ *     a course they do not teach), or a URL matching nothing — resolves to the
+ *     same generic in-shell 404 (`NotFoundState`), with the sidebar and header
+ *     still mounted. The sameness is the point: the app must never confirm that
+ *     a record exists to someone who cannot see it. #1660 widened `/student/*`
+ *     to admit INSTRUCTOR as a read-only preview of courses they already teach
+ *     — see the two #1660 tests below — so it is no longer a role refusal on
+ *     this branch, only an enrollment one.
  *   - Over HTTP the answer is specific (403 with a reason), because an API
  *     caller is not a reader being let down gently.
  */
@@ -111,15 +115,55 @@ test.describe("INSTRUCTOR access boundaries", () => {
     await expect(page.getByText(/Bug reports|AI configuration/i)).toHaveCount(0);
   });
 
-  test("the student shell is a generic 404, not a redirect", async ({ page }) => {
+  test("the student shell previews a taught course instead of refusing it (#1660)", async ({
+    page,
+  }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    // All four student routes, so a future change to one of them cannot pass
-    // by resembling the others.
-    await expectInShell404(page, "/student");
-    await expectInShell404(page, "/student/courses/1");
-    await expectInShell404(page, "/student/module/1");
-    await expectInShell404(page, "/student/lesson/1");
+    // #1660 lets an INSTRUCTOR open /student/* to preview the learner
+    // experience for a course they already teach — the enrollment gate already
+    // let them in, so there is nothing left to refuse. The preview banner is
+    // the signal that this is a staff lens, not a real student view.
+    await page.goto(`${AI_TUTOR_URL}/student`);
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 30_000 });
+
+    await page.goto(`${AI_TUTOR_URL}/student/courses/${fx.course.atCourseId}`);
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("student-preview-exit")).toHaveAttribute(
+      "href",
+      `/instructor/courses/${fx.course.atCourseId}`,
+    );
+
+    await page.goto(`${AI_TUTOR_URL}/student/module/${spine.moduleId}`);
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+    // The title also appears in the breadcrumb, so scope to the hero heading —
+    // getByText would otherwise match both and violate Playwright's strict mode.
+    await expect(page.getByRole("heading", { name: spine.moduleTitle })).toBeVisible();
+
+    await page.goto(`${AI_TUTOR_URL}/student/lesson/${spine.lessonId}`);
+    await expect(page.getByTestId("student-preview-banner")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("student-preview-exit")).toHaveAttribute(
+      "href",
+      `/instructor/lesson/${spine.lessonId}`,
+    );
+  });
+
+  test("the student shell still refuses a course this instructor does not teach (#1660)", async ({
+    page,
+  }) => {
+    await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
+
+    // Preview rides on top of the same enrollment gate — it is not a bypass
+    // of a course this instructor does not teach.
+    await expectInShell404(page, `/student/courses/${fx.foreign.atCourseId}`);
+    await expect(page.getByText(fx.foreign.name)).toHaveCount(0);
+    await expect(page.getByText(fx.foreign.code)).toHaveCount(0);
+
+    await expectInShell404(page, `/student/module/${foreignSpine.moduleId}`);
+    await expect(page.getByText("Foreign Module")).toHaveCount(0);
+
+    await expectInShell404(page, `/student/lesson/${foreignSpine.lessonId}`);
+    await expect(page.getByText("Foreign Lesson")).toHaveCount(0);
   });
 
   test("a course taught by someone else is a generic 404", async ({ page }) => {
