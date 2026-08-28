@@ -66,7 +66,18 @@ function isUsableBankQuestion(question) {
  * `offset + limit`: this call consumes rows the filter discarded.
  */
 export async function listBankQuestions(coreOfferingId, { topicId, limit = 20, offset = 0 } = {}) {
-  const topicsPromise = listEduAiCourseTopics(coreOfferingId);
+  // Started before the paging loop so the two Core reads overlap, but it must
+  // carry its own catch: it is not awaited until after the loop, and the loop's
+  // own await rejects for the same reason this one does (Core unreachable). A
+  // bare promise would then be abandoned mid-flight — an unhandled rejection
+  // that takes the server down under Node's default
+  // `--unhandled-rejections=throw` rather than failing the one request (#1652
+  // review). Topic names are decoration here, so losing them degrades the
+  // response instead of failing it.
+  const topicsPromise = listEduAiCourseTopics(coreOfferingId).catch((err) => {
+    console.warn("[bankQuestions] Could not load course topics; names omitted", err);
+    return [];
+  });
 
   // Every length comparison below is against what Core will honour, never the
   // raw request.

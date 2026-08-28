@@ -27,6 +27,7 @@ import {
   cn,
 } from "@eduai/ui";
 import { questionService } from "../../services/questionService";
+import { describeVariantError } from "../../lib/variantErrors";
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -168,10 +169,19 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       setStatus(id, "approved");
       onReviewed?.();
     } catch (e: unknown) {
-      const err = e as { response?: { status?: number; data?: { error?: string } } };
+      const err = e as {
+        response?: { status?: number; data?: { error?: string; code?: string } };
+      };
       // Already reviewed (server lock) → treat approve as a no-op success, not an error.
       // Keeps the action idempotent if the live state drifted under a stale dialog.
-      if (err?.response?.status === 409 || err?.response?.data?.error === "VARIANT_LOCKED") {
+      //
+      // Narrowed to that one code on purpose: 409 alone is no longer a single
+      // situation. A lost publish race answers VARIANT_CONFLICT with the same
+      // status after rolling its Core push back, and reporting that as
+      // "approved" would tell the instructor a question is published when it
+      // is not (#1652 review).
+      const code = err?.response?.data?.code ?? err?.response?.data?.error;
+      if (code === "VARIANT_LOCKED") {
         setStatus(id, "approved");
         onReviewed?.();
         return;
@@ -181,7 +191,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         description:
           err?.response?.status === 403
             ? "Only instructors can approve. Try again."
-            : "Could not approve this variant. Please try again.",
+            : describeVariantError(err),
       });
     }
   };

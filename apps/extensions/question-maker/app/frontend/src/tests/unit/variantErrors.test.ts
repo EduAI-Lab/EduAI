@@ -34,6 +34,13 @@ describe("describeVariantError", () => {
     expect(describeVariantError(error)).toContain("publish");
   });
 
+  it("translates a lost publish race without dressing it up as the content lock", () => {
+    const message = describeVariantError({ response: { data: { code: "VARIANT_CONFLICT" } } });
+
+    expect(message).toContain("Someone else changed this question");
+    expect(message).not.toContain("draft");
+  });
+
   it("falls back to the client-side message, never to undefined", () => {
     expect(describeVariantError(new Error("Network Error"))).toBe("Network Error");
     expect(describeVariantError({})).toContain("Something went wrong");

@@ -244,3 +244,31 @@ describe("listBankQuestions Core limit clamping", () => {
     expect(result.hasMore).toBe(true);
   });
 });
+
+/**
+ * The topic fetch is started before the question paging loop so the two Core
+ * reads overlap. Both fail for the same reason — Core unreachable — so the
+ * loop rejecting while the topic promise is still in flight is the common
+ * path, not a rare interleaving (#1652 review).
+ */
+describe("listBankQuestions when the topic fetch fails", () => {
+  it("still returns questions, with topic names omitted", async () => {
+    listEduAiCourseTopics.mockRejectedValue(new Error("EduAI unreachable"));
+
+    const result = await listBankQuestions("core-course-1", {});
+
+    expect(result.questions.map((q) => q.id)).toEqual(["q1", "q3"]);
+    expect(result.questions.every((q) => q.topicName === null)).toBe(true);
+  });
+
+  it("reports the question failure, with the topic rejection already handled", async () => {
+    const topicsRejection = new Error("topics unreachable");
+    listEduAiCourseTopics.mockRejectedValue(topicsRejection);
+    listCourseTestableQuestions.mockRejectedValue(new Error("questions unreachable"));
+
+    // The abandoned promise is the hazard: the loop throws before
+    // `await topicsPromise` is ever reached, so without its own catch the topic
+    // rejection has no handler at all.
+    await expect(listBankQuestions("core-course-1", {})).rejects.toThrow("questions unreachable");
+  });
+});

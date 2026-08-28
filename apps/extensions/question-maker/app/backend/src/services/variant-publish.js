@@ -122,9 +122,14 @@ export async function publishApprovedVariant({ variant, ownerId, cookie }) {
 export function respondToPublishFailure(res, result) {
   switch (result.outcome) {
     case "conflict":
+      // Deliberately NOT `VARIANT_LOCKED`. That code means "already reviewed",
+      // which clients treat as an idempotent approve-success — and this is the
+      // opposite: the push was rolled back, so the variant is demonstrably not
+      // published. Answering both with one code told the instructor a
+      // withdrawn approval had succeeded (#1652 review).
       res.status(409).json({
         success: false,
-        code: "VARIANT_LOCKED",
+        code: "VARIANT_CONFLICT",
         error: "Someone else changed this question at the same time. Reload and try again.",
       });
       return true;
@@ -193,6 +198,62 @@ export async function withdrawVariantFromCore(coreQuestionId) {
     return { outcome: result === null ? "gone" : "withdrawn" };
   } catch (err) {
     logger.warn({ err, coreQuestionId }, "Failed to withdraw Core question before un-review");
+    return { outcome: "failed" };
+  }
+}
+
+/**
+ * Undoes a withdrawal whose local un-review then failed to commit.
+ *
+ * The un-review withdraws Core first and writes the local row second, so a
+ * failure in between leaves the two stores disagreeing: Core `testable=false`
+ * while QM still reads reviewed, linked and shared. Nothing re-asserts Core
+ * afterwards — `shouldPushApprovedVariantToCore` requires a null
+ * `coreQuestionId`, so a later re-approval is skipped — and the split has no
+ * surface that reveals it (#1652 review). Putting `testable` back restores the
+ * exact state the request started from, which a retry can then repair.
+ *
+ * Every condition is re-read authoritatively rather than trusted from the
+ * pre-fence snapshot:
+ *   - a row that has moved to a *different* Core question was un-reviewed by
+ *     someone else, and the id withdrawn here is genuinely dead — restoring it
+ *     would resurrect the orphan the withdrawal existed to prevent;
+ *   - a row whose `shareWithExtensions` is false was never shared, so the
+ *     withdrawal was already a no-op and there is nothing to put back.
+ *
+ * @returns {Promise<{ outcome: "restored" | "not-needed" | "failed" }>}
+ */
+export async function restoreVariantSharingOnCore({ variantId, ownerId, coreQuestionId }) {
+  let current;
+  try {
+    current = await prisma.variants.findFirst({
+      where: { id: Number(variantId), questionMetadata: { course: { userId: ownerId } } },
+      select: { isDraft: true, coreQuestionId: true, shareWithExtensions: true },
+    });
+  } catch (err) {
+    // Cannot establish whether Core is now out of step, so the caller must not
+    // report a plain failure as if the two stores still agreed.
+    logger.error({ err, variantId }, "Could not read variant to restore its Core sharing");
+    return { outcome: "failed" };
+  }
+
+  if (
+    !current ||
+    current.isDraft !== false ||
+    current.coreQuestionId !== coreQuestionId ||
+    current.shareWithExtensions !== true
+  ) {
+    return { outcome: "not-needed" };
+  }
+
+  try {
+    await patchQuestionTestableOnCore(coreQuestionId, true);
+    return { outcome: "restored" };
+  } catch (err) {
+    logger.error(
+      { err, coreQuestionId, variantId },
+      "Failed to restore Core sharing after an un-review write failed",
+    );
     return { outcome: "failed" };
   }
 }

@@ -32,6 +32,7 @@ import { VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from "../services/coreWiri
 import {
   publishApprovedVariant,
   respondToPublishFailure,
+  restoreVariantSharingOnCore,
   withdrawVariantFromCore,
 } from "../services/variant-publish.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
@@ -286,7 +287,8 @@ router.put(
         withdrawnCoreQuestionId = current.coreQuestionId;
       }
 
-      const variant = await updateVariant(
+      let variant;
+      const updateArgs = [
         req.params.variantId,
         {
           questionText,
@@ -312,7 +314,37 @@ router.put(
           // against a link that is no longer the current one (#1652 review).
           withdrawnCoreQuestionId,
         },
-      );
+      ];
+
+      try {
+        variant = await updateVariant(...updateArgs);
+      } catch (updateError) {
+        // Core was already withdrawn above and this write was meant to be the
+        // matching local half. Leaving it undone is not a clean failure: QM
+        // would still read reviewed, linked and shared while Core reads
+        // `testable=false`, and nothing re-asserts Core afterwards, so the
+        // question is invisible to other extensions for good. Put the
+        // withdrawal back so the request fails to exactly where it started —
+        // the state a retry can repair (#1652 review). The fence's own
+        // UNREVIEW_STATE_CHANGED throws through here too, which is why the
+        // restore re-reads rather than trusting the snapshot.
+        if (withdrawnCoreQuestionId) {
+          const restoration = await restoreVariantSharingOnCore({
+            variantId: req.params.variantId,
+            ownerId: req.qmCourse.userId,
+            coreQuestionId: withdrawnCoreQuestionId,
+          });
+          if (restoration.outcome === "failed") {
+            return res.status(502).json({
+              success: false,
+              code: "CORE_WITHDRAW_COMPENSATION_FAILED",
+              error:
+                "This question was not moved back to draft, and its EduAI copy could not be restored. Reload before trying again.",
+            });
+          }
+        }
+        throw updateError;
+      }
 
       // State-based push: fires whenever the caller sets isDraft=false and the
       // variant is not yet linked to Core. The stable idempotencyKey makes

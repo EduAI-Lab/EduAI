@@ -21,6 +21,8 @@ function messageForCode(code: string | undefined): string | null {
   switch (code) {
     case "VARIANT_LOCKED":
       return LOCK_FALLBACK;
+    case "VARIANT_CONFLICT":
+      return "Someone else changed this question at the same time. Reload and try again.";
     case "VARIANT_ROLLBACK_FAILED":
       return "Publishing to EduAI failed and the question was left in an unclear state. Reload before trying again.";
     case "CORE_PUSH_FAILED":

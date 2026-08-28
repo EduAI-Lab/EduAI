@@ -373,4 +373,20 @@ describe("getCanvasCourseMapping", () => {
     expect(await getCanvasCourseMapping("u1", 9, COOKIE)).toBeNull();
     expect(getCourseFromCore).not.toHaveBeenCalled();
   });
+
+  /**
+   * "Core did not answer" is not "this course has no Canvas link". Callers now
+   * hide the Canvas tab and both import entry points on a resolved-unlinked, so
+   * returning null here would strip every Canvas affordance from a genuinely
+   * linked course on one transient failure (#1652 review).
+   */
+  it("reports an unresolved link rather than an absent one when Core is unreachable", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    getCourseFromCore.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    await expect(getCanvasCourseMapping("u1", 9, COOKIE)).rejects.toMatchObject({
+      status: 503,
+      body: { error: "CANVAS_LINK_UNRESOLVED" },
+    });
+  });
 });

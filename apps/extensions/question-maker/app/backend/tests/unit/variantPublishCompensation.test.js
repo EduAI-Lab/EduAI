@@ -137,4 +137,22 @@ describe("respondToPublishFailure", () => {
       expect.objectContaining({ success: false, code: "CORE_PUBLISH_COMPENSATION_FAILED" }),
     );
   });
+
+  /**
+   * A lost publish race and an already-reviewed variant are both 409s, but they
+   * are opposites: the first rolled its Core push back, the second is already
+   * published. Clients treat VARIANT_LOCKED as an idempotent approve-success,
+   * so sharing the code told the instructor a withdrawn approval had succeeded
+   * (#1652 review).
+   */
+  it("gives a lost race its own code, distinct from the already-reviewed lock", () => {
+    const json = vi.fn();
+    const res = { status: vi.fn(() => ({ json })) };
+
+    expect(respondToPublishFailure(res, { outcome: "conflict" })).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, code: "VARIANT_CONFLICT" }),
+    );
+  });
 });

@@ -282,8 +282,15 @@ export const CourseDetailPage = () => {
     let cancelled = false;
     setIsCanvasLinked(null);
     void (async () => {
-      const mapping = await canvasService.getCourseMapping(courseId);
-      if (!cancelled) setIsCanvasLinked(Boolean(mapping?.canvasCourseId));
+      const link = await canvasService.getCourseLink(courseId);
+      if (cancelled) return;
+      // `unknown` stays null — the same state the page holds while resolving,
+      // which every gate below reads permissively. A Core hiccup would
+      // otherwise read as "not linked" and silently strip the Canvas tab, both
+      // import actions and the bank-sync button from a linked course, with
+      // nothing on screen to explain it (#1652 review).
+      if (link.status === "unknown") return;
+      setIsCanvasLinked(link.status === "linked");
     })();
     return () => {
       cancelled = true;
@@ -1077,7 +1084,7 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             isLoading={isBanksLoading}
             loadError={banksError}
-            isCanvasLinked={isCanvasLinked === true}
+            isCanvasLinked={isCanvasLinked !== false}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}

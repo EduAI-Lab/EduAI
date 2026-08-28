@@ -163,6 +163,28 @@ export const exportAssessmentToCanvas = async (
       throw canvasError("Assessment has no questions to export", 400);
     }
 
+    // An assessment may only be exported into the Canvas course this local
+    // course is linked to. Without this, one export into the wrong Canvas
+    // course mints the mapping row below for it, and because that row is
+    // created-if-absent and never updated it then shadows the authoritative
+    // Core `externalId` for every later quiz and bank import — permanently and
+    // invisibly re-pointing the course's Canvas link (#1652 review). Mirrors
+    // the guard quiz and bank import already apply.
+    const parsedCanvasCourseId = Number(canvasCourseId);
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, assessment.courseId, cookie);
+    if (!courseCanvasMapping) {
+      throw canvasError(
+        "Course is not linked to Canvas. Sync the course from Canvas before exporting an assessment.",
+        400,
+      );
+    }
+    if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
+      throw canvasError(
+        "canvasCourseId does not match the Canvas course linked to this local course",
+        400,
+      );
+    }
+
     const quizPayload = {
       title: assessment.name,
       description: assessment.description || `Exported from Question Maker - ${assessment.type}`,
@@ -384,7 +406,17 @@ export const getCanvasCourseMapping = async (userId, localCourseId, cookie) => {
     // does not depend on the caller's own Core enrollment (#1072 contract).
     coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
   } catch {
-    return null; // Core unreachable — treat as unlinked rather than hard-failing.
+    // NOT null. "Core is unreachable" is not "this course has no Canvas link",
+    // and callers now hang real behaviour off the difference: the course page
+    // hides the Canvas tab and both import entry points on a false, so
+    // swallowing a transient Core failure silently strips every Canvas
+    // affordance from a genuinely linked course (#1652 review). Say so instead
+    // and let the caller treat it as unknown.
+    throw canvasError(
+      "Could not check this course's Canvas link because EduAI did not respond. Please retry.",
+      503,
+      { error: "CANVAS_LINK_UNRESOLVED" },
+    );
   }
   if (coreCourse?.externalSource !== CANVAS_EXTERNAL_SOURCE) return null;
 
