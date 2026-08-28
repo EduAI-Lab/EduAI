@@ -140,6 +140,15 @@ export const courseSchema = z
   })
   .passthrough() satisfies z.ZodType<Course>;
 
+// #1644: `GET /api/courses/:id` adds `viewerRole` — the caller's role *on this
+// course* — which the instructor course page uses to gate staff-only tabs.
+// Decode it at the boundary so a wrong-typed value from a version mismatch is
+// caught, rather than the raw cast silently passing a bad field through and
+// recreating the dead-staff-tab behavior.
+export const courseDetailSchema = courseSchema
+  .extend({ viewerRole: roleSchema.nullish() })
+  .passthrough() satisfies z.ZodType<Course>;
+
 export const moduleSchema = z
   .object({
     id: z.number(),

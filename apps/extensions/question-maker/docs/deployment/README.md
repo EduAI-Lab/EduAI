@@ -52,6 +52,47 @@ available.
    64-character hexadecimal `ENCRYPTION_KEY`, the Core service URL and shared
    `EDUAI_API_KEY`, and the approved browser origins. Keep `.env` untracked.
 
+   **If this deployment has ever connected Canvas from Question Maker**, it also
+   needs `CORE_DATABASE_URL` and `CORE_ENCRYPTION_KEY` — see "Canvas credential
+   migration" below.
+
+## Canvas credential migration (one-time, #1084)
+
+Question Maker no longer stores Canvas API tokens; Core does. On startup the
+backend container runs, in order:
+
+1. `scripts/baselineExistingDatabase.js`
+2. `scripts/migrate-canvas-integrations-to-core.mjs` — the credential copier
+3. `prisma migrate deploy` — which renames `canvas_integrations` to
+   `canvas_integrations_pre_core_backup`
+
+The copier must run before step 3, so it is part of the container command rather
+than a manual step. It decrypts each token with QM's `ENCRYPTION_KEY`, re-encrypts
+it with Core's, and writes it to Core only where Core has no row for that user
+(Core wins on conflict). Because the two services are documented as holding
+**separate** keys, the QM container environment needs both:
+
+| Variable | Value |
+|---|---|
+| `CORE_DATABASE_URL` | Core's Postgres URL, reachable from the QM container |
+| `CORE_ENCRYPTION_KEY` | Core's `ENCRYPTION_KEY` |
+
+If QM has `canvas_integrations` rows and `CORE_DATABASE_URL` is unset, the copier
+exits non-zero and the container will not start — this is deliberate, so tokens are
+never renamed out of reach without being copied. On a deployment that never
+connected Canvas from QM the copier is a no-op and both variables may be omitted.
+
+Verify the copy before deploying for real:
+
+~~~sh
+cd /srv/www/EduAI
+npm run db:migrate:canvas-to-core -w question-maker-backend -- --dry-run
+~~~
+
+Once Core's rows are verified, `canvas_integrations_pre_core_backup` may be dropped
+on the QM database. Leaving it is safe; dropping it is irreversible. Full procedure:
+[`docs/DEPLOYMENT.md`](../../../../../docs/DEPLOYMENT.md).
+
 ## Preflight
 
 Run these checks from the monorepo root before changing the live stack:

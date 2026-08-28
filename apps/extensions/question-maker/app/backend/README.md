@@ -121,6 +121,29 @@ script is a no-op and `migrate deploy` runs `init` and everything after it from 
 script is idempotent — once `_prisma_migrations` exists (baselined or fresh), it no-ops on every later
 deploy.
 
+`db:migrate:deploy` then runs `scripts/migrate-canvas-integrations-to-core.mjs` **before**
+`prisma migrate deploy`, because that migration renames `canvas_integrations` →
+`canvas_integrations_pre_core_backup`. The copier decrypts each stored Canvas token with QM's
+`ENCRYPTION_KEY`, re-encrypts it with Core's, and inserts it into Core's `canvas_integrations` only when
+Core has no row for that user (Core wins on conflict). It needs, in the QM container environment:
+
+| Variable | Purpose |
+|---|---|
+| `CORE_DATABASE_URL` | Core Postgres — where the credentials are copied to |
+| `CORE_ENCRYPTION_KEY` | Core's AES key, used to re-encrypt each token |
+| `QM_ENCRYPTION_KEY` | QM's AES key (falls back to QM's own `ENCRYPTION_KEY`) |
+
+Core and QM are documented as holding **separate** keys ([`docs/ENVIRONMENT.md`](../../../../../docs/ENVIRONMENT.md)),
+so `CORE_ENCRYPTION_KEY` is required whenever legacy rows exist — the copier cannot decrypt Core-bound
+ciphertext with QM's key. On a database with no `canvas_integrations` rows the copier is a no-op and the
+Core variables may be omitted. If rows *do* exist and `CORE_DATABASE_URL` is unset the copier exits
+non-zero rather than silently skipping, which fails the container start — set both variables before
+deploying an instance that has ever connected Canvas from QM. Dry run:
+
+```bash
+npm run db:migrate:canvas-to-core -w question-maker-backend -- --dry-run
+```
+
 The API is available at `http://localhost:8000` by default.
 
 ## API Endpoints
@@ -160,11 +183,12 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 
 ## Database Schema
 
-The schema (11 models: `User`, `Course`, `Topics`, `QuestionMetadata`, `Assessments`, `Variants`,
-`AssessmentSections`, `SectionVariants`, `CanvasIntegration`, `CanvasCourseMapping`,
-`VariantSelectionCursor`) is defined in [`prisma/schema.prisma`](prisma/schema.prisma) — read that file
-directly rather than a hand-copied summary here, since it's the actual source of truth and this doc will
-drift otherwise.
+The schema is defined in [`prisma/schema.prisma`](prisma/schema.prisma) — read that file directly rather
+than a hand-copied summary here, since it's the actual source of truth and this doc will drift otherwise.
+
+Note that QM no longer owns a `CanvasIntegration` model: Canvas credentials are stored once, in Core, and
+QM reaches Canvas through Core's proxy routes (#1084). Any pre-existing QM `canvas_integrations` rows are
+copied into Core on deploy — see "Adopting an existing deployment" above.
 
 ## Development
 
@@ -189,8 +213,9 @@ npm run lint
 
 ## Deployment
 
-- `Dockerfile` — production image; baselines (if needed) and runs `prisma migrate deploy` before starting
-  the server — see "Adopting an existing deployment" above
+- `Dockerfile` — production image; baselines (if needed), copies any QM-only Canvas credentials into Core,
+  then runs `prisma migrate deploy` before starting the server — see "Adopting an existing deployment"
+  above and [`docs/DEPLOYMENT.md`](../../../../../docs/DEPLOYMENT.md)
 - `Dockerfile.dev` — development image; runs `npm run dev` (migrate + seed:if-empty + nodemon)
 - Environment-based configuration (see Environment Variables above)
 - Rate limiting, Helmet, and CORS are enabled by default

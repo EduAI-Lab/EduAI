@@ -105,7 +105,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   const { page, search } = parseListUrlParams(request);
 
   const [course, modulesPage] = await Promise.all([
-    api.courseById(courseId) as Promise<Course>,
+    api.courseById(courseId),
     api.modulesForCourse(courseId, { page, search }),
   ]);
 
@@ -138,10 +138,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
-  const tabs = getCourseDetailTabs(
-    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
-  );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
   const {
     course,
     modules: initialModules,
@@ -150,6 +146,23 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     pageSize,
     search,
   } = loaderData;
+  // #1644: gate staff tabs on the viewer's role *on this course* (from the
+  // loader), not the global effective role — a global-effective TA who is only a
+  // STUDENT here must not see staff tabs whose content the server 403s.
+  const tabs = getCourseDetailTabs(
+    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
+    course.viewerRole ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  // #1644: the router reuses this instance when CourseSwitcher changes only
+  // `:courseId`, so `activeTab` survives the switch. If the new course's
+  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
+  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
+  // trigger and every tab panel hides — the page renders blank. Clamp back to
+  // `content` during render whenever the active tab is no longer available.
+  if (!tabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab("content");
+  }
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);

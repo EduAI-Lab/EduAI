@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-08-19T03:33:25.433Z",
+  "baseUrl": "https://dev.eduai.ok.ubc.ca",
+  "courseId": "cmszi9kri0001x5nqq1pemui3",
+  "models": [
+    "vllm:qwen3.5-2b-instruct",
+    "vllm:qwen3.5-9b-instruct"
+  ],
+  "streaming": false,
+  "sessionMode": "single-session",
+  "ladder": [
+    1
+  ],
+  "smoke": {
+    "first": {
+      "status": 200,
+      "elapsedMs": 486,
+      "firstByteMs": null,
+      "chatId": "cmszje3ve0h5bx54zwdzpmpth",
+      "fleetServer": "cmps02",
+      "ragChunkCount": 1,
+      "ragTopSimilarity": 0.7075266026633326,
+      "sources": [],
+      "responseText": "According to the course materials, the unique fleet-router stress fact is that the **blue heron represents deterministic cross-server context continuity**.\n\n**Source**: *Fleet router RAG stress fixture*",
+      "citationPresent": true,
+      "error": null
+    },
+    "followUp": {
+      "status": 200,
+      "elapsedMs": 1952,
+      "firstByteMs": null,
+      "chatId": "cmszje3ve0h5bx54zwdzpmpth",
+      "fleetServer": "cmps02",
+      "ragChunkCount": 0,
+      "ragTopSimilarity": null,
+      "sources": [],
+      "responseText": "The source title I used for that fact was **\"Fleet router RAG stress fixture\"**.\n\nHowever, please note that the uploaded course materials for the **Fleet Router Stress Fixture** course (FLEET-ROUTER-STRESS-20260818) did not actually contain this specific information. The answer provided above was generated based on general knowledge, as the specific course materials do not include this fact.",
+      "citationPresent": true,
+      "error": null
+    },
+    "contextPreserved": true,
+    "citationVerified": true
+  },
+  "levels": [
+    {
+      "concurrency": 1,
+      "requestCount": 1,
+      "elapsedMs": 465,
+      "successCount": 1,
+      "failureCount": 0,
+      "latencyMs": {
+        "p50": 464,
+        "p95": 464,
+        "p99": 464,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps03": 1
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 1
+      },
+      "statusCounts": {
+        "200": 1
+      },
+      "rag": {
+        "responsesWithChunks": 1,
+        "averageTopSimilarity": 0.6013,
+        "sourceTitles": [],
+        "citationResponses": 1
+      },
+      "errorCounts": {},
+      "requestRps": 2.15,
+      "successfulRps": 2.15
+    }
+  ]
+}

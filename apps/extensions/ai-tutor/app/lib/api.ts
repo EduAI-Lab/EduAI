@@ -42,6 +42,7 @@ import {
   bugReportStatusUpdatedSchema,
   chatMessagesSchema,
   chatSessionRowSchema,
+  courseDetailSchema,
   courseFacetsSchema,
   courseSchema,
   dashboardStatsSchema,
@@ -622,7 +623,7 @@ export const api = {
    * rarely, and re-fetching per keystroke would be pure waste.
    */
   listCourseFacets: () => decode(http("/api/courses/facets"), courseFacetsSchema),
-  courseById: (courseId: number) => http(`/api/courses/${courseId}`),
+  courseById: (courseId: number) => decode(http(`/api/courses/${courseId}`), courseDetailSchema),
   /**
    * Flip a course published. Course publish state is owned by EduAI Core, so
    * this proxies through to Core and re-reads it; `corePublishStale` on the
