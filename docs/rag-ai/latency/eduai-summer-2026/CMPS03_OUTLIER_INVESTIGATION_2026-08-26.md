@@ -2,8 +2,7 @@
 
 **Test period:** August 26, 2026 UTC
 **Related:** [#1589](https://github.com/EduAI-Lab/EduAI/issues/1589) (opened against
-[PR #1582](https://github.com/EduAI-Lab/EduAI/pull/1582) /
-[`FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md`](./FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md))
+[PR #1582](https://github.com/EduAI-Lab/EduAI/pull/1582))
 **Environment:** Direct native-vLLM calls on `cmps01` and `cmps03`, loopback only
 (`127.0.0.1:18001` / `:18002`) — no EduAI Core, router, or public ingress involved.
 
@@ -85,25 +84,28 @@ including the closest approximation to the original dual-model test.
 ## Confirmed difference (does not explain the outlier)
 
 - **vLLM version drift:** cmps01's `eduai-vllm-t3` container is running vLLM
-  **0.27.1**; cmps03's is running vLLM **0.26.0**. Both containers use the
-  `vllm/vllm-openai:latest` image tag (not the `v0.26.0` pin recorded in
-  `infra/cmps01/docker-compose.yml` and `infra/cmps03/docker-compose.yml` in
-  this repo), so the two hosts pulled `latest` at different times and have
-  since diverged. This is a real config-drift bug worth fixing on its own
-  (repo-pinned versions no longer match what's deployed on either host), but
-  it does not explain the reported outlier — cmps03 on the *older* vLLM
-  version performed identically to cmps01 on the newer one in every test run
-  above, including the combined-load pass.
+  **0.27.1**; cmps03's is running vLLM **0.26.0**. Both deployed containers
+  used the `vllm/vllm-openai:latest` image tag at inspection, so the hosts
+  pulled `latest` at different times and have since diverged. This is a real
+  deployment-drift issue worth fixing on its own, but it does not explain the
+  reported outlier — cmps03 on the *older* vLLM version performed identically
+  to cmps01 on the newer one in every test run above, including the
+  combined-load pass.
 
-  **Fixed:** `infra/cmps01/migrate.sh` and `README.md` re-pinned to
-  `vllm/vllm-openai:v0.27.1` (matching what's live on cmps01 today) in
-  [PR #1582](https://github.com/EduAI-Lab/EduAI/pull/1582), commit
-  `bb301f950`, so future redeploys are reproducible and don't silently drift
-  again. cmps03's compose file (on the separate, unmerged
-  `codex/883-cmps03-heavy-fleet` branch) still pins `v0.26.0`; that branch
-  was out of scope for this fix and hasn't been touched.
+  On this branch, the repository does not contain a CMPS03 compose file.
+  The CMPS01 references relevant to this finding are `infra/cmps01/migrate.sh`
+  and `infra/cmps01/README.md`; they document deployment guidance, not proof
+  that either live host is currently pinned. Version pin standardization should
+  be made in the deployment change that owns each host, including the separate
+  CMPS03 deployment branch.
 
 ## Not re-checked / still open
+
+- **GPU assignment / stale 35B-A3B configuration:** the active 2B/9B
+  containers were compared for matching command-line flags, but the
+  container-to-GPU mapping was not independently verified and stale
+  35B-A3B configuration was not ruled out. This remains open and needs
+  privileged host/container inspection.
 
 - **PCIe link state at idle:** `nvidia-smi` reports
   `pcie.link.gen.current=1` (of a `max=4`) on both hosts while idle at P8
