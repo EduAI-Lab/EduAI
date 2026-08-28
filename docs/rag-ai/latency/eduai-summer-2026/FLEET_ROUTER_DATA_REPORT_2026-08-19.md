@@ -30,7 +30,7 @@ The raw harness artifacts record both `requestRps` (all requests completed by th
 | 768 | 152/768 | 8,345 | 15,950 | 9.32 | 480 | 136 | 0 |
 | 1,000 | 318/1,000 | 12,944 | 18,610 | 16.75 | 288 | 2 | 392 |
 
-At 768 and 1,000 users, the same authenticated user had accumulated requests across ladder levels, so the original rate-limit window affected the result. The 512+ public values are therefore ingress observations, not isolated fleet-capacity measurements.
+At 768 and 1,000 concurrent requests, the same authenticated session had accumulated requests across ladder levels, so the original rate-limit window affected the result. The 512+ public values are therefore ingress observations, not isolated fleet-capacity measurements.
 
 ## Post-hardening direct-Core data
 

@@ -80,6 +80,10 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
     }
     ejectedUntilByUrl.delete(normalized);
   }
+  // Capture the ejection marker before starting an async probe. A failure can
+  // be recorded while this probe is in flight; a late successful response must
+  // not clear that newer marker or repopulate the cache with stale health.
+  const ejectionAtProbeStart = ejectedUntilByUrl.get(normalized);
   const cached = healthCache.get(normalized);
   const cacheTtlMs = configuredDuration("FLEET_HEALTH_CACHE_TTL_MS", DEFAULT_HEALTH_CACHE_TTL_MS);
   const timeoutMs = configuredDuration("FLEET_HEALTH_TIMEOUT_MS", DEFAULT_HEALTH_TIMEOUT_MS);
@@ -135,6 +139,21 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       modelIds,
       checkedAt,
     };
+    const ejectionAfterProbe = ejectedUntilByUrl.get(normalized);
+    if (ejectionAfterProbe !== ejectionAtProbeStart) {
+      const nowAfterProbe = Date.now();
+      if (ejectionAfterProbe !== undefined && ejectionAfterProbe > nowAfterProbe) {
+        return {
+          ok: false,
+          modelIds: null,
+          checkedAt: nowAfterProbe,
+          error: `host ejected for ${ejectionAfterProbe - nowAfterProbe}ms after inference failure`,
+        };
+      }
+      if (ejectionAfterProbe !== undefined) {
+        ejectedUntilByUrl.delete(normalized);
+      }
+    }
     ejectedUntilByUrl.delete(normalized);
     healthCache.set(normalized, result);
     return result;

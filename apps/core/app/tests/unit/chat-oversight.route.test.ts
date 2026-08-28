@@ -8,7 +8,7 @@ vi.mock("ai", async (importOriginal) => {
   return {
     ...actual,
     streamText: vi.fn(),
-    createDataStreamResponse: vi.fn(({ execute }) => {
+    createDataStreamResponse: vi.fn(({ execute, headers }) => {
       const chunks: string[] = [];
       const dataStream = {
         write: (part: string) => {
@@ -17,7 +17,7 @@ vi.mock("ai", async (importOriginal) => {
         writeMessageAnnotation: vi.fn(),
       };
       execute(dataStream);
-      return new Response(chunks.join(""), { status: 200 });
+      return new Response(chunks.join(""), { status: 200, headers });
     }),
     formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
@@ -92,6 +92,7 @@ import { auth } from "~/lib/auth/server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import { invalidatePolicyCache } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
@@ -287,6 +288,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
       metadata: { resolvedModelId: "vllm:test-model" },
     });
     expect(await res.text()).toContain("Want to continue?");
+  });
+
+  it("preserves RAG latency telemetry on overseen streaming replies", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(baseBody({ streaming: true, chatMode: "learning", courseId: "c1" })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(findRelevantContent).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("X-RAG-Latency-Ms")).toMatch(/^\d+$/);
   });
 
   it("returns 500 when overseen persistence fails instead of showing unsaved text", async () => {

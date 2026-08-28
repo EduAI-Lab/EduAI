@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getServerHealth,
   invalidateFleetHealthCacheForUrl,
   recordFleetHostFailure,
   resetFleetHealthCache,
@@ -683,6 +684,28 @@ describe("fleet host ejection cooldown recovery (fake timers)", () => {
     expect(afterCooldown?.serverId).toBe("cmps01");
   });
 
+  it("does not let an in-flight probe clear a newer ejection", async () => {
+    process.env.FLEET_FAILURE_EJECTION_MS = "30000";
+    let resolveFetch!: (response: Response) => void;
+    const deferredFetch = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.mocked(fetch).mockImplementationOnce(async () => deferredFetch);
+
+    const probe = getServerHealth("http://cmps01.ok.ubc.ca:8001");
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    recordFleetHostFailure("http://cmps01.ok.ubc.ca:8001");
+    resolveFetch(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), { status: 200 }),
+    );
+
+    await expect(probe).resolves.toMatchObject({ ok: false });
+    await expect(getServerHealth("http://cmps01.ok.ubc.ca:8001")).resolves.toMatchObject({
+      ok: false,
+    });
+  });
+
   it("clamps an oversized FLEET_FAILURE_EJECTION_MS to the configured maximum bound", async () => {
     process.env.FLEET_FAILURE_EJECTION_MS = "99999999"; // far above the 120s max bound
     recordFleetHostFailure("http://cmps01.ok.ubc.ca:8001");
@@ -723,5 +746,81 @@ describe("fleet host ejection cooldown recovery (fake timers)", () => {
       excludeServerIds: ["cmps02"],
     });
     expect(recovered?.serverId).toBe("cmps01");
+  });
+});
+
+describe("fleet health duration configuration", () => {
+  const originalCacheTtlMs = process.env.FLEET_HEALTH_CACHE_TTL_MS;
+  const originalTimeoutMs = process.env.FLEET_HEALTH_TIMEOUT_MS;
+
+  beforeEach(() => {
+    resetFleetHealthCache();
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), { status: 200 }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalCacheTtlMs === undefined) delete process.env.FLEET_HEALTH_CACHE_TTL_MS;
+    else process.env.FLEET_HEALTH_CACHE_TTL_MS = originalCacheTtlMs;
+    if (originalTimeoutMs === undefined) delete process.env.FLEET_HEALTH_TIMEOUT_MS;
+    else process.env.FLEET_HEALTH_TIMEOUT_MS = originalTimeoutMs;
+    resetFleetHealthCache();
+    vi.restoreAllMocks();
+  });
+
+  it("honors the configured cache TTL", async () => {
+    process.env.FLEET_HEALTH_CACHE_TTL_MS = "100";
+    const url = "http://cmps01.ok.ubc.ca:8001";
+
+    await getServerHealth(url);
+    await vi.advanceTimersByTimeAsync(99);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("clamps cache TTL to the minimum and maximum bounds", async () => {
+    const url = "http://cmps01.ok.ubc.ca:8001";
+    process.env.FLEET_HEALTH_CACHE_TTL_MS = "1";
+    await getServerHealth(url);
+    await vi.advanceTimersByTimeAsync(99);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    resetFleetHealthCache();
+    vi.mocked(fetch).mockClear();
+    process.env.FLEET_HEALTH_CACHE_TTL_MS = "99999999";
+    await getServerHealth(url);
+    await vi.advanceTimersByTimeAsync(119_999);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await getServerHealth(url);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("clamps the health probe timeout to the configured bounds", async () => {
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValue(new AbortController().signal);
+    process.env.FLEET_HEALTH_TIMEOUT_MS = "1";
+    await getServerHealth("http://cmps01.ok.ubc.ca:8001");
+    expect(timeoutSpy).toHaveBeenLastCalledWith(100);
+
+    resetFleetHealthCache();
+    process.env.FLEET_HEALTH_TIMEOUT_MS = "99999999";
+    await getServerHealth("http://cmps01.ok.ubc.ca:8001");
+    expect(timeoutSpy).toHaveBeenLastCalledWith(120_000);
   });
 });

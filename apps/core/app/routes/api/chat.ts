@@ -1628,7 +1628,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fleetPick = await resolveFleetHost({
           jobType,
           resolvedModelId,
-          affinityKey: chat?.id ?? actingUser.id,
+          affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
         });
         if (fleetPick) {
           chatApiTrace("fleet host selected", {
@@ -2631,7 +2631,7 @@ ${buildEmptyCourseRagBlock()}`;
             failedPick,
             resolvedModelId,
             jobType,
-            affinityKey: chat?.id ?? actingUser.id,
+            affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
           });
           if (nextPick) {
             fleetPick = nextPick;
@@ -2806,6 +2806,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          if (ragLatencyMs !== null) {
+            headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+          }
           Object.assign(
             headers,
             autoRoutingHeaders(
@@ -2829,6 +2832,7 @@ ${buildEmptyCourseRagBlock()}`;
 
               dataStream.writeMessageAnnotation({
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                ragLatencyMs,
               });
 
               dataStream.write(

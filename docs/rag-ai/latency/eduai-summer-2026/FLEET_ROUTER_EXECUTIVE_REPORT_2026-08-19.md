@@ -54,7 +54,7 @@ xychart-beta
     line [8, 8, 19, 47, 81, 183, 243, 329]
 ```
 
-**Server-series order:** cmps01, cmps02, cmps03. At 1,000 users, routing was effectively even: 332 / 339 / 329 requests. The limiting signal was latency saturation, not request loss: p95 reached 43.4 seconds while the direct-Core run still returned 1,000/1,000 successes.
+**Server-series order:** cmps01, cmps02, cmps03. At 1,000 concurrent requests from the authenticated session, routing was effectively even: 332 / 339 / 329 requests. The limiting signal was latency saturation, not request loss: p95 reached 43.4 seconds while the direct-Core run still returned 1,000/1,000 successes.
 
 ## 2. Individual-server stress testing
 
@@ -162,7 +162,7 @@ cmps02 was restored to Qwen 2.5 32B after the fleet run, so no comparable native
 - The controlled direct-Core run completed 2,776/2,776 requests successfully across the full ladder.
 - The authenticated RAG smoke test preserved `chatId`, citations, RAG results, and `X-Fleet-Server`.
 - Follow-up context remained correct when routed to another server because Core persists conversation history.
-- The 1,000-user test is a stress ceiling, not a recommended low-latency operating target.
+- The 1,000-request concurrency test is a stress ceiling, not a recommended low-latency operating target.
 
 ## Production assessment
 
