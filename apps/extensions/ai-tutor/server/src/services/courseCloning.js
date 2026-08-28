@@ -12,8 +12,10 @@
  *     missing names are created in one batch before any activity is written.
  *   - The whole tree is written level by level with `createManyAndReturn`, so a
  *     clone costs a fixed number of statements instead of one per node. Each
- *     level maps parents to children by position in the returned array, which
- *     Postgres fills in insert order for a single multi-row insert.
+ *     level maps parents to children by position in the returned array, and
+ *     since Prisma guarantees no ordering there, the returned rows are sorted
+ *     back into input order by autoincrement id first. See
+ *     `correlateCreatedRows`.
  *   - Main-topic remapping is mandatory; if a source activity references a
  *     topic we cannot resolve, the whole clone aborts rather than creating an
  *     activity with a broken foreign key.
@@ -167,11 +169,14 @@ async function createActivitiesForLessons(tx, lessonBuckets, topicIdMap) {
 
   if (activityRows.length === 0) return;
 
-  const createdActivities = await tx.activity.createManyAndReturn({
-    data: activityRows,
-    select: { id: true },
-  });
-  assertRowCount(createdActivities, activityRows, "activities");
+  const createdActivities = correlateCreatedRows(
+    await tx.activity.createManyAndReturn({
+      data: activityRows,
+      select: { id: true },
+    }),
+    activityRows,
+    "activities",
+  );
 
   const joinRows = [];
   const seenPairs = new Set();
@@ -193,17 +198,23 @@ async function createActivitiesForLessons(tx, lessonBuckets, topicIdMap) {
 }
 
 /**
- * Guard the index-for-index correlation between an insert and its returned rows.
+ * Restore the input ordering of rows returned by a `createManyAndReturn`.
  *
- * Why: Every level maps parents to children by array position. A short return
- * would silently attach children to the wrong parent, so it aborts instead.
+ * Why: Every level maps parents to children by array position, but Prisma does
+ * not document any ordering guarantee for `createManyAndReturn`, so a permuted
+ * return would silently attach children to the wrong parent. Autoincrement ids
+ * are drawn from the sequence in `VALUES` order, so sorting the returned rows
+ * by id reconstructs the input order even if the driver hands them back
+ * shuffled. The row count is still asserted, since a short return cannot be
+ * repaired by sorting.
  */
-function assertRowCount(created, requested, label) {
+function correlateCreatedRows(created, requested, label) {
   if (created.length !== requested.length) {
     throw new Error(
       `Clone wrote ${created.length} ${label} but expected ${requested.length}; aborting.`,
     );
   }
+  return created.toSorted((a, b) => a.id - b.id);
 }
 
 /**
@@ -245,15 +256,15 @@ export async function cloneCourseContent(
 
   if (sourceModules.length === 0) return;
 
-  const sourceTopics = await db.topic.findMany({
-    where: { courseOfferingId: sourceCourseId },
-  });
+  // Independent reads, so they go out together rather than costing two round trips.
+  const [sourceTopics, maxPosition] = await Promise.all([
+    db.topic.findMany({ where: { courseOfferingId: sourceCourseId } }),
+    db.module.aggregate({
+      where: { courseOfferingId: targetCourseId },
+      _max: { position: true },
+    }),
+  ]);
   const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
-
-  const maxPosition = await db.module.aggregate({
-    where: { courseOfferingId: targetCourseId },
-    _max: { position: true },
-  });
   let nextModulePosition = maxPosition._max.position ?? 0;
 
   const moduleRows = sourceModules.map((module) => {
@@ -276,11 +287,14 @@ export async function cloneCourseContent(
       targetCourseId,
     });
 
-    const createdModules = await tx.module.createManyAndReturn({
-      data: moduleRows,
-      select: { id: true },
-    });
-    assertRowCount(createdModules, moduleRows, "modules");
+    const createdModules = correlateCreatedRows(
+      await tx.module.createManyAndReturn({
+        data: moduleRows,
+        select: { id: true },
+      }),
+      moduleRows,
+      "modules",
+    );
 
     const lessonRows = [];
     const lessonSources = [];
@@ -299,11 +313,14 @@ export async function cloneCourseContent(
 
     if (lessonRows.length === 0) return;
 
-    const createdLessons = await tx.lesson.createManyAndReturn({
-      data: lessonRows,
-      select: { id: true },
-    });
-    assertRowCount(createdLessons, lessonRows, "lessons");
+    const createdLessons = correlateCreatedRows(
+      await tx.lesson.createManyAndReturn({
+        data: lessonRows,
+        select: { id: true },
+      }),
+      lessonRows,
+      "lessons",
+    );
 
     await createActivitiesForLessons(
       tx,
@@ -354,16 +371,17 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId, 
     ),
   );
 
-  const sourceTopics =
+  // Independent reads, so they go out together rather than costing two round trips.
+  const [sourceTopics, maxPosition] = await Promise.all([
     sourceCourseIds.length > 0
-      ? await db.topic.findMany({ where: { courseOfferingId: { in: sourceCourseIds } } })
-      : [];
+      ? db.topic.findMany({ where: { courseOfferingId: { in: sourceCourseIds } } })
+      : [],
+    db.lesson.aggregate({
+      where: { moduleId: targetModuleId },
+      _max: { position: true },
+    }),
+  ]);
   const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
-
-  const maxPosition = await db.lesson.aggregate({
-    where: { moduleId: targetModuleId },
-    _max: { position: true },
-  });
   let nextLessonPosition = maxPosition._max.position ?? 0;
 
   const lessonRows = lessons.map((lesson) => {
@@ -385,11 +403,14 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId, 
       targetCourseId: targetModule.courseOfferingId,
     });
 
-    const createdLessons = await tx.lesson.createManyAndReturn({
-      data: lessonRows,
-      select: { id: true },
-    });
-    assertRowCount(createdLessons, lessonRows, "lessons");
+    const createdLessons = correlateCreatedRows(
+      await tx.lesson.createManyAndReturn({
+        data: lessonRows,
+        select: { id: true },
+      }),
+      lessonRows,
+      "lessons",
+    );
 
     await createActivitiesForLessons(
       tx,
