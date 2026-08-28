@@ -1260,6 +1260,69 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     expect(result).toEqual({ writeSucceeded: true });
   });
 
+  // #1639/#1643 follow-up: the AI SDK validates tool input through `parameters`
+  // before `execute`, so an override missing from the tool schema is stripped
+  // and the model silently stays on the global default. Parse through the
+  // schema here to prove the override survives to the mutation.
+  it("createAiModel schema forwards contextFillRatio to the mutation", async () => {
+    vi.mocked(createAdminAiModelMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    const tools = createAdminChatTools(ctx);
+    const parsed = tools.createAiModel.parameters.parse({
+      providerId: "prov-1",
+      modelId: "gpt-5",
+      name: "GPT-5",
+      description: "desc",
+      type: "CHAT",
+      contextFillRatio: 0.9,
+      confirmed: true,
+    });
+    expect(parsed.contextFillRatio).toBe(0.9);
+    const { confirmed: _confirmed, ...input } = parsed;
+    await runWrite(tools.createAiModel, input);
+    expect(createAdminAiModelMutation).toHaveBeenCalledWith(
+      ADMIN,
+      expect.objectContaining({ contextFillRatio: 0.9 }),
+    );
+  });
+
+  it("updateAiModel schema forwards a null contextFillRatio to clear the override", async () => {
+    vi.mocked(updateAdminAiModelMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    const tools = createAdminChatTools(ctx);
+    const parsed = tools.updateAiModel.parameters.parse({
+      id: "model-1",
+      contextFillRatio: null,
+      confirmed: true,
+    });
+    expect(parsed.contextFillRatio).toBeNull();
+    const { confirmed: _confirmed, id, ...input } = parsed;
+    await runWrite(tools.updateAiModel, { id, ...input });
+    expect(updateAdminAiModelMutation).toHaveBeenCalledWith(
+      ADMIN,
+      "model-1",
+      expect.objectContaining({ contextFillRatio: null }),
+    );
+  });
+
+  it("model tool schemas reject an out-of-range contextFillRatio", () => {
+    const tools = createAdminChatTools(ctx);
+    const createRes = tools.createAiModel.parameters.safeParse({
+      providerId: "prov-1",
+      modelId: "gpt-5",
+      name: "GPT-5",
+      description: "desc",
+      type: "CHAT",
+      contextFillRatio: 1.5,
+      confirmed: true,
+    });
+    expect(createRes.success).toBe(false);
+    const updateRes = tools.updateAiModel.parameters.safeParse({
+      id: "model-1",
+      contextFillRatio: 0.1,
+      confirmed: true,
+    });
+    expect(updateRes.success).toBe(false);
+  });
+
   it("deleteAiModel", async () => {
     vi.mocked(deleteAdminAiModelMutation).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);

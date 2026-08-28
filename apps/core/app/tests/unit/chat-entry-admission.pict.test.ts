@@ -82,7 +82,7 @@ vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn().mockResolvedValue([]) },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     course: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     externalUser: { findUnique: vi.fn(), update: vi.fn() },
     user: { findUnique: vi.fn(), create: vi.fn() },
