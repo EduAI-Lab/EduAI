@@ -4,7 +4,7 @@
  *
  * Reads apps/core/.env (same as prisma seed). Or pass inline:
  *   VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
- *   VLLM_MODEL=qwen2.5-32b-instruct npm run vllm:smoke
+ *   VLLM_MODEL=qwen3.5-2b-instruct npm run vllm:smoke
  */
 
 import { readFileSync, existsSync } from "node:fs";

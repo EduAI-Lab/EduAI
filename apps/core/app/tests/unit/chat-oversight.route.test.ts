@@ -8,7 +8,7 @@ vi.mock("ai", async (importOriginal) => {
   return {
     ...actual,
     streamText: vi.fn(),
-    createDataStreamResponse: vi.fn(({ execute }) => {
+    createDataStreamResponse: vi.fn(({ execute, headers }) => {
       const chunks: string[] = [];
       const dataStream = {
         write: (part: string) => {
@@ -17,7 +17,7 @@ vi.mock("ai", async (importOriginal) => {
         writeMessageAnnotation: vi.fn(),
       };
       execute(dataStream);
-      return new Response(chunks.join(""), { status: 200 });
+      return new Response(chunks.join(""), { status: 200, headers });
     }),
     formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
@@ -49,7 +49,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -76,7 +79,7 @@ vi.mock("~/lib/ai/embedding", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   },
@@ -395,6 +398,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(JSON.stringify(body)).not.toContain("Step ladder");
   });
 
+  it("preserves RAG latency telemetry on overseen streaming replies", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(baseBody({ streaming: true, chatMode: "learning", courseId: "c1" })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(findRelevantContent).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("X-RAG-Latency-Ms")).toMatch(/^\d+$/);
+  });
+
   it("returns 500 when overseen persistence fails instead of showing unsaved text", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
@@ -466,6 +482,34 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(await res.text()).toContain("**Top summary**");
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
   });
+
+  it.each([false, true] as const)(
+    "preserves the required diagram after capping a long visual response (streaming=%s)",
+    async (streaming) => {
+      process.env.ADHD_ASSIST_OVERSIGHT = "false";
+      const longAnswer = `${"This explanation adds useful context. ".repeat(120)}Keep the stages visible.`;
+      mockStreamResult({
+        text: JSON.stringify({
+          ...JSON.parse(STRUCTURED_ASSIST),
+          answer: longAnswer,
+        }),
+      });
+
+      const res = await action(
+        makeArgs(
+          baseBody({
+            streaming,
+            model: "vllm:qwen3.5-2b-instruct",
+            messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("```eduai-diagram");
+      expect(body.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(300);
+    },
+  );
 
   it.each([
     ["vllm:qwen3.5-2b-instruct", false],

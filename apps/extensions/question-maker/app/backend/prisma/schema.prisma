@@ -19,11 +19,10 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  courses              Course[]
-  courseAccess         CourseAccess[]
-  createdQuestions     QuestionMetadata[]    @relation("QuestionMetadataCreator")
-  createdVariants      Variants[]            @relation("VariantsCreator")
-  canvasIntegration          CanvasIntegration?
+  courses                    Course[]
+  courseAccess               CourseAccess[]
+  createdQuestions           QuestionMetadata[]    @relation("QuestionMetadataCreator")
+  createdVariants            Variants[]            @relation("VariantsCreator")
   canvasCourseMappings       CanvasCourseMapping[]
   canvasBankMappings         CanvasBankMapping[]
   canvasBankQuestionMappings CanvasBankQuestionMapping[]
@@ -277,25 +276,6 @@ model SectionVariants {
   /// `WHERE section_id = ?`. Only the trailing column needs its own (#1368).
   @@index([variantId])
   @@map("section_variants")
-}
-
-/// Per-user Canvas integration details. `apiKey` is stored encrypted
-/// (AES-256-GCM via src/utils/encryption.js) — encrypt/decrypt happens in
-/// the service layer (canvasService.js), not here; Prisma has no field-level
-/// getters/setters to replace the old Sequelize accessor + hooks.
-model CanvasIntegration {
-  id         Int      @id @default(autoincrement())
-  userId     String   @unique @map("user_id")
-  canvasUrl  String   @map("canvas_url")
-  /// Encrypted Canvas API key
-  apiKey     String   @map("api_key")
-  isTestMode Boolean  @default(false) @map("is_test_mode")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("canvas_integrations")
 }
 
 /// Maps a local course to a Canvas course for export tracking. True 1:1 with

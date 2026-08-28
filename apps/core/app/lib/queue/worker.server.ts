@@ -15,7 +15,7 @@ import { workerConcurrency } from "./concurrency.server";
 
 export { workerConcurrency } from "./concurrency.server";
 
-const DEFAULT_WORKER_MODEL = "vllm:qwen2.5-32b-instruct";
+const DEFAULT_WORKER_MODEL = "vllm:qwen3.5-9b-instruct";
 const DEFAULT_AI_JOB_TIMEOUT_MS = 120_000;
 
 export type AiJobResult = {

@@ -3,27 +3,32 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import {
+  CAMPUS_INTERACTIVE_MODEL_IDS,
+  LEGACY_CAMPUS_MODEL_IDS,
+  RETAINED_ASSIST_MODEL_ID,
+} from "../app/lib/ai/campus-model-catalog";
 
 const prisma = new PrismaClient();
 
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen3.5-2b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
     routerTier: "TIER_1" as const,
     estEnergyJoulesPerToken: 0.04,
     averageCarbonGramsPerToken: 8.9e-7,
   },
   {
     providerName: "vllm",
-    modelId: "qwen3.5-9b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
     routerTier: "TIER_2" as const,
     estEnergyJoulesPerToken: 0.2,
     averageCarbonGramsPerToken: 4.45e-6,
   },
   {
     providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
+    modelId: RETAINED_ASSIST_MODEL_ID,
     routerTier: "TIER_3" as const,
     estEnergyJoulesPerToken: 0.5,
     averageCarbonGramsPerToken: 1.11e-5,
@@ -226,21 +231,21 @@ async function main() {
 
   const vllmModels = [
     {
-      modelId: "qwen3.5-2b-instruct",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
       name: "Qwen3.5 2B Instruct (vLLM)",
       description: "House chat — tier 1, hybrid RAG",
       maxTokens: 8192,
       supportsTools: false,
     },
     {
-      modelId: "qwen3.5-9b-instruct",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
       name: "Qwen3.5 9B Instruct (vLLM)",
       description: "Standard chat — tier 2, hybrid RAG",
       maxTokens: 8192,
       supportsTools: true,
     },
     {
-      modelId: "qwen2.5-32b-instruct",
+      modelId: RETAINED_ASSIST_MODEL_ID,
       name: "Qwen 2.5 32B AWQ (vLLM)",
       description: "Large tier — tools via Hermes parser",
       maxTokens: 8192,
@@ -274,7 +279,7 @@ async function main() {
   await prisma.aIModel.updateMany({
     where: {
       providerId: vllm.id,
-      modelId: { in: ["qwen2.5-7b-instruct", "qwen3.5-4b-instruct"] },
+      modelId: { in: [...LEGACY_CAMPUS_MODEL_IDS] },
     },
     data: { isActive: false, routerTier: null },
   });

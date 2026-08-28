@@ -260,8 +260,6 @@ export function ensureAdhdAssistDiagram(args: { text: string; userText?: string 
   }
 
   const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
-  const extracted = extractStagesFromDraft(args.text);
-  if (extracted.length < 3) return args.text;
   const typeId =
     requestedStageCount && requestedStageCount > 2
       ? "process-flow"
@@ -269,6 +267,9 @@ export function ensureAdhdAssistDiagram(args: { text: string; userText?: string 
           userText: args.userText,
           draftText: args.text,
         });
+  const extracted = extractStagesFromDraft(args.text);
+  const minimumStageCount = typeId === "compare" && requestedStageCount == null ? 2 : 3;
+  if (extracted.length < minimumStageCount) return args.text;
   const stages = normalizeStagesForType(typeId, extracted);
   return `${args.text.trim()}\n\n${buildEduaiDiagramFence({
     typeId,

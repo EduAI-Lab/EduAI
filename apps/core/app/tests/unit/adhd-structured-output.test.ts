@@ -7,6 +7,7 @@ import {
   renderAdhdStructuredResponse,
   resolveRequestedAssistStageCount,
 } from "~/lib/ai/adhd-structured-output";
+import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
 
 const structuredPayload = {
   title: "Gradient descent",
@@ -49,6 +50,19 @@ describe("structured Assist output", () => {
     expect(rendered?.indexOf("```eduai-diagram")).toBeLessThan(
       rendered?.indexOf("The optimizer lowers error") ?? 0,
     );
+  });
+
+  it("round-trips the stored renderer through the display transform once", () => {
+    const rendered = renderAdhdStructuredResponse({
+      text: structured,
+      userText: "Draw a diagram of gradient descent",
+    });
+    const display = transformAssistiveDisplayCopy(rendered ?? "");
+
+    expect(display.match(/\*\*TLDR\*\*/g)).toHaveLength(1);
+    expect(display.match(/\*\*Continue\*\*/g)).toHaveLength(1);
+    expect(display.indexOf("### Step ladder")).toBeLessThan(display.indexOf("```eduai-diagram"));
+    expect(display.indexOf("```eduai-diagram")).toBeLessThan(display.indexOf("**TLDR**"));
   });
 
   it("accepts the two-sided compare contract without truncating it", () => {
@@ -167,6 +181,15 @@ describe("structured Assist output", () => {
     });
     expect(rendered).toContain("```eduai-diagram\nprocess-flow");
     expect(rendered.match(/^\d+\./gm)).toHaveLength(3);
+  });
+
+  it("recovers a fence-free two-sided comparison", () => {
+    const markdown = `### Step ladder\n1. Flashcards — Recall small pieces repeatedly.\n2. Practice tests — Retrieve answers under test-like conditions.`;
+    const rendered = ensureAdhdAssistDiagram({
+      text: markdown,
+      userText: "Compare flashcards versus practice tests with a diagram",
+    });
+    expect(rendered).toContain("```eduai-diagram\ncompare");
   });
 
   it("does not use structured output for images or tool turns", () => {

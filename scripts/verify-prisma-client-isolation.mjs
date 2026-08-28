@@ -1,5 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -86,6 +87,52 @@ try {
 } finally {
   await aiTutorPrisma.$disconnect();
   await qmPrisma.$disconnect();
+}
+
+// Each backend must reach Prisma through its own generated `@eduai/*` package.
+// A bare `@prisma/client` import resolves to the hoisted npm stub (or, on a
+// machine where another workspace happened to generate into it, to a foreign
+// client), so it fails only in the deployment layouts — Docker startup, a fresh
+// CI install — where it matters most.
+const SOURCE_EXTENSIONS = [".js", ".mjs", ".cjs", ".ts", ".tsx"];
+const BARE_CLIENT_IMPORT = /(?:from|import|require\()\s*["'`]@prisma\/client(?:\/[^"'`]*)?["'`]/;
+
+function* sourceFiles(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* sourceFiles(full);
+    } else if (SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+      yield full;
+    }
+  }
+}
+
+for (const [pkgRoot, clientPackage] of [
+  [aiTutorPkgRoot, aiTutorClientPackage],
+  [qmBackendPkgRoot, qmClientPackage],
+]) {
+  for (const subdir of ["src", "scripts", "tests"]) {
+    for (const file of sourceFiles(resolve(pkgRoot, subdir))) {
+      if (!BARE_CLIENT_IMPORT.test(readFileSync(file, "utf8"))) continue;
+      console.error(
+        `FAIL: ${relative(repoRoot, file)} imports "@prisma/client" directly. ` +
+          `Import ${clientPackage} instead.`,
+      );
+      failures++;
+    }
+  }
+}
+
+if (failures === 0) {
+  console.log("PASS: No backend source imports a bare @prisma/client.");
 }
 
 if (failures > 0) {

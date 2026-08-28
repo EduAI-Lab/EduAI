@@ -62,7 +62,7 @@ AI tutoring platform with a two-agent supervisor system (primary tutor + pedagog
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
 
-Campus AI fleet defaults: interactive routing uses `vllm:qwen3.5-2b-instruct` and `vllm:qwen3.5-9b-instruct`; `vllm:qwen2.5-32b-instruct` remains on cmps02 as the Assist Auto fallback. An explicit chat-model selection always takes precedence over Assist Auto. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+Campus AI fleet defaults: interactive routing uses `vllm:qwen3.5-2b-instruct` and `vllm:qwen3.5-9b-instruct`; `vllm:qwen2.5-32b-instruct` remains on cmps02 as the Assist Auto fallback. An explicit chat-model selection always takes precedence over Assist Auto. See [the model split rationale](docs/research/MODEL_SPLIT_DOC.md) and [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
 Core disables Qwen3.5 thinking-mode output for vLLM chat requests by default. Set `VLLM_DISABLE_THINKING=0` only when the model's `<think>` reasoning output is explicitly required.
 
@@ -119,6 +119,26 @@ TSV, so the two runs can be compared directly:
 CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
  ```
+
+For authenticated RAG fleet testing, use
+[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
+fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
+Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved
+`FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test
+database; it refuses to overwrite an existing fixture. The setup command
+prints a `courseId`; remove the fixture and its stress chats afterward by
+rerunning the helper with that ID and `--cleanup`.
+The harness signs in, verifies a two-turn RAG conversation, records chat
+continuity/citations and `X-Fleet-Server`, then runs the controlled
+16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated
+session. First-run results and raw
+artifacts are recorded in
+[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
+the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
+and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
+provide the per-server measurements and machine-readable artifact context.
+Those results are baseline evidence and do not replace a later load-aware
+rerun.
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 

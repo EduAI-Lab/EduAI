@@ -39,7 +39,7 @@ echo "=== Step 2: recreate backends (localhost only) ==="
 docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
+  vllm/vllm-openai:v0.27.1 \
   --model Qwen/Qwen3.5-2B \
   --served-model-name qwen3.5-2b-instruct \
   --host 0.0.0.0 \
@@ -48,7 +48,7 @@ docker run -d --name eduai-vllm --gpus '"device=0"' \
 docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
+  vllm/vllm-openai:v0.27.1 \
   --model Qwen/Qwen3.5-9B \
   --served-model-name qwen3.5-9b-instruct \
   --host 0.0.0.0 \
