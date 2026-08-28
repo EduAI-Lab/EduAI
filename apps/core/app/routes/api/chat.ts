@@ -1476,9 +1476,11 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
+    let ragLatencyMs: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
     if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
+      const ragStartedAt = Date.now();
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1493,6 +1495,8 @@ export async function action({ request }: ActionFunctionArgs) {
         ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err: formatStreamError(err) });
+      } finally {
+        ragLatencyMs = Date.now() - ragStartedAt;
       }
     }
 
@@ -1683,6 +1687,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fleetPick = await resolveFleetHost({
           jobType,
           resolvedModelId,
+          affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
         });
         if (fleetPick) {
           chatApiTrace("fleet host selected", {
@@ -2021,6 +2026,7 @@ export async function action({ request }: ActionFunctionArgs) {
         if (routerRagPrefetch) {
           return { hits: routerRagPrefetch };
         }
+        const ragStartedAt = Date.now();
         try {
           const hits = await findRelevantContent(
             userQuestion,
@@ -2030,8 +2036,10 @@ export async function action({ request }: ActionFunctionArgs) {
             restrictRagToStudentVisible,
             { signal: request.signal },
           );
+          ragLatencyMs = Date.now() - ragStartedAt;
           return { hits };
         } catch (error) {
+          ragLatencyMs = Date.now() - ragStartedAt;
           console.error("Error prefetching course RAG context:", error);
           return { hits: [], error };
         }
@@ -2768,6 +2776,7 @@ ${buildEmptyCourseRagBlock()}`;
             failedPick,
             resolvedModelId,
             jobType,
+            affinityKey: isServiceKeyCaller ? (chat?.id ?? undefined) : (chat?.id ?? actingUser.id),
           });
           if (nextPick) {
             fleetPick = nextPick;
@@ -2942,6 +2951,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          if (ragLatencyMs !== null) {
+            headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+          }
           Object.assign(
             headers,
             autoRoutingHeaders(
@@ -2965,6 +2977,7 @@ ${buildEmptyCourseRagBlock()}`;
 
               dataStream.writeMessageAnnotation({
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                ragLatencyMs,
               });
 
               dataStream.write(
@@ -2979,6 +2992,10 @@ ${buildEmptyCourseRagBlock()}`;
         await persistOverseenAssistantMessages(finalText);
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: finalText,
@@ -2994,8 +3011,12 @@ ${buildEmptyCourseRagBlock()}`;
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: responseHeaders,
+          },
         );
       } catch (error) {
         releaseAdmission();
@@ -3030,6 +3051,9 @@ ${buildEmptyCourseRagBlock()}`;
       headers["Transfer-Encoding"] = "chunked";
       headers["Connection"] = "keep-alive";
       Object.assign(headers, admissionHeaders());
+      if (ragLatencyMs !== null) {
+        headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+      }
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -3126,6 +3150,10 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         releaseAdmission();
+        const responseHeaders = jsonResponseHeaders();
+        if (ragLatencyMs !== null) {
+          responseHeaders["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+        }
         return new Response(
           JSON.stringify({
             content: text,
@@ -3141,8 +3169,12 @@ ${buildEmptyCourseRagBlock()}`;
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: responseHeaders,
+          },
         );
       } catch (error) {
         releaseAdmission();
