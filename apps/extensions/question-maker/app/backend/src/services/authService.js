@@ -13,14 +13,14 @@ import { prisma } from "../config/database.js";
  */
 function readNonNegativeIntEnv(name, fallback) {
   const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
+  if (raw === undefined || raw.trim() === "") return fallback;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
 /** Setting either to 0 disables the cache: every request upserts, as before #1388. */
-export const USER_ROW_CACHE_TTL_MS = readNonNegativeIntEnv('USER_ROW_CACHE_TTL_MS', 15 * 60_000);
-export const USER_ROW_CACHE_MAX = readNonNegativeIntEnv('USER_ROW_CACHE_MAX', 5_000);
+export const USER_ROW_CACHE_TTL_MS = readNonNegativeIntEnv("USER_ROW_CACHE_TTL_MS", 15 * 60_000);
+export const USER_ROW_CACHE_MAX = readNonNegativeIntEnv("USER_ROW_CACHE_MAX", 5_000);
 
 /**
  * userId -> epoch ms after which the entry goes stale. Records that this
