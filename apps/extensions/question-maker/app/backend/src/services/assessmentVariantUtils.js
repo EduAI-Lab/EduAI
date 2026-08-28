@@ -26,7 +26,15 @@ export async function loadOrderedVariantsForAssessment(assessmentId) {
               isAiGenerated: true,
               isDraft: true,
               questionMetadata: {
-                select: { id: true, type: true, primaryTopicId: true, description: true },
+                // `courseId` is selected so readiness can filter the course scope in
+                // memory instead of issuing a second authorization query per question.
+                select: {
+                  id: true,
+                  type: true,
+                  courseId: true,
+                  primaryTopicId: true,
+                  description: true,
+                },
               },
             },
           },
