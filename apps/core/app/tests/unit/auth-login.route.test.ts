@@ -221,12 +221,15 @@ describe("auth/login action", () => {
     );
   });
 
-  it("does not expire the session cookie when COOKIE_DOMAIN is loopback", async () => {
-    process.env.COOKIE_DOMAIN = "localhost";
+  it("expires every legacy cookie scope when issuing a shared-domain session", async () => {
+    process.env.COOKIE_DOMAIN = ".ok.ubc.ca";
+    authServerMocks.authBaseURL = "https://my.eduai.ok.ubc.ca";
     vi.mocked(auth.handler).mockResolvedValue(
       new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
         status: 200,
-        headers: { "Set-Cookie": "better-auth.session_token=abc; Path=/" },
+        headers: {
+          "Set-Cookie": "__Secure-better-auth.session_token=fresh; Domain=.ok.ubc.ca; Path=/",
+        },
       }),
     );
 
@@ -237,19 +240,66 @@ describe("auth/login action", () => {
         redirectTo: "/dashboard",
       }),
     )) as Response;
+    const cookies = res.headers.getSetCookie();
 
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Set-Cookie")).toContain("better-auth.session_token=abc");
-    expect(res.headers.get("Set-Cookie")).not.toMatch(/(?:^|,\s)better-auth\.session_token=;/);
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=fresh; Domain=.ok.ubc.ca; Path=/",
+    );
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=my.eduai.ok.ubc.ca",
+    );
+    // The intermediate scope from before COOKIE_DOMAIN widened from
+    // `.eduai.ok.ubc.ca` to `.ok.ubc.ca` — a browser that still holds that
+    // cookie sends it alongside the fresh one, and the server cannot tell
+    // which the browser will list first.
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.eduai.ok.ubc.ca",
+    );
+    // Must NOT re-expire the domain we just issued the fresh session on.
+    expect(cookies).not.toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.ok.ubc.ca",
+    );
   });
 
-  it("expires the HTTP host-only session cookie when COOKIE_DOMAIN is configured", async () => {
+  it("expires the broader legacy scope when COOKIE_DOMAIN rolls back", async () => {
     process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+    authServerMocks.authBaseURL = "https://my.eduai.ok.ubc.ca";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: {
+          "Set-Cookie": "__Secure-better-auth.session_token=fresh; Domain=.eduai.ok.ubc.ca; Path=/",
+        },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+    const cookies = res.headers.getSetCookie();
+
+    expect(cookies).toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.ok.ubc.ca",
+    );
+    expect(cookies).not.toContain(
+      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.eduai.ok.ubc.ca",
+    );
+  });
+
+  it("does not expire the session cookie for loopback COOKIE_DOMAIN", async () => {
+    process.env.COOKIE_DOMAIN = "localhost";
     authServerMocks.authBaseURL = "http://localhost:3000";
     vi.mocked(auth.handler).mockResolvedValue(
       new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
         status: 200,
-        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+        headers: { "Set-Cookie": "better-auth.session_token=fresh; Path=/" },
       }),
     );
 
@@ -261,38 +311,9 @@ describe("auth/login action", () => {
       }),
     )) as Response;
 
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Set-Cookie")).toContain(
+    expect(res.headers.getSetCookie()).not.toContain(
       "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
     );
-    expect(res.headers.get("Set-Cookie")).not.toMatch(
-      /(?:^|,\s)__Secure-better-auth\.session_token=;/,
-    );
-  });
-
-  it("expires the HTTPS host-only session cookie when COOKIE_DOMAIN is configured", async () => {
-    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
-    authServerMocks.authBaseURL = "https://app.eduai.ok.ubc.ca";
-    vi.mocked(auth.handler).mockResolvedValue(
-      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
-        status: 200,
-        headers: { "Set-Cookie": "__Secure-better-auth.session_token=abc; Path=/; Secure" },
-      }),
-    );
-
-    const res = (await action(
-      makeActionArgs({
-        email: "a@ubc.ca",
-        password: "correct-password-123",
-        redirectTo: "/dashboard",
-      }),
-    )) as Response;
-
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Set-Cookie")).toContain(
-      "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
-    );
-    expect(res.headers.get("Set-Cookie")).not.toMatch(/(?:^|,\s)better-auth\.session_token=;/);
   });
 
   it("catches a thrown error from the handler and returns a formError", async () => {

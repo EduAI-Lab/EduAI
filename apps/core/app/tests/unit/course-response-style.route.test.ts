@@ -51,7 +51,12 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  // Spread the real module so the token-budget helpers (#1639) resolve; only the
+  // capability/tool lookups are stubbed.
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn(),
   modelSupportsTools: vi.fn().mockResolvedValue(false),
 }));
@@ -73,7 +78,7 @@ vi.mock("~/lib/policy.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },

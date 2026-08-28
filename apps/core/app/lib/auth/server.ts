@@ -6,6 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import { resolveAuthCookieDomain } from "./cookie-domain";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
@@ -18,7 +19,6 @@ import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
-import { resolveAuthCookieDomain } from "./cookie-domain";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||

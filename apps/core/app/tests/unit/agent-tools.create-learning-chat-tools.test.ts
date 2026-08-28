@@ -7,13 +7,15 @@ const { webSearchMock, fetchPageMock } = vi.hoisted(() => ({
   fetchPageMock: { description: "fetch page", execute: vi.fn() },
 }));
 
-vi.mock("~/lib/ai/embedding", () => ({
-  findRelevantContent: vi.fn(),
-}));
-
+// getInformation's retrieval body (find -> cap -> fail-closed on throw) moved
+// to the shared runCourseMaterialSearchTool (#1658 review — it was duplicated
+// near-verbatim in this file, ai/chat-tools.ts, and admin chat's
+// searchCourseMaterials); that logic's own tests now live in
+// chat-rag.search-tool.test.ts. This file only needs to verify
+// createLearningChatTools calls it with the right arguments and passes its
+// result straight through.
 vi.mock("~/lib/chat-rag", () => ({
-  capRagHitsForTool: vi.fn((hits) => hits),
-  HYBRID_RAG_MAX_CHUNKS: 4,
+  runCourseMaterialSearchTool: vi.fn(),
 }));
 
 vi.mock("~/lib/ai/tools", () => ({
@@ -21,8 +23,7 @@ vi.mock("~/lib/ai/tools", () => ({
   fetchPage: fetchPageMock,
 }));
 
-import { findRelevantContent } from "~/lib/ai/embedding";
-import { capRagHitsForTool } from "~/lib/chat-rag";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import { createLearningChatTools } from "~/lib/agent-tools/create-learning-chat-tools";
 import type { ChatToolContext } from "~/lib/agent-tools/chat-mode";
 
@@ -66,23 +67,22 @@ describe("createLearningChatTools", () => {
   });
 
   describe("getInformation", () => {
-    it("returns an error when no course is selected", async () => {
+    it("returns an error when no course is selected, without calling the search tool", async () => {
       const tools = createLearningChatTools({ ...baseCtx, effectiveCourseId: null });
       const result = await tools.getInformation.execute(
         { question: "what is a loop?" },
         {} as never,
       );
       expect(result).toEqual({ error: "No course selected for RAG search" });
-      expect(findRelevantContent).not.toHaveBeenCalled();
+      expect(runCourseMaterialSearchTool).not.toHaveBeenCalled();
     });
 
-    it("searches course materials and returns capped hits on success", async () => {
+    it("delegates to the shared search tool with the course and visibility restriction", async () => {
       const hits = [
         { content: "loops are...", similarity: 0.9, materialTitle: "Ch1" },
         { content: "for-loops are...", similarity: 0.8, materialTitle: "Ch2" },
       ];
-      vi.mocked(findRelevantContent).mockResolvedValue(hits as never);
-      vi.mocked(capRagHitsForTool).mockReturnValue(hits as never);
+      vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ relevantContent: hits, count: 2 });
 
       const tools = createLearningChatTools(baseCtx);
       const result = await tools.getInformation.execute(
@@ -90,14 +90,12 @@ describe("createLearningChatTools", () => {
         {} as never,
       );
 
-      expect(findRelevantContent).toHaveBeenCalledWith("what is a loop?", "c1", 4, undefined, true);
-      expect(capRagHitsForTool).toHaveBeenCalledWith(hits);
+      expect(runCourseMaterialSearchTool).toHaveBeenCalledWith("what is a loop?", "c1", true);
       expect(result).toEqual({ relevantContent: hits, count: 2 });
     });
 
-    it("defaults restrictToStudentVisible to false when not provided", async () => {
-      vi.mocked(findRelevantContent).mockResolvedValue([]);
-      vi.mocked(capRagHitsForTool).mockReturnValue([]);
+    it("passes an unset restrictToStudentVisible through as-is — the shared search tool defaults it to false", async () => {
+      vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ relevantContent: [], count: 0 });
 
       const tools = createLearningChatTools({
         user: { id: "u1", role: "INSTRUCTOR" },
@@ -105,18 +103,13 @@ describe("createLearningChatTools", () => {
       });
       await tools.getInformation.execute({ question: "what is a loop?" }, {} as never);
 
-      expect(findRelevantContent).toHaveBeenCalledWith(
-        "what is a loop?",
-        "c1",
-        4,
-        undefined,
-        false,
-      );
+      expect(runCourseMaterialSearchTool).toHaveBeenCalledWith("what is a loop?", "c1", undefined);
     });
 
-    it("returns an error when the search throws", async () => {
-      vi.mocked(findRelevantContent).mockRejectedValue(new Error("db down"));
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    it("passes the search tool's error result straight through", async () => {
+      vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({
+        error: "Failed to search course materials",
+      });
 
       const tools = createLearningChatTools(baseCtx);
       const result = await tools.getInformation.execute(
@@ -125,7 +118,6 @@ describe("createLearningChatTools", () => {
       );
 
       expect(result).toEqual({ error: "Failed to search course materials" });
-      consoleSpy.mockRestore();
     });
   });
 });
