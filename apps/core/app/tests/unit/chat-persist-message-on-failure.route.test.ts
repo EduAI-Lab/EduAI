@@ -45,6 +45,8 @@ vi.mock("~/lib/agent-tools", () => ({
   createChatTools: vi.fn().mockReturnValue({}),
   isPrivilegedChatMode: vi.fn().mockReturnValue(true),
   parseChatMode: vi.fn().mockReturnValue("admin"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -115,7 +117,7 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },

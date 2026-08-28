@@ -37,12 +37,14 @@ vi.mock("~/lib/ai/embedding", () => ({
 }));
 
 vi.mock("~/lib/agent-tools", () => ({
+  ADMIN_CORE_TOOL_NAMES: [],
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
   buildInstructorSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn((mode: JsonValue) => (mode === "admin" ? "ADMIN" : "LEARNING")),
   createChatTools: vi.fn().mockReturnValue({}),
   isPrivilegedChatMode: vi.fn((mode: JsonValue) => mode === "admin" || mode === "instructor"),
   parseChatMode: vi.fn((v: JsonValue) => (v === "admin" ? "admin" : "learning")),
+  pickCoreAdminChatTools: vi.fn((tools: JsonValue) => tools),
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -105,7 +107,7 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     courseTopic: { findMany: vi.fn() },
     aIModel: { findFirst: vi.fn() },

@@ -345,6 +345,9 @@ model AIModel {
   description                String
   type                       AIModelType
   maxTokens                  Int?
+  // Per-model override for CHAT_CONTEXT_FILL_RATIO (0 < r <= 1): fraction of the
+  // context window the assembled prompt may fill before older turns are digested.
+  contextFillRatio           Float?
   supportsImages             Boolean         @default(false)
   supportsTools              Boolean         @default(false)
   supportsStreaming          Boolean         @default(true)
