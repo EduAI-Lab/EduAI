@@ -31,27 +31,19 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // #1453: the list GET now carries a short `Cache-Control`, so a plain refetch
-  // right after a mutation can be served the pre-mutation body from the browser
-  // cache and make the admin's own edit look like it never landed. Mutations
-  // pass `force` to bypass it; the initial load stays cacheable.
-  const refresh = useCallback(
-    async (opts?: { force?: boolean }) => {
-      try {
-        setError(null);
-        const response = await apiFetch<PaginatedResponse<AIProvider>>(
-          `/api/ai-providers?${paginationQuery(pagination)}`,
-          opts?.force ? { cache: "no-store" } : undefined,
-        );
-        setProviders(response.data.map(normalizeProvider));
-        setTotal(response.total);
-      } catch (err) {
-        console.error("Failed to fetch providers:", err);
-        setError(err instanceof Error ? err.message : "Failed to fetch providers");
-      }
-    },
-    [pagination],
-  );
+  const refresh = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await apiFetch<PaginatedResponse<AIProvider>>(
+        `/api/ai-providers?${paginationQuery(pagination)}`,
+      );
+      setProviders(response.data.map(normalizeProvider));
+      setTotal(response.total);
+    } catch (err) {
+      console.error("Failed to fetch providers:", err);
+      setError(err instanceof Error ? err.message : "Failed to fetch providers");
+    }
+  }, [pagination]);
 
   useEffect(() => {
     void (async () => {
@@ -66,7 +58,7 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
         method: "POST",
         body: JSON.stringify(data),
       });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );
@@ -77,7 +69,7 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
         method: "PATCH",
         body: JSON.stringify(data),
       });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );
@@ -85,7 +77,7 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
   const deleteProvider = useCallback(
     async (id: string) => {
       await apiFetch<void>(`/api/ai-providers/${id}`, { method: "DELETE" });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );

@@ -10,13 +10,20 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 
+/**
+ * #1453: every response here is scoped to `session.user.id`, so none of it may
+ * be stored. The browser cache key is method + URL with no session component,
+ * so a stored body would be served to the next account on the same profile.
+ */
 function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return withNoStore(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
 }
 
 const PROFILE_SELECT = {
@@ -50,7 +57,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json(404, { error: "USER_NOT_FOUND" });
   }
 
-  return withReferenceCache(json(200, user), REFERENCE_MAX_AGE.profile);
+  return json(200, user);
 }
 
 export async function action({ request }: ActionFunctionArgs) {

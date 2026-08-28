@@ -144,26 +144,29 @@ describe("PATCH /api/me (#297)", () => {
   });
 });
 
-// #1453 — self-scoped profile read, hit on most page loads.
+// #1453 — the profile carries email, name and role, all scoped to
+// `session.user.id`. The browser cache key is method + URL with no session
+// component and logout does not purge it, so nothing here may be stored: on a
+// shared profile a stored body is handed to whoever logs in next.
 describe("GET /api/me Cache-Control (#1453)", () => {
-  it("caches the profile privately for 30s", async () => {
+  it("forbids storing the profile", async () => {
     mockUser();
     const res = await loader(makeArgs());
-    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("does not cache the 401", async () => {
+  it("forbids storing the 401", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     const res = await loader(makeArgs());
     expect(res.status).toBe(401);
-    expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("does not cache a 404 (the row can appear at any time)", async () => {
+  it("forbids storing a 404 (the row can appear at any time)", async () => {
     mockUser();
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
     const res = await loader(makeArgs());
     expect(res.status).toBe(404);
-    expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 });

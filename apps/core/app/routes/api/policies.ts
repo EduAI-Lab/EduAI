@@ -3,14 +3,11 @@ import { z } from "zod";
 
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
-import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-
-/** #1453: every read path returns the same short-lived private cache header. */
-const cached = (response: Response) => withReferenceCache(response, REFERENCE_MAX_AGE.policies);
 
 /**
  * GET /api/policies — read all configurable RBAC policy flags.
@@ -20,6 +17,13 @@ const cached = (response: Response) => withReferenceCache(response, REFERENCE_MA
  *   - Admin dashboard: an ADMIN user session.
  * Returns `{ policies, definitions }` — values plus label/description metadata
  * so the admin UI can render the toggles from the same response.
+ *
+ * #1453: every read path is `no-store`. The body varies by role (ADMIN
+ * additionally receives `definitions`) while the browser cache key is method +
+ * URL with no session or role component, so a stored body is served across
+ * roles in BOTH directions: a non-admin gets the admin body, and an admin gets
+ * the non-admin body, whose missing `definitions` makes the settings page
+ * render zero toggles with no error (`usePolicies` falls back to `[]`).
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   // Resolve a user session first. Any authenticated user may read policy VALUES
@@ -30,11 +34,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (session?.user) {
     if (session.user.role !== "ADMIN") {
-      return cached(json({ policies: await getPolicies() }));
+      return withNoStore(json({ policies: await getPolicies() }));
     }
     // Only ADMIN additionally receives the toggle DEFINITIONS used to render the
     // admin settings UI; PATCH stays ADMIN-only.
-    return cached(
+    return withNoStore(
       json({
         policies: await getPolicies(),
         definitions: getPolicyDefinitions(),
@@ -46,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // with the shared service key.
   const guard = await requireServiceKey(request);
   if (guard) return guard;
-  return cached(json({ policies: await getPolicies() }));
+  return withNoStore(json({ policies: await getPolicies() }));
 }
 
 const UpdatePolicySchema = z.object({

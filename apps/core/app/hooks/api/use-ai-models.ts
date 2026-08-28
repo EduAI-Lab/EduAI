@@ -27,31 +27,21 @@ export function useAiModels() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // #1453: the list GET now carries a short `Cache-Control`, so a plain refetch
-  // right after a mutation can be served the pre-mutation body from the browser
-  // cache and make the admin's own edit look like it never landed. Mutations
-  // pass `force` to bypass it; the initial load stays cacheable.
-  const refresh = useCallback(
-    async (opts?: { force?: boolean }) => {
-      try {
-        setError(null);
-        const query = paginationQuery(pagination, {
-          search: debouncedSearch,
-          providerId,
-        });
-        const response = await apiFetch<PaginatedResponse<AIModel>>(
-          `/api/ai-models?${query}`,
-          opts?.force ? { cache: "no-store" } : undefined,
-        );
-        setModels(response.data);
-        setTotal(response.total);
-      } catch (err) {
-        console.error("Failed to fetch models:", err);
-        setError(err instanceof Error ? err.message : "Failed to fetch models");
-      }
-    },
-    [pagination, debouncedSearch, providerId],
-  );
+  const refresh = useCallback(async () => {
+    try {
+      setError(null);
+      const query = paginationQuery(pagination, {
+        search: debouncedSearch,
+        providerId,
+      });
+      const response = await apiFetch<PaginatedResponse<AIModel>>(`/api/ai-models?${query}`);
+      setModels(response.data);
+      setTotal(response.total);
+    } catch (err) {
+      console.error("Failed to fetch models:", err);
+      setError(err instanceof Error ? err.message : "Failed to fetch models");
+    }
+  }, [pagination, debouncedSearch, providerId]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
@@ -76,7 +66,7 @@ export function useAiModels() {
         method: "POST",
         body: JSON.stringify(data),
       });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );
@@ -87,7 +77,7 @@ export function useAiModels() {
         method: "PATCH",
         body: JSON.stringify(data),
       });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );
@@ -95,7 +85,7 @@ export function useAiModels() {
   const deleteModel = useCallback(
     async (id: string) => {
       await apiFetch<void>(`/api/ai-models/${id}`, { method: "DELETE" });
-      await refresh({ force: true });
+      await refresh();
     },
     [refresh],
   );

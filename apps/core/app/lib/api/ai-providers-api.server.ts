@@ -7,7 +7,7 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import { paginatedResponse, parsePaginationParams } from "~/lib/pagination.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -63,10 +63,10 @@ export async function handleAiProvidersApiRequest(request: Request) {
           take: pagination.take,
         }),
       ]);
-      return withReferenceCache(
-        paginatedResponse(providers, total, pagination),
-        REFERENCE_MAX_AGE.aiCatalogue,
-      );
+      // #1453: ADMIN-only, and the browser cache key is method + URL with no
+      // session or role component, so a stored body would be served to the next
+      // caller on the same profile before the role check above ever runs.
+      return withNoStore(paginatedResponse(providers, total, pagination));
     }
 
     case "POST": {

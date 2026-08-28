@@ -8,7 +8,7 @@
 
 ### Changed
 
-- [core] perf: Add a short `private` `Cache-Control` to Core's slow-changing reference GETs (`/api/policies`, `/api/disciplines`, `/api/me`, `/api/preferences`, the AI provider/model catalogues) so the browser stops refetching unchanged data on every navigation, with the admin catalogue hooks bypassing the cache after a mutation. Closes #1453. (@abdullahmoh21, 2026-08-18) — [#1565](https://github.com/EduAI-Lab/EduAI/pull/1565)
+- [core] perf: Cache `/api/disciplines` in the browser for 120s so navigations stop refetching the unchanged discipline registry, and mark every caller-varying reference GET (`/api/me`, `/api/preferences`, `/api/policies`, the AI provider/model catalogues) `no-store` since the browser cache key carries no session and would serve one account's body to the next. Closes #1453. (@abdullahmoh21, 2026-08-18) — [#1565](https://github.com/EduAI-Lab/EduAI/pull/1565)
 - [core] perf: Move the AI-service status poller into a shared `useAiStatus` store that pauses while the tab is hidden and refreshes once on becoming visible, so a backgrounded tab stops issuing provider probes every 60s. Closes #1454. (@abdullahmoh21, 2026-08-18) — [#1562](https://github.com/EduAI-Lab/EduAI/pull/1562)
 - [ai-tutor] perf: gzip every AI-Tutor API response over 1kb, so large course-tree and lesson `contentMd` payloads stop going over the wire uncompressed. Closes #1450. (@abdullahmoh21, 2026-08-18) — #PR
 - [ai-tutor] perf: gzip every AI-Tutor API response over 1kb, so large course-tree and lesson `contentMd` payloads stop going over the wire uncompressed. Closes #1450. (@abdullahmoh21, 2026-08-18) — [#1563](https://github.com/EduAI-Lab/EduAI/pull/1563)

@@ -160,11 +160,12 @@ describe("PATCH /api/preferences", () => {
   });
 });
 
-// #1453 — self-scoped UI prefs, read on most page loads. The defaults path is a
-// separate `return`, so it needs the header too or a user with no row saved
-// keeps paying for the round trip.
+// #1453 — UI prefs are read by `session.user.id`, so nothing here may be
+// stored. The defaults path is a separate `return` and a 200 like any other, so
+// it needs the same guarantee or a user with no row saved leaks the previous
+// account's defaults-vs-stored distinction on a shared profile.
 describe("GET /api/preferences Cache-Control (#1453)", () => {
-  it("caches a stored preference row", async () => {
+  it("forbids storing a stored preference row", async () => {
     mockUser();
     vi.mocked(prisma.userPreference.findUnique).mockResolvedValue({
       assistDefault: true,
@@ -174,20 +175,20 @@ describe("GET /api/preferences Cache-Control (#1453)", () => {
       theme: "system",
     } as never);
     const res = await loader(makeArgs());
-    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("caches the defaults returned when no row exists", async () => {
+  it("forbids storing the defaults returned when no row exists", async () => {
     mockUser();
     vi.mocked(prisma.userPreference.findUnique).mockResolvedValue(null as never);
     const res = await loader(makeArgs());
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("does not cache the 401", async () => {
+  it("forbids storing the 401", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     const res = await loader(makeArgs());
-    expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 });

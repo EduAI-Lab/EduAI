@@ -11,13 +11,20 @@ import { saveUserPreference } from "~/lib/user-preferences.server";
 import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 
+/**
+ * #1453: preferences are read by `session.user.id`, so nothing here may be
+ * stored — the browser cache key carries no session, and the defaults path
+ * returns a 200 just like a real row does.
+ */
 function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return withNoStore(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
 }
 
 function rowToResponse(row: {
@@ -54,10 +61,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   if (!row) {
-    return withReferenceCache(json(200, DEFAULT_ACCOUNT_PREFERENCES), REFERENCE_MAX_AGE.profile);
+    return json(200, DEFAULT_ACCOUNT_PREFERENCES);
   }
 
-  return withReferenceCache(json(200, rowToResponse(row)), REFERENCE_MAX_AGE.profile);
+  return json(200, rowToResponse(row));
 }
 
 export async function action({ request }: ActionFunctionArgs) {

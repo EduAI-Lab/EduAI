@@ -94,22 +94,25 @@ describe("GET /api/ollama-models (regression — already ADMIN-only)", () => {
   });
 });
 
-// #1453 — the catalogues are ADMIN-only and change only by an admin edit, so
-// the list GET is cacheable. The 403 must stay uncached: a demoted-then-restored
-// admin would otherwise keep getting their own cached denial.
+// #1453 — the catalogues are ADMIN-only, and the browser cache key is method +
+// URL with no session or role component. A stored 200 would be served to the
+// next caller on the same profile before the role check above ever runs, so the
+// list GET is `no-store`. The denials carry no cache header at all, which this
+// pins so nobody later wraps the whole handler in `withReferenceCache`.
 describe.each([
   ["GET /api/ai-providers", providersLoader, "/api/ai-providers"],
   ["GET /api/ai-models", modelsLoader, "/api/ai-models"],
 ] as const)("%s Cache-Control (#1453)", (_name, loader, path) => {
-  it("caches the ADMIN 200 privately for 30s", async () => {
+  it("forbids storing the ADMIN 200", async () => {
     mockUser("ADMIN");
     const res = await loader(makeArgs(path));
-    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("does not cache the 403", async () => {
+  it("leaves the denial uncacheable", async () => {
     mockUser("STUDENT");
     const res = await loader(makeArgs(path));
+    expect([401, 403]).toContain(res.status);
     expect(res.headers.get("Cache-Control")).toBeNull();
   });
 });
