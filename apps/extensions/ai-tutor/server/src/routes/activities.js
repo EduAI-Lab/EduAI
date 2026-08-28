@@ -1521,7 +1521,11 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // A course TA is a STUDENT-platform user (Core has no UserRole.TA), so
+      // `authUser.role` is "STUDENT" here. Verify against the TA *enrollment*
+      // role explicitly — the default `expectedRole` (authUser.role) would build
+      // an allowedRoles of ["STUDENT"] and deny the very TA this branch admits.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1627,7 +1631,10 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       return res.status(403).json({ error: "Not authorized for this submission" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // See the submissions-list handler above: a TA's platform role is STUDENT,
+      // so the TA enrollment role must be checked explicitly or this grade
+      // override 403s the very TA the `isTa` branch is meant to authorize.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this submission" });
@@ -1711,7 +1718,10 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // As above: check the TA enrollment role explicitly. `authUser.role` is
+      // "STUDENT" for a course TA, so the default would deny feedback access to
+      // the TA this branch is meant to admit.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
