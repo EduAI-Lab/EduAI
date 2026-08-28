@@ -19,9 +19,11 @@ import { shouldPushApprovedVariantToCore } from "./variant-push-gate.js";
  * @returns {Promise<{ outcome: string, coreQuestionId?: string, deletedTopicIds?: string[] }>}
  *   `skipped`  — nothing to publish (still a draft, already linked, or no Core course)
  *   `linked`   — pushed and linked; `coreQuestionId` is set
- *   `conflict` — another writer moved the row first
+ *   `conflict` — another writer moved the row first; the pushed Core row was withdrawn
  *   `invalid-topics` / `duplicate-topic` — Core rejected the topic set
  *   `rollback-failed` — push failed AND the approval could not be undone
+ *   `orphaned-core-question` — the Core row was created but could neither be
+ *     linked nor withdrawn; `coreQuestionId` names the row left behind
  *   `push-failed` — push failed, approval rolled back to draft
  */
 export async function publishApprovedVariant({ variant, ownerId, cookie }) {
@@ -30,17 +32,43 @@ export async function publishApprovedVariant({ variant, ownerId, cookie }) {
   const course = variant.questionMetadata?.course;
   if (!course?.coreCourseId) return { outcome: "skipped" };
 
+  // Set the moment the push resolves. Everything after that point has to undo
+  // the Core row it created: the row is live and `testable` may be true, while
+  // nothing local points at it. The idempotency key hashes `testable`, so a
+  // retry with a different share choice mints a *second* row rather than
+  // replaying this one, leaving the first shared forever (#1652 review).
+  let pushedCoreQuestionId = null;
+
   try {
     const pushResult = await pushVariantToCore(variant, course, cookie);
+    pushedCoreQuestionId = pushResult.coreQuestionId;
     const linkResult = await linkVariantToCore(
       variant.id,
       ownerId,
       variant,
       pushResult.coreQuestionId,
     );
-    if (!linkResult.applied) return { outcome: "conflict" };
+    if (!linkResult.applied) {
+      // The row moved under us, so this Core question will never be linked.
+      // (`applied` is true when the concurrent writer happened to link this
+      // very id, so withdrawing here can never disown a live link.)
+      const compensation = await withdrawVariantFromCore(pushedCoreQuestionId);
+      if (compensation.outcome === "failed") {
+        return { outcome: "orphaned-core-question", coreQuestionId: pushedCoreQuestionId };
+      }
+      return { outcome: "conflict" };
+    }
     return { outcome: "linked", coreQuestionId: linkResult.variant.coreQuestionId };
   } catch (coreErr) {
+    // Withdraw the pushed row before anything else: the local approval is about
+    // to be undone, and a `testable=true` Core question with no QM link is
+    // exactly the orphan AI Tutor would keep serving.
+    let compensationFailed = false;
+    if (pushedCoreQuestionId) {
+      const compensation = await withdrawVariantFromCore(pushedCoreQuestionId);
+      compensationFailed = compensation.outcome === "failed";
+    }
+
     // Roll approval back to draft before reporting an error. The approval is
     // already persisted; leaving it approved would trip VARIANT_LOCKED on the
     // next attempt and block the retry this promises.
@@ -59,6 +87,9 @@ export async function publishApprovedVariant({ variant, ownerId, cookie }) {
     }
 
     if (rollbackFailed) return { outcome: "rollback-failed" };
+    if (compensationFailed) {
+      return { outcome: "orphaned-core-question", coreQuestionId: pushedCoreQuestionId };
+    }
 
     if (coreErr.status === 422) {
       const errBody = coreErr.body ?? {};
@@ -120,6 +151,14 @@ export function respondToPublishFailure(res, result) {
         code: "DUPLICATE_TOPIC",
         error:
           "The primary topic also appears in the secondary topics. Fix the topic list and mark it reviewed again.",
+      });
+      return true;
+    case "orphaned-core-question":
+      res.status(502).json({
+        success: false,
+        code: "CORE_PUBLISH_COMPENSATION_FAILED",
+        error:
+          "This question reached EduAI but could not be linked back or withdrawn there. Reload before trying again.",
       });
       return true;
     case "push-failed":
