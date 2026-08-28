@@ -9,6 +9,7 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
+import { messageFromCause } from "~/lib/form-errors";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
@@ -117,10 +118,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return redirect("/onboarding/student-id", { headers });
   } catch (err: unknown) {
-    let message = "Sign up failed";
-    if (err instanceof Object && "message" in err) {
-      message = String((err as { message?: string }).message ?? message);
-    }
+    const message = messageFromCause(err, "Sign up failed");
     return { formError: message };
   }
 }

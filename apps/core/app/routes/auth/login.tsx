@@ -9,6 +9,7 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
+import { messageFromCause } from "~/lib/form-errors";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -187,10 +188,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
-    let message = "Sign in failed";
-    if (err instanceof Object && "message" in err) {
-      message = String((err as { message?: string }).message ?? message);
-    }
+    const message = messageFromCause(err, "Sign in failed");
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
