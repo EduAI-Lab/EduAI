@@ -64,14 +64,23 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
-  getChatModelCapabilities: vi.fn().mockResolvedValue({
-    supportsTools: false,
-    maxTokens: null,
-    name: null,
-  }),
-  modelSupportsTools: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
+  // Partial mock (#1639 merge): chat.ts's history-budget recompute calls
+  // several other real exports from this module (resolveModelContextWindow,
+  // capMaxOutputTokensForPrompt, etc.) — keep those real rather than
+  // hand-rolling fakes for each, and only fake the two model-capability
+  // lookups this suite actually needs to control.
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  return {
+    ...actual,
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: false,
+      maxTokens: null,
+      name: null,
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(false),
+  };
+});
 
 vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
@@ -114,7 +123,7 @@ vi.mock("~/lib/request-context.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { findMany: vi.fn(), createMany: vi.fn(), count: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     courseTopic: { findMany: vi.fn().mockResolvedValue([]) },
     aIModel: { findFirst: vi.fn() },
@@ -251,6 +260,7 @@ beforeEach(() => {
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+  vi.mocked(prisma.chatMessage.count).mockResolvedValue(0);
   vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
