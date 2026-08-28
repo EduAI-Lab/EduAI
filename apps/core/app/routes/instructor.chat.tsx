@@ -76,6 +76,15 @@ async function listMyPublishedInstructorCourses(user: RbacUser) {
   return courses.filter((c) => c.department === null || !authorizedUnits.includes(c.department));
 }
 
+/** `startDate` formatted as e.g. "Jan 5, 2026" — always in UTC so the label doesn't shift with the server/test-runner's local timezone (`startDate` is a bare calendar date, not a moment). */
+const formatStartDate = (d: Date) =>
+  new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(d);
+
 /**
  * #1659 review: Course.code is NOT globally unique — only
  * (code, startDate, section) is (schema.prisma's @@unique) — so two offerings
@@ -83,7 +92,15 @@ async function listMyPublishedInstructorCourses(user: RbacUser) {
  * term, or co-teaching two sections). The selector is keyed by `id` (see
  * `courseSelectionKey="id"` on InstructorChatView) so that ambiguity can
  * never mis-route a request, but the human-facing label still needs enough
- * context — term + section — to tell duplicate-code rows apart at a glance.
+ * context to tell duplicate-code rows apart at a glance too.
+ *
+ * #1666 review: a calendar-year-only label (e.g. "2026 Sec 1") collapses two
+ * same-code, same-section offerings that start on different dates within the
+ * same year (a Spring and Fall re-run, say) back into identical labels. The
+ * full `startDate` is part of the actual uniqueness constraint, so using it
+ * — rather than just its year — is the only label that's guaranteed to
+ * disambiguate every case the constraint allows.
+ *
  * Courses whose code is unique within this instructor's own list keep the
  * plain code as their label.
  */
@@ -100,7 +117,7 @@ function labelInstructorCourses(
     name: c.name,
     label:
       (codeCounts.get(c.code) ?? 0) > 1
-        ? `${c.code} — ${c.startDate.getUTCFullYear()} Sec ${c.section}`
+        ? `${c.code} — ${formatStartDate(c.startDate)} Sec ${c.section}`
         : undefined,
   }));
 }

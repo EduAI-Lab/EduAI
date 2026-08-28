@@ -111,7 +111,7 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
     });
   });
 
-  it("labels duplicate-code offerings with term + section so the id-keyed selector stays distinguishable (#1659 review)", async () => {
+  it("labels duplicate-code offerings with the full start date + section so the id-keyed selector stays distinguishable (#1659 review)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "instr-1", role: "INSTRUCTOR" },
     } as never);
@@ -130,8 +130,41 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
     };
 
     expect(result.courses).toEqual([
-      { id: "course-1", code: "COSC 121", name: "Intro to CS", label: "COSC 121 — 2026 Sec 001" },
-      { id: "course-2", code: "COSC 121", name: "Intro to CS", label: "COSC 121 — 2026 Sec 002" },
+      {
+        id: "course-1",
+        code: "COSC 121",
+        name: "Intro to CS",
+        label: "COSC 121 — Jan 1, 2026 Sec 001",
+      },
+      {
+        id: "course-2",
+        code: "COSC 121",
+        name: "Intro to CS",
+        label: "COSC 121 — Sep 1, 2026 Sec 002",
+      },
     ]);
+  });
+
+  // #1666 review: a calendar-year-only label collapsed two same-code,
+  // same-section offerings that start on different dates in the same year
+  // (e.g. a Spring and Fall re-run) back into identical text. The selector
+  // was still safely id-keyed, but an instructor had no way to tell the rows
+  // apart before clicking.
+  it("distinguishes same-code, same-section offerings that start on different dates within the same year (#1666 review)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instr-1", role: "INSTRUCTOR" },
+    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([
+      { ...COURSE_ROW, startDate: new Date("2026-01-05T00:00:00Z") },
+      { ...COURSE_ROW, id: "course-2", startDate: new Date("2026-09-08T00:00:00Z") },
+    ] as never);
+
+    const result = (await loader(makeArgs())) as {
+      courses: Array<{ id: string; code: string; name: string; label?: string }>;
+    };
+
+    expect(result.courses[0].label).toBe("COSC 121 — Jan 5, 2026 Sec 001");
+    expect(result.courses[1].label).toBe("COSC 121 — Sep 8, 2026 Sec 001");
+    expect(result.courses[0].label).not.toBe(result.courses[1].label);
   });
 });

@@ -46,6 +46,14 @@ export type DashboardCourse = {
   name: string;
   term: string;
   year: number;
+  /**
+   * #1659 review: `/instructor/chat` only ever loads published courses and
+   * falls back to `courses[0]` (or redirects if none) when asked for one
+   * that isn't — so a card for an unpublished course must not send the
+   * instructor there at all, rather than silently landing on the wrong
+   * course or bouncing back.
+   */
+  isPublished: boolean;
 };
 
 export type DashboardRecentChat = {
@@ -168,27 +176,43 @@ function CourseListPanel({
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              // Nested inside the row's <Link>; a nested <a> is invalid markup
-              // and hydration-mismatches, so navigate imperatively instead.
-              e.preventDefault();
-              e.stopPropagation();
-              // #1659 review: /instructor/chat keys its selector by course id
-              // (Course.code isn't globally unique); every other chat surface
-              // still keys by ?courseCode=.
-              const param =
-                chatHref === "/instructor/chat"
-                  ? `courseId=${encodeURIComponent(course.id)}`
-                  : `courseCode=${encodeURIComponent(course.code)}`;
-              navigate(`${chatHref}?${param}`);
-            }}
-            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
-            style={{ background: "var(--primary)" }}
-          >
-            Chat
-          </button>
+          {/*
+           * #1659 review: /instructor/chat only ever loads published courses
+           * (falling back to courses[0], or redirecting if none) — so a card
+           * for an unpublished course must not link there at all, rather than
+           * silently landing on a different course or bouncing the instructor
+           * back to the dashboard.
+           */}
+          {chatHref === "/instructor/chat" && !course.isPublished ? (
+            <span
+              title="Publish this course to open the ops assistant for it"
+              className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-[var(--radius-md)] whitespace-nowrap border border-border cursor-not-allowed"
+            >
+              Unpublished
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                // Nested inside the row's <Link>; a nested <a> is invalid markup
+                // and hydration-mismatches, so navigate imperatively instead.
+                e.preventDefault();
+                e.stopPropagation();
+                // #1659 review: /instructor/chat keys its selector by course id
+                // (Course.code isn't globally unique); every other chat surface
+                // still keys by ?courseCode=.
+                const param =
+                  chatHref === "/instructor/chat"
+                    ? `courseId=${encodeURIComponent(course.id)}`
+                    : `courseCode=${encodeURIComponent(course.code)}`;
+                navigate(`${chatHref}?${param}`);
+              }}
+              className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
+              style={{ background: "var(--primary)" }}
+            >
+              Chat
+            </button>
+          )}
         </Link>
       ))}
     </div>

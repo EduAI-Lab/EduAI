@@ -40,6 +40,7 @@ const course1: DashboardCourse = {
   name: "Intro to CS",
   term: "Fall",
   year: 2026,
+  isPublished: true,
 };
 
 const course2: DashboardCourse = {
@@ -48,6 +49,7 @@ const course2: DashboardCourse = {
   name: "Data Structures",
   term: "Fall",
   year: 2026,
+  isPublished: true,
 };
 
 const chat1: DashboardRecentChat = {
@@ -86,6 +88,7 @@ function renderDashboard(props: Partial<DashboardViewProps> = {}) {
     [
       { path: "/", element: <DashboardView {...baseProps} {...props} /> },
       { path: "/chat", element: <div>Chat page</div> },
+      { path: "/instructor/chat", element: <div>Instructor chat page</div> },
       { path: "/courses", element: <div>Courses page</div> },
       { path: "/courses/:id", element: <div>Course detail page</div> },
     ],
@@ -182,6 +185,46 @@ describe("DashboardView", () => {
 
     expect(router.state.location.pathname).toBe("/chat");
     expect(router.state.location.search).toBe("?courseCode=CS101");
+  });
+
+  // #1666 review: /instructor/chat only ever loads published courses and
+  // falls back to courses[0] (or redirects if none) for one that isn't — so
+  // an unpublished course's card must not link there at all, rather than
+  // silently landing on a different course or bouncing the instructor back.
+  describe("unpublished courses on the instructor (/instructor/chat) dashboard", () => {
+    const publishedCourse: DashboardCourse = { ...course1, isPublished: true };
+    const unpublishedCourse: DashboardCourse = { ...course2, isPublished: false };
+
+    it("disables the Chat action instead of linking to /instructor/chat for an unpublished course", () => {
+      renderDashboard({
+        courses: [publishedCourse, unpublishedCourse],
+        chatHref: "/instructor/chat",
+      });
+
+      expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(1);
+      expect(screen.getByText("Unpublished")).toBeInTheDocument();
+    });
+
+    it("still links a published course's card to /instructor/chat by course id", () => {
+      const { router } = renderDashboard({
+        courses: [publishedCourse, unpublishedCourse],
+        chatHref: "/instructor/chat",
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+      expect(router.state.location.pathname).toBe("/instructor/chat");
+      expect(router.state.location.search).toBe(`?courseId=${publishedCourse.id}`);
+    });
+
+    it("does not disable an unpublished course's Chat action on the learning-assistant dashboard", () => {
+      // chatHref defaults to "/chat" here, which has no published-only
+      // constraint — the restriction is specific to /instructor/chat.
+      renderDashboard({ courses: [publishedCourse, unpublishedCourse] });
+
+      expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(2);
+      expect(screen.queryByText("Unpublished")).not.toBeInTheDocument();
+    });
   });
 
   it("does not render an analytics slot when analytics is not provided", () => {
