@@ -1108,6 +1108,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         supportsStreaming: z.boolean().optional(),
         inputPricing: z.number().min(0).optional(),
         outputPricing: z.number().min(0).optional(),
+        contextFillRatio: z
+          .number()
+          .min(0.5)
+          .max(0.98)
+          .nullable()
+          .optional()
+          .describe(
+            "Per-model chat context fill ratio override (#1639); 0.5–0.98, null clears back to env/default",
+          ),
         isActive: z.boolean().optional(),
       }),
       execute: async ({ confirmed, ...input }) =>
@@ -1134,6 +1143,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         supportsStreaming: z.boolean().optional(),
         inputPricing: z.number().min(0).optional(),
         outputPricing: z.number().min(0).optional(),
+        contextFillRatio: z
+          .number()
+          .min(0.5)
+          .max(0.98)
+          .nullable()
+          .optional()
+          .describe(
+            "Per-model chat context fill ratio override (#1639); 0.5–0.98, null clears back to env/default",
+          ),
         isActive: z.boolean().optional(),
         providerId: z.string().min(1).optional(),
       }),
