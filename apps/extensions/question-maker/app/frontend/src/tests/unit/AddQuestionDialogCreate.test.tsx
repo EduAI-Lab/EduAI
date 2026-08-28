@@ -284,4 +284,34 @@ describe("AddQuestionDialog create mode", () => {
 
     await waitFor(() => expect(screen.getByText("AI service down")).toBeInTheDocument());
   });
+
+  it("shows an error when generating without a course selected", async () => {
+    renderNew({ courseId: null });
+    await screen.findByText("Question Parameters");
+
+    fireEvent.click(screen.getByLabelText("Generate with AI assistant"));
+    const promptBox = await screen.findByPlaceholderText(/Time complexity of quicksort/);
+    fireEvent.change(promptBox, { target: { value: "Sorting algorithms" } });
+    fireEvent.click(screen.getByText("Generate question"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Select a course before generating a question.")).toBeInTheDocument(),
+    );
+    expect(eduaiServiceDefault.generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it("shows a course-code warning when the AI service doesn't recognize the course", async () => {
+    courseService.getCourse.mockResolvedValue({ id: 7, code: "XYZ999", name: "Unlisted Course" });
+    eduaiServiceDefault.listCourses.mockResolvedValue([
+      { id: "1", code: "CPSC100", name: "Intro to CS" },
+    ]);
+    renderNew();
+    await screen.findByText("Question Parameters");
+
+    fireEvent.click(screen.getByLabelText("Generate with AI assistant"));
+
+    expect(
+      await screen.findByText(/AI service does not recognize course code "XYZ999"/i),
+    ).toBeInTheDocument();
+  });
 });

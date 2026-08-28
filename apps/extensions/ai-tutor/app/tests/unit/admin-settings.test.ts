@@ -5,7 +5,6 @@ import {
   clampIterations,
   formatApiKeyUpdatedTime,
   formatCostTier,
-  getAdminSettingsApi,
   getApiKeySourceTag,
   inferCostTier,
   inferProvider,
@@ -245,12 +244,6 @@ describe("normalizePolicy", () => {
       normalizePolicy({ dualLoopEnabled: "false" } as unknown as RawAdminAiModelPolicy, models)
         .dualLoopEnabled,
     ).toBe(true);
-  });
-});
-
-describe("getAdminSettingsApi", () => {
-  it("returns the api module", () => {
-    expect(getAdminSettingsApi()).toBeDefined();
   });
 });
 

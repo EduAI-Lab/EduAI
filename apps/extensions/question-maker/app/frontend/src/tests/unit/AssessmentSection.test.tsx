@@ -223,4 +223,141 @@ describe("AssessmentSection", () => {
     fireEvent.click(screen.getAllByText("Import from Canvas")[0]);
     expect(onImportFromCanvas).toHaveBeenCalled();
   });
+
+  it("blocks export when the assessment has unreviewed draft questions", async () => {
+    renderSection({
+      assessments: [
+        assessment({
+          sections: [{ sectionVariants: [{ variant: { difficulty: "easy", isDraft: true } }] }],
+        }),
+      ],
+      onExportToCanvas: vi.fn(),
+    });
+    fireEvent.click(screen.getByText("Export…"));
+    await waitFor(() =>
+      expect(
+        screen.getByText("Cannot export until all draft questions are reviewed and published."),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("exports to Word and Txt from the export dialog", async () => {
+    const onExportToWord = vi.fn().mockResolvedValue(undefined);
+    const onExportToTxt = vi.fn();
+    renderSection({
+      assessments: [
+        assessment({
+          sections: [{ sectionVariants: [{ variant: { difficulty: "easy", isDraft: false } }] }],
+        }),
+      ],
+      onExportToWord,
+      onExportToTxt,
+    });
+    fireEvent.click(screen.getByText("Export…"));
+    await waitFor(() => expect(screen.getByText("Export assessment")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Export as Word (.docx)"));
+    expect(onExportToWord).toHaveBeenCalledWith(1, "Midterm");
+    expect(screen.queryByText("Export assessment")).not.toBeInTheDocument();
+  });
+
+  it("exports as TXT from the export dialog", async () => {
+    const onExportToTxt = vi.fn();
+    renderSection({
+      assessments: [
+        assessment({
+          sections: [{ sectionVariants: [{ variant: { difficulty: "easy", isDraft: false } }] }],
+        }),
+      ],
+      onExportToTxt,
+    });
+    fireEvent.click(screen.getByText("Export…"));
+    await waitFor(() => expect(screen.getByText("Export assessment")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Export as TXT"));
+    expect(onExportToTxt).toHaveBeenCalledWith(1, "Midterm");
+  });
+
+  it("cancels the export dialog without exporting", async () => {
+    renderSection({
+      assessments: [
+        assessment({
+          sections: [{ sectionVariants: [{ variant: { difficulty: "easy", isDraft: false } }] }],
+        }),
+      ],
+      onExportToCanvas: vi.fn(),
+    });
+    fireEvent.click(screen.getByText("Export…"));
+    await waitFor(() => expect(screen.getByText("Export assessment")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Cancel"));
+    await waitFor(() => expect(screen.queryByText("Export assessment")).not.toBeInTheDocument());
+  });
+
+  it("renders the semester badge and description when present", () => {
+    renderSection({
+      assessments: [assessment({ semester: "Fall 2026", description: "Covers chapters 1-4" })],
+    });
+    expect(screen.getByText("Fall 2026")).toBeInTheDocument();
+    expect(screen.getByText("Covers chapters 1-4")).toBeInTheDocument();
+  });
+
+  it("uses the singular label for a single question", () => {
+    renderSection({
+      assessments: [
+        assessment({
+          sections: [{ sectionVariants: [{ variant: { difficulty: "medium", isDraft: false } }] }],
+        }),
+      ],
+    });
+    expect(screen.getByText("1 question")).toBeInTheDocument();
+  });
+
+  it("falls back to a neutral accent for an unrecognized assessment type", () => {
+    renderSection({ assessments: [assessment({ type: "Pop Quiz" })] });
+    expect(screen.getByText("Pop Quiz")).toBeInTheDocument();
+  });
+
+  it("disables New assessment while a blueprint save is in flight", async () => {
+    let resolveAdd: () => void;
+    const onAddAssessment = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAdd = resolve;
+        }),
+    );
+    renderSection({ onAddAssessment });
+    fireEvent.click(screen.getByText("New assessment"));
+    await waitFor(() => expect(screen.getByText("generate-assessment-modal")).toBeInTheDocument());
+    lastGenerateModalProps.onGenerate({ name: "New one" });
+    await waitFor(() => expect(screen.getByText("Saving…")).toBeInTheDocument());
+    expect(screen.getByText("Saving…").closest("button")).toBeDisabled();
+    // Closing the modal while a save is in flight is a no-op.
+    lastGenerateModalProps.onClose();
+    expect(screen.getByText("generate-assessment-modal")).toBeInTheDocument();
+    resolveAdd!();
+    await waitFor(() => expect(screen.getByText("New assessment")).toBeInTheDocument());
+  });
+
+  it("shows Import from Canvas in the empty state even without a selected course", () => {
+    const onImportFromCanvas = vi.fn();
+    renderSection({ selectedCourseId: null, onImportFromCanvas });
+    expect(screen.getByText("No assessments yet")).toBeInTheDocument();
+    const [, emptyStateButton] = screen.getAllByText("Import from Canvas");
+    fireEvent.click(emptyStateButton);
+    expect(onImportFromCanvas).toHaveBeenCalled();
+  });
+
+  it("hides per-card menu items the user lacks permission for", () => {
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canManageAssessment: false,
+      canExportAssessment: false,
+      canUseVariantWorkflow: false,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    renderSection({
+      assessments: [assessment()],
+      onDeleteAssessment: vi.fn(),
+      onExportToCanvas: vi.fn(),
+    });
+    expect(screen.queryByLabelText("Assessment actions")).not.toBeInTheDocument();
+  });
 });

@@ -31,13 +31,18 @@ vi.mock("@/services/eduaiService", () => ({
   default: { listModels: (...args: unknown[]) => listModels(...args) },
 }));
 
+const getProviderFromModel = vi.fn().mockReturnValue(null);
+const getApiKey = vi.fn().mockResolvedValue(null);
+const setApiKey = vi.fn().mockResolvedValue(undefined);
+const removeApiKey = vi.fn();
+const requiresApiKey = vi.fn().mockReturnValue(false);
 vi.mock("@/services/apiKeyStorage", () => ({
   apiKeyStorage: {
-    getProviderFromModel: vi.fn().mockReturnValue(null),
-    getApiKey: vi.fn().mockResolvedValue(null),
-    setApiKey: vi.fn().mockResolvedValue(undefined),
-    removeApiKey: vi.fn(),
-    requiresApiKey: vi.fn().mockReturnValue(false),
+    getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
+    getApiKey: (...args: unknown[]) => getApiKey(...args),
+    setApiKey: (...args: unknown[]) => setApiKey(...args),
+    removeApiKey: (...args: unknown[]) => removeApiKey(...args),
+    requiresApiKey: (...args: unknown[]) => requiresApiKey(...args),
     buildApiKeysForModel: vi.fn().mockResolvedValue({}),
   },
   isCloudProvider: vi.fn().mockReturnValue(false),
@@ -115,6 +120,11 @@ describe("QuestionUploadDialog", () => {
     listModels.mockReset().mockResolvedValue([]);
     addJob.mockClear();
     updateJobStatus.mockClear();
+    getProviderFromModel.mockReset().mockReturnValue(null);
+    getApiKey.mockReset().mockResolvedValue(null);
+    setApiKey.mockReset().mockResolvedValue(undefined);
+    removeApiKey.mockReset();
+    requiresApiKey.mockReset().mockReturnValue(false);
   });
 
   it("shows a guard dialog and does nothing else when there is no course selected", () => {
@@ -430,6 +440,219 @@ describe("QuestionUploadDialog", () => {
     await waitFor(() =>
       expect(toastFn).toHaveBeenCalledWith("Questions restored", expect.any(Object)),
     );
+  });
+
+  it("warns about an external model and requires an API key input", async () => {
+    listModels.mockResolvedValue([
+      { id: "vllm:qwen2.5-32b-instruct", label: "Qwen 32B", provider: "vllm" },
+      { id: "openai:gpt-4", label: "GPT-4", provider: "openai" },
+    ]);
+    getProviderFromModel.mockReturnValue("openai");
+    requiresApiKey.mockReturnValue(true);
+    renderDialog();
+
+    await screen.findByText("Upload Questions");
+    fireEvent.click(screen.getByLabelText("AI model"));
+    fireEvent.click(await screen.findByRole("option", { name: "GPT-4 (openai)" }));
+
+    expect(
+      await screen.findByText(/External models send your prompts and course data/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("OPENAI API Key")).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: "Save key" })).toBeDisabled();
+  });
+
+  it("shows a masked existing key and clears it via Change", async () => {
+    listModels.mockResolvedValue([{ id: "openai:gpt-4", label: "GPT-4", provider: "openai" }]);
+    getProviderFromModel.mockReturnValue("openai");
+    requiresApiKey.mockReturnValue(true);
+    getApiKey.mockResolvedValue("sk-existing-1234567890");
+    renderDialog();
+
+    await screen.findByText("Upload Questions");
+    fireEvent.click(screen.getByLabelText("AI model"));
+    fireEvent.click(await screen.findByRole("option", { name: "GPT-4 (openai)" }));
+
+    expect(await screen.findByDisplayValue("sk-exist••••••••••••••")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+
+    expect(removeApiKey).toHaveBeenCalledWith("openai");
+    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
+  });
+
+  it("edits a draft's summary, question text, difficulty, topic, and switches it to MCQ", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    renderDialog();
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    fireEvent.change(screen.getByDisplayValue("S1"), { target: { value: "Updated summary" } });
+    expect(screen.getByDisplayValue("Updated summary")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue("Q1"), {
+      target: { value: "Updated question text" },
+    });
+    expect(screen.getByDisplayValue("Updated question text")).toBeInTheDocument();
+
+    const secondaryTopicCheckbox = screen.getByRole("checkbox", { name: "Geometry" });
+    fireEvent.click(secondaryTopicCheckbox);
+    expect(secondaryTopicCheckbox).toBeChecked();
+
+    // Combobox order: assessment type (left card), then the draft's primary
+    // topic, difficulty, and type selects.
+    const [, primaryTopicSelect, difficultySelect, typeSelect] = screen.getAllByRole("combobox");
+
+    fireEvent.click(difficultySelect);
+    fireEvent.click(await screen.findByRole("option", { name: "hard" }));
+    expect(screen.getByText("hard")).toBeInTheDocument();
+
+    fireEvent.click(primaryTopicSelect);
+    fireEvent.click(await screen.findByRole("option", { name: "Geometry" }));
+
+    fireEvent.click(typeSelect);
+    fireEvent.click(await screen.findByRole("option", { name: "Multiple Choice" }));
+
+    fireEvent.change(screen.getByLabelText("Option A"), { target: { value: "First" } });
+    fireEvent.change(screen.getByLabelText("Option B"), { target: { value: "Second" } });
+    fireEvent.click(screen.getByRole("button", { name: "Mark option B correct" }));
+    expect(screen.getByLabelText("Option A")).toHaveValue("First");
+  });
+
+  it("blocks save without calling the service when a draft's summary is cleared", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    renderDialog();
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    fireEvent.change(screen.getByDisplayValue("S1"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Quiz 1" } });
+
+    const saveButton = screen.getByRole("button", { name: /save questions/i });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    // The missing-summary guard in handleSave rejects the save silently (no
+    // visible error surface exists once the dialog is in the review step),
+    // so the only observable effect is that the service is never invoked.
+    await waitFor(() => expect(saveButton).toHaveTextContent("Save questions"));
+    expect(saveExtractedQuestions).not.toHaveBeenCalled();
+  });
+
+  it("shows an error toast and stays in review when saving fails", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    saveExtractedQuestions.mockRejectedValue({ response: { data: { error: "Save exploded" } } });
+    const { onQuestionsSaved, onClose } = renderDialog();
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Quiz 1" } });
+    fireEvent.click(screen.getByRole("button", { name: /save questions/i }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "Save failed",
+        expect.objectContaining({ description: "Save exploded" }),
+      ),
+    );
+    expect(await screen.findByText("Review extracted questions (1)")).toBeInTheDocument();
+    expect(onQuestionsSaved).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("opens directly to the review step when initialDraftQuestions are provided", async () => {
+    const initialDraftQuestions = [
+      {
+        id: "d1",
+        question: "Pre-filled question",
+        summary: "Pre-filled summary",
+        difficulty: "medium" as const,
+        type: "SA" as const,
+        answer: "",
+        primaryTopicId: null,
+        secondaryTopicIds: [],
+        include: true,
+      },
+    ];
+    renderDialog({ initialDraftQuestions });
+
+    expect(await screen.findByText("Review extracted questions (1)")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Pre-filled question")).toBeInTheDocument();
+    expect(extractQuestionsFromText).not.toHaveBeenCalled();
+  });
+
+  it("refreshes topics on mount when none are provided and selects the first one", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    const onEnsureTopics = vi.fn().mockResolvedValue(topics);
+    renderDialog({ topics: [], onEnsureTopics });
+    await waitFor(() => expect(onEnsureTopics).toHaveBeenCalledWith(7));
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    // The draft's primary-topic select defaults to the first refreshed topic.
+    expect(screen.getByText("Algebra")).toBeInTheDocument();
+  });
+
+  it("falls back to an empty topic list when refreshing topics fails", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    const onEnsureTopics = vi.fn().mockRejectedValue(new Error("network error"));
+    renderDialog({ topics: [], onEnsureTopics });
+    await waitFor(() => expect(onEnsureTopics).toHaveBeenCalledWith(7));
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    expect(screen.getByText(/No topics available/i)).toBeInTheDocument();
+  });
+
+  it("shows the external-model warning and lets an existing key be changed from the expanded upload panel", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    listModels.mockResolvedValue([{ id: "openai:gpt-4", label: "GPT-4", provider: "openai" }]);
+    getProviderFromModel.mockReturnValue("openai");
+    requiresApiKey.mockReturnValue(true);
+    getApiKey.mockResolvedValue("sk-existing-1234567890");
+    renderDialog();
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    fireEvent.click(screen.getByText("Upload & model"));
+    expect(
+      await screen.findByText(/External models send your prompts and course data/i),
+    ).toBeInTheDocument();
+
+    expect(await screen.findByDisplayValue("sk-exist••••••••••••••")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+
+    expect(removeApiKey).toHaveBeenCalledWith("openai");
+    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
   });
 });
 

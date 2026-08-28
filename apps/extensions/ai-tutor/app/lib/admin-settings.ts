@@ -50,10 +50,6 @@ export const DEFAULT_POLICY: AdminAiModelPolicy = {
 const MIN_SUPERVISOR_ITERATIONS = 1;
 const MAX_SUPERVISOR_ITERATIONS = 5;
 
-export function getAdminSettingsApi() {
-  return api;
-}
-
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
   const hasPolicyApi = typeof api.getAdminAiModelPolicy === "function";
   const hasModelsApi = typeof api.listAiModels === "function";

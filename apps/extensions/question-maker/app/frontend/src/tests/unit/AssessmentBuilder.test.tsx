@@ -88,4 +88,49 @@ describe("AssessmentBuilder", () => {
     fireEvent.click(within(dialog).getByText(/Add 1 question/));
     expect(onAddQuestionsToSection).toHaveBeenCalledWith(10, [200]);
   });
+
+  it("resets the picker's section id when the picker is closed without confirming", async () => {
+    render(<AssessmentBuilder {...baseProps({ assessment: assessmentWithSection })} />);
+    fireEvent.click(screen.getByText("Add more questions"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText("Cancel"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("renames a section on title blur", () => {
+    const onUpdateSectionName = vi.fn();
+    render(
+      <AssessmentBuilder
+        {...baseProps({ assessment: assessmentWithSection, onUpdateSectionName })}
+      />,
+    );
+    const titleInput = screen.getByDisplayValue("Section A");
+    fireEvent.change(titleInput, { target: { value: "Renamed Section" } });
+    fireEvent.blur(titleInput);
+    expect(onUpdateSectionName).toHaveBeenCalledWith(10, "Renamed Section");
+  });
+
+  it("deletes a section from its header button", () => {
+    const onDeleteSection = vi.fn();
+    render(
+      <AssessmentBuilder {...baseProps({ assessment: assessmentWithSection, onDeleteSection })} />,
+    );
+    fireEvent.click(screen.getByLabelText("Delete section"));
+    expect(onDeleteSection).toHaveBeenCalledWith(10);
+  });
+
+  it("reorders sections via the move-up control", async () => {
+    const onReorderSections = vi.fn().mockResolvedValue(undefined);
+    const twoSections = {
+      id: 1,
+      sections: [
+        { id: 10, name: "Section A", position: 0, sectionVariants: [] },
+        { id: 11, name: "Section B", position: 1, sectionVariants: [] },
+      ],
+    } as unknown as Assessment;
+    render(<AssessmentBuilder {...baseProps({ assessment: twoSections, onReorderSections })} />);
+    const moveUpButtons = screen.getAllByLabelText("Move section up");
+    fireEvent.click(moveUpButtons[1]);
+    await waitFor(() => expect(onReorderSections).toHaveBeenCalledWith([11, 10]));
+  });
 });

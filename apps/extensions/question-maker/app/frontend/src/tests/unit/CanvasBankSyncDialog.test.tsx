@@ -232,4 +232,58 @@ describe("CanvasBankSyncDialog", () => {
       ),
     );
   });
+
+  it("shows an error toast and clears banks when loading Canvas banks fails", async () => {
+    canvasService.getIntegration.mockResolvedValue({ isConnected: true });
+    canvasService.getCourses.mockResolvedValue([{ id: 1, name: "Intro CS", course_code: "CS101" }]);
+    canvasService.getQuestionBanks.mockRejectedValue({ message: "banks down" });
+    renderDialog();
+
+    await selectOption(0, "CS101 - Intro CS");
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith(
+        "Failed to load Canvas banks",
+        expect.objectContaining({ description: "banks down" }),
+      ),
+    );
+  });
+
+  it("preselects the destination bank from selectedLocalBankId", async () => {
+    canvasService.getIntegration.mockResolvedValue({ isConnected: true });
+    canvasService.getCourses.mockResolvedValue([]);
+    questionBankService.listBanks.mockResolvedValue([
+      { id: "b1", name: "Existing bank" },
+      { id: "b2", name: "Other bank" },
+    ]);
+    renderDialog({ selectedLocalBankId: "b2" });
+
+    await screen.findByText("Canvas course");
+    const destinationCombo = screen.getAllByRole("combobox")[3];
+    await waitFor(() => expect(destinationCombo).toHaveTextContent("Other bank"));
+  });
+
+  it("labels a Canvas bank without a title using its name or id fallback", async () => {
+    canvasService.getIntegration.mockResolvedValue({ isConnected: true });
+    canvasService.getCourses.mockResolvedValue([{ id: 1, name: "Intro CS", course_code: "CS101" }]);
+    canvasService.getQuestionBanks.mockResolvedValue([{ id: 9, name: "Named Bank" }, { id: 10 }]);
+    renderDialog();
+
+    await selectOption(0, "CS101 - Intro CS");
+    await waitFor(() => expect(canvasService.getQuestionBanks).toHaveBeenCalled());
+    const bankCombo = screen.getAllByRole("combobox")[1];
+    fireEvent.click(bankCombo);
+    expect(await screen.findByText("Named Bank")).toBeInTheDocument();
+    expect(screen.getByText("Bank 10")).toBeInTheDocument();
+  });
+
+  it("renders a Canvas course without a course code", async () => {
+    canvasService.getIntegration.mockResolvedValue({ isConnected: true });
+    canvasService.getCourses.mockResolvedValue([{ id: 1, name: "Intro CS", course_code: null }]);
+    renderDialog();
+
+    await screen.findByText("Canvas course");
+    const courseCombo = screen.getAllByRole("combobox")[0];
+    fireEvent.click(courseCombo);
+    expect(await screen.findByText("Intro CS")).toBeInTheDocument();
+  });
 });

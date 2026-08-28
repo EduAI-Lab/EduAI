@@ -277,4 +277,165 @@ describe("CanvasImportDialog", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("logs and falls back to the connect form when loading the integration fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    getIntegration.mockRejectedValue(new Error("network down"));
+    renderDialog();
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith(
+        "Failed to load Canvas integration:",
+        expect.any(Error),
+      ),
+    );
+    // Integration state stays null, so the connect form never shows and courses
+    // are never fetched.
+    expect(getCourses).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("logs when loading local courses fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([]);
+    getCoursesLocal.mockRejectedValue(new Error("boom"));
+    renderDialog();
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith("Failed to load local courses:", expect.any(Error)),
+    );
+    consoleError.mockRestore();
+  });
+
+  it("surfaces a toast and clears quizzes when loading quizzes fails", async () => {
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([]);
+    getQuizzes.mockRejectedValue({ response: { data: { error: "Quiz service down" } } });
+    renderDialog();
+
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "Failed to load quizzes",
+        expect.objectContaining({ description: "Quiz service down" }),
+      ),
+    );
+    expect(await screen.findByText(/no quizzes found in this course/i)).toBeInTheDocument();
+  });
+
+  it("logs and clears topics when loading topics fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: "BIO-L" }]);
+    getCourseTopics.mockRejectedValue(new Error("topics down"));
+    renderDialog();
+
+    await selectByLabel("Local Course", "BIO-L - Biology");
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith("Failed to load topics:", expect.any(Error)),
+    );
+    expect(
+      await screen.findByText(/no topics found\. please create a topic for this course first/i),
+    ).toBeInTheDocument();
+    consoleError.mockRestore();
+  });
+
+  it("shows a test-mode toast when connecting falls back to mock Canvas data", async () => {
+    getIntegration.mockResolvedValue({ isConnected: false });
+    connectCanvasWithFallback.mockResolvedValue({
+      integration: { isConnected: true },
+      usedTestMode: true,
+    });
+    getCourses.mockResolvedValue([]);
+    renderDialog();
+
+    await screen.findByLabelText("Canvas Instance URL");
+    fireEvent.change(screen.getByLabelText("Canvas Instance URL"), {
+      target: { value: "https://canvas.instructure.com" },
+    });
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Canvas" }));
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        "Canvas test mode",
+        expect.objectContaining({
+          description: "Using mock Canvas data because live credentials were unavailable.",
+        }),
+      ),
+    );
+    // Successful connect swaps the connect form out for the course selects.
+    expect(await screen.findByText("Canvas Course")).toBeInTheDocument();
+  });
+
+  it("shows an extra toast when more than three questions are skipped", async () => {
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: "BIO101" }]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: "BIO-L" }]);
+    getQuizzes.mockResolvedValue([
+      { id: 20, title: "Quiz 1", quiz_type: "assignment", published: true },
+    ]);
+    getCourseTopics.mockResolvedValue([{ id: 9, name: "Cells" }]);
+    importQuiz.mockResolvedValue({
+      assessmentId: 55,
+      assessmentName: "Quiz 1",
+      questionsImported: 1,
+      questionsSkipped: 4,
+      skippedQuestions: [
+        { position: 1, name: "Q1", type: "essay_question", reason: "unsupported" },
+        { position: 2, name: "Q2", type: "essay_question", reason: "unsupported" },
+        { position: 3, name: "Q3", type: "essay_question", reason: "unsupported" },
+        { position: 4, name: "Q4", type: "essay_question", reason: "unsupported" },
+      ],
+    });
+    renderDialog();
+
+    await selectByLabel("Canvas Course", "BIO101 - Intro Bio");
+    await selectByLabel("Quiz", "Quiz 1 (Published)");
+    await selectByLabel("Local Course", "BIO-L - Biology");
+
+    const importButton = await screen.findByRole("button", { name: /import from canvas/i });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    fireEvent.click(importButton);
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        "Some questions were skipped",
+        expect.objectContaining({
+          description: expect.stringContaining("4 questions with unsupported types"),
+        }),
+      ),
+    );
+  });
+
+  it("renders a Canvas course without a code and marks unpublished quizzes", async () => {
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([{ id: 1, name: "Intro Bio", course_code: null }]);
+    getCoursesLocal.mockResolvedValue([]);
+    getQuizzes.mockResolvedValue([
+      { id: 20, title: "Draft Quiz", quiz_type: "assignment", published: false },
+    ]);
+    renderDialog();
+
+    await selectByLabel("Canvas Course", "Intro Bio");
+    const quizCombo = await screen.findByRole("combobox", { name: "Quiz" });
+    fireEvent.click(quizCombo);
+    expect(await screen.findByText("Draft Quiz (Unpublished)")).toBeInTheDocument();
+  });
+
+  it("renders a local course without a code", async () => {
+    getIntegration.mockResolvedValue({ isConnected: true });
+    getCourses.mockResolvedValue([]);
+    getCoursesLocal.mockResolvedValue([{ id: 5, name: "Biology", code: null }]);
+    renderDialog();
+
+    const localCombo = await screen.findByRole("combobox", { name: "Local Course" });
+    fireEvent.click(localCombo);
+    expect(await screen.findByText("Biology")).toBeInTheDocument();
+  });
 });

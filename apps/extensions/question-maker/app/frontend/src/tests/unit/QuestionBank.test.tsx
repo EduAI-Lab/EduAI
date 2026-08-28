@@ -264,6 +264,119 @@ describe("QuestionBank", () => {
     expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
   });
 
+  it("filters by question type via the Filters popover", async () => {
+    const entries = [
+      makeEntry({ questionType: "MCQ" }),
+      makeEntry({
+        questionId: 2,
+        questionType: "SA",
+        variant: {
+          ...makeEntry().variant,
+          id: 2,
+          questionText: "Short answer question",
+          choices: null,
+        },
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    fireEvent.click(await screen.findByText("Short answer"));
+
+    expect(screen.getByText("Short answer question")).toBeInTheDocument();
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+    expect(screen.getByText("1 of 2 shown")).toBeInTheDocument();
+  });
+
+  it("filters by difficulty via the Filters popover", async () => {
+    const entries = [
+      makeEntry({ variant: { ...makeEntry().variant, id: 1, difficulty: "easy" } }),
+      makeEntry({
+        questionId: 2,
+        variant: {
+          ...makeEntry().variant,
+          id: 2,
+          difficulty: "hard",
+          questionText: "Hard question",
+        },
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    const hardOptions = await screen.findAllByText("Hard");
+    const hardCheckboxLabel = hardOptions.find((el) => el.closest("label"))!;
+    fireEvent.click(hardCheckboxLabel);
+
+    expect(screen.getByText("Hard question")).toBeInTheDocument();
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+  });
+
+  it("filters by reasoning level via the Filters popover", async () => {
+    const entries = [
+      makeEntry({ variant: { ...makeEntry().variant, id: 1, reasoningLevel: "factual" } }),
+      makeEntry({
+        questionId: 2,
+        variant: {
+          ...makeEntry().variant,
+          id: 2,
+          reasoningLevel: "analytical",
+          questionText: "Analytical question",
+        },
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    fireEvent.click(await screen.findByText("Analytical"));
+
+    expect(screen.getByText("Analytical question")).toBeInTheDocument();
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+  });
+
+  it("filters by AI-generated source via the Filters popover", async () => {
+    const entries = [
+      makeEntry({ isAiGenerated: false }),
+      makeEntry({
+        questionId: 2,
+        isAiGenerated: true,
+        variant: { ...makeEntry().variant, id: 2, questionText: "AI question" },
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "AI" }));
+
+    expect(screen.getByText("AI question")).toBeInTheDocument();
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+  });
+
+  it("filters by draft status via the Filters popover", async () => {
+    const entries = [
+      makeEntry({ isDraft: false }),
+      makeEntry({
+        questionId: 2,
+        isDraft: true,
+        variant: { ...makeEntry().variant, id: 2, questionText: "Draft question" },
+      }),
+    ];
+    render(<QuestionBank variants={entries} {...baseProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+
+    expect(screen.getByText("Draft question")).toBeInTheDocument();
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+  });
+
+  it("shows a custom empty message when provided", () => {
+    render(
+      <QuestionBank variants={[]} {...baseProps()} emptyMessage="Nothing here for this topic." />,
+    );
+    expect(screen.getByText("Nothing here for this topic.")).toBeInTheDocument();
+  });
+
   it("numbers non-base variants of the same question in creation order", () => {
     const base = makeEntry({ variant: { ...makeEntry().variant, id: 1, referenceId: null } });
     const variantA = makeEntry({

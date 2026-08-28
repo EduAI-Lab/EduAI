@@ -11,6 +11,14 @@ import type { Assessment } from "@/types/question";
 
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 
+// jsdom has no ResizeObserver; the MultiSelect's cmdk list needs observe/disconnect to be callable.
+class FakeResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+(globalThis as any).ResizeObserver = (globalThis as any).ResizeObserver ?? FakeResizeObserver;
+
 const topics: Topic[] = [
   { id: 1, name: "Sorting" } as unknown as Topic,
   { id: 2, name: "Graphs" } as unknown as Topic,
@@ -147,6 +155,31 @@ describe("QuestionMetadataPanel", () => {
       expect(combo).toBeDisabled();
     }
     expect(screen.getByLabelText(/description/i)).toBeDisabled();
+  });
+
+  it('shows a "Loading..." placeholder in the assessment select while aux data loads', () => {
+    renderPanel({ assessments: [], isAuxLoading: true });
+    fireEvent.click(screen.getByRole("combobox", { name: /assessment/i }));
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("adds a secondary topic and reports it via onToggleSecondaryTopic", () => {
+    const { onToggleSecondaryTopic } = renderPanel();
+    const multiSelectTrigger = screen.getByText("Select secondary topics").closest("button")!;
+    fireEvent.click(multiSelectTrigger);
+    fireEvent.click(screen.getByText("Graphs"));
+    expect(onToggleSecondaryTopic).toHaveBeenCalledWith("2", true);
+  });
+
+  it("removes a secondary topic and reports it via onToggleSecondaryTopic", () => {
+    const { onToggleSecondaryTopic } = renderPanel({
+      value: baseValue({ variantSecondaryTopics: ["2"] }),
+    });
+    const multiSelectTrigger = screen.getByText("Graphs").closest("button")!;
+    fireEvent.click(multiSelectTrigger);
+    const [, optionInList] = screen.getAllByText("Graphs");
+    fireEvent.click(optionInList);
+    expect(onToggleSecondaryTopic).toHaveBeenCalledWith("2", false);
   });
 
   it("disables the primary topic select and shows a loading hint when topics are still loading", () => {

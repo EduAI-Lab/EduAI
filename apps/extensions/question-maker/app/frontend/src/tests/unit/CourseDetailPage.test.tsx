@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { Question, Assessment, QuestionVariantEntry } from "@/types/question";
+import type { Question, Assessment } from "@/types/question";
 
 afterEach(cleanup);
 
@@ -680,7 +680,7 @@ describe("CourseDetailPage assessments tab", () => {
     assessmentService.getAssessmentsPage.mockResolvedValue({ items: [emptyAssessment], total: 1 });
     render(<CourseDetailPage />);
     await screen.findByTestId("assessment-section");
-    fireEvent.click(screen.getByText("export-txt-300"));
+    fireEvent.click(await screen.findByText("export-txt-300"));
     expect(toastFn.error).toHaveBeenCalledWith("Cannot export", expect.anything());
   });
 

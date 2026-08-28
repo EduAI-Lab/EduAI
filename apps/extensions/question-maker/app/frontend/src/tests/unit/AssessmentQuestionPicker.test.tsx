@@ -7,6 +7,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AssessmentQuestionPicker } from "@/components/assessments/AssessmentQuestionPicker";
 
+// jsdom has no ResizeObserver; the Combobox's cmdk list needs observe/disconnect to be callable.
+class FakeResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+(globalThis as any).ResizeObserver = (globalThis as any).ResizeObserver ?? FakeResizeObserver;
+
 afterEach(cleanup);
 
 const topics = [{ id: "t1", name: "Topic One" }] as any;
@@ -167,5 +175,75 @@ describe("AssessmentQuestionPicker", () => {
     expect(screen.getByText("No questions match")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Clear filters"));
     expect(screen.getByText("Question text 1")).toBeInTheDocument();
+  });
+
+  it("filters by primary topic via the Combobox", () => {
+    renderPicker({
+      questionBank: [
+        entry(1, { primaryTopicId: "t1" }),
+        entry(2, {
+          primaryTopicId: "t2",
+          primaryTopicName: "Topic Two",
+          variant: { id: 2, questionText: "Second-topic question", difficulty: "medium" },
+        }),
+      ],
+      topics: [
+        { id: "t1", name: "Topic One" },
+        { id: "t2", name: "Topic Two" },
+      ] as any,
+    });
+
+    const [primaryCombobox] = screen.getAllByRole("combobox");
+    fireEvent.click(primaryCombobox);
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Topic Two" }));
+
+    expect(screen.getByText("Second-topic question")).toBeInTheDocument();
+    expect(screen.queryByText("Question text 1")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the topics list for a display name when primaryTopicName is missing", () => {
+    renderPicker({
+      questionBank: [entry(1, { primaryTopicName: undefined })],
+      topics: [{ id: "t1", name: "Fallback Topic" }] as any,
+    });
+    expect(screen.getByText("Fallback Topic")).toBeInTheDocument();
+  });
+
+  it("filters by secondary topic via the MultiSelect", () => {
+    renderPicker({
+      questionBank: [
+        entry(1, { variant: { id: 1, questionText: "Question text 1", difficulty: "easy" } }),
+        entry(2, {
+          variant: {
+            id: 2,
+            questionText: "Has secondary topic",
+            difficulty: "medium",
+            secondaryTopicsId: ["t2"],
+          },
+        }),
+      ],
+      topics: [
+        { id: "t1", name: "Topic One" },
+        { id: "t2", name: "Topic Two" },
+      ] as any,
+    });
+
+    const [, secondaryPlaceholder] = screen.getAllByText("All topics");
+    fireEvent.click(secondaryPlaceholder.closest("button")!);
+    fireEvent.click(screen.getByRole("option", { name: "Topic Two" }));
+
+    expect(screen.getByText("Has secondary topic")).toBeInTheDocument();
+    expect(screen.queryByText("Question text 1")).not.toBeInTheDocument();
+  });
+
+  it("clears selection and active filters when closed via Cancel", () => {
+    const onOpenChange = vi.fn();
+    renderPicker({ onOpenChange });
+    fireEvent.click(screen.getByRole("button", { name: "hard" }));
+    fireEvent.click(screen.getByText("Recursion basics"));
+    expect(screen.getByText("· 1 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

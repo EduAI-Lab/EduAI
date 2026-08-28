@@ -7,7 +7,7 @@
  * we can drive this page's own handlers directly.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const {
@@ -426,8 +426,10 @@ describe("AssessmentBuilderPage", () => {
     questionService.getQuestions.mockResolvedValue([questionWithVariant]);
     renderPage();
     await waitFor(() => expect(lastViewModalProps).toBeTruthy());
-    lastViewModalProps.onCreateVariant({ questionId: 20, variant: { id: 200 } });
-    await waitFor(() => expect(screen.getByText("question-modal-variant")).toBeInTheDocument());
+    act(() => {
+      lastViewModalProps.onCreateVariant({ questionId: 20, variant: { id: 200 } });
+    });
+    expect(screen.getByText("question-modal-variant")).toBeInTheDocument();
   });
 
   it("updates question metadata via onUpdateQuestionMetadata", async () => {
