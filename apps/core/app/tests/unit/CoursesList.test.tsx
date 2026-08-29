@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
+import { termLabelLong } from "@eduai/ui";
 import { CoursesView, type CoursesViewProps } from "~/components/courses/courses-view";
 import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 import type { Course } from "~/hooks/api/use-courses";
@@ -104,6 +105,12 @@ const MATH_COURSE: Course = {
   department: "MATH",
 };
 
+// Each create-course test renders the whole view, then opens a Radix popover
+// and a full react-day-picker calendar to choose the start date. That is
+// comfortably under a second alone but can pass 5s when the file runs
+// alongside the rest of the suite, so this file gets a wider timeout.
+vi.setConfig({ testTimeout: 15_000 });
+
 const NOOP = async () => {};
 
 function wrap(ui: React.ReactElement, policies: PolicyValues = {}) {
@@ -159,9 +166,14 @@ function submitButtonFor(name: RegExp): HTMLElement {
   return screen.getAllByRole("button", { name }).find((b) => b.getAttribute("type") === "submit")!;
 }
 
-/** The "Start date" field has no <Label htmlFor>, so it isn't reachable via getByLabelText. */
-function startDateInput(): HTMLInputElement {
-  return document.querySelector('input[name="startDate"]') as HTMLInputElement;
+/**
+ * Picks a start date through the themed calendar popover. The trigger is a
+ * button, not a date input, so the value is set by clicking a day — day
+ * buttons are named with the full date, e.g. "Monday, September 1st, 2025".
+ */
+function chooseStartDate(fullDayName: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: /^start date$/i }));
+  fireEvent.click(screen.getByRole("button", { name: fullDayName }));
 }
 
 // CoursesAdminView
@@ -213,6 +225,12 @@ describe("CoursesAdminView — mutation flows", () => {
   const INSTRUCTORS = [{ id: "i1", name: "Prof X", email: "x@example.edu" }];
 
   it("submits the create form and calls onCreateCourse with the assembled data", async () => {
+    // The calendar opens on the current month; pin it to the one being picked.
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
       <CoursesAdminView
@@ -231,9 +249,9 @@ describe("CoursesAdminView — mutation flows", () => {
     chooseDepartmentCombobox(combos[0], "Computer Science");
 
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "250" } });
-    fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
+    chooseStartDate(/September 1st, 2025/);
 
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
 
@@ -249,7 +267,71 @@ describe("CoursesAdminView — mutation flows", () => {
     );
   });
 
-  it("disables the create submit button until department and instructor are chosen", async () => {
+  // The calendar opens on the current month, so each case pins the clock to the
+  // month it picks from rather than driving the caption dropdowns.
+  it.each([
+    ["2025-09-01", /September 1st, 2025/, "W1", 2025],
+    ["2026-01-15", /January 15th, 2026/, "W2", 2025],
+    ["2026-05-04", /May 4th, 2026/, "S1", 2026],
+    ["2026-07-20", /July 20th, 2026/, "S2", 2026],
+  ])("derives term and academic year from a %s start date", async (startDate, day, term, year) => {
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${startDate}T12:00:00`));
+    const onCreateCourse = vi.fn().mockResolvedValue(undefined);
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+    fireEvent.change(screen.getByLabelText("Course name"), { target: { value: "New Course" } });
+    chooseDepartmentCombobox(screen.getAllByRole("combobox")[0], "Computer Science");
+    fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "250" } });
+    chooseStartDate(day);
+
+    // The derived term is shown read-only before submit, so the user can see
+    // what the date resolved to.
+    expect(screen.getByText(termLabelLong(term, year))).toBeInTheDocument();
+
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
+    fireEvent.click(submitButtonFor(/create course/i));
+
+    await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));
+    expect(onCreateCourse).toHaveBeenCalledWith(expect.objectContaining({ term, year, startDate }));
+  });
+
+  it("offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    // Only the department combobox and the instructor select remain.
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    expect(document.querySelector('input[name="year"]')).toBeNull();
+  });
+
+  it("disables the create submit button until department, instructor and start date are set", async () => {
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     wrap(
       <CoursesAdminView
         courses={[]}
@@ -267,7 +349,12 @@ describe("CoursesAdminView — mutation flows", () => {
     chooseDepartmentCombobox(combos[0], "Computer Science");
     expect(submitButtonFor(/create course/i)).toBeDisabled();
 
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
+    // The start date used to be a `required` input; the picker is a button, so
+    // the gate is the disabled condition now.
+    expect(submitButtonFor(/create course/i)).toBeDisabled();
+
+    chooseStartDate(/September 1st, 2025/);
     expect(submitButtonFor(/create course/i)).not.toBeDisabled();
   });
 
@@ -557,6 +644,12 @@ describe("CoursesUnitAdminView — mutation flows", () => {
   });
 
   it("submits the create form using the selected department when multiple are authorized", async () => {
+    // The calendar opens on the current month; pin it to the one being picked.
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
       <CoursesUnitAdminView
@@ -576,8 +669,8 @@ describe("CoursesUnitAdminView — mutation flows", () => {
     chooseDepartmentCombobox(combos[0], "Mathematics");
 
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "200" } });
-    fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
-    await chooseSelectOption(screen.getAllByRole("combobox")[2], /prof x/i);
+    chooseStartDate(/September 1st, 2025/);
+    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
     await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));
@@ -587,6 +680,12 @@ describe("CoursesUnitAdminView — mutation flows", () => {
   });
 
   it("submits the create form using the single authorized department automatically", async () => {
+    // The calendar opens on the current month; pin it to the one being picked.
+    // Fake ONLY Date, never the timers: `waitFor` polls on setTimeout, and a
+    // faked clock starves it under full-suite load (5s timeouts) even though
+    // it passes when this file runs alone.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
     const onCreateCourse = vi.fn().mockResolvedValue(undefined);
     wrap(
       <CoursesUnitAdminView
@@ -602,8 +701,10 @@ describe("CoursesUnitAdminView — mutation flows", () => {
     fireEvent.click(screen.getByRole("button", { name: /create course/i }));
     fireEvent.change(screen.getByLabelText("Course name"), { target: { value: "Intro CS" } });
     fireEvent.change(screen.getByLabelText("Course number"), { target: { value: "110" } });
-    fireEvent.change(startDateInput(), { target: { value: "2025-09-01" } });
-    await chooseSelectOption(screen.getAllByRole("combobox")[1], /prof x/i);
+    chooseStartDate(/September 1st, 2025/);
+    // Single authorized department renders no department combobox, and the term
+    // is derived rather than picked, so the instructor select is the only one.
+    await chooseSelectOption(screen.getAllByRole("combobox")[0], /prof x/i);
 
     fireEvent.click(submitButtonFor(/create course/i));
     await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1));
@@ -757,6 +858,97 @@ describe("CoursesUnitAdminView — mutation flows", () => {
       />,
     );
     expect(screen.getByText("No courses match your search.")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The derived-term change is identical in all three create dialogs, but only
+ * the admin one was covered — a regression confined to the unit-admin or
+ * instructor variant would have gone unnoticed (#1681 review). These pin the
+ * two properties that matter on the other two: no hand-entered term or year,
+ * and submit gated on the start date now that the `required` input is gone.
+ */
+describe("create-course term derivation — unit-admin and instructor variants", () => {
+  const INSTRUCTORS = [{ id: "i1", name: "Prof X", email: "x@example.edu" }];
+
+  it("CoursesUnitAdminView offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={["COSC"]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    expect(screen.queryByLabelText(/^term$/i)).toBeNull();
+    expect(document.querySelector('input[name="year"]')).toBeNull();
+  });
+
+  it("CoursesUnitAdminView keeps create disabled until a start date is picked", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={["COSC"]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    await chooseSelectOption(screen.getAllByRole("combobox")[0], /prof x/i);
+    expect(submitButtonFor(/create course/i)).toBeDisabled();
+
+    chooseStartDate(/September 1st, 2025/);
+
+    expect(submitButtonFor(/create course/i)).not.toBeDisabled();
+    vi.useRealTimers();
+  });
+
+  it("CoursesInstructorView offers no way to pick a term or year by hand", () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+
+    expect(screen.queryByLabelText(/^term$/i)).toBeNull();
+    expect(document.querySelector('input[name="year"]')).toBeNull();
+  });
+
+  it("CoursesInstructorView keeps create disabled until a start date is picked", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2025-09-15T12:00:00"));
+    wrap(
+      <CoursesInstructorView
+        courses={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /create course/i }));
+    expect(submitButtonFor(/create course/i)).toBeDisabled();
+
+    chooseStartDate(/September 1st, 2025/);
+
+    expect(submitButtonFor(/create course/i)).not.toBeDisabled();
+    vi.useRealTimers();
   });
 });
 

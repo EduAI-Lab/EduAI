@@ -217,7 +217,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .send({ isDraft: false });
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe("INVALID_TOPIC_IDS");
+    expect(res.body.code).toBe("INVALID_TOPIC_IDS");
     expect(res.body.deletedTopicIds).toEqual(deletedTopicIds);
     expect(mockTopicsUpdateMany).toHaveBeenCalledWith({
       where: { coreTopicId: { in: deletedTopicIds } },
@@ -283,7 +283,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .send({ isDraft: false });
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe("DUPLICATE_TOPIC");
+    expect(res.body.code).toBe("DUPLICATE_TOPIC");
     expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
       42,
       COURSE.userId,
@@ -304,7 +304,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe("CORE_PUSH_FAILED");
+    expect(res.body.code).toBe("CORE_PUSH_FAILED");
     expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
       42,
       COURSE.userId,
@@ -329,7 +329,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(res.status).toBe(500);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
+    expect(res.body.code).toBe("VARIANT_ROLLBACK_FAILED");
   });
 
   it("does not claim draft state when rollback reports a non-draft concurrent state", async () => {
@@ -346,7 +346,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .send({ isDraft: false });
 
     expect(res.status).toBe(500);
-    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
+    expect(res.body.code).toBe("VARIANT_ROLLBACK_FAILED");
   });
 
   it("re-approval after a transient Core push failure retries the push (state-based gating)", async () => {
