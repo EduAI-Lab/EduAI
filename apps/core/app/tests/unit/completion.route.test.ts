@@ -240,6 +240,69 @@ describe("POST /api/completion review regressions", () => {
     );
   });
 
+  it("honors an explicit request isEnabled:false over a stored enabled row", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              isEnabled: false,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the stored isEnabled when the request omits it", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: { apiKey: "__core_stored__" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: expect.objectContaining({ isEnabled: true }),
+      }),
+    );
+  });
+
   it("maps fleet model unavailability to the stable 503 contract", async () => {
     vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
     vi.mocked(resolveFleetHost).mockRejectedValue(
