@@ -238,6 +238,10 @@ export type Course = {
    *  reflects the write, not a confirmed Core read. Absent otherwise. */
   corePublishStale?: boolean;
   progress?: Progress;
+  /** The viewer's role *on this course* (#1644), set only by `GET /api/courses/:id`.
+   *  Authoritative for gating course-detail staff tabs — distinct from the global
+   *  effective `User.role`, which a TA carries onto every course they can reach. */
+  viewerRole?: Role | null;
 };
 
 export type Module = {

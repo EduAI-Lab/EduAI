@@ -7,6 +7,7 @@ import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth, authBaseURL } from "~/lib/auth/server";
+import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
@@ -37,23 +38,57 @@ function formBodyErrorResponse(cause: unknown): Response | null {
   return null;
 }
 
+/** Cookie scopes used by the two deployed EduAI environments before this fix. */
+const LEGACY_SESSION_COOKIE_DOMAINS = [".eduai.ok.ubc.ca", ".ok.ubc.ca"] as const;
+
 /**
- * Remove a legacy host-only session cookie after issuing the configured
- * cross-subdomain cookie. Cookies with the same name but different Domain
- * attributes coexist, and browsers send the host-only one first; an old
- * token could therefore mask the newly-created shared session on /dashboard.
+ * Remove legacy session cookies after issuing the configured cross-subdomain
+ * cookie. Cookies with the same name but different Domain attributes coexist,
+ * and browsers can send an older, more-specific cookie first; that token can
+ * therefore mask the newly-created shared session on /dashboard.
+ *
+ * The derived cleanup covers narrower parent scopes between the current host
+ * and the configured domain. The explicit list also covers rollback from the
+ * broad production domain (`.ok.ubc.ca`) to the dev/previous production
+ * domain (`.eduai.ok.ubc.ca`), which the current-domain walk cannot see.
  */
-function appendHostOnlySessionCookieDeletion(headers: Headers): void {
-  if (!process.env.COOKIE_DOMAIN?.trim()) return;
+function appendLegacySessionCookieDeletions(headers: Headers): void {
+  const configuredDomain = resolveAuthCookieDomain();
+  if (!configuredDomain) return;
 
   const cookieName = authBaseURL.startsWith("https://")
     ? "__Secure-better-auth.session_token"
     : "better-auth.session_token";
   const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
-  headers.append(
-    "Set-Cookie",
-    `${cookieName}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`,
-  );
+  const attributes = `Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`;
+
+  // The original deployment created a host-only cookie. Expire that exact
+  // scope first.
+  headers.append("Set-Cookie", `${cookieName}=; ${attributes}`);
+
+  const hostname = new URL(authBaseURL).hostname.toLowerCase();
+  const labels = hostname.split(".");
+  const configuredHost = configuredDomain.replace(/^\./, "").toLowerCase();
+  const domains = new Set<string>();
+
+  // Expire every parent-domain scope from the exact hostname up to (but not
+  // including) the currently configured COOKIE_DOMAIN.
+  for (let i = 0; i < labels.length - 1; i += 1) {
+    const candidate = labels.slice(i).join(".");
+    if (candidate === configuredHost) break;
+    domains.add(i === 0 ? candidate : `.${candidate}`);
+  }
+
+  // Also expire known broader scopes so a COOKIE_DOMAIN rollback cannot leave
+  // an older, less-specific token competing with the freshly-issued cookie.
+  for (const legacyDomain of LEGACY_SESSION_COOKIE_DOMAINS) {
+    if (hostname.endsWith(legacyDomain)) domains.add(legacyDomain);
+  }
+
+  domains.delete(`.${configuredHost}`);
+  for (const domainAttr of domains) {
+    headers.append("Set-Cookie", `${cookieName}=; ${attributes}; Domain=${domainAttr}`);
+  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -161,7 +196,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
-    appendHostOnlySessionCookieDeletion(headers);
+    appendLegacySessionCookieDeletions(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.

@@ -76,6 +76,14 @@ export interface CanvasBankSyncResult {
   lastSyncedAt?: string;
 }
 
+/** The Canvas course a local course is linked to, as the mapping endpoint returns it. */
+export interface CanvasCourseMapping {
+  localCourseId: number;
+  canvasCourseId: number;
+  canvasCourseName: string | null;
+  source?: "local" | "core";
+}
+
 export const canvasService = {
   /** True when local dev should prefer Canvas test mode (set VITE_CANVAS_TEST_MODE=true). */
   prefersTestMode(): boolean {
@@ -154,12 +162,19 @@ export const canvasService = {
   },
 
   /** Exports an assessment to a Canvas course, returning quiz details. */
+  /**
+   * Exports an assessment to Canvas. `published` defaults to true so the quiz is
+   * visible in Canvas (a graded quiz is listed under Quizzes and Assignments
+   * only once published, #1556); pass false to leave it as a draft.
+   */
   async exportAssessment(
     assessmentId: number,
     canvasCourseId: number,
+    options: { published?: boolean } = {},
   ): Promise<CanvasExportResult> {
     const response = await api.post(`/api/canvas/export/${assessmentId}`, {
       canvasCourseId,
+      published: options.published !== false,
     });
     return response.data.data;
   },
@@ -171,6 +186,30 @@ export const canvasService = {
       return response.data.data;
     } catch (error) {
       return null;
+    }
+  },
+
+  /**
+   * The course's Canvas link with the failure kept separate from the answer.
+   *
+   * `getCourseMapping` collapses a Core hiccup, a 500 and a dropped connection
+   * into the same `null` a genuinely unlinked course returns. That is fine
+   * where the caller only offers a Canvas action, but a caller that *hides*
+   * things on "unlinked" would strip every Canvas affordance from a linked
+   * course on one transient error, with nothing on screen to explain it
+   * (#1652 review). `"unknown"` lets such a caller leave the UI alone.
+   */
+  async getCourseLink(
+    courseId: number,
+  ): Promise<
+    { status: "linked"; mapping: CanvasCourseMapping } | { status: "unlinked" | "unknown" }
+  > {
+    try {
+      const response = await api.get(`/api/canvas/mapping/${courseId}`);
+      const mapping = response.data.data;
+      return mapping?.canvasCourseId ? { status: "linked", mapping } : { status: "unlinked" };
+    } catch {
+      return { status: "unknown" };
     }
   },
 
@@ -202,7 +241,8 @@ export const canvasService = {
     options: {
       assessmentType?: string;
       assessmentName?: string;
-      primaryTopicId: number;
+      /** Local topic CUID — never coerced to a number (#1652 review). */
+      primaryTopicId: string;
     },
   ): Promise<CanvasImportResult> {
     const response = await api.post(`/api/canvas/import/${canvasCourseId}/quizzes/${quizId}`, {

@@ -26,9 +26,9 @@ const SYNC_RATE_WINDOW_MS = parseEnvInt(process.env.CANVAS_SYNC_RATE_WINDOW_MS, 
 const LINK_RATE_LIMIT = parseEnvInt(process.env.CANVAS_LINK_ROSTER_RATE_LIMIT, 10);
 const LINK_RATE_WINDOW_MS = parseEnvInt(process.env.CANVAS_LINK_ROSTER_RATE_WINDOW_MS, 900_000);
 
-/** Instructor/admin endpoints: connect, courses picker, sync, disconnect. */
+/** Instructor/admin/unit-admin endpoints: connect, courses picker, sync, disconnect, quiz proxies. */
 export function canManageCanvasIntegration(role: string | null | undefined): boolean {
-  return role === UserRole.INSTRUCTOR || role === UserRole.ADMIN;
+  return role === UserRole.INSTRUCTOR || role === UserRole.ADMIN || role === UserRole.UNIT_ADMIN;
 }
 
 /** Student-number linker: students only (TAs are STUDENT-platform users). */

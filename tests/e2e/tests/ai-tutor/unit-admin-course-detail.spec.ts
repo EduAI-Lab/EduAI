@@ -17,6 +17,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
+import { openTab } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 let coursePath: string;
@@ -70,7 +71,7 @@ test.describe("UNIT_ADMIN course detail", () => {
     await signInThroughPage(page, ua, coursePath);
 
     await expect(page.getByRole("heading", { name: ua.course.name, level: 1 })).toBeVisible();
-    await expect(page.getByText(`${ua.course.code} · 2026W1`)).toBeVisible();
+    await expect(page.getByText(`${ua.course.code} · 2026-27W1`)).toBeVisible();
     // Read-only badge. The one course-publish control in the app lives on the
     // dashboard's drafts panel; this page shows state without an action, so a
     // toggle appearing here would be a second, unreviewed entry point.
@@ -100,7 +101,7 @@ test.describe("UNIT_ADMIN course detail", () => {
   test("the Submissions tab renders the course grading rollup", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
 
-    await page.getByRole("tab", { name: "Submissions" }).click();
+    await openTab(page, "Submissions");
 
     await expect(page.getByText("Student answer attempts in this course.")).toBeVisible();
     for (const tile of ["Needs grading", "Correct", "Pass rate"]) {
@@ -111,7 +112,7 @@ test.describe("UNIT_ADMIN course detail", () => {
   test("the Feedback tab renders its filters and pager", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
 
-    await page.getByRole("tab", { name: "Feedback" }).click();
+    await openTab(page, "Feedback");
 
     await expect(page.getByText("Student activity feedback in this course.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Apply filters" })).toBeVisible();
@@ -121,7 +122,7 @@ test.describe("UNIT_ADMIN course detail", () => {
 
   test("the Feedback filters validate, apply and clear", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
-    await page.getByRole("tab", { name: "Feedback" }).click();
+    await openTab(page, "Feedback");
     await expect(page.getByText("Student activity feedback in this course.")).toBeVisible();
 
     // A non-numeric Activity ID is rejected in the client before any request —
@@ -145,7 +146,7 @@ test.describe("UNIT_ADMIN course detail", () => {
   test("the Analytics tab renders the course and per-student panels", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
 
-    await page.getByRole("tab", { name: "Analytics" }).click();
+    await openTab(page, "Analytics");
 
     for (const tile of ["Students", "Submissions", "Accuracy", "Avg rating", "Help requests"]) {
       await expect(page.getByText(tile, { exact: true }).first()).toBeVisible();

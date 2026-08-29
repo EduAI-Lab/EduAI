@@ -107,6 +107,7 @@ import {
   importExternalCourseForUser,
 } from "../services/importTaughtCoursesService.js";
 import { listAdminBugReports } from "../services/bugReports.js";
+import { listBankQuestions } from "../services/bankQuestions.js";
 import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
 import {
@@ -661,6 +662,60 @@ router.post(
 );
 
 /**
+ * `GET /courses/:courseId/bank-questions` — the shared question bank for the
+ * activity picker.
+ *
+ * Auth: course admin (LEAD instructor / unit-admin / admin), same gate as the
+ * other authoring routes.
+ * Only EduAI-imported courses have a bank; a native course returns 400 rather
+ * than a misleading empty list.
+ * Returns `{ questions, hasMore, nextOffset }`. The service reads as many Core
+ * pages as it needs to fill `limit` *usable* rows, so a run of long-answer or
+ * select-all-that-apply questions no longer returns an empty picker (#1652
+ * review). `hasMore` can only ever say "there may be more" — never an exact
+ * remaining count, since the filter runs after Core already paged, and no
+ * total is invented. `nextOffset` is the Core offset to resume from; it is not
+ * `offset + limit`, because the filtered-out rows were consumed too.
+ */
+router.get(
+  "/courses/:courseId/bank-questions",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
+      if (!course.coreOfferingId) {
+        return res.status(400).json({ error: "Course was not imported from EduAI" });
+      }
+
+      const limit = Number(req.query.limit) || 20;
+      const offset = Number(req.query.offset) || 0;
+      const { questions, hasMore, nextOffset } = await listBankQuestions(course.coreOfferingId, {
+        topicId: req.query.topicId || undefined,
+        limit,
+        offset,
+      });
+      res.json({ questions, hasMore, nextOffset });
+    } catch (error) {
+      logSafeError("[eduai] Failed to list bank questions", error);
+      return respondEduAiUpstreamError(res, error, "Unable to load the question bank");
+    }
+  },
+);
+
+/**
  * GET /courses/:courseId — single course details + membership check.
  *
  * Auth: enrolled student, TA, course instructor, unit admin, or admin.
@@ -779,7 +834,16 @@ router.get("/courses/:courseId", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
 
-    res.json(mapCourseOffering(course, coreCourse));
+    // The caller's role *on this course* (not their global effective role). The
+    // client gates course-detail staff tabs on this so a global-effective TA who
+    // is only a STUDENT on this course sees no staff tabs (#1644). Learners get
+    // the live enrolment role; staff get their principal role, falling back to
+    // the principal kind (a unit admin authorized by unit has no enrolment role).
+    const viewerRole = isLearner
+      ? (liveEnrollment?.role ?? null)
+      : (liveStaffPrincipal?.role ?? liveStaffPrincipal?.kind ?? null);
+
+    res.json({ ...mapCourseOffering(course, coreCourse), viewerRole });
   } catch (e) {
     sendSafeError(res, e, "Internal server error");
   }

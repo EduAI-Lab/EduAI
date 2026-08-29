@@ -62,7 +62,6 @@ const COVERED_BY_EXISTING_UNIQUE = [
   "canvas_bank_question_mappings.user_id",
   "canvas_course_mappings.local_course_id",
   "canvas_course_mappings.user_id",
-  "canvas_integrations.user_id",
   "course_access.user_id",
   "section_variants.section_id",
   "topics.course_id",

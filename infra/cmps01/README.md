@@ -129,7 +129,7 @@ Captured from `docker inspect` on cmps01:
 docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
+  vllm/vllm-openai:v0.27.1 \
   --model Qwen/Qwen2.5-7B-Instruct \
   --served-model-name qwen2.5-7b-instruct \
   --host 0.0.0.0 \
@@ -139,16 +139,20 @@ docker run -d --name eduai-vllm --gpus '"device=0"' \
 docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
+  vllm/vllm-openai:v0.27.1 \
   --model Qwen/Qwen2.5-32B-Instruct-AWQ \
   --served-model-name qwen2.5-32b-instruct \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
-  --max-model-len 16384 \
+  --max-model-len 32768 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes
 ```
+
+`Qwen2.5-32B-Instruct-AWQ` advertises a 32K native position limit. Keep the
+deployment at that limit; overriding it can produce invalid output or runtime
+errors.
 
 Wait for logs (`docker logs -f eduai-vllm` / `eduai-vllm-t3`) until Uvicorn is ready, then:
 
@@ -257,7 +261,7 @@ SSH to cmps01. Template (adjust GPU, model, flags):
 docker run -d --name eduai-vllm-14b --gpus '"device=0"' \
   -p 127.0.0.1:18003:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
+  vllm/vllm-openai:v0.27.1 \
   --model Qwen/Qwen2.5-14B-Instruct \
   --served-model-name qwen2.5-14b-instruct \
   --host 0.0.0.0 \

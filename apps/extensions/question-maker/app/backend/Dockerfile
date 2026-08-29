@@ -75,9 +75,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # This prevents hanging shutdowns and zombie processes when running as PID 1
 ENTRYPOINT ["dumb-init", "--"]
 
-# Baseline a pre-existing (Sequelize-managed) database if needed, apply pending
-# migrations, then start the application. See scripts/baselineExistingDatabase.js.
+# Baseline a pre-existing (Sequelize-managed) database if needed, copy any QM-only
+# Canvas credentials into Core, apply pending migrations, then start the
+# application. The copier must run BEFORE `prisma migrate deploy` renames
+# canvas_integrations away — see scripts/migrate-canvas-integrations-to-core.mjs
+# and docs/DEPLOYMENT.md.
 # Compose passes the database password separately so reserved URL characters do
 # not corrupt DATABASE_URL. Node's URL serializer percent-encodes it without
 # writing the resulting credential to logs.
-CMD ["sh", "-c", "if [ -n \"${POSTGRES_PASSWORD:-}\" ]; then qm_database_url=\"$(node -e 'const url = new URL(process.env.DATABASE_URL); url.password = process.env.POSTGRES_PASSWORD; process.stdout.write(url.href)')\" || exit 1; export DATABASE_URL=\"$qm_database_url\"; fi; node scripts/baselineExistingDatabase.js && prisma migrate deploy && exec node src/index.js"]
+CMD ["sh", "-c", "if [ -n \"${POSTGRES_PASSWORD:-}\" ]; then qm_database_url=\"$(node -e 'const url = new URL(process.env.DATABASE_URL); url.password = process.env.POSTGRES_PASSWORD; process.stdout.write(url.href)')\" || exit 1; export DATABASE_URL=\"$qm_database_url\"; fi; node scripts/baselineExistingDatabase.js && node scripts/migrate-canvas-integrations-to-core.mjs && prisma migrate deploy && exec node src/index.js"]

@@ -1,34 +1,39 @@
 /**
  * Oracle for tests/models/parse-validate-canvas-url.pict (census docs/PICT_CENSUS.md § S5).
  *
- * Parse-time Canvas base URL validation drift contract (issue #1184) — Core
- * `parseAndValidateCanvasUrl` (client.server.ts:165) vs QM `validateCanvasUrl`
- * (canvasUrlGuard.js:109). Request-time DNS pinning / assertPublicHostname is
- * out of scope for this model.
+ * Parse-time Canvas base URL validation contract (issue #1184). Originally a
+ * Core-vs-QM drift model; QM's `validateCanvasUrl` (canvasUrlGuard.js) was
+ * deleted when QM's Canvas egress moved into Core (#1084), so Core
+ * `parseAndValidateCanvasUrl` is now the single boundary and inherits QM's
+ * stricter canonical-base rules. Request-time DNS pinning /
+ * assertPublicHostname is out of scope for this model.
  *
  * Current behavior:
  *
  * Core `parseAndValidateCanvasUrl`:
  *   - Rejects malformed / non-hierarchical URLs.
+ *   - Rejects userinfo, query strings, and fragments — a Canvas base is an
+ *     origin plus an optional deployment sub-path and nothing else.
  *   - Rejects localhost names and private/reserved IP literals at parse time.
  *   - Accepts http: only for localhost, 127.0.0.1, ::1, canvas.docker in local
  *     development; production requires https:.
  *   - Rejects other schemes (file:, etc.).
  *
- * QM `validateCanvasUrl`:
- *   - Rejects malformed URLs.
- *   - Requires https: (http rejected, including localhost).
- *   - Rejects private/reserved IPv4 and IPv6 literals (isPrivateIPv4 /
- *     isPrivateIPv6); DNS names are accepted even when they look numeric
- *     (e.g. 10.example.edu).
- *   - Rejects non-https schemes.
+ * QM `validateCanvasUrl` (removed in #1084, retained here as the source of the
+ * canonical-base rules Core absorbed):
+ *   - Rejected malformed URLs.
+ *   - Required https: (http rejected, including localhost).
+ *   - Rejected userinfo, query strings, and fragments.
+ *   - Rejected private/reserved IPv4 and IPv6 literals; DNS names were
+ *     accepted even when they looked numeric (e.g. 10.example.edu).
  *
- * Union rule (strictest shared intent — both adapters assert this oracle):
+ * Union rule (strictest shared intent — the oracle Core asserts):
  *   - Must be a valid absolute URL with https: scheme.
+ *   - Must not carry userinfo, a query string, or a fragment.
  *   - Must not target a private/reserved IP literal.
  *   - Public DNS names and public IP literals are accepted.
- *   - Userinfo, path traversal segments, and query strings do not affect
- *     parse-time acceptance (SSRF via path/query is out of scope here).
+ *   - Path traversal segments do not affect parse-time acceptance (the base
+ *     path is normalized by WHATWG parsing before any API path is appended).
  *
  * Known divergences (oracle stays strict; failing adapter side = bug to file):
  *   - Core accepts http://localhost (QM rejects).
@@ -45,11 +50,20 @@ export type ParseValidateCanvasUrlRow = {
 
 export type ParseValidateCanvasUrlVerdict = {
   accept: boolean;
-  rejectReason?: "invalid-format" | "invalid-scheme" | "http-not-allowed" | "private-ip";
+  rejectReason?:
+    | "invalid-format"
+    | "invalid-scheme"
+    | "http-not-allowed"
+    | "non-canonical-base"
+    | "private-ip";
 };
 
 /** Rows where Core currently diverges from the union oracle (parse-time only). */
 export function coreKnownDivergence(row: ParseValidateCanvasUrlRow): boolean {
+  // The canonical-base rules apply before the local-development allowlist, so
+  // a localhost URL carrying a query is rejected by both sides and no longer
+  // diverges — only the plain localhost forms do.
+  if (row.ExtraPath === "query-ssrf") return false;
   if (row.UrlForm === "http-host" && row.HostClass === "localhost") return true;
   if (row.UrlForm === "https-host" && row.HostClass === "localhost") return true;
   return false;
@@ -114,7 +128,12 @@ export function parseValidateCanvasUrlOracle(
     return { accept: false, rejectReason: "http-not-allowed" };
   }
 
-  // https-host or with-userinfo
+  // https-host or with-userinfo. Core rejects a non-canonical base before it
+  // looks at the host, so userinfo and query strings are checked first.
+  if (row.UrlForm === "with-userinfo" || row.ExtraPath === "query-ssrf") {
+    return { accept: false, rejectReason: "non-canonical-base" };
+  }
+
   if (row.HostClass === "ipv4-private" || row.HostClass === "ipv6-literal") {
     return { accept: false, rejectReason: "private-ip" };
   }
