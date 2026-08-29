@@ -121,18 +121,40 @@ git pull --ff-only origin development
 npm install
 npm run docker:dev:db
 npm run db:generate -w edu-ai
-npm run db:migrate:deploy -w question-maker-backend
+# Order matters for Canvas credential copy: Core schema first, then AI Tutor, then QM
+# (QM's migrate deploy copies tokens into Core before renaming its local table).
 cd apps/core && npx prisma migrate deploy
 cd ../extensions/ai-tutor/server && npx prisma migrate deploy
+cd ../../.. && npm run db:migrate:deploy -w question-maker-backend
 ```
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is
 useful before restarting the shared stack because it fails before traffic is sent to an incompatible
-schema. `go-live-build.sh` runs the Core migration preflight, all three migrations, the safe Core
-reference seed, and extension-local catalog seeds. Core fixture seeding is intentionally forbidden
-on shared hosts because it provisions fixed demo identities. Bootstrap the first real Core
-administrator with the operator invitation command in
-[`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
+schema. `go-live-build.sh` runs Core → AI Tutor → Question Maker in that order, so a normal deploy
+does not need them run by hand. Production QM containers run baseline → canvas→Core copier →
+`prisma migrate deploy` from their startup command (the same sequence as
+`npm run db:migrate:deploy`) before starting the API — set `CORE_DATABASE_URL`,
+`QM_ENCRYPTION_KEY` / `CORE_ENCRYPTION_KEY` (or the respective `ENCRYPTION_KEY` values) in the
+container env whenever QM still has credential rows.
+
+### Canvas credentials: QM → Core (one-time)
+
+Question Maker no longer stores Canvas API tokens. Before QM's Prisma migrate renames
+`canvas_integrations` → `canvas_integrations_pre_core_backup`,
+both the QM container startup command and
+`npm run db:migrate:deploy -w question-maker-backend` run
+`scripts/migrate-canvas-integrations-to-core.mjs`, which:
+
+1. Reads rows from QM `canvas_integrations` (or the backup table if already renamed)
+2. Decrypts each `api_key` with **QM** `ENCRYPTION_KEY`
+3. Re-encrypts with **Core** `ENCRYPTION_KEY` (documented as a separate key in
+   [`docs/ENVIRONMENT.md`](ENVIRONMENT.md))
+4. Inserts into Core `canvas_integrations` only when Core has no row for that `userId`
+
+Dry-run: `npm run db:migrate:canvas-to-core -w question-maker-backend -- --dry-run`
+
+After verifying Core rows, ops may `DROP TABLE canvas_integrations_pre_core_backup` on the
+QM database. Leaving the backup is safe; dropping it is irreversible.
 
 ### Deploying a branch
 
@@ -215,17 +237,31 @@ bash infra/s378/go-live-build.sh
 sets their public URLs. The canonical script and operational notes live in
 [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
 
-### Async AI-job queue (hard-disabled pre-MVP)
+### Async AI-job worker
 
-Do not deploy the standalone BullMQ worker. The authenticated owner-scoped
-status/cancellation API and server-side model authorization contract are not
-complete, so Core intentionally keeps the queue unavailable before MVP.
+The durable BullMQ queue is drained by a separate Core process. Run one worker
+process per Core deployment:
 
-`QUEUE_ENQUEUE_ENABLED` is deprecated and ignored even when set to `true`.
-`/api/chat` always uses direct chat, and `npm run queue:worker` exits before
-opening Redis or constructing a BullMQ worker. Re-enabling the queue requires a
-reviewed code change after those security contracts and their client flow ship;
-deployment configuration alone cannot enable it.
+```bash
+cd apps/core
+npm run queue:worker
+```
+
+The process consumes `ai-jobs-chat` and `ai-jobs-heavy`, claims the authoritative
+`AiJob` row, routes inference through the matching fleet pool, and writes
+`COMPLETED` or `FAILED`. Graceful `SIGINT`/`SIGTERM` shutdown closes both BullMQ
+workers before disconnecting Redis.
+
+| Variable | Purpose |
+| -------- | ------- |
+| `REDIS_URL` | Shared Redis used by the producer and worker |
+| `QUEUE_ENQUEUE_ENABLED` | Enables the guarded producer path; turn on only when the worker service is healthy |
+| `AI_JOB_DEFAULT_MODEL` | Optional explicit worker model; otherwise Auto routing is used |
+| `AI_JOB_CHAT_CONCURRENCY` | Chat-pool worker concurrency (default `8`) |
+| `AI_JOB_HEAVY_CONCURRENCY` | Heavy-pool worker concurrency (default `1`) |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | Per-attempt provider timeout in milliseconds (default `120000`) |
+| `AI_JOB_ATTEMPTS` | Total BullMQ attempts per job (default `3`) |
+| `AI_JOB_RETRY_DELAY_MS` | Exponential retry base delay (default `5000`) |
 
 ### Apache reverse proxy
 

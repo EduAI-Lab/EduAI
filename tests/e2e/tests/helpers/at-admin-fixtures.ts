@@ -203,17 +203,48 @@ export async function seedMcqActivity(
 }
 
 /**
+ * Create an open-ended SHORT_TEXT activity — no answer key, so a submission to
+ * it cannot be auto-graded and lands in the staff "to review" grading queue
+ * (`isCorrect: null`). This is the realistic source of an ungraded submission,
+ * since MCQ and answer-keyed short-text both auto-grade on submit.
+ */
+export async function seedShortTextActivity(
+  ctx: APIRequestContext,
+  lessonId: number,
+  mainTopicId: string,
+  opts: { question?: string } = {},
+): Promise<{ id: number; question: string }> {
+  const question = opts.question ?? "Explain, in your own words, why the base case terminates.";
+  const res = await ctx.post(`${AT}/api/lessons/${lessonId}/activities`, {
+    data: {
+      question,
+      type: "SHORT_TEXT",
+      // No `answer` — an open-ended prompt a human grades.
+      mainTopicId,
+      instructionsMd: "Answer in a sentence or two.",
+      enableTeachMode: true,
+      enableGuideMode: true,
+    },
+  });
+  expect(res.status()).toBe(201);
+  const activity = await res.json();
+  return { id: activity.id, question };
+}
+
+/**
  * Enrol a fresh student in the Core course and have them answer an activity,
  * so course staff have a submission to grade.
  *
  * `answerOption` is an **index**, not a letter — `activityEvaluation.js` only
  * compares it when it is a number, so a letter silently records no answer.
+ * Pass `answerText` instead to submit a short-text answer (e.g. to an
+ * open-ended activity, which stays ungraded and enters the review queue).
  */
 export async function seedStudentSubmission(
   playwright: RequestFixture,
   seeded: SeededCourse,
   activityId: number,
-  opts: { answerOption?: number } = {},
+  opts: { answerOption?: number; answerText?: string } = {},
 ): Promise<{ studentEmail: string; studentName: string }> {
   const studentCtx = await playwright.request.newContext();
   try {
@@ -240,8 +271,12 @@ export async function seedStudentSubmission(
     );
     expect(mirrorRes.status()).toBe(201);
 
+    const answerBody =
+      typeof opts.answerText === "string"
+        ? { answerText: opts.answerText }
+        : { answerOption: opts.answerOption ?? 1 };
     const answerRes = await studentCtx.post(`${AT}/api/questions/${activityId}/answer`, {
-      data: { answerOption: opts.answerOption ?? 1 },
+      data: answerBody,
     });
     expect(answerRes.status()).toBe(200);
 

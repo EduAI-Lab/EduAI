@@ -10,7 +10,7 @@ sudo install -o root -g root -m 0640 /path/to/eduai-core.env /etc/eduai/producti
 sudo install -o root -g root -m 0644 /path/to/eduai-core.service /etc/eduai/production-templates/eduai-core.service
 sudo install -o root -g root -m 0644 /path/to/my.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/my.eduai.ok.ubc.ca.conf
 sudo install -o root -g root -m 0644 /path/to/eduai-aitutor-server.service /etc/eduai/production-templates/eduai-aitutor-server.service
-sudo install -o root -g root -m 0644 /path/to/aitutor.ok.ubc.ca.conf /etc/eduai/production-templates/aitutor.ok.ubc.ca.conf
+sudo install -o root -g root -m 0644 /path/to/aitutor.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/aitutor.eduai.ok.ubc.ca.conf
 ```
 
 The deployment account must not be able to write this directory. After copying

@@ -80,10 +80,13 @@ export async function computeLessonTreeContext(lesson, module, { publishedOnly }
  * Breadcrumb payload for GET /lessons/:id/breadcrumb.
  *
  * @param {object} lesson Prisma lesson with `module.courseOffering` included
- * @param {{ publishedOnly: boolean }} opts
+ * @param {{ publishedOnly: boolean, viewerEnrollmentRole?: string | null }} opts
  * @returns {Promise<{ breadcrumb: object, coreUnavailable: boolean }>}
  */
-export async function buildLessonBreadcrumb(lesson, { publishedOnly }) {
+export async function buildLessonBreadcrumb(
+  lesson,
+  { publishedOnly, viewerEnrollmentRole = null },
+) {
   const { module } = lesson;
   const { courseOffering } = module;
 
@@ -99,6 +102,10 @@ export async function buildLessonBreadcrumb(lesson, { publishedOnly }) {
     breadcrumb: {
       module: mapModule(module),
       course: mapCourseOffering(courseOffering, coreCourse),
+      // The caller's enrollment role for THIS course, so the client can scope
+      // course-specific capabilities (e.g. answer submission) rather than
+      // reusing the global /api/me effective role (PR #1626).
+      viewerEnrollmentRole,
       ...context,
     },
   };

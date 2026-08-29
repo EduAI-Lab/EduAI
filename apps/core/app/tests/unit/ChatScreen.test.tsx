@@ -169,6 +169,9 @@ beforeEach(() => {
     ],
     loading: false,
   });
+  // append returns a Promise in the real AI SDK; the chip handler chains
+  // .finally() on it to clear its in-flight guard, so the mock must resolve.
+  appendMock.mockResolvedValue(undefined);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -316,7 +319,6 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
-
   it("uses the configured Assist model only when Auto is selected", () => {
     const assistAutoData: ChatBaseData = {
       ...autoRoutingData,
@@ -356,7 +358,7 @@ describe("ChatScreen — header", () => {
       expect.objectContaining({ model: "anthropic:claude-sonnet", adhdAssist: true }),
     );
   });
-  it("submits suggested prompts through the shared submit handler", async () => {
+  it("submits a suggested prompt directly via append, not through the input round-trip (#1644)", async () => {
     renderChatScreen();
 
     fireEvent.click(
@@ -366,22 +368,64 @@ describe("ChatScreen — header", () => {
     );
 
     await waitFor(() => {
-      expect(handleInputChangeMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          target: expect.objectContaining({
-            value: "Summarize this whole chat",
-          }),
-        }),
-      );
+      // The known prompt string is submitted directly; no fabricated input
+      // event and no rAF-deferred form submit (which raced with typed input).
+      expect(appendMock).toHaveBeenCalledWith({
+        role: "user",
+        content: "Summarize this whole chat",
+      });
 
       expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: "task_initiation",
         }),
       );
-
-      expect(handleSubmitMock).toHaveBeenCalledTimes(1);
     });
+
+    expect(handleInputChangeMock).not.toHaveBeenCalled();
+    expect(handleSubmitMock).not.toHaveBeenCalled();
+  });
+
+  it("clears a typed composer draft when a suggested prompt is submitted (#1648)", async () => {
+    // AI SDK v4's `append` (unlike the old `handleSubmit` path) does not clear
+    // the composer. A draft the user typed before clicking a chip must be
+    // cleared as part of the chip submission — otherwise it lingers and the
+    // next Send fires the stale draft as an unintended extra turn.
+    renderChatScreen();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Select suggested prompt",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(appendMock).toHaveBeenCalledTimes(1);
+    });
+    expect(setChatInput).toHaveBeenCalledWith("");
+  });
+
+  it("ignores a second suggested-prompt click while the first is in flight (#1644)", async () => {
+    // append resolves only when we let it, so the guard window stays open.
+    let releaseAppend: () => void = () => {};
+    appendMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseAppend = resolve;
+        }),
+    );
+
+    renderChatScreen();
+    const chip = screen.getByRole("button", { name: "Select suggested prompt" });
+
+    fireEvent.click(chip);
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(appendMock).toHaveBeenCalledTimes(1);
+    });
+
+    releaseAppend();
   });
   it("hydrates routed model ids from the stored transcript", () => {
     const transcript = makePersistedTranscript();

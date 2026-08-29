@@ -41,6 +41,7 @@ export type ModelFormData = {
   supportsStreaming: boolean;
   inputPricing?: number;
   outputPricing?: number;
+  contextFillRatio?: number | null;
   isActive: boolean;
   /** Auto-routing membership is managed from the Auto configuration panel. */
   routerTier?: RouterTier | null;
@@ -95,6 +96,7 @@ export function ModelFormDialog({
     supportsStreaming: boolean;
     inputPricing: string;
     outputPricing: string;
+    contextFillRatio: string;
     isActive: boolean;
     providerId: string;
   }>({
@@ -108,6 +110,7 @@ export function ModelFormDialog({
     supportsStreaming: true,
     inputPricing: "",
     outputPricing: "",
+    contextFillRatio: "",
     isActive: true,
     providerId: "",
   });
@@ -128,6 +131,7 @@ export function ModelFormDialog({
         supportsStreaming: model.supportsStreaming,
         inputPricing: model.inputPricing?.toString() || "",
         outputPricing: model.outputPricing?.toString() || "",
+        contextFillRatio: model.contextFillRatio?.toString() || "",
         isActive: model.isActive,
         providerId: model.providerId,
       });
@@ -143,6 +147,7 @@ export function ModelFormDialog({
         supportsStreaming: true,
         inputPricing: "",
         outputPricing: "",
+        contextFillRatio: "",
         isActive: true,
         providerId: "",
       });
@@ -240,6 +245,9 @@ export function ModelFormDialog({
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
+      // Empty clears the per-model override (null) so the model falls back to
+      // the env/default fill ratio; a value is sent for Zod to bound (#1639).
+      contextFillRatio: formData.contextFillRatio ? Number(formData.contextFillRatio) : null,
     });
   };
 
@@ -529,6 +537,24 @@ export function ModelFormDialog({
                 onChange={(e) => setFormData({ ...formData, outputPricing: e.target.value })}
                 placeholder="10.00"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="contextFillRatio">Context Fill Ratio</Label>
+              <Input
+                id="contextFillRatio"
+                type="number"
+                step="0.01"
+                min="0.5"
+                max="0.98"
+                value={formData.contextFillRatio}
+                onChange={(e) => setFormData({ ...formData, contextFillRatio: e.target.value })}
+                placeholder="0.90"
+              />
+              <p className="text-xs text-muted-foreground">
+                Fraction of the context window filled before older chat turns are digested. Blank
+                uses the platform default (0.5–0.98).
+              </p>
             </div>
           </div>
 

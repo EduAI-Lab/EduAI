@@ -2,7 +2,7 @@
  * Authentication service
  * Session validation goes through Core (POST /api/sessions/validate).
  * This service only maintains the thin local user record required for FK
- * integrity within QM (courses, canvas_integrations, canvas_course_mappings).
+ * integrity within QM (courses, canvas_course_mappings).
  */
 import { prisma } from "../config/database.js";
 

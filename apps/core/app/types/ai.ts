@@ -29,6 +29,7 @@ export type AIModel = {
   supportsStreaming: boolean;
   inputPricing?: number;
   outputPricing?: number;
+  contextFillRatio?: number | null;
   isActive: boolean;
   // `null` = not part of Auto routing's candidate pool. See the comment on
   // `RouterTierSchema` in `~/lib/ai/schemas` for why TIER_2 is effectively

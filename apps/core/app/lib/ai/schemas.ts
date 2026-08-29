@@ -48,6 +48,15 @@ export const CreateAIModelSchema = z.object({
   supportsStreaming: z.boolean().default(true),
   inputPricing: z.number().min(0, "Input pricing must be non-negative").optional(),
   outputPricing: z.number().min(0, "Output pricing must be non-negative").optional(),
+  // Per-model override for the chat context fill ratio (#1639). Bounds mirror the
+  // runtime clamp in providers.server `resolveContextFillRatio` (0.5–0.98); null
+  // clears the override so the model falls back to env/default.
+  contextFillRatio: z
+    .number()
+    .min(0.5, "Fill ratio must be at least 0.5")
+    .max(0.98, "Fill ratio must be at most 0.98")
+    .nullable()
+    .optional(),
   isActive: z.boolean().default(true),
   routerTier: RouterTierSchema.optional(),
   providerId: z.string().min(1, "Provider is required"),
@@ -64,6 +73,12 @@ export const UpdateAIModelSchema = z.object({
   supportsStreaming: z.boolean().optional(),
   inputPricing: z.number().min(0, "Input pricing must be non-negative").optional(),
   outputPricing: z.number().min(0, "Output pricing must be non-negative").optional(),
+  contextFillRatio: z
+    .number()
+    .min(0.5, "Fill ratio must be at least 0.5")
+    .max(0.98, "Fill ratio must be at most 0.98")
+    .nullable()
+    .optional(),
   isActive: z.boolean().optional(),
   routerTier: RouterTierSchema.optional(),
   providerId: z.string().min(1, "Provider is required").optional(),

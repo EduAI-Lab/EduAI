@@ -175,6 +175,27 @@ describe("CreateAIModelSchema", () => {
     const result = CreateAIModelSchema.safeParse({ ...valid, routerTier: "TIER_4" });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a contextFillRatio inside the 0.5–0.98 clamp (#1639)", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 0.85 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contextFillRatio).toBe(0.85);
+    }
+  });
+
+  it("rejects a contextFillRatio below 0.5 or above 0.98 (#1639)", () => {
+    expect(CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 0.3 }).success).toBe(false);
+    expect(CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 1.2 }).success).toBe(false);
+  });
+
+  it("accepts null contextFillRatio to clear the per-model override (#1639)", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contextFillRatio).toBeNull();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -210,5 +231,11 @@ describe("UpdateAIModelSchema", () => {
   it("rejects a routerTier value outside the RouterTier enum", () => {
     const result = UpdateAIModelSchema.safeParse({ routerTier: "NOT_A_TIER" });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts and clamps contextFillRatio; null clears it (#1639)", () => {
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: 0.9 }).success).toBe(true);
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: null }).success).toBe(true);
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: 0.1 }).success).toBe(false);
   });
 });
