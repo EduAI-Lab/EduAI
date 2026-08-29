@@ -171,7 +171,14 @@ export function useCourses(options: UseCoursesOptions = {}) {
       let body = first;
       if (loadAll) {
         const pageCount = Math.ceil(first.total / first.pageSize) || 1;
-        const remaining: Array<PaginatedResponse<Course> | undefined> = [];
+        // Indexed by pageIndex - 1 (page 0 is `first`); every slot from 1 to
+        // pageCount - 1 is claimed and filled exactly once by the worker pool
+        // below, so by the time `Promise.all` resolves the array holds no
+        // holes — but its declared element type stays possibly-`undefined`
+        // until narrowed, hence the explicit check in the reduce below.
+        const remaining: Array<PaginatedResponse<Course> | undefined> = Array.from({
+          length: Math.max(0, pageCount - 1),
+        });
         let nextPageIndex = 1;
         const readNextPage = async () => {
           while (nextPageIndex < pageCount) {
@@ -184,11 +191,16 @@ export function useCourses(options: UseCoursesOptions = {}) {
             readNextPage(),
           ),
         );
+        const remainingData = remaining.reduce<Course[]>((acc, page) => {
+          if (page) acc.push(...page.data);
+          return acc;
+        }, []);
+        const data = [...first.data, ...remainingData];
         body = {
           ...first,
-          data: [first.data, ...remaining.map((page) => page.data)].flat(),
+          data,
           page: 1,
-          pageSize: body.data.length,
+          pageSize: data.length,
         };
       }
       if (seq !== requestSeq.current) return;
