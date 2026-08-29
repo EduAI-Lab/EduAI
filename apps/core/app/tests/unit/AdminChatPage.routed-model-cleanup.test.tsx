@@ -8,11 +8,12 @@
 // so the Stop path is exercised directly through the onStop callback rather
 // than by simulating an error — mirroring how handleStop actually gets used.
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 type UseChatOptions = {
+  fetch?: typeof fetch;
   onResponse?: (response: Response) => void | Promise<void>;
   onFinish?: (message: { id: string; role: string }) => void;
   onError?: (error: Error) => void;
@@ -117,6 +118,10 @@ beforeEach(() => {
   stopMock.mockClear();
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("AdminChatPage — routed-model cleanup on error", () => {
   it("primes streamingRoutedRegistryId from the X-Routed-Model response header", async () => {
     renderAdminChatPage();
@@ -141,6 +146,44 @@ describe("AdminChatPage — routed-model cleanup on error", () => {
 });
 
 describe("AdminChatPage — routed-model cleanup on Stop", () => {
+  it("uses request-specific cancellation for admin chat Stop", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const originalSendBeacon = navigator.sendBeacon;
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: undefined,
+    });
+
+    try {
+      renderAdminChatPage();
+
+      await act(async () => {
+        await capturedUseChatOptions.current?.fetch?.("/api/chat", { method: "POST" });
+      });
+      const request = fetchMock.mock.calls[0];
+      const requestId = new Headers(request?.[1]?.headers).get("X-EduAI-Request-Id");
+      expect(requestId).toEqual(expect.any(String));
+
+      const onStop = capturedChatViewSharedProps.current?.onStop as () => void;
+      expect(onStop).toBeInstanceOf(Function);
+      await act(async () => {
+        onStop();
+      });
+
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "/api/chat/cancel",
+        expect.objectContaining({ method: "POST", keepalive: true }),
+      );
+      expect(stopMock).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
   it("clears streamingRoutedRegistryId when the user clicks Stop mid-turn, without onError/onFinish firing", async () => {
     renderAdminChatPage();
 

@@ -353,7 +353,11 @@ describe("POST /api/completion", () => {
 
     await action(makeArgs({ model: "ollama:test", messages: [], streaming: true }));
 
-    expect(withAdmissionRelease).toHaveBeenCalledWith(streamResponse, release);
+    expect(withAdmissionRelease).toHaveBeenCalledWith(
+      streamResponse,
+      release,
+      expect.any(AbortSignal),
+    );
     expect(release).not.toHaveBeenCalled();
   });
 });

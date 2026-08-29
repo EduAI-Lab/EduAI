@@ -13,17 +13,31 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
 const {
+  mockCreateVariant,
+  mockLinkVariantToCore,
+  mockPushVariantToCore,
   mockUpdateVariant,
   mockDeleteVariant,
   mockVariantsFindOne,
+  mockVariantsUpdate,
+  mockApplyShareChoice,
+  mockClearCoreLink,
   mockQuestionFindOne,
   mockEnrollments,
+  mockPatchTestable,
 } = vi.hoisted(() => ({
+  mockCreateVariant: vi.fn(),
+  mockLinkVariantToCore: vi.fn(),
+  mockPushVariantToCore: vi.fn(),
   mockUpdateVariant: vi.fn(),
   mockDeleteVariant: vi.fn().mockResolvedValue(true),
   mockVariantsFindOne: vi.fn(),
+  mockVariantsUpdate: vi.fn(),
+  mockApplyShareChoice: vi.fn(),
+  mockClearCoreLink: vi.fn(),
   mockQuestionFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
+  mockPatchTestable: vi.fn(),
 }));
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -42,26 +56,30 @@ vi.mock("../../src/config/settings.js", () => {
 });
 
 vi.mock("../../src/services/questionService.js", () => ({
-  createVariant: vi.fn(),
+  createVariant: mockCreateVariant,
+  linkVariantToCore: mockLinkVariantToCore,
+  rollbackVariantApproval: vi.fn(),
   updateVariant: mockUpdateVariant,
   deleteVariant: mockDeleteVariant,
   getVariantsByQuestion: vi.fn(),
+  applyVariantShareChoice: mockApplyShareChoice,
+  clearVariantCoreLinkIfUnchanged: mockClearCoreLink,
 }));
 
 vi.mock("../../src/services/coreWiringService.js", () => ({
-  pushVariantToCore: vi.fn(),
+  pushVariantToCore: mockPushVariantToCore,
 }));
 
 vi.mock("../../src/services/coreApiService.js", () => ({
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: vi.fn().mockResolvedValue({ id: "cuid-core-course", department: "COSC" }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
-  patchQuestionTestableOnCore: vi.fn(),
+  patchQuestionTestableOnCore: mockPatchTestable,
 }));
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
-    variants: { findUnique: mockVariantsFindOne, update: vi.fn() },
+    variants: { findUnique: mockVariantsFindOne, update: mockVariantsUpdate },
     questionMetadata: { findUnique: mockQuestionFindOne },
     assessments: {},
     assessmentSections: {},
@@ -201,7 +219,10 @@ describe("approved-variant lock (§19)", () => {
       .send({ questionText: "sneaky edit" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("VARIANT_LOCKED");
+    // `code` is the machine-readable contract; `error` carries the sentence the
+    // instructor reads, which used to be this bare code.
+    expect(res.body.code).toBe("VARIANT_LOCKED");
+    expect(res.body.error).not.toBe("VARIANT_LOCKED");
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
 
@@ -243,7 +264,10 @@ describe("approved-variant lock (§19)", () => {
       .send({ isAiGenerated: true, questionText: "sneaky edit" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("VARIANT_LOCKED");
+    // `code` is the machine-readable contract; `error` carries the sentence the
+    // instructor reads, which used to be this bare code.
+    expect(res.body.code).toBe("VARIANT_LOCKED");
+    expect(res.body.error).not.toBe("VARIANT_LOCKED");
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
 
@@ -371,5 +395,147 @@ describe("TA own-only delete (§19)", () => {
 
     expect(res.status).toBe(200);
     expect(mockDeleteVariant).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1555: the share choice and Core's `testable` flag must not drift apart
+// ---------------------------------------------------------------------------
+describe("share-with-extensions stays in step with Core (#1555)", () => {
+  it("PATCH .../testable also records the choice on the variant", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
+    });
+    mockPatchTestable.mockResolvedValue({ id: "cuid-q1", testable: true });
+    mockApplyShareChoice.mockResolvedValue({ applied: true, variant: { id: 42 } });
+
+    const res = await request(app)
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
+      .send({ testable: true });
+
+    expect(res.status).toBe(200);
+    // The write is conditional on the row still being the approved variant
+    // linked to the question Core just patched (#1652 review).
+    expect(mockApplyShareChoice).toHaveBeenCalledWith(42, COURSE.userId, "cuid-q1", true);
+  });
+
+  it("does not leave a question shared in Core when the row changed under the write", async () => {
+    // A concurrent un-review lands between the Core patch and the local write.
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
+    });
+    mockPatchTestable.mockResolvedValue({ id: "cuid-q1", testable: true });
+    mockApplyShareChoice.mockResolvedValue({ applied: false, reason: "state_changed" });
+
+    const res = await request(app)
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
+      .send({ testable: true });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("VARIANT_STATE_CHANGED");
+    // The Core write is undone rather than left asserting a choice that was
+    // never persisted locally.
+    expect(mockPatchTestable).toHaveBeenLastCalledWith("cuid-q1", false);
+  });
+
+  it("drops a stale Core link only while it still points at the missing question", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
+    });
+    // Core reports the question gone.
+    mockPatchTestable.mockResolvedValue(null);
+    mockClearCoreLink.mockResolvedValue({ applied: true });
+
+    const res = await request(app)
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
+      .send({ testable: true });
+
+    expect(res.status).toBe(404);
+    expect(mockClearCoreLink).toHaveBeenCalledWith(42, COURSE.userId, "cuid-q1");
+  });
+
+  it("an approved variant stays locked to the post-approval switch, not the edit form", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockVariantsFindOne.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      createdBy: "inst-1",
+      coreQuestionId: "cuid-q1",
+      questionMetadata: { type: "SA", course: COURSE },
+    });
+
+    const res = await request(app)
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=v")
+      .send({ shareWithExtensions: true });
+
+    // Approved variants are revert-only; the share choice is changed through
+    // PATCH .../testable, which writes both Core and the local column.
+    expect(res.status).toBe(409);
+    expect(mockPatchTestable).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A variant created already-approved must reach Core, or it is born stuck:
+// approved with no coreQuestionId is `approvalInFlight`, which can never be
+// reverted. The push used to run only on the approve (PUT) path.
+// ---------------------------------------------------------------------------
+describe("creating an already-approved variant publishes it (#1555 follow-up)", () => {
+  const approved = {
+    id: 77,
+    isDraft: false,
+    coreQuestionId: null,
+    questionMetadata: { id: 5, type: "SA", course: COURSE },
+  };
+
+  it("pushes to Core and links the returned question id", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCreateVariant.mockResolvedValue(approved);
+    mockPushVariantToCore.mockResolvedValue({ coreQuestionId: "cuid-new" });
+    mockLinkVariantToCore.mockResolvedValue({
+      applied: true,
+      variant: { ...approved, coreQuestionId: "cuid-new" },
+    });
+
+    const res = await request(app)
+      .post("/api/questions/5/variants")
+      .set("Cookie", "session=v")
+      .send({ questionText: "What is 2+2?", isDraft: false });
+
+    expect(res.status).toBe(201);
+    expect(mockPushVariantToCore).toHaveBeenCalled();
+    expect(mockLinkVariantToCore).toHaveBeenCalled();
+  });
+
+  it("leaves a draft alone — nothing to publish until it is reviewed", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCreateVariant.mockResolvedValue({ ...approved, isDraft: true });
+
+    const res = await request(app)
+      .post("/api/questions/5/variants")
+      .set("Cookie", "session=v")
+      .send({ questionText: "What is 2+2?", isDraft: true });
+
+    expect(res.status).toBe(201);
+    expect(mockPushVariantToCore).not.toHaveBeenCalled();
   });
 });

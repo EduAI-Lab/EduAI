@@ -99,7 +99,7 @@ test.describe("AI Tutor ADMIN — platform-wide course list", () => {
       await expect(page).not.toHaveURL(/status=published/, { timeout: 20_000 });
 
       await page.getByRole("combobox").filter({ hasText: "Term" }).click();
-      await page.getByRole("option", { name: "2026W2", exact: true }).click();
+      await page.getByRole("option", { name: "2026-27W2", exact: true }).click();
       await expect(page).toHaveURL(/term=W2/, { timeout: 20_000 });
       await expect(page.getByText(draft.name).first()).toBeVisible();
       await expect(page.getByText(published.name)).toHaveCount(0);

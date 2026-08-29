@@ -33,6 +33,7 @@ import {
   acquireAiAdmission,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
@@ -656,6 +657,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // already been persisted (#1621 review) — otherwise the client can't
   // resume the same thread on retry even though nothing was lost server-side.
   let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
+  const activeRequestId = request.headers.get("X-EduAI-Request-Id")?.trim() || null;
   try {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
@@ -2599,14 +2601,37 @@ ${buildEmptyCourseRagBlock()}`;
 
     const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
+    const streamAbortController = new AbortController();
+    const abortStreamFromRequest = () => streamAbortController.abort();
+    if (request.signal.aborted) abortStreamFromRequest();
+    else request.signal.addEventListener("abort", abortStreamFromRequest, { once: true });
+    let unregisterCancellation: (() => void) | undefined;
+    const cleanupStreamCancellation = () => {
+      unregisterCancellation?.();
+      unregisterCancellation = undefined;
+      request.signal.removeEventListener("abort", abortStreamFromRequest);
+    };
+    if (activeRequestId) {
+      unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
+        streamAbortController.abort();
+      });
+    }
+    const releaseAdmission = (keepCancellation = false) => {
+      if (admissionRelease) {
+        admissionRelease();
+        admissionRelease = null;
+      }
+      if (!keepCancellation) cleanupStreamCancellation();
+    };
     let admissionWaitedMs = 0;
     if (needsAdmission) {
       try {
-        const slot = await acquireAiAdmission(request.signal);
+        const slot = await acquireAiAdmission(streamAbortController.signal);
         admissionRelease = slot.release;
         admissionWaitedMs = slot.waitedMs;
       } catch (err) {
-        if (isClientAbort(err, request.signal)) {
+        if (isClientAbort(err, streamAbortController.signal)) {
+          releaseAdmission();
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
@@ -2620,6 +2645,7 @@ ${buildEmptyCourseRagBlock()}`;
               serverId: overflow.serverId,
             });
           } else {
+            releaseAdmission();
             return new Response(
               JSON.stringify({
                 error: "Server busy — too many concurrent AI requests. Try again shortly.",
@@ -2632,16 +2658,11 @@ ${buildEmptyCourseRagBlock()}`;
             );
           }
         } else {
+          releaseAdmission();
           throw err;
         }
       }
     }
-    const releaseAdmission = () => {
-      if (admissionRelease) {
-        admissionRelease();
-        admissionRelease = null;
-      }
-    };
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
@@ -2712,7 +2733,7 @@ ${buildEmptyCourseRagBlock()}`;
         // type cannot carry on its own.
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
-        abortSignal: request.signal,
+        abortSignal: streamAbortController.signal,
         onChunk: probe
           ? () => {
               probe.hooks.signalReady();
@@ -2819,7 +2840,7 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
-      if (isClientAbort(error, request.signal)) {
+      if (isClientAbort(error, streamAbortController.signal)) {
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -2877,7 +2898,10 @@ ${buildEmptyCourseRagBlock()}`;
             }
             applyBedrockOverflow(overflow);
             shouldProbeFleetStream = false;
-            releaseAdmission();
+            // The local slot is no longer needed, but the request-specific
+            // cancellation handle must survive while the Bedrock fallback
+            // stream is running.
+            releaseAdmission(true);
             chatApiTrace("bedrock overflow after fleet exhausted", {
               resolvedModelId,
               serverId: overflow.serverId,
@@ -2887,7 +2911,7 @@ ${buildEmptyCourseRagBlock()}`;
           }
         } catch (retryError) {
           releaseAdmission();
-          if (isClientAbort(retryError, request.signal)) {
+          if (isClientAbort(retryError, streamAbortController.signal)) {
             return clientAbortResponse();
           }
           logStreamError(retryError, streamTrace);
@@ -3076,7 +3100,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (oversightStage === "provider") {
@@ -3124,7 +3148,16 @@ ${buildEmptyCourseRagBlock()}`;
           telemetryServerId ?? fleetPick?.serverId ?? null,
         ),
       );
-      const release = admissionRelease;
+      // `admissionRelease` is cleared below so outer error paths cannot release
+      // a slot after ownership transfers to the response body. Capture the
+      // acquired callback by value first: closing over `releaseAdmission()` here
+      // would read the now-null mutable variable and leak every completed
+      // streaming turn until AI_MAX_INFLIGHT is exhausted.
+      const acquiredAdmissionRelease = admissionRelease;
+      const release = () => {
+        acquiredAdmissionRelease?.();
+        cleanupStreamCancellation();
+      };
       admissionRelease = null;
       const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {
         headers,
@@ -3137,7 +3170,11 @@ ${buildEmptyCourseRagBlock()}`;
       if (liveStreamData) {
         dataStreamOptions.data = liveStreamData;
       }
-      return withAdmissionRelease(result.toDataStreamResponse(dataStreamOptions), release);
+      return withAdmissionRelease(
+        result.toDataStreamResponse(dataStreamOptions),
+        release,
+        streamAbortController.signal,
+      );
     } else {
       let providerResultResolved = false;
       try {
@@ -3234,7 +3271,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (!providerResultResolved) {
