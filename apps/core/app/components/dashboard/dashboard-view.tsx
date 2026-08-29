@@ -54,6 +54,15 @@ export type DashboardCourse = {
    * course or bouncing back.
    */
   isPublished: boolean;
+  /**
+   * #1666 review: `listCoursesForUser` includes active TA and published
+   * STUDENT enrollment rows for a platform INSTRUCTOR too (not just courses
+   * they teach), but `/instructor/chat`'s loader only lists courses with a
+   * real active INSTRUCTOR enrollment — so a mixed-role user's card for a
+   * course they merely take/TA must not link to the ops assistant either;
+   * it would silently fall back to a different (actually-taught) course.
+   */
+  callerEnrollmentRole: string | null;
 };
 
 export type DashboardRecentChat = {
@@ -182,13 +191,24 @@ function CourseListPanel({
            * for an unpublished course must not link there at all, rather than
            * silently landing on a different course or bouncing the instructor
            * back to the dashboard.
+           *
+           * #1666 review: the same applies to a mixed-role user's non-taught
+           * row — /instructor/chat's loader only lists courses with a real
+           * active INSTRUCTOR enrollment, so a card for a course this user
+           * only takes/TAs (callerEnrollmentRole !== "INSTRUCTOR") must not
+           * link there either.
            */}
-          {chatHref === "/instructor/chat" && !course.isPublished ? (
+          {chatHref === "/instructor/chat" &&
+          (!course.isPublished || course.callerEnrollmentRole !== "INSTRUCTOR") ? (
             <span
-              title="Publish this course to open the ops assistant for it"
+              title={
+                course.callerEnrollmentRole !== "INSTRUCTOR"
+                  ? "You don't teach this course"
+                  : "Publish this course to open the ops assistant for it"
+              }
               className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-[var(--radius-md)] whitespace-nowrap border border-border cursor-not-allowed"
             >
-              Unpublished
+              {course.callerEnrollmentRole !== "INSTRUCTOR" ? "Not teaching" : "Unpublished"}
             </span>
           ) : (
             <button

@@ -140,10 +140,19 @@ function DashboardContent({
 
 export default function Page() {
   const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
+  // #1666 review: surface the Course Assistant nav link for a non-INSTRUCTOR
+  // platform role who actually teaches a course (dashboard.courses already
+  // carries each row's real active enrollment role — no extra query).
+  const navUser = {
+    ...user,
+    hasInstructorEnrollment: dashboard.courses.some(
+      (course) => course.callerEnrollmentRole === "INSTRUCTOR",
+    ),
+  };
 
   return (
     <CoreAppShell
-      user={user}
+      user={navUser}
       breadcrumbs={
         <Breadcrumb>
           <BreadcrumbList>

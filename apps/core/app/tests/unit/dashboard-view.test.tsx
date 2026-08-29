@@ -41,6 +41,7 @@ const course1: DashboardCourse = {
   term: "Fall",
   year: 2026,
   isPublished: true,
+  callerEnrollmentRole: "INSTRUCTOR",
 };
 
 const course2: DashboardCourse = {
@@ -50,6 +51,7 @@ const course2: DashboardCourse = {
   term: "Fall",
   year: 2026,
   isPublished: true,
+  callerEnrollmentRole: "INSTRUCTOR",
 };
 
 const chat1: DashboardRecentChat = {
@@ -224,6 +226,47 @@ describe("DashboardView", () => {
 
       expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(2);
       expect(screen.queryByText("Unpublished")).not.toBeInTheDocument();
+    });
+  });
+
+  // #1666 review: listCoursesForUser includes active TA and published
+  // STUDENT enrollment rows for a platform INSTRUCTOR too, not just courses
+  // they teach — but /instructor/chat's loader only lists courses with a
+  // real active INSTRUCTOR enrollment. A card for a course this user merely
+  // takes/TAs must not link there either; it would silently fall back to a
+  // different (actually-taught) course.
+  describe("mixed-role courses on the instructor (/instructor/chat) dashboard", () => {
+    const taughtCourse: DashboardCourse = {
+      ...course1,
+      isPublished: true,
+      callerEnrollmentRole: "INSTRUCTOR",
+    };
+    const taCourse: DashboardCourse = { ...course2, isPublished: true, callerEnrollmentRole: "TA" };
+
+    it("disables the Chat action for a course this user only TAs, even though it's published", () => {
+      renderDashboard({ courses: [taughtCourse, taCourse], chatHref: "/instructor/chat" });
+
+      expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(1);
+      expect(screen.getByText("Not teaching")).toBeInTheDocument();
+    });
+
+    it("still links the taught course's card to /instructor/chat by course id", () => {
+      const { router } = renderDashboard({
+        courses: [taughtCourse, taCourse],
+        chatHref: "/instructor/chat",
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+      expect(router.state.location.pathname).toBe("/instructor/chat");
+      expect(router.state.location.search).toBe(`?courseId=${taughtCourse.id}`);
+    });
+
+    it("does not disable a TA'd course's Chat action on the learning-assistant dashboard", () => {
+      renderDashboard({ courses: [taughtCourse, taCourse] });
+
+      expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(2);
+      expect(screen.queryByText("Not teaching")).not.toBeInTheDocument();
     });
   });
 

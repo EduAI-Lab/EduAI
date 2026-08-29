@@ -86,7 +86,10 @@ export function getNavSecondaryForUser(user: NavUser): NavItem[] {
     items.push(...ADMIN_SECONDARY_NAV);
   }
 
-  if (role === "INSTRUCTOR") {
+  // #1666 review: also surfaced for a non-INSTRUCTOR platform role who holds
+  // a real active INSTRUCTOR enrollment somewhere (the route/API already
+  // allow that caller in) — see NavUser.hasInstructorEnrollment.
+  if (role === "INSTRUCTOR" || user.hasInstructorEnrollment) {
     items.push(...INSTRUCTOR_SECONDARY_NAV);
   }
 

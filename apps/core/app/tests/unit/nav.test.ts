@@ -23,6 +23,24 @@ describe("nav — chatbot placement (#835)", () => {
     expect(secondary[0].key).toBe("chat");
     expect(secondary.find((item) => item.key === "admin-chat")).toBeDefined();
   });
+
+  it("includes Course Assistant for a platform INSTRUCTOR", () => {
+    const secondary = getNavSecondaryForUser({ role: "INSTRUCTOR" });
+    expect(secondary.find((item) => item.key === "instructor-chat")).toBeDefined();
+  });
+
+  it("omits Course Assistant for a plain STUDENT with no instructor enrollment", () => {
+    const secondary = getNavSecondaryForUser({ role: "STUDENT" });
+    expect(secondary.find((item) => item.key === "instructor-chat")).toBeUndefined();
+  });
+
+  // #1666 review: the route/API allow a platform STUDENT (or TA/UNIT_ADMIN)
+  // with a real active INSTRUCTOR enrollment into /instructor/chat —
+  // role === "INSTRUCTOR" alone missed them, making the feature undiscoverable.
+  it("includes Course Assistant for a non-INSTRUCTOR platform role with an active INSTRUCTOR enrollment (#1666 review)", () => {
+    const secondary = getNavSecondaryForUser({ role: "STUDENT", hasInstructorEnrollment: true });
+    expect(secondary.find((item) => item.key === "instructor-chat")).toBeDefined();
+  });
 });
 
 describe("getNavForUser — ADMIN role", () => {

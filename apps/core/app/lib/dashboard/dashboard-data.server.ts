@@ -287,6 +287,7 @@ function toDashboardCourse(course: {
   term: string;
   year: number;
   isPublished: boolean;
+  callerEnrollmentRole?: string | null;
 }): DashboardCourse {
   return {
     id: course.id,
@@ -295,6 +296,7 @@ function toDashboardCourse(course: {
     term: course.term,
     year: course.year,
     isPublished: course.isPublished,
+    callerEnrollmentRole: course.callerEnrollmentRole ?? null,
   };
 }
 

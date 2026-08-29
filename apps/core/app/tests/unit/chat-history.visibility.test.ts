@@ -244,7 +244,7 @@ describe("listChats", () => {
 
     expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { AND: [{ userId: "admin-1" }] },
+        where: { AND: [{ userId: "admin-1" }, { chatbotType: "LEARNING" }] },
       }),
     );
   });
@@ -256,7 +256,26 @@ describe("listChats", () => {
 
     expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { AND: [{}, { courseId: "c1" }, { userId: "owner-1" }] },
+        where: {
+          AND: [{}, { chatbotType: "LEARNING" }, { courseId: "c1" }, { userId: "owner-1" }],
+        },
+      }),
+    );
+  });
+
+  // #1666 review: a saved ADMIN/INSTRUCTOR-mode chat has no way to "continue"
+  // via /chat/:chatId (which only ever resumes as chatMode: "learning") — it
+  // rendered read-only with no indication why, so it's excluded from this
+  // listing (the sidebar/dashboard history) entirely instead of being a
+  // confusing dead end.
+  it("excludes non-LEARNING chats from the listing regardless of role", async () => {
+    prismaMock.chat.findMany.mockResolvedValue([]);
+
+    await listChats({ id: "instr-1", role: "INSTRUCTOR" });
+
+    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { AND: [{ userId: "instr-1" }, { chatbotType: "LEARNING" }] },
       }),
     );
   });

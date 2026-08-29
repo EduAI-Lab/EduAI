@@ -193,6 +193,16 @@ export async function resolveChatReadAccess(
  * List chats visible to `viewer`, optionally narrowed by course/owner. Results
  * are newest-first and carry a lightweight first-user-message preview so the UI
  * has something to show (chat titles are not auto-generated).
+ *
+ * Restricted to LEARNING-mode chats (#1666 review): this feeds the generic
+ * chat sidebar/history and the dashboard's "Continue in chat" panel, both of
+ * which render into `/chat/:chatId` — which only ever resumes as
+ * `chatMode: "learning"` (`resolveChatReadAccess` already only grants
+ * `canEdit` for LEARNING rows, for the same reason). A saved ADMIN or
+ * INSTRUCTOR-mode chat has no way to "continue" there — it just renders
+ * read-only with no indication why — so it is excluded from this listing
+ * entirely rather than shown as a dead end. Those chats live in their own
+ * `/admin/chat` / `/instructor/chat` UIs, which do not use this listing.
  */
 export async function listChats(
   viewer: ChatHistoryViewer,
@@ -204,7 +214,12 @@ export async function listChats(
     scope === "own" ? { userId: viewer.id } : await buildChatVisibilityFilter(viewer);
 
   const where: Prisma.ChatWhereInput = {
-    AND: [visibility, ...(courseId ? [{ courseId }] : []), ...(userId ? [{ userId }] : [])],
+    AND: [
+      visibility,
+      { chatbotType: "LEARNING" },
+      ...(courseId ? [{ courseId }] : []),
+      ...(userId ? [{ userId }] : []),
+    ],
   };
 
   const chats = await prisma.chat.findMany({

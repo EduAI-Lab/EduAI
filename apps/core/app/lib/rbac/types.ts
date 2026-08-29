@@ -56,4 +56,12 @@ export type NavGroupItem = {
 
 export type NavUser = {
   role?: string | null;
+  /**
+   * #1666 review: the route/API allow a platform STUDENT (or TA/UNIT_ADMIN)
+   * with an active `Enrollment(role=INSTRUCTOR)` on some course into
+   * `/instructor/chat` — `role === "INSTRUCTOR"` alone misses them, leaving
+   * the feature undiscoverable. Optional and defaults to falsy for callers
+   * that haven't resolved it, so this is additive.
+   */
+  hasInstructorEnrollment?: boolean;
 };
