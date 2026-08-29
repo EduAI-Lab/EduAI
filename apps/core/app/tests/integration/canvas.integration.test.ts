@@ -12,6 +12,7 @@ vi.mock("~/lib/canvas/client.server", async (importOriginal) => {
   return {
     ...actual,
     verifyCanvasCredentials: vi.fn().mockResolvedValue(undefined),
+    listCanvasCourseStudents: vi.fn(actual.listCanvasCourseStudents),
   };
 });
 
@@ -19,7 +20,11 @@ import { resetCanvasRateLimitsForTests, isCanvasSyncRateLimited } from "~/lib/ca
 import { prepareStudentIdStorage, readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { loader, action } from "~/routes/api/canvas.$";
 import { auth } from "~/lib/auth/server";
-import { verifyCanvasCredentials, CanvasVerificationError } from "~/lib/canvas/client.server";
+import {
+  verifyCanvasCredentials,
+  CanvasVerificationError,
+  listCanvasCourseStudents,
+} from "~/lib/canvas/client.server";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -411,6 +416,21 @@ describe("Canvas API — courses and sync", { timeout: 15_000 }, () => {
     });
     expect(rosterRows.length).toBeGreaterThan(0);
     expect(rosterRows.some((row) => readStoredStudentId(row.sisUserId) === "10000001")).toBe(true);
+  });
+
+  it("rolls back a first sync when the Canvas roster fetch fails", async () => {
+    await connectTestMode();
+    vi.mocked(listCanvasCourseStudents).mockRejectedValueOnce(new Error("roster unavailable"));
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const response = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    const body = await response.json();
+
+    expect(body.data.errors).toEqual([{ canvasId: "1", message: "roster unavailable" }]);
+    const course = await prisma.course.findFirst({
+      where: { externalSource: "canvas", externalId: "1" },
+    });
+    expect(course).toBeNull();
   });
 
   it("syncs selected courses and links enrollments by studentId", async () => {

@@ -45,8 +45,9 @@ export type ChatViewSharedProps = {
   selectedModel: string;
   setSelectedModel: (value: string) => void;
   selectedModelInfo?: ChatModelOption;
+  selectedCourseId: string | null;
   selectedCourseCode: string | null;
-  setSelectedCourseCode: (value: string | null) => void;
+  setSelectedCourseId: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
   /**
    * Which field of `ChatCourseOption` the selector keys/emits through

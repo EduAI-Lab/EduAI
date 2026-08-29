@@ -45,6 +45,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   proxyCoreGetQuizQuestion,
   proxyCoreCreateQuiz: vi.fn(),
   proxyCoreCreateQuizQuestion: vi.fn(),
+  proxyCoreDeleteQuiz: vi.fn(),
   proxyCoreGetQuestionBank: vi.fn(),
   proxyCoreListQuestionBankQuestions: vi.fn(),
   proxyCoreListQuestionBanks: vi.fn(),

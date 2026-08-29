@@ -38,9 +38,9 @@ function mapEnrollment(courseId: string, row: ApiEnrollment): CourseEnrollment {
 }
 
 /** Cursor "load more" roster (#1042) — bounded per page instead of one unbounded fetch. */
-export function useCourseEnrollments(courseId: string) {
+export function useCourseEnrollments(courseId: string, enabled = true) {
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -61,7 +61,7 @@ export function useCourseEnrollments(courseId: string) {
   );
 
   const fetchEnrollments = useCallback(async () => {
-    if (!courseId) return;
+    if (!courseId || !enabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -74,7 +74,7 @@ export function useCourseEnrollments(courseId: string) {
     } finally {
       setLoading(false);
     }
-  }, [courseId, fetchPage]);
+  }, [courseId, enabled, fetchPage]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
@@ -96,7 +96,7 @@ export function useCourseEnrollments(courseId: string) {
   }, [courseId, fetchPage, nextCursor, loadingMore]);
 
   useEffect(() => {
-    fetchEnrollments();
+    if (enabled) void fetchEnrollments();
   }, [fetchEnrollments]);
 
   const enroll = useCallback(

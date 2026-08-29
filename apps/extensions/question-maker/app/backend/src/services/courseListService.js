@@ -23,7 +23,7 @@ import {
 import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
 import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
-const MIN_LIST_RANK = LEVELS.instructor.rank;
+const MIN_LIST_RANK = LEVELS.ta.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
 const accessSyncedAtByUser = new Map();
 const coreCatalogCache = { courses: null, refreshedAt: 0 };
@@ -255,7 +255,7 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
 }
 
 /**
- * List QM courses visible to the caller at instructor rank or above.
+ * List QM courses visible to the caller at TA rank or above.
  * ADMIN sees Core's full catalog (materializing anchors as needed, see
  * below); UNIT_ADMIN / INSTRUCTOR are filtered via courseAccess over the
  * local rows only.

@@ -8,8 +8,8 @@ describe("canAccessQm", () => {
     expect(canAccessQm("UNIT_ADMIN")).toBe(true);
   });
 
-  it("blocks students and TAs", () => {
-    expect(canAccessQm("STUDENT")).toBe(false);
+  it("allows platform students through for course-level TA resolution", () => {
+    expect(canAccessQm("STUDENT")).toBe(true);
     expect(canAccessQm("TA")).toBe(false);
   });
 

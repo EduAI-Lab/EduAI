@@ -202,6 +202,32 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
   });
 
+  it("waits at the loaded boundary until the next activity arrives", async () => {
+    let releaseNextPage!: (value: {
+      data: ReturnType<typeof activity>[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }) => void;
+    mockActivitiesForLesson.mockReturnValue(
+      new Promise((resolve) => {
+        releaseNextPage = resolve;
+      }),
+    );
+
+    await act(async () => {
+      wrap({ activities: [activity(1)], activitiesTotal: 2 });
+    });
+
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+
+    await act(async () => {
+      releaseNextPage({ data: [activity(2)], total: 2, page: 2, pageSize: 50 });
+    });
+
+    expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
+  });
+
   it("shows the server-derived order text from the deferred breadcrumb", async () => {
     wrap();
     await waitFor(() => {

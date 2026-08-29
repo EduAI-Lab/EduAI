@@ -1,4 +1,6 @@
-export const QM_AUTHORIZED_ROLES = ["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"] as const;
+// Core represents course TAs as platform STUDENT users; course-level guards
+// still deny ordinary students who do not hold a TA enrollment.
+export const QM_AUTHORIZED_ROLES = ["INSTRUCTOR", "ADMIN", "UNIT_ADMIN", "STUDENT"] as const;
 
 export type QmAuthorizedRole = (typeof QM_AUTHORIZED_ROLES)[number];
 

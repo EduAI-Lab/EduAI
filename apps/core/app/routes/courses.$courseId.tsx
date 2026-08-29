@@ -128,7 +128,10 @@ export default function CourseDetailPage() {
     enroll,
     removeEnrollment,
     refetch: refetchEnrollments,
-  } = useCourseEnrollments(course.id);
+  } = useCourseEnrollments(
+    course.id,
+    access === "admin" || access === "unit" || access === "instructor",
+  );
   const {
     materials,
     uploadMaterial,

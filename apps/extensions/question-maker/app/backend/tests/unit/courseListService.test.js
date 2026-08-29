@@ -555,12 +555,13 @@ describe("listCoursesForUser", () => {
       expect(rows).toHaveLength(0);
     });
 
-    it("excludes a course where the caller has a TA callerEnrollmentRole (below MIN_LIST_RANK)", async () => {
+    it("includes a course where a platform student has a TA callerEnrollmentRole", async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
       mockListCoursesFromCore.mockResolvedValue([{ id: "core-1", callerEnrollmentRole: "TA" }]);
 
-      const rows = await listCoursesForUser({ id: "ta-1", role: "TA" });
-      expect(rows).toHaveLength(0);
+      const rows = await listCoursesForUser({ id: "ta-1", role: "STUDENT" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].accessLevel).toBe("ta");
     });
 
     it("excludes a course where the caller has a STUDENT callerEnrollmentRole (below MIN_LIST_RANK)", async () => {

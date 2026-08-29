@@ -19,6 +19,8 @@ set -euo pipefail
 CANVAS_BASE_URL="${CANVAS_URL:-http://localhost:8080}"
 ADMIN_TOKEN="${CANVAS_ADMIN_TOKEN:-}"
 USER_PASSWORD="${CANVAS_SEED_PASSWORD:-password123}"
+COURSE_START_AT="2020-01-01T00:00:00Z"
+COURSE_END_AT="2035-12-31T23:59:59Z"
 RESET_BEFORE_SEED=true
 # ==============================================================
 
@@ -58,7 +60,7 @@ CANVAS_HTTP_CODE=0
 CANVAS_BODY=""
 
 log() {
-  printf '[seed-local-canvas] %s\n' "$*"
+  printf '[seed-local-canvas] %s\n' "$*" >&2
 }
 
 die() {
@@ -199,6 +201,14 @@ canvas_post() {
   printf '%s' "$CANVAS_BODY"
 }
 
+canvas_put() {
+  canvas_call PUT "$1" "$2" ""
+  if [[ "$CANVAS_HTTP_CODE" -ge 400 ]]; then
+    die "PUT $1 -> HTTP ${CANVAS_HTTP_CODE}: ${CANVAS_BODY}"
+  fi
+  printf '%s' "$CANVAS_BODY"
+}
+
 canvas_post_soft() {
   canvas_call POST "$1" "$2" ""
 }
@@ -294,7 +304,8 @@ is_protected() {
 
 find_user_by_email() {
   local email="$1"
-  local email_lower="${email,,}"
+  local email_lower
+  email_lower="$(printf '%s' "$email" | tr '[:upper:]' '[:lower:]')"
   local results
   results="$(canvas_get /accounts/self/users "search_term=$(printf '%s' "$email" | jq -sRr @uri)&per_page=100")"
   printf '%s' "$results" | jq -c --arg email "$email_lower" \
@@ -470,40 +481,41 @@ get_or_create_course() {
     body="$(jq -n \
       --arg name "$name" \
       --arg code "$course_code" \
-      '{course: {name: $name, course_code: $code, license: "private"}}')"
+      --arg start "$COURSE_START_AT" \
+      --arg end "$COURSE_END_AT" \
+      '{course: {name: $name, course_code: $code, license: "private", start_at: $start, end_at: $end, restrict_enrollments_to_course_dates: true}}')"
     local created
     created="$(canvas_post /accounts/self/courses "$body")"
     course_id="$(printf '%s' "$created" | jq -r '.id')"
     log "created course: ${course_code} (id=${course_id})"
   fi
 
+  local dates
+  dates="$(jq -n --arg start "$COURSE_START_AT" --arg end "$COURSE_END_AT" \
+    '{course: {start_at: $start, end_at: $end, restrict_enrollments_to_course_dates: true}}')"
+  canvas_put "/courses/${course_id}" "$dates" >/dev/null
+
   enroll_user "$course_id" "$teacher_user_id" "TeacherEnrollment"
   printf '%s' "$course_id"
 }
-
-declare -A TEACHER_IDS=()
-declare -A STUDENT_IDS=()
 
 seed_canvas() {
   local entry name email sis
   for entry in "${TEACHERS[@]}"; do
     IFS='|' read -r name email <<<"$entry"
-    local user_json
-    user_json="$(get_or_create_user "$name" "$email" "$USER_PASSWORD")"
-    TEACHER_IDS["$email"]="$(printf '%s' "$user_json" | jq -r '.id')"
+    get_or_create_user "$name" "$email" "$USER_PASSWORD" >/dev/null
   done
 
   for entry in "${STUDENTS[@]}"; do
     IFS='|' read -r name email sis <<<"$entry"
-    local user_json
-    user_json="$(get_or_create_user "$name" "$email" "$USER_PASSWORD" "$sis")"
-    STUDENT_IDS["$email"]="$(printf '%s' "$user_json" | jq -r '.id')"
+    get_or_create_user "$name" "$email" "$USER_PASSWORD" "$sis" >/dev/null
   done
 
   local course_entry course_name course_code teacher_email student_emails
   for course_entry in "${COURSES[@]}"; do
     IFS='|' read -r course_name course_code teacher_email student_emails <<<"$course_entry"
-    local teacher_id="${TEACHER_IDS[$teacher_email]}"
+    local teacher_id
+    teacher_id="$(find_user_by_email "$teacher_email" | jq -r '.id')"
     local course_id
     course_id="$(get_or_create_course "$course_name" "$course_code" "$teacher_id")"
 
@@ -512,7 +524,8 @@ seed_canvas() {
     for student_email in "${student_list[@]}"; do
       student_email="${student_email//[$'\t\r\n ']}"
       [[ -z "$student_email" ]] && continue
-      local student_id="${STUDENT_IDS[$student_email]}"
+      local student_id
+      student_id="$(find_user_by_email "$student_email" | jq -r '.id')"
       enroll_user "$course_id" "$student_id" "StudentEnrollment"
     done
   done

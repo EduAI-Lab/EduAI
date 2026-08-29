@@ -1,4 +1,4 @@
-import { type RouteConfig, index, route } from "@react-router/dev/routes";
+import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
@@ -17,8 +17,10 @@ export default [
   route("/auth/accept-invitation", "routes/auth/accept-invitation.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
   route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
-  route("/chat", "routes/chat.tsx"),
-  route("/chat/:chatId", "routes/chat.$chatId.tsx"),
+  layout("routes/chat-layout.tsx", [
+    route("/chat", "routes/chat.tsx"),
+    route("/chat/:chatId", "routes/chat.$chatId.tsx"),
+  ]),
   route("/settings", "routes/settings.tsx"),
   route("/help", "routes/help.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),

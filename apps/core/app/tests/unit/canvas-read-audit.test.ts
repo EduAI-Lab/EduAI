@@ -60,6 +60,7 @@ vi.mock("~/lib/canvas/client.server", () => ({
 vi.mock("~/lib/canvas/quizzes.server", () => ({
   createCanvasQuiz: vi.fn(),
   createCanvasQuizQuestion: vi.fn(),
+  deleteCanvasQuiz: vi.fn(),
   getCanvasQuiz: vi.fn(),
   getCanvasQuizQuestion: vi.fn(),
   listCanvasQuizQuestions: vi.fn(),

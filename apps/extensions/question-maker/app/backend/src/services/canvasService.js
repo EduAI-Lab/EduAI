@@ -11,6 +11,7 @@ import {
   proxyCoreCanvasGetIntegration,
   proxyCoreCreateQuiz,
   proxyCoreCreateQuizQuestion,
+  proxyCoreDeleteQuiz,
   proxyCoreGetQuiz,
   proxyCoreGetQuizQuestion,
   proxyCoreGetQuestionBank,
@@ -130,6 +131,7 @@ export const exportAssessmentToCanvas = async (
   cookie,
   options = {},
 ) => {
+  let createdQuiz = null;
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
@@ -201,6 +203,7 @@ export const exportAssessmentToCanvas = async (
 
     const quizResponse = await proxyCoreCreateQuiz(cookie, canvasCourseId, quizPayload);
     const quiz = quizResponse.data;
+    createdQuiz = quiz;
     const quizId = quiz.id;
 
     // Create questions in Canvas
@@ -255,6 +258,27 @@ export const exportAssessmentToCanvas = async (
         : `${integration.canvasUrl}/courses/${canvasCourseId}/quizzes/${quizId}`,
     };
   } catch (error) {
+    let cleanupFailed = false;
+    if (createdQuiz) {
+      try {
+        await proxyCoreDeleteQuiz(cookie, canvasCourseId, createdQuiz.id);
+      } catch (cleanupError) {
+        cleanupFailed = true;
+        logger.error(
+          { cleanupError, canvasCourseId, quizId: createdQuiz.id },
+          "Failed to remove a partial Canvas quiz after export failure",
+        );
+      }
+    }
+    if (cleanupFailed) {
+      const compensationError = canvasError(
+        "Canvas export failed and the partial quiz could not be removed. Delete it in Canvas before retrying.",
+        502,
+        { error: "CANVAS_EXPORT_COMPENSATION_FAILED", quizId: createdQuiz.id },
+      );
+      compensationError.code = "CANVAS_EXPORT_COMPENSATION_FAILED";
+      throw compensationError;
+    }
     rethrowCoreCanvasError(error, "export assessment to Canvas");
   }
 };

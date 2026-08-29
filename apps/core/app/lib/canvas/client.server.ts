@@ -875,6 +875,11 @@ function getMockCanvasRequestResponse<T>(path: string, method: string, body?: Js
     } as T;
   }
 
+  if (path.includes("/quizzes") && method === "DELETE") {
+    const quizId = Number(path.match(/\/quizzes\/(\d+)$/)?.[1] ?? 1);
+    return { id: quizId, title: "Deleted Test Quiz" } as T;
+  }
+
   if (path.includes("/quizzes") && method === "GET" && !path.includes("/questions")) {
     const singleQuizMatch = path.match(/\/quizzes\/(\d+)$/);
     if (singleQuizMatch) {

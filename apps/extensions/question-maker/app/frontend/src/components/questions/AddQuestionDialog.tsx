@@ -1736,7 +1736,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       <div className="space-y-2">
                         <Label>Primary topic</Label>
                         <Select
-                          value={editPrimaryTopicId || undefined}
+                          value={editPrimaryTopicId}
                           onValueChange={setEditPrimaryTopicId}
                           disabled={isApproved || viewTopicsLoading || viewTopics.length === 0}
                         >

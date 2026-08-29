@@ -574,6 +574,15 @@ export async function proxyCoreCreateQuizQuestion(cookie, canvasCourseId, quizId
   });
 }
 
+/** DELETE /api/canvas/quizzes/:quizId — compensate a failed multi-step export. */
+export async function proxyCoreDeleteQuiz(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+    { method: "DELETE" },
+  );
+}
+
 /** GET /api/canvas/question-banks?canvasCourseId= — list Classic Canvas question banks. */
 export async function proxyCoreListQuestionBanks(cookie, canvasCourseId) {
   return canvasCookieFetch(

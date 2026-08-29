@@ -627,41 +627,42 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       return rest;
     });
 
-    // Optimistic UI via useOptimistic
-    addActivityOpt((items) =>
-      items.map((a) =>
-        a.id === activityId
-          ? {
-              ...a,
-              enableTeachMode: newTeach,
-              enableGuideMode: newGuide,
-              enableCustomMode: newCustom,
-              customPrompt: mode === "custom" && !enabled ? null : a.customPrompt,
-            }
-          : a,
-      ),
-    );
-    if (mode === "custom" && !enabled) {
-      setPromptSaved((prev) => ({ ...prev, [activityId]: false }));
-    }
-
-    beginModeUpdate(activityId);
-    try {
-      const payload: ActivityUpdateBody = {
-        enableTeachMode: newTeach,
-        enableGuideMode: newGuide,
-        enableCustomMode: newCustom,
-      };
+    startTransition(async () => {
+      addActivityOpt((items) =>
+        items.map((a) =>
+          a.id === activityId
+            ? {
+                ...a,
+                enableTeachMode: newTeach,
+                enableGuideMode: newGuide,
+                enableCustomMode: newCustom,
+                customPrompt: mode === "custom" && !enabled ? null : a.customPrompt,
+              }
+            : a,
+        ),
+      );
       if (mode === "custom" && !enabled) {
-        payload.customPrompt = null;
+        setPromptSaved((prev) => ({ ...prev, [activityId]: false }));
       }
-      const updated = await api.updateActivity(activityId, payload);
-      setActivities((prev) => prev.map((a) => (a.id === activityId ? updated : a)));
-    } catch (error) {
-      console.error("Failed to update AI modes", error);
-    } finally {
-      endModeUpdate(activityId);
-    }
+
+      beginModeUpdate(activityId);
+      try {
+        const payload: ActivityUpdateBody = {
+          enableTeachMode: newTeach,
+          enableGuideMode: newGuide,
+          enableCustomMode: newCustom,
+        };
+        if (mode === "custom" && !enabled) {
+          payload.customPrompt = null;
+        }
+        const updated = await api.updateActivity(activityId, payload);
+        setActivities((prev) => prev.map((a) => (a.id === activityId ? updated : a)));
+      } catch (error) {
+        console.error("Failed to update AI modes", error);
+      } finally {
+        endModeUpdate(activityId);
+      }
+    });
   };
 
   const handleCustomPromptSave = async (activity: Activity) => {
@@ -688,31 +689,33 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
     setPromptErrors((prev) => ({ ...prev, [activity.id]: "" }));
 
-    addActivityOpt((items) =>
-      items.map((item) =>
-        item.id === activity.id
-          ? { ...item, customPrompt: draft, customPromptTitle: titleDraft }
-          : item,
-      ),
-    );
-    setSavingPromptId(activity.id);
-    try {
-      const updated = await api.updateActivity(activity.id, {
-        customPrompt: draft,
-        customPromptTitle: titleDraft,
-      });
-      setActivities((prev) => prev.map((item) => (item.id === activity.id ? updated : item)));
-      setPromptSaved((prev) => ({ ...prev, [activity.id]: true }));
-    } catch (error) {
-      console.error("Failed to save custom prompt", error);
-      setPromptErrors((prev) => ({
-        ...prev,
-        [activity.id]: "Could not save the custom prompt. Please try again.",
-      }));
-      setActivities((prev) => [...prev]);
-    } finally {
-      setSavingPromptId((current) => (current === activity.id ? null : current));
-    }
+    startTransition(async () => {
+      addActivityOpt((items) =>
+        items.map((item) =>
+          item.id === activity.id
+            ? { ...item, customPrompt: draft, customPromptTitle: titleDraft }
+            : item,
+        ),
+      );
+      setSavingPromptId(activity.id);
+      try {
+        const updated = await api.updateActivity(activity.id, {
+          customPrompt: draft,
+          customPromptTitle: titleDraft,
+        });
+        setActivities((prev) => prev.map((item) => (item.id === activity.id ? updated : item)));
+        setPromptSaved((prev) => ({ ...prev, [activity.id]: true }));
+      } catch (error) {
+        console.error("Failed to save custom prompt", error);
+        setPromptErrors((prev) => ({
+          ...prev,
+          [activity.id]: "Could not save the custom prompt. Please try again.",
+        }));
+        setActivities((prev) => [...prev]);
+      } finally {
+        setSavingPromptId((current) => (current === activity.id ? null : current));
+      }
+    });
   };
 
   // `value` is the raw topic id string from the Select. Topic ids are opaque
@@ -725,39 +728,42 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
     const targetActivity = oActivities.find((activity) => activity.id === activityId);
     if (!targetActivity) return;
-    // Optimistic UI via useOptimistic
-    addActivityOpt((items) =>
-      items.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              mainTopic: topic,
-              secondaryTopics: activity.secondaryTopics.filter((item) => String(item.id) !== value),
-            }
-          : activity,
-      ),
-    );
-
-    beginTopicUpdate(activityId);
-    try {
-      const updated = await api.updateActivity(activityId, { mainTopicId: value });
-      setActivities((prev) =>
-        prev.map((activity) =>
+    startTransition(async () => {
+      addActivityOpt((items) =>
+        items.map((activity) =>
           activity.id === activityId
             ? {
                 ...activity,
-                mainTopic: updated.mainTopic,
-                secondaryTopics: updated.secondaryTopics,
+                mainTopic: topic,
+                secondaryTopics: activity.secondaryTopics.filter(
+                  (item) => String(item.id) !== value,
+                ),
               }
             : activity,
         ),
       );
-    } catch (error) {
-      console.error("Failed to update main topic", error);
-      // Base state remains unchanged; optimistic view will clear on next render
-    } finally {
-      endTopicUpdate(activityId);
-    }
+
+      beginTopicUpdate(activityId);
+      try {
+        const updated = await api.updateActivity(activityId, { mainTopicId: value });
+        setActivities((prev) =>
+          prev.map((activity) =>
+            activity.id === activityId
+              ? {
+                  ...activity,
+                  mainTopic: updated.mainTopic,
+                  secondaryTopics: updated.secondaryTopics,
+                }
+              : activity,
+          ),
+        );
+      } catch (error) {
+        console.error("Failed to update main topic", error);
+        // Base state remains unchanged; optimistic view clears when the action settles.
+      } finally {
+        endTopicUpdate(activityId);
+      }
+    });
   };
 
   // Full-array secondary-topic change from the MultiSelect. The optimistic

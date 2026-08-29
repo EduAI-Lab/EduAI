@@ -25,6 +25,7 @@ import {
 import {
   createCanvasQuiz,
   createCanvasQuizQuestion,
+  deleteCanvasQuiz,
   getCanvasQuiz,
   getCanvasQuizQuestion,
   listCanvasQuizQuestions,
@@ -647,9 +648,39 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       }
 
       case "DELETE": {
-        if (subpath !== "disconnect") {
-          return json({ success: false, error: "NOT_FOUND" }, 404);
+        const quizRoute = parseCanvasQuizSubpath(subpath);
+        if (quizRoute?.kind === "quiz") {
+          const queryOrError = parseCanvasCourseIdQuery(request);
+          if (queryOrError instanceof Response) return queryOrError;
+
+          const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+          if (credentialsOrError instanceof Response) return credentialsOrError;
+
+          const data = await deleteCanvasQuiz(
+            credentialsOrError,
+            queryOrError.canvasCourseId,
+            quizRoute.quizId,
+          );
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "CANVAS_QUIZ_WRITE",
+              category: "CANVAS",
+              entityType: "CanvasQuiz",
+              entityId: String(quizRoute.quizId),
+              entityLabel: data.title ?? null,
+              details: {
+                canvasCourseId: queryOrError.canvasCourseId,
+                quizId: quizRoute.quizId,
+                operation: "delete",
+              },
+            }),
+          );
+          return json({ success: true, data });
         }
+
+        if (subpath !== "disconnect") return json({ success: false, error: "NOT_FOUND" }, 404);
 
         const existingIntegration = await getCanvasIntegrationPublic(userId);
         await deleteCanvasIntegration(userId);

@@ -974,7 +974,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // Single findMany keeps candidate priority without N round-trips; case is
         // insensitive so "cosc121" still resolves.
         let resolvedCourseId: string | null = null;
-        if (courseCode) {
+        if (courseCode && !courseId) {
           try {
             const candidates = courseCodeLookupCandidates(courseCode);
             if (candidates.length > 0) {
@@ -1029,7 +1029,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // A persisted chat is pinned to its course. If a follow-up turn explicitly
         // names a *different* course, reject — silently switching would split the
         // chat's RAG context and message history across courses (#685 review).
-        const requestedCourseId = resolvedCourseId || courseId || null;
+        const requestedCourseId = courseId || resolvedCourseId || null;
         if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
           return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
             status: 409,
@@ -1037,7 +1037,7 @@ export async function action({ request }: ActionFunctionArgs) {
           });
         }
 
-        const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+        const effectiveCourseId = courseId || resolvedCourseId || chat?.courseId || null;
 
         // #657: the global "general assistant" chat was removed — every interactive
         // chat is now course-scoped. Server-to-server callers (admin API key /
