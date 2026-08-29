@@ -32,6 +32,7 @@ import { courseService } from "@/services/courseService";
 import eduaiService, {
   type EduAIModelOption,
   type EduAICourseOption,
+  type EduAIQuestionGenerationRequest,
 } from "@/services/eduaiService";
 import { apiKeyStorage } from "@/services/apiKeyStorage";
 import { normalizeCourseCode } from "@/utils/courseDisplay";
@@ -416,13 +417,9 @@ export function QuestionComposerPage() {
       setError("Select a course before generating a question.");
       return;
     }
+    // courseCode is optional — the backend prefers QM courseId (#1362) and
+    // falls back to code lookup only when no id is supplied.
     const code = resolveCourseCodeForEduAI();
-    if (!code) {
-      setError(
-        "AI service requires a course code. Update the course with a code or ensure it exists in the AI service.",
-      );
-      return;
-    }
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
@@ -509,18 +506,20 @@ export function QuestionComposerPage() {
           : undefined;
 
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
-      const response = await eduaiService.generateQuestions({
+      const generateParams: EduAIQuestionGenerationRequest = {
         prompt: promptWithTopics,
-        courseCode: code,
+        courseId: validCourseId,
+        courseCode: code || undefined,
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
-        ...(variantMcqRequiredCount != null
-          ? { mcqRequiredChoiceCount: variantMcqRequiredCount }
-          : {}),
-      });
+      };
+      if (variantMcqRequiredCount != null) {
+        generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
+      }
+      const response = await eduaiService.generateQuestions(generateParams);
 
       const generated = response?.data?.questions?.[0];
       if (!generated)

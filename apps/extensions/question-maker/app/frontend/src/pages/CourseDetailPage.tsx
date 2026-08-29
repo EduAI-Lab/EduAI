@@ -146,9 +146,11 @@ export const CourseDetailPage = () => {
   const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<
-    typeof mapExtractedToDraftQuestions
-  > | null>(null);
+  /** Drafts from a background extraction, scoped to the course they were extracted for. */
+  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<{
+    courseId: number;
+    drafts: ReturnType<typeof mapExtractedToDraftQuestions>;
+  } | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
   const [isBanksLoading, setIsBanksLoading] = useState(false);
@@ -781,10 +783,20 @@ export const CourseDetailPage = () => {
             return;
           }
           params.onExtractionComplete?.("success", { questionsCount: drafts.length });
-          setPendingExtractionDrafts(drafts);
+          const extractionCourseId = params.courseId;
+          setPendingExtractionDrafts({ courseId: extractionCourseId, drafts });
           toast("Your extraction is ready", {
             description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Open the upload dialog to review and save.`,
-            action: { label: "Review questions", onClick: () => setIsUploadOpen(true) },
+            action: {
+              label: "Review questions",
+              onClick: () => {
+                // Return to the course these drafts belong to. CourseDetail keeps
+                // state across :courseId changes, so opening here while on another
+                // course would otherwise save into the wrong course.
+                navigate(`/courses/${extractionCourseId}`);
+                setIsUploadOpen(true);
+              },
+            },
             duration: Infinity,
           });
         })
@@ -795,8 +807,16 @@ export const CourseDetailPage = () => {
           toast.error("Extraction failed", { description: message, duration: Infinity });
         });
     },
-    [toast],
+    [navigate, toast],
   );
+
+  // If the user navigates to another course while the upload dialog is open
+  // with course-scoped drafts, close it so we never save into the wrong course.
+  useEffect(() => {
+    if (isUploadOpen && pendingExtractionDrafts && courseId !== pendingExtractionDrafts.courseId) {
+      setIsUploadOpen(false);
+    }
+  }, [courseId, isUploadOpen, pendingExtractionDrafts]);
 
   // ── Assessment handlers ─────────────────────────────────────────────────────
   const handleCreateAssessment = useCallback(
@@ -1110,7 +1130,9 @@ export const CourseDetailPage = () => {
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
             onExtractInBackground={handleExtractInBackground}
-            initialDraftQuestions={pendingExtractionDrafts}
+            initialDraftQuestions={
+              pendingExtractionDrafts?.courseId === courseId ? pendingExtractionDrafts.drafts : null
+            }
           />
 
           {selectedAssessmentForExport && (
