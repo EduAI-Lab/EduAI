@@ -124,10 +124,19 @@ export async function recordTopicAnalysisJobs(
   });
   if (ready.length === 0) return [];
 
+  // Derived from the WHOLE batch, so every chunk of one sync shares it and a
+  // resync of the same corpus derives the same key again — which matters when a
+  // previous attempt already created some of the chunks: the pre-existing rows
+  // and the new ones still end up in the same group.
+  const batchKey = topicAnalysisIdempotencyKey(
+    args.courseId,
+    ready.map((material) => material.checksum),
+  );
+
   const recorded: RecordedTopicAnalysisJob[] = [];
   for (let start = 0; start < ready.length; start += MAX_MATERIALS_PER_JOB) {
     const chunk = ready.slice(start, start + MAX_MATERIALS_PER_JOB);
-    const job = await recordChunk(args, chunk);
+    const job = await recordChunk(args, chunk, batchKey);
     if (job) recorded.push(job);
   }
   return recorded;
@@ -136,6 +145,7 @@ export async function recordTopicAnalysisJobs(
 async function recordChunk(
   args: StartTopicAnalysisArgs,
   chunk: { id: string; checksum: string }[],
+  batchKey: string,
 ): Promise<RecordedTopicAnalysisJob | null> {
   const idempotencyKey = topicAnalysisIdempotencyKey(
     args.courseId,
@@ -154,6 +164,7 @@ async function recordChunk(
       courseId: args.courseId,
       materialIds: chunk.map((material) => material.id),
       canvasCourseId: args.canvasCourseId ?? null,
+      batchKey,
     },
   });
 

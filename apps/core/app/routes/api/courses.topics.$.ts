@@ -12,8 +12,8 @@ import {
   createCourseTopic,
   updateCourseTopic,
   deleteCourseTopic,
-  getCourseTopics,
-  getCourseTopic,
+  getCourseTopicsWithSources,
+  getCourseTopicWithSources,
 } from "~/lib/courses/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -21,7 +21,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
-    const topic = await getCourseTopic(courseId, topicId, includeDeleted);
+    const topic = await getCourseTopicWithSources(courseId, topicId, includeDeleted);
     if (!topic) {
       return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
         status: 404,
@@ -34,7 +34,7 @@ async function topicsGetResponse(courseId: string, topicId?: string, includeDele
     });
   }
 
-  const topics = await getCourseTopics(courseId, includeDeleted);
+  const topics = await getCourseTopicsWithSources(courseId, includeDeleted);
   return new Response(JSON.stringify({ topics }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -351,12 +351,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const responseBody =
           result.status === "404"
             ? { error: "Topic not found" }
-            : {
-                error: "Invalid input",
-                // JSON.stringify drops an undefined value, so a result without
-                // field errors still serializes to a bare `{ error }`.
-                details: result.details ?? undefined,
-              };
+            : // #1624: the course's last topic is the fallback, and removing it
+              // would leave Question Maker with nothing to author against.
+              result.status === "409"
+              ? { error: result.error }
+              : {
+                  error: "Invalid input",
+                  // JSON.stringify drops an undefined value, so a result without
+                  // field errors still serializes to a bare `{ error }`.
+                  details: result.details ?? undefined,
+                };
         return new Response(JSON.stringify(responseBody), {
           status: Number(result.status),
           headers: { "Content-Type": "application/json" },

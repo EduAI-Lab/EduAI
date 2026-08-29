@@ -176,6 +176,22 @@ describe("recordTopicAnalysisJobs", () => {
     expect(chunks[0]).toHaveLength(MAX_MATERIALS_PER_JOB);
     expect(chunks[1]).toHaveLength(1);
     expect([...chunks[0], ...chunks[1]]).toEqual(materials.map((m) => m.id));
+
+    // Both chunks carry one shared batch key, derived from the whole corpus —
+    // that is what lets the status read report a failed chunk instead of only
+    // the newest row.
+    const keys = prismaMock.aiJob.create.mock.calls.map(
+      (call) => call[0].data.payload.input.batchKey as string,
+    );
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[0]).toBe(
+      topicAnalysisIdempotencyKey(
+        "course-1",
+        materials.map((m) => m.checksum),
+      ),
+    );
+    // …and it is not the same as either chunk's own idempotency key.
+    expect(keys[0]).not.toBe(prismaMock.aiJob.create.mock.calls[0][0].data.bullJobId);
   });
 
   it("marks an abandoned RUNNING row resumable once its lease lapses", async () => {

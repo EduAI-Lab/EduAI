@@ -17,7 +17,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   courseMaterial: { findMany: vi.fn() },
   course: { findUnique: vi.fn() },
-  aiJob: { findFirst: vi.fn(), deleteMany: vi.fn() },
+  aiJob: { findFirst: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 const recordTopicAnalysisJobs = vi.hoisted(() => vi.fn());
@@ -305,16 +305,37 @@ describe("mergeGeneratedTopic", () => {
 });
 
 describe("latestTopicAnalysisForCourse", () => {
-  it("reports the most recent job and the outstanding suggestion count", async () => {
-    const createdAt = new Date("2026-08-26T10:00:00.000Z");
-    prismaMock.aiJob.findFirst.mockResolvedValue({
+  /** A chunk row as the status read selects it. `batchKey` groups a split sync. */
+  function jobRow(
+    overrides: Partial<{
+      id: string;
+      status: string;
+      errorMessage: string | null;
+      createdAt: Date;
+      completedAt: Date | null;
+      result: unknown;
+      batchKey: string | null;
+    }> = {},
+  ) {
+    const { batchKey = "batch-1", ...rest } = overrides;
+    return {
       id: "job-1",
       status: "COMPLETED",
       errorMessage: null,
-      createdAt,
-      completedAt: createdAt,
+      createdAt: new Date("2026-08-26T10:00:00.000Z"),
+      completedAt: new Date("2026-08-26T10:00:00.000Z"),
       result: { created: 4, usedSource: "canvas-modules" },
-    });
+      payload:
+        batchKey === null
+          ? { input: { kind: "topic-analysis" } }
+          : { input: { kind: "topic-analysis", batchKey } },
+      ...rest,
+    };
+  }
+
+  it("reports the most recent job and the outstanding suggestion count", async () => {
+    const createdAt = new Date("2026-08-26T10:00:00.000Z");
+    prismaMock.aiJob.findMany.mockResolvedValue([jobRow()]);
     prismaMock.courseTopic.count.mockResolvedValue(4);
 
     expect(await latestTopicAnalysisForCourse("course-1")).toEqual({
@@ -332,7 +353,7 @@ describe("latestTopicAnalysisForCourse", () => {
   });
 
   it("reports a null job for a course that has never been analysed", async () => {
-    prismaMock.aiJob.findFirst.mockResolvedValue(null);
+    prismaMock.aiJob.findMany.mockResolvedValue([]);
     prismaMock.courseTopic.count.mockResolvedValue(0);
 
     expect(await latestTopicAnalysisForCourse("course-1")).toEqual({
@@ -342,18 +363,106 @@ describe("latestTopicAnalysisForCourse", () => {
   });
 
   it("tolerates a job row whose result is missing or malformed", async () => {
-    prismaMock.aiJob.findFirst.mockResolvedValue({
-      id: "job-1",
-      status: "FAILED",
-      errorMessage: "boom",
-      createdAt: new Date(),
-      completedAt: null,
-      result: null,
-    });
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ status: "FAILED", errorMessage: "boom", completedAt: null, result: null }),
+    ]);
     prismaMock.courseTopic.count.mockResolvedValue(0);
 
     const status = await latestTopicAnalysisForCourse("course-1");
     expect(status.job).toMatchObject({ created: null, usedSource: null, errorMessage: "boom" });
+  });
+
+  /**
+   * An oversized sync becomes several rows. Reporting only the newest would let
+   * a completed chunk hide a failed or still-running sibling — the instructor
+   * would read "Suggested N topics" over a batch that half failed.
+   */
+  it("reports FAILED when an earlier chunk failed and the newest completed", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "chunk-b", status: "COMPLETED", result: { created: 3, usedSource: "ai" } }),
+      jobRow({
+        id: "chunk-a",
+        status: "FAILED",
+        errorMessage: "provider unreachable",
+        createdAt: new Date("2026-08-26T09:00:00.000Z"),
+        completedAt: null,
+        result: null,
+      }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(3);
+
+    const status = await latestTopicAnalysisForCourse("course-1");
+    expect(status.job).toMatchObject({
+      id: "chunk-b",
+      status: "FAILED",
+      errorMessage: "provider unreachable",
+      // The batch started when its first chunk was written.
+      createdAt: new Date("2026-08-26T09:00:00.000Z").toISOString(),
+      // Settled — a failed batch has finished, it just finished badly.
+      completedAt: new Date("2026-08-26T10:00:00.000Z").toISOString(),
+    });
+  });
+
+  it("stays in flight until every chunk settles", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "chunk-b", status: "COMPLETED" }),
+      jobRow({ id: "chunk-a", status: "RUNNING", completedAt: null, result: null }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(0);
+
+    const status = await latestTopicAnalysisForCourse("course-1");
+    expect(status.job).toMatchObject({ status: "RUNNING", completedAt: null });
+  });
+
+  it("sums created counts across a completed batch", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "chunk-b", result: { created: 3, usedSource: "material-headings" } }),
+      jobRow({ id: "chunk-a", result: { created: 4, usedSource: "material-headings" } }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(7);
+
+    const status = await latestTopicAnalysisForCourse("course-1");
+    expect(status.job).toMatchObject({ status: "COMPLETED", created: 7 });
+  });
+
+  it("labels the batch with the source that actually produced topics", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "chunk-b", result: { created: 0, usedSource: "none" } }),
+      jobRow({ id: "chunk-a", result: { created: 5, usedSource: "canvas-modules" } }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(5);
+
+    expect((await latestTopicAnalysisForCourse("course-1")).job).toMatchObject({
+      usedSource: "canvas-modules",
+    });
+  });
+
+  it("does not fold in rows from a different batch", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "current", batchKey: "batch-2" }),
+      // An older, unrelated sync that failed — must not poison the new batch.
+      jobRow({ id: "old", batchKey: "batch-1", status: "FAILED", errorMessage: "stale" }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(4);
+
+    expect((await latestTopicAnalysisForCourse("course-1")).job).toMatchObject({
+      id: "current",
+      status: "COMPLETED",
+      errorMessage: null,
+    });
+  });
+
+  it("reads a pre-chunking row on its own", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "legacy", batchKey: null }),
+      jobRow({ id: "older", batchKey: null, status: "FAILED", errorMessage: "stale" }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(4);
+
+    expect((await latestTopicAnalysisForCourse("course-1")).job).toMatchObject({
+      id: "legacy",
+      status: "COMPLETED",
+    });
   });
 });
 

@@ -38,6 +38,14 @@ const TopicAnalysisInputSchema = z.object({
   materialIds: z.array(z.string().min(1)).min(1).max(500),
   /** Set when the batch came from a Canvas sync, so modules can be read for structure. */
   canvasCourseId: z.string().min(1).nullish(),
+  /**
+   * Groups the chunks one oversized sync was split into (#1624). Derived from
+   * the whole batch's checksums, so it is stable across resyncs and identical
+   * for every chunk — the status read needs it to report a batch as failed when
+   * any one chunk failed, rather than reporting only the newest row. Optional:
+   * rows written before chunking existed have none, and are read alone.
+   */
+  batchKey: z.string().min(1).optional(),
 });
 
 export const JobInputSchema = z.discriminatedUnion("kind", [

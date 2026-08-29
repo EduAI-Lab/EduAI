@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 
 import prisma from "~/lib/prisma.server";
+import { deleteCourseTopic } from "~/lib/courses/server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
 import {
   recordTopicAnalysisJobs,
@@ -595,6 +596,86 @@ describe("stale job recovery", () => {
     // Same row (the idempotency key is unchanged), but now the caller may run it
     // — which is what stops the banner sitting in flight forever.
     expect(second).toEqual({ jobId: first!.jobId, created: false, resumable: true });
+  });
+});
+
+describe("batch status aggregation", () => {
+  /**
+   * An oversized sync becomes several rows sharing a `batchKey`. Reporting only
+   * the newest would let a completed chunk hide a failed sibling, so the banner
+   * would claim success over a batch that half failed.
+   */
+  it("reports a batch as FAILED while any chunk failed", async () => {
+    const material = await seedMaterial({
+      checksum: "sum-batch",
+      rawText: "Chapter 1 — Limits",
+    });
+    const recorded = await recordTopicAnalysisJob({
+      courseId,
+      userId,
+      materialIds: [material.id],
+    });
+    await runTopicAnalysisJob(recorded!.jobId, noAi);
+
+    // A sibling chunk of the same batch that failed, written directly so the
+    // batch has one completed and one failed row.
+    const completed = await prisma.aiJob.findUniqueOrThrow({ where: { id: recorded!.jobId } });
+    await prisma.aiJob.create({
+      data: {
+        kind: "topic-analysis",
+        type: "background",
+        source: "core:topic-analysis",
+        status: "FAILED",
+        errorMessage: "provider unreachable",
+        completedAt: new Date(),
+        payload: completed.payload as object,
+        userId,
+        courseId,
+        queueName: completed.queueName,
+        bullJobId: `${completed.bullJobId}-sibling`,
+      },
+    });
+
+    const status = await latestTopicAnalysisForCourse(courseId);
+    expect(status.job).toMatchObject({
+      status: "FAILED",
+      errorMessage: "provider unreachable",
+    });
+  });
+});
+
+describe("the course always keeps an authorable topic", () => {
+  it("refuses to delete the fallback when it is the only live topic", async () => {
+    await ensureCourseHasTopic(courseId);
+
+    expect(await deleteCourseTopic(courseId, { name: FALLBACK_TOPIC_NAME })).toEqual({
+      status: "409",
+      error: "LAST_TOPIC_PROTECTED",
+    });
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+  });
+
+  it("restores the fallback when the last real topic is deleted", async () => {
+    const topic = await prisma.courseTopic.create({
+      data: { courseId, name: "Limits", createdBy: userId },
+    });
+
+    expect(await deleteCourseTopic(courseId, { topicId: topic.id })).toMatchObject({
+      status: "204",
+    });
+    expect((await liveTopics()).map((t) => t.name)).toEqual([FALLBACK_TOPIC_NAME]);
+  });
+
+  it("allows deleting the fallback once real topics exist", async () => {
+    await ensureCourseHasTopic(courseId);
+    await prisma.courseTopic.create({
+      data: { courseId, name: "Limits", createdBy: userId },
+    });
+
+    expect(await deleteCourseTopic(courseId, { name: FALLBACK_TOPIC_NAME })).toMatchObject({
+      status: "204",
+    });
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual(["Limits"]);
   });
 });
 

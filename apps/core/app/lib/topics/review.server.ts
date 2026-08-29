@@ -26,9 +26,107 @@ type ReviewOutcome =
   | { status: "404" | "409"; error: string };
 
 /**
- * Latest topic-analysis job for a course, plus the outstanding suggestion count.
+ * How many recent topic-analysis rows the status read scans to assemble a batch.
  *
- * The job row is the persistent notification (#1624): a banner reading it
+ * A batch is one chunk per 500 materials, so this covers a 25,000-material
+ * course — far past anything real — while keeping the read bounded.
+ */
+const MAX_SCANNED_JOB_ROWS = 50;
+
+type JobRow = {
+  id: string;
+  status: string;
+  errorMessage: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  result: unknown;
+  payload: unknown;
+};
+
+/** The `batchKey` a chunk row carries, or null for a row written before chunking. */
+function batchKeyOf(row: JobRow): string | null {
+  const payload = row.payload;
+  if (payload === null || typeof payload !== "object") return null;
+  const input = (payload as { input?: unknown }).input;
+  if (input === null || typeof input !== "object") return null;
+  const key = (input as { batchKey?: unknown }).batchKey;
+  return typeof key === "string" && key.length > 0 ? key : null;
+}
+
+function resultOf(row: JobRow): { created?: unknown; usedSource?: unknown } | null {
+  return (row.result ?? null) as { created?: unknown; usedSource?: unknown } | null;
+}
+
+const IN_FLIGHT = new Set(["PENDING", "RUNNING"]);
+
+/**
+ * Collapse a batch's chunk rows into the single status the banner shows.
+ *
+ * An oversized sync becomes several rows, and reporting only the newest would
+ * let a completed chunk hide a failed or still-running sibling — the instructor
+ * would read "Suggested 12 topics" over a batch that half failed. So the
+ * severity order is failure first, then in-flight, then completion: the batch is
+ * only done when every chunk is.
+ */
+function aggregateBatch(chunks: JobRow[], newest: JobRow) {
+  const failed = chunks.find((chunk) => chunk.status === "FAILED");
+  const inFlight = chunks.filter((chunk) => IN_FLIGHT.has(chunk.status));
+  const settled = inFlight.length === 0;
+
+  const status = failed
+    ? "FAILED"
+    : // RUNNING outranks PENDING so a batch mid-flight does not read as queued.
+      inFlight.some((chunk) => chunk.status === "RUNNING")
+      ? "RUNNING"
+      : inFlight.length > 0
+        ? "PENDING"
+        : chunks.every((chunk) => chunk.status === "COMPLETED")
+          ? "COMPLETED"
+          : newest.status;
+
+  const createdCounts = chunks
+    .map((chunk) => resultOf(chunk)?.created)
+    .filter((count): count is number => typeof count === "number");
+
+  // The source that actually produced topics is the informative one; a chunk of
+  // untitled material reporting "none" should not label the whole batch.
+  const producing = chunks.find((chunk) => {
+    const result = resultOf(chunk);
+    return typeof result?.created === "number" && result.created > 0;
+  });
+  const usedSourceFrom = producing ?? chunks.find((chunk) => resultOf(chunk)?.usedSource != null);
+  const usedSource = resultOf(usedSourceFrom ?? newest)?.usedSource;
+
+  const completedAts = chunks
+    .map((chunk) => chunk.completedAt)
+    .filter((at): at is Date => at !== null);
+
+  return {
+    // The newest row is the stable handle the client keys on.
+    id: newest.id,
+    status,
+    errorMessage: failed?.errorMessage ?? null,
+    // Earliest chunk: the batch started when its first row was written.
+    createdAt: chunks
+      .reduce(
+        (earliest, chunk) => (chunk.createdAt < earliest ? chunk.createdAt : earliest),
+        chunks[0].createdAt,
+      )
+      .toISOString(),
+    // Only meaningful once every chunk has settled.
+    completedAt:
+      settled && completedAts.length > 0
+        ? new Date(Math.max(...completedAts.map((at) => at.getTime()))).toISOString()
+        : null,
+    created: createdCounts.length > 0 ? createdCounts.reduce((a, b) => a + b, 0) : null,
+    usedSource: typeof usedSource === "string" ? usedSource : null,
+  };
+}
+
+/**
+ * Latest topic-analysis batch for a course, plus the outstanding suggestion count.
+ *
+ * The job rows are the persistent notification (#1624): a banner reading them
  * survives reloads and new sessions, which is what "persistent" has to mean for
  * an instructor who kicked off a sync and closed the tab.
  */
@@ -41,10 +139,11 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
   // never disturbed.
   await resumeStaleTopicAnalysisJobs(courseId);
 
-  const [job, pendingSuggestions] = await Promise.all([
-    prisma.aiJob.findFirst({
+  const [rows, pendingSuggestions] = await Promise.all([
+    prisma.aiJob.findMany({
       where: { courseId, kind: "topic-analysis" },
       orderBy: { createdAt: "desc" },
+      take: MAX_SCANNED_JOB_ROWS,
       select: {
         id: true,
         status: true,
@@ -52,6 +151,7 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
         createdAt: true,
         completedAt: true,
         result: true,
+        payload: true,
       },
     }),
     prisma.courseTopic.count({
@@ -59,22 +159,15 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
     }),
   ]);
 
-  if (!job) return { job: null, pendingSuggestions };
+  const newest = rows[0];
+  if (!newest) return { job: null, pendingSuggestions };
 
-  const result = (job.result ?? null) as { created?: unknown; usedSource?: unknown } | null;
+  // Group by the newest row's batch. A row with no `batchKey` predates chunking
+  // and stands alone, which is exactly the old single-row behaviour.
+  const batchKey = batchKeyOf(newest);
+  const chunks = batchKey ? rows.filter((row) => batchKeyOf(row) === batchKey) : [newest];
 
-  return {
-    job: {
-      id: job.id,
-      status: job.status,
-      errorMessage: job.errorMessage,
-      createdAt: job.createdAt.toISOString(),
-      completedAt: job.completedAt?.toISOString() ?? null,
-      created: typeof result?.created === "number" ? result.created : null,
-      usedSource: typeof result?.usedSource === "string" ? result.usedSource : null,
-    },
-    pendingSuggestions,
-  };
+  return { job: aggregateBatch(chunks, newest), pendingSuggestions };
 }
 
 /**
