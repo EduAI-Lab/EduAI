@@ -434,6 +434,47 @@ describe("ChatScreen — header", () => {
     }
   });
 
+  it("cancels the server-side request before switching courses mid-turn (#1649 review)", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    try {
+      renderPersistedChatWithBlankChatRoute(makePersistedTranscript());
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      // Start an in-flight turn so activeRequestIdRef holds a live request id.
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+      const initialFetch = vi.mocked(globalThis.fetch).mock.calls.at(-1);
+      const requestId = new Headers(initialFetch?.[1]?.headers).get("X-EduAI-Request-Id");
+      expect(requestId).toEqual(expect.any(String));
+
+      chatState.isLoading = true;
+      const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
+      await act(async () => {
+        persistedViewProps.setSelectedCourseCode("PHYS 121");
+      });
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(sendBeacon.mock.calls[0][0]).toBe("/api/chat/cancel");
+      const body = sendBeacon.mock.calls[0][1] as Blob;
+      expect(JSON.parse(await body.text())).toEqual({ requestId });
+      expect(stopChat).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
   it("submits a suggested prompt directly via append, not through the input round-trip (#1644)", async () => {
     renderChatScreen();
 

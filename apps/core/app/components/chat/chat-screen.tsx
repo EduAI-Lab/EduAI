@@ -531,6 +531,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
   );
 
+  // Shared with handleStop: a course change, New Chat, or history navigation
+  // away from an in-flight turn must cancel the server-side request the same
+  // way the Stop button does, not just abort the client fetch — otherwise a
+  // masked disconnect leaves generation and the admission slot running.
+  // cancelChatRequest/stop are both no-ops when nothing is in flight, so this
+  // is safe to call unconditionally from every exit path.
+  const stopActiveChatRequest = useCallback(() => {
+    cancelChatRequest(activeRequestIdRef);
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
+
   const handleCourseChange = useCallback(
     (code: string | null) => {
       const action = resolveCourseChangeAction({
@@ -546,7 +559,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         // A chat id can arrive in onResponse while the URL is still /chat. A
         // same-route navigation does not remount this component, so clear all
         // persisted/in-flight state before handing off the selected course.
-        stop();
+        stopActiveChatRequest();
         pendingNavigateChatId.current = null;
         pendingRoutedRegistryIdRef.current = null;
         setChatId(null);
@@ -571,18 +584,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       selectedCourseCode,
       setInput,
       setMessages,
-      stop,
+      stopActiveChatRequest,
     ],
   );
 
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
-    cancelChatRequest(activeRequestIdRef);
-    pendingRoutedRegistryIdRef.current = null;
-    setStreamingRoutedRegistryId(null);
-    stop();
-  }, [stop]);
+    stopActiveChatRequest();
+  }, [stopActiveChatRequest]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -656,17 +666,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   // Route is the source of truth: selecting history navigates to /chat/:chatId
   // (loader hydrates the transcript) instead of mutating composer state in place.
+  // Leaving a persisted chat mid-turn without cancelling would otherwise leak
+  // the server-side generation and its admission slot (same as course change).
   const handleSelectChat = useCallback(
     (id: string) => {
+      stopActiveChatRequest();
       navigate(`/chat/${id}`);
     },
-    [navigate],
+    [navigate, stopActiveChatRequest],
   );
 
   // New chat = a clean /chat route (no transcript, no restore).
   const handleNewChat = useCallback(() => {
+    stopActiveChatRequest();
     navigate("/chat");
-  }, [navigate]);
+  }, [navigate, stopActiveChatRequest]);
 
   const historyListProps = {
     chats,
