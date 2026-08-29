@@ -66,11 +66,15 @@ including the closest approximation to the original dual-model test.
   configured either side.
 - **Host CPU/NUMA/RAM:** identical `Xeon Gold 6426Y` (2 socket, 16 core/32
   thread each), identical NUMA layout, 503 GiB RAM on both.
-- **GPU health signals:** no Xid errors or hardware faults in `dmesg` on
-  cmps03; no PCIe replay-counter anomalies observed; temperatures stayed
-  ≤44 °C on cmps03 through the 128-concurrency burst (well under any
-  throttle threshold) — matches the report's own conclusion that this is not
-  a request-loss or crash issue.
+- **GPU health signals (partial — see caveat below):** no PCIe replay-counter
+  anomalies observed via `nvidia-smi`, and temperatures stayed ≤44 °C on
+  cmps03 through the 128-concurrency burst (well under any throttle
+  threshold) — matches the report's own conclusion that this is not a
+  request-loss or crash issue. **`dmesg`/kernel-level Xid and hardware-fault
+  history was *not* checked** — the deploy user does not have permission to
+  read the kernel ring buffer on cmps03 (see "Not re-checked / still open"
+  below), so this bullet is limited to what `nvidia-smi` observed during the
+  test window and should not be read as a clean kernel-log audit.
 - **Thermal/clock behavior under load:** on cmps03, GPU1 (9B) boosts to
   ~2,400–2,700 MHz / 100% util / ~290–300 W for several seconds under a
   128-concurrent burst, then drops to ~65–70 W / 0% util for the remainder of
@@ -117,9 +121,11 @@ including the closest approximation to the original dual-model test.
 - **`dmesg`/kernel logs:** the deploy user (`ssaada08`) does not have
   permission to read the kernel ring buffer or `sudo` non-interactively on
   cmps03 (`dmesg: read kernel buffer failed: Operation not permitted`;
-  `sudo: a password is required`). Kernel-level throttle/error history is
-  still unavailable without operator access — same limitation noted for a
-  different host in the s378 handoff.
+  `sudo: a password is required`). Kernel-level throttle/error history —
+  including Xid errors and any hardware-fault entries — is still unavailable
+  without operator access, so the "GPU health signals" bullet above could
+  **not** be corroborated at the kernel-log level; same access limitation
+  noted for a different host in the s378 handoff.
 - **ECC counters:** unsupported/`[N/A]` on both cards — expected for this
   GPU line, not a gap specific to this investigation.
 - **The original report's exact conditions:** the August run also went
@@ -137,19 +143,66 @@ including the closest approximation to the original dual-model test.
   Aug 26 (reboot, driver update, BIOS power-profile change) that would
   explain a transient issue resolving on its own.
 
+## Fleet readiness update (2026-08-28)
+
+The load tests above were run directly against loopback vLLM
+(`127.0.0.1:18001` / `:18002`) and never exercised the fleet router or
+per-host service/proxy path. A separate s378 fleet smoke test run on
+2026-08-28 checked that service path directly and found it degraded on
+cmps03, independent of the loopback results above:
+
+- `cmps01`: `/v1/models` healthy.
+- `cmps02`: reachable, but currently missing the `qwen3.5-9b-instruct` model.
+- `cmps03`: reachable, but `/v1/models` returns HTTP 400 with
+  `{"type":"no_db_connection","message":"No connected db."}`.
+
+The active s378 fleet configuration keeps all three hosts on the interactive
+fleet — cmps03 is not being removed, only its earlier special heavy/background
+routing role was retired. The smoke test itself reports "2/3 hosts healthy"
+and exits successfully because its pass threshold is two hosts, but that
+threshold masks a real gap: the fleet is operationally degraded until
+cmps03's service/proxy database dependency (`no_db_connection`) is repaired.
+
+This means the two results in this document should **not** be read together
+as "cmps03 is healthy": the direct loopback vLLM load parity above supports
+"the original 7–9x latency outlier was not reproduced at the vLLM layer,"
+but it does not establish that the cmps03 proxy/API path (port 8001) that the
+fleet actually routes through is healthy — that path is currently failing for
+an unrelated reason (`no_db_connection`), not the latency outlier under
+investigation here. Both are true at once: the outlier didn't reproduce, and
+the host is currently degraded for a different, already-identified reason.
+
+Full router/proxy-path validation against a repaired cmps03 is tracked
+separately in [#1632](https://github.com/EduAI-Lab/EduAI/issues/1632)
+(post-MVP fleet stress re-run after queue-aware routing), whose acceptance
+criteria already require cmps03 to be "either remediated or its remaining
+path-specific limitation... documented with evidence." This document's
+closure recommendation below treats the `no_db_connection` finding as that
+documented, currently-open limitation — not as something resolved by the
+loopback tests above.
+
 ## Recommendation
 
 Two load shapes have now been tried and both came back clean: the
 single-model concurrency ladder (16–128) and combined dual-GPU saturation
-(128+128). Both agree cmps03 currently performs identically to cmps01. That
-is a real result, not an inconclusive one — but it is a "not reproducible,"
-not a "fixed," and the two of us should not report it as resolved.
+(128+128). Both agree cmps03's vLLM layer currently performs identically to
+cmps01's. That is a real result, not an inconclusive one — but it is a "not
+reproducible," not a "fixed," and the two of us should not report it as
+resolved. Separately, and not resolved by these tests, the 2026-08-28 fleet
+smoke test above found cmps03's service/proxy path degraded
+(`no_db_connection`); that is a distinct, currently-open issue tracked via
+#1632, not evidence for or against the latency outlier.
 
 - **Close #1589 as "not reproducible as of 2026-08-26,"** not as fixed.
   Record in the issue: two independent load shapes (isolated per-model
-  ladder, and combined dual-model saturation) both showed cmps03 matching
-  cmps01 within noise, so the original 7–9x gap is not a standing property of
-  the host's current hardware/software/config state.
+  ladder, and combined dual-model saturation) both showed cmps03's vLLM
+  layer matching cmps01 within noise, so the original 7–9x gap is not a
+  standing property of the host's current hardware/software/config state.
+  Record alongside it that, as of 2026-08-28, cmps03 remains configured as an
+  interactive fleet host but its service/proxy path is degraded/pending IT
+  investigation (`no_db_connection`) — the host should not be described as
+  fully ready until `/v1/models` succeeds through the same port-8001 path the
+  fleet uses, and that follow-up is tracked in #1632.
 - **Reopen if it recurs.** If the fleet stress test is rerun (e.g. for a
   future PR) and cmps03 shows the same outlier again, that would confirm the
   cause is either the full router/3-server path (untested here) or a
