@@ -37,6 +37,8 @@ export type ProviderSettingStatus = {
   baseUrl: string | null;
 };
 
+export type SetApiKeyResult = { storedRemotely: boolean };
+
 /** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
 export type CampusProvider = "vllm" | "ollama";
 
@@ -184,6 +186,11 @@ const getApiKeyForUser = async (userId: string, provider: AIProvider): Promise<s
   return value || null;
 };
 
+const removeApiKeyForCurrentUser = (provider: AIProvider): void => {
+  const scope = currentScope();
+  if (scope) localStorage.removeItem(storageKeyFor(scope.userId, provider));
+};
+
 export const apiKeyStorage = {
   async getProviderSettings(): Promise<ProviderSettingStatus[]> {
     const response = await fetch("/api/eduai/provider-settings", { credentials: "include" });
@@ -214,7 +221,7 @@ export const apiKeyStorage = {
   },
 
   /** Stores an API key for the bound account after encrypting it. */
-  async setApiKey(provider: AIProvider, apiKey: string): Promise<void> {
+  async setApiKey(provider: AIProvider, apiKey: string): Promise<SetApiKeyResult> {
     const scope = currentScope();
     if (!scope) throw new Error("Cannot store an API key without an authenticated user");
     try {
@@ -226,28 +233,39 @@ export const apiKeyStorage = {
       });
       if (!response.ok) throw new Error(`Failed to save provider settings: ${response.status}`);
     } catch {
+      // Keep a clearly-degraded local fallback for offline development and
+      // older deployments, but tell callers that Core did not receive it.
       const encrypted = await encrypt(apiKey, scope.userId);
-      if (!isCurrentScope(scope)) return;
+      if (!isCurrentScope(scope)) return { storedRemotely: false };
       localStorage.setItem(storageKeyFor(scope.userId, provider), encrypted);
-      return;
+      return { storedRemotely: false };
     }
-    if (!isCurrentScope(scope)) return;
+    if (!isCurrentScope(scope)) return { storedRemotely: false };
     localStorage.removeItem(storageKeyFor(scope.userId, provider));
+    return { storedRemotely: true };
   },
 
   /** Retrieves a key only from the currently bound account. */
   async getApiKey(provider: AIProvider): Promise<string | null> {
     const scope = currentScope();
     if (!scope) return null;
-    const value = await getApiKeyForUser(scope.userId, provider);
-    return isCurrentScope(scope) ? value : null;
+    try {
+      const statuses = await this.getProviderSettings();
+      const remote = statuses.find((setting) => setting.providerName === provider);
+      if (!isCurrentScope(scope)) return null;
+      if (remote) return remote.isEnabled && remote.hasKey ? CORE_STORED_KEY : null;
+      // A successful empty Core response is authoritative: do not revive a
+      // deleted/disabled key from the browser namespace.
+      return null;
+    } catch {
+      const value = await getApiKeyForUser(scope.userId, provider);
+      return isCurrentScope(scope) ? value : null;
+    }
   },
 
-  /** Removes a key only from the currently bound account. */
-  removeApiKey(provider: AIProvider): void {
-    const scope = currentScope();
-    if (!scope) return;
-    localStorage.removeItem(storageKeyFor(scope.userId, provider));
+  /** Removes a key from Core, then clears the account-scoped browser fallback. */
+  async removeApiKey(provider: AIProvider): Promise<void> {
+    await this.removeProviderSetting(provider);
   },
 
   async removeProviderSetting(provider: AIProvider): Promise<void> {
@@ -256,13 +274,26 @@ export const apiKeyStorage = {
       { method: "DELETE", credentials: "include" },
     );
     if (!response.ok) throw new Error(`Failed to remove provider settings: ${response.status}`);
-    this.removeApiKey(provider);
+    removeApiKeyForCurrentUser(provider);
   },
 
   /** Returns provider keys only from one stable account-scope snapshot. */
   async getAllApiKeys(): Promise<Record<string, string>> {
     const scope = currentScope();
     if (!scope) return {};
+
+    try {
+      const statuses = await this.getProviderSettings();
+      if (!isCurrentScope(scope)) return {};
+      return Object.fromEntries(
+        statuses
+          .filter((status) => status.isEnabled && status.hasKey)
+          .map((status) => [status.providerName, CORE_STORED_KEY]),
+      );
+    } catch {
+      // Core is unavailable: use the account-scoped browser fallback.
+    }
+
     const keys: Record<string, string> = {};
 
     for (const provider of CLOUD_PROVIDERS) {
@@ -315,8 +346,10 @@ export const apiKeyStorage = {
     const scope = currentScope();
     if (!scope) return {};
     let remoteStatus: ProviderSettingStatus[] = [];
+    let remoteAvailable = false;
     try {
       remoteStatus = await this.getProviderSettings();
+      remoteAvailable = true;
     } catch {
       // Fall back to the legacy browser copy while the Core proxy is unavailable.
     }
@@ -324,6 +357,7 @@ export const apiKeyStorage = {
     if (remote?.isEnabled && remote.hasKey) {
       return { [provider]: { isEnabled: true } };
     }
+    if (remoteAvailable) return {};
 
     const apiKey = await getApiKeyForUser(scope.userId, provider);
     if (!isCurrentScope(scope) || !apiKey) {

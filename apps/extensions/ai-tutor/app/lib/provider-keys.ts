@@ -53,6 +53,7 @@ export function getProviderFromModelId(modelId: string): string {
 }
 
 export function maskApiKey(key: string): string {
+  if (key === CORE_STORED_KEY) return "••••••••";
   if (key.length <= 8) return "••••••••";
   return `••••••${key.slice(-4)}`;
 }
@@ -108,6 +109,28 @@ export function saveApiKeysToStorage(
     }
   } catch {
     // Ignore storage errors.
+  }
+}
+
+/** Removes one account-scoped legacy key after its Core replacement succeeds. */
+export function removeApiKeyFromStorage(userId: string | null | undefined, provider: string): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    const storageKey = getApiKeysStorageKey(userId);
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+    const keys = Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+      ),
+    );
+    delete keys[provider];
+    saveApiKeysToStorage(userId, keys);
+  } catch {
+    // Keep the legacy value if storage cannot be updated; the next migration
+    // can retry without losing the only copy.
   }
 }
 

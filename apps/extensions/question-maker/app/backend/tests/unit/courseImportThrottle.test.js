@@ -1,7 +1,6 @@
 /**
- * Unit tests for the GET /api/course auto-import mirror: throttled, fire-and-
- * forget, per-user (#1072 unified contract — mirrors ai-tutor's
- * `runCoreMirror`, apps/extensions/ai-tutor/server/src/routes/authentication.js).
+ * Unit tests for the GET /api/course auto-import mirror: throttled, awaited,
+ * coalesced, per-user (#1072 unified contract).
  * No DB, no network — every collaborator of the route is mocked.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,7 +111,7 @@ describe("GET /api/course auto-import mirror throttle", () => {
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(2);
   });
 
-  it("does not block the list response on the mirror settling (fire-and-forget)", async () => {
+  it("waits for the mirror before returning the list response", async () => {
     let releaseImport;
     importTaughtCoursesFromCore.mockImplementation(
       () =>
@@ -121,15 +120,47 @@ describe("GET /api/course auto-import mirror throttle", () => {
         }),
     );
 
-    const res = await request(appFor(instructor))
+    const response = request(appFor(instructor))
       .get("/api/course?page=1&pageSize=25")
       .set("Cookie", "session=x");
 
-    // The response already came back even though the mirror promise above is
-    // still unsettled — proves the route didn't await it.
-    expect(res.status).toBe(200);
+    let settled = false;
+    const responsePromise = response.then((value) => {
+      settled = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
     expect(releaseImport).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(settled).toBe(false);
     releaseImport({ imported: 0, skipped: 0 });
+    const res = await responsePromise;
+    expect(res.status).toBe(200);
+  });
+
+  it("shares one in-flight mirror between concurrent list calls", async () => {
+    let releaseImport;
+    importTaughtCoursesFromCore.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseImport = resolve;
+        }),
+    );
+
+    const first = request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
+    const second = request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
+
+    const firstPromise = first.then((value) => value);
+    const secondPromise = second.then((value) => value);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1);
+    releaseImport({ imported: 0, skipped: 0 });
+    await expect(firstPromise).resolves.toMatchObject({ status: 200 });
+    await expect(secondPromise).resolves.toMatchObject({ status: 200 });
   });
 
   it("logs and swallows a mirror failure without failing the list response", async () => {

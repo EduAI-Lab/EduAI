@@ -9,6 +9,7 @@ import {
 } from "~/hooks/api/pagination";
 
 const SEARCH_DEBOUNCE_MS = 300;
+const LOAD_ALL_CONCURRENCY = 4;
 
 /** Filter-group ids the Core course list exposes (matches `build*FilterGroup` in @eduai/ui). */
 export const COURSE_FILTER_KEYS = ["status", "term", "department"] as const;
@@ -170,8 +171,18 @@ export function useCourses(options: UseCoursesOptions = {}) {
       let body = first;
       if (loadAll) {
         const pageCount = Math.ceil(first.total / first.pageSize) || 1;
-        const remaining = await Promise.all(
-          Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => readPage(index + 1)),
+        const remaining: Array<PaginatedResponse<Course> | undefined> = [];
+        let nextPageIndex = 1;
+        const readNextPage = async () => {
+          while (nextPageIndex < pageCount) {
+            const pageIndex = nextPageIndex++;
+            remaining[pageIndex - 1] = await readPage(pageIndex);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(LOAD_ALL_CONCURRENCY, Math.max(0, pageCount - 1)) }, () =>
+            readNextPage(),
+          ),
         );
         body = {
           ...first,

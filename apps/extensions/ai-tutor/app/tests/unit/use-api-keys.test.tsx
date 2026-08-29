@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { AuthProvider, useLocalUser, type AuthUser } from "~/hooks/useLocalUser";
+import api from "~/lib/api";
 import { useApiKeys } from "~/hooks/use-api-keys";
 
 vi.mock("~/lib/api", async () => {
@@ -27,6 +28,10 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe("useApiKeys account isolation", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.clearAllMocks();
+    vi.mocked(api.getUserProviderSettings).mockRejectedValue(new Error("Core unavailable"));
+    vi.mocked(api.saveUserProviderSetting).mockResolvedValue(undefined);
+    vi.mocked(api.deleteUserProviderSetting).mockResolvedValue(undefined);
   });
 
   it("does not expose user A provider keys after logout and user B login", async () => {
@@ -108,5 +113,39 @@ describe("useApiKeys account isolation", () => {
 
     expect(result.current.getKey("opencode")).toBe("opencode-secret");
     expect(result.current.hasKey("opencode")).toBe(true);
+  });
+
+  it("migrates an account-scoped legacy key after Core accepts it", async () => {
+    localStorage.setItem(
+      "ai-provider-keys:v2:student-a",
+      JSON.stringify({ google: "student-a-secret" }),
+    );
+    vi.mocked(api.getUserProviderSettings).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(api.saveUserProviderSetting).toHaveBeenCalledWith({
+      providerName: "google",
+      isEnabled: true,
+      apiKey: "student-a-secret",
+    });
+    expect(result.current.getKey("google")).toBe("__core_stored__");
+    expect(localStorage.getItem("ai-provider-keys:v2:student-a")).toBeNull();
+  });
+
+  it("keeps the legacy key usable when its Core migration fails", async () => {
+    localStorage.setItem(
+      "ai-provider-keys:v2:student-a",
+      JSON.stringify({ google: "student-a-secret" }),
+    );
+    vi.mocked(api.getUserProviderSettings).mockResolvedValue([]);
+    vi.mocked(api.saveUserProviderSetting).mockRejectedValue(new Error("Core unavailable"));
+
+    const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.getKey("google")).toBe("student-a-secret");
+    expect(localStorage.getItem("ai-provider-keys:v2:student-a")).toContain("student-a-secret");
   });
 });

@@ -2073,7 +2073,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       keySaved={providerKeySaved}
       onClearSavedKey={() => {
         const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-        if (provider) apiKeyStorage.removeApiKey(provider);
+        if (provider) void apiKeyStorage.removeApiKey(provider);
         setProviderKeySaved(false);
         setProviderApiKey("");
         setApiKeySaveState("idle");
@@ -2084,13 +2084,14 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         if (!provider || !providerApiKey.trim()) return;
         setApiKeySaveState("saving");
         try {
-          await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+          const result = await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
           setProviderKeySaved(true);
           setProviderApiKey("");
           setApiKeySaveState("saved");
           toast("API key saved", {
-            description:
-              "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
+            description: result.storedRemotely
+              ? "Stored securely in Core for your account."
+              : "Core is unavailable; using an encrypted browser fallback until it reconnects.",
           });
           // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
           void eduaiStatus.refresh();

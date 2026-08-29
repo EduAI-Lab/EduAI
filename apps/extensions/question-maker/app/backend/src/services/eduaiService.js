@@ -163,13 +163,11 @@ class EduAIService {
    * session cookie only when no service key is configured.
    */
   buildChatAuthHeaders(cookie) {
-    const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
-    if (trimmedCookie) {
-      return { cookie: trimmedCookie };
-    }
     if (this.apiKey) {
       return { Authorization: `Bearer ${this.apiKey}` };
     }
+    const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
+    if (trimmedCookie) return { cookie: trimmedCookie };
     return null;
   }
 
@@ -1012,6 +1010,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       } else if (error.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
         return {
           success: true,
+          provider,
           message: "EduAI API key is valid (provider API key test failed as expected)",
           note: "The EduAI API key works, but you need to provide valid AI provider API keys",
         };

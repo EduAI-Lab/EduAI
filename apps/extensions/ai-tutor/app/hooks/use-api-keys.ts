@@ -5,6 +5,7 @@ import {
   API_KEYS_CLEARED_EVENT,
   CORE_STORED_KEY,
   loadApiKeysFromStorage,
+  removeApiKeyFromStorage,
 } from "~/lib/provider-keys";
 
 export type UseApiKeysResult = {
@@ -43,16 +44,48 @@ export function useApiKeys(): UseApiKeysResult {
       .getUserProviderSettings()
       .then((rows) => {
         if (!active) return;
-        const nextKeys = Object.fromEntries(
-          rows
-            .filter((row) => row.isEnabled && row.hasKey)
-            .map((row) => [row.providerName, CORE_STORED_KEY]),
-        );
-        setAccountKeys({
-          userId,
-          keys: nextKeys,
-          loaded: true,
-        });
+        const localKeys = loadApiKeysFromStorage(userId);
+        const remoteByProvider = new Map(rows.map((row) => [row.providerName, row]));
+        const nextKeys: Record<string, string> = {};
+        const migratedProviders = new Set<string>();
+        const pendingMigrationKeys = new Map<string, string>();
+
+        void (async () => {
+          for (const [provider, key] of Object.entries(localKeys)) {
+            const remote = remoteByProvider.get(provider);
+            try {
+              if (remote?.hasKey) {
+                removeApiKeyFromStorage(userId, provider);
+              } else if (!remote) {
+                await api.saveUserProviderSetting({
+                  providerName: provider,
+                  isEnabled: true,
+                  apiKey: key,
+                });
+                removeApiKeyFromStorage(userId, provider);
+                migratedProviders.add(provider);
+              }
+            } catch {
+              // Keep the legacy copy when migration cannot be persisted.
+              pendingMigrationKeys.set(provider, key);
+              continue;
+            }
+          }
+
+          if (!active) return;
+          for (const row of rows) {
+            if (row.isEnabled && row.hasKey) nextKeys[row.providerName] = CORE_STORED_KEY;
+          }
+          for (const provider of Object.keys(localKeys)) {
+            if (!nextKeys[provider] && migratedProviders.has(provider)) {
+              nextKeys[provider] = CORE_STORED_KEY;
+            }
+            if (!nextKeys[provider] && pendingMigrationKeys.has(provider)) {
+              nextKeys[provider] = pendingMigrationKeys.get(provider) ?? "";
+            }
+          }
+          setAccountKeys({ userId, keys: nextKeys, loaded: true });
+        })();
       })
       .catch(() => {
         if (active) setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
@@ -81,6 +114,7 @@ export function useApiKeys(): UseApiKeysResult {
         return { userId, keys: next, loaded: true };
       });
       await api.saveUserProviderSetting({ providerName: provider, isEnabled: true, apiKey: key });
+      removeApiKeyFromStorage(userId, provider);
       setAccountKeys((previous) => {
         const next = previous.userId === userId ? { ...previous.keys } : {};
         next[provider] = CORE_STORED_KEY;
@@ -94,6 +128,7 @@ export function useApiKeys(): UseApiKeysResult {
     async (provider: string) => {
       if (!userId) return;
       await api.deleteUserProviderSetting(provider);
+      removeApiKeyFromStorage(userId, provider);
       setAccountKeys((previous) => {
         const next = previous.userId === userId ? { ...previous.keys } : {};
         delete next[provider];

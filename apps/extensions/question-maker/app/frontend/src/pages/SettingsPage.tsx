@@ -82,6 +82,7 @@ const DEFAULT_EXPORT_PREFS: ExportPrefs = {
 
 /** Masks a stored key the way QuestionAIControls does: first 8 chars + bullets. */
 function maskKey(value: string): string {
+  if (value === CORE_STORED_KEY) return "••••••••";
   return `${value.substring(0, 8)}${"•".repeat(Math.max(0, value.length - 8))}`;
 }
 
@@ -185,11 +186,20 @@ export default function SettingsPage() {
     const draft = (drafts[provider] ?? "").trim();
     if (!draft) return;
     setSavingProvider(provider);
-    await apiKeyStorage.setApiKey(provider, draft);
-    await refreshKeys();
-    setDrafts((prev) => ({ ...prev, [provider]: "" }));
-    setSavingProvider(null);
-    toast(`${PROVIDER_LABELS[provider]} API key saved`);
+    try {
+      const result = await apiKeyStorage.setApiKey(provider, draft);
+      await refreshKeys();
+      setDrafts((prev) => ({ ...prev, [provider]: "" }));
+      toast(
+        result.storedRemotely
+          ? `${PROVIDER_LABELS[provider]} API key saved`
+          : `${PROVIDER_LABELS[provider]} API key saved locally (Core unavailable)`,
+      );
+    } catch {
+      toast.error(`Could not save ${PROVIDER_LABELS[provider]} API key`);
+    } finally {
+      setSavingProvider(null);
+    }
   };
 
   const handleRemoveKey = async (provider: AIProvider): Promise<void> => {
@@ -316,9 +326,9 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle>Model Providers</CardTitle>
                   <CardDescription>
-                    Keys are stored for this account in this browser and sent through EduAI services
-                    to the selected provider when you use AI. Signing out removes them from this
-                    browser.
+                    Keys are stored securely in EduAI Core for this account and sent through EduAI
+                    services to the selected provider when you use AI. An encrypted browser fallback
+                    is used only while Core is unavailable.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">

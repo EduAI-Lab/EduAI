@@ -1047,11 +1047,12 @@ export function QuestionComposerPage() {
               if (!provider || !providerApiKey.trim()) return;
               setApiKeySaveState("saving");
               try {
-                await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+                const result = await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState("saved");
                 toast("API key saved", {
-                  description:
-                    "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
+                  description: result.storedRemotely
+                    ? "Stored securely in Core for your account."
+                    : "Core is unavailable; using an encrypted browser fallback until it reconnects.",
                 });
               } catch {
                 setApiKeySaveState("error");

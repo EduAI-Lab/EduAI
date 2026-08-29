@@ -497,6 +497,14 @@ export async function runCompletion(request: CompletionRequest) {
     const stored = storedApiKeys[provider];
     const mergedSettings = { ...requestSettings, ...stored };
     if (stored?.apiKey) mergedSettings.apiKey = stored.apiKey;
+    // Core owns secrets and base URLs, but the request's explicit enablement
+    // is the operation being performed and must be allowed to override the
+    // persisted flag. `toUserProviderSettings` supplies a default, so inspect
+    // the raw parsed body to distinguish omitted from explicit false.
+    const rawRequestSettings = apiKeysParsed.data[provider];
+    if (rawRequestSettings?.isEnabled !== undefined) {
+      mergedSettings.isEnabled = rawRequestSettings.isEnabled;
+    }
     mergedApiKeys[provider] = mergedSettings;
   }
 

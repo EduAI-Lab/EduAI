@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { apiKeyStorage } from "@/services/apiKeyStorage";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { apiKeyStorage, CORE_STORED_KEY } from "@/services/apiKeyStorage";
 
 describe("apiKeyStorage account isolation", () => {
   beforeEach(() => {
     localStorage.clear();
     apiKeyStorage.setAuthenticatedUser(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("never loads or builds a payload from user A after logout and user B login", async () => {
@@ -54,5 +58,30 @@ describe("apiKeyStorage account isolation", () => {
     expect(await apiKeyStorage.buildApiKeysForModel("opencode:deepseek-v4-flash")).toEqual({
       opencode: { apiKey: "opencode-secret", isEnabled: true },
     });
+  });
+
+  it("treats an authoritative Core response as the source of truth over stale local data", async () => {
+    apiKeyStorage.setAuthenticatedUser("instructor-a");
+    localStorage.setItem("eduai_api_key_v2:instructor-a:google", "stale-ciphertext");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    } as Response);
+
+    expect(await apiKeyStorage.getApiKey("google")).toBeNull();
+    expect(await apiKeyStorage.buildApiKeysForModel("google:gemini-2.5-flash")).toEqual({});
+  });
+
+  it("exposes a Core-owned enabled key as a sentinel without returning its secret", async () => {
+    apiKeyStorage.setAuthenticatedUser("instructor-a");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [{ providerName: "google", isEnabled: true, hasKey: true, baseUrl: null }],
+    } as Response);
+
+    expect(await apiKeyStorage.getApiKey("google")).toBe(CORE_STORED_KEY);
+    expect(await apiKeyStorage.getAllApiKeys()).toEqual({ google: CORE_STORED_KEY });
   });
 });

@@ -65,34 +65,38 @@ function stableCoreFailure(error, fallbackMessage) {
   };
 }
 
-// The Core course mirror (`importTaughtCoursesFromCore`) is a background side
-// effect, not a dependency of the list response: it fetches Core's cookie-
-// scoped course list and writes local Course anchors + topic syncs. It
-// previously ran awaited on every GET /api/course, so every list paid a
-// serial Core-fetch + import waterfall before the caller's own courses were
-// even read. Mirrors ai-tutor's `runCoreMirror` (server/src/routes/
-// authentication.js): throttle to at most once per window per user, and fire
-// without awaiting so the list response never blocks on it. A freshly-
-// imported course therefore may not appear until the NEXT list call, not this
-// one — acceptable per #1072's unified contract.
+// The Core course mirror (`importTaughtCoursesFromCore`) is shared by
+// concurrent list calls for a user. A list waits for the one in-flight mirror
+// so a course cannot be read while the mirror is still writing it; the mirror
+// itself remains throttled and fail-soft.
 const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
+const inFlightMirrorByUser = new Map();
 
-function runCoreImportMirror(userId, role, cookie) {
+async function runCoreImportMirror(userId, role, cookie) {
+  const inFlight = inFlightMirrorByUser.get(userId);
+  if (inFlight) return inFlight;
+
   const now = Date.now();
   const last = lastMirrorAtByUser.get(userId) ?? 0;
   if (now - last < CORE_MIRROR_THROTTLE_MS) return;
   lastMirrorAtByUser.set(userId, now);
 
-  // Fire-and-forget — errors are logged, never surfaced to the list response.
-  void importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "").catch((err) => {
-    logger.warn({ err, userId }, "Core course mirror failed on list");
-  });
+  const mirror = importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "")
+    .catch((err) => {
+      logger.warn({ err, userId }, "Core course mirror failed on list");
+    })
+    .finally(() => {
+      inFlightMirrorByUser.delete(userId);
+    });
+  inFlightMirrorByUser.set(userId, mirror);
+  return mirror;
 }
 
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */
 export function resetCoreImportThrottleForTests() {
   lastMirrorAtByUser.clear();
+  inFlightMirrorByUser.clear();
 }
 
 /**
@@ -186,7 +190,7 @@ router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const pagination = parsePaginationParams(req, { required: true });
 
-    runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
+    await runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 

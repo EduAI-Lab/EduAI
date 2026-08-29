@@ -70,6 +70,7 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { acquireAiAdmission } from "~/lib/ai/admission.server";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<typeof action>[0] {
@@ -200,6 +201,43 @@ describe("POST /api/completion review regressions", () => {
       provider: "openai",
     });
     expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("preserves stored secrets and base URLs while honoring explicit request enablement", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: false,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              baseUrl: "https://request.example.test/v1",
+              isEnabled: true,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: {
+          apiKey: "stored-openai-secret",
+          baseUrl: "https://stored.example.test/v1",
+          isEnabled: true,
+        },
+      }),
+    );
   });
 
   it("maps fleet model unavailability to the stable 503 contract", async () => {
