@@ -192,7 +192,8 @@ export async function action({ request }: ActionFunctionArgs) {
       // each is set only when this request has something to report for it.
       const telemetryHeaders: Record<string, string> = {};
       if (outcome.fleetServerId) telemetryHeaders["X-Fleet-Server"] = outcome.fleetServerId;
-      if (admissionWaitedMs > 0) telemetryHeaders["X-Admission-Wait-Ms"] = String(admissionWaitedMs);
+      if (admissionWaitedMs > 0)
+        telemetryHeaders["X-Admission-Wait-Ms"] = String(admissionWaitedMs);
 
       if (outcome.streaming) {
         try {
