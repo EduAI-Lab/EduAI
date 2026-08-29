@@ -24,10 +24,18 @@ const ROUTING_TIER_ASSIGNMENTS = [
 ];
 
 async function applyRoutingTierAssignments() {
+  const providerByName = new Map<string, { id: string }>();
+  const currentVllmModelIds = new Set(
+    ROUTING_TIER_ASSIGNMENTS.filter((row) => row.providerName === "vllm").map((row) => row.modelId),
+  );
+
   for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
+    let provider = providerByName.get(row.providerName);
+    if (!provider) {
+      provider =
+        (await prisma.aIProvider.findUnique({ where: { name: row.providerName } })) ?? undefined;
+      if (provider) providerByName.set(row.providerName, provider);
+    }
     if (!provider) continue;
 
     const result = await prisma.aIModel.updateMany({
@@ -48,6 +56,24 @@ async function applyRoutingTierAssignments() {
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+
+  // Clear stale tiers on retired vLLM rows (e.g. after a fleet generation
+  // change) so loadTierRows() cannot keep selecting them — mirrors seed.ts.
+  const vllm =
+    providerByName.get("vllm") ??
+    (await prisma.aIProvider.findUnique({
+      where: { name: "vllm" },
+    }));
+  if (vllm) {
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { notIn: [...currentVllmModelIds] },
+      },
       data: { routerTier: null },
     });
   }

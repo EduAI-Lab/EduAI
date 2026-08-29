@@ -1136,7 +1136,7 @@ const COURSES: SeedCourse[] = [
 // Keep these IDs aligned with the vLLM catalog in this file and in
 // `apps/core/prisma/sync-ai-providers.ts`. The values are the current
 // `ESTIMATED_FROM_TOKENS` estimates used by Auto's energy/carbon tie-breaks.
-const ROUTING_TIER_ASSIGNMENTS = [
+export const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
     modelId: "qwen2.5-7b-instruct",
@@ -1153,13 +1153,23 @@ const ROUTING_TIER_ASSIGNMENTS = [
   },
 ];
 
-async function applyRoutingTierAssignments() {
+export async function applyRoutingTierAssignments() {
   console.log("Applying routing tier and energy constants...");
 
+  // Providers touched below, keyed by name, so the retired-vLLM-row cleanup
+  // (after the loop) can reuse the same lookups instead of querying again.
+  const providerByName = new Map<string, { id: string }>();
+  const currentVllmModelIds = new Set(
+    ROUTING_TIER_ASSIGNMENTS.filter((row) => row.providerName === "vllm").map((row) => row.modelId),
+  );
+
   for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
+    let provider = providerByName.get(row.providerName);
+    if (!provider) {
+      provider =
+        (await prisma.aIProvider.findUnique({ where: { name: row.providerName } })) ?? undefined;
+      if (provider) providerByName.set(row.providerName, provider);
+    }
     if (!provider) {
       console.warn(`   Skip tier row (unknown provider): ${row.providerName}`);
       continue;
@@ -1183,6 +1193,26 @@ async function applyRoutingTierAssignments() {
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+
+  // Clear the tier on any vLLM row this seed no longer assigns — e.g. after a
+  // fleet generation change (qwen2.5 -> qwen3.5), the old model IDs would
+  // otherwise keep a stale routerTier and stay selectable by loadTierRows()
+  // even though they are no longer the deployed models this seed manages.
+  const vllm =
+    providerByName.get("vllm") ??
+    (await prisma.aIProvider.findUnique({
+      where: { name: "vllm" },
+    }));
+  if (vllm) {
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { notIn: [...currentVllmModelIds] },
+      },
       data: { routerTier: null },
     });
   }

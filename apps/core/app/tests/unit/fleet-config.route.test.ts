@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
   resetFleetHealthCache: vi.fn(),
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
+  resolveAllowedVllmBaseUrl: vi.fn((raw: string) => raw),
+  InvalidVllmBaseUrlError: class InvalidVllmBaseUrlError extends Error {},
 }));
+
+const { InvalidVllmBaseUrlError } = mocks;
 
 vi.mock("~/lib/auth/guards.server", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("~/lib/ai/routing/fleet/config-file", () => ({
@@ -27,6 +31,10 @@ vi.mock("~/lib/ai/routing/fleet/registry", () => ({
 vi.mock("~/lib/ai/routing/fleet/health", () => ({
   getServerHealth: mocks.getServerHealth,
   resetFleetHealthCache: mocks.resetFleetHealthCache,
+}));
+vi.mock("~/lib/ai/vllm-url.server", () => ({
+  InvalidVllmBaseUrlError: mocks.InvalidVllmBaseUrlError,
+  resolveAllowedVllmBaseUrl: mocks.resolveAllowedVllmBaseUrl,
 }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: mocks.fireAndForget,
@@ -73,6 +81,9 @@ beforeEach(() => {
     ok: true,
     modelIds: ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct"],
   });
+  // Default: every baseUrl passes the allowlist check, mirroring the real
+  // resolveAllowedVllmBaseUrl signature (echoes the URL back on success).
+  mocks.resolveAllowedVllmBaseUrl.mockImplementation((raw: string) => raw);
 });
 
 describe("fleet config API", () => {
@@ -139,5 +150,30 @@ describe("fleet config API", () => {
       servers,
     });
     expect(mocks.getServerHealth).not.toHaveBeenCalled();
+  });
+
+  it("rejects a baseUrl outside the deployment-owned vLLM allowlist before saving or probing", async () => {
+    mocks.resolveAllowedVllmBaseUrl.mockImplementation(() => {
+      throw new InvalidVllmBaseUrlError(
+        "vLLM base URL must match an exact deployment base or explicit development/test loopback",
+      );
+    });
+    const attackerServers = [
+      {
+        id: "evil",
+        baseUrl: "http://169.254.169.254",
+        jobTypes: ["interactive"],
+        models: [],
+      },
+    ];
+
+    const response = await action(makeArgs("PUT", { servers: attackerServers }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.saveFleetConfigFile).not.toHaveBeenCalled();
+    expect(mocks.getServerHealth).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("evil"),
+    });
   });
 });

@@ -105,6 +105,20 @@ export async function handleAiModelsApiRequest(request: Request) {
         );
       }
 
+      // Auto routing's tier pool is CHAT-only (loadTierRows in routing/tiers.ts
+      // filters `type: "CHAT"`), so a tier set on any other model type would
+      // never take effect — reject it up front rather than let it sit unused.
+      if (
+        result.data.routerTier !== null &&
+        result.data.routerTier !== undefined &&
+        result.data.type !== "CHAT"
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have an Auto Routing Tier" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
       try {
         const model = await prisma.aIModel.create({
           data: result.data,
@@ -169,10 +183,19 @@ export async function handleAiModelsApiRequest(request: Request) {
 
       const nextType = result.data.type ?? existingModel.type;
       const nextSupportsTools = result.data.supportsTools ?? existingModel.supportsTools;
+      const nextRouterTier =
+        result.data.routerTier !== undefined ? result.data.routerTier : existingModel.routerTier;
 
       if (nextSupportsTools && nextType !== "CHAT") {
         return new Response(
           JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (nextRouterTier !== null && nextType !== "CHAT") {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have an Auto Routing Tier" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }

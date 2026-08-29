@@ -11,6 +11,7 @@ import {
 import { getServerHealth, resetFleetHealthCache } from "~/lib/ai/routing/fleet/health";
 import { getAllFleetServers, resetFleetRegistryCache } from "~/lib/ai/routing/fleet/registry";
 import type { FleetServer } from "~/lib/ai/routing/fleet/types";
+import { InvalidVllmBaseUrlError, resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -24,6 +25,28 @@ const FleetServerSchema = z.object({
 const FleetConfigSchema = z.object({
   servers: z.array(FleetServerSchema),
 });
+
+/**
+ * Reject any server whose baseUrl is not a deployment-owned vLLM endpoint
+ * before it is ever written to disk or probed. Without this, an admin (or a
+ * compromised admin session) could point the fleet config at an arbitrary
+ * host and getServerHealth() would send the internal VLLM_API_KEY to it
+ * (Authorization: Bearer ... on GET {baseUrl}/v1/models) — an SSRF-adjacent
+ * credential leak. resolveAllowedVllmBaseUrl enforces the same exact-base
+ * allowlist (VLLM_BASE_URL / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL,
+ * plus loopback in dev/test) already used for outbound vLLM calls elsewhere.
+ */
+function assertAllowedFleetServers(servers: FleetServer[]): void {
+  for (const server of servers) {
+    try {
+      resolveAllowedVllmBaseUrl(server.baseUrl);
+    } catch (err) {
+      const message =
+        err instanceof InvalidVllmBaseUrlError ? err.message : "Invalid fleet server base URL";
+      throw new FleetConfigError(`servers[${server.id}].baseUrl rejected: ${message}`);
+    }
+  }
+}
 
 function readEffectiveConfig() {
   const fileConfig = loadFleetConfigFile();
@@ -76,6 +99,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
+    assertAllowedFleetServers(parsed.data.servers);
     const config = saveFleetConfigFile(parsed.data);
     resetFleetRegistryCache();
     resetFleetHealthCache();

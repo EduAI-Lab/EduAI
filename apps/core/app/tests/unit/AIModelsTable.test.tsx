@@ -117,7 +117,7 @@ describe("AIModelsTable — rendering", () => {
     expect(screen.getByText("GPT-3.5")).toBeInTheDocument();
   });
 
-  it("keeps Auto configuration out of the model table", () => {
+  it("shows the model's Auto Routing Tier in the Auto Tier column (#1679)", () => {
     render(
       <AIModelsTable
         models={[{ ...baseModel, routerTier: "TIER_1" as const }]}
@@ -126,7 +126,20 @@ describe("AIModelsTable — rendering", () => {
         onToggleActive={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/Auto Tier|Small tier|Large tier/)).not.toBeInTheDocument();
+    expect(screen.getByText("Auto Tier")).toBeInTheDocument();
+    expect(screen.getByText("Tier 1")).toBeInTheDocument();
+  });
+
+  it("shows a 'Not in pool' placeholder when the model has no tier", () => {
+    render(
+      <AIModelsTable
+        models={[{ ...baseModel, routerTier: null }]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Not in pool")).toBeInTheDocument();
   });
 });
 
