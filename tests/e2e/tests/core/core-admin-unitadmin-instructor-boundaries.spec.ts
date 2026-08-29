@@ -586,15 +586,23 @@ test.describe("Unit Admin: department scope for course visibility and management
   }) => {
     const admin = await playwright.request.newContext();
     const unitAdmin = await playwright.request.newContext();
+    const instructor = await playwright.request.newContext();
     try {
       await createAdmin(admin, { prefix: "unit-delete-admin" });
       await createUnitAdmin(unitAdmin, { prefix: "unit-delete-unit" });
+      await createInstructor(instructor, { prefix: "unit-delete-instructor" });
       const unitAdminId = await getUserId(unitAdmin);
+      const instructorId = await getUserId(instructor);
       await setAuthorizedUnits(admin, unitAdminId, ["COSC"]);
 
       await setPolicy(admin, "unitAdmins.canDeleteCourses", false);
 
-      const course1 = await createCourse(admin, { prefix: "unit-delete-off", department: "COSC" });
+      const course1 = await createCourse(admin, {
+        prefix: "unit-delete-off",
+        department: "COSC",
+        instructorUserIds: instructorId,
+      });
+      expect(course1.status(), await course1.text()).toBe(201);
       const course1Id = (await course1.json()).id;
       const deniedRes = await unitAdmin.delete(`${CORE_URL}/api/courses/${course1Id}`);
       expect(deniedRes.status()).toBe(403);
@@ -603,7 +611,12 @@ test.describe("Unit Admin: department scope for course visibility and management
 
       await setPolicy(admin, "unitAdmins.canDeleteCourses", true);
 
-      const course2 = await createCourse(admin, { prefix: "unit-delete-on", department: "COSC" });
+      const course2 = await createCourse(admin, {
+        prefix: "unit-delete-on",
+        department: "COSC",
+        instructorUserIds: instructorId,
+      });
+      expect(course2.status(), await course2.text()).toBe(201);
       const course2Id = (await course2.json()).id;
       const allowedRes = await unitAdmin.delete(`${CORE_URL}/api/courses/${course2Id}`);
       expect(allowedRes.status()).toBe(204);
@@ -616,6 +629,7 @@ test.describe("Unit Admin: department scope for course visibility and management
     } finally {
       await admin.dispose();
       await unitAdmin.dispose();
+      await instructor.dispose();
     }
   });
 });
@@ -880,29 +894,49 @@ test.describe("Canvas integration API: role gate + instructors.canManageCanvasIn
       await createInstructor(instructor, { prefix: "canvas-sync-instructor" });
 
       // No CanvasIntegration row exists yet for this fresh instructor —
-      // sync must fail closed (CANVAS_NOT_CONNECTED), never silently succeed
-      // or fall through to treating an arbitrary canvasCourseId as valid.
+      // sync must fail closed, never silently succeed or fall through to
+      // treating an arbitrary canvasCourseId as valid. The route throws
+      // CanvasNotConnectedError and serializes it via error.message (a
+      // human-readable string, not a machine error code — unlike the
+      // sibling CANVAS_NOT_CONNECTED code used by the admin-chat tool at
+      // ~/lib/agent-tools/admin-canvas.server.ts:198), so assert on the
+      // actual contract this route returns.
       const syncRes = await instructor.post(`${CORE_URL}/api/canvas/sync`, {
         data: { canvasCourseIds: ["999999"] },
       });
       expect(syncRes.status()).toBe(400);
-      expect((await syncRes.json()).error).toBe("CANVAS_NOT_CONNECTED");
+      expect((await syncRes.json()).error).toBe("Connect Canvas first");
     } finally {
       await instructor.dispose();
     }
   });
 });
 
-// #1571-pattern gap found in a #1669 deep-audit pass: three admin-gated
-// surfaces (cron-jobs trigger/schedule, bug-report triage, invitation
-// create/list/revoke/resend) each rolled their own admin check that only read
-// the session's cached role, unlike the shared `requireAdmin`/`requireInviter`
-// guards used everywhere else, which re-check `isActive` against the DB
-// (fixed for #1571: deactivating an admin must revoke access on their very
-// next request, not only once their session naturally expires). A deactivated
-// admin's still-live session therefore kept full access to all three surfaces
-// indefinitely. Fixed in this pass by threading the same DB re-check through
-// all three call sites.
+// #1571-pattern consistency gap found in a #1669 deep-audit pass: three
+// admin-gated surfaces (cron-jobs trigger/schedule, bug-report triage,
+// invitation create/list/revoke/resend) each rolled their own admin check
+// that only read the session's cached role, never re-checking `isActive`
+// against the DB the way `guards.server.ts`'s `requireInviter` (fixed here)
+// and the shared `requireAdmin` used elsewhere already do.
+//
+// Live-verified correction to this pass's own first draft: for a normal
+// cookie-session caller, the `#971` `/get-session` after-hook
+// (`~/lib/auth/server.ts`) already closes the actual exploitable window —
+// it re-reads `isActive` on every `getRequestSession`/`auth.api.getSession`
+// call (there is no cross-request cache; see the memo comment in
+// `request-session.server.ts`), nulls the session, and deletes the
+// now-orphaned `Session` row the moment it sees `isActive: false`. So by the
+// time any of these three routes' OWN role check runs, `session?.user` is
+// already `null` — the deactivated admin's very next request already 401s
+// on cron-jobs/bug-reports (their `if (!session?.user)` branch) before ever
+// reaching the role/isActive check this pass added, and always 403s on
+// invitations regardless of session state (`requireInviter`'s fallback
+// branch below). The added `isActiveAdminUser`/inline DB re-check in these
+// three routes is real and worth keeping (it matches the codebase's
+// established pattern and is the enforcement point for any future caller
+// that resolves a session by a path other than `getRequestSession`), but it
+// is defense-in-depth on top of `#971`'s hook for the cookie-session path
+// actually exercised below, not the sole thing preventing access here.
 test.describe("SECURITY: deactivating an admin revokes access to every admin-gated surface immediately (#1571 pattern)", () => {
   test("a deactivated ADMIN's still-live session loses cron-jobs, bug-report triage, and invitation authority", async ({
     playwright,
@@ -927,10 +961,11 @@ test.describe("SECURITY: deactivating an admin revokes access to every admin-gat
       });
       expect(deactivateRes.status()).toBe(200);
 
-      // The target's session cookie is still the same live cookie — no
-      // sign-out/sign-in happened — so this exercises the exact race the
-      // #971 session hook only closes for the NEXT full getSession resolution.
-      // The per-route DB re-check is what must reject it here.
+      // The target's session cookie is still the same cookie value, but the
+      // #971 `/get-session` hook already re-checks `isActive` on this very
+      // next resolution — cron-jobs/bug-reports both branch on
+      // `if (!session?.user)` first, so a fully-invalidated session 401s
+      // before their own role/isActive check is ever reached.
       const cronRes = await target.get(`${CORE_URL}/api/admin/cron-jobs`);
       expect(cronRes.status()).toBe(401);
 
@@ -940,7 +975,7 @@ test.describe("SECURITY: deactivating an admin revokes access to every admin-gat
       expect(cronTriggerRes.status()).toBe(401);
 
       const bugsRes = await target.get(`${CORE_URL}/api/admin/bug-reports`);
-      expect(bugsRes.status()).toBe(403);
+      expect(bugsRes.status()).toBe(401);
 
       const inviteRes = await target.post(`${CORE_URL}/api/invitations`, {
         data: { email: uniqueEmail("deact-invite-target"), role: "STUDENT" },

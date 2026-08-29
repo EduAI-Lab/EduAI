@@ -188,11 +188,21 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
 
   // Closes the doc's "System Logs page content beyond 'loads without
   // redirecting'" gap: trigger a real PATCH /api/policies (which
-  // apps/core/app/routes/api/policies.ts writes as an AuditLog row with
-  // actionCode POLICY_FLAG_UPDATED — see admin.logs.tsx's default "audit"
-  // tab, sorted newest-first) and assert the row actually renders, not just
-  // that the page loads.
-  test("System Logs (Audit tab) renders a real audit-log row after a policy change", async ({
+  // apps/core/app/routes/api/policies.ts writes an audit_logs row with
+  // actionCode POLICY_FLAG_UPDATED) and assert the row actually renders, not
+  // just that the page loads.
+  //
+  // This row lands on the SECURITY tab, not the default "Audit" one — a
+  // first draft of this test assumed otherwise and failed against the live
+  // stack. `db.auditlog.server.ts`'s `buildAuditLogWhere` deliberately
+  // excludes `category: "SECURITY"` rows from the Audit tab's query unless
+  // `includeSecurity`/an explicit `category` filter says otherwise ("Security
+  // tab queries are always hard-scoped to SECURITY so caller mistakes cannot
+  // leak tabs" — same comment, other direction), and `policies.ts` tags this
+  // action `category: "SECURITY"` (toggling a permission gate is a security
+  // control change, verified live: 150 of the seed+run's 305 total audit_logs
+  // rows carry that category and are invisible on the Audit tab by design).
+  test("System Logs (Security tab) renders a real audit-log row after a policy change", async ({
     page,
     playwright,
   }) => {
@@ -208,18 +218,32 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       });
       expect(patchRes.status()).toBe(200);
 
+      // The PATCH response above is already awaited, and policies.ts's
+      // fire-and-forget logAuditAction call commits well within a real
+      // network round trip (verified directly against the DB: the row lands
+      // within tens of milliseconds) — so a single fresh navigation is enough.
       await skipDashboardTour(page);
       await injectSession(page, ctx);
-      await page.goto(`${CORE_URL}/admin/logs`);
+      await page.goto(`${CORE_URL}/admin/logs?tab=security`);
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByText("POLICY_FLAG_UPDATED").first()).toBeVisible({
         timeout: 15_000,
       });
-      // The row's Entity column renders entityLabel, which policies.ts sets
-      // to the flag key — confirms this is *this* change, not a stale
-      // pre-existing row that happens to share the actionCode.
-      await expect(page.getByText(flagKey).first()).toBeVisible();
+      // The Security tab's table (unlike the Audit tab's) has no Entity
+      // column at all — Created/Action/Actor/Outcome/Route/IP/Details only
+      // (verified live). Open the row's "View details" dialog instead, which
+      // renders the full row including entityLabel/details, to confirm this
+      // is *this* change and not a stale pre-existing row that happens to
+      // share the actionCode.
+      await page
+        .getByRole("row", { name: /POLICY_FLAG_UPDATED/ })
+        .first()
+        .getByRole("button", { name: "View details" })
+        .click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(flagKey).first()).toBeVisible();
     } finally {
       // restore default so this test doesn't leak state into other tests
       await ctx.patch(`${CORE_URL}/api/policies`, { data: { key: flagKey, value: before } });
@@ -305,8 +329,13 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
 
       // The chat list button shows the owner's name (course-chats-panel.tsx),
       // not the chat content — proves the oversight list is really wired to
-      // this course's real chats, not a stub/empty state.
-      await expect(page.getByText(studentName)).toBeVisible({ timeout: 15_000 });
+      // this course's real chats, not a stub/empty state. Match the chat-list
+      // button specifically (getByText alone is ambiguous — the Enrollments
+      // tab's roster panel stays mounted off-screen and also renders this
+      // same student name).
+      await expect(
+        page.getByRole("button", { name: new RegExp(studentName) }),
+      ).toBeVisible({ timeout: 15_000 });
       expect(student.name).toBe(studentName);
     } finally {
       await adminCtx.dispose();
