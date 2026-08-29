@@ -7,7 +7,7 @@
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 
 vi.mock("~/hooks/useLocalUser", () => ({
   useLocalUser: () => ({ user: { id: "u1", name: "Prof Test", role: "INSTRUCTOR" } }),
@@ -45,13 +45,25 @@ function renderDashboard(role: string, courseTotal: number, courseList = courses
     },
   } as unknown as Route.ComponentProps;
 
-  return render(
-    <MemoryRouter initialEntries={["/dashboard"]}>
-      <ShellBreadcrumbProvider>
-        <DashboardHome {...props} />
-      </ShellBreadcrumbProvider>
-    </MemoryRouter>,
+  // A *data* router, not `MemoryRouter`. The staff panel publishes a course and
+  // revalidates the route afterwards (`useRevalidator`), which throws outside a
+  // data-router context — and in the app this is a route component, so a data
+  // router is what it actually renders under.
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/dashboard",
+        element: (
+          <ShellBreadcrumbProvider>
+            <DashboardHome {...props} />
+          </ShellBreadcrumbProvider>
+        ),
+      },
+    ],
+    { initialEntries: ["/dashboard"] },
   );
+
+  return render(<RouterProvider router={router} />);
 }
 
 describe("DashboardHome — truncation disclosure (#1208)", () => {

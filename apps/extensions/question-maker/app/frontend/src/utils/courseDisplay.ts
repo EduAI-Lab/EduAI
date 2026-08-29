@@ -12,7 +12,7 @@ export function normalizeCourseCode(value: string | null | undefined): string {
 }
 
 /**
- * Canonical compact term label, e.g. "2026W1", via the shared `@eduai/ui` term
+ * Canonical compact term label, e.g. "2026-27W1", via the shared `@eduai/ui` term
  * model — identical to AI Tutor and Core. Returns null when neither term nor
  * year is known, so nav labels can omit the "(…)" suffix entirely.
  */
@@ -60,11 +60,17 @@ export function dedupeCoursesByCoreId(courses: Course[]): Course[] {
  * either linked to a course the caller is enrolled in, or not yet linked at
  * all (pre-#1072-step-7 local-only rows with no Core identity to check).
  */
+/**
+ * The courses a picker should offer, plus whether they are unlinked local rows
+ * the UI labels as mock data.
+ */
+export type CourseSelection = { courses: Course[]; showMockLabel: boolean };
+
 export function filterCoursesForCourseSelection(
   localCourses: Course[] | undefined,
   coreCourses: EduAICourseOption[],
   options?: { bypassCoreEnrollmentFilter?: boolean },
-): { courses: Course[]; showMockLabel: boolean } {
+): CourseSelection {
   const local = dedupeCoursesByCoreId(localCourses ?? []);
   if (options?.bypassCoreEnrollmentFilter || coreCourses.length === 0) {
     return { courses: local, showMockLabel: coreCourses.length === 0 };

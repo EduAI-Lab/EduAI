@@ -28,6 +28,7 @@ import express from "express";
 import { prisma } from "../config/database.js";
 import { requireRole, isCourseAdmin } from "../middleware/auth.js";
 import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
+import { resolveNextChatId } from "../utils/chatSession.js";
 import {
   parsePaginationParams,
   paginated,
@@ -37,6 +38,7 @@ import {
   PaginationError,
 } from "../utils/pagination.js";
 import { evaluateQuestion } from "../services/activityEvaluation.js";
+import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
 import {
   ActivityMutationError,
   createActivityForLesson,
@@ -50,6 +52,7 @@ import {
   recordActivityFeedback,
   recordAiHelpRequest,
   recordSubmissionMetrics,
+  resyncSubmissionMetrics,
 } from "../services/activityAnalytics.js";
 import {
   resolveSupervisorSettings,
@@ -404,8 +407,14 @@ async function handleAiInteraction({
       signal: abortController.signal,
     });
 
-    // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
-    const nextChatId = aiResult.chatId || chatId || null;
+    // Session identity is owned by AI Tutor, not Core. Core's `/api/completion`
+    // is deliberately stateless and returns no chatId, so on a first turn both
+    // `aiResult.chatId` and the client-supplied `chatId` are null. Mint one here
+    // (rather than leaving it null) so `upsertChatSession` persists an
+    // `AiChatSession` row and the student's history panel is non-empty; the
+    // response threads it back to the client for subsequent turns (#1646).
+    // Tutor content stays out of Core's Chat/ChatMessage store by design.
+    const nextChatId = resolveNextChatId(aiResult.chatId, chatId);
     const session = await upsertChatSession({
       userId: authUser.id,
       activityId,
@@ -459,10 +468,12 @@ async function handleAiInteraction({
         ? "The AI study buddy took too long to respond. Please try again."
         : "Unable to generate an AI tutoring response",
       code: timedOut ? "AI_TUTOR_TIMEOUT" : "AI_TUTOR_GUIDANCE_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   } finally {
     res.removeListener("close", onClientClose);
@@ -631,7 +642,9 @@ router.post(
       res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -675,7 +688,9 @@ router.patch(
       res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
       if (e instanceof ActivityMutationError) {
-        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
       sendSafeError(res, e, "Internal server error");
     }
@@ -1041,8 +1056,10 @@ router.get(
 
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
-        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      if (excludeLessonId !== null) {
+        importableScope.lessonId = { not: excludeLessonId };
+      }
       // #1207: this scope spans EVERY course the caller manages, so a bounded
       // page over it is an instructor's whole activity corpus — server-side
       // search is the only way to reach a candidate past the first page. The
@@ -1091,9 +1108,8 @@ router.get(
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
  *
- * Why: `attemptNumber` is computed server-side from the latest existing
- * submission rather than trusted from the client, so retries can't collide
- * or be spoofed.
+ * Why: `attemptNumber` is allocated transactionally and guarded by a database
+ * uniqueness constraint rather than trusted from the client.
  */
 router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
@@ -1157,29 +1173,17 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
-    // Get the latest attempt number for this activity and user
-    const latestSubmission = await prisma.submission.findFirst({
-      where: { userId: authUser.id, activityId },
-      orderBy: { attemptNumber: "desc" },
-      select: { attemptNumber: true },
-    });
-
-    const nextAttemptNumber = latestSubmission ? latestSubmission.attemptNumber + 1 : 1;
-
-    const submission = await prisma.submission.create({
-      data: {
-        userId: authUser.id,
-        activityId,
-        attemptNumber: nextAttemptNumber,
-        response: {
-          answerText: typeof answerText === "string" ? answerText : null,
-          answerOption: typeof answerOption === "number" ? answerOption : null,
-        },
-        aiFeedback: isCorrect
-          ? { message: "Nice! That looks right." }
-          : { message: "Not quite. Try another angle." },
-        isCorrect,
+    const submission = await createSubmissionWithNextAttempt({
+      userId: authUser.id,
+      activityId,
+      response: {
+        answerText: typeof answerText === "string" ? answerText : null,
+        answerOption: typeof answerOption === "number" ? answerOption : null,
       },
+      aiFeedback: isCorrect
+        ? { message: "Nice! That looks right." }
+        : { message: "Not quite. Try another angle." },
+      isCorrect,
     });
 
     if (authUser.role === "STUDENT") {
@@ -1455,10 +1459,12 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     const body = {
       error: "Unable to generate a custom tutoring response",
       code: "AI_TUTOR_CUSTOM_ERROR",
-      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
-      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
-      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
     };
+    // Only the identifiers the upstream actually returned belong in the
+    // response, so the client never sees `requestId: undefined`.
+    if (metadata.requestId) body.requestId = metadata.requestId;
+    if (metadata.correlationId) body.correlationId = metadata.correlationId;
+    if (metadata.traceId) body.traceId = metadata.traceId;
     return res.status(status).json(body);
   }
 });
@@ -1522,7 +1528,11 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // A course TA is a STUDENT-platform user (Core has no UserRole.TA), so
+      // `authUser.role` is "STUDENT" here. Verify against the TA *enrollment*
+      // role explicitly — the default `expectedRole` (authUser.role) would build
+      // an allowedRoles of ["STUDENT"] and deny the very TA this branch admits.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1628,7 +1638,10 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       return res.status(403).json({ error: "Not authorized for this submission" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // See the submissions-list handler above: a TA's platform role is STUDENT,
+      // so the TA enrollment role must be checked explicitly or this grade
+      // override 403s the very TA the `isTa` branch is meant to authorize.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this submission" });
@@ -1639,6 +1652,13 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       where: { id: submissionId },
       data: updateData,
     });
+
+    // The student metrics behind Analytics are written once, at submit time —
+    // without this re-derive an override left the Analytics tab contradicting
+    // the Submissions tab for the same course.
+    if (typeof isCorrect !== "undefined") {
+      await resyncSubmissionMetrics({ userId: updated.userId, activityId });
+    }
 
     res.json(updated);
   } catch (e) {
@@ -1705,7 +1725,10 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
     if (isTa) {
-      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      // As above: check the TA enrollment role explicitly. `authUser.role` is
+      // "STUDENT" for a course TA, so the default would deny feedback access to
+      // the TA this branch is meant to admit.
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser, "TA");
       if (!liveEnrollment) return;
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1972,11 +1995,26 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
       return res.status(403).json({ error: "Activity is not available" });
     }
 
+    // AI-Tutor owns its session identity: on a first turn Core's stateless
+    // `/api/completion` returns no chatId, so the route mints one locally
+    // (`resolveNextChatId`) and Core never creates a matching `Chat`. Restoring
+    // such a session therefore proxies to a Core chat that cannot exist and
+    // gets a 404 — which used to dead-end every restored history entry in an
+    // error (#1646). Transcript CONTENT is not persisted anywhere yet (deferred
+    // follow-up), so a locally-minted session simply has no messages to show:
+    // return a benign empty transcript that the client renders as its normal
+    // empty state instead of surfacing an error.
+    const emptyTranscript = { chat: { id: chatId, title: null }, messages: [] };
+
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
-    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
-      headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },
-    });
+    const headers = { "Content-Type": "application/json" };
+    if (cookie) headers.cookie = cookie;
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, { headers });
+    if (upstream.status === 404) {
+      // Not a Core-backed chat (the common, locally-minted case) — empty state.
+      return res.json(emptyTranscript);
+    }
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: "Failed to fetch messages from Core" });
     }

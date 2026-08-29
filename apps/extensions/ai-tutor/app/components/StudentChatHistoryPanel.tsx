@@ -34,11 +34,13 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const MODE_LABELS: Record<string, string> = {
-  teach: "Teach",
-  guide: "Guide",
-  custom: "Custom",
-};
+// A `Map` because a session's stored `mode` is whatever string the row holds;
+// an unrecognised one falls back to the raw value at the call site.
+const MODE_LABELS = new Map<string, string>([
+  ["teach", "Teach"],
+  ["guide", "Guide"],
+  ["custom", "Custom"],
+]);
 
 export function StudentChatHistoryPanel({
   open,
@@ -164,7 +166,7 @@ export function StudentChatHistoryPanel({
                   >
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <Badge variant="secondary" size="sm">
-                        {MODE_LABELS[session.mode] ?? session.mode}
+                        {MODE_LABELS.get(session.mode) ?? session.mode}
                       </Badge>
                       <p className="text-[11px] text-muted-foreground">
                         {relativeTime(session.updatedAt)}

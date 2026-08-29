@@ -17,7 +17,7 @@ export type EvalConditionConfig = {
   requiresDeterministicOnly?: boolean;
 };
 
-export const CONDITIONS: Record<EvalCondition, EvalConditionConfig> = {
+export const CONDITIONS = {
   baseline: {
     adhdAssist: false,
     label: "Baseline",
@@ -43,7 +43,7 @@ export const CONDITIONS: Record<EvalCondition, EvalConditionConfig> = {
     requiresOversight: true,
     requiresDeterministicOnly: true,
   },
-};
+} satisfies Record<EvalCondition, EvalConditionConfig>;
 
 /** The three conditions "all-three" resolves to (Form A RQ3) — does not
  * include assist-deterministic, which is a separate ablation selected
@@ -55,10 +55,10 @@ export const ALL_CONDITIONS: EvalCondition[] = [
 ];
 
 /** @deprecated CLI aliases — prefer explicit condition names. */
-export const LEGACY_MODE_ALIASES: Record<string, EvalCondition> = {
-  off: "baseline",
-  on: "assist-oversight",
-};
+export const LEGACY_MODE_ALIASES = new Map<string, EvalCondition>([
+  ["off", "baseline"],
+  ["on", "assist-oversight"],
+]);
 
 export class EvalAdhdAssistModeError extends Error {
   constructor(message: string) {
@@ -91,7 +91,7 @@ export function resolveConditions(
     return ["baseline", "assist-oversight"];
   }
 
-  const mapped = LEGACY_MODE_ALIASES[rawMode] ?? rawMode;
+  const mapped = LEGACY_MODE_ALIASES.get(rawMode) ?? rawMode;
   if (!(mapped in CONDITIONS)) {
     throw new EvalAdhdAssistModeError(
       `--mode must be baseline|assist-prompt-only|assist-oversight|assist-deterministic|all-three ` +
@@ -100,7 +100,7 @@ export function resolveConditions(
   }
 
   const condition = mapped as EvalCondition;
-  if (mapped !== rawMode && LEGACY_MODE_ALIASES[rawMode]) {
+  if (mapped !== rawMode && LEGACY_MODE_ALIASES.has(rawMode)) {
     warn(`warning: --mode ${rawMode} is deprecated; using ${mapped}.`);
   }
   return [condition];

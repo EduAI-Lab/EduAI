@@ -65,15 +65,17 @@ export function ubcAcademicYearFromDate(date: Date, term: string = ubcTermFromDa
   return term === "W2" ? calendarYear - 1 : calendarYear;
 }
 
-const UBC_TERM_START_MONTH: Record<string, number> = {
-  W1: 9,
-  W2: 1,
-  S1: 5,
-  S2: 7,
-};
+// A `Map` because `code` arrives as a free-form string on the course row; an
+// unrecognised term falls back to September at the call site.
+const UBC_TERM_START_MONTH = new Map<string, number>([
+  ["W1", 9],
+  ["W2", 1],
+  ["S1", 5],
+  ["S2", 7],
+]);
 
 function ubcTermStartDate(year: number, code: string): Date {
-  const month = UBC_TERM_START_MONTH[code] ?? 9;
+  const month = UBC_TERM_START_MONTH.get(code) ?? 9;
   // Noon UTC, not midnight-with-a-fixed-offset: Vancouver is UTC-8 (PST) in
   // January but UTC-7 (PDT) in May–Sep, so any single fixed hour below 8
   // lands the synthesized W2 start on Dec 31 Vancouver time and

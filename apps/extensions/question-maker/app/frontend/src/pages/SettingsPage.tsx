@@ -43,21 +43,21 @@ import { toast } from "sonner";
 
 const KEY_PROVIDERS: AIProvider[] = ["google", "openai", "deepseek", "anthropic", "opencode"];
 
-const PROVIDER_LABELS: Record<AIProvider, string> = {
+const PROVIDER_LABELS = {
   google: "Google AI (Gemini)",
   openai: "OpenAI",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
   opencode: "OpenCode Go",
-};
+} satisfies Record<AIProvider, string>;
 
-const PROVIDER_PLACEHOLDERS: Record<AIProvider, string> = {
+const PROVIDER_PLACEHOLDERS = {
   google: "AIza-...",
   openai: "sk-...",
   deepseek: "sk-...",
   anthropic: "sk-ant-...",
   opencode: "OpenCode Go API key",
-};
+} satisfies Record<AIProvider, string>;
 
 const DEFAULT_MODEL_KEY = "qm:default-model";
 const EXPORT_PREFS_KEY = "qm:export-prefs";

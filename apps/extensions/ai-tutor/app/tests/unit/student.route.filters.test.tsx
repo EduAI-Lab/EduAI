@@ -15,7 +15,7 @@ import type { Course } from "~/lib/types";
 
 function renderStudentHome(
   courses: Partial<Course>[],
-  overrides: Record<string, unknown> = {},
+  overrides: Partial<Route.ComponentProps["loaderData"]> = {},
   initialEntry = "/student",
 ) {
   const props = {
@@ -78,7 +78,12 @@ describe("StudentHome — server-side filters (#1208)", () => {
         search: "",
         filters: { term: [], status: [], progress: ["not-started"] },
       },
-      facets: { terms: [], statuses: [], progress: ["not-started", "in-progress", "completed"] },
+      facets: {
+        terms: [],
+        statuses: [],
+        progress: ["not-started", "in-progress", "completed"],
+        coreUnavailable: false,
+      },
     });
 
     expect(screen.getByText("Linear Algebra")).toBeInTheDocument();

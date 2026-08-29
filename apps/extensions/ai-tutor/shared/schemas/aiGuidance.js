@@ -2,9 +2,18 @@ import { z } from "zod";
 
 export const KnowledgeLevelSchema = z.enum(["beginner", "intermediate", "advanced"]);
 
+/**
+ * `Topic.id` is a cuid string (`Topic.id String @id @default(cuid())`), and
+ * `resolveTopicName` compares the incoming id against `mainTopic.id` and the
+ * join rows' `topicId`, both cuids. This was declared `z.number().int()`, so a
+ * real topic id was rejected at the boundary and the focus-topic selection
+ * never reached the tutor prompt.
+ */
+export const TopicIdSchema = z.string().min(1);
+
 export const TeachRequestSchema = z.object({
   knowledgeLevel: KnowledgeLevelSchema,
-  topicId: z.number().int().optional(),
+  topicId: TopicIdSchema.optional(),
   message: z.string().min(1),
   modelId: z.string().min(1).optional(),
   apiKey: z.string().min(1),
@@ -28,7 +37,7 @@ export const GuideRequestSchema = z.object({
 
 export const CustomRequestSchema = z.object({
   knowledgeLevel: KnowledgeLevelSchema,
-  topicId: z.number().int().optional(),
+  topicId: TopicIdSchema.optional(),
   message: z.string().min(1),
   studentAnswer: z.union([z.string(), z.number()]).nullish(),
   modelId: z.string().min(1).optional(),

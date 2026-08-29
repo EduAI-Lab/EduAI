@@ -65,7 +65,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           category: "AI_CONFIG",
           entityType: "ReEmbedJob",
           entityId: job.id,
-          details: { courseId, ...(idempotencyKey ? { idempotencyKey } : {}) },
+          details: { courseId, idempotencyKey: idempotencyKey || undefined },
         }),
       );
     }
@@ -78,8 +78,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         // False only when the caller supplied an Idempotency-Key that could
         // not be attached because the active job already belongs to a
         // different key (#1269 review) — the job above is still correct,
-        // but a later retry on the caller's own key will not find it.
-        ...(idempotencyKey ? { keyHonored } : {}),
+        // but a later retry on the caller's own key will not find it. A caller
+        // that sent no key gets no verdict, so the field is absent for them.
+        keyHonored: idempotencyKey ? keyHonored : undefined,
       },
       created ? 202 : 200,
     );

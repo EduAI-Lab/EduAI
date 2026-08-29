@@ -22,7 +22,7 @@ import type { FormEvent } from "react";
 import { useOptimistic, useRef, useState } from "react";
 import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { IconDownload, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
+import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import {
   Button,
   Card,
@@ -62,6 +62,7 @@ import {
   courseYear,
 } from "../lib/course-display";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
+import type { ModuleCreatePayload } from "../lib/api";
 import type { Course, Module } from "../lib/types";
 import type { Route } from "./+types/instructor.course";
 import { requireClientUser } from "~/lib/client-auth";
@@ -85,6 +86,7 @@ import {
   parseListUrlParams,
   redirectPastEnd,
 } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -103,7 +105,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   const { page, search } = parseListUrlParams(request);
 
   const [course, modulesPage] = await Promise.all([
-    api.courseById(courseId) as Promise<Course>,
+    api.courseById(courseId),
     api.modulesForCourse(courseId, { page, search }),
   ]);
 
@@ -136,10 +138,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
-  const tabs = getCourseDetailTabs(
-    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
-  );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
   const {
     course,
     modules: initialModules,
@@ -148,6 +146,23 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     pageSize,
     search,
   } = loaderData;
+  // #1644: gate staff tabs on the viewer's role *on this course* (from the
+  // loader), not the global effective role — a global-effective TA who is only a
+  // STUDENT here must not see staff tabs whose content the server 403s.
+  const tabs = getCourseDetailTabs(
+    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
+    course.viewerRole ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  // #1644: the router reuses this instance when CourseSwitcher changes only
+  // `:courseId`, so `activeTab` survives the switch. If the new course's
+  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
+  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
+  // trigger and every tab panel hides — the page renders blank. Clamp back to
+  // `content` during render whenever the active tab is no longer available.
+  if (!tabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab("content");
+  }
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
@@ -162,6 +177,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [movingModule, setMovingModule] = useState<Module | null>(null);
   const searching = search !== "";
   const [title, setTitle] = useState("");
+  // Optional at creation time, same field the edit dialog writes. Without it a
+  // description could only be added after the fact, from the card kebab.
+  const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -331,8 +349,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     if (!numericCourseId || !title.trim()) return;
     setCreating(true);
     try {
-      await api.createModule(numericCourseId, { title: title.trim() });
+      const payload: ModuleCreatePayload = { title: title.trim() };
+      // Omit rather than send "" — the column is nullable and a blank string
+      // would render as an empty description line on the card.
+      if (description.trim()) payload.description = description.trim();
+      await api.createModule(numericCourseId, payload);
       setTitle("");
+      setDescription("");
       setCreateOpen(false);
       await revealNewestModule();
     } catch (error) {
@@ -549,23 +572,39 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <PageTabsContent value="content" className="space-y-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Modules</h2>
-            <PermissionGate allow={perms.canManageContent}>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {/* #1660: TA excluded — a TA already has a real (non-preview)
+                  view of this course via /student, not a preview of someone
+                  else's. */}
+              {perms.canPreviewAsStudent && numericCourseId != null ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => handleImportOpenChange(true)}
+                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
                 >
-                  <IconDownload className="size-4" aria-hidden="true" />
-                  Import
+                  <IconEye className="size-4" aria-hidden="true" />
+                  Preview as student
                 </Button>
-                <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                  <IconPlus className="size-4" aria-hidden="true" />
-                  Add module
-                </Button>
-              </div>
-            </PermissionGate>
+              ) : null}
+              <PermissionGate allow={perms.canManageContent}>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleImportOpenChange(true)}
+                  >
+                    <IconDownload className="size-4" aria-hidden="true" />
+                    Import
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                    <IconPlus className="size-4" aria-hidden="true" />
+                    Add module
+                  </Button>
+                </div>
+              </PermissionGate>
+            </div>
           </div>
 
           <PermissionGate allow={perms.canManageContent}>
@@ -593,6 +632,16 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       placeholder="e.g. Getting started"
                       autoFocus
                       required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-module-description">Description</Label>
+                    <Textarea
+                      id="new-module-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Optional — what this module covers"
+                      rows={3}
                     />
                   </div>
                   <DialogFooter>
@@ -999,3 +1048,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

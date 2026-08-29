@@ -9,7 +9,7 @@ import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 import { useQuestionStats } from "@/hooks/useQuestionStats";
 import { useAllQuestions } from "@/hooks/useAllQuestions";
 import { useAllAssessments } from "@/hooks/useAllAssessments";
-import { questionTypeLabels } from "@/types/question";
+import { questionTypeLabels, type QuestionType } from "@/types/question";
 import {
   QmDashboardView,
   type QmDashboardCourse,
@@ -22,11 +22,11 @@ import { useAutoRedirectForMainTour } from "@/tour/useAutoRedirectForMainTour";
 
 const STAFF_ROLES = new Set(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
 
-const TYPE_COLORS: Record<string, string> = {
+const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
   SA: "var(--color-series-7)",
   LA: "var(--color-series-8)",
-};
+} satisfies Record<QuestionType, string>;
 // Pull from the shared difficulty tokens (index.css) so meters match every other
 // difficulty surface and adapt to light/dark automatically.
 const DIFF_COLORS = {
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   );
 
   const analytics = useMemo<QmDashboardAnalytics>(() => {
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
     let easy = 0;
     let medium = 0;
     let hard = 0;

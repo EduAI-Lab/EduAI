@@ -41,16 +41,16 @@ import {
   updateCronSchedule,
   resetCronSchedule,
 } from "~/lib/db.cron-jobs.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const ADMIN_USER = { id: "u-admin", role: "ADMIN", email: "admin@test.com" };
 const STUDENT_USER = { id: "u-student", role: "STUDENT", email: "student@test.com" };
 
-function makeRequest(path: string, method = "GET", body?: unknown) {
-  return new Request(`http://localhost${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+function makeRequest(path: string, method = "GET", body?: RouteRequestBody) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  return new Request(`http://localhost${path}`, init);
 }
 
 function makeArgs(request: Request) {

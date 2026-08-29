@@ -1,26 +1,42 @@
+import type { JsonValue } from "~/lib/json-value";
 import type { FleetHealthResult } from "./types";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
-const HEALTH_CACHE_TTL_MS = 30_000;
-const HEALTH_TIMEOUT_MS = 5_000;
+const DEFAULT_HEALTH_CACHE_TTL_MS = 30_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 5_000;
+const DEFAULT_FAILURE_EJECTION_MS = 30_000;
+const MIN_HEALTH_DURATION_MS = 100;
+const MAX_HEALTH_DURATION_MS = 120_000;
 
 type CacheEntry = FleetHealthResult;
 
 const healthCache = new Map<string, CacheEntry>();
+const ejectedUntilByUrl = new Map<string, number>();
+
+function configuredDuration(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_HEALTH_DURATION_MS, Math.max(MIN_HEALTH_DURATION_MS, Math.floor(parsed)));
+}
 
 /**
  * Parse `/v1/models` payload.
  * - `null`: response shape unusable → health check marks host unhealthy (no configured-model fallback)
  * - `[]`: endpoint is healthy but hosts no models → do not fall back
  */
-function parseModelIds(payload: unknown): string[] | null {
-  if (!payload || typeof payload !== "object") return null;
-  const data = payload as { data?: unknown };
-  if (!Array.isArray(data.data)) return null;
+function parseModelIds(payload: JsonValue | undefined): string[] | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = payload.data;
+  if (!Array.isArray(data)) return null;
   const ids: string[] = [];
-  for (const entry of data.data) {
-    if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
-      ids.push((entry as { id: string }).id);
+  for (const entry of data) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof entry.id === "string"
+    ) {
+      ids.push(entry.id);
     }
   }
   return ids;
@@ -29,6 +45,7 @@ function parseModelIds(payload: unknown): string[] | null {
 /** Clear health cache (unit tests). */
 export function resetFleetHealthCache(): void {
   healthCache.clear();
+  ejectedUntilByUrl.clear();
 }
 
 /**
@@ -40,14 +57,41 @@ export function invalidateFleetHealthCacheForUrl(baseUrl: string): void {
   healthCache.delete(normalized);
 }
 
+/** Temporarily remove a host after an inference failure. */
+export function recordFleetHostFailure(baseUrl: string): void {
+  const normalized = baseUrl.replace(/\/$/, "");
+  const durationMs = configuredDuration("FLEET_FAILURE_EJECTION_MS", DEFAULT_FAILURE_EJECTION_MS);
+  ejectedUntilByUrl.set(normalized, Date.now() + durationMs);
+  healthCache.delete(normalized);
+}
+
 export async function getServerHealth(baseUrl: string): Promise<FleetHealthResult> {
   const normalized = baseUrl.replace(/\/$/, "");
+  const now = Date.now();
+  const ejectedUntil = ejectedUntilByUrl.get(normalized);
+  if (ejectedUntil !== undefined) {
+    if (ejectedUntil > now) {
+      return {
+        ok: false,
+        modelIds: null,
+        checkedAt: now,
+        error: `host ejected for ${ejectedUntil - now}ms after inference failure`,
+      };
+    }
+    ejectedUntilByUrl.delete(normalized);
+  }
+  // Capture the ejection marker before starting an async probe. A failure can
+  // be recorded while this probe is in flight; a late successful response must
+  // not clear that newer marker or repopulate the cache with stale health.
+  const ejectionAtProbeStart = ejectedUntilByUrl.get(normalized);
   const cached = healthCache.get(normalized);
-  if (cached && Date.now() - cached.checkedAt < HEALTH_CACHE_TTL_MS) {
+  const cacheTtlMs = configuredDuration("FLEET_HEALTH_CACHE_TTL_MS", DEFAULT_HEALTH_CACHE_TTL_MS);
+  const timeoutMs = configuredDuration("FLEET_HEALTH_TIMEOUT_MS", DEFAULT_HEALTH_TIMEOUT_MS);
+  if (cached && now - cached.checkedAt < cacheTtlMs) {
     return cached;
   }
 
-  const checkedAt = Date.now();
+  const checkedAt = now;
   const apiKey = resolveVllmApiKey();
   if (!apiKey) {
     const result: FleetHealthResult = {
@@ -63,7 +107,7 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
   try {
     const res = await fetch(`${normalized}/v1/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       const result: FleetHealthResult = {
@@ -75,7 +119,9 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       healthCache.set(normalized, result);
       return result;
     }
-    const body = (await res.json()) as unknown;
+    // SAFETY: `Response#json` resolves to whatever the host sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees.
+    const body = (await res.json()) as JsonValue;
     const modelIds = parseModelIds(body);
     // HTTP 200 without a valid `data` array is unhealthy — do not fall back to configured models.
     if (modelIds === null) {
@@ -93,6 +139,22 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       modelIds,
       checkedAt,
     };
+    const ejectionAfterProbe = ejectedUntilByUrl.get(normalized);
+    if (ejectionAfterProbe !== ejectionAtProbeStart) {
+      const nowAfterProbe = Date.now();
+      if (ejectionAfterProbe !== undefined && ejectionAfterProbe > nowAfterProbe) {
+        return {
+          ok: false,
+          modelIds: null,
+          checkedAt: nowAfterProbe,
+          error: `host ejected for ${ejectionAfterProbe - nowAfterProbe}ms after inference failure`,
+        };
+      }
+      if (ejectionAfterProbe !== undefined) {
+        ejectedUntilByUrl.delete(normalized);
+      }
+    }
+    ejectedUntilByUrl.delete(normalized);
     healthCache.set(normalized, result);
     return result;
   } catch (err) {

@@ -9,7 +9,8 @@
  * search is active — seeding it there would render the current course as if it
  * had matched the query.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import type { JsonValue } from "~/lib/json-value";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -58,6 +59,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The slice of `Response` the component under test reads off a mocked fetch. */
+type FetchResponseStub = { ok?: boolean; status?: number; json: () => Promise<JsonValue> };
+
 describe("CourseSwitcher", () => {
   it("requests one bounded page with paging params — an unpaged read would 400", async () => {
     renderSwitcher();
@@ -81,6 +85,36 @@ describe("CourseSwitcher", () => {
     renderSwitcher({ currentCourseCode: "" });
 
     expect(screen.getByText("Intro to CS")).toBeInTheDocument();
+  });
+
+  it("shows each course's term, so two offerings of one code are distinguishable", async () => {
+    // A course code repeats verbatim every term; the row's second line carries
+    // the term so the breadcrumb can tell this term's course from last term's.
+    // Shared with AI Tutor and Question Maker via `courseSwitcherSublabel`.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { id: "course-1", code: "CS101", name: "Intro to CS", term: "W1", year: 2026 },
+            { id: "course-2", code: "CS101", name: "Intro to CS", term: "S1", year: 2026 },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 200,
+        }),
+    });
+
+    renderSwitcher();
+    await waitFor(() => expect(courseUrls(mockFetch)).toHaveLength(1));
+    // Radix opens on pointerdown, which jsdom has no PointerEvent for, so drive
+    // the trigger's keyboard path instead (same technique as the shared
+    // component's own test in packages/ui).
+    fireEvent.keyDown(screen.getByLabelText("Switch course"), { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Intro to CS · 2026-27W1")).toBeInTheDocument());
+    expect(screen.getByText("Intro to CS · 2026S1")).toBeInTheDocument();
   });
 
   it("keeps showing the current course when the list request fails", async () => {
@@ -116,7 +150,7 @@ describe("CourseSwitcher", () => {
   });
 
   it("drops a stale in-flight response when the component unmounts", async () => {
-    let resolveFetch: (value: unknown) => void = () => {};
+    let resolveFetch: (value: FetchResponseStub) => void = () => {};
     mockFetch.mockReturnValue(
       new Promise((resolve) => {
         resolveFetch = resolve;

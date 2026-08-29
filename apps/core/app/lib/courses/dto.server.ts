@@ -74,7 +74,56 @@ function isoDate(value: DateLike): string | null {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-function hasOwn(row: object, key: string): boolean {
+/**
+ * A course row as projected by Prisma, or a narrow in-process test double.
+ *
+ * Every key is optional rather than the type being open: `serializeCourseForApi`
+ * treats a missing key and a null value as different things, so the
+ * own-property checks below are what decide the DTO. Deriving it from the staff
+ * select — the widest of the three — means a column renamed in the schema fails
+ * here instead of silently serializing as `undefined`.
+ *
+ * `deletedAt` is not in any select but is read for the forensic branch below.
+ */
+type CourseRowCandidate = Partial<
+  Prisma.CourseGetPayload<{ select: typeof COURSE_STAFF_SELECT }> & { deletedAt: Date | null }
+>;
+
+/**
+ * A serialized course.
+ *
+ * Every field is optional because the serializer copies one only when the row
+ * owns it: which keys appear is decided at runtime by the audience, by
+ * `detail`, and by what the caller's projection selected.
+ */
+export type CoursePublicDto = {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string | null;
+  section?: string | null;
+  term?: string | null;
+  year?: number | null;
+  isActive?: boolean;
+  isPublished?: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  department?: string | null;
+  deletedAt?: Date | null;
+  callerEnrollmentRole?: string | null;
+  hasAiConfig?: boolean;
+  responseStyleTags?: string[];
+  instructor?: { name: string | null; email: string | null } | null;
+  externalSource?: string | null;
+  externalId?: string | null;
+  aiInstructions?: string | null;
+  courseScopeGuardrailEnabled?: boolean;
+  ragTopK?: number | null;
+  ragSimilarityThreshold?: number | null;
+  instructorId?: string | null;
+};
+
+function hasOwn(row: CourseRowCandidate, key: keyof CourseRowCandidate): boolean {
   return Object.prototype.hasOwnProperty.call(row, key);
 }
 
@@ -87,14 +136,15 @@ function hasOwn(row: object, key: string): boolean {
  * real Prisma projections always include the selected fields.
  */
 export function serializeCourseForApi(
-  row: Record<string, any>,
+  row: CourseRowCandidate,
   options: CourseDtoOptions,
-): Record<string, any> {
-  const dto: Record<string, any> = {
-    id: row.id,
-    code: row.code,
-    name: row.name,
-  };
+): CoursePublicDto {
+  // Built as an accumulator rather than one literal: every field below is
+  // conditional, so the three identity fields are assigned the same way.
+  const dto: CoursePublicDto = {};
+  dto.id = row.id;
+  dto.code = row.code;
+  dto.name = row.name;
 
   // Every real Prisma projection has these own-properties (including null
   // values).  Keeping narrow test/in-process doubles narrow too avoids making
@@ -131,18 +181,13 @@ export function serializeCourseForApi(
     // private. Response-style labels and the teaching-team contact are public
     // course-detail metadata already rendered by the enrolled-student UI.
     if (options.detail && (hasOwn(row, "aiInstructions") || hasOwn(row, "responseStyleTags"))) {
-      dto.hasAiConfig = courseHasAiConfig(
-        Array.isArray(row.responseStyleTags) ? row.responseStyleTags : [],
-        typeof row.aiInstructions === "string" ? row.aiInstructions : null,
-      );
+      dto.hasAiConfig = courseHasAiConfig(row.responseStyleTags ?? [], row.aiInstructions ?? null);
     }
     if (options.detail && hasOwn(row, "responseStyleTags")) {
-      dto.responseStyleTags = Array.isArray(row.responseStyleTags)
-        ? row.responseStyleTags.filter((tag: unknown): tag is string => typeof tag === "string")
-        : [];
+      dto.responseStyleTags = row.responseStyleTags ?? [];
     }
     if (options.detail) {
-      if (row.instructor && typeof row.instructor === "object") {
+      if (row.instructor) {
         dto.instructor = {
           name: row.instructor.name ?? null,
           email: row.instructor.email ?? null,
@@ -168,7 +213,7 @@ export function serializeCourseForApi(
   // persistence/synchronization timestamps.
   if (hasOwn(row, "aiInstructions")) dto.aiInstructions = row.aiInstructions;
   if (hasOwn(row, "responseStyleTags")) {
-    dto.responseStyleTags = Array.isArray(row.responseStyleTags) ? row.responseStyleTags : [];
+    dto.responseStyleTags = row.responseStyleTags ?? [];
   }
   if (options.detail && hasOwn(row, "courseScopeGuardrailEnabled")) {
     dto.courseScopeGuardrailEnabled = Boolean(row.courseScopeGuardrailEnabled);
@@ -186,7 +231,7 @@ export function serializeCourseForApi(
     if (hasOwn(row, "instructorId")) dto.instructorId = row.instructorId ?? null;
     if (hasOwn(row, "externalSource")) dto.externalSource = row.externalSource ?? null;
     if (hasOwn(row, "externalId")) dto.externalId = row.externalId ?? null;
-    if (row.instructor && typeof row.instructor === "object") {
+    if (row.instructor) {
       dto.instructor = {
         name: row.instructor.name ?? null,
         email: row.instructor.email ?? null,
@@ -198,5 +243,3 @@ export function serializeCourseForApi(
 
   return dto;
 }
-
-export type CoursePublicDto = ReturnType<typeof serializeCourseForApi>;

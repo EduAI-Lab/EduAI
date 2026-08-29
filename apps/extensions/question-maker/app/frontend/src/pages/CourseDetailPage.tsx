@@ -34,6 +34,7 @@ import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { useGuidedTour } from "../contexts/GuidedTourContext";
 import { useQmLayout } from "../components/layout/QmLayoutContext";
 import { questionService } from "../services/questionService";
+import type { ProviderApiKeys } from "../services/apiKeyStorage";
 import { courseService } from "../services/courseService";
 import assessmentService from "../services/assessmentService";
 import {
@@ -46,6 +47,7 @@ import { DEFAULT_LIST_PAGE_SIZE, ListPaginationBar } from "../components/shared/
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseOverviewTab } from "./course-detail/CourseOverviewTab";
 import { CourseBanksTab } from "./course-detail/CourseBanksTab";
+import { resolveCourseTab, type ActiveTab } from "./course-detail/courseTabs";
 import { CourseTopicsHeroAction } from "./course-detail/CourseTopicsHeroAction";
 import { CourseCanvasTab } from "./course-detail/CourseCanvasTab";
 import type { QuestionAnalyticsProps } from "@eduai/ui";
@@ -57,12 +59,14 @@ import {
   AssessmentGenerationParams,
   MCQChoice,
   questionTypeLabels,
+  type QuestionType,
 } from "../types/question";
 import { Topic } from "../types/topic";
 import {
   QuestionUploadDialog,
   mapExtractedToDraftQuestions,
 } from "../components/question-bank/QuestionUploadDialog";
+import canvasService from "../services/canvasService";
 import { CanvasExportDialog } from "../components/canvas/CanvasExportDialog";
 import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
 import { CanvasBankSyncDialog } from "../components/canvas/CanvasBankSyncDialog";
@@ -75,14 +79,14 @@ import {
 } from "../utils/assessmentExport";
 
 type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
+type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
+type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
-const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
-
-const TYPE_COLORS: Record<string, string> = {
+const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
   SA: "var(--color-series-7)",
   LA: "var(--color-series-8)",
-};
+} satisfies Record<QuestionType, string>;
 // Shared difficulty tokens (index.css) — keeps meters consistent + dark-mode aware.
 const DIFF_COLORS = {
   easy: "var(--diff-easy-solid)",
@@ -104,10 +108,12 @@ export const CourseDetailPage = () => {
     activeTourId,
   } = useGuidedTour();
 
+  // Canvas actions are offered only for courses that were synced from Canvas;
+  // null until the course's Canvas link has been resolved.
+  const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
+
   const tabParam = searchParams.get("tab");
-  const activeTab: ActiveTab = VALID_TABS.includes(tabParam as ActiveTab)
-    ? (tabParam as ActiveTab)
-    : "overview";
+  const activeTab: ActiveTab = resolveCourseTab(tabParam, isCanvasLinked);
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
       setSearchParams(
@@ -132,7 +138,7 @@ export const CourseDetailPage = () => {
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
     totalVariants: number;
-    typeStats: Array<{ type: string; count: number }>;
+    typeStats: Array<{ type: QuestionType; count: number }>;
     difficultyStats: Array<{ difficulty: string; count: number }>;
     aiCount: number;
     humanCount: number;
@@ -146,11 +152,8 @@ export const CourseDetailPage = () => {
   const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  /** Drafts from a background extraction, scoped to the course they were extracted for. */
-  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<{
-    courseId: number;
-    drafts: ReturnType<typeof mapExtractedToDraftQuestions>;
-  } | null>(null);
+  const [pendingExtractionReview, setPendingExtractionReview] =
+    useState<PendingExtractionReview | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
   const [isBanksLoading, setIsBanksLoading] = useState(false);
@@ -271,6 +274,30 @@ export const CourseDetailPage = () => {
     };
   }, [courseId]);
 
+  // Canvas link for this course, resolved from its Canvas course mapping.
+  useEffect(() => {
+    if (!courseId) {
+      setIsCanvasLinked(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCanvasLinked(null);
+    void (async () => {
+      const link = await canvasService.getCourseLink(courseId);
+      if (cancelled) return;
+      // `unknown` stays null — the same state the page holds while resolving,
+      // which every gate below reads permissively. A Core hiccup would
+      // otherwise read as "not linked" and silently strip the Canvas tab, both
+      // import actions and the bank-sync button from a linked course, with
+      // nothing on screen to explain it (#1652 review).
+      if (link.status === "unknown") return;
+      setIsCanvasLinked(link.status === "linked");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +314,7 @@ export const CourseDetailPage = () => {
           totalQuestions: Number(stats.totalQuestions) || 0,
           totalVariants: Number(stats.totalVariants) || 0,
           typeStats: (stats.typeStats ?? []).map((row) => ({
-            type: String(row.type),
+            type: row.type,
             count: Number(row.count) || 0,
           })),
           difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
@@ -473,7 +500,7 @@ export const CourseDetailPage = () => {
 
     if (!courseQuestionStats) return empty;
 
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
     for (const row of courseQuestionStats.typeStats) {
       typeCounts[row.type] = row.count;
     }
@@ -557,8 +584,11 @@ export const CourseDetailPage = () => {
 
   const handleUploadQuestions = useCallback(() => {
     if (courseId) void loadTopicsForCourse(courseId);
+    if (pendingExtractionReview && pendingExtractionReview.courseId !== courseId) {
+      setPendingExtractionReview(null);
+    }
     setIsUploadOpen(true);
-  }, [courseId, loadTopicsForCourse]);
+  }, [courseId, loadTopicsForCourse, pendingExtractionReview]);
 
   const handleUpdateVariant = useCallback(
     (
@@ -743,7 +773,7 @@ export const CourseDetailPage = () => {
       text: string;
       courseId: number;
       model: string;
-      apiKeys: Record<string, unknown>;
+      apiKeys: ProviderApiKeys;
       jobId?: string;
       onExtractionComplete?: (
         status: "success" | "error",
@@ -783,17 +813,13 @@ export const CourseDetailPage = () => {
             return;
           }
           params.onExtractionComplete?.("success", { questionsCount: drafts.length });
-          const extractionCourseId = params.courseId;
-          setPendingExtractionDrafts({ courseId: extractionCourseId, drafts });
+          setPendingExtractionReview({ courseId: params.courseId, drafts });
           toast("Your extraction is ready", {
-            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Open the upload dialog to review and save.`,
+            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Review them in the source course before saving.`,
             action: {
               label: "Review questions",
               onClick: () => {
-                // Return to the course these drafts belong to. CourseDetail keeps
-                // state across :courseId changes, so opening here while on another
-                // course would otherwise save into the wrong course.
-                navigate(`/courses/${extractionCourseId}`);
+                navigate(`/courses/${params.courseId}?tab=questions`);
                 setIsUploadOpen(true);
               },
             },
@@ -809,14 +835,6 @@ export const CourseDetailPage = () => {
     },
     [navigate, toast],
   );
-
-  // If the user navigates to another course while the upload dialog is open
-  // with course-scoped drafts, close it so we never save into the wrong course.
-  useEffect(() => {
-    if (isUploadOpen && pendingExtractionDrafts && courseId !== pendingExtractionDrafts.courseId) {
-      setIsUploadOpen(false);
-    }
-  }, [courseId, isUploadOpen, pendingExtractionDrafts]);
 
   // ── Assessment handlers ─────────────────────────────────────────────────────
   const handleCreateAssessment = useCallback(
@@ -1006,7 +1024,7 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
+          {isCanvasLinked !== false && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
         </PageTabsList>
 
         <PageTabsContent value="overview" className="space-y-6">
@@ -1019,7 +1037,13 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab("assessments")}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            // Canvas import is scoped to the linked Canvas course, so the action
+            // is withheld — not just the tab — when there is no link (#1652
+            // review). `null` means "not resolved yet", which keeps the action
+            // in place rather than flickering it out on every load.
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
         </PageTabsContent>
 
@@ -1057,6 +1081,7 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             isLoading={isBanksLoading}
             loadError={banksError}
+            isCanvasLinked={isCanvasLinked !== false}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}
@@ -1080,7 +1105,9 @@ export const CourseDetailPage = () => {
             onExportToTxt={handleExportAssessmentToTxt}
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
           <ListPaginationBar
             total={assessmentsTotal}
@@ -1092,7 +1119,7 @@ export const CourseDetailPage = () => {
         </PageTabsContent>
 
         <PageTabsContent value="canvas" className="space-y-6">
-          {courseId && (
+          {courseId && isCanvasLinked !== false && (
             <CourseCanvasTab
               courseId={courseId}
               canWrite={!writesDisabled}
@@ -1119,10 +1146,13 @@ export const CourseDetailPage = () => {
       {courseId && (
         <>
           <QuestionUploadDialog
-            open={isUploadOpen}
+            open={
+              isUploadOpen &&
+              (!pendingExtractionReview || pendingExtractionReview.courseId === courseId)
+            }
             onClose={() => {
               setIsUploadOpen(false);
-              setPendingExtractionDrafts(null);
+              setPendingExtractionReview(null);
             }}
             courseId={courseId}
             courseName={course.name}
@@ -1131,7 +1161,7 @@ export const CourseDetailPage = () => {
             onQuestionsSaved={handleQuestionsUploaded}
             onExtractInBackground={handleExtractInBackground}
             initialDraftQuestions={
-              pendingExtractionDrafts?.courseId === courseId ? pendingExtractionDrafts.drafts : null
+              pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null
             }
           />
 

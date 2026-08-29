@@ -133,7 +133,7 @@ const UNIT_ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
   },
 ];
 
-export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
+export const DASHBOARD_CONFIG = {
   ADMIN: {
     statBuilder: ({
       userTotal,
@@ -238,7 +238,7 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
       subheading: "Your AI-powered learning companion.",
     }),
   },
-};
+} satisfies Record<EffectiveRole, DashboardRoleConfig>;
 
 /**
  * Renders the dashboard for any role from the route loader's `DashboardData`

@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -68,7 +69,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -79,7 +80,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
-  const hasNoCourses = availableCourses.length === 0;
+  // An empty list only means "not enrolled" once the fetch has actually
+  // resolved. Answering the first message on `/chat` replaces the route with
+  // `/chat/:id`, which remounts this screen — without the loading gate the
+  // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
+  // overlay over the reply that was still streaming (#1517).
+  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
@@ -172,6 +178,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
+  const promptSubmitInFlightRef = useRef(false);
   const pendingNavigateChatId = useRef<string | null>(null);
   // ChatScreen creates the CurrentUserIdProvider below this hook, inside
   // CoreAppShell. Pass the loader-owned user id explicitly so this instance
@@ -367,7 +374,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             annotation !== null &&
             typeof annotation === "object" &&
             !Array.isArray(annotation) &&
-            (annotation as Record<string, unknown>).hitLongOutputCap === true,
+            (annotation as JsonObject).hitLongOutputCap === true,
         );
 
       if (hitLongOutputCap) {
@@ -574,6 +581,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
+      // Share the chip's in-flight guard: a chip's `append` sets the ref
+      // synchronously but `isLoading` only flips on the next render, so an
+      // Enter/Send fired in that window would otherwise submit a second
+      // concurrent request. Bail while a chip submit is still settling.
+      if (promptSubmitInFlightRef.current) {
+        e.preventDefault();
+        return;
+      }
       if (!chatId) {
         postAssistiveClientEvent({
           eventType: "task_initiation",
@@ -691,23 +706,59 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     }
   };
 
-  const handlePromptSelect = (prompt: string) => {
-    const inputEvent = {
-      target: { value: prompt },
-      currentTarget: { value: prompt },
-    } as React.ChangeEvent<HTMLInputElement>;
+  const handlePromptSelect = useCallback(
+    (prompt: string) => {
+      const text = prompt.trim();
+      if (!text) return;
+      // Re-entrancy guard: without it, clicking a chip twice (or a second chip)
+      // before the request settles fires a second submit. The old rAF round-trip
+      // through handleInputChange resolved each deferred submit against whatever
+      // `input` held when its callback ran, so a chip click could submit the
+      // user's already-typed text. Submit the known prompt string directly via
+      // `append` instead, gated on in-flight state.
+      if (isLoading || promptSubmitInFlightRef.current) return;
+      promptSubmitInFlightRef.current = true;
+      // AI SDK v4's `append` doesn't clear the composer the way `handleSubmit`
+      // did. Clear any typed-but-unsent draft here — otherwise it lingers, Send
+      // re-enables once the chip request settles, and the next submit fires the
+      // stale draft as an unintended extra turn.
+      setInput("");
 
-    handleInputChange(inputEvent);
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-    requestAnimationFrame(() => {
-      const formEvent = {
-        preventDefault: () => {},
-        currentTarget: {} as HTMLFormElement,
-      } as React.FormEvent<HTMLFormElement>;
-
-      onSubmit(formEvent);
-    });
-  };
+      void append({ role: "user", content: text })
+        .catch((error) => {
+          // AI SDK surfaces request failures through onError, but handle a
+          // rejected `append` explicitly so it never becomes an unhandled
+          // rejection — and the in-flight guard is still released via finally.
+          console.error("Failed to submit suggested prompt", error);
+        })
+        .finally(() => {
+          promptSubmitInFlightRef.current = false;
+        });
+    },
+    [adhdAssist, append, chatId, isLoading, setInput],
+  );
 
   const sharedViewProps = {
     chatModels,

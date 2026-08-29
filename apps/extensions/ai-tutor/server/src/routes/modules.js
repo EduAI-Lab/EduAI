@@ -566,9 +566,11 @@ router.get("/modules/:moduleId/context", async (req, res) => {
       return res.status(403).json({ error: "Module is not published" });
     }
 
+    // Staff count across every sibling; a student counts only published ones.
+    // `undefined` is Prisma's "no constraint".
     const scope = {
       courseOfferingId: module.courseOfferingId,
-      ...(isStudent && !hasElevatedAccess ? { isPublished: true } : {}),
+      isPublished: isStudent && !hasElevatedAccess ? true : undefined,
     };
     // "Sorts before me" under `position asc, id asc` — the id tiebreak matters
     // because `position` carries no unique constraint.

@@ -12,12 +12,12 @@ import {
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 
 /** Expected stage count per catalog fixture, keyed the same as DIAGRAM_FIXTURE_NAMES. */
-const EXPECTED_STAGE_COUNT: Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number> = {
+const EXPECTED_STAGE_COUNT = {
   "process-flow": processFlowPayload.stages.length,
   hierarchy: hierarchyPayload.stages.length,
   compare: comparePayload.stages.length,
   "gradient-descent": gradientDescentPayload.stages.length,
-};
+} satisfies Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number>;
 
 /**
  * #1320 real-browser regression, replacing the Happy DOM className-only
@@ -234,9 +234,10 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // Prove "reachable only via a sideways scroll" directly: the last stage
     // chip starts clipped/off-pane, and scrolling the container right
     // (nothing in the chat UI prompts a user to do this) brings it fully
-    // into view. Use behavior:"instant" — the production pane class includes
-    // scroll-smooth, so assigning scrollLeft animates and a same-tick
-    // boundingBox() still sees the un-scrolled 650px right edge (CI #1422).
+    // into view. Keep behavior:"instant" — it is what makes a same-tick
+    // boundingBox() see the scrolled position rather than the un-scrolled
+    // 650px right edge, whatever scroll-behavior the pane carries (CI #1422;
+    // the pane class dropped scroll-smooth in #1517).
     const lastChip = page.locator("[data-eduai-diagram] button[aria-pressed]").last();
     await expect(lastChip).toHaveText("Wipe counter");
     const { beforeRight, afterRight, scrollLeft } = await page.evaluate(() => {

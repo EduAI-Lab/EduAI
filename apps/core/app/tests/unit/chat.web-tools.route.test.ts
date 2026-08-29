@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -11,7 +12,7 @@ vi.mock("ai", async (importOriginal) => {
       toDataStreamResponse: ({ headers }: { headers: Record<string, string> }) =>
         new Response("ok", { status: 200, headers }),
     })),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -23,7 +24,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -45,7 +49,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
   },
 }));
@@ -60,11 +64,12 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -76,7 +81,7 @@ function makeArgs(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "u-1", role: "user", content: "hi" }],
     model: "vllm:test-model",
@@ -107,9 +112,7 @@ beforeEach(() => {
   } as never);
   // Course-context backfill (tagging an existing chat with its course) calls
   // chat.update; echo the patched row so the chat stays resolved on that path.
-  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
-    data?: Record<string, unknown>;
-  }) => ({
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
     id: CHAT_ID,
     userId: "u1",
     adhdAssist: false,

@@ -42,6 +42,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import prisma from "~/lib/prisma.server";
 import { handleAiModelsApiRequest } from "~/lib/api/ai-models-api.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const MODEL_ROW = {
   id: "model-1",
@@ -53,7 +54,12 @@ const MODEL_ROW = {
   supportsTools: true,
 };
 
-function request(method: string, path = "/api/ai-models", body?: unknown, headers?: HeadersInit) {
+function request(
+  method: string,
+  path = "/api/ai-models",
+  body?: RouteRequestBody,
+  headers?: HeadersInit,
+) {
   return new Request(`http://core.test${path}`, {
     method,
     headers,

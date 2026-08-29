@@ -27,15 +27,15 @@ export function parseCursorParams(searchParams: URLSearchParams): CursorParams {
   return { cursor, limit };
 }
 
+/** One page of a cursor walk, and where the next one resumes (null at the end). */
+export type CursorPage<T> = { page: T[]; nextCursor: string | null };
+
 /**
  * Split a `take: limit + 1` lookahead result into the page to return and the
  * next cursor. `nextCursor` is the id of the last row of the page — Prisma's
  * `cursor: { id }, skip: 1` pattern resumes immediately after it.
  */
-export function splitPage<T extends { id: string }>(
-  rows: T[],
-  limit: number,
-): { page: T[]; nextCursor: string | null } {
+export function splitPage<T extends { id: string }>(rows: T[], limit: number): CursorPage<T> {
   if (rows.length > limit) {
     const page = rows.slice(0, limit);
     return { page, nextCursor: page[page.length - 1]!.id };

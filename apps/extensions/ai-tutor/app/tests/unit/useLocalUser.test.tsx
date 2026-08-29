@@ -102,7 +102,7 @@ describe("AuthProvider", () => {
   });
 
   it("retries on ApiNetworkError instead of treating the caller as logged out", async () => {
-    const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
+    const meMock = api.me as ReturnType<typeof vi.fn>;
     meMock
       .mockRejectedValueOnce(new ApiNetworkError())
       .mockRejectedValueOnce(new ApiNetworkError())
@@ -132,7 +132,7 @@ describe("AuthProvider", () => {
   });
 
   it("surfaces a persistent dependency outage instead of treating it as logout", async () => {
-    const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
+    const meMock = api.me as ReturnType<typeof vi.fn>;
     meMock.mockRejectedValue(new ApiNetworkError());
 
     const { result } = renderHook(() => useLocalUser(), {
@@ -152,7 +152,7 @@ describe("AuthProvider", () => {
   });
 
   it("gives up and treats the caller as logged out on a non-network error", async () => {
-    const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
+    const meMock = api.me as ReturnType<typeof vi.fn>;
     meMock.mockRejectedValueOnce(new Error("Authentication required"));
 
     const { result } = renderHook(() => useLocalUser(), {
@@ -220,7 +220,7 @@ describe("AuthProvider", () => {
 
   it("clears local provider keys but keeps the user and propagates a logout failure", async () => {
     const logoutError = new Error("Logout service unavailable");
-    const logoutMock = api.logout as unknown as ReturnType<typeof vi.fn>;
+    const logoutMock = api.logout as ReturnType<typeof vi.fn>;
     logoutMock.mockRejectedValueOnce(logoutError);
     saveApiKeysToStorage(testUser.id, { google: "student-secret" });
 

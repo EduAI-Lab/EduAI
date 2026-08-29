@@ -13,7 +13,7 @@
  * Related: `services/api.ts` (`Paginated<T>`),
  * `components/common/PaginationControls.tsx`.
  */
-import api, { type Paginated } from "./api";
+import api, { type Paginated, type QueryParams } from "./api";
 
 /**
  * Server page size for whole-set reads. Matches `MAX_PAGE_SIZE` in the
@@ -40,7 +40,7 @@ export const MAX_PAGE_SIZE = 200;
  */
 export async function fetchAllPages<T>(
   path: string,
-  params: Record<string, unknown> = {},
+  params: QueryParams = {},
   pageSize: number = MAX_PAGE_SIZE,
 ): Promise<T[]> {
   const MAX_PAGES = 1000;

@@ -52,11 +52,11 @@ const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
 const DIFFICULTY_OPTIONS: QuestionDifficulty[] = ["easy", "medium", "hard"];
 const REASONING_OPTIONS: ReasoningLevel[] = ["factual", "analytical", "application"];
 
-const SORT_LABELS: Record<QuestionSort, string> = {
+const SORT_LABELS = {
   newest: "Newest first",
   oldest: "Oldest first",
   type: "By type",
-};
+} satisfies Record<QuestionSort, string>;
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 

@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { useState } from "react";
 import { Card, CardContent, Button } from "@eduai/ui";
 import {
@@ -7,29 +8,18 @@ import {
 } from "~/hooks/api/use-course-chats";
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */
-function messageText(content: unknown): string {
+function partText(part: JsonValue | undefined): string {
+  return part && typeof part === "object" && !Array.isArray(part) && typeof part.text === "string"
+    ? part.text
+    : "";
+}
+
+function messageText(content: JsonValue | undefined): string {
   if (typeof content === "string") return content;
-  if (content && typeof content === "object") {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj.content === "string") return obj.content;
-    if (Array.isArray(obj.parts)) {
-      return obj.parts
-        .map((p) =>
-          p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string"
-            ? (p as Record<string, unknown>).text
-            : "",
-        )
-        .join("");
-    }
-    if (Array.isArray(obj.content)) {
-      return obj.content
-        .map((p) =>
-          p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string"
-            ? (p as Record<string, unknown>).text
-            : "",
-        )
-        .join("");
-    }
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    if (typeof content.content === "string") return content.content;
+    if (Array.isArray(content.parts)) return content.parts.map(partText).join("");
+    if (Array.isArray(content.content)) return content.content.map(partText).join("");
   }
   return "";
 }

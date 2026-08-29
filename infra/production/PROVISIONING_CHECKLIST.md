@@ -94,6 +94,12 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - Redis decision is documented; queue remains disabled if no worker exists.
 - cmps01 inference endpoint is reachable from production.
 - cmps02/03 are not configured until firewall access is confirmed.
-- No extension URL is configured until the new aliases and authentication flow are ready.
-- Apache config validates.
+- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` is configured before the AI Tutor browser build.
+- `COOKIE_DOMAIN=.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services; confirm no unrelated `*.ok.ubc.ca` service should receive the shared cookie.
+- The AI Tutor vhost relies on the certificate already covering `*.eduai.ok.ubc.ca` on this host (no explicit `SSLCertificateFile` in the template); confirm that coverage, and that Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.
+
+Question Maker is provisioned separately — see its own provisioning
+branch/PR and `PROVISIONING_CHECKLIST.md` section 9 there for its
+database, secrets, and Apache checks (`provision-qm` handles most of it
+automatically; this checklist does not cover it).

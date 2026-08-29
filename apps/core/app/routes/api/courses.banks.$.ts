@@ -1,9 +1,11 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { canEditCourse } from "~/lib/rbac";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import {
   addQuestionToBank,
   addQuestionsToBank,
@@ -14,13 +16,6 @@ import {
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 /**
  * Nested path after /api/courses/:courseId/banks
@@ -155,9 +150,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (parts.length === 1 && method === "DELETE") {
-    let body: Record<string, unknown> = {};
+    let body: JsonObject = {};
     try {
-      body = await request.json();
+      // SAFETY: `Request#json` resolves to whatever the client sent; the guard
+      // below keeps a non-object body from reaching the service.
+      const parsed = (await request.json()) as JsonValue;
+      body = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
       body = {};
     }

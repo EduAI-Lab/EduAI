@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
@@ -9,14 +10,14 @@ const PrismaClientKnownRequestErrorMock = vi.hoisted(
   () =>
     class PrismaClientKnownRequestError extends Error {
       code: string;
-      meta?: Record<string, unknown>;
+      meta?: JsonObject;
 
       constructor(
         message: string,
         options: {
           code: string;
           clientVersion?: string;
-          meta?: Record<string, unknown>;
+          meta?: JsonObject;
         },
       ) {
         super(message);
@@ -35,11 +36,12 @@ const prismaMock = vi.hoisted(() => {
     deleteMany: vi.fn(),
     count: vi.fn(),
   };
+  // The post-enqueue snapshot reads position + depth inside one REPEATABLE
+  // READ transaction; the mock runs that callback against this same client.
+  const txClient = { aiJob };
   return {
     aiJob,
-    // The post-enqueue snapshot reads position + depth inside one REPEATABLE
-    // READ transaction; the mock runs that callback against the same client.
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+    $transaction: vi.fn(async <T>(fn: (tx: typeof txClient) => T) => fn(txClient)),
   };
 });
 

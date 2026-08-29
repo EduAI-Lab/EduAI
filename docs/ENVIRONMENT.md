@@ -28,6 +28,7 @@ compose file, independent of any `.env.example`. The files below are for local (
 | `apps/extensions/question-maker/.env.example` | `apps/extensions/question-maker/.env` | QM backend (`app/backend/src/config/settings.js`) **and** QM frontend (Vite `VITE_*` vars) |
 | `infra/cron/cron.env.example` | `/etc/eduai/cron.env` (manual, production only) | Production cron scripts |
 | `infra/cron/cron.env.local.example` | `infra/cron/cron.env.local` (manual, gitignored) | `infra/cron/dry-run-local.sh` only |
+| `apps/core/loadtest/.env.loadtest.example` | `apps/core/.env.loadtest` (manual, gitignored) | Isolated #919 k6 harness (`npm run loadtest:*`) — never the shared study host |
 
 The AI Tutor **frontend** app (`apps/extensions/ai-tutor/`, distinct from its `server/`
 sibling) has no `.env` of its own — it does not inherit from `apps/core/.env` or
@@ -99,7 +100,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `CRON_SCRIPT_DIR` | optional (default repository `infra/cron`) | dev/prod | Directory that contains Core-triggered shell scripts. Production can set `/opt/eduai/cron`. |
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
-| `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
+| `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_CONTEXT_FILL_RATIO`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments. `CHAT_CONTEXT_FILL_RATIO` (#1639) sets the token-budget trigger as a fraction of the model context window (per-model override: `AIModel.contextFillRatio`) |
 | `CHAT_MAX_BODY_BYTES`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_MESSAGE_CHARS`, `CHAT_MAX_TOTAL_MESSAGE_CHARS` | optional (defaults 2 MiB, 100, 32768, 131072) | dev/prod | Bounded `/api/chat` ingress; rejects oversized request bodies with 413 and message count/content overages with 422 before persistence or provider admission |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.1+: Teacher requires literal `**Top summary**` / `**Next?**`; UI TLDR/Continue remapping is client-only). |
@@ -110,6 +111,14 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
+| `BETTER_AUTH_DISABLE_RATE_LIMIT` | optional | loadtest / integration tests | Set `1` to turn off Better Auth's per-IP sign-in limiter. Core integration tests set this in `app/tests/setup.env.ts`. The #919 harness sets it in `.env.loadtest` so 500 loopback VUs are not measuring "how fast does the auth limiter trip." |
+| `LOADTEST_BASE_URL` | optional (default `http://127.0.0.1:4100`) | loadtest | k6 target. Loopback only unless `LOADTEST_ALLOW_REMOTE=1`. Live hosts `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca` are always refused (trailing-dot FQDNs included). |
+| `LOADTEST_ALLOW_REMOTE` | optional | loadtest | Set `1` to allow a non-loopback `LOADTEST_BASE_URL` for a **dedicated** load-test host. Does not unlock the live study/prod hosts. |
+| `LOADTEST_VUS` | optional (default `500`) | loadtest | How many `loadtest.vu-NNN@eduai.local` accounts `seed-loadtest-users.ts` creates. |
+| `EDUAI_LOCAL_SEED_PASSWORD` | required for `loadtest:setup` | loadtest | Explicit fixture password for `prisma/seed.ts` and the VU seeder. `loadtest:setup` generates it if empty and invokes seed with a local-demo contract; the app runtime in `.env.loadtest` stays `NODE_ENV=production`. k6 reads the same value via `loadtest/scripts/run-k6.sh`. |
+| `LOADTEST_UNIQUE_USERS` | optional | loadtest | Set `0` to round-robin the five demo students instead of one account per VU. |
+| `HOST` | optional (loadtest default `127.0.0.1`) | loadtest | Bind address for the mock LLM and `react-router-serve` during a harness run. |
+| `ROUTING_LOCAL_VLLM_ONLY` | optional | loadtest / research | Set `1` so Auto routing stays on `vllm:*` models. The #919 harness also sets `VLLM_FLEET_CHAT_URLS` to the mock so chat does not wait on campus fleet hosts. |
 
 ### Future queue settings
 
@@ -126,7 +135,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `DATABASE_URL` | Points at the `eduai_test` database instead of the dev DB |
 | `BETTER_AUTH_SECRET` | Fixed test value, not a real secret |
 | `BETTER_AUTH_URL` | Test server URL |
-| `COOKIE_DOMAIN` | `localhost` |
+| `COOKIE_DOMAIN` | `localhost` — Core treats loopback values as unset, so `crossSubDomainCookies` stays off locally (#1517) |
 | `PORT` | Test server port (4001) |
 | `EDUAI_API_KEY` | Fixed test value, not a real secret |
 
@@ -219,6 +228,11 @@ Copied by hand to `infra/cron/cron.env.local` (gitignored), read only by
 Real Canvas instructor credentials are **stored in the database, AES-256-GCM encrypted**
 (keyed by `ENCRYPTION_KEY` above) — see `docs/CANVAS.md` and
 `apps/core/app/lib/canvas/encryption.ts`. They are not env vars.
+
+Core and Question Maker use **separate** `ENCRYPTION_KEY` values. The one-time QM→Core
+credential copy (`npm run db:migrate:canvas-to-core -w question-maker-backend`) decrypts
+under QM's key and re-encrypts under Core's before inserting into Core — see
+[`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
 
 The only genuine Canvas *environment* variables in the repo are dev-only, read by
 `apps/core/scripts/seed_local_canvas.sh` for seeding a local Canvas instance and not loaded

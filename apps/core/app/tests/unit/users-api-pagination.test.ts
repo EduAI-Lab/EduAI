@@ -129,7 +129,7 @@ describe("GET /api/users — filters", () => {
   /** The `where` handed to the page's findMany. */
   const whereFromFindMany = () => {
     const calls = vi.mocked(prisma.user.findMany).mock.calls;
-    return (calls[0]?.[0] as { where?: Record<string, unknown> })?.where;
+    return calls[0]?.[0]?.where;
   };
 
   it("maps a comma-separated role facet onto one `in` filter", async () => {
@@ -226,9 +226,7 @@ describe("GET /api/users — ?ids= lookup (#1125)", () => {
 
     await get("?ids=u1,u2&search=ali");
 
-    const where = (
-      vi.mocked(prisma.user.findMany).mock.calls[0][0] as { where: Record<string, unknown> }
-    ).where;
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0][0]!.where!;
     expect(where.id).toEqual({ in: ["u1", "u2"] });
     expect(where.OR).toBeDefined();
   });
@@ -250,11 +248,7 @@ describe("GET /api/users course student candidates", () => {
 
     expect((await get(candidateQuery)).status).toBe(200);
 
-    const where = (
-      vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
-        where: Record<string, unknown>;
-      }
-    ).where;
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0][0]!.where!;
     expect(where).toMatchObject({
       role: { in: ["STUDENT"] },
       isActive: true,
@@ -306,9 +300,7 @@ describe("GET /api/users course student candidates", () => {
     // other admin-only field or relation count may appear here, since those
     // leak the moment they're selected regardless of what the mapped response
     // later omits.
-    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
-      select?: Record<string, unknown>;
-    };
+    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0]!;
     expect(findManyArgs.select).toEqual({ id: true, name: true, email: true });
 
     // The raw response body itself carries no admin metadata either.

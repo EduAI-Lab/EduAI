@@ -34,9 +34,7 @@ describe("TruncatedListNotice (#1208)", () => {
   });
 
   it("renders nothing for a non-finite total (loader still resolving)", () => {
-    const { container } = render(
-      <TruncatedListNotice shown={2} total={undefined as unknown as number} />,
-    );
+    const { container } = render(<TruncatedListNotice shown={2} total={undefined} />);
     expect(container).toBeEmptyDOMElement();
   });
 });

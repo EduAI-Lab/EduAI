@@ -18,8 +18,36 @@ vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
+const mockQuizQuestion = {
+  id: 1,
+  question_name: "1. Test Question",
+  question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+  question_type: "multiple_choice_question",
+  position: 1,
+  answers: [
+    { id: 1, answer_text: "3", answer_weight: 0 },
+    { id: 2, answer_text: "4", answer_weight: 100 },
+    { id: 3, answer_text: "5", answer_weight: 0 },
+    { id: 4, answer_text: "6", answer_weight: 0 },
+  ],
+};
+
+const mockCoreCanvas = vi.hoisted(() => ({
+  // The import's linked-course guard resolves the Canvas link through this
+  // when QM holds no mapping row (#1652 review).
+  getCourseFromCore: vi.fn(),
+  proxyCoreCanvasGetIntegration: vi.fn(),
+  proxyCoreGetQuiz: vi.fn(),
+  proxyCoreListQuizQuestions: vi.fn(),
+  proxyCoreGetQuizQuestion: vi.fn(),
+}));
+
+vi.mock("../../src/services/coreApiService.js", () => mockCoreCanvas);
+
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
+
+const TEST_COOKIE = "session=test";
 
 describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
@@ -48,6 +76,7 @@ describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
   let courseId, topicId;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     await truncateTestDatabase();
     await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
@@ -56,13 +85,27 @@ describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
     const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
-    await prisma.canvasIntegration.create({
-      data: {
-        userId: USER.id,
-        canvasUrl: "https://canvas.test",
-        apiKey: "test-token",
-        isTestMode: true,
-      },
+    mockCoreCanvas.proxyCoreCanvasGetIntegration.mockResolvedValue({
+      success: true,
+      data: { canvasUrl: "https://canvas.test", isTestMode: true, isConnected: true },
+    });
+    mockCoreCanvas.proxyCoreGetQuiz.mockResolvedValue({
+      success: true,
+      data: { id: 1, title: "Test Quiz", quiz_type: "assignment" },
+    });
+    mockCoreCanvas.proxyCoreListQuizQuestions.mockResolvedValue({
+      success: true,
+      data: [mockQuizQuestion],
+    });
+    mockCoreCanvas.proxyCoreGetQuizQuestion.mockResolvedValue({
+      success: true,
+      data: mockQuizQuestion,
+    });
+    // The seeded course is linked to Canvas course 101, the id this import uses.
+    mockCoreCanvas.getCourseFromCore.mockResolvedValue({
+      externalSource: "canvas",
+      externalId: "101",
+      name: "Canvas Course 101",
     });
   });
 
@@ -76,11 +119,15 @@ describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
       .spyOn(prisma.questionMetadata, "create")
       .mockRejectedValue(new Error("simulated insert failure"));
     try {
-      const promise = canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {
-        primaryTopicId: topicId,
-      });
-      // After the fix the catch runs cleanly, the question is skipped, and the loop hits its
-      // intentional empty-import guard. Before the fix it rejects with "canvasQuestion is not defined".
+      const promise = canvas.importQuizFromCanvas(
+        USER.id,
+        101,
+        1,
+        courseId,
+        { primaryTopicId: topicId },
+        USER.id,
+        TEST_COOKIE,
+      );
       await expect(promise).rejects.toThrow(/No questions could be imported/);
       await expect(promise).rejects.not.toThrow(/canvasQuestion is not defined/);
     } finally {

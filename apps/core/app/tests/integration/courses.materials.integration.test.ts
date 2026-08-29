@@ -3,6 +3,7 @@
 // Integration tests for /api/courses/:courseId/materials (#300).
 // Real Postgres; auth + AI processing mocked at the module level.
 
+import type { JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import prisma from "~/lib/prisma.server";
 
@@ -78,7 +79,7 @@ function uploadArgs(user: { id: string; role: string }, marker = "lecture notes 
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(form),
-  } as unknown as Request;
+  } as Request;
   return { request, params: { courseId }, context: {} as never } as any;
 }
 
@@ -206,7 +207,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
   });
 });
 
-function renameArgs(user: { id: string; role: string }, materialId: string, title: unknown) {
+function renameArgs(user: { id: string; role: string }, materialId: string, title: JsonValue) {
   mockSession(user);
   return {
     request: new Request(`http://localhost/api/courses/${courseId}/materials/${materialId}`, {

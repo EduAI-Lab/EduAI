@@ -2,6 +2,7 @@
  * Persists routing + sustainability telemetry after each LLM turn.
  */
 
+import type { JsonObject } from "~/lib/json-value";
 import type { Prisma } from "@prisma/client";
 import { estimateTurnEnergy } from "~/lib/ai/energy/estimate.server";
 import { numToRouterTier } from "./tiers";
@@ -26,7 +27,7 @@ export async function persistAiInteractionTelemetry(params: {
   wasAuto: boolean;
   routingTier: 1 | 2 | 3 | null;
   routerVersion: string | null;
-  routerFeatures: Record<string, unknown> | null;
+  routerFeatures: JsonObject | null;
   /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed. */
   serverId?: string | null;
   /** Owning chat, when this turn came from the interactive /chat UI; null for worker/background completions. */
@@ -44,9 +45,7 @@ export async function persistAiInteractionTelemetry(params: {
         })
       : null;
 
-    const { promptTokens, completionTokens, totalTokens } = normalizeTokenUsage(
-      params.usage as Record<string, unknown> | undefined,
-    );
+    const { promptTokens, completionTokens, totalTokens } = normalizeTokenUsage(params.usage);
 
     let estInputCostUsd: number | null = null;
     let estOutputCostUsd: number | null = null;

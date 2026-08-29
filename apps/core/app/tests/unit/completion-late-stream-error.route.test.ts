@@ -57,8 +57,9 @@ import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",
@@ -83,7 +84,7 @@ function streamingBody() {
 // A minimal LanguageModelV1 whose doStream succeeds (so streamText returns a
 // streaming result) but then emits text deltas followed by a provider error
 // part once the stream is consumed — the late failure #1113 describes.
-function makeFailingModel(upstreamError: unknown) {
+function makeFailingModel(cause: unknown) {
   return {
     specificationVersion: "v1",
     provider: "openai",
@@ -98,7 +99,7 @@ function makeFailingModel(upstreamError: unknown) {
         start(controller) {
           controller.enqueue({ type: "text-delta", textDelta: "Hello" });
           controller.enqueue({ type: "text-delta", textDelta: " world" });
-          controller.enqueue({ type: "error", error: upstreamError });
+          controller.enqueue({ type: "error", error: cause });
           controller.close();
         },
       }),

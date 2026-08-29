@@ -1,6 +1,27 @@
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 import type { AIModel } from "~/hooks/api/types";
 
+/**
+ * The registration body a discovered local model is created with. Every field
+ * is filled in by the builders below, so this is the whole contract the caller
+ * hands to `POST /api/ai-models` — not an open bag it has to inspect.
+ */
+export type LocalModelCreatePayload = {
+  modelId: string;
+  name: string;
+  description: string;
+  type: "CHAT";
+  supportsImages: boolean;
+  supportsTools: boolean;
+  supportsStreaming: boolean;
+  inputPricing: number;
+  outputPricing: number;
+  isActive: boolean;
+};
+
+/** A discovered model's fields plus the provider it was discovered under. */
+export type LocalModelCreateRequest = LocalModelCreatePayload & { providerId: string };
+
 export type LocalModelSyncResult = {
   created: number;
   skipped: number;
@@ -8,7 +29,7 @@ export type LocalModelSyncResult = {
   createdNames: string[];
 };
 
-export function buildOllamaModelCreatePayload(ollama: OllamaModel): Record<string, unknown> {
+export function buildOllamaModelCreatePayload(ollama: OllamaModel): LocalModelCreatePayload {
   const modelId = ollama.name;
   const lower = modelId.toLowerCase();
 
@@ -26,7 +47,7 @@ export function buildOllamaModelCreatePayload(ollama: OllamaModel): Record<strin
   };
 }
 
-export function buildVllmModelCreatePayload(vllm: VllmModel): Record<string, unknown> {
+export function buildVllmModelCreatePayload(vllm: VllmModel): LocalModelCreatePayload {
   const displayName = vllm.id
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -63,8 +84,8 @@ export function formatLocalModelSyncMessage(
 export async function syncLocalModels(
   existingModels: AIModel[],
   providerId: string,
-  payloads: Record<string, unknown>[],
-  onCreateModel: (data: Record<string, unknown>) => Promise<void>,
+  payloads: LocalModelCreatePayload[],
+  onCreateModel: (data: LocalModelCreateRequest) => Promise<void>,
 ): Promise<LocalModelSyncResult> {
   const existingIds = new Set(
     existingModels.filter((model) => model.providerId === providerId).map((model) => model.modelId),

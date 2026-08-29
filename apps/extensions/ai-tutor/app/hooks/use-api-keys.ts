@@ -67,7 +67,9 @@ export function useApiKeys(): UseApiKeysResult {
     (provider: string) => {
       if (!userId) return;
       setAccountKeys((previous) => {
-        const next = { ...(previous.userId === userId ? previous.keys : {}) };
+        // Keys belonging to a different user are never carried into this one.
+        const existing = previous.userId === userId ? previous.keys : undefined;
+        const next = { ...existing };
         delete next[provider];
         saveApiKeysToStorage(userId, next);
         return { userId, keys: next, loaded: true };

@@ -2,7 +2,10 @@
  * Question API client handling CRUD, AI generation/extraction, variant ops, and ordering.
  * Provides typed responses to keep UI code lean and focused on rendering.
  */
-import api from "./api";
+import type { JsonValue } from "@eduai/types";
+
+import api, { type QueryParams } from "./api";
+import type { ProviderApiKeys } from "./apiKeyStorage";
 import {
   Question,
   QuestionCreate,
@@ -11,6 +14,7 @@ import {
   QuestionStats,
   QuestionVariant,
   QuestionDifficulty,
+  QuestionType,
   ReasoningLevel,
   ExtractedQuestion,
   MCQChoice,
@@ -45,7 +49,10 @@ const mapVariant = (variant: any): QuestionVariant => ({
   isAiGenerated: variant.isAiGenerated ?? variant.is_ai_generated ?? false,
   isDraft: variant.isDraft ?? variant.is_draft ?? false,
   coreQuestionId: variant.coreQuestionId ?? variant.core_question_id ?? null,
-  testable: variant.testable ?? undefined,
+  // `shareWithExtensions` is QM's mirror of Core's `testable` — the toggle
+  // writes both — so list and detail rows, which carry only the local column,
+  // still render the author's real current choice (#1652 review).
+  testable: variant.testable ?? variant.shareWithExtensions ?? undefined,
   createdAt: variant.createdAt ?? variant.created_at,
   updatedAt: variant.updatedAt ?? variant.updated_at,
   assessment: variant.assessment
@@ -94,7 +101,7 @@ const SERVER_MAX_LIST_LIMIT = 200;
 const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
-function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): PaginatedList<T> {
+function unwrapPaginatedList<T>(data: JsonValue, mapItem: (row: any) => T): PaginatedList<T> {
   if (Array.isArray(data)) {
     const items = data.map(mapItem);
     return { items, total: items.length, limit: items.length, offset: 0 };
@@ -160,7 +167,7 @@ export const questionService = {
       offset?: number;
     } = {},
   ): Promise<PaginatedList<Question>> {
-    const params: Record<string, unknown> = {};
+    const params: QueryParams = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.questionBankId !== undefined) params.questionBankId = options.questionBankId;
     if (options.search !== undefined) params.search = options.search;
@@ -268,6 +275,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Author's choice to let other EduAI extensions use this question (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.post(`/api/questions/${questionId}/variants`, payload);
@@ -290,6 +299,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Approval-time opt-in; the server forces it false on a draft (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.put(`/api/questions/variants/${variantId}`, payload);
@@ -328,14 +339,14 @@ export const questionService = {
   async getQuestionStats(options: { courseId?: number } = {}): Promise<
     QuestionStats & {
       totalVariants?: number;
-      typeStats?: Array<{ type: string; count: number | string }>;
+      typeStats?: Array<{ type: QuestionType; count: number | string }>;
       aiCount?: number;
       humanCount?: number;
       reviewedCount?: number;
       usedTopicIds?: string[];
     }
   > {
-    const params: Record<string, unknown> = {};
+    const params: QueryParams = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     const response = await api.get("/api/questions/stats", { params });
     return response.data.data;
@@ -346,7 +357,7 @@ export const questionService = {
     text: string;
     courseId: number;
     model?: string;
-    apiKeys?: Record<string, any>;
+    apiKeys?: ProviderApiKeys;
   }): Promise<ExtractedQuestion[]> {
     const response = await api.post("/api/questions/extract", payload);
     return response.data.data || [];

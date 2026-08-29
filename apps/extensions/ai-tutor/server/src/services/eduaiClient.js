@@ -5,6 +5,12 @@ import {
   EduAiQuestionListSchema,
 } from "../schemas/eduai.js";
 import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+// TODO(#1647-followup): the inline `Bearer ${process.env.EDUAI_API_KEY}` reads
+// below predate `serviceAuthHeader()`/`getEffectiveEduAiApiKey` and still read
+// the env key directly (throwing on unset). Migrate them to the effective key
+// in a focused follow-up — it changes both the key source and the unset
+// contract per call site, so it is kept out of the #1647 fix. `listEduAiModels`
+// (~:592) already uses the effective key as the reference pattern.
 const DEFAULT_BASE_URL = "http://localhost:5174/api";
 
 function normalizeBaseUrl(rawUrl) {
@@ -59,13 +65,15 @@ async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === "string" ? options.cookie : "";
 
   const url = `${getEduAiBaseUrl()}${path}`;
+  // Caller-supplied headers still win over the forwarded session cookie, which
+  // is why they are applied last.
+  const headers = { "Content-Type": "application/json" };
+  if (cookie) headers.cookie = cookie;
+  Object.assign(headers, options.headers);
+
   const response = await fetch(url, {
     method: options.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookie ? { cookie } : {}),
-      ...options.headers,
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
   });
@@ -179,6 +187,9 @@ export async function postCoreBugReport(userId, payload) {
     source: "AI_TUTOR",
     userId,
     description: payload.description,
+    // Core stores this column; forgetting it here left every AI Tutor report
+    // typeless, so triage's Type filter could never match one.
+    bugType: payload.bugType ?? null,
     isAnonymous: payload.isAnonymous ?? false,
     consoleLogs: payload.consoleLogs ?? null,
     networkLogs: payload.networkLogs ?? null,
@@ -345,6 +356,15 @@ async function fetchCoreUsers(cookie, params, signal) {
 
 /**
  * PATCH Core admin bug report status (ADMIN session cookie).
+ *
+ * The cookie carries the ADMIN identity — Core's admin bug-report route has no
+ * service-key path, so it cannot be dropped. The service key is what gets the
+ * request past Core's cross-origin mutation guard: that guard fails closed on
+ * any cookie-bearing unsafe method with no Origin/Referer/Sec-Fetch-Site, which
+ * is exactly the shape of a server-to-server call, and accepts a valid service
+ * key as the sole non-browser bypass. Sending only the cookie earns a 403
+ * CROSS_ORIGIN_MUTATION. Every other cookie-forwarding mutation here (publish,
+ * enrollments) pairs the two for the same reason.
  */
 export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
   if (!cookie) {
@@ -353,11 +373,19 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
     throw error;
   }
 
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
+
   const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
   const response = await fetch(url, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
       cookie,
     },
     body: JSON.stringify({ status: coreStatus }),
@@ -683,7 +711,10 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = 
  * Returns the `questions` array from Core's paginated response.
  * Throws an Error with `status` set on HTTP failure.
  */
-export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
+export async function listCourseTestableQuestions(
+  coreOfferingId,
+  { limit = 20, offset = 0, topicId } = {},
+) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error("EDUAI_API_KEY not configured");
@@ -695,6 +726,7 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
     limit: String(limit),
     offset: String(offset),
   });
+  if (topicId) params.set("topicId", topicId);
 
   const data = await requestEduAi(`/questions?${params}`, {
     headers: { Authorization: `Bearer ${serviceKey}` },

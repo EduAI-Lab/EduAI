@@ -59,6 +59,7 @@ const {
   resetCourseAccessSyncForTests,
   enrichCourseDetail,
   findCoursesByProjectedCode,
+  formatSemesterDisplay,
 } = await import("../../src/services/courseListService.js");
 
 describe("listCoursesForUser", () => {
@@ -523,6 +524,37 @@ describe("listCoursesForUser", () => {
       expect(rows[0].code).toBe("STUDY3");
     });
 
+    it("propagates a status-bearing 401/403 from the cookie-scoped Core list instead of returning an empty catalog (#1569 review)", async () => {
+      // An expired/invalid caller cookie makes the REAL listCoursesFromCore
+      // boundary throw a coreError with `.status` (401/403). Swallowing it would
+      // deny every row and return [], which the route would answer 200 — an auth
+      // failure masquerading as "you have no courses". The service must rethrow
+      // so the route surfaces Not Authorized. This crosses the actual Core call,
+      // unlike a route test that mocks listCoursesForUser itself.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      for (const status of [401, 403]) {
+        mockListCoursesFromCore.mockRejectedValueOnce(
+          Object.assign(new Error("Core request failed"), { status }),
+        );
+        await expect(
+          listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "stale" }),
+        ).rejects.toMatchObject({ status });
+      }
+    });
+
+    it("fails closed (empty, no throw) when the cookie-scoped Core list fails without an auth status (#1114)", async () => {
+      // Core unreachable / 5xx (no 401/403): degrade to an empty visible set
+      // rather than surfacing the failure — roleByCoreId stays empty and every
+      // row is denied. Distinguishes an infra failure from a caller-auth one.
+      mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
+      mockListCoursesFromCore.mockRejectedValue(
+        Object.assign(new Error("Core unavailable"), { status: 503 }),
+      );
+
+      const rows = await listCoursesForUser({ id: "inst-1", role: "INSTRUCTOR" }, { cookie: "s" });
+      expect(rows).toHaveLength(0);
+    });
+
     it("excludes a course where the caller has a TA callerEnrollmentRole (below MIN_LIST_RANK)", async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: "other-owner", coreCourseId: "core-1" }]);
       mockListCoursesFromCore.mockResolvedValue([{ id: "core-1", callerEnrollmentRole: "TA" }]);
@@ -659,5 +691,31 @@ describe("findCoursesByProjectedCode (#1362)", () => {
     expect(mockSearchCoursesFromCore.mock.calls.map((c) => c[0])).toEqual(
       expect.arrayContaining(["COSC121", "COSC 121"]),
     );
+  });
+});
+
+describe("formatSemesterDisplay", () => {
+  // This function is a hand-maintained twin of `termLabelLong` in
+  // packages/ui/src/lib/term.ts (QM's backend cannot import the frontend-only
+  // package). These cases mirror that file's tests so the two cannot drift
+  // apart silently.
+  it("spans both calendar years of a Winter session", () => {
+    expect(formatSemesterDisplay("W1", 2026)).toBe("2026-27 Winter Term 1");
+    expect(formatSemesterDisplay("W2", 2026)).toBe("2026-27 Winter Term 2");
+  });
+
+  it("leaves a Summer session on its single calendar year", () => {
+    expect(formatSemesterDisplay("S1", 2027)).toBe("2027 Summer Term 1");
+    expect(formatSemesterDisplay("S2", 2027)).toBe("2027 Summer Term 2");
+  });
+
+  it("rolls the span across a century boundary", () => {
+    expect(formatSemesterDisplay("W1", 2099)).toBe("2099-00 Winter Term 1");
+  });
+
+  it("falls back to whichever half it has", () => {
+    expect(formatSemesterDisplay("W1", null)).toBe("Winter Term 1");
+    expect(formatSemesterDisplay(null, 2026)).toBe("2026");
+    expect(formatSemesterDisplay(null, null)).toBe("Unscheduled");
   });
 });

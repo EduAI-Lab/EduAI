@@ -1,6 +1,10 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+import type { MutationResult } from "~/lib/agent-tools/admin-mutations.server";
+import type { ToolInput } from "~/lib/agent-tools/tool-input";
 
 vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   getAccessibleCourse: vi.fn(),
@@ -12,6 +16,14 @@ vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   listAdminUsers: vi.fn(),
   resolveAdminCourseId: vi.fn(),
   resolveAdminUserId: vi.fn(),
+}));
+
+// #1658: searchCourseMaterials delegates its retrieval body to the shared
+// runCourseMaterialSearchTool (#1658 review — that logic was duplicated
+// across three call sites); its own tests live in chat-rag.search-tool.test.ts,
+// so this file only verifies the course-resolution wiring around it.
+vi.mock("~/lib/chat-rag", () => ({
+  runCourseMaterialSearchTool: vi.fn(),
 }));
 
 vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
@@ -92,14 +104,15 @@ vi.mock("~/lib/idempotency.server", async (importOriginal) => {
   return {
     ...actual,
     withIdempotency: async (
-      opts: { body?: Record<string, unknown> | null },
-      handler: (body: Record<string, unknown> | null) => Promise<Response>,
+      opts: { body?: JsonObject | null },
+      handler: (body: JsonObject | null) => Promise<Response>,
     ) => handler(opts.body ?? null),
   };
 });
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
 import { agentReadyEndpoints } from "~/lib/agent-readiness/manifest";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -189,8 +202,8 @@ const call = { toolCallId: "test", messages: [] };
  * immediately (see admin-write-confirmation.server: same-turn rejection only applies
  * when the preview was bound to a non-null turnId). */
 async function runWrite(
-  tool: { execute: (args: never, call: never) => PromiseLike<unknown> },
-  args: Record<string, unknown>,
+  tool: { execute: (args: never, call: never) => PromiseLike<MutationResult> },
+  args: ToolInput,
 ) {
   const preview = await tool.execute({ ...args, confirmed: false } as never, call as never);
   expect(preview).toMatchObject({ writeSucceeded: false, error: "CONFIRMATION_REQUIRED" });
@@ -241,6 +254,69 @@ describe("createAdminChatTools read execute", () => {
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
+  });
+
+  it("searchCourseMaterials resolves course then delegates to the shared search tool (#1658)", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    const hit = { content: "Late assignments lose 10% per day.", similarity: 0.9 };
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({
+      relevantContent: [hit] as never,
+      count: 1,
+    });
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { courseCode: "COSC 111", question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(resolveAdminCourseId).toHaveBeenCalled();
+    // ctx doesn't set restrictToStudentVisible; the shared search tool defaults it to false.
+    expect(runCourseMaterialSearchTool).toHaveBeenCalledWith(
+      "What is the late penalty?",
+      "course-1",
+      undefined,
+    );
+    expect(result).toEqual({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+      relevantContent: [hit],
+      count: 1,
+    });
+  });
+
+  it("searchCourseMaterials returns the course-resolution error without calling the search tool", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "courseId or courseCode required" });
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(result).toEqual({ error: "courseId or courseCode required" });
+    expect(runCourseMaterialSearchTool).not.toHaveBeenCalled();
+  });
+
+  it("searchCourseMaterials passes the search tool's error result straight through", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({
+      error: "Failed to search course materials",
+    });
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.searchCourseMaterials.execute(
+      { courseCode: "COSC 111", question: "What is the late penalty?" },
+      call,
+    );
+
+    expect(result).toEqual({ error: "Failed to search course materials" });
   });
 
   it("listCourseEnrollments passes userId/userEmail through for an exact roster lookup", async () => {
@@ -1182,6 +1258,69 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const result = await runWrite(tools.updateAiModel, args);
     expect(updateAdminAiModelMutation).toHaveBeenCalledWith(ADMIN, "model-1", { name: "Renamed" });
     expect(result).toEqual({ writeSucceeded: true });
+  });
+
+  // #1639/#1643 follow-up: the AI SDK validates tool input through `parameters`
+  // before `execute`, so an override missing from the tool schema is stripped
+  // and the model silently stays on the global default. Parse through the
+  // schema here to prove the override survives to the mutation.
+  it("createAiModel schema forwards contextFillRatio to the mutation", async () => {
+    vi.mocked(createAdminAiModelMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    const tools = createAdminChatTools(ctx);
+    const parsed = tools.createAiModel.parameters.parse({
+      providerId: "prov-1",
+      modelId: "gpt-5",
+      name: "GPT-5",
+      description: "desc",
+      type: "CHAT",
+      contextFillRatio: 0.9,
+      confirmed: true,
+    });
+    expect(parsed.contextFillRatio).toBe(0.9);
+    const { confirmed: _confirmed, ...input } = parsed;
+    await runWrite(tools.createAiModel, input);
+    expect(createAdminAiModelMutation).toHaveBeenCalledWith(
+      ADMIN,
+      expect.objectContaining({ contextFillRatio: 0.9 }),
+    );
+  });
+
+  it("updateAiModel schema forwards a null contextFillRatio to clear the override", async () => {
+    vi.mocked(updateAdminAiModelMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    const tools = createAdminChatTools(ctx);
+    const parsed = tools.updateAiModel.parameters.parse({
+      id: "model-1",
+      contextFillRatio: null,
+      confirmed: true,
+    });
+    expect(parsed.contextFillRatio).toBeNull();
+    const { confirmed: _confirmed, id, ...input } = parsed;
+    await runWrite(tools.updateAiModel, { id, ...input });
+    expect(updateAdminAiModelMutation).toHaveBeenCalledWith(
+      ADMIN,
+      "model-1",
+      expect.objectContaining({ contextFillRatio: null }),
+    );
+  });
+
+  it("model tool schemas reject an out-of-range contextFillRatio", () => {
+    const tools = createAdminChatTools(ctx);
+    const createRes = tools.createAiModel.parameters.safeParse({
+      providerId: "prov-1",
+      modelId: "gpt-5",
+      name: "GPT-5",
+      description: "desc",
+      type: "CHAT",
+      contextFillRatio: 1.5,
+      confirmed: true,
+    });
+    expect(createRes.success).toBe(false);
+    const updateRes = tools.updateAiModel.parameters.safeParse({
+      id: "model-1",
+      contextFillRatio: 0.1,
+      confirmed: true,
+    });
+    expect(updateRes.success).toBe(false);
   });
 
   it("deleteAiModel", async () => {

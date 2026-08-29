@@ -58,13 +58,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
-  const rows = await prisma.chat.findMany({
+  const pageArgs = {
     // Owner must be an active STUDENT of this course — excludes staff chats
     // (instructor/TA/unit-admin) that are also tagged to the course.
     where: {
       courseId,
       user: {
-        enrollments: { some: { courseId, role: "STUDENT", isActive: true } },
+        enrollments: { some: { courseId, role: "STUDENT" as const, isActive: true } },
       },
     },
     select: {
@@ -74,10 +74,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       updatedAt: true,
       user: { select: { id: true, name: true } },
     },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    orderBy: [{ updatedAt: "desc" as const }, { id: "desc" as const }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  });
+  };
+  // A cursor page resumes past the cursor row itself; the first page sends
+  // neither key, so Prisma never sees a half-specified pair.
+  const rows = cursor
+    ? await prisma.chat.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+    : await prisma.chat.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
 
   return json({

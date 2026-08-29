@@ -10,13 +10,14 @@
  * loader, mounted via createMemoryRouter + RouterProvider so navigations
  * actually happen (a plain MemoryRouter can't drive useNavigation()).
  */
+import type { JsonObject } from "~/lib/json-value";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createMemoryRouter, RouterProvider, useSearchParams } from "react-router";
 
 import { LogsAdminView, type LogsTab } from "~/components/admin/logs-admin-view";
 
-const ROWS_BY_TAB: Record<LogsTab, Array<Record<string, unknown>>> = {
+const ROWS_BY_TAB = {
   audit: [
     {
       id: "a1",

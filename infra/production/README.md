@@ -29,14 +29,16 @@ The replacement deployment uses a release layout:
 
 The application service runs from `current`. The old checkout remains available until the new deployment is accepted.
 
-## Initial Core-only production configuration
+## Production configuration
 
 - Public URL: `https://my.eduai.ok.ubc.ca`
 - Internal Core port: `127.0.0.1:3000`
 - PostgreSQL: private production database, not the legacy checkout's database
 - Redis: private production Redis instance for the optional BullMQ worker
 - Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
-- Extension links: omit `VITE_AI_TUTOR_URL` and `VITE_QUESTION_MAKER_URL` until the new production aliases and authentication path are ready
+- AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
+- Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
+- Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000` — see the dedicated Question Maker provisioning PR/branch for its templates and `provision-qm` helper action; not covered by this file
 
 ## One-time server preparation
 
@@ -67,6 +69,42 @@ sudo chmod 0640 /etc/eduai/eduai-core.env
 
 The production database must be provisioned and tested before migrations are applied. Take a backup before each schema-changing release.
 
+### AI Tutor production prerequisites
+
+Provision a dedicated PostgreSQL role and database before installing
+`ai-tutor.env.example`; do not reuse Core's `eduai_prod` database:
+
+```sql
+CREATE ROLE ai_tutor_prod LOGIN PASSWORD '<generated-password>';
+CREATE DATABASE ai_tutor_prod OWNER ai_tutor_prod;
+```
+
+Install the following reviewed templates as root-owned files:
+
+```text
+infra/production/ai-tutor.env.example                        -> /etc/eduai/eduai-aitutor.env
+infra/production/systemd/eduai-aitutor-server.service        -> /etc/systemd/system/
+infra/production/apache/aitutor.eduai.ok.ubc.ca.conf         -> /etc/apache2/sites-available/
+```
+
+The frontend uses the public-only values in
+`infra/production/ai-tutor-frontend.env` during the build. The API environment
+must contain the same `EDUAI_API_KEY` as Core, but that secret must never be
+committed or copied into the frontend bundle. This vhost does not set
+explicit `SSLCertificateFile`/`SSLCertificateKeyFile` paths — it relies on
+the certificate already configured for `*.eduai.ok.ubc.ca` names on this
+host; confirm that coverage before enabling a new vhost under this domain,
+rather than assuming a per-hostname certificate file exists.
+
+### Question Maker production prerequisites
+
+Question Maker's production templates and provisioning sequence are not in
+this revision of `README.md` — see the dedicated Question Maker
+provisioning branch/PR, which follows the same static-frontend-plus-API
+pattern as AI Tutor above (hostname `questionmaker.eduai.ok.ubc.ca`, API on
+`127.0.0.1:8000`) and a `provision-qm` `eduai-production-admin` action
+modeled on `provision-aitutor`.
+
 ## First release procedure
 
 From a clean checkout of the approved `main` commit:
@@ -79,20 +117,47 @@ npm ci
 npm run db:generate -w edu-ai
 cd apps/core
 npx prisma migrate deploy
+set -a; . /etc/eduai/eduai-core.env; set +a
 npm run build
 cd ../..
-ln -sfn "/srv/www/eduai-production/releases/<commit>" /srv/www/eduai-production/current
+```
+
+`/srv/www/eduai-production` is root-owned; a direct `ln -sfn` as the
+deployment account fails with `Permission denied`. Switch `current` through
+the helper instead:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <commit>
+```
+
+For a release that includes AI Tutor, run its database migration and build
+before switching `current`:
+
+```bash
+cd "/srv/www/eduai-production/releases/<commit>"
+set -a; . /etc/eduai/eduai-aitutor.env; set +a
+(cd apps/extensions/ai-tutor/server && npx prisma generate)
+(cd apps/extensions/ai-tutor/server && npx prisma migrate deploy)
+cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
+npm run build -w ai-tutor
 ```
 
 Restart only after the build and migration succeed:
 
 ```bash
 sudo systemctl daemon-reload
+sudo systemctl enable --now eduai-aitutor-server
 sudo systemctl restart eduai-core
 sudo systemctl is-active eduai-core
+sudo systemctl is-active eduai-aitutor-server
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
+curl -fsS http://127.0.0.1:4000/api/health >/dev/null
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
+curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
 ```
+
+Question Maker's health checks are covered by its own provisioning
+branch/PR (see above), not this file.
 
 Do not run `prisma db push` or automatic production seeding in this procedure.
 
@@ -102,7 +167,7 @@ Keep the previous release symlink target until public smoke tests pass. If the n
 
 ```bash
 sudo systemctl stop eduai-core
-ln -sfn "/srv/www/eduai-production/releases/<previous-commit>" /srv/www/eduai-production/current
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <previous-commit>
 sudo systemctl start eduai-core
 ```
 

@@ -5,15 +5,19 @@ import type { Topic } from "./topic";
 
 export type { Topic } from "./topic";
 
+// These three are Prisma `Json?` columns the frontend forwards verbatim: it
+// never reads a field off them, so JSON's own contract is the whole contract.
+import type { JsonObject } from "@eduai/types";
+
 export type QuestionDifficulty = "easy" | "medium" | "hard";
 export type QuestionType = "MCQ" | "SA" | "LA";
 export type ReasoningLevel = "factual" | "analytical" | "application";
 
-export const questionTypeLabels: Record<QuestionType, string> = {
+export const questionTypeLabels = {
   MCQ: "Multiple Choice",
   SA: "Short Answer",
   LA: "Long Answer",
-};
+} satisfies Record<QuestionType, string>;
 export type AssessmentType = "Assignment" | "Lab" | "Quiz" | "Mid" | "Final";
 
 // MCQ Choice interface
@@ -56,7 +60,10 @@ export interface QuestionVariant {
   isDraft?: boolean; // Indicates if this variant is a draft and needs review
   /** Core Question CUID after approval push — required for AI Tutor testable toggle. */
   coreQuestionId?: string | null;
-  /** When true on Core, question is injected into AI Tutor tutoring context. */
+  /**
+   * When true on Core, other EduAI extensions may use this question. QM mirrors
+   * it locally as `shareWithExtensions`; `mapVariant` folds the two together.
+   */
   testable?: boolean;
   createdBy?: string | null;
   createdAt?: string;
@@ -245,7 +252,7 @@ export interface SectionVariantLink {
   sectionId: number;
   variantId: number;
   displayOrder: number;
-  metadata?: Record<string, unknown> | null;
+  metadata?: JsonObject | null;
   variant?: QuestionVariant;
 }
 
@@ -255,9 +262,9 @@ export interface AssessmentSection {
   name: string;
   description?: string | null;
   sectionType?: string | null;
-  difficultySettings?: Record<string, unknown> | null;
-  topicFilters?: Record<string, unknown> | null;
-  metadata?: Record<string, unknown> | null;
+  difficultySettings?: JsonObject | null;
+  topicFilters?: JsonObject | null;
+  metadata?: JsonObject | null;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -268,9 +275,9 @@ export interface AssessmentSectionCreateInput {
   name: string;
   description?: string;
   sectionType?: string;
-  difficultySettings?: Record<string, unknown> | null;
-  topicFilters?: Record<string, unknown> | null;
-  metadata?: Record<string, unknown> | null;
+  difficultySettings?: JsonObject | null;
+  topicFilters?: JsonObject | null;
+  metadata?: JsonObject | null;
   position?: number;
   questionTypes?: QuestionType[];
   reasoningData?: ReasoningDataState;

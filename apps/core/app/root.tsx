@@ -265,6 +265,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/eduai-graduation.svg" type="image/svg+xml" />
         <Meta />
         {/* HydratedRouter does not retain ServerRouter's nonce context. */}
         <Links nonce={nonce} />

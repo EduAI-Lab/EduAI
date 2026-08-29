@@ -15,7 +15,9 @@ vi.mock("~/lib/api", () => ({
 
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 
-const page = (courses: { id: number; title: string }[]) => ({
+const page = (
+  courses: { id: number; title: string; term?: string | null; year?: number | null }[],
+) => ({
   data: courses,
   total: courses.length,
   page: 1,
@@ -40,6 +42,36 @@ async function settle() {
     vi.advanceTimersByTime(400);
   });
 }
+
+describe("CourseSwitcher — course term on each row", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    listCourses.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the term, so two offerings of one course code are distinguishable", async () => {
+    // `term`/`year` are read through from Core by the server mapper; the row's
+    // second line carries them via the shared `courseSwitcherSublabel`, the same
+    // helper Core and Question Maker use.
+    listCourses.mockResolvedValue(
+      page([
+        { id: 1, title: "COSC 111 — Intro", term: "W1", year: 2026 },
+        { id: 2, title: "COSC 111 — Intro", term: "S1", year: 2026 },
+      ]),
+    );
+
+    renderSwitcher();
+    await settle();
+    openMenu();
+
+    expect(screen.getByText("Intro · 2026-27W1")).toBeInTheDocument();
+    expect(screen.getByText("Intro · 2026S1")).toBeInTheDocument();
+  });
+});
 
 describe("CourseSwitcher — server search (#1208)", () => {
   beforeEach(() => {
@@ -93,10 +125,10 @@ describe("CourseSwitcher — server search (#1208)", () => {
     await waitFor(() => expect(listCourses).toHaveBeenCalledTimes(1));
 
     // The "co" request is held open so it can resolve AFTER the later "cosc" one.
-    let resolveSlow: (v: unknown) => void = () => {};
+    let resolveSlow: (coursesPage: ReturnType<typeof page>) => void = () => {};
     listCourses.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
+        new Promise<ReturnType<typeof page>>((resolve) => {
           resolveSlow = resolve;
         }),
     );

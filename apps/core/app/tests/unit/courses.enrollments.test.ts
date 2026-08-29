@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -60,6 +61,7 @@ import {
 } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const VALID_KEY = "test-service-key";
 
@@ -100,7 +102,7 @@ const MOCK_COURSE = {
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = MOCK_COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = MOCK_COURSE) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
@@ -119,7 +121,7 @@ function makeArgs(id?: string, authorization?: string, query = "") {
   } as any;
 }
 
-function makePost(id: string, body: unknown) {
+function makePost(id: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/courses/${id}/enrollments`, {
       method: "POST",
@@ -275,7 +277,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps STUDENT enrollment correctly", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const student = body.enrollments.find((e: Record<string, unknown>) => e.role === "STUDENT");
+    const student = body.enrollments.find((e: JsonObject) => e.role === "STUDENT");
     expect(student).toEqual({
       id: "enr-1",
       studentId: "user-1",
@@ -291,9 +293,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps INSTRUCTOR enrollment correctly with null enrolledAt", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const instructor = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "INSTRUCTOR",
-    );
+    const instructor = body.enrollments.find((e: JsonObject) => e.role === "INSTRUCTOR");
     expect(instructor).toEqual({
       id: "enr-3",
       studentId: "user-3",
@@ -310,7 +310,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("returns both active and inactive enrollments", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
+    const activeStates = body.enrollments.map((e: JsonObject) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });

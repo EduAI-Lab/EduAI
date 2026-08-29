@@ -1,7 +1,9 @@
 // @vitest-environment node
 // Per-user rate limiting for /api/chat (#987): caps LLM completion requests
 // so an authenticated user can't submit unbounded requests to the model.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
 
@@ -25,8 +27,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -41,6 +43,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -90,7 +94,7 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -115,7 +119,7 @@ const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
 const originalChatRateLimitWindow = process.env.CHAT_RATE_LIMIT_WINDOW_MS;
 const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -127,7 +131,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",

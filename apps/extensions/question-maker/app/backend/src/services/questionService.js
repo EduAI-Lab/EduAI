@@ -447,6 +447,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
             referenceId: true,
             isAiGenerated: true,
             isDraft: true,
+            // The sharing panel is opened straight from this list, so it needs
+            // the Core link and the author's current share choice — without
+            // them every approved variant rendered as "not yet published" and
+            // the toggle was unreachable (#1652 review).
+            coreQuestionId: true,
+            shareWithExtensions: true,
             createdAt: true,
             updatedAt: true,
             assessment: { select: { id: true, name: true, type: true } },
@@ -493,6 +499,9 @@ export const getQuestionById = async (questionId, userId) => {
           referenceId: true,
           isAiGenerated: true,
           isDraft: true,
+          // Same projection as the list path — see the note there.
+          coreQuestionId: true,
+          shareWithExtensions: true,
           createdAt: true,
           updatedAt: true,
           assessment: { select: { id: true, name: true, type: true } },
@@ -623,7 +632,10 @@ export const updateQuestion = async (questionId, userId, updateData) => {
         where: { questionMetadataId: question.id, isDraft: false },
       });
       if (reviewedVariant) {
-        throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+        throw variantLocked(
+          "SIBLING_REVIEWED",
+          "Another version of this question is already reviewed, so its type and topic are locked. Move the reviewed versions back to draft first.",
+        );
       }
     }
 
@@ -1122,14 +1134,15 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
     throw relationNotFound("Assessment not found for this course");
   }
 
-  // Get current questionOrder or initialize empty object
-  const currentOrder = {
-    ...(question.questionOrder &&
+  // Legacy rows can hold a null or an array here; only a real object carries
+  // an order worth copying forward.
+  const storedOrder =
+    question.questionOrder &&
     typeof question.questionOrder === "object" &&
     !Array.isArray(question.questionOrder)
       ? question.questionOrder
-      : {}),
-  };
+      : undefined;
+  const currentOrder = { ...storedOrder };
 
   // Remove the assessment from the order
   delete currentOrder[String(parsedAssessmentId)];
@@ -1144,6 +1157,21 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
 };
 
 // Variant Management Functions
+/**
+ * A 409 lock, told in the instructor's terms. `code` stays VARIANT_LOCKED
+ * because callers branch on it (the generated-variants dialog, the composer);
+ * `reason` distinguishes the three situations that used to be indistinguishable,
+ * and `message` is what the UI shows.
+ */
+function variantLocked(reason, message) {
+  return Object.assign(new Error(message), {
+    status: 409,
+    isPublic: true,
+    code: "VARIANT_LOCKED",
+    reason,
+  });
+}
+
 /** Creates a variant for a question while validating course ownership and metadata. */
 export const createVariant = async (questionId, variantData, userId) => {
   questionId = Number(questionId);
@@ -1222,7 +1250,27 @@ export const createVariant = async (questionId, variantData, userId) => {
       isAiGenerated:
         variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
       isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+      // Sharing with other extensions is opt-in (#1555); the flag reaches Core
+      // as the Question's `testable` when the variant is approved and pushed.
+      // A draft is never shareable — sharing rides on review, so the two cannot
+      // disagree even when the request comes from outside the authoring UI.
+      shareWithExtensions:
+        Boolean(variantData.shareWithExtensions) && variantData.isDraft === false,
       createdBy: variantData.createdBy ?? null,
+    },
+    // The create route publishes a variant that is born reviewed, and
+    // `publishApprovedVariant` resolves the Core course through this relation.
+    // Without it the push is silently skipped and the variant is stranded
+    // approved-but-unpushed, which is the one state that cannot be reverted.
+    include: {
+      questionMetadata: {
+        select: {
+          id: true,
+          type: true,
+          primaryTopicId: true,
+          course: { select: { id: true, coreCourseId: true } },
+        },
+      },
     },
   });
 
@@ -1308,7 +1356,10 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     // isDraft:false retry is the one safe exception: the content-derived
     // Core idempotency key lets it resume a crashed/late push.
     if (approvalInFlight && !approvalRetry) {
-      throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+      throw variantLocked(
+        "PUBLISH_IN_FLIGHT",
+        "This question is still being published to EduAI, so it cannot be changed yet. Try again in a moment.",
+      );
     }
 
     // §19 approved-variant lock: once approved, content edits are blocked
@@ -1318,7 +1369,10 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     if (variant.isDraft === false) {
       if (!reverting && !aiTagOnly) {
         if (!approvalRetry) {
-          throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+          throw variantLocked(
+            "APPROVED",
+            "This question is reviewed, so its content is locked. Move it back to draft to reopen it for editing.",
+          );
         }
       }
     } else {
@@ -1415,6 +1469,28 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
     // #1080 un-review: reopening a reviewed variant back to draft must clear
     // its Core link so the next approval re-pushes a fresh copy.
     const unreviewing = variant.isDraft === false && nextIsDraft === true;
+
+    // The withdrawal that precedes this write is decided from a pre-fence
+    // snapshot, so it can be about a different Core row than the one actually
+    // linked here — or about no row at all, when the snapshot was still
+    // draft/unlinked and a concurrent approval published in the meantime.
+    // Clearing a link nobody withdrew would strand a `testable=true` Core
+    // question that AI Tutor keeps serving with no local row left to point at
+    // it. Refuse instead; the caller retries against fresh state (#1652
+    // review).
+    if (
+      unreviewing &&
+      variant.coreQuestionId &&
+      variant.coreQuestionId !== (mutationContext.withdrawnCoreQuestionId ?? null)
+    ) {
+      throw variantLocked(
+        "UNREVIEW_STATE_CHANGED",
+        "This question was published to EduAI while your change was in flight, so it was not un-reviewed. Please try again.",
+      );
+    }
+    // The draft state this write lands in — the caller's when it supplies one,
+    // otherwise the state the row is already in.
+    const resultingIsDraft = nextIsDraft !== undefined ? nextIsDraft : variant.isDraft === true;
     const ALLOWED_VARIANT_UPDATE_FIELDS = [
       "questionText",
       "difficulty",
@@ -1461,8 +1537,19 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
       ...(normalizedCorrectAnswers !== undefined && {
         correctAnswers: normalizedCorrectAnswers,
       }),
+      // Sharing is an approval-time opt-in, so it is bound to the state the
+      // write actually lands in, not to what the caller asked for. A direct PUT
+      // could otherwise set it on a draft, and the next `isDraft: false`
+      // approval would publish it with no opt-in of its own (#1652 review).
+      ...(variantData.shareWithExtensions !== undefined && {
+        shareWithExtensions: resultingIsDraft ? false : Boolean(variantData.shareWithExtensions),
+      }),
       ...(unreviewing && {
         coreQuestionId: null,
+        // Withdrawing review withdraws sharing with it (#1555): the variant is
+        // detached from Core here, so leaving the flag set would claim a
+        // question is usable by other extensions when nothing can reach it.
+        shareWithExtensions: false,
       }),
     };
 
@@ -1608,7 +1695,92 @@ export const rollbackVariantApproval = async (variantId, userId, snapshot) => {
 
     const variant = await db.variants.update({
       where: { id: current.id },
-      data: { isDraft: true },
+      // Sharing rides on approval, so undoing the approval undoes it too —
+      // otherwise a failed publish leaves a draft flagged as shared, and the
+      // next approval republishes without a fresh opt-in (#1652 review).
+      data: { isDraft: true, shareWithExtensions: false },
+      include: variantSnapshotInclude,
+    });
+    return { applied: true, variant };
+  });
+};
+
+/**
+ * Records the author's sharing choice only while the row is still the approved,
+ * linked variant the Core write was about.
+ *
+ * The testable endpoint patches Core first and then writes here, so a
+ * concurrent un-review can land in between. Persisting unconditionally would
+ * flag a draft as shared, or re-assert sharing for a Core question that was
+ * just withdrawn. The caller compensates on `applied: false` (#1652 review).
+ */
+export const applyVariantShareChoice = async (
+  variantId,
+  userId,
+  expectedCoreQuestionId,
+  testable,
+) => {
+  const parsedVariantId = Number(variantId);
+  const existing = await prisma.variants.findFirst({
+    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+    select: { id: true, questionMetadataId: true },
+  });
+
+  if (!existing) return { applied: false, reason: "not_found" };
+
+  return withQuestionMutationFence(existing.questionMetadataId, async (db) => {
+    const current = await db.variants.findFirst({
+      where: { id: existing.id, questionMetadata: { course: { userId } } },
+      include: variantSnapshotInclude,
+    });
+
+    if (!current) return { applied: false, reason: "not_found" };
+
+    // Both halves matter: still reviewed, and still the same Core row.
+    if (current.isDraft !== false || current.coreQuestionId !== expectedCoreQuestionId) {
+      return { applied: false, reason: "state_changed", variant: current };
+    }
+
+    const variant = await db.variants.update({
+      where: { id: current.id },
+      data: { shareWithExtensions: testable },
+      include: variantSnapshotInclude,
+    });
+    return { applied: true, variant };
+  });
+};
+
+/**
+ * Drops the Core link only if it still points at the question Core reported
+ * gone, so a concurrent re-approval's fresh link is not discarded.
+ */
+export const clearVariantCoreLinkIfUnchanged = async (
+  variantId,
+  userId,
+  expectedCoreQuestionId,
+) => {
+  const parsedVariantId = Number(variantId);
+  const existing = await prisma.variants.findFirst({
+    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+    select: { id: true, questionMetadataId: true },
+  });
+
+  if (!existing) return { applied: false, reason: "not_found" };
+
+  return withQuestionMutationFence(existing.questionMetadataId, async (db) => {
+    const current = await db.variants.findFirst({
+      where: { id: existing.id, questionMetadata: { course: { userId } } },
+      include: variantSnapshotInclude,
+    });
+
+    if (!current) return { applied: false, reason: "not_found" };
+    if (current.coreQuestionId !== expectedCoreQuestionId) {
+      return { applied: false, reason: "state_changed", variant: current };
+    }
+
+    const variant = await db.variants.update({
+      where: { id: current.id },
+      data: { coreQuestionId: null, shareWithExtensions: false },
       include: variantSnapshotInclude,
     });
     return { applied: true, variant };

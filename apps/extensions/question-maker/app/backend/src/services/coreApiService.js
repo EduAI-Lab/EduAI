@@ -5,6 +5,7 @@
  */
 import { config } from "../config/settings.js";
 import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
+import { currentCanvasRequestSignal } from "../middleware/canvasRequestContext.js";
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -59,7 +60,7 @@ async function readServiceKeyPage(path, { signal } = {}) {
   try {
     res = await fetch(`${config.coreUrl}${path}`, {
       headers: serviceHeaders(),
-      ...(signal ? { signal } : {}),
+      signal,
     });
   } catch (error) {
     if (signal?.aborted) assertQmAiDeadline({ signal });
@@ -126,6 +127,14 @@ async function fetchCoursePages(
  * When both are available, retries with the alternate auth mode on auth failures
  * so a stale EDUAI_API_KEY does not block user-session reads — unless `cookieOnly`
  * is set (user-scoped reads must not fall back to the unscoped service key).
+ *
+ * A `cookieOnly` MUTATION still sends the service key alongside the cookie.
+ * Core's cross-origin guard fails closed on any cookie-bearing unsafe method
+ * with no Origin/Referer/Sec-Fetch-Site — the exact shape of a server-to-server
+ * call — and takes a valid service key as its only non-browser bypass, so the
+ * cookie alone earns a 403 CROSS_ORIGIN_MUTATION (#1556). This is not a
+ * fallback: the cookie is still the identity Core resolves the caller from, and
+ * there is still no key-only variant to degrade to.
  */
 async function fetchFromCore(
   path,
@@ -135,7 +144,11 @@ async function fetchFromCore(
   const url = `${config.coreUrl}${path}`;
   let variants = authHeaderVariants({ cookie, preferCookie });
   if (cookieOnly) {
-    variants = cookie ? [{ cookie }] : [];
+    const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+    const serviceKey = isMutation && config.eduaiApiKey ? config.eduaiApiKey : null;
+    variants = cookie
+      ? [serviceKey ? { cookie, Authorization: `Bearer ${serviceKey}` } : { cookie }]
+      : [];
   }
 
   if (variants.length === 0) {
@@ -148,12 +161,14 @@ async function fetchFromCore(
   for (const authHeaders of variants) {
     let res;
     try {
-      res = await fetch(url, {
+      const init = {
         method,
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        ...(signal ? { signal } : {}),
-      });
+        signal,
+      };
+      // Reads default to GET, which must not carry a body at all.
+      if (body !== undefined) init.body = JSON.stringify(body);
+      res = await fetch(url, init);
     } catch (error) {
       if (signal?.aborted) assertQmAiDeadline({ signal });
       throw error;
@@ -178,11 +193,14 @@ function coreError(message, status, body) {
     typeof body?.error === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
       ? body.error
       : null;
-  return Object.assign(new Error(code || "Core request failed"), {
-    status,
-    body,
-    ...(code ? { code, isPublic: true } : {}),
-  });
+  const error = Object.assign(new Error(code || "Core request failed"), { status, body });
+  // Only a machine-readable Core code is safe to relay to the caller; a free
+  // text message stays internal, so `isPublic` rides along with `code` alone.
+  if (code) {
+    error.code = code;
+    error.isPublic = true;
+  }
+  return error;
 }
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
@@ -228,14 +246,27 @@ export async function pushTopicToCore(coreCourseId, name) {
  * POST /api/questions — session-only endpoint on Core.
  * Forwards the caller's session cookie so Core can authenticate the user
  * and derive createdBy from the session.
+ *
+ * The service key rides along for the same reason the Canvas mutations carry
+ * it: Core's cross-origin guard fails closed on a cookie-bearing unsafe method
+ * with no Origin/Referer/Sec-Fetch-Site — the shape of every server-to-server
+ * call — and takes a valid key as its only non-browser bypass. Without it this
+ * push has answered 403 CROSS_ORIGIN_MUTATION since the guard landed, leaving
+ * approved variants stranded with no Core question. The cookie remains the
+ * identity; the key only proves the caller is trusted.
  */
 export async function pushQuestionToCore(payload, cookieHeader) {
+  const headers = {
+    "Content-Type": "application/json",
+    cookie: cookieHeader ?? "",
+  };
+  if (config.eduaiApiKey) {
+    headers.Authorization = `Bearer ${config.eduaiApiKey}`;
+  }
+
   const res = await fetch(`${config.coreUrl}/api/questions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      cookie: cookieHeader ?? "",
-    },
+    headers,
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -377,7 +408,7 @@ export async function getMyProfileFromCore(cookieHeader, opts = {}) {
   try {
     res = await fetch(`${config.coreUrl}/api/me`, {
       headers: { cookie: cookieHeader ?? "" },
-      ...(opts.signal ? { signal: opts.signal } : {}),
+      signal: opts.signal,
     });
   } catch (error) {
     if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
@@ -443,6 +474,139 @@ export async function searchCoursesFromCore(
     ? await readServiceKeyPage(path, authOptions)
     : await fetchFromCore(path, authOptions);
   return Array.isArray(data?.data) ? data.data : [];
+}
+
+function canvasCourseQuery(canvasCourseId) {
+  return `canvasCourseId=${encodeURIComponent(canvasCourseId)}`;
+}
+
+/** The caller-disconnect failure, distinct from any upstream Core error. */
+function canvasRequestCancelledError() {
+  return Object.assign(new Error("Canvas request cancelled by the caller"), {
+    status: 499,
+    code: "CANVAS_REQUEST_CANCELLED",
+    body: { error: "CANVAS_REQUEST_CANCELLED" },
+    isPublic: true,
+  });
+}
+
+/**
+ * Every Canvas proxy call inherits the caller-disconnect signal published by
+ * `canvasRequestContext`, so abandoning the browser request aborts the QM→Core
+ * fetch — and with it Core's Canvas egress — rather than leaving it running for
+ * nobody. The abort is reported as its own cancellation error so it is never
+ * mistaken for a Core or Canvas failure.
+ */
+async function canvasCookieFetch(path, cookie, { method = "GET", body } = {}) {
+  const signal = currentCanvasRequestSignal();
+  if (signal?.aborted) throw canvasRequestCancelledError();
+
+  try {
+    return await fetchFromCore(path, { method, body, cookie, cookieOnly: true, signal });
+  } catch (error) {
+    if (signal?.aborted) throw canvasRequestCancelledError();
+    throw error;
+  }
+}
+
+/** GET /api/canvas/integration — caller's Core Canvas integration (session-only). */
+export async function proxyCoreCanvasGetIntegration(cookie) {
+  return canvasCookieFetch("/api/canvas/integration", cookie);
+}
+
+/** POST /api/canvas/connect — save the caller's Canvas credentials on Core. */
+export async function proxyCoreCanvasConnect(cookie, body) {
+  return canvasCookieFetch("/api/canvas/connect", cookie, { method: "POST", body });
+}
+
+/** DELETE /api/canvas/disconnect — remove the caller's Core Canvas integration. */
+export async function proxyCoreCanvasDisconnect(cookie) {
+  return canvasCookieFetch("/api/canvas/disconnect", cookie, { method: "DELETE" });
+}
+
+/** GET /api/canvas/courses — list Canvas courses via the caller's Core integration. */
+export async function proxyCoreCanvasListCourses(cookie) {
+  return canvasCookieFetch("/api/canvas/courses", cookie);
+}
+
+/** GET /api/canvas/quizzes?canvasCourseId= — list quizzes in a Canvas course. */
+export async function proxyCoreListQuizzes(cookie, canvasCourseId) {
+  return canvasCookieFetch(`/api/canvas/quizzes?${canvasCourseQuery(canvasCourseId)}`, cookie);
+}
+
+/** GET /api/canvas/quizzes/:quizId?canvasCourseId= — fetch one Canvas quiz. */
+export async function proxyCoreGetQuiz(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/quizzes/:quizId/questions?canvasCourseId= — list quiz questions. */
+export async function proxyCoreListQuizQuestions(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/quizzes/:quizId/questions/:questionId?canvasCourseId= — fetch one question. */
+export async function proxyCoreGetQuizQuestion(cookie, canvasCourseId, quizId, questionId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions/${encodeURIComponent(questionId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** POST /api/canvas/quizzes — create a Canvas quiz. */
+export async function proxyCoreCreateQuiz(cookie, canvasCourseId, quiz) {
+  return canvasCookieFetch("/api/canvas/quizzes", cookie, {
+    method: "POST",
+    body: { canvasCourseId, quiz },
+  });
+}
+
+/** POST /api/canvas/quizzes/:quizId/questions — create a Canvas quiz question. */
+export async function proxyCoreCreateQuizQuestion(cookie, canvasCourseId, quizId, question) {
+  return canvasCookieFetch(`/api/canvas/quizzes/${encodeURIComponent(quizId)}/questions`, cookie, {
+    method: "POST",
+    body: { canvasCourseId, question },
+  });
+}
+
+/** GET /api/canvas/question-banks?canvasCourseId= — list Classic Canvas question banks. */
+export async function proxyCoreListQuestionBanks(cookie, canvasCourseId) {
+  return canvasCookieFetch(
+    `/api/canvas/question-banks?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+  );
+}
+
+/** GET /api/canvas/question-banks/:bankId — fetch one Canvas question bank. */
+export async function proxyCoreGetQuestionBank(cookie, canvasBankId) {
+  return canvasCookieFetch(
+    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}`,
+    cookie,
+  );
+}
+
+/**
+ * GET /api/canvas/question-banks/:bankId/questions — list bank questions (one page).
+ * Optional query: page, perPage.
+ */
+export async function proxyCoreListQuestionBankQuestions(
+  cookie,
+  canvasBankId,
+  { page = 1, perPage = 100 } = {},
+) {
+  const qs = new URLSearchParams({
+    page: String(page),
+    perPage: String(perPage),
+  });
+  return canvasCookieFetch(
+    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}/questions?${qs}`,
+    cookie,
+  );
 }
 
 /** GET /api/courses/:courseId/banks */

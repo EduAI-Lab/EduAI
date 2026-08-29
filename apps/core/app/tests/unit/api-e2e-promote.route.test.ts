@@ -11,12 +11,13 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { action } from "~/routes/api/e2e.promote";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeArgs(method: string, body?: unknown) {
+function makeArgs(method: string, body?: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/e2e/promote", {
       method,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
     params: {},
     context: {} as never,

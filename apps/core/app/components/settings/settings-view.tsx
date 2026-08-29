@@ -49,7 +49,7 @@ type ServerApiKey = {
 };
 
 const FIXED_PREFIX = "eduai";
-const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
+const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 
 /**
  * Cloud providers that take a user-supplied key. Ollama is deliberately absent —
@@ -77,7 +77,10 @@ export function SettingsView({
 }: SettingsViewProps) {
   const { isEnabled } = usePolicyGate();
   const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
-  const canvasEnabled = role === "ADMIN" || isEnabled("instructors.canManageCanvasIntegration");
+  const canvasEnabled =
+    role === "ADMIN" ||
+    role === "UNIT_ADMIN" ||
+    isEnabled("instructors.canManageCanvasIntegration");
   const showCanvasSettings = roleHasCanvas && canvasEnabled;
   const showStudentNumberSettings = role === "STUDENT";
   const showApiKeySettings = role === "ADMIN";
@@ -114,7 +117,8 @@ export function SettingsView({
       const { data, error } = await authClient.apiKey.create({
         name: newKeyName || undefined,
         prefix: FIXED_PREFIX,
-        ...(expiresIn ? { expiresIn } : {}),
+        // "Never expires" sends no lifetime at all.
+        expiresIn: expiresIn || undefined,
       });
       if (error) throw new Error(error.message);
       if (data?.key) {

@@ -34,14 +34,14 @@ import type { QmNavItemKey } from "@/lib/rbac/types";
 
 const iconClass = "size-4";
 
-const PALETTE_NAV_ICONS: Record<QmNavItemKey, typeof IconDashboard> = {
+const PALETTE_NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
   "bug-reports": IconBug,
   "back-to-eduai": IconBooks,
-};
+} satisfies Record<QmNavItemKey, typeof IconDashboard>;
 
 function PaletteNavIcon({ navKey }: { navKey: QmNavItemKey }) {
   const Icon = PALETTE_NAV_ICONS[navKey];

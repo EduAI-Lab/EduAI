@@ -1,7 +1,9 @@
 // @vitest-environment node
 // #1441 review: admission timeout must skip the rethrow after Bedrock overflow
 // activates, so the request reaches streamText on the overflow model.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -18,8 +20,8 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -34,6 +36,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("admin"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -103,7 +107,7 @@ vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -118,17 +122,24 @@ vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode overflow paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -140,9 +151,15 @@ function makeRequest(body: object) {
   } as never;
 }
 
+/** One part of the SDK's `fullStream`, as this test feeds them through. */
+type StreamPart = { type?: string; text?: string; textDelta?: string; error?: unknown };
+
+/** What `onChunk` receives: the part, wrapped the way the SDK wraps it. */
+type StreamChunk = { chunk: StreamPart };
+
 function makeFullStream(
-  parts: unknown[],
-  onChunk?: (chunk: unknown) => void,
+  parts: StreamPart[],
+  onChunk?: (chunk: StreamChunk) => void,
 ): ReadableStream<unknown> {
   return new ReadableStream({
     async pull(controller) {
@@ -157,7 +174,7 @@ function makeFullStream(
   });
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -181,6 +198,9 @@ beforeEach(() => {
   delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 
   vi.mocked(acquireAiAdmission).mockRejectedValue(new AdmissionTimeoutError());
+  // #1571: vi.clearAllMocks() above wipes the factory default, so re-arm the
+  // admin isActive re-check for each admin-mode overflow case.
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "ADMIN" },
   } as never);

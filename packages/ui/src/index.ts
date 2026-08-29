@@ -135,7 +135,7 @@ export type {
   CourseSwitcherOption,
   CourseSwitcherId,
 } from "./course-switcher";
-export { AIServiceIndicators } from "./ai-service-indicators";
+export { AIServiceIndicators, isServiceActive } from "./ai-service-indicators";
 export type {
   AIServiceIndicatorsProps,
   ServiceStatus,
@@ -188,15 +188,18 @@ export {
   termFromMonth,
   termFromDate,
   termInfoFromDate,
+  termInfoFromDateInput,
   normalizeTerm,
   termName,
+  courseSwitcherSublabel,
   termLabel,
   termLabelLong,
   termSortKey,
   compareByTerm,
   groupCoursesByTerm,
 } from "./lib/term";
-export type { TermCode, TermInfo, CourseTermGroup } from "./lib/term";
+export type { AcademicTerm, TermCode, TermInfo, CourseTermGroup } from "./lib/term";
+export { parseDateInputValue, formatDateInputValue } from "./lib/date-input";
 
 // ── Analytics charts ───────────────────────────────────────────────────────
 export { DonutChart } from "./charts/donut-chart";
@@ -222,6 +225,7 @@ export {
   CardAction,
 } from "./ui/card";
 export { Badge, badgeVariants } from "./ui/badge";
+export type { BadgeVariant } from "./ui/badge";
 export { Input } from "./ui/input";
 
 // ── shadcn primitives ──────────────────────────────────────────────────────
@@ -234,6 +238,7 @@ export { AvatarImage, AvatarFallback } from "./ui/avatar";
 export * from "./ui/breadcrumb";
 export * from "./ui/button-group";
 export * from "./ui/calendar";
+export * from "./ui/date-picker-field";
 export * from "./ui/carousel";
 export * from "./ui/chat-container";
 export * from "./ui/checkbox";

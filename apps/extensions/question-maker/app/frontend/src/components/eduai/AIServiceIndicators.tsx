@@ -30,12 +30,12 @@ interface AIServiceIndicatorsProps {
   className?: string;
 }
 
-const DOT_CLASS: Record<DotState, string> = {
+const DOT_CLASS = {
   online: "bg-emerald-500",
   idle: "bg-muted-foreground/40",
   error: "bg-red-500",
   loading: "bg-amber-400 animate-pulse",
-};
+} satisfies Record<DotState, string>;
 
 function Chip({
   label,

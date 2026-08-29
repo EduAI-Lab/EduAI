@@ -137,6 +137,27 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
 };
 
 /**
+ * Clears `assessmentId` on every variant that still points at `assessmentId` but no longer
+ * has a section link inside it. The link check and the write are one statement, so a variant
+ * placed into another section of the same assessment concurrently can't be unlinked, and the
+ * `assessmentId` predicate carries the per-variant guard, so no read is needed first.
+ * `variantIds` narrows the sweep to ids the caller already holds; omit it to cover every
+ * variant the assessment claims. `client` is `prisma` or a transaction client.
+ */
+const clearOrphanedAssessmentLinks = (client, assessmentId, variantIds = null) => {
+  const where = {
+    assessmentId,
+    sectionLinks: { none: { section: { assessmentId } } },
+  };
+
+  if (variantIds) {
+    where.id = { in: variantIds };
+  }
+
+  return client.variants.updateMany({ where, data: { assessmentId: null } });
+};
+
+/**
  * Rewrite section positions to 0..n-1 for the given ordered id list.
  * `sectionIds` must be exactly the set of sections on the assessment (no missing/extra/dupes).
  * Uses the same 0-based convention as `createAssessmentSection` (count-based default).
@@ -197,31 +218,22 @@ export const deleteAssessmentSection = async (sectionId, userId, courseId = null
   const section = await findSectionForUser(sectionId, userId, courseId);
   const assessmentId = section.assessment.id;
 
-  // Get all variants in this section
-  const sectionVariants = await prisma.sectionVariants.findMany({
-    where: { sectionId },
-    select: { variantId: true },
+  // Delete the section (this will cascade delete SectionVariants), then clear the
+  // assessment link on whatever that orphaned. Both statements run in one transaction so
+  // a failure after the delete can't leave variants pointing at an assessment that no
+  // longer places them, with no UI path left to clear the stale link.
+  //
+  // The clear deliberately takes no id list. Reading this section's variants up front and
+  // sweeping only those ids would miss a variant linked into the section between the read
+  // and the delete: the cascade removes its link but the id never reaches the sweep, so it
+  // keeps a stale `assessmentId`. Moving that read inside the transaction would not help,
+  // since these run at the connection's default READ COMMITTED isolation and each statement
+  // takes a fresh snapshot. Sweeping the assessment instead makes the predicate the
+  // invariant itself, so the window closes regardless of when a link appeared.
+  await prisma.$transaction(async (tx) => {
+    await tx.assessmentSections.delete({ where: { id: section.id } });
+    await clearOrphanedAssessmentLinks(tx, assessmentId);
   });
-
-  const variantIds = sectionVariants.map((sv) => sv.variantId);
-
-  // Delete the section (this will cascade delete SectionVariants)
-  await prisma.assessmentSections.delete({ where: { id: section.id } });
-
-  // For each variant, check if it's still in any other sections of the same assessment
-  for (const variantId of variantIds) {
-    const otherSectionsCount = await prisma.sectionVariants.count({
-      where: { variantId, section: { assessmentId } },
-    });
-
-    // If variant is not in any other sections of this assessment, clear the assessmentId
-    if (otherSectionsCount === 0) {
-      const variant = await prisma.variants.findUnique({ where: { id: variantId } });
-      if (variant && variant.assessmentId === assessmentId) {
-        await prisma.variants.update({ where: { id: variantId }, data: { assessmentId: null } });
-      }
-    }
-  }
 
   return true;
 };
@@ -292,29 +304,27 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
   // Validate the variant against the section's actual course before deleting
   // any legacy link. The add path already enforces this, but malformed rows
   // created before that guard must not let a same-owner caller mutate a foreign
-  // course variant through this section route.
-  const variant = await verifyVariantOwnership(variantId, userId, section.assessment.courseId);
+  // course variant through this section route. Called for the throw, not the row: the
+  // orphan clear below carries its own `assessmentId` guard in the where clause.
+  await verifyVariantOwnership(variantId, userId, section.assessment.courseId);
 
-  const { count: deleted } = await prisma.sectionVariants.deleteMany({
-    where: { sectionId, variantId },
-  });
+  // Unlink and clear in one transaction, matching `deleteAssessmentSection`: a failure
+  // between the two would leave the link row gone and `assessmentId` still set, which is
+  // the same orphaned pointer with no UI path to clear it. The throw rolls the delete back.
+  await prisma.$transaction(async (tx) => {
+    const { count: deleted } = await tx.sectionVariants.deleteMany({
+      where: { sectionId, variantId },
+    });
 
-  if (!deleted) {
-    throw new Error("Variant not found in section");
-  }
-
-  // Check if variant is in any other sections of the same assessment
-  const assessmentId = section.assessment.id;
-  const otherSectionsCount = await prisma.sectionVariants.count({
-    where: { variantId, section: { assessmentId } },
-  });
-
-  // If variant is not in any other sections of this assessment, clear the assessmentId
-  if (otherSectionsCount === 0) {
-    if (variant && variant.assessmentId === assessmentId) {
-      await prisma.variants.update({ where: { id: variantId }, data: { assessmentId: null } });
+    if (!deleted) {
+      throw new Error("Variant not found in section");
     }
-  }
+
+    // If the variant is no longer in any section of this assessment, clear its assessmentId.
+    // Shared with `deleteAssessmentSection` so both paths apply the same orphan rule. The id
+    // list is the caller's own argument rather than a read, so narrowing is safe here.
+    await clearOrphanedAssessmentLinks(tx, section.assessment.id, [variantId]);
+  });
 
   return true;
 };
@@ -412,7 +422,9 @@ export const removeQuestionFromAllSections = async (questionId, userId, courseId
       id: questionId,
       course: {
         userId,
-        ...(courseId != null ? { id: Number(courseId) } : {}),
+        // Without a course the ownership check spans every course the user
+        // owns; `undefined` is Prisma's "no constraint".
+        id: courseId != null ? Number(courseId) : undefined,
       },
     },
   });

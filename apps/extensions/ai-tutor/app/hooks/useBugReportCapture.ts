@@ -41,6 +41,7 @@ const MAX_CONSOLE_ENTRIES = 200;
 const MAX_NETWORK_ENTRIES = 100;
 const SCREENSHOT_CACHE_WINDOW_MS = 5_000;
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- formats whatever was handed to a patched console.*; the rule's own `cause` hatch is the same case, minus the throwable.
 function stringifyArg(value: unknown) {
   if (value instanceof Error) {
     return value.message;

@@ -21,15 +21,13 @@ function course(id: number, progress?: { completed: number; total: number }): Co
     id,
     title: `Course ${id}`,
     isPublished: true,
-    ...(progress
+    progress: progress
       ? {
-          progress: {
-            completed: progress.completed,
-            total: progress.total,
-            percentage: progress.total > 0 ? (progress.completed / progress.total) * 100 : 0,
-          },
+          completed: progress.completed,
+          total: progress.total,
+          percentage: progress.total > 0 ? (progress.completed / progress.total) * 100 : 0,
         }
-      : {}),
+      : undefined,
   };
 }
 

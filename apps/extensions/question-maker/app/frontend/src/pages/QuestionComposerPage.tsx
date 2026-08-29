@@ -11,6 +11,7 @@
  * @eduai/ui design system: two-column grid, sticky action bar, live QuestionCard preview,
  * AI assist panel. Tabler icons only.
  */
+import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Card, CardContent, CardHeader, CardTitle, Label, Separator } from "@eduai/ui";
@@ -173,6 +174,8 @@ export function QuestionComposerPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [markAsReviewed, setMarkAsReviewed] = useState(false);
+  // #1555: sharing with other extensions is the author's call, and opt-in.
+  const [shareWithExtensions, setShareWithExtensions] = useState(false);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
@@ -300,12 +303,12 @@ export function QuestionComposerPage() {
           description: question.description ?? "",
         }));
       })
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
         const message =
-          (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data
+          (cause as { response?: { data?: { error?: string } }; message?: string })?.response?.data
             ?.error ??
-          (err as { message?: string })?.message ??
+          (cause as { message?: string })?.message ??
           "Could not load the source question.";
         setSourceError(message);
       })
@@ -362,14 +365,17 @@ export function QuestionComposerPage() {
       ? `AI service does not recognize course code "${resolvedCourseCode}". Generation will still run, but results may be less accurate.`
       : null;
 
+  /** Per-field composer validation messages; an absent key means that field is fine. */
+  type ComposerValidationErrors = {
+    questionText?: string;
+    primaryTopic?: string;
+    choices?: string;
+    answer?: string;
+  };
+
   // ── Validation ───────────────────────────────────────────────────────────
   const validation = useMemo(() => {
-    const errors: {
-      questionText?: string;
-      primaryTopic?: string;
-      choices?: string;
-      answer?: string;
-    } = {};
+    const errors: ComposerValidationErrors = {};
     if (!form.questionText.trim()) errors.questionText = "Question text is required.";
     if (mode !== "variant" && !form.primaryTopicId.trim())
       errors.primaryTopic = "Select a primary topic.";
@@ -516,6 +522,7 @@ export function QuestionComposerPage() {
         reasoningDistribution,
         apiKeys,
       };
+      // Left out entirely when unknown so the generator picks its own default.
       if (variantMcqRequiredCount != null) {
         generateParams.mcqRequiredChoiceCount = variantMcqRequiredCount;
       }
@@ -559,7 +566,7 @@ export function QuestionComposerPage() {
           ? Array.from(
               new Set(
                 generated.secondary_topic_ids
-                  .map((v: unknown) => String(v).trim())
+                  .map((v: JsonValue) => String(v).trim())
                   .filter((v) => v !== "" && topicIdSet.has(v) && v !== primaryTopicId),
               ),
             )
@@ -716,6 +723,12 @@ export function QuestionComposerPage() {
           correctAnswers,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           isDraft: nextIsDraft,
+          // The sharing choice only travels with a write that approves. On the
+          // `wasApproved` path this write reverts to draft, where sharing does
+          // not apply and the author re-decides when they mark it reviewed
+          // again; omitting it there keeps the edit branch from silently
+          // dropping a checked box on the approval path (#1652 review).
+          ...(nextIsDraft === false && { shareWithExtensions }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
         // Only send type/primaryTopicId when they actually changed: a question can have
@@ -758,6 +771,7 @@ export function QuestionComposerPage() {
           referenceId: referenceId != null ? Number(referenceId) : undefined,
           isAiGenerated,
           isDraft: !markAsReviewed,
+          shareWithExtensions,
         });
         toast("Variant added", { description: "The new variant has been saved." });
         navigateBackToQuestions();
@@ -784,6 +798,7 @@ export function QuestionComposerPage() {
         secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
         isAiGenerated,
         isDraft: !markAsReviewed,
+        shareWithExtensions,
       });
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
@@ -1088,19 +1103,52 @@ export function QuestionComposerPage() {
 
       {/* Mark-as-reviewed control lives near the save area for parity with the dialog. */}
       <Separator className="my-6" />
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="composer-mark-reviewed"
-          checked={markAsReviewed}
-          onChange={(e) => setMarkAsReviewed(e.target.checked)}
-          disabled={isSubmitting}
-          className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
-        />
-        <Label htmlFor="composer-mark-reviewed" className="cursor-pointer text-sm text-foreground">
-          Mark as reviewed{" "}
-          <span className="text-muted-foreground">(otherwise saved as a draft)</span>
-        </Label>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-mark-reviewed"
+            checked={markAsReviewed}
+            onChange={(e) => {
+              const reviewed = e.target.checked;
+              setMarkAsReviewed(reviewed);
+              // Sharing only takes effect on approval, so a question that stops
+              // being reviewed stops being shared with it (#1555).
+              if (!reviewed) setShareWithExtensions(false);
+            }}
+            disabled={isSubmitting}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-mark-reviewed"
+            className="cursor-pointer text-sm text-foreground"
+          >
+            Mark as reviewed{" "}
+            <span className="text-muted-foreground">(otherwise saved as a draft)</span>
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-share-with-extensions"
+            data-testid="share-with-extensions"
+            checked={shareWithExtensions}
+            onChange={(e) => setShareWithExtensions(e.target.checked)}
+            disabled={isSubmitting || !markAsReviewed}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-share-with-extensions"
+            className={`cursor-pointer text-sm ${
+              markAsReviewed ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            Usable by other EduAI extensions{" "}
+            <span className="text-muted-foreground">
+              {markAsReviewed ? "(available to AI Tutor once synced)" : "(mark as reviewed first)"}
+            </span>
+          </Label>
+        </div>
       </div>
 
       {/* AI error details */}

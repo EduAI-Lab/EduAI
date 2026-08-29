@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -32,13 +33,15 @@ import {
  * shape rather than call order/mockResolvedValueOnce.
  */
 function mockGroupByServerId(rows: unknown[]) {
-  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation((args: unknown) => {
-    const by = (args as { by: string[] }).by;
-    if (by.length === 2 && by.includes("chatId")) {
-      return Promise.resolve([]) as never;
-    }
-    return Promise.resolve(rows) as never;
-  });
+  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation(
+    (args: Prisma.AIInteractionGroupByArgs) => {
+      const by = (args as { by: string[] }).by;
+      if (by.length === 2 && by.includes("chatId")) {
+        return Promise.resolve([]) as never;
+      }
+      return Promise.resolve(rows) as never;
+    },
+  );
 }
 
 /** Stubs both the serverId grouping and the distinct-chatId grouping (server, chatId) pairs. */
@@ -46,13 +49,15 @@ function mockGroupByServerIdWithChats(
   rows: unknown[],
   chatRows: { serverId: string | null; chatId: string }[],
 ) {
-  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation((args: unknown) => {
-    const by = (args as { by: string[] }).by;
-    if (by.length === 2 && by.includes("chatId")) {
-      return Promise.resolve(chatRows) as never;
-    }
-    return Promise.resolve(rows) as never;
-  });
+  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation(
+    (args: Prisma.AIInteractionGroupByArgs) => {
+      const by = (args as { by: string[] }).by;
+      if (by.length === 2 && by.includes("chatId")) {
+        return Promise.resolve(chatRows) as never;
+      }
+      return Promise.resolve(rows) as never;
+    },
+  );
 }
 
 describe("getInteractionCountsByServer", () => {

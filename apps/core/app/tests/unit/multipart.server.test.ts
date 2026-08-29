@@ -30,7 +30,7 @@ function streamRequest(chunks: string[], headers: Record<string, string> = {}, c
     headers: new Headers(headers),
     body: stream,
     signal: new AbortController().signal,
-  } as unknown as Request;
+  } as Request;
   return { request, cancel };
 }
 
