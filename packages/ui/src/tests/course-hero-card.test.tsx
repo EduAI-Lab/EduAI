@@ -17,7 +17,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />,
     );
-    expect(screen.getByText(/CPSC 110 · 2024W2/)).toBeInTheDocument();
+    expect(screen.getByText(/CPSC 110 · 2024-25W2/)).toBeInTheDocument();
     // Headline is the name alone; the code reads in the eyebrow, not repeated behind a colon.
     expect(screen.getByText("Computation, Programs, and Programming")).toBeInTheDocument();
   });
@@ -95,7 +95,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />,
     );
-    expect(screen.getByText(/2024W2/)).toBeInTheDocument();
+    expect(screen.getByText(/2024-25W2/)).toBeInTheDocument();
 
     rerender(
       <CourseHeroCard
@@ -106,7 +106,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />,
     );
-    expect(screen.getByText(/2024W2/)).toBeInTheDocument();
+    expect(screen.getByText(/2024-25W2/)).toBeInTheDocument();
   });
 
   it("applies custom className to the container", () => {

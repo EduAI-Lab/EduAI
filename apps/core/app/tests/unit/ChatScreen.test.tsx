@@ -61,14 +61,25 @@ vi.mock("~/lib/assistive-events.client", () => ({
   postAssistiveClientEvent: postAssistiveClientEventMock,
 }));
 
+const DEFAULT_COURSES = [
+  { id: "c1", code: "COSC 101", name: "Intro to CS" },
+  { id: "c2", code: "PHYS 121", name: "Mechanics" },
+];
+// Mutable so the not-enrolled tests can replay the in-flight fetch a remount
+// starts with (#1517); `resetCoursesState` restores it between tests.
+const coursesState = vi.hoisted(() => ({
+  courses: [] as Array<{ id: string; code: string; name: string }>,
+  loading: false,
+}));
+
+function resetCoursesState() {
+  coursesState.courses = DEFAULT_COURSES;
+  coursesState.loading = false;
+}
+resetCoursesState();
+
 vi.mock("~/hooks/api/use-courses", () => ({
-  useCourses: () => ({
-    courses: [
-      { id: "c1", code: "COSC 101", name: "Intro to CS" },
-      { id: "c2", code: "PHYS 121", name: "Mechanics" },
-    ],
-    loading: false,
-  }),
+  useCourses: () => coursesState,
 }));
 
 vi.mock("~/hooks/api/use-chat-history", () => ({
@@ -166,6 +177,7 @@ const autoRoutingData: ChatBaseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCoursesState();
   // append returns a Promise in the real AI SDK; the chip handler chains
   // .finally() on it to clear its in-flight guard, so the mock must resolve.
   appendMock.mockResolvedValue(undefined);
@@ -1052,5 +1064,33 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/chat", expect.anything());
     expect(captureCourseViewProps.mock.lastCall?.[0].adhdAssist).toBe(true);
     fetchSpy.mockRestore();
+  });
+});
+
+describe("ChatScreen — not-enrolled overlay gating (#1517)", () => {
+  it("does not report no-courses while the course fetch is still in flight", () => {
+    // What a remount looks like: answering the first message on `/chat`
+    // replaces the route with `/chat/:id`, so useCourses restarts at `[]`.
+    coursesState.courses = [];
+    coursesState.loading = true;
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBeUndefined();
+  });
+
+  it("reports no-courses once the fetch resolves with an empty list", () => {
+    coursesState.courses = [];
+    coursesState.loading = false;
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBe("no-courses");
+  });
+
+  it("leaves chat enabled when the fetch resolves with courses", () => {
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBeUndefined();
   });
 });
