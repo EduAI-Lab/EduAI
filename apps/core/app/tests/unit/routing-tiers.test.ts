@@ -19,10 +19,15 @@ import {
 
 const provider = { name: "vllm" };
 
-function tierRow(modelId: string, routerTier: "TIER_1" | "TIER_3") {
+function tierRow(
+  modelId: string,
+  routerTier: "TIER_1" | "TIER_3",
+  type: "CHAT" | "EMBEDDING" = "CHAT",
+) {
   return {
     modelId,
     routerTier,
+    type,
     estEnergyJoulesPerToken: null,
     averageCarbonGramsPerToken: null,
     supportsImages: false,
@@ -56,6 +61,7 @@ describe("routing tier model cache", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           isActive: true,
+          type: "CHAT",
           provider: { isActive: true },
         }),
       }),
@@ -106,6 +112,17 @@ describe("routing tier model cache", () => {
       "openai:gpt-4o-mini",
       "vllm:qwen2.5-7b-instruct",
     ]);
+  });
+
+  it("excludes non-chat models from the Auto routing pool", async () => {
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([
+      tierRow("qwen2.5-7b-instruct", "TIER_1"),
+      tierRow("text-embedding-3-small", "TIER_1", "EMBEDDING"),
+    ]);
+
+    const rows = await getCachedTierModels();
+
+    expect(rows.map((row) => row.registryId)).toEqual(["vllm:qwen2.5-7b-instruct"]);
   });
 });
 

@@ -55,6 +55,7 @@ describe("buildOllamaModelCreatePayload", () => {
       inputPricing: 0,
       outputPricing: 0,
     });
+    expect(payload.routerTier).toBeNull();
   });
 });
 
@@ -70,6 +71,7 @@ describe("buildVllmModelCreatePayload", () => {
       name: "Qwen2.5 7b Instruct",
       supportsTools: false,
     });
+    expect(payload.routerTier).toBeNull();
   });
 });
 

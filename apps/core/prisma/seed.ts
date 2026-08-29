@@ -1133,29 +1133,23 @@ const COURSES: SeedCourse[] = [
  * manually until that gap is closed, or apply this seed step to production
  * deploys too.
  */
-// energyJoules/carbonGrams below are placeholders scaled from the retired
-// 7B/32B pair's constants by parameter count (2B/9B replaced 7B/32B on the
-// vLLM fleet) — NOT a real measurement. Per docs/rag-ai/routing/
-// eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md these are always
-// `ESTIMATED_FROM_TOKENS`, but a same-family interpolation is a weaker
-// estimate than the original pair had (those came from an earlier round of
-// the same placeholder scaling). Replace with real figures — or at least a
-// documented derivation — before relying on Auto's carbon-based tie-break
-// for these two models specifically.
+// Keep these IDs aligned with the vLLM catalog in this file and in
+// `apps/core/prisma/sync-ai-providers.ts`. The values are the current
+// `ESTIMATED_FROM_TOKENS` estimates used by Auto's energy/carbon tie-breaks.
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen3.5-2b-instruct",
+    modelId: "qwen2.5-7b-instruct",
     routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.03,
-    averageCarbonGramsPerToken: 6.7e-7,
+    estEnergyJoulesPerToken: 0.08,
+    averageCarbonGramsPerToken: 1.78e-6,
   },
   {
     providerName: "vllm",
-    modelId: "qwen3.5-9b-instruct",
+    modelId: "qwen2.5-32b-instruct",
     routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.15,
-    averageCarbonGramsPerToken: 3.3e-6,
+    estEnergyJoulesPerToken: 0.5,
+    averageCarbonGramsPerToken: 1.11e-5,
   },
 ];
 

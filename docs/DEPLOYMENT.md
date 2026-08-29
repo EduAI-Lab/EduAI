@@ -325,7 +325,7 @@ do not infer callback routes from the subdomain name.
 2. Fetch the reviewed release commit into a clean checkout.
 3. Install locked dependencies with `npm ci`.
 4. Run Core's `npm run db:migrate:preflight`, notify/rotate any listed legacy API-key owners, and resolve any duplicate course/job rows.
-5. Apply Core, AI Tutor, and Question Maker Prisma migrations, then run Core's `npm run db:seed:reference`.
+5. Apply Core, AI Tutor, and Question Maker Prisma migrations. Do not run Core's `npm run db:seed:reference` in production; that reference seed is used by `eduai-dev`/s378 only. Assign production Auto models explicitly from Admin → AI management → Auto routing after verifying the deployed server catalog.
 6. Build the frontend/server bundles required by the chosen process manager.
 7. Restart one service at a time and verify its local health endpoint.
 8. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
