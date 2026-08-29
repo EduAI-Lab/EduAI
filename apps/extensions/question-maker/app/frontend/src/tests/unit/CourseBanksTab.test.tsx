@@ -20,6 +20,7 @@ describe("CourseBanksTab", () => {
         banks={[]}
         canWrite
         isLoading
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -33,6 +34,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -47,6 +49,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite={false}
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -62,6 +65,7 @@ describe("CourseBanksTab", () => {
         banks={[]}
         canWrite
         loadError="Failed to load banks"
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -76,6 +80,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={onCreateBank}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -93,6 +98,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -110,6 +116,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={onSyncFromCanvas}
         onOpenBank={vi.fn()}
@@ -119,12 +126,27 @@ describe("CourseBanksTab", () => {
     expect(onSyncFromCanvas).toHaveBeenCalled();
   });
 
+  it("hides the Canvas sync action when the course is not linked to Canvas", () => {
+    render(
+      <CourseBanksTab
+        banks={[]}
+        canWrite
+        isCanvasLinked={false}
+        onCreateBank={vi.fn()}
+        onSyncFromCanvas={vi.fn()}
+        onOpenBank={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("sync-canvas-bank-btn")).not.toBeInTheDocument();
+  });
+
   it("renders bank cards with default badge and opens a bank on click", () => {
     const onOpenBank = vi.fn();
     render(
       <CourseBanksTab
         banks={banks}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={onOpenBank}

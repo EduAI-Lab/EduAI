@@ -196,7 +196,7 @@ describe("CanvasExportDialog", () => {
     await waitFor(() => expect(exportButton).toBeEnabled());
     fireEvent.click(exportButton);
 
-    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42));
+    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42, { published: true }));
     await waitFor(() =>
       expect(onExportSuccess).toHaveBeenCalledWith({
         quizId: 99,
@@ -234,15 +234,6 @@ describe("CanvasExportDialog", () => {
         expect.objectContaining({ description: "Quiz limit reached" }),
       ),
     );
-  });
-
-  it("switches back to the connect form via Change Connection", async () => {
-    getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 42, name: "Chem", course_code: "CHEM201" }]);
-    renderDialog();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Change Connection" }));
-    expect(await screen.findByLabelText("Canvas Instance URL")).toBeInTheDocument();
   });
 
   it("calls onClose from the Cancel footer button", async () => {

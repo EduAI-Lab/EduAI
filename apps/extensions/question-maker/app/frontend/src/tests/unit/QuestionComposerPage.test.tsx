@@ -284,12 +284,54 @@ describe("QuestionComposerPage create mode", () => {
     fireEvent.click(screen.getByText("set-choices"));
     fireEvent.click(screen.getByText("set-answer"));
     fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByLabelText(/mark as reviewed/i));
+    // The sharing label also says "mark as reviewed first", so anchor the match.
+    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
     fireEvent.click(screen.getByRole("button", { name: /save question/i }));
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
         99,
-        expect.objectContaining({ isDraft: false }),
+        expect.objectContaining({ isDraft: false, shareWithExtensions: false }),
+      ),
+    );
+  });
+
+  it("gates extension sharing on the reviewed checkbox and clears it when unreviewed", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+
+    const reviewed = screen.getByRole("checkbox", { name: /^mark as reviewed/i });
+    const share = screen.getByTestId("share-with-extensions");
+    expect(share).toBeDisabled();
+
+    fireEvent.click(reviewed);
+    expect(share).not.toBeDisabled();
+    fireEvent.click(share);
+    expect(share).toBeChecked();
+
+    // Sharing only takes effect on approval, so dropping the review drops it (#1555).
+    fireEvent.click(reviewed);
+    expect(share).not.toBeChecked();
+    expect(share).toBeDisabled();
+  });
+
+  it("submits the sharing flag for a reviewed variant", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-text"));
+    fireEvent.click(screen.getByText("set-choices"));
+    fireEvent.click(screen.getByText("set-answer"));
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
+    fireEvent.click(screen.getByTestId("share-with-extensions"));
+    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    await waitFor(() =>
+      expect(questionService.createVariant).toHaveBeenCalledWith(
+        99,
+        expect.objectContaining({ isDraft: false, shareWithExtensions: true }),
       ),
     );
   });

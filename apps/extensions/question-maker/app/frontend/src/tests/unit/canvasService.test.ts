@@ -90,8 +90,42 @@ describe("canvasService.exportAssessment / getCourseMapping / importQuiz / impor
       data: { data: { quizId: 1, quizTitle: "Q", questionsCreated: 5, canvasUrl: "u" } },
     });
     const result = await canvasService.exportAssessment(10, 20);
-    expect(post).toHaveBeenCalledWith("/api/canvas/export/10", { canvasCourseId: 20 });
+    // Quizzes publish by default so Canvas actually lists them (#1556).
+    expect(post).toHaveBeenCalledWith("/api/canvas/export/10", {
+      canvasCourseId: 20,
+      published: true,
+    });
     expect(result.quizId).toBe(1);
+  });
+
+  it("exportAssessment leaves the quiz a draft when published is false", async () => {
+    post.mockResolvedValue({ data: { data: { quizId: 2 } } });
+    await canvasService.exportAssessment(10, 20, { published: false });
+    expect(post).toHaveBeenCalledWith("/api/canvas/export/10", {
+      canvasCourseId: 20,
+      published: false,
+    });
+  });
+
+  it("getCourseLink reports a linked course with its mapping", async () => {
+    get.mockResolvedValue({ data: { data: { canvasCourseId: 5, canvasCourseName: "Canvas 5" } } });
+    await expect(canvasService.getCourseLink(1)).resolves.toEqual({
+      status: "linked",
+      mapping: { canvasCourseId: 5, canvasCourseName: "Canvas 5" },
+    });
+  });
+
+  it.each([[null], [{ canvasCourseId: null }]])(
+    "getCourseLink reports unlinked for mapping %s",
+    async (mapping) => {
+      get.mockResolvedValue({ data: { data: mapping } });
+      await expect(canvasService.getCourseLink(1)).resolves.toEqual({ status: "unlinked" });
+    },
+  );
+
+  it("getCourseLink keeps a request failure distinct from an unlinked course", async () => {
+    get.mockRejectedValue(new Error("boom"));
+    await expect(canvasService.getCourseLink(1)).resolves.toEqual({ status: "unknown" });
   });
 
   it("getCourseMapping returns null on error", async () => {

@@ -282,9 +282,12 @@ describe("AddQuestionDialog view mode", () => {
       entry: makeEntry({ isDraft: false }),
     });
 
-    // isApproved (isDraft:false) reveals the AI Tutor preview section.
-    expect(await screen.findByText("AI Tutor preview")).toBeInTheDocument();
-    expect(screen.getByText(/This variant is not synced to Core yet/i)).toBeInTheDocument();
+    // isApproved (isDraft:false) reveals the extension-sharing section.
+    expect(await screen.findByText("Use in other EduAI extensions")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Mark this question as reviewed to make it available/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     expect(setVariantTestable).not.toHaveBeenCalled();
   });
 
@@ -317,7 +320,7 @@ describe("AddQuestionDialog view mode", () => {
     await waitFor(() => expect(setVariantTestable).toHaveBeenCalledWith(10, true));
     await waitFor(() => expect(onSelectVariant).toHaveBeenCalled());
     expect(onUpdateVariant).toHaveBeenCalledWith(10, { testable: true });
-    expect(toastFn).toHaveBeenCalledWith("Available in AI Tutor", expect.any(Object));
+    expect(toastFn).toHaveBeenCalledWith("Usable by other EduAI extensions", expect.any(Object));
   });
 
   it("toggles testable off and opens AI Tutor from the preview section", async () => {
@@ -352,7 +355,10 @@ describe("AddQuestionDialog view mode", () => {
     await waitFor(() => expect(setVariantTestable).toHaveBeenCalledWith(10, false));
     await waitFor(() => expect(onSelectVariant).toHaveBeenCalled());
     expect(onUpdateVariant).toHaveBeenCalledWith(10, { testable: false });
-    expect(toastFn).toHaveBeenCalledWith("Removed from AI Tutor", expect.any(Object));
+    expect(toastFn).toHaveBeenCalledWith(
+      "No longer usable by other EduAI extensions",
+      expect.any(Object),
+    );
     openSpy.mockRestore();
   });
 
@@ -383,8 +389,44 @@ describe("AddQuestionDialog view mode", () => {
 
     await waitFor(() =>
       expect(toastFn.error).toHaveBeenCalledWith(
-        "Failed to update AI Tutor visibility",
+        "Could not update sharing",
         expect.objectContaining({ description: "core unreachable" }),
+      ),
+    );
+  });
+
+  it("surfaces the server's explanation when the toggle loses a race", async () => {
+    setVariantTestable.mockRejectedValue({
+      response: { data: { error: "VARIANT_STATE_CHANGED" } },
+    });
+    renderView({
+      entry: makeEntry({
+        isDraft: false,
+        variant: {
+          id: 10,
+          questionText: "What is 2 + 2?",
+          difficulty: "easy",
+          answer: "B",
+          choices: [
+            { letter: "A", text: "3" },
+            { letter: "B", text: "4" },
+          ],
+          secondaryTopicsId: [],
+          referenceId: null,
+          assessmentId: null,
+          coreQuestionId: "core-1",
+          testable: false,
+        } as any,
+      }),
+    });
+
+    fireEvent.click(await screen.findByRole("switch"));
+
+    // Axios's own message is only "Request failed with status code 409".
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith(
+        "Could not update sharing",
+        expect.objectContaining({ description: "VARIANT_STATE_CHANGED" }),
       ),
     );
   });

@@ -7,12 +7,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 
 const navigate = vi.fn();
+const sublabelFn = vi.fn((c: any) => (c.term ? `term:${c.term}` : undefined));
 let searchParamsValue = new URLSearchParams();
+let pathnameValue = "/courses/1";
 let displayCoursesValue: any[] = [];
 
 vi.mock("react-router", () => ({
   useNavigate: () => navigate,
-  useLocation: () => ({ pathname: "/courses/1" }),
+  useLocation: () => ({ pathname: pathnameValue }),
   useSearchParams: () => [searchParamsValue],
 }));
 
@@ -28,12 +30,14 @@ vi.mock("@eduai/ui", () => ({
       {props.courses.map((c: any) => (
         <button key={c.id} onClick={() => props.onSelect(c.id)}>
           {c.label}
+          <span data-testid={`sublabel-${c.id}`}>{c.sublabel ?? ""}</span>
         </button>
       ))}
       <button onClick={props.onOpenCurrent}>open-current</button>
       <button onClick={props.onViewAll}>view-all</button>
     </div>
   ),
+  courseSwitcherSublabel: (c: any) => sublabelFn(c),
 }));
 
 import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
@@ -42,6 +46,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   searchParamsValue = new URLSearchParams();
+  pathnameValue = "/courses/1";
   displayCoursesValue = [];
 });
 
@@ -52,6 +57,14 @@ describe("CourseSwitcher", () => {
 
     expect(screen.getByTestId("option-count").textContent).toBe("1");
     expect(screen.getByText("CPSC 101")).toBeInTheDocument();
+  });
+
+  it("carries the shared term sublabel onto each option", () => {
+    displayCoursesValue = [{ id: 1, code: "CPSC 101", name: "Intro to CS", term: "2026W1" }];
+    render(<CourseSwitcher courseId={1} />);
+
+    expect(sublabelFn).toHaveBeenCalledWith(displayCoursesValue[0]);
+    expect(screen.getByTestId("sublabel-1").textContent).toBe("term:2026W1");
   });
 
   it("seeds the active course when missing from the loaded list", () => {
@@ -89,6 +102,29 @@ describe("CourseSwitcher", () => {
 
     fireEvent.click(screen.getByText("view-all"));
     expect(navigate).toHaveBeenCalledWith("/courses");
+  });
+
+  it.each([
+    ["/courses/3/banks/9", "banks"],
+    ["/courses/3/assessments/4", "assessments"],
+    ["/courses/3/questions/7", "questions"],
+  ])("infers the workspace tab from the deep route %s", (pathname, tab) => {
+    pathnameValue = pathname;
+    displayCoursesValue = [{ id: 3, code: "BIOL 100", name: "Biology" }];
+    render(<CourseSwitcher courseId={3} />);
+
+    fireEvent.click(screen.getByText("open-current"));
+    expect(navigate).toHaveBeenCalledWith(`/courses/3?tab=${tab}`);
+  });
+
+  it("prefers a safe tab param over the inferred deep route", () => {
+    pathnameValue = "/courses/3/banks/9";
+    searchParamsValue = new URLSearchParams("tab=topics");
+    displayCoursesValue = [{ id: 3, code: "BIOL 100", name: "Biology" }];
+    render(<CourseSwitcher courseId={3} />);
+
+    fireEvent.click(screen.getByText("open-current"));
+    expect(navigate).toHaveBeenCalledWith("/courses/3?tab=topics");
   });
 
   it("uses name as label when no code is present", () => {
