@@ -78,7 +78,6 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 
-type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
 type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
 type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
