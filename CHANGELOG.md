@@ -55,6 +55,10 @@
 
 - [monorepo] feat: Replace the legacy globe branding with the approved graduation-cap mark across Core and design-system previews, and update Core, AI Tutor, and Question Maker browser-tab favicons. Closes #663. (@superbolt08, 2026-08-24) — [#1640](https://github.com/EduAI-Lab/EduAI/pull/1640)
 
+### Fixed
+
+- [infra] fix: `infra/production/admin-helper.sh` and its systemd/Apache/env templates referenced `aitutor.ok.ubc.ca`/`questionmaker.ok.ubc.ca` — a hostname rename drafted but never actually deployed. The live host (s348) runs `aitutor.eduai.ok.ubc.ca` (confirmed via the enabled Apache vhost and live `CORS_ORIGINS`/`CORE_URL` values over read-only SSH); the mismatch caused a real Question Maker provisioning attempt to fail on unknown helper action names and a raw `ln -sfn` against a now root-owned `/srv/www/eduai-production`. Reconciles every template/doc reference to the `.eduai.` form actually running in production, documents `activate-release` as the required symlink-swap mechanism, and replaces the never-shipped Docker-frontend (`:3005`) Question Maker vhost design with a static-Apache vhost modeled directly on AI Tutor's live configuration. `COOKIE_DOMAIN=.ok.ubc.ca`, which did ship as committed, is left untouched. Closes #1682. (@saadtab01, 2026-08-26) — [#1683](https://github.com/EduAI-Lab/EduAI/pull/1683)
+
 ### Tests
 
 - [core] test: Add an authenticated RAG fleet stress harness and document the first-run 16/32/64/128/256/512/768/1000 results, including public-path limits, direct-Core results, RAG citation/context smoke checks, and fleet-server distribution. Closes #893. (@superbolt08, 2026-08-24) — [#1631](https://github.com/EduAI-Lab/EduAI/pull/1631)
