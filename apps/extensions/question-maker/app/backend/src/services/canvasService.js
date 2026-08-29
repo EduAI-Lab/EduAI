@@ -18,7 +18,11 @@ import {
   proxyCoreListQuestionBanks,
   proxyCoreListQuizQuestions,
   proxyCoreListQuizzes,
+  getCourseFromCore,
 } from "./coreApiService.js";
+
+/** `Course.externalSource` Core stamps on courses it synced from Canvas. */
+const CANVAS_EXTERNAL_SOURCE = "canvas";
 
 const NOT_CONNECTED_MESSAGE =
   "Canvas integration not configured. Please connect your Canvas account first.";
@@ -34,35 +38,38 @@ export function parseCanvasNumericId(value, label = "id") {
   return n;
 }
 /**
- * Copies the sanitized failure metadata `fetchFromCore` attaches to a Core error
- * onto the QM-facing wrapper. Without this the error handler sees a bare `Error`
- * and collapses every Core 400/401/502 into a 500 "Request failed" (#1509).
- *
- * `code` rides along only when Core marked the error public, because
- * `coreApiService` sets `isPublic` exactly when `code` is a machine-readable
- * Core code — transport failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT`)
- * also carry a `code` and must not be relayed as a semantic one.
+ * A Canvas failure the caller can act on. `isPublic` lets `errorHandler` keep
+ * the message, and `status` keeps a user error (no questions, not connected)
+ * from being reported as a 500 — every failure here used to collapse into an
+ * indistinguishable "Request failed".
+ */
+function canvasError(message, status = 400, body) {
+  const err = new Error(message);
+  err.status = status;
+  err.isPublic = true;
+  if (body) err.body = body;
+  return err;
+}
+
+/**
+ * Relays the remaining sanitized metadata `fetchFromCore` attaches to a Core
+ * error. `canvasError` already carries status/body/isPublic; this adds Core's
+ * machine-readable `code`, and only when Core marked the error public, because
+ * `coreApiService` sets `isPublic` exactly when `code` is a real Core code —
+ * transport failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT`) also carry a
+ * `code` and must not be relayed as a semantic one (#1509).
  */
 function withCoreErrorMetadata(wrapped, error) {
-  const status = error?.status ?? error?.statusCode;
-  if (Number.isInteger(status)) wrapped.status = status;
-  if (error?.body !== undefined) wrapped.body = error.body;
-  if (error?.isPublic === true) {
-    wrapped.isPublic = true;
-    if (typeof error.code === "string") wrapped.code = error.code;
-  }
+  if (error?.isPublic === true && typeof error.code === "string") wrapped.code = error.code;
   if (error?.isSanitizedUpstreamError === true) wrapped.isSanitizedUpstreamError = true;
   return wrapped;
 }
 
 /** The QM-facing "connect Canvas first" failure, carrying Core's own status/code. */
-function notConnectedError() {
-  return Object.assign(new Error(NOT_CONNECTED_MESSAGE), {
-    status: 400,
-    body: { error: "CANVAS_NOT_CONNECTED" },
-    code: "CANVAS_NOT_CONNECTED",
-    isPublic: true,
-  });
+function notConnectedError(message = NOT_CONNECTED_MESSAGE) {
+  const err = canvasError(message, 400, { error: "CANVAS_NOT_CONNECTED" });
+  err.code = "CANVAS_NOT_CONNECTED";
+  return err;
 }
 
 /** Loads the caller's Core Canvas integration or throws when disconnected. */
@@ -87,22 +94,25 @@ function isCanvasPermissionDenied(error) {
 }
 
 /**
- * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message, preserving
- * Core's status/code/isPublic so the caller sees the real contract.
+ * Maps Core CANVAS_NOT_CONNECTED failures to the QM-facing message and keeps
+ * every other failure's own status/code: Core proxy errors carry the upstream
+ * status/body/code, and the errors raised above already carry the status that
+ * describes them. Only a genuinely unexpected error (no status) stays a 500.
  */
 function rethrowCoreCanvasError(error, action) {
   if (
     error?.status === 400 &&
     (error.body?.error === "CANVAS_NOT_CONNECTED" || error.message === "CANVAS_NOT_CONNECTED")
   ) {
-    const notConnected = notConnectedError();
-    notConnected.message = `Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`;
-    throw notConnected;
+    throw notConnectedError(`Failed to ${action}: ${NOT_CONNECTED_MESSAGE}`);
   }
-  throw withCoreErrorMetadata(
-    new Error(`Failed to ${action}: ${error?.message ?? "Core request failed"}`, { cause: error }),
-    error,
-  );
+  if (Number.isInteger(error?.status)) {
+    throw withCoreErrorMetadata(
+      canvasError(`Failed to ${action}: ${error.message}`, error.status, error.body),
+      error,
+    );
+  }
+  throw error;
 }
 
 /**
@@ -113,7 +123,13 @@ function rethrowCoreCanvasError(error, action) {
  * stored course mapping, so a non-owner instructor/UNIT_ADMIN can export into a
  * course they have access to without their identity being used as the mapping key.
  */
-export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, ownerId, cookie) => {
+export const exportAssessmentToCanvas = async (
+  assessmentId,
+  canvasCourseId,
+  ownerId,
+  cookie,
+  options = {},
+) => {
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
@@ -121,7 +137,7 @@ export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, own
     const assessment = await getAssessmentById(assessmentId, ownerId);
 
     if (!assessment) {
-      throw new Error("Assessment not found");
+      throw canvasError("Assessment not found", 404);
     }
 
     // Get all questions from sections
@@ -144,14 +160,41 @@ export const exportAssessmentToCanvas = async (assessmentId, canvasCourseId, own
     }
 
     if (questions.length === 0) {
-      throw new Error("Assessment has no questions to export");
+      throw canvasError("Assessment has no questions to export", 400);
+    }
+
+    // An assessment may only be exported into the Canvas course this local
+    // course is linked to. Without this, one export into the wrong Canvas
+    // course mints the mapping row below for it, and because that row is
+    // created-if-absent and never updated it then shadows the authoritative
+    // Core `externalId` for every later quiz and bank import — permanently and
+    // invisibly re-pointing the course's Canvas link (#1652 review). Mirrors
+    // the guard quiz and bank import already apply.
+    const parsedCanvasCourseId = Number(canvasCourseId);
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, assessment.courseId, cookie);
+    if (!courseCanvasMapping) {
+      throw canvasError(
+        "Course is not linked to Canvas. Sync the course from Canvas before exporting an assessment.",
+        400,
+      );
+    }
+    if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
+      throw canvasError(
+        "canvasCourseId does not match the Canvas course linked to this local course",
+        400,
+      );
     }
 
     const quizPayload = {
       title: assessment.name,
       description: assessment.description || `Exported from Question Maker - ${assessment.type}`,
+      // A graded quiz (`quiz_type: "assignment"`) is listed by Canvas under both
+      // Quizzes and Assignments — but only once published, so export publishes
+      // by default rather than leaving an invisible draft behind (#1556). A
+      // published quiz is visible to students immediately, so the caller can
+      // opt out and publish from Canvas when they are ready.
       quiz_type: "assignment",
-      published: false, // Don't publish automatically
+      published: options.published !== false,
       show_correct_answers: true,
       allowed_attempts: 1,
     };
@@ -321,18 +364,71 @@ const parseMCQOptions = (questionText, answerText) => {
  * is 1:1 with the course, not scoped per-user, so any authorized caller sees
  * the same mapping a co-instructor created.
  */
-export const getCanvasCourseMapping = async (userId, localCourseId) => {
+/**
+ * Resolves the Canvas course a local course is linked to, or null when it has
+ * no link. Two sources, in order:
+ *   1. `canvas_course_mappings` — written only as a side effect of quiz import
+ *      and assessment export, so it exists for courses QM itself touched.
+ *   2. The Core course record — courses synced from Canvas carry the Canvas
+ *      course id as `externalId` under `externalSource: "canvas"`. This is the
+ *      only source for a course synced from Canvas but never quiz-imported.
+ */
+export const getCanvasCourseMapping = async (userId, localCourseId, cookie) => {
+  const parsedLocalCourseId = Number(localCourseId);
   try {
     const mapping = await prisma.canvasCourseMapping.findUnique({
       where: {
-        localCourseId,
+        localCourseId: parsedLocalCourseId,
       },
     });
 
-    return mapping;
+    if (mapping) {
+      return {
+        localCourseId: parsedLocalCourseId,
+        canvasCourseId: Number(mapping.canvasCourseId),
+        canvasCourseName: mapping.canvasCourseName ?? null,
+        source: "local",
+      };
+    }
   } catch (error) {
     throw new Error(`Failed to get Canvas course mapping: ${error.message}`);
   }
+
+  const course = await prisma.course.findUnique({
+    where: { id: parsedLocalCourseId },
+    select: { coreCourseId: true },
+  });
+  if (!course?.coreCourseId) return null;
+
+  let coreCourse = null;
+  try {
+    // FIELD read of the course's Canvas identity — service key first, so it
+    // does not depend on the caller's own Core enrollment (#1072 contract).
+    coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
+  } catch {
+    // NOT null. "Core is unreachable" is not "this course has no Canvas link",
+    // and callers now hang real behaviour off the difference: the course page
+    // hides the Canvas tab and both import entry points on a false, so
+    // swallowing a transient Core failure silently strips every Canvas
+    // affordance from a genuinely linked course (#1652 review). Say so instead
+    // and let the caller treat it as unknown.
+    throw canvasError(
+      "Could not check this course's Canvas link because EduAI did not respond. Please retry.",
+      503,
+      { error: "CANVAS_LINK_UNRESOLVED" },
+    );
+  }
+  if (coreCourse?.externalSource !== CANVAS_EXTERNAL_SOURCE) return null;
+
+  const canvasCourseId = Number(coreCourse.externalId);
+  if (!Number.isInteger(canvasCourseId) || canvasCourseId <= 0) return null;
+
+  return {
+    localCourseId: parsedLocalCourseId,
+    canvasCourseId,
+    canvasCourseName: coreCourse.name ?? null,
+    source: "core",
+  };
 };
 
 /** Lists quizzes from a Canvas course, filtering to assignment-style quizzes. */
@@ -627,6 +723,8 @@ export const importQuizFromCanvas = async (
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
+    const parsedCanvasCourseId = parseCanvasNumericId(canvasCourseId, "canvasCourseId");
+
     // Verify local course exists and is accessible (owner-scoped). Existence
     // check only — `Course` has no local name to select anymore (#1072 §4 step 10).
     const course = await prisma.course.findFirst({
@@ -635,16 +733,35 @@ export const importQuizFromCanvas = async (
     });
 
     if (!course) {
-      throw new Error("Local course not found");
+      throw canvasError("Local course not found", 404);
     }
 
-    const quizResponse = await proxyCoreGetQuiz(cookie, canvasCourseId, quizId);
+    // A quiz may only be imported from the Canvas course this local course is
+    // linked to. The dialog already restricts the picker, but that is a client
+    // choice — without this a direct request could import another Canvas
+    // course's quiz and mint the mapping row for it on the way in (#1652
+    // review). Mirrors the guard question-bank import already applies.
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, localCourseId, cookie);
+    if (!courseCanvasMapping) {
+      throw canvasError(
+        "Course is not linked to Canvas. Sync the course from Canvas before importing a quiz.",
+        400,
+      );
+    }
+    if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
+      throw canvasError(
+        "canvasCourseId does not match the Canvas course linked to this local course",
+        400,
+      );
+    }
+
+    const quizResponse = await proxyCoreGetQuiz(cookie, parsedCanvasCourseId, quizId);
     const quiz = quizResponse.data;
 
-    const canvasQuestions = await getCanvasQuizQuestions(cookie, canvasCourseId, quizId);
+    const canvasQuestions = await getCanvasQuizQuestions(cookie, parsedCanvasCourseId, quizId);
 
     if (canvasQuestions.length === 0) {
-      throw new Error("Quiz has no questions to import");
+      throw canvasError("Quiz has no questions to import", 400);
     }
 
     // Determine assessment type from options or default
@@ -673,8 +790,9 @@ export const importQuizFromCanvas = async (
     const primaryTopicId = options.primaryTopicId || null;
 
     if (!primaryTopicId) {
-      throw new Error(
+      throw canvasError(
         "Primary topic ID is required for importing questions. Please select a topic.",
+        400,
       );
     }
 
@@ -699,7 +817,7 @@ export const importQuizFromCanvas = async (
         try {
           canvasQuestion = await getCanvasQuizQuestionById(
             cookie,
-            canvasCourseId,
+            parsedCanvasCourseId,
             quizId,
             questionId,
           );
@@ -787,7 +905,10 @@ export const importQuizFromCanvas = async (
 
     // If no questions were imported at all, throw an error
     if (importedQuestions.length === 0) {
-      throw new Error("No questions could be imported. All question types may be unsupported.");
+      throw canvasError(
+        "No questions could be imported. All question types may be unsupported.",
+        400,
+      );
     }
 
     // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
@@ -802,7 +923,7 @@ export const importQuizFromCanvas = async (
         data: {
           userId: ownerId,
           localCourseId: localCourseId,
-          canvasCourseId: canvasCourseId,
+          canvasCourseId: parsedCanvasCourseId,
           canvasCourseName: integration.isTestMode ? "Test Course" : undefined,
         },
       });
@@ -923,10 +1044,7 @@ export const importQuestionBankFromCanvas = async (
     }
 
     // Banks may only sync into the local course that was linked from Canvas.
-    const courseCanvasMapping = await prisma.canvasCourseMapping.findUnique({
-      where: { localCourseId: parsedLocalCourseId },
-      select: { canvasCourseId: true, localCourseId: true },
-    });
+    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, parsedLocalCourseId, cookie);
     if (!courseCanvasMapping) {
       const err = new Error(
         "Course is not linked to Canvas. Sync the course from Canvas before importing question banks.",

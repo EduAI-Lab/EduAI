@@ -223,7 +223,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     const res = await request(app).put(`/api/questions/${qid}`).set(cookie()).send({ type: "SA" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("VARIANT_LOCKED");
+    expect(res.body.code).toBe("VARIANT_LOCKED");
   });
 
   it("rejects a primary topic change on a reviewed question (409 VARIANT_LOCKED)", async () => {
@@ -235,7 +235,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       .send({ primaryTopicId: otherTopicId });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("VARIANT_LOCKED");
+    expect(res.body.code).toBe("VARIANT_LOCKED");
   });
 
   it("rejects a secondary topics change on a reviewed variant (409 VARIANT_LOCKED, regression)", async () => {
@@ -247,7 +247,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       .send({ secondaryTopicsId: [otherTopicId] });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("VARIANT_LOCKED");
+    expect(res.body.code).toBe("VARIANT_LOCKED");
   });
 
   it("unrelated edits (e.g. description) still succeed on a reviewed question", async () => {
@@ -340,7 +340,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       release.resolve();
       const edit = await staleEdit;
       expect(edit.status).toBe(409);
-      expect(edit.body.error).toBe("VARIANT_LOCKED");
+      expect(edit.body.code).toBe("VARIANT_LOCKED");
 
       const persisted = await prisma.variants.findUnique({ where: { id: vid } });
       expect(persisted.isDraft).toBe(false);
@@ -490,7 +490,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       .set(cookie())
       .send({ isDraft: true });
     expect(unreview.status).toBe(409);
-    expect(unreview.body.error).toBe("VARIANT_LOCKED");
+    expect(unreview.body.code).toBe("VARIANT_LOCKED");
 
     releasePush.resolve();
     const approved = await approval;

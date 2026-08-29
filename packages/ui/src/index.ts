@@ -190,6 +190,7 @@ export {
   termInfoFromDate,
   normalizeTerm,
   termName,
+  courseSwitcherSublabel,
   termLabel,
   termLabelLong,
   termSortKey,

@@ -180,6 +180,31 @@ export function termLabel(term?: string | null, year?: number | string | null): 
   return raw || "No term scheduled";
 }
 
+/**
+ * Secondary line for a breadcrumb course-switcher row.
+ *
+ * The row's primary label is the course code (or the name when there is no
+ * code), and a code repeats verbatim across every offering of a course — so the
+ * term goes here, beside the name, to tell this term's course apart from last
+ * term's. Shared by Core, AI Tutor and Question Maker so the three breadcrumbs
+ * cannot drift.
+ *
+ * Returns undefined when there is nothing to add beneath the label.
+ */
+export function courseSwitcherSublabel(course: {
+  code?: string | null;
+  name?: string | null;
+  term?: string | null;
+  year?: number | string | null;
+}): string | undefined {
+  const hasTerm = Boolean(course.term) || course.year != null;
+  const parts = [
+    course.code ? course.name : null,
+    hasTerm ? termLabel(course.term, course.year) : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 /** Long label for headings, e.g. "Winter Term 1 2026" (`year` is the academic-year label, as in `termLabel`). */
 export function termLabelLong(term?: string | null, year?: number | string | null): string {
   const code = isTermCode(term) ? term : normalizeTerm(term);

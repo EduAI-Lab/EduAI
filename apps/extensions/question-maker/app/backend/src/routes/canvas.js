@@ -160,7 +160,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { assessmentId } = req.params;
-      const { canvasCourseId } = req.body;
+      const { canvasCourseId, published } = req.body;
 
       if (!canvasCourseId) {
         return res.status(400).json({
@@ -174,6 +174,8 @@ router.post(
         canvasCourseId,
         req.qmCourse.userId,
         req.headers.cookie,
+        // Absent means publish: only an explicit `false` holds the quiz back.
+        { published: published !== false },
       );
 
       res.json({
@@ -195,7 +197,11 @@ router.get(
   requireCourseAccess({ min: "instructor", getCourseId: (req) => req.params.courseId }),
   async (req, res, next) => {
     try {
-      const mapping = await getCanvasCourseMapping(req.qmCourse.userId, req.qmCourse.id);
+      const mapping = await getCanvasCourseMapping(
+        req.qmCourse.userId,
+        req.qmCourse.id,
+        req.headers.cookie,
+      );
 
       res.json({
         success: true,

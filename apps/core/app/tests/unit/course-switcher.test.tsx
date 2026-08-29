@@ -10,7 +10,7 @@
  * had matched the query.
  */
 import type { JsonValue } from "~/lib/json-value";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -85,6 +85,36 @@ describe("CourseSwitcher", () => {
     renderSwitcher({ currentCourseCode: "" });
 
     expect(screen.getByText("Intro to CS")).toBeInTheDocument();
+  });
+
+  it("shows each course's term, so two offerings of one code are distinguishable", async () => {
+    // A course code repeats verbatim every term; the row's second line carries
+    // the term so the breadcrumb can tell this term's course from last term's.
+    // Shared with AI Tutor and Question Maker via `courseSwitcherSublabel`.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { id: "course-1", code: "CS101", name: "Intro to CS", term: "W1", year: 2026 },
+            { id: "course-2", code: "CS101", name: "Intro to CS", term: "S1", year: 2026 },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 200,
+        }),
+    });
+
+    renderSwitcher();
+    await waitFor(() => expect(courseUrls(mockFetch)).toHaveLength(1));
+    // Radix opens on pointerdown, which jsdom has no PointerEvent for, so drive
+    // the trigger's keyboard path instead (same technique as the shared
+    // component's own test in packages/ui).
+    fireEvent.keyDown(screen.getByLabelText("Switch course"), { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Intro to CS · 2026W1")).toBeInTheDocument());
+    expect(screen.getByText("Intro to CS · 2026S1")).toBeInTheDocument();
   });
 
   it("keeps showing the current course when the list request fails", async () => {
