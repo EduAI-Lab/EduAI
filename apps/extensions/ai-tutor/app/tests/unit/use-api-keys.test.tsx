@@ -134,6 +134,44 @@ describe("useApiKeys account isolation", () => {
     expect(localStorage.getItem("ai-provider-keys:v2:student-a")).toBeNull();
   });
 
+  it("rolls back the optimistic key state when the Core save rejects", async () => {
+    vi.mocked(api.getUserProviderSettings).mockResolvedValue([]);
+    vi.mocked(api.saveUserProviderSetting).mockRejectedValue(new Error("Core unavailable"));
+
+    const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => {
+      await expect(result.current.setKey("google", "student-a-secret")).rejects.toThrow(
+        "Core unavailable",
+      );
+    });
+
+    expect(result.current.getKey("google")).toBe("");
+    expect(result.current.hasKey("google")).toBe(false);
+  });
+
+  it("restores the previous connected value when a re-save rejects", async () => {
+    vi.mocked(api.getUserProviderSettings).mockResolvedValue([
+      { providerName: "google", isEnabled: true, hasKey: true, baseUrl: null },
+    ]);
+    vi.mocked(api.saveUserProviderSetting).mockRejectedValue(new Error("Core unavailable"));
+
+    const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.getKey("google")).toBe("__core_stored__");
+
+    await act(async () => {
+      await expect(result.current.setKey("google", "new-secret")).rejects.toThrow(
+        "Core unavailable",
+      );
+    });
+
+    expect(result.current.getKey("google")).toBe("__core_stored__");
+  });
+
   it("keeps the legacy key usable when its Core migration fails", async () => {
     localStorage.setItem(
       "ai-provider-keys:v2:student-a",

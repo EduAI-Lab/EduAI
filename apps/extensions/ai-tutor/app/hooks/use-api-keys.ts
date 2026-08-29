@@ -108,12 +108,34 @@ export function useApiKeys(): UseApiKeysResult {
   const setKey = useCallback(
     async (provider: string, key: string) => {
       if (!userId) return;
+      // Capture the pre-optimistic value so a rejected Core save can restore
+      // it instead of leaving the UI reporting "Connected" for a key Core
+      // never persisted.
+      let previousValue: string | undefined;
       setAccountKeys((previous) => {
         const next = previous.userId === userId ? { ...previous.keys } : {};
+        previousValue = next[provider];
         next[provider] = key;
         return { userId, keys: next, loaded: true };
       });
-      await api.saveUserProviderSetting({ providerName: provider, isEnabled: true, apiKey: key });
+      try {
+        await api.saveUserProviderSetting({
+          providerName: provider,
+          isEnabled: true,
+          apiKey: key,
+        });
+      } catch (err) {
+        setAccountKeys((previous) => {
+          const next = previous.userId === userId ? { ...previous.keys } : {};
+          if (previousValue === undefined) {
+            delete next[provider];
+          } else {
+            next[provider] = previousValue;
+          }
+          return { userId, keys: next, loaded: true };
+        });
+        throw err;
+      }
       removeApiKeyFromStorage(userId, provider);
       setAccountKeys((previous) => {
         const next = previous.userId === userId ? { ...previous.keys } : {};
