@@ -7,7 +7,11 @@
 import * as React from "react";
 import { useNavigate } from "react-router";
 
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
+import {
+  CourseSwitcher as SharedCourseSwitcher,
+  courseSwitcherSublabel,
+  type CourseSwitcherOption,
+} from "@eduai/ui";
 
 /** One bounded page at the API's max `pageSize`, for course pickers (#1041). */
 const COURSE_PICKER_QUERY = "page=1&pageSize=200";
@@ -15,7 +19,15 @@ const COURSE_PICKER_QUERY = "page=1&pageSize=200";
 /** Matches the debounce the admin table hooks use, so search feels consistent. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-type CoreCourse = { id: string; code: string; name: string };
+// `term`/`year` are already on the wire from `/api/courses`; the switcher row
+// shows them so two offerings of one course code are distinguishable.
+type CoreCourse = {
+  id: string;
+  code: string;
+  name: string;
+  term?: string | null;
+  year?: number | null;
+};
 
 export function CourseSwitcher({
   currentCourseId,
@@ -66,7 +78,11 @@ export function CourseSwitcher({
   // course as if it had matched the query.
   const options: CourseSwitcherOption[] =
     courses.length > 0
-      ? courses.map((c) => ({ id: c.id, label: c.code || c.name, sublabel: c.name }))
+      ? courses.map((c) => ({
+          id: c.id,
+          label: c.code || c.name,
+          sublabel: courseSwitcherSublabel(c),
+        }))
       : query === ""
         ? [
             {

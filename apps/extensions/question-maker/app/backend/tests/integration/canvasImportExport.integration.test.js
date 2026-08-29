@@ -27,6 +27,9 @@ const mockQuizQuestion = {
 };
 
 const mockCoreCanvas = vi.hoisted(() => ({
+  // `getCanvasCourseMapping` resolves the Canvas link from the Core course when
+  // QM holds no mapping row, so the import guard needs this in the mock too.
+  getCourseFromCore: vi.fn(),
   proxyCoreCanvasGetIntegration: vi.fn(),
   proxyCoreListQuizzes: vi.fn(),
   proxyCoreGetQuiz: vi.fn(),
@@ -117,6 +120,12 @@ describeDb("canvasService import/export (integration, Core proxies mocked)", () 
       success: true,
       data: { id: 9001 },
     });
+    // The seeded course is linked to Canvas course 101 on the Core side.
+    mockCoreCanvas.getCourseFromCore.mockResolvedValue({
+      externalSource: "canvas",
+      externalId: "101",
+      name: "Canvas Course 101",
+    });
   });
 
   afterAll(async () => {
@@ -190,6 +199,50 @@ describeDb("canvasService import/export (integration, Core proxies mocked)", () 
           TEST_COOKIE,
         ),
       ).rejects.toThrow(/Local course not found/);
+    });
+
+    // #1652 review: the dialog restricts the Canvas course it offers, but that
+    // is a client choice — a direct request must not be able to import another
+    // Canvas course's quiz, nor mint the mapping row for it on the way in.
+    it("refuses a canvasCourseId that is not the one this course is linked to", async () => {
+      await expect(
+        canvas.importQuizFromCanvas(
+          USER.id,
+          999,
+          1,
+          courseId,
+          { primaryTopicId: topicId },
+          USER.id,
+          TEST_COOKIE,
+        ),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringMatching(/does not match the Canvas course linked/),
+      });
+
+      const mapping = await prisma.canvasCourseMapping.findUnique({
+        where: { localCourseId: courseId },
+      });
+      expect(mapping).toBeNull();
+    });
+
+    it("refuses to import into a course with no Canvas link at all", async () => {
+      mockCoreCanvas.getCourseFromCore.mockResolvedValue({ externalSource: null });
+
+      await expect(
+        canvas.importQuizFromCanvas(
+          USER.id,
+          101,
+          1,
+          courseId,
+          { primaryTopicId: topicId },
+          USER.id,
+          TEST_COOKIE,
+        ),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringMatching(/not linked to Canvas/),
+      });
     });
 
     it("throws when the integration is not configured", async () => {

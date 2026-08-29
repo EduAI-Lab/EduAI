@@ -69,7 +69,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses } = useCourses({ pageSize: 200, includeFacets: false, loadAll: true });
+  const { courses, loading: coursesLoading } = useCourses({
+    pageSize: 200,
+    includeFacets: false,
+    loadAll: true,
+  });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -80,7 +84,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
-  const hasNoCourses = availableCourses.length === 0;
+  // An empty list only means "not enrolled" once the fetch has actually
+  // resolved. Answering the first message on `/chat` replaces the route with
+  // `/chat/:id`, which remounts this screen — without the loading gate the
+  // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
+  // overlay over the reply that was still streaming (#1517).
+  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;

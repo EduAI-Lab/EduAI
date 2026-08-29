@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getAssessmentById = vi.fn();
 const mappingFindOne = vi.fn();
 const mappingCreate = vi.fn();
+const courseFindOne = vi.fn();
 const proxyCoreCanvasGetIntegration = vi.fn();
 const proxyCoreCreateQuiz = vi.fn();
 const proxyCoreCreateQuizQuestion = vi.fn();
@@ -37,7 +38,7 @@ vi.mock("../../src/config/database.js", () => ({
     variants: {},
     assessmentSections: {},
     sectionVariants: {},
-    course: {},
+    course: { findUnique: courseFindOne },
   },
 }));
 
@@ -84,7 +85,12 @@ describe("exportAssessmentToCanvas (Core quiz proxies mocked)", () => {
       },
     });
     getAssessmentById.mockResolvedValue(sampleAssessment());
-    mappingFindOne.mockResolvedValue(null);
+    // Export is pinned to the course's own Canvas link, so the happy path needs
+    // one. The mapping row is read twice: once by the link guard, once by the
+    // create-if-absent below it — hence the null on the second read.
+    mappingFindOne
+      .mockResolvedValueOnce({ localCourseId: 5, canvasCourseId: 999, canvasCourseName: null })
+      .mockResolvedValue(null);
     mappingCreate.mockResolvedValue({ id: 1 });
 
     proxyCoreCreateQuiz.mockResolvedValue({
@@ -130,6 +136,40 @@ describe("exportAssessmentToCanvas (Core quiz proxies mocked)", () => {
         canvasCourseName: undefined,
       },
     });
+  });
+
+  /**
+   * The mapping row below is created-if-absent and never updated, and
+   * `getCanvasCourseMapping` prefers it over Core's `externalId`. So an export
+   * into an arbitrary Canvas course used to mint a row that shadowed the
+   * genuine Core-synced link for every later quiz and bank import — silently
+   * and permanently re-pointing the course (#1652 review).
+   */
+  it("refuses to export into a Canvas course the local course is not linked to", async () => {
+    mappingFindOne.mockReset();
+    mappingFindOne.mockResolvedValue({
+      localCourseId: 5,
+      canvasCourseId: 111,
+      canvasCourseName: null,
+    });
+
+    await expect(exportAssessmentToCanvas(100, 999, 42, TEST_COOKIE)).rejects.toThrow(
+      /does not match the Canvas course linked/i,
+    );
+    expect(proxyCoreCreateQuiz).not.toHaveBeenCalled();
+    expect(mappingCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to export from a course with no Canvas link at all", async () => {
+    mappingFindOne.mockReset();
+    mappingFindOne.mockResolvedValue(null);
+    courseFindOne.mockResolvedValue({ coreCourseId: null });
+
+    await expect(exportAssessmentToCanvas(100, 999, 42, TEST_COOKIE)).rejects.toThrow(
+      /not linked to Canvas/i,
+    );
+    expect(proxyCoreCreateQuiz).not.toHaveBeenCalled();
+    expect(mappingCreate).not.toHaveBeenCalled();
   });
 
   it("throws when Canvas is not connected on Core", async () => {

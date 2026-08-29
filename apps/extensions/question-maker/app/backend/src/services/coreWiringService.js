@@ -126,8 +126,10 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
     choices: variant.choices ?? undefined,
     answer: variant.answer ?? undefined,
     selectAllThatApply: variant.selectAllThatApply ?? false,
+    // The author's share choice (#1555): Core's `testable` is what other
+    // extensions read to decide whether they may use this question.
     correctAnswers: variant.correctAnswers ?? undefined,
-    testable: false,
+    testable: variant.shareWithExtensions === true,
     secondaryTopicIds: coreSecondaryTopicIds,
   };
   payload.idempotencyKey = `qm-variant-${variant.id}-${hashPayloadContent(payload)}`;
@@ -137,7 +139,10 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
   // 404); if it was deleted on Core, fall through to recreate so a partial-failure
   // retry can re-link instead of orphaning.
   if (variant.coreQuestionId) {
-    const existing = await patchQuestionTestableOnCore(variant.coreQuestionId, false);
+    // Doubles as the existence probe and as the write that re-asserts the
+    // author's current share choice — sending a fixed `false` here would
+    // silently unshare a shared question on every re-approve (#1555).
+    const existing = await patchQuestionTestableOnCore(variant.coreQuestionId, payload.testable);
     if (existing !== null) {
       return { coreQuestionId: variant.coreQuestionId };
     }

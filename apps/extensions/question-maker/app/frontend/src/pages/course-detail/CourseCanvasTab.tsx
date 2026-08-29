@@ -1,8 +1,9 @@
 /**
  * Canvas tab for the course workspace. Surfaces what used to be buried inside
- * dialogs: connection status, the local↔Canvas course link, and the import entry
- * point. Connecting an account lives in Settings; exporting lives on a built
- * assessment — this tab orients the user and launches the import wizard.
+ * dialogs: connection status and the import entry point. Connecting an account
+ * lives in Settings; exporting lives on a built assessment — this tab orients
+ * the user and launches the import wizard. The tab itself only renders for a
+ * course synced from Canvas, so it does not restate that link.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -24,17 +25,15 @@ interface CourseCanvasTabProps {
 
 export function CourseCanvasTab({ courseId, canWrite, onImportFromCanvas }: CourseCanvasTabProps) {
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
-  const [mapping, setMapping] = useState<{ coreCourseId?: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([canvasService.getIntegration(), canvasService.getCourseMapping(courseId)])
-      .then(([intg, map]) => {
-        if (cancelled) return;
-        setIntegration(intg);
-        setMapping(map);
+    canvasService
+      .getIntegration()
+      .then((intg) => {
+        if (!cancelled) setIntegration(intg);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -46,7 +45,7 @@ export function CourseCanvasTab({ courseId, canWrite, onImportFromCanvas }: Cour
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="flex flex-col gap-4">
         <div className="h-36 animate-pulse rounded-[var(--radius-xl)] border border-border bg-card" />
         <div className="h-36 animate-pulse rounded-[var(--radius-xl)] border border-border bg-card" />
       </div>
@@ -74,46 +73,30 @@ export function CourseCanvasTab({ courseId, canWrite, onImportFromCanvas }: Cour
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <PanelCard
-          title="Connection"
-          action={
-            integration.isTestMode ? (
-              <Badge variant="warning">Test mode</Badge>
-            ) : (
-              <Badge variant="success">Connected</Badge>
-            )
-          }
-        >
-          <div className="flex items-start gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-muted text-muted-foreground">
-              <IconSchool className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">
-                {integration.canvasUrl || "Canvas"}
-              </div>
-              <Link
-                to="/settings"
-                className="text-xs font-medium text-primary-text hover:underline"
-              >
-                Manage connection
-              </Link>
-            </div>
+      <PanelCard
+        title="Connection"
+        action={
+          integration.isTestMode ? (
+            <Badge variant="warning">Test mode</Badge>
+          ) : (
+            <Badge variant="success">Connected</Badge>
+          )
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-muted text-muted-foreground">
+            <IconSchool className="size-5" />
           </div>
-        </PanelCard>
-
-        <PanelCard
-          title="Course link"
-          action={mapping?.coreCourseId ? <Badge variant="secondary">Linked</Badge> : undefined}
-        >
-          <p className="text-sm text-muted-foreground">
-            {mapping?.coreCourseId
-              ? `This course is linked to Canvas course #${mapping.coreCourseId}. Imports and exports use this link.`
-              : "No Canvas course linked yet. The first import will link this course automatically."}
-          </p>
-        </PanelCard>
-      </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-foreground">
+              {integration.canvasUrl || "Canvas"}
+            </div>
+            <Link to="/settings" className="text-xs font-medium text-primary-text hover:underline">
+              Manage connection
+            </Link>
+          </div>
+        </div>
+      </PanelCard>
 
       <PanelCard title="Move questions in and out of Canvas">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
