@@ -159,14 +159,22 @@ class EduAIService {
    * Builds auth headers for Core /api/completion. The service key is the primary
    * credential for server-to-server proxying — Core's requireServiceKey guard
    * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
-   * completion route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
-   * session cookie only when no service key is configured.
+   * completion route ignores → MISSING_SERVICE_KEY/401).
+   *
+   * Both the bearer token AND the caller's session cookie are sent whenever
+   * both exist: QM now sends `__core_stored__` for a Core-owned provider key
+   * (#1684 review), and Core's completion route needs the session cookie to
+   * resolve `userId` and read that user's encrypted key back — the service key
+   * alone authorizes the *request* but carries no per-user identity. When only
+   * one of the two is available, that one is sent alone.
    */
   buildChatAuthHeaders(cookie) {
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
+    if (this.apiKey) {
+      return trimmedCookie
+        ? { Authorization: `Bearer ${this.apiKey}`, cookie: trimmedCookie }
+        : { Authorization: `Bearer ${this.apiKey}` };
+    }
     if (trimmedCookie) return { cookie: trimmedCookie };
     return null;
   }

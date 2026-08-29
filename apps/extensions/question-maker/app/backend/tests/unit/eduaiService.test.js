@@ -211,8 +211,12 @@ describe("chat", () => {
     expect(payload.courseCode).toBe("CS 101");
     expect(payload.courseId).toBe("cuid-core-cs101");
     // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
+    // The caller's session cookie is forwarded alongside it (#1684 review):
+    // QM sends `__core_stored__` for a Core-owned key, and Core needs the
+    // cookie to resolve `userId` and read that user's encrypted key back —
+    // the service key alone authorizes the request but carries no identity.
     expect(opts.headers["Authorization"]).toBe("Bearer test-key-123456");
-    expect(opts.headers.cookie).toBeUndefined();
+    expect(opts.headers.cookie).toBe("__Secure-better-auth.session_token=abc");
     expect(opts.headers["x-api-key"]).toBeUndefined();
     expect(opts.timeout).toBe(60000);
   });
@@ -281,12 +285,14 @@ describe("chat", () => {
       feature: "question-maker",
       jobType: "background",
     });
-    // Service key is preferred when configured (cookie is only the fallback).
+    // The service key is the primary credential, but the session cookie still
+    // rides along so Core can resolve the caller's identity for a Core-owned
+    // provider key (#1684 review) — it is not merely a fallback here.
     expect(opts.headers.Authorization).toBe("Bearer test-key-123456");
-    expect(opts.headers.cookie).toBeUndefined();
+    expect(opts.headers.cookie).toBe("__Secure-better-auth.session_token=abc");
   });
 
-  it("falls back to Bearer service key when no cookie is present", async () => {
+  it("sends only the Bearer service key when no cookie is present", async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: "hello" } });
 
     await eduaiService.chat({
@@ -937,7 +943,11 @@ describe("testApiKey", () => {
     expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
   });
 
-  it("prefers the service key when both cookie and service key are present", async () => {
+  it("sends both the service key and the session cookie when both are present", async () => {
+    // The probe uses the service key as its primary credential (the success
+    // message still names it), but the cookie rides along too — Core needs it
+    // to resolve the caller's identity for a Core-owned provider key (#1684
+    // review follow-up).
     axios.post.mockResolvedValue({ status: 200, data: { content: "pong" } });
     const out = await eduaiService.testApiKey({
       cookie: "__Secure-better-auth.session_token=abc",
@@ -945,7 +955,9 @@ describe("testApiKey", () => {
     expect(out.success).toBe(true);
     expect(out.message).toMatch(/Service key can reach AI/i);
     expect(axios.post.mock.calls[0][2].headers.Authorization).toBe("Bearer test-key-123456");
-    expect(axios.post.mock.calls[0][2].headers.cookie).toBeUndefined();
+    expect(axios.post.mock.calls[0][2].headers.cookie).toBe(
+      "__Secure-better-auth.session_token=abc",
+    );
   });
 
   it("flags auth failure on a 401", async () => {
