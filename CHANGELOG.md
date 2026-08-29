@@ -4,6 +4,7 @@
 
 ### Changed
 
+- [question-maker] perf: Memoize known user ids in `findOrCreateUser` so `requireAuth` skips the deliberately no-op `user.upsert` on side-effect-free read requests, while mutating requests still upsert before dependent writes; the TTL lets a removed row self-heal. Closes #1388. (@abdullahmoh21, 2026-08-11) — [#1467](https://github.com/EduAI-Lab/EduAI/pull/1467)
 - [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query, and the section-delete and variant-unlink paths made transactional. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
 ## [Week 18 — August 24–30, 2026]
 
