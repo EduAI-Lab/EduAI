@@ -287,7 +287,7 @@ describe("Chat API client abort (#267)", () => {
     process.env.AI_MAX_INFLIGHT = "1";
     resetAiAdmission();
 
-    let resolveCourse: ((value: unknown) => void) | undefined;
+    let resolveCourse: ((value: { code: string } | null) => void) | undefined;
     vi.mocked(prisma.course.findUnique).mockImplementationOnce(
       () => new Promise((resolve) => (resolveCourse = resolve)) as never,
     );
