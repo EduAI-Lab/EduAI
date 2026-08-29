@@ -84,4 +84,27 @@ describe("apiKeyStorage account isolation", () => {
     expect(await apiKeyStorage.getApiKey("google")).toBe(CORE_STORED_KEY);
     expect(await apiKeyStorage.getAllApiKeys()).toEqual({ google: CORE_STORED_KEY });
   });
+
+  it("falls back to the legacy browser key only when the Core request itself fails, not when Core answers empty", async () => {
+    apiKeyStorage.setAuthenticatedUser("instructor-a");
+
+    // Seed a legacy-encrypted browser copy via a Core-unreachable save.
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("network down"));
+    const seedResult = await apiKeyStorage.setApiKey("google", "legacy-secret");
+    expect(seedResult).toEqual({ storedRemotely: false });
+
+    // Core reachable but returns no row for this provider — must NOT read the
+    // legacy browser copy back (Core's empty answer is authoritative).
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    } as Response);
+    expect(await apiKeyStorage.getApiKey("google")).toBeNull();
+
+    // Core unreachable — the legacy browser copy is the only signal available,
+    // so it is used.
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("network down"));
+    expect(await apiKeyStorage.getApiKey("google")).toBe("legacy-secret");
+  });
 });
