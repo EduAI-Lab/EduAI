@@ -23,6 +23,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 vi.mock("../../src/services/courseCloning.js", () => ({
+  CLONE_TRANSACTION_TIMEOUT_MS: 15_000,
   cloneCourseContent: (...args) => cloneCourseContent(...args),
   cloneLessonsFromOffering: (...args) => cloneLessonsFromOffering(...args),
 }));
