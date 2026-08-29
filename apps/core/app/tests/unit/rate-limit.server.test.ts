@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 const redisEvalMock = vi.hoisted(() => vi.fn());
+const redisZremMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/queue/connection.server", () => ({
   default: {},
-  rateLimitRedis: { eval: redisEvalMock },
+  rateLimitRedis: { eval: redisEvalMock, zrem: redisZremMock },
 }));
 
 import {
@@ -12,6 +13,7 @@ import {
   getChatRateLimitConfig,
   isRateLimited,
   parseEnvInt,
+  refundRateLimitCharge,
   resetRateLimitsForTests,
 } from "~/lib/auth/rate-limit.server";
 
@@ -19,6 +21,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   redisEvalMock.mockReset();
+  redisZremMock.mockReset();
   resetRateLimitsForTests();
 });
 
@@ -149,6 +152,7 @@ describe("checkRateLimit", () => {
     await expect(checkRateLimit("chat:user-1", 2, 60_000)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
     expect(redisEvalMock).toHaveBeenCalledOnce();
   });
@@ -190,6 +194,7 @@ describe("checkRateLimit", () => {
     await expect(checkRateLimit("chat:user-3", 1, 1_000)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
   });
 
@@ -230,6 +235,7 @@ describe("checkRateLimit", () => {
     await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
     await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
       limited: true,
@@ -243,6 +249,7 @@ describe("checkRateLimit", () => {
     await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
     await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
       limited: true,
@@ -280,7 +287,86 @@ describe("checkRateLimit", () => {
     const resultPromise = checkRateLimit("chat:user-7", 1, 60_000);
     await vi.advanceTimersByTimeAsync(301);
 
-    await expect(resultPromise).resolves.toEqual({ limited: false, retryAfter: 0 });
+    await expect(resultPromise).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+  });
+});
+
+describe("refundRateLimitCharge (#1547 review)", () => {
+  it("removes the exact reservation token via a single atomic Redis ZREM, not by rank", async () => {
+    redisZremMock.mockResolvedValue(1);
+
+    await refundRateLimitCharge("chat-daily:user-1", "1700000000000:token-a");
+
+    expect(redisZremMock).toHaveBeenCalledOnce();
+    expect(redisZremMock).toHaveBeenCalledWith("chat-daily:user-1", "1700000000000:token-a");
+  });
+
+  it("does not touch a concurrent charge's token when Redis is healthy", async () => {
+    // Whichever member ZREM is asked to remove is the only one that goes —
+    // there is no "remove whatever is newest" step for a concurrent charge
+    // to race with.
+    redisZremMock.mockImplementation(async (_key: string, member: string) =>
+      member === "token-a" ? 1 : 0,
+    );
+
+    await refundRateLimitCharge("chat-daily:user-1", "token-a");
+
+    expect(redisZremMock).toHaveBeenCalledWith("chat-daily:user-1", "token-a");
+    expect(redisZremMock).not.toHaveBeenCalledWith("chat-daily:user-1", "token-b");
+  });
+
+  it("falls back to the memory store, removing only the matching token, when Redis errors", async () => {
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+    redisZremMock.mockRejectedValue(new Error("redis unavailable"));
+
+    const first = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    const second = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    const third = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    expect([first, second, third].every((r) => !r.limited)).toBe(true);
+
+    // Refund only the middle charge — the classic bug this fixes would
+    // instead drop whichever charge is newest (`third`'s), not `second`'s.
+    await refundRateLimitCharge("chat-daily:user-2", second.reservationToken!);
+
+    // One slot freed: a 4th charge fits (first, third, and the new one = 3),
+    // but a 5th does not — proving exactly one charge (second's) was
+    // removed, not zero and not two.
+    await expect(checkRateLimit("chat-daily:user-2", 3, 60_000)).resolves.toMatchObject({
+      limited: false,
+    });
+    await expect(checkRateLimit("chat-daily:user-2", 3, 60_000)).resolves.toMatchObject({
+      limited: true,
+    });
+  });
+
+  it("checks the memory store even when Redis ZREM reports nothing removed (charge landed there during a Redis blip)", async () => {
+    // Charge happens while Redis is down (memory fallback)...
+    redisEvalMock.mockRejectedValueOnce(new Error("redis unavailable"));
+    const charged = await checkRateLimit("chat-daily:user-3", 1, 60_000);
+    expect(charged.limited).toBe(false);
+
+    // ...but by refund time Redis has recovered: ZREM runs, finds no such
+    // member (it was never in Redis), and must still fall through to check
+    // the memory store rather than treating "0 removed" as "done."
+    redisZremMock.mockResolvedValue(0);
+    await refundRateLimitCharge("chat-daily:user-3", charged.reservationToken!);
+
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+    await expect(checkRateLimit("chat-daily:user-3", 1, 60_000)).resolves.toMatchObject({
+      limited: false,
+    });
+  });
+
+  it("is a safe no-op for a token that was never charged (already refunded, or evicted)", async () => {
+    redisZremMock.mockResolvedValue(0);
+
+    await expect(
+      refundRateLimitCharge("chat-daily:user-4", "mem:never-existed"),
+    ).resolves.toBeUndefined();
   });
 });
 
