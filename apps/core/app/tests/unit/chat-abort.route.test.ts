@@ -282,6 +282,34 @@ describe("Chat API client abort (#267)", () => {
     await chatAction;
   });
 
+  it("honors cancellation requested before the stream is registered", async () => {
+    const previousMaxInflight = process.env.AI_MAX_INFLIGHT;
+    process.env.AI_MAX_INFLIGHT = "1";
+    resetAiAdmission();
+
+    let resolveCourse: ((value: unknown) => void) | undefined;
+    vi.mocked(prisma.course.findUnique).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveCourse = resolve)) as never,
+    );
+
+    const requestId = "4d0c8f45-7a5f-4f12-9a73-2f719ea4cc93";
+    try {
+      const chatAction = action(makeRequest(baseBody({ streaming: true }), undefined, requestId));
+      await vi.waitFor(() => expect(prisma.course.findUnique).toHaveBeenCalled());
+
+      const cancelResponse = await cancelAction(makeCancelRequest(requestId));
+      expect(cancelResponse.status).toBe(204);
+
+      resolveCourse?.({ code: "COSC101" });
+      await expect(chatAction).resolves.toMatchObject({ status: 499 });
+      expect(streamText).not.toHaveBeenCalled();
+    } finally {
+      resetAiAdmission();
+      if (previousMaxInflight === undefined) delete process.env.AI_MAX_INFLIGHT;
+      else process.env.AI_MAX_INFLIGHT = previousMaxInflight;
+    }
+  });
+
   it("cancels a request while it is queued for an admission slot", async () => {
     const previousMaxInflight = process.env.AI_MAX_INFLIGHT;
     process.env.AI_MAX_INFLIGHT = "1";

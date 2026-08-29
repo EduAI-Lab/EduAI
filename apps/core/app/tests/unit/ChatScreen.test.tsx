@@ -395,6 +395,45 @@ describe("ChatScreen — header", () => {
     }
   });
 
+  it("falls back to keepalive when sendBeacon refuses to queue", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(false);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    try {
+      renderChatScreen();
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+
+      await act(async () => {
+        captureCourseViewProps.mock.lastCall?.[0].onStop();
+      });
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(globalThis.fetch)).toHaveBeenLastCalledWith(
+        "/api/chat/cancel",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "same-origin",
+          keepalive: true,
+        }),
+      );
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
   it("submits a suggested prompt directly via append, not through the input round-trip (#1644)", async () => {
     renderChatScreen();
 

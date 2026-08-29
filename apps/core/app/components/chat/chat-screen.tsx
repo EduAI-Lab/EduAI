@@ -27,6 +27,7 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { cancelChatRequest, fetchChatWithRequestId } from "./chat-request-cancellation";
 import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
@@ -308,13 +309,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
   const activeRequestIdRef = useRef<string | null>(null);
-  const chatFetch = useCallback<typeof fetch>((input, init) => {
-    const requestId = crypto.randomUUID();
-    activeRequestIdRef.current = requestId;
-    const headers = new Headers(init?.headers);
-    headers.set("X-EduAI-Request-Id", requestId);
-    return fetch(input, { ...init, headers });
-  }, []);
+  const chatFetch = useCallback<typeof fetch>(
+    (input, init) => fetchChatWithRequestId(activeRequestIdRef, input, init),
+    [],
+  );
 
   const {
     messages,
@@ -580,22 +578,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
-    const requestId = activeRequestIdRef.current;
-    activeRequestIdRef.current = null;
-    if (requestId) {
-      const body = JSON.stringify({ requestId });
-      if (typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon("/api/chat/cancel", new Blob([body], { type: "application/json" }));
-      } else {
-        void fetch("/api/chat/cancel", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-        });
-      }
-    }
+    cancelChatRequest(activeRequestIdRef);
     pendingRoutedRegistryIdRef.current = null;
     setStreamingRoutedRegistryId(null);
     stop();
