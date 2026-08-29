@@ -8,8 +8,9 @@ import {
   loadFleetConfigFile,
   saveFleetConfigFile,
 } from "~/lib/ai/routing/fleet/config-file";
-import { resetFleetHealthCache } from "~/lib/ai/routing/fleet/health";
+import { getServerHealth, resetFleetHealthCache } from "~/lib/ai/routing/fleet/health";
 import { getAllFleetServers, resetFleetRegistryCache } from "~/lib/ai/routing/fleet/registry";
+import type { FleetServer } from "~/lib/ai/routing/fleet/types";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -31,6 +32,22 @@ function readEffectiveConfig() {
     source: fileConfig ? ("file" as const) : ("environment" as const),
     servers: fileConfig?.servers ?? getAllFleetServers(),
   };
+}
+
+async function testFleetConnections(servers: FleetServer[]) {
+  const results = await Promise.all(
+    servers.map(async (server) => {
+      const health = await getServerHealth(server.baseUrl);
+      const result = {
+        serverId: server.id,
+        baseUrl: server.baseUrl,
+        connected: health.ok,
+        models: health.modelIds ?? [],
+      };
+      return health.error ? { ...result, error: health.error } : result;
+    }),
+  );
+  return { testedAt: new Date().toISOString(), servers: results };
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -62,6 +79,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const config = saveFleetConfigFile(parsed.data);
     resetFleetRegistryCache();
     resetFleetHealthCache();
+    const connectionTest = await testFleetConnections(config.servers);
 
     if (session?.user) {
       fireAndForget(
@@ -78,7 +96,12 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    return json({ configured: true, source: "file" as const, servers: config.servers });
+    return json({
+      configured: true,
+      source: "file" as const,
+      servers: config.servers,
+      connectionTest,
+    });
   } catch (err) {
     const message = err instanceof FleetConfigError ? err.message : "Failed to save fleet config";
     return json({ error: message }, 400);

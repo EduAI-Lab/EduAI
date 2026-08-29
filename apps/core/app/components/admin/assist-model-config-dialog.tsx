@@ -52,7 +52,7 @@ export function AssistModelConfigDialog({
     () =>
       models
         .filter((model) => model.type === "CHAT" && model.isActive && model.provider.isActive)
-        .toSorted((left, right) => left.name.localeCompare(right.name)),
+        .sort((left, right) => left.name.localeCompare(right.name)),
     [models],
   );
 

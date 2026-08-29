@@ -13,7 +13,11 @@ import {
   Checkbox,
   Input,
 } from "@eduai/ui";
-import type { FleetJobType, FleetServerConfig } from "~/hooks/api/use-fleet-config";
+import type {
+  FleetConnectionTest,
+  FleetJobType,
+  FleetServerConfig,
+} from "~/hooks/api/use-fleet-config";
 
 type FleetConfigPanelProps = {
   servers: FleetServerConfig[];
@@ -22,6 +26,7 @@ type FleetConfigPanelProps = {
   loading: boolean;
   saving: boolean;
   error: string | null;
+  connectionTest: FleetConnectionTest | null;
   onSave: (servers: FleetServerConfig[]) => Promise<FleetServerConfig[]>;
 };
 
@@ -56,6 +61,7 @@ export function FleetConfigPanel({
   loading,
   saving,
   error,
+  connectionTest,
   onSave,
 }: FleetConfigPanelProps) {
   const [drafts, setDrafts] = useState<FleetServerConfig[]>(servers);
@@ -111,10 +117,10 @@ export function FleetConfigPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AI fleet configuration</CardTitle>
+        <CardTitle>AI servers configuration</CardTitle>
         <CardDescription>
-          Manage the vLLM fleet used by Auto routing. Live <code>/v1/models</code> health checks are
-          the source of truth; fallback models are used only when a server cannot be reached.
+          Manage the vLLM servers used by Auto routing. Live <code>/v1/models</code> health checks
+          are the source of truth; fallback models are used only when a server cannot be reached.
         </CardDescription>
         <p className="text-sm text-muted-foreground">
           {configured
@@ -126,7 +132,7 @@ export function FleetConfigPanel({
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading fleet configuration…</p>
+          <p className="text-sm text-muted-foreground">Loading server configuration…</p>
         ) : (
           <>
             {(error || validationError) && (
@@ -137,20 +143,51 @@ export function FleetConfigPanel({
             {saved && (
               <Alert>
                 <AlertDescription>
-                  Fleet configuration saved and routing caches refreshed.
+                  Server configuration saved and routing caches refreshed.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {connectionTest && (
+              <Alert
+                variant={
+                  connectionTest.servers.every((server) => server.connected)
+                    ? "default"
+                    : "destructive"
+                }
+              >
+                <AlertDescription>
+                  <span className="font-medium">
+                    {connectionTest.servers.length === 0
+                      ? "Connection test complete: no servers configured."
+                      : connectionTest.servers.every((server) => server.connected)
+                        ? "Connection successful."
+                        : "Connection test completed with failures."}
+                  </span>
+                  <div className="mt-2 space-y-1">
+                    {connectionTest.servers.map((server) => (
+                      <div key={server.serverId}>
+                        <span className="font-medium">{server.serverId}</span>
+                        {": "}
+                        {server.connected
+                          ? `connected; models fetched: ${server.models.length > 0 ? server.models.join(", ") : "none"}`
+                          : `connection failed${server.error ? `: ${server.error}` : "."}`}
+                      </div>
+                    ))}
+                  </div>
                 </AlertDescription>
               </Alert>
             )}
 
             {drafts.length === 0 && (
               <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                No fleet servers are configured. Add a server to enable fleet routing.
+                No servers are configured. Add a server to enable server routing.
               </p>
             )}
 
             <div className="space-y-3">
               {drafts.map((server, index) => (
-                <div key={`${index}-${server.id}`} className="rounded-lg border p-4">
+                <div key={index} className="rounded-lg border p-4">
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-1 text-sm font-medium">
                       Server ID
@@ -236,7 +273,7 @@ export function FleetConfigPanel({
                 Add server
               </Button>
               <Button type="button" onClick={() => void handleSave()} disabled={saving}>
-                {saving ? "Saving…" : "Save fleet config"}
+                {saving ? "Saving…" : "Save server config"}
               </Button>
             </div>
           </>

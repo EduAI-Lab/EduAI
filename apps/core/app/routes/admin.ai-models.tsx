@@ -78,6 +78,7 @@ export default function AIModelsPage() {
   } = useRoutingModelSettings();
   const {
     servers: fleetServers,
+    connectionTest: fleetConnectionTest,
     configured: fleetConfigured,
     source: fleetSource,
     isLoading: fleetConfigLoading,
@@ -171,6 +172,7 @@ export default function AIModelsPage() {
         onSetAssistModel={saveAssistModel}
         assistModelSettingError={assistModelSettingError}
         fleetServers={fleetServers}
+        fleetConnectionTest={fleetConnectionTest}
         fleetConfigured={fleetConfigured}
         fleetSource={fleetSource}
         fleetConfigLoading={fleetConfigLoading}

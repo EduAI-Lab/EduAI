@@ -94,6 +94,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdmin
         onSetAssistModel={vi.fn().mockResolvedValue(null)}
         assistModelSettingError={null}
         fleetServers={[]}
+        fleetConnectionTest={null}
         fleetConfigured={false}
         fleetSource="environment"
         fleetConfigLoading={false}
@@ -524,12 +525,12 @@ describe("AiModelsAdminView", () => {
         onSaveFleetConfig,
       });
 
-      fireEvent.mouseDown(screen.getByRole("tab", { name: "Fleet" }), { button: 0 });
+      fireEvent.mouseDown(screen.getByRole("tab", { name: "Servers" }), { button: 0 });
       await waitFor(() => {
-        expect(screen.getByText("AI fleet configuration")).toBeInTheDocument();
+        expect(screen.getByText("AI servers configuration")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole("button", { name: "Save fleet config" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save server config" }));
 
       await waitFor(() => {
         expect(onSaveFleetConfig).toHaveBeenCalledWith([

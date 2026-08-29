@@ -26,7 +26,7 @@ import type { ModelFormData, OllamaModel, VllmModel } from "~/components/admin/m
 import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
 import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
-import type { FleetServerConfig } from "~/hooks/api/use-fleet-config";
+import type { FleetConnectionTest, FleetServerConfig } from "~/hooks/api/use-fleet-config";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -79,6 +79,7 @@ export type AiModelsAdminViewProps = {
   onSetAssistModel: (modelId: string | null) => Promise<string | null>;
   assistModelSettingError: string | null;
   fleetServers: FleetServerConfig[];
+  fleetConnectionTest: FleetConnectionTest | null;
   fleetConfigured: boolean;
   fleetSource: "file" | "environment";
   fleetConfigLoading: boolean;
@@ -117,6 +118,7 @@ export function AiModelsAdminView({
   onSetAssistModel,
   assistModelSettingError,
   fleetServers,
+  fleetConnectionTest,
   fleetConfigured,
   fleetSource,
   fleetConfigLoading,
@@ -384,6 +386,26 @@ export function AiModelsAdminView({
     (model) => `${model.provider.name}:${model.modelId}` === assistModelId,
   );
   const assistModelName = assistModel?.name ?? null;
+  const fleetModelLocations = useMemo(() => {
+    const locations = new Map<string, Set<string>>();
+    const addLocation = (serverId: string, modelId: string) => {
+      const key = `vllm:${modelId.toLowerCase()}`;
+      const serverIds = locations.get(key) ?? new Set<string>();
+      serverIds.add(serverId);
+      locations.set(key, serverIds);
+    };
+
+    for (const server of fleetServers) {
+      for (const modelId of server.models) addLocation(server.id, modelId);
+    }
+    for (const server of fleetConnectionTest?.servers ?? []) {
+      for (const modelId of server.models) addLocation(server.serverId, modelId);
+    }
+
+    return Object.fromEntries(
+      [...locations.entries()].map(([modelId, serverIds]) => [modelId, [...serverIds]]),
+    );
+  }, [fleetConnectionTest, fleetServers]);
 
   const handleSaveAutoRouting = async ({ smallModelIds, largeModelIds }: AutoRoutingSelection) => {
     const small = new Set(smallModelIds);
@@ -439,7 +461,7 @@ export function AiModelsAdminView({
               <PageTabsList>
                 <PageTabsTrigger value="models">Models</PageTabsTrigger>
                 <PageTabsTrigger value="providers">Providers</PageTabsTrigger>
-                <PageTabsTrigger value="fleet">Fleet</PageTabsTrigger>
+                <PageTabsTrigger value="servers">Servers</PageTabsTrigger>
               </PageTabsList>
 
               <PageTabsContent value="models" className="space-y-4">
@@ -544,6 +566,7 @@ export function AiModelsAdminView({
 
                     <AIModelsTable
                       models={models}
+                      fleetModelLocations={fleetModelLocations}
                       onEdit={(model) => {
                         setEditingModel(model);
                         handleModelDialogChange(true);
@@ -600,7 +623,7 @@ export function AiModelsAdminView({
                 </Card>
               </PageTabsContent>
 
-              <PageTabsContent value="fleet" className="space-y-4">
+              <PageTabsContent value="servers" className="space-y-4">
                 <FleetConfigPanel
                   servers={fleetServers}
                   configured={fleetConfigured}
@@ -608,6 +631,7 @@ export function AiModelsAdminView({
                   loading={fleetConfigLoading}
                   saving={fleetConfigSaving}
                   error={fleetConfigError}
+                  connectionTest={fleetConnectionTest}
                   onSave={onSaveFleetConfig}
                 />
               </PageTabsContent>

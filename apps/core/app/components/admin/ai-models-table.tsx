@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { IconEdit, IconTrash, IconPlus, IconCloud, IconServer } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconCloud, IconServer } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
@@ -55,6 +54,7 @@ type AIModel = {
 
 export interface AIModelsTableProps {
   models: AIModel[];
+  fleetModelLocations?: Record<string, string[]>;
   onEdit: (model: AIModel) => void;
   onDelete: (id: string) => void;
   onToggleActive: (model: AIModel) => void;
@@ -92,10 +92,16 @@ const getTypeColor = (type: string) => {
 };
 
 const isLocalProvider = (provider: AIProvider) => {
-  return provider.name === "ollama";
+  return provider.name === "ollama" || provider.name === "vllm";
 };
 
-export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIModelsTableProps) {
+export function AIModelsTable({
+  models,
+  fleetModelLocations = {},
+  onEdit,
+  onDelete,
+  onToggleActive,
+}: AIModelsTableProps) {
   return (
     <div className="rounded-md border">
       <Table>
@@ -129,7 +135,15 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <span>{model.provider.displayName}</span>
+                  <div>
+                    <div>{model.provider.displayName}</div>
+                    {fleetModelLocations[`vllm:${model.modelId.toLowerCase()}`]?.length ? (
+                      <div className="text-xs text-muted-foreground">
+                        Server:{" "}
+                        {fleetModelLocations[`vllm:${model.modelId.toLowerCase()}`].join(", ")}
+                      </div>
+                    ) : null}
+                  </div>
                   <Badge variant="outline" className="text-xs">
                     {isLocalProvider(model.provider) ? (
                       <>

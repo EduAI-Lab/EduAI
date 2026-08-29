@@ -76,6 +76,30 @@ describe("AIModelsTable — rendering", () => {
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
   });
 
+  it("marks vLLM models as local and shows their configured server", () => {
+    const vllmModel = {
+      ...baseModel,
+      id: "m-vllm",
+      modelId: "qwen2.5-7b-instruct",
+      name: "Qwen 2.5 7B",
+      provider: { ...baseProvider, name: "vllm", displayName: "vLLM" },
+    };
+
+    render(
+      <AIModelsTable
+        models={[vllmModel]}
+        fleetModelLocations={{ "vllm:qwen2.5-7b-instruct": ["cmps01"] }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("vLLM")).toBeInTheDocument();
+    expect(screen.getByText("Local")).toBeInTheDocument();
+    expect(screen.getByText("Server: cmps01")).toBeInTheDocument();
+  });
+
   it("renders one row per model", () => {
     const models = [
       baseModel,
