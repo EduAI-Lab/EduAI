@@ -8,18 +8,28 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(),
     count: vi.fn(),
   },
-  question: { count: vi.fn(), updateMany: vi.fn() },
-  questionSecondaryTopic: { deleteMany: vi.fn() },
+  question: { count: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+  questionSecondaryTopic: {
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+  },
   courseMaterial: { findMany: vi.fn() },
   course: { findUnique: vi.fn() },
   aiJob: { findFirst: vi.fn(), deleteMany: vi.fn() },
   $transaction: vi.fn(),
 }));
-const recordTopicAnalysisJob = vi.hoisted(() => vi.fn());
+const recordTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 const runTopicAnalysisJob = vi.hoisted(() => vi.fn());
+const resumeStaleTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
-vi.mock("~/lib/topics/job.server", () => ({ recordTopicAnalysisJob, runTopicAnalysisJob }));
+vi.mock("~/lib/topics/job.server", () => ({
+  recordTopicAnalysisJobs,
+  runTopicAnalysisJob,
+  resumeStaleTopicAnalysisJobs,
+}));
 
 const { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } = await import("~/lib/topics/fallback.server");
 const {
@@ -43,6 +53,13 @@ beforeEach(() => {
   // The retry path fires this without awaiting and attaches a .catch, so it has
   // to hand back a real promise.
   runTopicAnalysisJob.mockResolvedValue(undefined);
+  resumeStaleTopicAnalysisJobs.mockResolvedValue([]);
+  // Default: no secondary tags anywhere, so only the tests that care set them.
+  prismaMock.questionSecondaryTopic.count.mockResolvedValue(0);
+  prismaMock.questionSecondaryTopic.findMany.mockResolvedValue([]);
+  prismaMock.question.findMany.mockResolvedValue([]);
+  // Dismiss re-checks the fallback invariant; a live topic means nothing to do.
+  prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "some-topic" });
 });
 
 describe("ensureCourseHasTopic", () => {
@@ -161,6 +178,48 @@ describe("dismissGeneratedTopic", () => {
     });
     expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
   });
+
+  it("refuses when the only references are secondary tags", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue(SUGGESTION);
+    prismaMock.question.count.mockResolvedValue(0);
+    prismaMock.questionSecondaryTopic.count.mockResolvedValue(2);
+
+    expect(await dismissGeneratedTopic("course-1", "topic-1", "user-1")).toEqual({
+      status: "409",
+      error: "TOPIC_HAS_QUESTIONS",
+    });
+    expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
+  });
+
+  it("ignores secondary tags belonging to deleted questions", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue(SUGGESTION);
+    prismaMock.question.count.mockResolvedValue(0);
+    prismaMock.courseTopic.update.mockResolvedValue(SUGGESTION);
+
+    await dismissGeneratedTopic("course-1", "topic-1", "user-1");
+
+    expect(prismaMock.questionSecondaryTopic.count.mock.calls[0][0].where).toMatchObject({
+      topicId: "topic-1",
+      question: { deletedAt: null },
+    });
+  });
+
+  it("restores the fallback when the dismissed topic was the course's last", async () => {
+    prismaMock.courseTopic.findFirst
+      // findSuggestion, then ensureCourseHasTopic's "any live topic?" read.
+      .mockResolvedValueOnce(SUGGESTION)
+      .mockResolvedValueOnce(null);
+    prismaMock.question.count.mockResolvedValue(0);
+    prismaMock.courseTopic.update.mockResolvedValue(SUGGESTION);
+    prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
+
+    await dismissGeneratedTopic("course-1", "topic-1", "user-1");
+
+    expect(prismaMock.courseTopic.create.mock.calls[0][0].data).toMatchObject({
+      name: FALLBACK_TOPIC_NAME,
+      origin: "SYSTEM",
+    });
+  });
 });
 
 describe("mergeGeneratedTopic", () => {
@@ -176,10 +235,62 @@ describe("mergeGeneratedTopic", () => {
       where: { topicId: "topic-1" },
       data: { topicId: "topic-2" },
     });
-    expect(prismaMock.questionSecondaryTopic.deleteMany).toHaveBeenCalledWith({
-      where: { topicId: "topic-1" },
-    });
     expect(prismaMock.courseTopic.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("carries a secondary tag across to the target instead of discarding it", async () => {
+    prismaMock.courseTopic.findFirst
+      .mockResolvedValueOnce(SUGGESTION)
+      .mockResolvedValueOnce({ id: "topic-2", name: "Recursion" });
+    // One question tags the source and neither already tags nor sits on the target.
+    prismaMock.questionSecondaryTopic.findMany
+      .mockResolvedValueOnce([{ questionId: "q1" }])
+      .mockResolvedValueOnce([]);
+    prismaMock.question.findMany.mockResolvedValue([]);
+
+    await mergeGeneratedTopic("course-1", "topic-1", "topic-2", "user-1");
+
+    expect(prismaMock.questionSecondaryTopic.updateMany).toHaveBeenCalledWith({
+      where: { topicId: "topic-1" },
+      data: { topicId: "topic-2" },
+    });
+    expect(prismaMock.questionSecondaryTopic.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("drops only the tags that would collide on the target", async () => {
+    prismaMock.courseTopic.findFirst
+      .mockResolvedValueOnce(SUGGESTION)
+      .mockResolvedValueOnce({ id: "topic-2", name: "Recursion" });
+    prismaMock.questionSecondaryTopic.findMany
+      // q1, q2 and q3 all tag the source…
+      .mockResolvedValueOnce([{ questionId: "q1" }, { questionId: "q2" }, { questionId: "q3" }])
+      // …q1 already tags the target, so repointing it would collide.
+      .mockResolvedValueOnce([{ questionId: "q1" }]);
+    // …and q2's primary topic is now the target, making the tag a self-reference.
+    prismaMock.question.findMany.mockResolvedValue([{ id: "q2" }]);
+
+    await mergeGeneratedTopic("course-1", "topic-1", "topic-2", "user-1");
+
+    const deleted = prismaMock.questionSecondaryTopic.deleteMany.mock.calls[0][0];
+    expect(deleted.where.topicId).toBe("topic-1");
+    expect([...deleted.where.questionId.in].sort()).toEqual(["q1", "q2"]);
+    // q3 survives the merge, repointed onto the target.
+    expect(prismaMock.questionSecondaryTopic.updateMany).toHaveBeenCalledWith({
+      where: { topicId: "topic-1" },
+      data: { topicId: "topic-2" },
+    });
+  });
+
+  it("touches no secondary rows when the source carries none", async () => {
+    prismaMock.courseTopic.findFirst
+      .mockResolvedValueOnce(SUGGESTION)
+      .mockResolvedValueOnce({ id: "topic-2", name: "Recursion" });
+    prismaMock.questionSecondaryTopic.findMany.mockResolvedValue([]);
+
+    await mergeGeneratedTopic("course-1", "topic-1", "topic-2", "user-1");
+
+    expect(prismaMock.questionSecondaryTopic.deleteMany).not.toHaveBeenCalled();
+    expect(prismaMock.questionSecondaryTopic.updateMany).not.toHaveBeenCalled();
   });
 
   it("404s when the merge target is not on this course", async () => {
@@ -253,7 +364,9 @@ describe("retryTopicAnalysis", () => {
       externalId: "77",
       externalSource: "canvas",
     });
-    recordTopicAnalysisJob.mockResolvedValue({ jobId: "job-2", created: true });
+    recordTopicAnalysisJobs.mockResolvedValue([
+      { jobId: "job-2", created: true, resumable: false },
+    ]);
 
     expect(await retryTopicAnalysis("course-1", "user-1")).toEqual({ jobId: "job-2" });
 
@@ -262,7 +375,7 @@ describe("retryTopicAnalysis", () => {
       kind: "topic-analysis",
       status: "FAILED",
     });
-    expect(recordTopicAnalysisJob.mock.calls[0][0]).toMatchObject({
+    expect(recordTopicAnalysisJobs.mock.calls[0][0]).toMatchObject({
       materialIds: ["m1", "m2"],
       canvasCourseId: "77",
     });
@@ -271,24 +384,28 @@ describe("retryTopicAnalysis", () => {
   it("passes no Canvas id for a course that was never Canvas linked", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1" }]);
     prismaMock.course.findUnique.mockResolvedValue({ externalId: null, externalSource: null });
-    recordTopicAnalysisJob.mockResolvedValue({ jobId: "job-2", created: true });
+    recordTopicAnalysisJobs.mockResolvedValue([
+      { jobId: "job-2", created: true, resumable: false },
+    ]);
 
     await retryTopicAnalysis("course-1", "user-1");
 
-    expect(recordTopicAnalysisJob.mock.calls[0][0].canvasCourseId).toBeNull();
+    expect(recordTopicAnalysisJobs.mock.calls[0][0].canvasCourseId).toBeNull();
   });
 
   it("returns null when the course has nothing to analyse", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([]);
 
     expect(await retryTopicAnalysis("course-1", "user-1")).toBeNull();
-    expect(recordTopicAnalysisJob).not.toHaveBeenCalled();
+    expect(recordTopicAnalysisJobs).not.toHaveBeenCalled();
   });
 
   it("does not re-run a job that already exists for an unchanged corpus", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1" }]);
     prismaMock.course.findUnique.mockResolvedValue({ externalId: null, externalSource: null });
-    recordTopicAnalysisJob.mockResolvedValue({ jobId: "job-1", created: false });
+    recordTopicAnalysisJobs.mockResolvedValue([
+      { jobId: "job-1", created: false, resumable: false },
+    ]);
 
     expect(await retryTopicAnalysis("course-1", "user-1")).toEqual({ jobId: "job-1" });
     expect(runTopicAnalysisJob).not.toHaveBeenCalled();

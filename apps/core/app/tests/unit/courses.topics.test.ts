@@ -72,6 +72,10 @@ const TOPIC = {
   reviewStatus: "ACCEPTED" as const,
   confidence: null,
   generatedByJobId: null,
+  // #1624 provenance projection — empty for a hand-authored topic, which has no
+  // source materials to name.
+  sources: [],
+  sourceCount: 0,
   createdAt: TOPIC_AT,
   updatedAt: TOPIC_AT,
 };

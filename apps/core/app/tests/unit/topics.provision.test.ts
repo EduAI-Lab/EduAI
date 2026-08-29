@@ -248,3 +248,67 @@ describe("provisionCourseTopics — never touches existing topics", () => {
     });
   });
 });
+
+describe("provisionCourseTopics — AI provenance", () => {
+  /** Prose with no Chapter/Unit/Week heading, so the AI path is the one reached. */
+  function unstructuredCorpus(count: number) {
+    return Array.from({ length: count }, (_, index) =>
+      material({
+        id: `mat-${index}`,
+        title: `Reading ${index}`,
+        rawText: `Body text for reading ${index}.`,
+      }),
+    );
+  }
+
+  /**
+   * The prompt only ever shows the model a bounded sample of the corpus. The
+   * sample used to be taken inside prompt building while provenance was recorded
+   * over every nonblank material, so `CourseTopicSource` claimed the ninth
+   * material onwards as the source of names derived from the first eight.
+   */
+  it("attributes AI topics only to the materials the model was shown", async () => {
+    const materials = unstructuredCorpus(12);
+    prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
+    const runCompletion = vi.fn(async (_args: { systemPrompt: string; prompt: string }) =>
+      JSON.stringify({ topics: ["Recursion"] }),
+    );
+
+    await provisionCourseTopics(
+      baseArgs({ materialIds: materials.map((m) => m.id), runCompletion }),
+    );
+
+    const { sources } = prismaMock.courseTopic.create.mock.calls[0][0].data;
+    expect(sources.create).toEqual(
+      Array.from({ length: 8 }, (_, index) => ({ materialId: `mat-${index}` })),
+    );
+    expect(sources.create).not.toContainEqual({ materialId: "mat-8" });
+  });
+
+  it("shows the model the same materials it attributes the topic to", async () => {
+    const materials = unstructuredCorpus(12);
+    prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
+    const runCompletion = vi.fn(async (_args: { systemPrompt: string; prompt: string }) =>
+      JSON.stringify({ topics: ["Recursion"] }),
+    );
+
+    await provisionCourseTopics(
+      baseArgs({ materialIds: materials.map((m) => m.id), runCompletion }),
+    );
+
+    const { prompt } = runCompletion.mock.calls[0][0];
+    expect(prompt).toContain("Reading 7");
+    expect(prompt).not.toContain("Reading 8");
+  });
+
+  it("propagates a provider failure so the job is recorded as failed", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue(unstructuredCorpus(1));
+    const runCompletion = vi.fn(async () => {
+      throw new Error("provider unreachable");
+    });
+
+    await expect(
+      provisionCourseTopics(baseArgs({ materialIds: ["mat-0"], runCompletion })),
+    ).rejects.toThrow("provider unreachable");
+  });
+});

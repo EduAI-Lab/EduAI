@@ -7,6 +7,7 @@ const prismaMock = vi.hoisted(() => ({
     create: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
+    findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
   },
@@ -21,10 +22,16 @@ vi.mock("~/lib/logging.server", () => ({
   logSystemError: vi.fn(),
 }));
 
+const { logSystemError } = await import("~/lib/logging.server");
+
 const {
   topicAnalysisIdempotencyKey,
-  recordTopicAnalysisJob,
+  recordTopicAnalysisJobs,
+  resumeStaleTopicAnalysisJobs,
   runTopicAnalysisJob,
+  startTopicAnalysis,
+  MAX_MATERIALS_PER_JOB,
+  TOPIC_ANALYSIS_LEASE_MS,
   TOPIC_ANALYSIS_QUEUE_NAME,
 } = await import("~/lib/topics/job.server");
 
@@ -77,7 +84,7 @@ describe("topicAnalysisIdempotencyKey", () => {
   });
 });
 
-describe("recordTopicAnalysisJob", () => {
+describe("recordTopicAnalysisJobs", () => {
   it("records one job for a batch of processed materials", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([
       { id: "m1", checksum: "sum-1" },
@@ -85,13 +92,13 @@ describe("recordTopicAnalysisJob", () => {
     ]);
     prismaMock.aiJob.create.mockResolvedValue({ id: "job-1" });
 
-    const result = await recordTopicAnalysisJob({
+    const result = await recordTopicAnalysisJobs({
       courseId: "course-1",
       userId: "user-1",
       materialIds: ["m1", "m2"],
     });
 
-    expect(result).toEqual({ jobId: "job-1", created: true });
+    expect(result).toEqual([{ jobId: "job-1", created: true, resumable: false }]);
     const data = prismaMock.aiJob.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
       kind: "topic-analysis",
@@ -105,39 +112,170 @@ describe("recordTopicAnalysisJob", () => {
   it("adopts the existing job when the same batch is retried", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
     prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
-    prismaMock.aiJob.findUnique.mockResolvedValue({ id: "job-existing" });
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-existing",
+      status: "RUNNING",
+      startedAt: new Date(),
+    });
 
-    const result = await recordTopicAnalysisJob({
+    const result = await recordTopicAnalysisJobs({
       courseId: "course-1",
       userId: "user-1",
       materialIds: ["m1"],
     });
 
-    expect(result).toEqual({ jobId: "job-existing", created: false });
+    // Still leased by a live runner: adopted for reporting, but not resumable.
+    expect(result).toEqual([{ jobId: "job-existing", created: false, resumable: false }]);
   });
 
   it("records nothing when no material in the batch is processed yet", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([]);
 
     expect(
-      await recordTopicAnalysisJob({
+      await recordTopicAnalysisJobs({
         courseId: "course-1",
         userId: "user-1",
         materialIds: ["m1"],
       }),
-    ).toBeNull();
+    ).toEqual([]);
     expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
   });
 
   it("only considers materials that finished processing", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([]);
 
-    await recordTopicAnalysisJob({ courseId: "course-1", userId: "user-1", materialIds: ["m1"] });
+    await recordTopicAnalysisJobs({ courseId: "course-1", userId: "user-1", materialIds: ["m1"] });
 
     expect(prismaMock.courseMaterial.findMany.mock.calls[0][0].where).toMatchObject({
       status: "READY",
       deletedAt: null,
     });
+  });
+
+  it("splits a batch larger than one job's material bound instead of throwing", async () => {
+    const materials = Array.from({ length: MAX_MATERIALS_PER_JOB + 1 }, (_, index) => ({
+      id: `m${index}`,
+      checksum: `sum-${index}`,
+    }));
+    prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
+    prismaMock.aiJob.create
+      .mockResolvedValueOnce({ id: "job-a" })
+      .mockResolvedValueOnce({ id: "job-b" });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: materials.map((m) => m.id),
+    });
+
+    expect(result.map((job) => job.jobId)).toEqual(["job-a", "job-b"]);
+    // Every material lands in exactly one job, and no job exceeds the bound.
+    const chunks = prismaMock.aiJob.create.mock.calls.map(
+      (call) => call[0].data.payload.input.materialIds as string[],
+    );
+    expect(chunks[0]).toHaveLength(MAX_MATERIALS_PER_JOB);
+    expect(chunks[1]).toHaveLength(1);
+    expect([...chunks[0], ...chunks[1]]).toEqual(materials.map((m) => m.id));
+  });
+
+  it("marks an abandoned RUNNING row resumable once its lease lapses", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
+    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-stale",
+      status: "RUNNING",
+      startedAt: new Date(Date.now() - TOPIC_ANALYSIS_LEASE_MS - 1000),
+    });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+    });
+
+    expect(result).toEqual([{ jobId: "job-stale", created: false, resumable: true }]);
+  });
+
+  it("marks a PENDING row nothing ever picked up resumable", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
+    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-pending",
+      status: "PENDING",
+      startedAt: null,
+    });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+    });
+
+    expect(result[0]).toMatchObject({ jobId: "job-pending", resumable: true });
+  });
+});
+
+describe("startTopicAnalysis", () => {
+  /**
+   * The defect this covers: a Canvas sync may hand over an arbitrary selection —
+   * "all files" is one click — and the job schema caps `materialIds` at 500. The
+   * payload parse used to reject the oversized batch inside a fire-and-forget
+   * async block, so the sync still reported success while the instructor got no
+   * job, no banner, and no topics.
+   */
+  it("starts every chunk of an oversized batch instead of rejecting it", async () => {
+    const materials = Array.from({ length: MAX_MATERIALS_PER_JOB + 1 }, (_, index) => ({
+      id: `m${index}`,
+      checksum: `sum-${index}`,
+    }));
+    prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
+    prismaMock.aiJob.create
+      .mockResolvedValueOnce({ id: "job-a" })
+      .mockResolvedValueOnce({ id: "job-b" });
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    startTopicAnalysis({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: materials.map((m) => m.id),
+    });
+
+    await vi.waitFor(() => expect(prismaMock.aiJob.create).toHaveBeenCalledTimes(2));
+    // Both rows were claimed and run — nothing was silently dropped.
+    await vi.waitFor(() =>
+      expect(
+        prismaMock.aiJob.update.mock.calls.filter((call) => call[0].data.status === "COMPLETED")
+          .length,
+      ).toBe(2),
+    );
+    expect(logSystemError).not.toHaveBeenCalled();
+  });
+});
+
+describe("resumeStaleTopicAnalysisJobs", () => {
+  it("re-runs rows no runner still holds", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([{ id: "job-stale" }]);
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    expect(await resumeStaleTopicAnalysisJobs("course-1")).toEqual(["job-stale"]);
+
+    const where = prismaMock.aiJob.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ courseId: "course-1", kind: "topic-analysis" });
+    // Only unheld rows: PENDING, or RUNNING past the lease.
+    expect(where.OR).toEqual([
+      { status: "PENDING" },
+      { status: "RUNNING", startedAt: null },
+      { status: "RUNNING", startedAt: { lt: expect.any(Date) } },
+    ]);
+  });
+
+  it("resumes nothing when every row is terminal or still leased", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([]);
+
+    expect(await resumeStaleTopicAnalysisJobs("course-1")).toEqual([]);
+    expect(prismaMock.aiJob.updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -164,6 +302,25 @@ describe("runTopicAnalysisJob", () => {
 
     expect(provisionCourseTopics).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.update).not.toHaveBeenCalled();
+  });
+
+  it("claims a lapsed lease through the same atomic statement as a fresh row", async () => {
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    await runTopicAnalysisJob("job-1", vi.fn());
+
+    // One conditional updateMany decides the winner — a RUNNING row is only
+    // reclaimable past the lease, so a healthy run is never taken away.
+    const where = prismaMock.aiJob.updateMany.mock.calls[0][0].where;
+    expect(where.id).toBe("job-1");
+    expect(where.OR).toEqual([
+      { status: "PENDING" },
+      { status: "RUNNING", startedAt: null },
+      { status: "RUNNING", startedAt: { lt: expect.any(Date) } },
+    ]);
+    const cutoff = where.OR[2].status === "RUNNING" ? where.OR[2].startedAt.lt : null;
+    expect(Date.now() - cutoff.getTime()).toBeGreaterThanOrEqual(TOPIC_ANALYSIS_LEASE_MS);
   });
 
   it("records a failure on the row rather than throwing", async () => {

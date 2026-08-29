@@ -1,5 +1,10 @@
 import prisma from "~/lib/prisma.server";
-import { recordTopicAnalysisJob, runTopicAnalysisJob } from "~/lib/topics/job.server";
+import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
+import {
+  recordTopicAnalysisJobs,
+  resumeStaleTopicAnalysisJobs,
+  runTopicAnalysisJob,
+} from "~/lib/topics/job.server";
 
 /** Shape returned by the topic-analysis status endpoint. */
 export type TopicAnalysisStatus = {
@@ -28,6 +33,14 @@ type ReviewOutcome =
  * an instructor who kicked off a sync and closed the tab.
  */
 export async function latestTopicAnalysisForCourse(courseId: string): Promise<TopicAnalysisStatus> {
+  // Repair before reporting. A job whose process died between writing its row
+  // and finishing the work has nothing else to notice it — there is no worker
+  // pool or cron here — so the status read doubles as the recovery trigger,
+  // which is exactly when an instructor is watching a banner that would
+  // otherwise say "in progress" forever. Lease-guarded, so a healthy run is
+  // never disturbed.
+  await resumeStaleTopicAnalysisJobs(courseId);
+
   const [job, pendingSuggestions] = await Promise.all([
     prisma.aiJob.findFirst({
       where: { courseId, kind: "topic-analysis" },
@@ -108,10 +121,17 @@ export async function dismissGeneratedTopic(
   const topic = await findSuggestion(courseId, topicId);
   if (!topic) return { status: "404", error: "TOPIC_NOT_FOUND" };
 
-  const questionCount = await prisma.question.count({
-    where: { topicId: topic.id, deletedAt: null },
-  });
-  if (questionCount > 0) {
+  // Both relations count. A question that merely *tags* this topic is still a
+  // question referencing it, and dismissing underneath it would leave that tag
+  // pointing at a soft-deleted row — the same orphaning the primary check
+  // exists to prevent, just one relation over.
+  const [questionCount, secondaryCount] = await Promise.all([
+    prisma.question.count({ where: { topicId: topic.id, deletedAt: null } }),
+    prisma.questionSecondaryTopic.count({
+      where: { topicId: topic.id, question: { deletedAt: null } },
+    }),
+  ]);
+  if (questionCount > 0 || secondaryCount > 0) {
     // Dismissing would orphan authored questions. Merge is the operation that
     // handles this case; refuse rather than silently take one of its behaviours.
     return { status: "409", error: "TOPIC_HAS_QUESTIONS" };
@@ -122,6 +142,12 @@ export async function dismissGeneratedTopic(
     data: { deletedAt: new Date(), deletedBy: userId },
     select: { id: true, name: true },
   });
+
+  // Dismissing the course's last live topic would leave Question Maker with
+  // nothing to author against, which is the exact state the fallback exists to
+  // prevent — so the invariant is re-established here too, not only after a job.
+  await ensureCourseHasTopic(courseId);
+
   return { status: "200", topic: updated };
 }
 
@@ -153,10 +179,9 @@ export async function mergeGeneratedTopic(
       where: { topicId: topic.id },
       data: { topicId: target.id },
     });
-    // A question already carrying the target as a secondary topic would violate
-    // the secondary-topic unique key when the source is repointed onto it, so
-    // drop the source's secondary links rather than rewriting them.
-    await tx.questionSecondaryTopic.deleteMany({ where: { topicId: topic.id } });
+
+    await repointSecondaryLinks(tx, topic.id, target.id);
+
     await tx.courseTopic.update({
       where: { id: topic.id },
       data: { deletedAt: new Date(), deletedBy: userId },
@@ -164,6 +189,67 @@ export async function mergeGeneratedTopic(
   });
 
   return { status: "200", topic: target };
+}
+
+/** The transactional client `mergeGeneratedTopic` hands to its helpers. */
+type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Move every secondary tag off the source topic and onto the target.
+ *
+ * Secondary tags are the question's *other* topics, and a merge has to carry
+ * them across like the primary — dropping them, as this used to, silently
+ * discarded a categorisation the author made. Only genuinely redundant links are
+ * deleted, and there are exactly two kinds:
+ *
+ *   - the question already tags the target, so repointing would collide on the
+ *     `@@id([questionId, topicId])` key; and
+ *   - the target is now the question's primary topic, which makes a secondary
+ *     tag naming it a self-reference rather than a second topic.
+ *
+ * Everything else is repointed, so the tag survives the merge.
+ */
+async function repointSecondaryLinks(
+  tx: TopicTransaction,
+  sourceTopicId: string,
+  targetTopicId: string,
+): Promise<void> {
+  const links = await tx.questionSecondaryTopic.findMany({
+    where: { topicId: sourceTopicId },
+    select: { questionId: true },
+  });
+  if (links.length === 0) return;
+
+  const questionIds = links.map((link) => link.questionId);
+
+  const [alreadyTagged, primaryOnTarget] = await Promise.all([
+    tx.questionSecondaryTopic.findMany({
+      where: { topicId: targetTopicId, questionId: { in: questionIds } },
+      select: { questionId: true },
+    }),
+    // Read after the primary repoint above, so this covers both a question that
+    // already sat on the target and one this merge just moved there.
+    tx.question.findMany({
+      where: { id: { in: questionIds }, topicId: targetTopicId },
+      select: { id: true },
+    }),
+  ]);
+
+  const redundant = new Set<string>([
+    ...alreadyTagged.map((row) => row.questionId),
+    ...primaryOnTarget.map((row) => row.id),
+  ]);
+
+  if (redundant.size > 0) {
+    await tx.questionSecondaryTopic.deleteMany({
+      where: { topicId: sourceTopicId, questionId: { in: [...redundant] } },
+    });
+  }
+
+  await tx.questionSecondaryTopic.updateMany({
+    where: { topicId: sourceTopicId },
+    data: { topicId: targetTopicId },
+  });
 }
 
 /**
@@ -198,19 +284,24 @@ export async function retryTopicAnalysis(
     where: { courseId, kind: "topic-analysis", status: "FAILED" },
   });
 
-  const recorded = await recordTopicAnalysisJob({
+  const recorded = await recordTopicAnalysisJobs({
     courseId,
     userId,
     materialIds: materials.map((material) => material.id),
     canvasCourseId: course?.externalSource === "canvas" ? course.externalId : null,
   });
-  if (!recorded) return null;
+  if (recorded.length === 0) return null;
 
-  if (recorded.created) {
-    void runTopicAnalysisJob(recorded.jobId).catch((cause: unknown) => {
+  for (const job of recorded) {
+    // A row still held by a live runner is left alone; a new one, or one
+    // abandoned past its lease, is started here.
+    if (!job.created && !job.resumable) continue;
+    void runTopicAnalysisJob(job.jobId).catch((cause: unknown) => {
       console.error("[topic-analysis] retry run crashed", cause);
     });
   }
 
-  return { jobId: recorded.jobId };
+  // A large corpus splits into several rows; the banner tracks the newest, and
+  // the first chunk's id is the stable handle to report back.
+  return { jobId: recorded[0].jobId };
 }

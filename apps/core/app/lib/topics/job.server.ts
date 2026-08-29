@@ -27,6 +27,45 @@ export const TOPIC_ANALYSIS_QUEUE_NAME = "inline:topic-analysis";
 const TOPIC_ANALYSIS_SOURCE = "core:topic-analysis";
 
 /**
+ * Materials per job row. Mirrors the `materialIds` bound in `JobInputSchema`, and
+ * is the reason a batch is chunked rather than rejected: a Canvas sync that
+ * imports a thousand files must still get topics, and an "all files" selection
+ * is a perfectly ordinary instructor action. Chunking keeps every job's payload
+ * inside the schema while losing no material.
+ */
+export const MAX_MATERIALS_PER_JOB = 500;
+
+/**
+ * How long a claimed job may sit in RUNNING before another runner may take it
+ * over.
+ *
+ * The row is written before the in-process run starts, so a deploy or a crash in
+ * between leaves a PENDING or RUNNING row nothing will ever finish — and because
+ * a later identical batch hashes to the same idempotency key, it would find that
+ * row and exit, pinning the instructor's banner in flight forever. The lease is
+ * what makes those rows reclaimable: past it, the next claimant wins the same
+ * atomic `updateMany` a fresh claim uses, so recovery cannot double-run a job
+ * that is merely slow.
+ */
+export const TOPIC_ANALYSIS_LEASE_MS = 10 * 60_000;
+
+/** Most stale rows one recovery sweep will resume; a sweep runs on a request path. */
+const MAX_RESUMED_PER_SWEEP = 5;
+
+/** A job row this process may run: freshly minted, or reclaimed past its lease. */
+export type RecordedTopicAnalysisJob = {
+  jobId: string;
+  created: boolean;
+  /** An existing row whose lease has lapsed (or which never started). */
+  resumable: boolean;
+};
+
+/** Rows older than this cutoff are no longer protected by a runner's lease. */
+function leaseCutoff(now: number = Date.now()): Date {
+  return new Date(now - TOPIC_ANALYSIS_LEASE_MS);
+}
+
+/**
  * Derive the idempotency key for a batch of materials.
  *
  * Keyed on content checksums, NOT material ids, and that distinction carries all
@@ -57,16 +96,22 @@ export type StartTopicAnalysisArgs = {
 };
 
 /**
- * Create the durable job row for a batch, or return the existing one.
+ * Create the durable job rows for a batch, one per chunk of at most
+ * `MAX_MATERIALS_PER_JOB` materials, reusing any row that already exists.
  *
- * Returns `{ created: false }` when this batch already has a job — that is the
- * "one sync batch does not create duplicate jobs when retried" guarantee, and it
- * is enforced by a unique index rather than by a check, so concurrent syncs
- * cannot both win.
+ * Returns `created: false` for a chunk that already has a job — that is the "one
+ * sync batch does not create duplicate jobs when retried" guarantee, and it is
+ * enforced by a unique index rather than by a check, so concurrent syncs cannot
+ * both win. An existing row also reports whether it is `resumable`: a PENDING row
+ * nothing ever picked up, or a RUNNING row past its lease, both of which this
+ * caller may take over.
+ *
+ * Chunks are cut from an id-ordered read, so the same corpus always splits the
+ * same way and each chunk's checksum key stays stable across resyncs.
  */
-export async function recordTopicAnalysisJob(
+export async function recordTopicAnalysisJobs(
   args: StartTopicAnalysisArgs,
-): Promise<{ jobId: string; created: boolean } | null> {
+): Promise<RecordedTopicAnalysisJob[]> {
   const ready = await prisma.courseMaterial.findMany({
     where: {
       id: { in: args.materialIds },
@@ -77,11 +122,24 @@ export async function recordTopicAnalysisJob(
     select: { id: true, checksum: true },
     orderBy: { id: "asc" },
   });
-  if (ready.length === 0) return null;
+  if (ready.length === 0) return [];
 
+  const recorded: RecordedTopicAnalysisJob[] = [];
+  for (let start = 0; start < ready.length; start += MAX_MATERIALS_PER_JOB) {
+    const chunk = ready.slice(start, start + MAX_MATERIALS_PER_JOB);
+    const job = await recordChunk(args, chunk);
+    if (job) recorded.push(job);
+  }
+  return recorded;
+}
+
+async function recordChunk(
+  args: StartTopicAnalysisArgs,
+  chunk: { id: string; checksum: string }[],
+): Promise<RecordedTopicAnalysisJob | null> {
   const idempotencyKey = topicAnalysisIdempotencyKey(
     args.courseId,
-    ready.map((material) => material.checksum),
+    chunk.map((material) => material.checksum),
   );
 
   const payload: JobPayload = JobPayloadSchema.parse({
@@ -94,7 +152,7 @@ export async function recordTopicAnalysisJob(
     input: {
       kind: "topic-analysis",
       courseId: args.courseId,
-      materialIds: ready.map((material) => material.id),
+      materialIds: chunk.map((material) => material.id),
       canvasCourseId: args.canvasCourseId ?? null,
     },
   });
@@ -114,29 +172,96 @@ export async function recordTopicAnalysisJob(
       },
       select: { id: true },
     });
-    return { jobId: job.id, created: true };
+    return { jobId: job.id, created: true, resumable: false };
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     const existing = await prisma.aiJob.findUnique({
       where: {
         queueName_bullJobId: { queueName: TOPIC_ANALYSIS_QUEUE_NAME, bullJobId: idempotencyKey },
       },
-      select: { id: true },
+      select: { id: true, status: true, startedAt: true },
     });
-    return existing ? { jobId: existing.id, created: false } : null;
+    if (!existing) return null;
+    return {
+      jobId: existing.id,
+      created: false,
+      resumable: isReclaimable(existing),
+    };
   }
 }
 
+/** Whether a row is one no runner still holds: never started, or past its lease. */
+function isReclaimable(row: { status: string; startedAt: Date | null }): boolean {
+  if (row.status === "PENDING") return true;
+  if (row.status !== "RUNNING") return false;
+  return row.startedAt === null || row.startedAt < leaseCutoff();
+}
+
 /**
- * Claim a PENDING job. Returns false when another runner already took it, which
- * is what stops a retried sync from provisioning the same topics twice.
+ * Claim a job that no runner currently holds. Returns false when another runner
+ * already took it, which is what stops a retried sync from provisioning the same
+ * topics twice.
+ *
+ * The claim is one atomic `updateMany`, and reclaiming a lapsed lease goes
+ * through that same statement rather than a separate reset — so a recovery sweep
+ * and a live retry racing for the same stale row still produce exactly one
+ * winner, and a job that is merely slow (lease intact) is never taken away.
  */
 async function claimTopicAnalysisJob(jobId: string): Promise<boolean> {
   const { count } = await prisma.aiJob.updateMany({
-    where: { id: jobId, status: "PENDING" },
+    where: {
+      id: jobId,
+      OR: [
+        { status: "PENDING" },
+        { status: "RUNNING", startedAt: null },
+        { status: "RUNNING", startedAt: { lt: leaseCutoff() } },
+      ],
+    },
     data: { status: "RUNNING", startedAt: new Date(), attempts: { increment: 1 } },
   });
   return count > 0;
+}
+
+/**
+ * Resume topic-analysis jobs for a course that no runner is finishing.
+ *
+ * Called from the status read, which is exactly the moment an instructor is
+ * looking at a banner that would otherwise be stuck: a process that died between
+ * writing the row and finishing the work leaves nothing else to notice it, and
+ * this project has no cron or worker pool to sweep from (see the file header).
+ * Claiming is lease-guarded, so a sweep that overlaps a healthy run does nothing.
+ */
+export async function resumeStaleTopicAnalysisJobs(courseId: string): Promise<string[]> {
+  const stale = await prisma.aiJob.findMany({
+    where: {
+      courseId,
+      kind: "topic-analysis",
+      OR: [
+        { status: "PENDING" },
+        { status: "RUNNING", startedAt: null },
+        { status: "RUNNING", startedAt: { lt: leaseCutoff() } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    take: MAX_RESUMED_PER_SWEEP,
+    select: { id: true },
+  });
+
+  for (const row of stale) {
+    void runTopicAnalysisJob(row.id).catch((cause: unknown) => {
+      fireAndForget(
+        logSystemError({
+          source: "AI",
+          code: "topic_analysis_resume_failed",
+          message: `Failed to resume stale topic analysis job ${row.id}`,
+          error: cause,
+          details: { jobId: row.id, courseId },
+        }),
+      );
+    });
+  }
+
+  return stale.map((row) => row.id);
 }
 
 /**
@@ -218,8 +343,9 @@ async function failJob(jobId: string, message: string): Promise<void> {
 }
 
 /**
- * Record the job and start it without awaiting, from a request path that has
- * already earned its response.
+ * Record the job rows for a batch and start them without awaiting, from a
+ * request path that has already earned its response. A batch larger than one
+ * job's material bound becomes several rows, run in order.
  *
  * Never throws: topic provisioning is layered on top of material sync, so a
  * failure here must degrade to "no topics generated", never to a failed import
@@ -227,9 +353,13 @@ async function failJob(jobId: string, message: string): Promise<void> {
  */
 export function startTopicAnalysis(args: StartTopicAnalysisArgs): void {
   void (async () => {
-    const recorded = await recordTopicAnalysisJob(args);
-    if (!recorded || !recorded.created) return;
-    await runTopicAnalysisJob(recorded.jobId);
+    const recorded = await recordTopicAnalysisJobs(args);
+    for (const job of recorded) {
+      // A row that already exists and is still leased belongs to another runner;
+      // anything else — brand new, or abandoned past its lease — is ours to run.
+      if (!job.created && !job.resumable) continue;
+      await runTopicAnalysisJob(job.jobId);
+    }
   })().catch((cause: unknown) => {
     fireAndForget(
       logSystemError({

@@ -37,12 +37,32 @@ function topicAnalysisModel(): string {
 }
 
 /**
+ * Raised when the provider itself could not be reached or refused the request.
+ *
+ * Distinct from a model that simply had nothing to say: the first is a failure
+ * the instructor must be told about and offered a retry for, the second is an
+ * ordinary empty result. Collapsing them — as returning null for both did —
+ * recorded a misconfigured or unreachable provider as a COMPLETED job with zero
+ * topics, so the promised failure notification never appeared.
+ */
+export class TopicAnalysisProviderError extends Error {
+  readonly status: number | undefined;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "TopicAnalysisProviderError";
+    this.status = status;
+  }
+}
+
+/**
  * Ask a model for topic names, returning its raw text or null.
  *
- * Returns null rather than throwing on a refused or failed completion: the AI
- * path is already the last resort, and "the model gave us nothing" is a
- * no-topics outcome the caller handles with the zero-topic fallback — not a
- * reason to fail the whole job and lose the deterministic work alongside it.
+ * Null means the model answered with nothing usable — a no-topics outcome the
+ * caller handles with the zero-topic fallback. A provider or configuration
+ * failure throws instead, which fails the job row and gives the instructor the
+ * banner's retry action. Nothing deterministic is lost either way: this path
+ * only runs when Canvas modules and material headings both came up empty.
  */
 export const runTopicAnalysisCompletion: RunTopicCompletion = async ({ systemPrompt, prompt }) => {
   const model = topicAnalysisModel();
@@ -58,6 +78,22 @@ export const runTopicAnalysisCompletion: RunTopicCompletion = async ({ systemPro
     signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
   });
 
-  if (!completion.ok || completion.streaming) return null;
+  if (!completion.ok) {
+    const status = "status" in completion ? completion.status : undefined;
+    const detail = "error" in completion && completion.error ? String(completion.error) : "unknown";
+    throw new TopicAnalysisProviderError(
+      `Topic analysis provider call failed (${model}): ${detail}`,
+      typeof status === "number" ? status : undefined,
+    );
+  }
+
+  // A streaming body cannot be read here, and asking for one was a programming
+  // error rather than a model outcome — surface it as a failure, not as silence.
+  if (completion.streaming) {
+    throw new TopicAnalysisProviderError(
+      `Topic analysis provider returned a streaming response for ${model}`,
+    );
+  }
+
   return completion.body.content ?? null;
 };

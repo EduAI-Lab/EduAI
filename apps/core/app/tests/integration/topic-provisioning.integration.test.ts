@@ -12,9 +12,12 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
 import {
-  recordTopicAnalysisJob,
+  recordTopicAnalysisJobs,
+  resumeStaleTopicAnalysisJobs,
   runTopicAnalysisJob,
   topicAnalysisIdempotencyKey,
+  TOPIC_ANALYSIS_LEASE_MS,
+  type StartTopicAnalysisArgs,
 } from "~/lib/topics/job.server";
 import { provisionCourseTopics } from "~/lib/topics/provision.server";
 import {
@@ -29,6 +32,18 @@ let userId: string;
 
 /** A completion seam that never reaches a model. */
 const noAi = vi.fn(async () => null);
+
+/**
+ * Single-chunk convenience over `recordTopicAnalysisJobs`.
+ *
+ * Every batch in this file is far below the per-job material bound, so it always
+ * yields exactly one row; chunking itself is covered in the unit tests, where a
+ * 501-material corpus can be set up without seeding 501 rows.
+ */
+async function recordTopicAnalysisJob(args: StartTopicAnalysisArgs) {
+  const [job] = await recordTopicAnalysisJobs(args);
+  return job ?? null;
+}
 
 async function seedMaterial(overrides: { id?: string; checksum: string; rawText: string }) {
   return prisma.courseMaterial.create({
@@ -160,7 +175,9 @@ describe("resync and retry", () => {
     const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
     const second = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
 
-    expect(second).toEqual({ jobId: first!.jobId, created: false });
+    // Resumable because nothing has claimed the PENDING row yet — adopting it is
+    // still what stops a second row being minted for the same corpus.
+    expect(second).toEqual({ jobId: first!.jobId, created: false, resumable: true });
     expect(await prisma.aiJob.count({ where: { courseId, kind: "topic-analysis" } })).toBe(1);
   });
 
@@ -405,6 +422,179 @@ describe("review actions", () => {
     });
 
     await prisma.question.deleteMany({ where: { courseId } });
+  });
+
+  it("carries a secondary tag across a merge rather than discarding it", async () => {
+    const source = await seedSuggestion("Chapter 1 — Limits");
+    const target = await prisma.courseTopic.create({
+      data: { courseId, name: "Limits", createdBy: userId },
+    });
+    const other = await prisma.courseTopic.create({
+      data: { courseId, name: "Continuity", createdBy: userId },
+    });
+    // The question's primary topic is unrelated, so nothing about the merge
+    // makes its secondary tag redundant — it must survive, repointed.
+    const question = await prisma.question.create({
+      data: {
+        courseId,
+        topicId: other.id,
+        createdBy: userId,
+        content: "What is a limit?",
+        type: "SA",
+        secondaryTopics: { create: [{ topicId: source.id }] },
+      },
+    });
+
+    expect(await mergeGeneratedTopic(courseId, source.id, target.id, userId)).toMatchObject({
+      status: "200",
+    });
+
+    const tags = await prisma.questionSecondaryTopic.findMany({
+      where: { questionId: question.id },
+    });
+    expect(tags.map((tag) => tag.topicId)).toEqual([target.id]);
+
+    await prisma.question.deleteMany({ where: { courseId } });
+  });
+
+  it("drops a secondary tag the merge would duplicate on the target", async () => {
+    const source = await seedSuggestion("Chapter 1 — Limits");
+    const target = await prisma.courseTopic.create({
+      data: { courseId, name: "Limits", createdBy: userId },
+    });
+    const other = await prisma.courseTopic.create({
+      data: { courseId, name: "Continuity", createdBy: userId },
+    });
+    // Already tags the target, so repointing would collide on the composite key.
+    const question = await prisma.question.create({
+      data: {
+        courseId,
+        topicId: other.id,
+        createdBy: userId,
+        content: "What is a limit?",
+        type: "SA",
+        secondaryTopics: { create: [{ topicId: source.id }, { topicId: target.id }] },
+      },
+    });
+
+    expect(await mergeGeneratedTopic(courseId, source.id, target.id, userId)).toMatchObject({
+      status: "200",
+    });
+
+    const tags = await prisma.questionSecondaryTopic.findMany({
+      where: { questionId: question.id },
+    });
+    expect(tags.map((tag) => tag.topicId)).toEqual([target.id]);
+
+    await prisma.question.deleteMany({ where: { courseId } });
+  });
+
+  it("dismiss refuses when the only references are secondary tags", async () => {
+    const suggestion = await seedSuggestion("Chapter 1 — Limits");
+    const other = await prisma.courseTopic.create({
+      data: { courseId, name: "Continuity", createdBy: userId },
+    });
+    await prisma.question.create({
+      data: {
+        courseId,
+        topicId: other.id,
+        createdBy: userId,
+        content: "What is a limit?",
+        type: "SA",
+        secondaryTopics: { create: [{ topicId: suggestion.id }] },
+      },
+    });
+
+    expect(await dismissGeneratedTopic(courseId, suggestion.id, userId)).toEqual({
+      status: "409",
+      error: "TOPIC_HAS_QUESTIONS",
+    });
+
+    await prisma.question.deleteMany({ where: { courseId } });
+  });
+
+  it("restores the fallback when the last topic is dismissed", async () => {
+    const suggestion = await seedSuggestion("Chapter 1 — Limits");
+
+    expect(await dismissGeneratedTopic(courseId, suggestion.id, userId)).toMatchObject({
+      status: "200",
+    });
+
+    // Authoring must never be blocked, so the course is left with Uncategorized.
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+  });
+});
+
+describe("stale job recovery", () => {
+  it("resumes a RUNNING row abandoned past its lease", async () => {
+    const material = await seedMaterial({
+      checksum: "sum-stale",
+      rawText: "Chapter 1 — Limits",
+    });
+    const recorded = await recordTopicAnalysisJob({
+      courseId,
+      userId,
+      materialIds: [material.id],
+    });
+    // Simulate a process that died after claiming the row.
+    await prisma.aiJob.update({
+      where: { id: recorded!.jobId },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(Date.now() - TOPIC_ANALYSIS_LEASE_MS - 60_000),
+      },
+    });
+
+    expect(await resumeStaleTopicAnalysisJobs(courseId)).toEqual([recorded!.jobId]);
+
+    // The resume runs without awaiting; wait for the row to reach a terminal state.
+    await vi.waitFor(async () => {
+      const row = await prisma.aiJob.findUniqueOrThrow({ where: { id: recorded!.jobId } });
+      expect(row.status).toBe("COMPLETED");
+    });
+    expect((await liveTopics()).map((topic) => topic.name)).toContain("Chapter 1 — Limits");
+  });
+
+  it("leaves a job still inside its lease alone", async () => {
+    const material = await seedMaterial({
+      checksum: "sum-healthy",
+      rawText: "Chapter 1 — Limits",
+    });
+    const recorded = await recordTopicAnalysisJob({
+      courseId,
+      userId,
+      materialIds: [material.id],
+    });
+    await prisma.aiJob.update({
+      where: { id: recorded!.jobId },
+      data: { status: "RUNNING", startedAt: new Date() },
+    });
+
+    expect(await resumeStaleTopicAnalysisJobs(courseId)).toEqual([]);
+    expect((await prisma.aiJob.findUniqueOrThrow({ where: { id: recorded!.jobId } })).status).toBe(
+      "RUNNING",
+    );
+  });
+
+  it("reports an abandoned batch as resumable when the same corpus syncs again", async () => {
+    const material = await seedMaterial({
+      checksum: "sum-abandoned",
+      rawText: "Chapter 1 — Limits",
+    });
+    const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+    await prisma.aiJob.update({
+      where: { id: first!.jobId },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(Date.now() - TOPIC_ANALYSIS_LEASE_MS - 60_000),
+      },
+    });
+
+    const second = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+
+    // Same row (the idempotency key is unchanged), but now the caller may run it
+    // — which is what stops the banner sitting in flight forever.
+    expect(second).toEqual({ jobId: first!.jobId, created: false, resumable: true });
   });
 });
 

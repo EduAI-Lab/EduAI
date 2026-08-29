@@ -30,6 +30,17 @@ export const TOPIC_ANALYSIS_SYSTEM_PROMPT = [
 export type SampledMaterial = { id: string; title: string; rawText: string | null };
 
 /**
+ * The bounded sample of materials the model is shown.
+ *
+ * Exported and applied by the caller so the prompt and the recorded provenance
+ * are cut from the same list: `CourseTopicSource` must name material the model
+ * actually read, never the whole batch it was drawn from.
+ */
+export function sampleMaterialsForPrompt<T>(materials: T[]): T[] {
+  return materials.slice(0, AI_MAX_SAMPLED_MATERIALS);
+}
+
+/**
  * Build the user prompt from a bounded sample of the course's materials.
  *
  * Each excerpt is labelled with its material id so the model's ordering is
@@ -39,7 +50,7 @@ export type SampledMaterial = { id: string; title: string; rawText: string | nul
  * AI-derived topic is attributed to the whole sampled set instead.
  */
 export function buildTopicAnalysisPrompt(materials: SampledMaterial[]): string {
-  const sampled = materials.slice(0, AI_MAX_SAMPLED_MATERIALS);
+  const sampled = sampleMaterialsForPrompt(materials);
   const sections = sampled.map((material, index) => {
     const excerpt = (material.rawText ?? "").slice(0, AI_EXCERPT_CHARS).trim();
     return [`### Material ${index + 1}: ${material.title}`, excerpt || "(no extracted text)"].join(

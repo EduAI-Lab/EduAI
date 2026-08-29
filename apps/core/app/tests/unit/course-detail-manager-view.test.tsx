@@ -19,6 +19,7 @@ import {
   type CourseDetailManagerCourse,
 } from "~/components/courses/course-detail-manager-view";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
+import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import type { CourseMaterial } from "~/components/course-materials-upload";
@@ -367,6 +368,75 @@ describe("CourseDetailManagerView — topics tab", () => {
     renderView({ topics: [] });
     clickTab(/topics/i);
     expect(screen.getByText("No topics yet.")).toBeInTheDocument();
+  });
+});
+
+describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
+  const SUGGESTION: CourseTopic = {
+    ...TOPIC,
+    id: "t-suggested",
+    name: "Chapter 1 — Recursion",
+    origin: "MATERIAL_HEADING",
+    reviewStatus: "SUGGESTED",
+    confidence: 0.8,
+    sources: [{ materialId: "m1", title: "Week 1 Reading" }],
+    sourceCount: 3,
+  };
+
+  it("names the materials a suggestion came from", () => {
+    renderView({ topics: [SUGGESTION] });
+    clickTab(/topics/i);
+    // The projection is capped, so the overflow is reported rather than hidden.
+    expect(screen.getByText(/From Week 1 Reading and 2 more/)).toBeInTheDocument();
+  });
+
+  it("renames a suggestion through the topics PATCH path", async () => {
+    const onRenameTopic = vi.fn().mockResolvedValue(undefined);
+    renderView({ topics: [SUGGESTION], onRenameTopic });
+    clickTab(/topics/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /rename chapter 1/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: /rename chapter 1/i }), {
+      target: { value: "Recursion" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onRenameTopic).toHaveBeenCalledWith("t-suggested", "Recursion"));
+  });
+
+  it("offers no rename affordance when no handler is supplied", () => {
+    renderView({ topics: [SUGGESTION] });
+    clickTab(/topics/i);
+    expect(screen.queryByRole("button", { name: /rename chapter 1/i })).toBeNull();
+  });
+
+  /**
+   * The review endpoint is rank >= 2, so a TA holding `tas.canManageTopics`
+   * would only ever get a 403 from these controls. Asserted on the pure gate
+   * rather than through a render, because the grant has to be forced on for the
+   * case to exist at all — with it off, the TA has no topic controls either way.
+   */
+  it("separates managing topics from reviewing suggestions for a granted TA", () => {
+    const gates = resolveManagerViewClientGates("ta", (key) => key === "tas.canManageTopics");
+
+    expect(gates.canManage).toBe(true);
+    expect(gates.canReviewTopicSuggestions).toBe(false);
+  });
+
+  it("lets rank >= 2 review suggestions", () => {
+    const always = () => true;
+    expect(resolveManagerViewClientGates("instructor", always).canReviewTopicSuggestions).toBe(
+      true,
+    );
+    expect(resolveManagerViewClientGates("unit", always).canReviewTopicSuggestions).toBe(true);
+    expect(resolveManagerViewClientGates("admin", always).canReviewTopicSuggestions).toBe(true);
+  });
+
+  it("shows them to an instructor", () => {
+    renderView({ topics: [SUGGESTION], access: "instructor" });
+    clickTab(/topics/i);
+    expect(screen.getByRole("button", { name: /approve chapter 1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /dismiss chapter 1/i })).toBeInTheDocument();
   });
 });
 

@@ -11,6 +11,7 @@ import { extractHeadingCandidates } from "~/lib/topics/headings";
 import {
   buildTopicAnalysisPrompt,
   parseTopicAnalysisResponse,
+  sampleMaterialsForPrompt,
   TOPIC_ANALYSIS_SYSTEM_PROMPT,
   type SampledMaterial,
 } from "~/lib/topics/ai";
@@ -157,6 +158,14 @@ export async function provisionCourseTopics(args: ProvisionArgs): Promise<TopicP
   };
 }
 
+/**
+ * Ask a model for topics, attributing them to the materials it actually read.
+ *
+ * The sample is taken here, once, and the same list feeds both the prompt and
+ * the recorded provenance. Filtering to nonblank text and then sampling in
+ * `buildTopicAnalysisPrompt` separately is what let `CourseTopicSource` claim a
+ * course's ninth material as the source of a name derived from the first eight.
+ */
 async function aiCandidates(
   args: ProvisionArgs,
   materials: SampledMaterial[],
@@ -164,15 +173,17 @@ async function aiCandidates(
   const withText = materials.filter((material) => (material.rawText ?? "").trim().length > 0);
   if (withText.length === 0) return [];
 
+  const sampled = sampleMaterialsForPrompt(withText);
+
   const content = await args.runCompletion({
     systemPrompt: TOPIC_ANALYSIS_SYSTEM_PROMPT,
-    prompt: buildTopicAnalysisPrompt(withText),
+    prompt: buildTopicAnalysisPrompt(sampled),
   });
   if (!content) return [];
 
   return parseTopicAnalysisResponse(
     content,
-    withText.map((material) => material.id),
+    sampled.map((material) => material.id),
   );
 }
 
