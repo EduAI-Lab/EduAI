@@ -155,11 +155,11 @@ test.describe("UNIT_ADMIN settings", () => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
     await openTab(page, "Providers");
 
-    // Keys are per-account and browser-local; they leave the browser only to be
-    // validated or used, and are never persisted server-side. That is the
-    // difference from the ADMIN-only platform key in /admin.
-    await expect(page.getByText(/Keys are stored for this account in this browser/)).toBeVisible();
-    await expect(page.getByText(/Signing out removes them from this browser/)).toBeVisible();
+    // Keys are per-account and persisted in Core; they leave the browser only
+    // to be validated or used. That is the difference from the ADMIN-only
+    // platform key in /admin.
+    await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
+    await expect(page.getByText(/sent through EduAI services/)).toBeVisible();
 
     for (const provider of ["Gemini", "OpenAI", "OpenCode Go"]) {
       await expect(providerKeyField(page, provider)).toBeVisible();
