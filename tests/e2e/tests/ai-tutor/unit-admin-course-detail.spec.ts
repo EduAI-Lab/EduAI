@@ -71,7 +71,7 @@ test.describe("UNIT_ADMIN course detail", () => {
     await signInThroughPage(page, ua, coursePath);
 
     await expect(page.getByRole("heading", { name: ua.course.name, level: 1 })).toBeVisible();
-    await expect(page.getByText(`${ua.course.code} · 2026W1`)).toBeVisible();
+    await expect(page.getByText(`${ua.course.code} · 2026-27W1`)).toBeVisible();
     // Read-only badge. The one course-publish control in the app lives on the
     // dashboard's drafts panel; this page shows state without an action, so a
     // toggle appearing here would be a second, unreviewed entry point.

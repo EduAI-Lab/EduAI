@@ -60,7 +60,10 @@ export interface QuestionVariant {
   isDraft?: boolean; // Indicates if this variant is a draft and needs review
   /** Core Question CUID after approval push — required for AI Tutor testable toggle. */
   coreQuestionId?: string | null;
-  /** When true on Core, question is injected into AI Tutor tutoring context. */
+  /**
+   * When true on Core, other EduAI extensions may use this question. QM mirrors
+   * it locally as `shareWithExtensions`; `mapVariant` folds the two together.
+   */
   testable?: boolean;
   createdBy?: string | null;
   createdAt?: string;

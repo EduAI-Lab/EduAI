@@ -34,7 +34,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   patchQuestionTestableOnCore: vi.fn(),
 }));
 
-const { pushTopicToCore, pushQuestionToCore } =
+const { pushTopicToCore, pushQuestionToCore, patchQuestionTestableOnCore } =
   await import("../../src/services/coreApiService.js");
 const { pushVariantToCore } = await import("../../src/services/coreWiringService.js");
 
@@ -80,6 +80,35 @@ describe("pushVariantToCore", () => {
     expect(payload.selectAllThatApply).toBe(false);
     expect(payload.correctAnswers).toBeUndefined();
     expect(cookie).toBe("session=abc");
+  });
+
+  it("pushes the author's share choice as Core's testable flag (#1555)", async () => {
+    topicsFindUnique.mockResolvedValueOnce({ ...mockPrimaryTopic, coreTopicId: "cuid-t1" });
+    pushQuestionToCore.mockResolvedValueOnce({ id: "cuid-question-shared" });
+
+    await pushVariantToCore({ ...baseVariant, shareWithExtensions: true }, course, "session=abc");
+
+    expect(pushQuestionToCore.mock.calls[0][0].testable).toBe(true);
+  });
+
+  it("keeps a question unshared when the author did not opt in", async () => {
+    topicsFindUnique.mockResolvedValueOnce({ ...mockPrimaryTopic, coreTopicId: "cuid-t1" });
+    pushQuestionToCore.mockResolvedValueOnce({ id: "cuid-question-private" });
+
+    await pushVariantToCore({ ...baseVariant, shareWithExtensions: false }, course, "session=abc");
+
+    expect(pushQuestionToCore.mock.calls[0][0].testable).toBe(false);
+  });
+
+  it("re-pushing an already-linked shared variant does not silently unshare it (#1555)", async () => {
+    topicsFindUnique.mockResolvedValueOnce({ ...mockPrimaryTopic, coreTopicId: "cuid-t1" });
+    patchQuestionTestableOnCore.mockResolvedValueOnce({ id: "cuid-existing" });
+
+    const linked = { ...baseVariant, coreQuestionId: "cuid-existing", shareWithExtensions: true };
+    const result = await pushVariantToCore(linked, course, "session=abc");
+
+    expect(result).toEqual({ coreQuestionId: "cuid-existing" });
+    expect(patchQuestionTestableOnCore).toHaveBeenCalledWith("cuid-existing", true);
   });
 
   it("push body includes selectAllThatApply and correctAnswers for multi-correct MCQ", async () => {

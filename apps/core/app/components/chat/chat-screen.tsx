@@ -70,10 +70,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses, loading: coursesLoading } = useCourses({
-    pageSize: 200,
-    includeFacets: false,
-  });
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -84,16 +81,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
-  const hasNoCourses = availableCourses.length === 0;
-  // The course hook starts with an empty list while the first request is in
-  // flight. Do not interpret that temporary state as a real access failure;
-  // `/chat/:chatId` remounts this screen after the first message, which used to
-  // make the no-courses overlay flash before the list arrived.
-  const disabledReason = coursesLoading
-    ? "courses-loading"
-    : hasNoCourses
-      ? "no-courses"
-      : undefined;
+  // An empty list only means "not enrolled" once the fetch has actually
+  // resolved. Answering the first message on `/chat` replaces the route with
+  // `/chat/:id`, which remounts this screen — without the loading gate the
+  // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
+  // overlay over the reply that was still streaming (#1517).
+  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
+  const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
     return navigatedModel && chatModels.some((model) => model.id === navigatedModel)

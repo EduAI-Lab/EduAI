@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const proxyCoreCanvasGetIntegration = vi.fn();
 const proxyCoreGetQuestionBank = vi.fn();
 const proxyCoreListQuestionBankQuestions = vi.fn();
+const getCourseFromCore = vi.fn();
 
 vi.mock("../../src/services/coreApiService.js", () => ({
   proxyCoreCanvasGetIntegration: (...args) => proxyCoreCanvasGetIntegration(...args),
@@ -19,6 +20,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   proxyCoreGetQuizQuestion: vi.fn(),
   proxyCoreListQuizQuestions: vi.fn(),
   proxyCoreListQuizzes: vi.fn(),
+  getCourseFromCore: (...args) => getCourseFromCore(...args),
 }));
 
 vi.mock("../../src/services/questionService.js", () => ({
@@ -42,7 +44,7 @@ vi.mock("../../src/services/questionBankService.js", () => ({
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
-    course: { findFirst: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn() },
     canvasCourseMapping: { findUnique: vi.fn() },
     canvasBankMapping: {
       findUnique: vi.fn(),
@@ -74,7 +76,8 @@ const { prisma } = await import("../../src/config/database.js");
 const { listBanks, createBank, addQuestionsToBank } =
   await import("../../src/services/questionBankService.js");
 const { createQuestion } = await import("../../src/services/questionService.js");
-const { importQuestionBankFromCanvas } = await import("../../src/services/canvasService.js");
+const { importQuestionBankFromCanvas, getCanvasCourseMapping } =
+  await import("../../src/services/canvasService.js");
 
 const COOKIE = "session=test";
 
@@ -114,7 +117,15 @@ beforeEach(() => {
   prisma.canvasCourseMapping.findUnique.mockResolvedValue({
     localCourseId: 9,
     canvasCourseId: 1,
+    canvasCourseName: "CS 101",
     userId: "u1",
+  });
+  prisma.course.findUnique.mockResolvedValue({ id: 9, coreCourseId: "core_1" });
+  getCourseFromCore.mockResolvedValue({
+    id: "core_1",
+    name: "CS 101",
+    externalSource: "canvas",
+    externalId: "1",
   });
   listBanks.mockResolvedValue([{ id: "bank_default", name: "Course bank" }]);
   prisma.canvasBankMapping.findUnique.mockResolvedValue(null);
@@ -206,8 +217,22 @@ describe("importQuestionBankFromCanvas", () => {
     });
   });
 
-  it("rejects when the local course is not linked to Canvas", async () => {
+  it("syncs a Canvas-synced Core course that has no local mapping row", async () => {
     prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+
+    const result = await importBank({ primaryTopicId: "topic_1" });
+
+    expect(result.bankId).toBe("bank_new");
+  });
+
+  it("rejects when neither the local mapping nor the Core course links to Canvas", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    getCourseFromCore.mockResolvedValue({
+      id: "core_1",
+      name: "CS 101",
+      externalSource: null,
+      externalId: null,
+    });
     await expect(importBank({ primaryTopicId: "t1" })).rejects.toMatchObject({
       status: 400,
     });
@@ -315,5 +340,53 @@ describe("importQuestionBankFromCanvas", () => {
         COOKIE,
       ),
     ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("getCanvasCourseMapping", () => {
+  it("returns the local mapping row when one exists", async () => {
+    const link = await getCanvasCourseMapping("u1", 9, COOKIE);
+
+    expect(link).toMatchObject({ canvasCourseId: 1, canvasCourseName: "CS 101" });
+    expect(getCourseFromCore).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the Canvas id on the Core course when no local row exists", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+
+    const link = await getCanvasCourseMapping("u1", 9, COOKIE);
+
+    expect(link).toMatchObject({ canvasCourseId: 1, canvasCourseName: "CS 101" });
+  });
+
+  it("returns null when the Core course did not come from Canvas", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    getCourseFromCore.mockResolvedValue({ id: "core_1", name: "CS 101", externalSource: null });
+
+    expect(await getCanvasCourseMapping("u1", 9, COOKIE)).toBeNull();
+  });
+
+  it("returns null when the local course is not linked to Core", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    prisma.course.findUnique.mockResolvedValue({ id: 9, coreCourseId: null });
+
+    expect(await getCanvasCourseMapping("u1", 9, COOKIE)).toBeNull();
+    expect(getCourseFromCore).not.toHaveBeenCalled();
+  });
+
+  /**
+   * "Core did not answer" is not "this course has no Canvas link". Callers now
+   * hide the Canvas tab and both import entry points on a resolved-unlinked, so
+   * returning null here would strip every Canvas affordance from a genuinely
+   * linked course on one transient failure (#1652 review).
+   */
+  it("reports an unresolved link rather than an absent one when Core is unreachable", async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    getCourseFromCore.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    await expect(getCanvasCourseMapping("u1", 9, COOKIE)).rejects.toMatchObject({
+      status: 503,
+      body: { error: "CANVAS_LINK_UNRESOLVED" },
+    });
   });
 });
