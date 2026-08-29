@@ -2337,7 +2337,14 @@ ${buildEmptyCourseRagBlock()}`;
       adhdProfileRequirements = getProfileRequirements(adhdProfile);
     }
 
-    const structuredAssistOutput = isStructuredAdhdAssistCandidate({
+    // Mutable: a Bedrock overflow (see applyBedrockOverflow below) clears both
+    // flags once streamConfig.model switches away from the vLLM Qwen3.5 fleet.
+    // The custom Bedrock provider has no object-generation mode (see
+    // BedrockChatLanguageModel.defaultObjectGenerationMode), so keeping either
+    // flag set would send an unsupported experimental_output request and/or
+    // route a plain Bedrock text response through the structured-JSON
+    // render/reject path, which always fails and 500s the request.
+    let structuredAssistOutput = isStructuredAdhdAssistCandidate({
       modelIdentifier: resolvedModelId,
       adhdAssist: effectiveAdhdAssist,
       imagesPresent,
@@ -2346,7 +2353,7 @@ ${buildEmptyCourseRagBlock()}`;
       toolsEnabled: useToolCalling,
     });
     const requestedAssistStageCount = resolveRequestedAssistStageCount(lastUserText);
-    const structuredOutput = structuredAssistOutput
+    let structuredOutput = structuredAssistOutput
       ? Output.object({
           schema: jsonSchema(
             buildAdhdAssistStructuredResponseSchema(
@@ -2619,6 +2626,17 @@ ${buildEmptyCourseRagBlock()}`;
         ...routerContext,
         bedrockOverflow: true,
       };
+      // The custom Bedrock provider does not support constrained/object output
+      // (no object-generation mode). Fall back to plain text on Bedrock rather
+      // than sending an unsupported experimental_output request or routing a
+      // Bedrock text response through the structured-JSON render/reject path.
+      if (structuredAssistOutput) {
+        structuredAssistOutput = false;
+        structuredOutput = undefined;
+        chatApiTrace("bedrock overflow cleared structured Assist output", {
+          resolvedModelId,
+        });
+      }
     };
 
     const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
