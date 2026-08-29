@@ -9,7 +9,38 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveSmokeApiKey } from "./lib/vllm-api-key.mjs";
-import { missingExpectedFleetModels } from "./lib/fleet-smoke-validation.mjs";
+import {
+  missingExpectedFleetModels,
+  hostScopedMissingModels,
+} from "./lib/fleet-smoke-validation.mjs";
+
+/**
+ * Best-effort read of fleet.config.json's declared per-server `models` (see
+ * app/lib/ai/routing/fleet/config-file.ts for the authoritative schema/
+ * validation used by the app itself). This script is a standalone Node CLI
+ * with no bundler/path-alias resolution, so it re-reads the same gitignored
+ * file directly instead of importing the TS module. Returns {} (no host
+ * mapping known) rather than throwing on a missing/malformed file — smoke
+ * still runs in legacy env-var-only deployments; it just can't be host-aware
+ * without a config file to declare which host should serve which model.
+ */
+function loadDeclaredHostModels() {
+  const path = resolve(process.env.FLEET_CONFIG_PATH?.trim() || "./fleet.config.json");
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const servers = Array.isArray(parsed?.servers) ? parsed.servers : [];
+    const byHost = {};
+    for (const server of servers) {
+      if (!server?.id || !Array.isArray(server.models)) continue;
+      byHost[server.id] = server.models.map((m) => String(m).toLowerCase());
+    }
+    return byHost;
+  } catch (err) {
+    console.log(`WARN  could not read fleet.config.json for host-aware checks: ${String(err)}`);
+    return {};
+  }
+}
 
 function loadEnvFile() {
   const envPath = resolve(process.cwd(), ".env");
@@ -142,6 +173,44 @@ async function main() {
     );
     process.exit(1);
   }
+
+  const declaredHostModels = loadDeclaredHostModels();
+  const hasDeclaredHosts = Object.keys(declaredHostModels).length > 0;
+  // Host-aware: a model missing only from the union check above is a real
+  // failure, but "present somewhere across all healthy hosts" is a false
+  // green when the SPECIFIC host declared to serve it (e.g. cmps02 for the
+  // retained Assist model) is the one that's down. Without fleet.config.json
+  // there is no host->model declaration to be host-aware with, so this stays
+  // a warning rather than a failure in that legacy env-var-only mode.
+  const violations = hostScopedMissingModels(
+    results,
+    [...expectedModels, assistModel],
+    declaredHostModels,
+  );
+  for (const violation of violations) {
+    const detail =
+      violation.reason === "host-down"
+        ? `declared host ${violation.hostId} is unhealthy or unreachable`
+        : violation.reason === "not-advertised"
+          ? `declared host ${violation.hostId} is healthy but did not advertise it live`
+          : "not advertised by any healthy host";
+    const line = `${violation.reason === "missing-everywhere" ? "FAIL" : hasDeclaredHosts ? "FAIL" : "WARN"}  Host-scoped check: ${violation.modelId} — ${detail}.`;
+    if (violation.reason === "missing-everywhere" || hasDeclaredHosts) {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
+  }
+  if (violations.length > 0 && (hasDeclaredHosts || violations.some((v) => v.hostId === null))) {
+    console.error(
+      "FAIL  Host-scoped model coverage failed — see violations above. " +
+        (hasDeclaredHosts
+          ? "Provision/repair the declared host(s) in fleet.config.json before enabling routing."
+          : "Provision the configured fleet before enabling these defaults."),
+    );
+    process.exit(1);
+  }
+
   const assistHosts = results.filter((result) =>
     result.modelIds.some((modelId) => modelId.toLowerCase() === assistModel.toLowerCase()),
   );
