@@ -17,7 +17,7 @@ describe("courseSwitcherSublabel", () => {
         term: "W1",
         year: 2026,
       }),
-    ).toBe("Systematic Program Design · 2026W1");
+    ).toBe("Systematic Program Design · 2026-27W1");
   });
 
   it("distinguishes two terms of the same course", () => {
@@ -36,7 +36,7 @@ describe("courseSwitcherSublabel", () => {
 
   it("shows the term alone when there is no code, because the name is already the label", () => {
     expect(courseSwitcherSublabel({ name: "Ad-hoc course", term: "W1", year: 2026 })).toBe(
-      "2026W1",
+      "2026-27W1",
     );
   });
 
