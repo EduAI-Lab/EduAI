@@ -1178,6 +1178,13 @@ export async function action({ request }: ActionFunctionArgs) {
             // Invalid payload is the caller's fault (400); Redis/DB outages are 503
             // (#1112) — never mask an infra outage as a client error.
             const status = httpStatusForEnqueueError(error);
+            // Only enqueue failures with a recognised shape are answered here. A
+            // 500 from the classifier means the throw was something unexpected (a
+            // Prisma fault, a programming error), which must escape to
+            // `withErrorResponse` so it takes the uniform `{ error: "CODE" }`
+            // envelope and the structured 5xx log — answering it locally would
+            // skip both, the exact gap the #1560 sweep closes.
+            if (status === 500) throw error;
             const isValidationError = error instanceof ZodError;
             return chatApiReject(
               status,

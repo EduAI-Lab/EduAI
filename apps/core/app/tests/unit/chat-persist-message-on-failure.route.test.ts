@@ -131,6 +131,15 @@ vi.mock("~/lib/logging.server", () => ({
   logSystemError: vi.fn(async () => undefined),
 }));
 
+// The #914 producer is hard-disabled pre-MVP (`isAiJobQueueEnabled` returns
+// false), so its failure branch is only reachable from a test that opts the
+// route into the enqueue path explicitly. Default to "off" so every other case
+// in this file keeps taking the normal chat path.
+vi.mock("~/lib/queue/chat-producer.server", () => ({
+  isEnqueueRequested: vi.fn(() => false),
+  enqueueQuestionGeneration: vi.fn(),
+}));
+
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode failure paths stay admitted.
@@ -145,6 +154,9 @@ import { resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { logSystemError } from "~/lib/logging.server";
+import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
+import { QueueFullError } from "~/lib/queue/queue-stats.server";
+import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
 const NEW_CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -283,5 +295,73 @@ describe("#1561 — user message survives a provider-gate failure", () => {
     expect(prisma.chat.create).toHaveBeenCalledTimes(1);
     expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(1);
     expect(res.headers.get("X-Chat-Id")).toBe(NEW_CHAT_ID);
+  });
+});
+
+// #1560 review round 3: the enqueue catch used to answer *every* throw with its
+// own `chatApiReject` body, so an unexpected fault (Prisma, a programming
+// error) never reached `withErrorResponse` — no uniform envelope, no structured
+// 5xx log. Only recognised enqueue failures are answered in the route now.
+describe("#1560 — enqueue failures narrow to typed errors", () => {
+  beforeEach(() => {
+    vi.mocked(isEnqueueRequested).mockReturnValue(true);
+  });
+
+  it("rethrows an unexpected enqueue error to the shared boundary", async () => {
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("boom: unexpected"));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await action(makeRequest(baseBody()));
+    errorSpy.mockRestore();
+
+    // Guard against passing for the wrong reason: the failure must come from the
+    // enqueue branch, not from some earlier gate.
+    expect(vi.mocked(enqueueQuestionGeneration)).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+    expect(vi.mocked(logSystemError)).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "API", statusCode: 500 }),
+    );
+  });
+
+  it("rethrows a Prisma failure to the shared boundary", async () => {
+    const prismaError = Object.assign(new Error("Unique constraint failed"), {
+      code: "P2002",
+      clientVersion: "5.0.0",
+    });
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(prismaError);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await action(makeRequest(baseBody()));
+    errorSpy.mockRestore();
+
+    // Guard against passing for the wrong reason: the failure must come from the
+    // enqueue branch, not from some earlier gate.
+    expect(vi.mocked(enqueueQuestionGeneration)).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    // The uniform envelope only — the raw Prisma message never reaches the client.
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+  });
+
+  it("still answers a saturated queue with 429 and Retry-After", async () => {
+    const full = new QueueFullError("ai-jobs" as never, 100, 100);
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(full);
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe(String(full.retryAfterSeconds));
+    expect((await res.json()).error).toBe("AI job queue is full");
+  });
+
+  it("still answers an infrastructure outage with 503 (#1112)", async () => {
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(
+      new QueueUnavailableError("Queue unavailable"),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe("Queue unavailable");
   });
 });

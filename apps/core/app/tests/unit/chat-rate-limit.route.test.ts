@@ -90,6 +90,10 @@ vi.mock("~/lib/policy.server", () => ({
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logSecurityEvent: vi.fn().mockResolvedValue(undefined),
+  // The #1279 boundary logs every mapped 5xx; these cases stub the chat
+  // dependencies only as far as the limiter, so anything past it escapes to
+  // `withErrorResponse` and reaches this logger.
+  logSystemError: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
