@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
 import { type Message } from "ai";
 import { Button } from "@eduai/ui";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
@@ -54,20 +55,25 @@ export interface ChatMessageProps {
  *   - anything else  → JSON.stringify (last resort, always a string)
  */
 export function coerceMessageContent(content: JsonValue | undefined): string {
-  if (typeof content === "string") return content;
+  const plain = asText(content);
+  if (plain !== null) return plain;
   if (content === null || content === undefined) return "";
-  if (Array.isArray(content)) {
+
+  const parts = asJsonArray(content);
+  if (parts) {
     // Array of message parts — gather text parts
-    const texts = content
-      .filter((p): p is JsonObject => p !== null && typeof p === "object" && !Array.isArray(p))
-      .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => String(p.text));
+    const texts = parts.flatMap((part) => {
+      const fields = asJsonObject(part);
+      if (!fields || fields.type !== "text") return [];
+      const partText = asText(fields.text);
+      return partText === null ? [] : [partText];
+    });
     if (texts.length > 0) return texts.join("\n");
     // Fall through to JSON.stringify below
   }
-  if (typeof content === "object" && !Array.isArray(content) && typeof content.text === "string") {
-    return content.text;
-  }
+
+  const objectText = asText(asJsonObject(content)?.text);
+  if (objectText !== null) return objectText;
   return JSON.stringify(content);
 }
 
@@ -120,9 +126,10 @@ function ChatMessageBody({
 
   // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
-    if (!part || typeof part.type !== "string") return null;
+    const partType = asText(part?.type);
+    if (partType === null) return null;
 
-    if (part.type === "tool-invocation") {
+    if (partType === "tool-invocation") {
       // Guard against missing toolInvocation on a nominally-typed part
       if (!part.toolInvocation) return null;
       return {
@@ -137,9 +144,9 @@ function ChatMessageBody({
     }
 
     // Handle dynamic tool parts from AI SDK v5+ format
-    if (part.type.startsWith("tool-")) {
+    if (partType.startsWith("tool-")) {
       return {
-        type: part.toolName || part.type.replace("tool-", ""),
+        type: part.toolName || partType.replace("tool-", ""),
         state: part.state || "input-available",
         input: part.input,
         output: part.output,
@@ -155,8 +162,8 @@ function ChatMessageBody({
   const safeParts = message.parts?.filter((part) => part != null) ?? [];
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
-    const t = (part as any).type as string | undefined;
-    if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
+    const t = asText((part as any).type);
+    if (t === null || (t !== "tool-invocation" && !t.startsWith("tool-"))) {
       return false;
     }
 

@@ -79,4 +79,58 @@ describe("student-chat-history", () => {
       { id: "m2", role: "assistant", content: "Hi there" },
     ]);
   });
+
+  it("extracts text from an AI-SDK object body with a content string", async () => {
+    mockGetChatMessages.mockResolvedValue({
+      messages: [{ id: "m1", role: "assistant", content: { content: "Object body text" } }],
+    });
+    await expect(loadSessionMessages(1, "chat-1")).resolves.toEqual([
+      { id: "m1", role: "assistant", content: "Object body text" },
+    ]);
+  });
+
+  it("extracts and joins text from a parts array, skipping non-text parts", async () => {
+    mockGetChatMessages.mockResolvedValue({
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          content: {
+            parts: [
+              { type: "text", text: "Hello" },
+              { type: "tool-call", name: "foo" },
+              { type: "text", text: "world" },
+            ],
+          },
+        },
+      ],
+    });
+    await expect(loadSessionMessages(1, "chat-1")).resolves.toEqual([
+      { id: "m1", role: "assistant", content: "Hello world" },
+    ]);
+  });
+
+  it("returns empty text for an object body with neither content nor parts", async () => {
+    mockGetChatMessages.mockResolvedValue({
+      messages: [{ id: "m1", role: "user", content: { foo: "bar" } }],
+    });
+    await expect(loadSessionMessages(1, "chat-1")).resolves.toEqual([
+      { id: "m1", role: "user", content: "" },
+    ]);
+  });
+
+  it("returns empty text for a null/array/undefined body", async () => {
+    mockGetChatMessages.mockResolvedValue({
+      messages: [
+        { id: "m1", role: "user", content: null },
+        { id: "m2", role: "user", content: [1, 2] },
+        { id: "m3", role: "user", content: undefined },
+      ],
+    });
+    await expect(loadSessionMessages(1, "chat-1")).resolves.toEqual([
+      { id: "m1", role: "user", content: "" },
+      { id: "m2", role: "user", content: "" },
+      { id: "m3", role: "user", content: "" },
+    ]);
+  });
 });

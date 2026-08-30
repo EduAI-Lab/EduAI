@@ -124,7 +124,7 @@ export function ProductTour({ steps, storageKey }: { steps: TourStep[]; storageK
         startedRef.current = true;
         setActive(true);
       };
-      if (typeof window.requestIdleCallback === "function") {
+      if (window.requestIdleCallback) {
         // Call on `window` (not a detached reference) — a bare `ric(start)`
         // invokes the native method with no receiver and throws
         // "Illegal invocation" in Chromium/Firefox.

@@ -14,6 +14,7 @@
  * `components/common/PaginationControls.tsx`.
  */
 import api, { type Paginated, type QueryParams } from "./api";
+import { isNumber } from "@eduai/ui/primitive-union";
 
 /**
  * Server page size for whole-set reads. Matches `MAX_PAGE_SIZE` in the
@@ -53,7 +54,7 @@ export async function fetchAllPages<T>(
 
     rows.push(...data);
 
-    const total = typeof envelope?.total === "number" ? envelope.total : rows.length;
+    const total = isNumber(envelope?.total) ? envelope.total : rows.length;
     if (data.length === 0 || data.length < pageSize || rows.length >= total) break;
   }
 

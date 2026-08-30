@@ -17,6 +17,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const prisma = new PrismaClient();
 
@@ -75,29 +76,31 @@ export function pct(count: number, total: number): string {
   return total > 0 ? `${((count / total) * 100).toFixed(0)}%` : "—";
 }
 
+/** One event's metrics object. Values stay undecoded — each reader below asks
+ * for the one field it needs. */
+const metricsRecordSchema = z.record(z.custom<Prisma.JsonValue>());
+
 /** The `metricsJson` column holds a JSON object per event; anything else is a row we skip. */
 function asMetrics(metricsJson: Prisma.JsonValue): Prisma.JsonObject | null {
-  if (!metricsJson || typeof metricsJson !== "object" || Array.isArray(metricsJson)) {
-    return null;
-  }
-  return metricsJson;
+  return metricsRecordSchema.safeParse(metricsJson).data ?? null;
 }
 
 function parseCompliance(metricsJson: Prisma.JsonValue): ComplianceRow | null {
   const m = asMetrics(metricsJson);
-  if (!m || typeof m.wordCount !== "number") return null;
+  const wordCount = z.number().safeParse(m?.wordCount);
+  if (!m || !wordCount.success) return null;
   return {
-    wordCount: m.wordCount,
+    wordCount: wordCount.data,
     structuralPass: Boolean(m.structuralPass),
-    durationMs: typeof m.durationMs === "number" ? m.durationMs : null,
+    durationMs: z.number().safeParse(m.durationMs).data ?? null,
   };
 }
 
 function parseBehavioral(metricsJson: Prisma.JsonValue): BehavioralRow {
   const m = asMetrics(metricsJson);
   return {
-    durationMs: m && typeof m.durationMs === "number" ? m.durationMs : null,
-    success: m && typeof m.success === "boolean" ? m.success : null,
+    durationMs: z.number().safeParse(m?.durationMs).data ?? null,
+    success: z.boolean().safeParse(m?.success).data ?? null,
   };
 }
 

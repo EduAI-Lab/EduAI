@@ -12,6 +12,13 @@
  * never imports Prisma or Zod. Framework-shaped errors are recognised by
  * duck-typing instead — see `normalizeError`.
  *
+ * That dependency-free duck-typing is also why this file is a standing
+ * `anti-slop/no-runtime-typeof` exemption. Every `typeof` below inspects a
+ * value that was *thrown* — from any app, any framework, any realm — so there
+ * is no I/O boundary to parse at and, by the constraint above, no zod to parse
+ * with. The checks are suppressed per-line so the rule can still reach zero
+ * elsewhere and be promoted to `error` (#1599).
+ *
  * `message` is developer-facing by default and is NOT sent to clients unless
  * the error opts in via `expose`. Every subclass here exposes its message,
  * because those messages are authored for users; anything unrecognised is

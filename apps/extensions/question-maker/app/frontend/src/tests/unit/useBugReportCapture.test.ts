@@ -191,4 +191,53 @@ describe("useBugReportCapture", () => {
 
     window.fetch = origFetch;
   });
+
+  it("buffers console.warn, console.error, and non-string args, trimming JSON.stringify failures", async () => {
+    const origWarn = console.warn;
+    const origError = console.error;
+
+    const { result } = renderHook(() => useBugReportCapture(true));
+
+    type CircularRef = { self?: CircularRef };
+    const circular: CircularRef = {};
+    circular.self = circular;
+    console.warn("plain warn");
+    console.error({ code: 42 }, circular);
+
+    const logs = JSON.parse(result.current.getCapturedData().consoleLogs);
+    expect(logs.some((e: { level: string }) => e.level === "warn")).toBe(true);
+    expect(logs.some((e: { level: string }) => e.level === "error")).toBe(true);
+
+    console.warn = origWarn;
+    console.error = origError;
+  });
+
+  it("records a network entry even when the underlying fetch rejects", async () => {
+    const origFetch = window.fetch;
+    window.fetch = vi.fn().mockRejectedValue(new Error("network down")) as typeof window.fetch;
+
+    const { result } = renderHook(() => useBugReportCapture(true));
+
+    await act(async () => {
+      await expect(window.fetch("/will-fail")).rejects.toThrow("network down");
+    });
+
+    const logs = JSON.parse(result.current.getCapturedData().networkLogs);
+    expect(logs[0]).toMatchObject({ url: "/will-fail", status: null });
+
+    window.fetch = origFetch;
+  });
+
+  it("restores originals on unmount", () => {
+    const origLog = console.log;
+    const origFetch = window.fetch;
+
+    const { unmount } = renderHook(() => useBugReportCapture(true));
+    expect(console.log).not.toBe(origLog);
+
+    unmount();
+
+    expect(console.log).toBe(origLog);
+    expect(window.fetch).toBe(origFetch);
+  });
 });

@@ -4,6 +4,8 @@
  */
 
 import type { JsonValue } from "~/lib/json-value";
+import { z } from "zod";
+import { asJsonArray, asJsonObject, jsonValueSchema } from "~/lib/json-value";
 import { streamText } from "ai";
 import {
   createAIProviderRegistry,
@@ -21,6 +23,7 @@ import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 
 const DEFAULT_TEMPERATURE = 0.2;
@@ -115,12 +118,25 @@ export function resolveCompletionInputLimits(
   };
 }
 
-export type CompletionMessage = {
-  id?: string;
-  role: string;
-  /** Either a plain string or the AI-SDK parts array; both arrive as JSON. */
-  content: JsonValue;
-};
+/**
+ * A completion message as it arrives on the wire.
+ *
+ * `content` is either a plain string or the AI-SDK parts array. That union is
+ * the contract, not a convenience: those are the two forms this route knows how
+ * to size against the character limits and forward to a provider.
+ */
+const completionMessageSchema = z
+  .object({
+    id: z.string().optional(),
+    role: z.string(),
+    content: z.union([z.string(), z.array(jsonValueSchema)]),
+  })
+  // Whatever else the caller attached travels on to the provider untouched, but
+  // it still has to be JSON: `runCompletion` re-validates the message it is
+  // handed, and an unknown-valued key would not survive that round trip.
+  .catchall(jsonValueSchema.optional());
+
+export type CompletionMessage = z.infer<typeof completionMessageSchema>;
 
 /**
  * Per-provider credentials the caller supplied. Keyed by provider id, and each
@@ -147,60 +163,81 @@ function completionValidationError(status: 400 | 422, error: string): Completion
   return { ok: false, status, error };
 }
 
-function serializedContentChars(content: JsonValue | undefined): number | null {
-  if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return null;
-  try {
-    const serialized = JSON.stringify(content);
-    return typeof serialized === "string" ? serialized.length : null;
-  } catch {
-    return null;
-  }
+/**
+ * How many characters a message costs against the size limits: a string costs
+ * its own length, a parts array costs its serialised length. The content has
+ * already been decoded into one of those two forms, so there is no third case.
+ */
+function serializedContentChars(content: CompletionMessage["content"]): number {
+  const text = z.string().safeParse(content);
+  return text.success ? text.data.length : JSON.stringify(content).length;
 }
 
-function validateApiKeys(
+/** A per-provider credential entry, before its fields are measured. */
+const apiKeyEntrySchema = z.object({}).passthrough();
+
+/**
+ * Either the decoded credentials or the rejection that stopped them, so the
+ * caller reads the entries it was handed instead of re-asserting the input it
+ * passed in.
+ */
+type ApiKeysDecodeResult =
+  | { ok: true; apiKeys: CompletionApiKeys }
+  | { ok: false; failure: CompletionValidationResult };
+
+function decodeApiKeys(
   value: JsonValue | undefined,
   limits: CompletionInputLimits,
-): CompletionValidationResult | null {
+): ApiKeysDecodeResult {
+  const rejected = (status: 400 | 422, error: string): ApiKeysDecodeResult => ({
+    ok: false,
+    failure: completionValidationError(status, error),
+  });
+
   if (value === undefined) {
-    return completionValidationError(400, "Invalid apiKeys");
+    return rejected(400, "Invalid apiKeys");
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return completionValidationError(422, "apiKeys must be an object");
+  const envelope = asJsonObject(value);
+  if (!envelope) {
+    return rejected(422, "apiKeys must be an object");
   }
 
-  for (const [providerId, providerValue] of Object.entries(value)) {
+  for (const [providerId, providerValue] of Object.entries(envelope)) {
     if (providerId.length > limits.maxModelChars) {
-      return completionValidationError(422, "apiKeys provider id exceeds maximum length");
+      return rejected(422, "apiKeys provider id exceeds maximum length");
     }
-    if (!providerValue || typeof providerValue !== "object" || Array.isArray(providerValue)) {
-      return completionValidationError(422, `apiKeys.${providerId} must be an object`);
+    const entry = apiKeyEntrySchema.safeParse(providerValue);
+    if (!entry.success) {
+      return rejected(422, `apiKeys.${providerId} must be an object`);
     }
 
-    const entry = providerValue;
-    if (entry.apiKey !== undefined) {
-      if (typeof entry.apiKey !== "string") {
-        return completionValidationError(422, `apiKeys.${providerId}.apiKey must be a string`);
+    const fields = entry.data;
+    if (fields.apiKey !== undefined) {
+      const apiKey = z.string().safeParse(fields.apiKey);
+      if (!apiKey.success) {
+        return rejected(422, `apiKeys.${providerId}.apiKey must be a string`);
       }
-      if (entry.apiKey.length > limits.maxApiKeyChars) {
-        return completionValidationError(422, "apiKey exceeds maximum length");
+      if (apiKey.data.length > limits.maxApiKeyChars) {
+        return rejected(422, "apiKey exceeds maximum length");
       }
     }
-    if (entry.baseUrl !== undefined) {
-      if (typeof entry.baseUrl !== "string") {
-        return completionValidationError(422, `apiKeys.${providerId}.baseUrl must be a string`);
+    if (fields.baseUrl !== undefined) {
+      const baseUrl = z.string().safeParse(fields.baseUrl);
+      if (!baseUrl.success) {
+        return rejected(422, `apiKeys.${providerId}.baseUrl must be a string`);
       }
-      if (entry.baseUrl.length > limits.maxBaseUrlChars) {
-        return completionValidationError(422, "baseUrl exceeds maximum length");
+      if (baseUrl.data.length > limits.maxBaseUrlChars) {
+        return rejected(422, "baseUrl exceeds maximum length");
       }
     }
   }
 
-  if (!clientApiKeysBodySchema.safeParse(value).success) {
-    return completionValidationError(400, "Invalid apiKeys");
+  const decoded = clientApiKeysBodySchema.safeParse(value);
+  if (!decoded.success) {
+    return rejected(400, "Invalid apiKeys");
   }
 
-  return null;
+  return { ok: true, apiKeys: decoded.data };
 }
 
 /** Validate cheap, bounded completion input before admission or provider setup. */
@@ -209,51 +246,71 @@ export function validateCompletionRequest(
   overrides: CompletionInputLimitOverrides = {},
 ): CompletionValidationResult {
   const limits = resolveCompletionInputLimits(overrides);
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
+  // Shallow on purpose: this runs before the size limits are enforced, so it
+  // must not walk an unbounded body. Every field below is decoded on its own.
+  const body = asJsonObject(input);
+  if (!body) {
     return completionValidationError(400, "Invalid completion request body");
   }
 
-  const body = input;
-  if (typeof body.model !== "string" || body.model.trim().length === 0) {
+  const model = z.string().safeParse(body.model);
+  if (!model.success || model.data.trim().length === 0) {
     return completionValidationError(400, "model is required");
   }
-  if (body.model.length > limits.maxModelChars) {
+  if (model.data.length > limits.maxModelChars) {
     return completionValidationError(422, "model exceeds maximum length");
   }
 
-  if (body.systemPrompt !== undefined && body.systemPrompt !== null) {
-    if (typeof body.systemPrompt !== "string") {
+  // An absent prompt and an explicit `null` both mean "no prompt", and callers
+  // distinguish them, so only a present value is decoded and measured.
+  let systemPrompt: string | null | undefined;
+  if (body.systemPrompt === null) {
+    systemPrompt = null;
+  } else if (body.systemPrompt !== undefined) {
+    const decoded = z.string().safeParse(body.systemPrompt);
+    if (!decoded.success) {
       return completionValidationError(422, "systemPrompt must be a string");
     }
-    if (body.systemPrompt.length > limits.maxSystemPromptChars) {
+    if (decoded.data.length > limits.maxSystemPromptChars) {
       return completionValidationError(422, "systemPrompt exceeds maximum length");
     }
+    systemPrompt = decoded.data;
   }
 
-  if (body.messages !== undefined && !Array.isArray(body.messages)) {
-    return completionValidationError(422, "messages must be an array");
+  let rawMessages: JsonValue[] = [];
+  if (body.messages !== undefined) {
+    const decoded = asJsonArray(body.messages);
+    if (!decoded) {
+      return completionValidationError(422, "messages must be an array");
+    }
+    rawMessages = decoded;
   }
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  if (messages.length > limits.maxMessages) {
+  if (rawMessages.length > limits.maxMessages) {
     return completionValidationError(422, "messages exceeds maximum count");
   }
 
+  const messages: CompletionMessage[] = [];
   let totalMessageChars = 0;
-  for (const message of messages) {
-    if (!message || typeof message !== "object" || Array.isArray(message)) {
+  for (const raw of rawMessages) {
+    const envelope = asJsonObject(raw);
+    if (!envelope) {
       return completionValidationError(422, "each message must be an object");
     }
-    const candidate = message;
-    if (typeof candidate.role !== "string") {
+    const role = z.string().safeParse(envelope.role);
+    if (!role.success) {
       return completionValidationError(422, "each message role must be a string");
     }
-    if (!COMPLETION_MESSAGE_ROLES.has(candidate.role)) {
-      return completionValidationError(422, `Unsupported message role: ${candidate.role}`);
+    if (!COMPLETION_MESSAGE_ROLES.has(role.data)) {
+      return completionValidationError(422, `Unsupported message role: ${role.data}`);
     }
-    const contentChars = serializedContentChars(candidate.content);
-    if (contentChars === null) {
+    // The envelope and the role are already decoded, so content is the only
+    // field left that can fail here.
+    const message = completionMessageSchema.safeParse(raw);
+    if (!message.success) {
       return completionValidationError(422, "each message content must be a string or parts array");
     }
+
+    const contentChars = serializedContentChars(message.data.content);
     if (contentChars > limits.maxMessageChars) {
       return completionValidationError(422, "message content exceeds maximum length");
     }
@@ -261,58 +318,60 @@ export function validateCompletionRequest(
     if (totalMessageChars > limits.maxTotalMessageChars) {
       return completionValidationError(422, "messages exceed aggregate character limit");
     }
+    messages.push(message.data);
   }
 
-  const apiKeysError = validateApiKeys(body.apiKeys, limits);
-  if (apiKeysError) return apiKeysError;
-  // SAFETY: `validateApiKeys` returned no error, so `apiKeys` is an object of
-  // per-provider entries with only the two optional string fields.
-  const apiKeys = (body.apiKeys ?? {}) as CompletionApiKeys;
+  const decodedApiKeys = decodeApiKeys(body.apiKeys, limits);
+  if (!decodedApiKeys.ok) return decodedApiKeys.failure;
 
+  let temperature: number | undefined;
   if (body.temperature !== undefined) {
-    if (
-      typeof body.temperature !== "number" ||
-      !Number.isFinite(body.temperature) ||
-      body.temperature < COMPLETION_MIN_TEMPERATURE ||
-      body.temperature > COMPLETION_MAX_TEMPERATURE
-    ) {
+    const decoded = z
+      .number()
+      .finite()
+      .min(COMPLETION_MIN_TEMPERATURE)
+      .max(COMPLETION_MAX_TEMPERATURE)
+      .safeParse(body.temperature);
+    if (!decoded.success) {
       return completionValidationError(
         422,
         `temperature must be between ${COMPLETION_MIN_TEMPERATURE} and ${COMPLETION_MAX_TEMPERATURE}`,
       );
     }
+    temperature = decoded.data;
   }
 
+  let maxTokens: number | undefined;
   if (body.maxTokens !== undefined) {
-    if (
-      typeof body.maxTokens !== "number" ||
-      !Number.isInteger(body.maxTokens) ||
-      body.maxTokens < 1 ||
-      body.maxTokens > MAX_COMPLETION_TOKENS
-    ) {
+    const decoded = z.number().int().min(1).max(MAX_COMPLETION_TOKENS).safeParse(body.maxTokens);
+    if (!decoded.success) {
       return completionValidationError(
         400,
         `maxTokens must be between 1 and ${MAX_COMPLETION_TOKENS}`,
       );
     }
+    maxTokens = decoded.data;
   }
 
-  if (body.streaming !== undefined && typeof body.streaming !== "boolean") {
-    return completionValidationError(422, "streaming must be a boolean");
+  let streaming: boolean | undefined;
+  if (body.streaming !== undefined) {
+    const decoded = z.boolean().safeParse(body.streaming);
+    if (!decoded.success) {
+      return completionValidationError(422, "streaming must be a boolean");
+    }
+    streaming = decoded.data;
   }
 
   return {
     ok: true,
     request: {
-      model: body.model,
-      apiKeys,
-      // SAFETY: every field below was checked by the walk above — this is
-      // where those checks are cashed in, not where they are assumed.
-      systemPrompt: body.systemPrompt as string | null | undefined,
-      messages: messages as CompletionMessage[],
-      streaming: body.streaming as boolean | undefined,
-      temperature: body.temperature as number | undefined,
-      maxTokens: body.maxTokens as number | undefined,
+      model: model.data,
+      apiKeys: decodedApiKeys.apiKeys,
+      systemPrompt,
+      messages,
+      streaming,
+      temperature,
+      maxTokens,
       routingContext: body.routingContext,
     },
   };
@@ -374,22 +433,20 @@ export function resolveCompletionPrompt(
   const rawMessages = Array.isArray(body.messages) ? body.messages : [];
 
   let systemFromBody: string | null = null;
-  if (typeof body.systemPrompt === "string") {
+  if (body.systemPrompt !== undefined && body.systemPrompt !== null) {
     systemFromBody = sanitizeSystemPrompt(body.systemPrompt);
-  } else if (body.systemPrompt === null) {
-    systemFromBody = null;
   }
 
   let systemFromMessage: string | null = null;
   const conversationMessages: CompletionMessage[] = [];
 
   for (const message of rawMessages) {
-    if (!message || typeof message !== "object" || typeof message.role !== "string") {
-      continue;
-    }
     if (message.role === "system") {
-      if (!systemFromMessage && typeof message.content === "string") {
-        systemFromMessage = sanitizeSystemPrompt(message.content);
+      // Only a plain-string system message is usable as a prompt; a parts array
+      // is a conversation turn that happens to be labelled `system`.
+      const text = z.string().safeParse(message.content);
+      if (!systemFromMessage && text.success) {
+        systemFromMessage = sanitizeSystemPrompt(text.data);
       }
       continue;
     }
@@ -415,6 +472,61 @@ export function resolveCompletionPrompt(
     system: composeSecurityPrompt(baseSystem),
     messages: conversationMessages,
   };
+}
+
+/**
+ * Ordered BYOK fallback models used when the UBC vLLM fleet is unavailable
+ * (#1645). Only BYOK providers belong here — the point is to use the caller's
+ * own key when server-hosted inference cannot serve the request. Override with
+ * `COMPLETION_FLEET_FALLBACK_MODELS` (comma-separated `provider:model` in
+ * preference order).
+ */
+export const DEFAULT_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
+
+/**
+ * Pick the first fallback model, in configured preference order, that is usable
+ * right now: its BYOK provider must be keyed AND enabled AND its `provider:model`
+ * id must resolve to an active Core catalog row (`resolveCompletionModelPolicy`).
+ * Returns that model's policy result so the caller reuses the parsed model, or
+ * null when no candidate qualifies — in which case the fleet outage stays a hard
+ * failure.
+ *
+ * Skipping earlier candidates that fail these checks is deliberate (#1645
+ * review): an earlier keyed-but-policy-failing (or disabled) candidate must not
+ * abandon a usable later one. A candidate that is keyed+enabled but whose
+ * catalog row is missing/inactive is logged as a warn breadcrumb (no secrets)
+ * so the otherwise-silent dead-on-arrival case is visible in logs.
+ */
+export async function resolveFleetFallbackModel(
+  userSettings: UserProviderSettings,
+): Promise<Extract<CompletionModelPolicyResult, { ok: true }> | null> {
+  const configured = process.env.COMPLETION_FLEET_FALLBACK_MODELS?.trim();
+  const candidates = (configured || DEFAULT_FLEET_FALLBACK_MODELS)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const parsed = parseModelIdentifier(candidate);
+    if (!parsed) continue;
+    // Local/UBC-hosted providers are exactly what just failed — skip them.
+    if (parsed.providerId === "vllm" || parsed.providerId === "ollama") continue;
+    const settings = userSettings[parsed.providerId];
+    // Require a held key AND an enabled provider. A disabled-but-keyed provider
+    // would otherwise be chosen here and then rejected downstream with a
+    // misleading INVALID_PROVIDER_CONFIG (#1645 review nit).
+    if (!settings?.apiKey || !settings.apiKey.trim() || !settings.isEnabled) continue;
+    const policy = await resolveCompletionModelPolicy(candidate);
+    if (policy.ok) return policy;
+    // Keyed + enabled but the catalog has no active row for it: this fallback is
+    // dead on arrival. Surface it (no secrets) and try the next ordered candidate.
+    console.warn("[completion] fleet fallback candidate unavailable in catalog", {
+      candidate,
+      providerId: parsed.providerId,
+      status: policy.status,
+    });
+  }
+  return null;
 }
 
 export async function runCompletion(request: CompletionRequest) {
@@ -467,8 +579,12 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
-  const parsedModel = modelPolicy.parsedModel;
-  const validatedModelId =
+  // Built before fleet resolution so a fleet outage can consult the caller's
+  // BYOK keys for a fallback provider (#1645).
+  const userProviderSettings = toUserProviderSettings(apiKeysParsed.data);
+
+  let parsedModel = modelPolicy.parsedModel;
+  let validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
   let fleetBaseUrl: string | undefined;
   let fleetServerId: string | undefined;
@@ -481,15 +597,23 @@ export async function runCompletion(request: CompletionRequest) {
       fleetBaseUrl = fleetPick?.baseUrl;
       fleetServerId = fleetPick?.serverId;
     } catch (error) {
-      if (error instanceof FleetUnavailableError) {
+      if (!(error instanceof FleetUnavailableError)) throw error;
+      // #1645: the UBC fleet is down. Before hard-failing, fall back to the first
+      // BYOK provider (in configured order) the caller keyed+enabled AND that has
+      // an active Core catalog row. If none qualifies, keep MODEL_UNAVAILABLE.
+      const fallbackPolicy = await resolveFleetFallbackModel(userProviderSettings);
+      if (!fallbackPolicy) {
         return createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE");
       }
-      throw error;
+      parsedModel = fallbackPolicy.parsedModel;
+      validatedModelId =
+        `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
+      // A BYOK provider needs no fleet host; leave fleetBaseUrl/fleetServerId unset.
     }
   }
 
   const validatedApiKeys = mergeLocalInferenceFromEnv(
-    toUserProviderSettings(apiKeysParsed.data),
+    userProviderSettings,
     validatedModelId,
     fleetBaseUrl,
   );
@@ -519,11 +643,8 @@ export async function runCompletion(request: CompletionRequest) {
   }
 
   const streaming = request.streaming === true;
-  const temperature =
-    typeof request.temperature === "number" && Number.isFinite(request.temperature)
-      ? request.temperature
-      : DEFAULT_TEMPERATURE;
-  const maxTokens = typeof request.maxTokens === "number" ? request.maxTokens : DEFAULT_MAX_TOKENS;
+  const temperature = request.temperature ?? DEFAULT_TEMPERATURE;
+  const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS;
 
   let result;
   try {

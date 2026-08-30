@@ -12,6 +12,7 @@ import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
 import { workerConcurrency } from "./concurrency.server";
+import { z } from "zod";
 
 export { workerConcurrency } from "./concurrency.server";
 
@@ -49,8 +50,9 @@ function formatError(cause: unknown): string {
   if (cause instanceof Error) {
     return cause.message || cause.name;
   }
-  if (typeof cause === "string") {
-    return cause;
+  const text = z.string().safeParse(cause);
+  if (text.success) {
+    return text.data;
   }
   try {
     return JSON.stringify(cause);
@@ -207,10 +209,8 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
 }
 
 function maxAttempts(job: Job<JobPayload | QueuedJobPayload>): number {
-  const attempts = job.opts.attempts;
-  return typeof attempts === "number" && Number.isFinite(attempts)
-    ? Math.max(1, Math.floor(attempts))
-    : 1;
+  const attempts = z.number().finite().safeParse(job.opts.attempts);
+  return attempts.success ? Math.max(1, Math.floor(attempts.data)) : 1;
 }
 
 /**
@@ -229,7 +229,7 @@ export async function processAiJob(
   const bullJobId = String(job.id);
 
   const aiJobId =
-    "aiJobId" in job.data && typeof job.data.aiJobId === "string" ? job.data.aiJobId : null;
+    "aiJobId" in job.data ? (z.string().safeParse(job.data.aiJobId).data ?? null) : null;
   const select = {
     id: true,
     status: true,

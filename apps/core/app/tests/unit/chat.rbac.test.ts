@@ -332,6 +332,79 @@ describe("POST /api/chat — admin chatMode gate", () => {
   });
 });
 
+// #1659: instructor mode is scoped to ONE published course the caller
+// actually teaches. Unlike admin mode, a course is always required, and the
+// authorization decision reuses the same resolveCourseAccessWithCourse
+// result every other course-scoped route reads — access.level === "instructor"
+// means "an active INSTRUCTOR enrollment on this exact course", regardless of
+// the caller's platform-wide UserRole.
+describe("POST /api/chat — instructor chatMode gate (#1659)", () => {
+  it("returns 400 COURSE_REQUIRED when instructor chatMode omits a course", async () => {
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("requires a course for instructor mode even for a server-to-server (service-key) caller — unlike learning/admin mode (#1659 review)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null); // valid service key
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("admits an INSTRUCTOR of a published course they teach (allow)", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("denies an instructor-level caller when the course is unpublished (deny: unpublished)", async () => {
+    mockAccess({ level: "instructor", rank: 2 }, { ...COURSE, isPublished: false });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a caller with no relationship to the course (deny: other course)", async () => {
+    mockAccess(null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a STUDENT-level enrollment on this course (not their course to run ops on)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a TA-level enrollment on this course", async () => {
+    mockAccess({ level: "ta", rank: 1 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies ADMIN-level access without a real INSTRUCTOR enrollment on this course (use /admin/chat instead)", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies UNIT_ADMIN-level access without a real INSTRUCTOR enrollment on this course", async () => {
+    mockAccess({ level: "unit", rank: 3 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 when the course does not exist", async () => {
+    mockAccess(null, null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+});
+
 // Edge-case audit #225 (RAG-03): chat isolation guards (foreign chatId,
 // cross-course follow-up) were enforced in the route but untested there.
 describe("POST /api/chat — chat isolation guards (#225 RAG-03)", () => {

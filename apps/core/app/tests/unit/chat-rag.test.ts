@@ -519,7 +519,7 @@ describe("prepareBoundedSessionContext", () => {
     });
 
     expect(bounded).toHaveLength(1);
-    expect(typeof bounded[0].content).toBe("string");
+    expect(bounded[0].content).toEqual(expect.any(String));
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(5_000);
   });
 

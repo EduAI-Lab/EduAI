@@ -6,6 +6,7 @@
 // being pulled into whatever chunk happens to reference this module.
 import type { Paragraph as DocxParagraph } from "docx";
 import type { VariantAiReviewResult } from "../services/assessmentVariantService";
+import { finiteMetric, formatMetric, metricAsSeconds } from "./aiReviewMetrics";
 
 function formatUsabilityLabel(value: string): string {
   if (value === "usable_as_is") return "Usable as-is";
@@ -15,20 +16,11 @@ function formatUsabilityLabel(value: string): string {
 }
 
 function scoreOfRow(r: VariantAiReviewResult["perQuestion"][number]): number {
-  if (
-    typeof r.exam_variant_composite_score_1to5 === "number" &&
-    Number.isFinite(r.exam_variant_composite_score_1to5)
-  ) {
-    const distinctnessFactor =
-      typeof r.exam_variant_distinctness_factor === "number" &&
-      Number.isFinite(r.exam_variant_distinctness_factor)
-        ? r.exam_variant_distinctness_factor
-        : 1;
+  const composite = finiteMetric(r.exam_variant_composite_score_1to5);
+  if (composite !== null) {
+    const distinctnessFactor = finiteMetric(r.exam_variant_distinctness_factor) ?? 1;
     const usabilityAdjusted =
-      typeof r.exam_variant_composite_score_1to5_usability_adjusted === "number" &&
-      Number.isFinite(r.exam_variant_composite_score_1to5_usability_adjusted)
-        ? r.exam_variant_composite_score_1to5_usability_adjusted
-        : r.exam_variant_composite_score_1to5;
+      finiteMetric(r.exam_variant_composite_score_1to5_usability_adjusted) ?? composite;
     return usabilityAdjusted * distinctnessFactor;
   }
   const vals = [
@@ -37,7 +29,9 @@ function scoreOfRow(r: VariantAiReviewResult["perQuestion"][number]): number {
     r.structural_validity,
     r.answer_correctness,
     r.topic_alignment,
-  ].filter((v): v is number => typeof v === "number");
+  ]
+    .map(finiteMetric)
+    .filter((v): v is number => v !== null);
   if (vals.length === 0) return 0;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
@@ -72,26 +66,14 @@ export async function buildAiReviewDocxBlob(
   const highExamples = ranked.slice(0, Math.min(3, ranked.length));
   const lowExample = ranked.length > 0 ? ranked[ranked.length - 1] : null;
 
-  const avg = (k: string) => {
-    const v = result.averages[k];
-    return typeof v === "number" ? v.toFixed(2) : "n/a";
-  };
+  const avg = (k: string) => formatMetric(result.averages[k], 2);
 
-  const finalScore0to100 =
-    typeof result.examVariantScoreFinal0to100 === "number"
-      ? result.examVariantScoreFinal0to100
-      : null;
-  const baseScore0to100 =
-    typeof result.examVariantScoreBase0to100 === "number"
-      ? result.examVariantScoreBase0to100
-      : null;
-  const usablePct =
-    typeof result.usableQuestionPercentage === "number" ? result.usableQuestionPercentage : null;
-  const reviewSeconds = typeof result.reviewTimeMs === "number" ? result.reviewTimeMs / 1000 : null;
-  const distinctnessAvg =
-    typeof result.distinctnessAverage1to5 === "number" ? result.distinctnessAverage1to5 : null;
-  const distinctnessFactorAvg =
-    typeof result.distinctnessFactorAvg === "number" ? result.distinctnessFactorAvg : null;
+  const finalScore0to100 = finiteMetric(result.examVariantScoreFinal0to100);
+  const baseScore0to100 = finiteMetric(result.examVariantScoreBase0to100);
+  const usablePct = finiteMetric(result.usableQuestionPercentage);
+  const reviewSeconds = metricAsSeconds(result.reviewTimeMs);
+  const distinctnessAvg = finiteMetric(result.distinctnessAverage1to5);
+  const distinctnessFactorAvg = finiteMetric(result.distinctnessFactorAvg);
   const overallSummaryText = result.overallSummary?.summaryText ?? "n/a";
   const overallStrengthsText = Array.isArray(result.overallSummary?.strengths)
     ? result.overallSummary.strengths.join(", ")

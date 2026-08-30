@@ -2,6 +2,7 @@ import { Textarea } from "./textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
 import { cn } from "../utils";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { isNumber } from "../lib/primitive-union";
 
 type PromptInputContextType = {
   isLoading: boolean;
@@ -101,10 +102,9 @@ function PromptInputTextarea({
 
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
-    textareaRef.current.style.height =
-      typeof maxHeight === "number"
-        ? `${Math.min(textareaRef.current.scrollHeight, maxHeight)}px`
-        : `min(${textareaRef.current.scrollHeight}px, ${maxHeight})`;
+    textareaRef.current.style.height = isNumber(maxHeight)
+      ? `${Math.min(textareaRef.current.scrollHeight, maxHeight)}px`
+      : `min(${textareaRef.current.scrollHeight}px, ${maxHeight})`;
   }, [value, maxHeight, disableAutosize]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

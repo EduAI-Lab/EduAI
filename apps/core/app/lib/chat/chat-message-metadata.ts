@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import type { JsonObject } from "~/lib/json-value";
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asJsonObject } from "~/lib/json-value";
 
 /**
  * The server-owned fields this module reads and writes.
@@ -38,18 +39,16 @@ function readMetadata(message: MessageWithMetadata): ChatMessageMetadata {
  * carries, so the existing slot is kept as an open JSON object rather than
  * narrowed to {@link ChatMessageMetadata}.
  *
- * Checked structurally rather than decoded: a decode that rejects one value
- * would drop the whole slot, which is the opposite of "preserved verbatim", and
- * it would also clone every key on the way through the persist path.
+ * Checked structurally rather than deep-decoded: a decode that rejects one
+ * nested value would drop the whole slot, which is the opposite of "preserved
+ * verbatim", and it would walk the whole graph on every persist.
  */
 function existingMetadata<T extends object>(message: T): JsonObject {
   const existing = "metadata" in message ? message.metadata : undefined;
-  // SAFETY: the caller's metadata is either a stored row's parsed JSON or a
-  // live message's own slot; this only claims it is an object, which the three
-  // checks establish, and every key is carried through untouched.
-  return existing !== null && typeof existing === "object" && !Array.isArray(existing)
-    ? (existing as JsonObject)
-    : {};
+  // SAFETY: the slot is declared `unknown` because this module is what checks
+  // it, and `asJsonObject` is that check — it only asks whether the value is a
+  // plain object and carries its keys through untouched.
+  return asJsonObject(existing as JsonValue | undefined) ?? {};
 }
 
 /**

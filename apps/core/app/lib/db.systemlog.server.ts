@@ -7,6 +7,7 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
+import { z } from "zod";
 import {
   redactErrorForConsole,
   redactSecretValuesInString,
@@ -89,10 +90,11 @@ function normalizeErrorMetadata(cause: unknown): ErrorMetadata {
     };
   }
 
-  if (typeof cause === "string") {
+  const text = z.string().safeParse(cause);
+  if (text.success) {
     return {
       errorName: "Error",
-      stack: cause,
+      stack: text.data,
     };
   }
 

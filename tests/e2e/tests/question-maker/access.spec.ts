@@ -162,7 +162,7 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
       code: "E2E 101",
     });
 
-    expect(typeof qmCourseId).toBe("number");
+    expect(qmCourseId).toEqual(expect.any(Number));
 
     const listRes = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(listRes.status()).toBe(200);

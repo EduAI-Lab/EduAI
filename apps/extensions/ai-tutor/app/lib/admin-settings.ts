@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import api from "~/lib/api";
-import { adminAiModelPolicySchema, type WireAdminAiModelPolicy } from "~/lib/api-schemas";
+import {
+  adminAiModelPolicySchema,
+  aiModelSchema,
+  type WireAdminAiModelPolicy,
+} from "~/lib/api-schemas";
 import type { EduAiApiKeyStatus } from "~/lib/types";
 
 export type CostTier = "LOW" | "MEDIUM" | "HIGH";
@@ -51,6 +55,20 @@ const MIN_SUPERVISOR_ITERATIONS = 1;
 const MAX_SUPERVISOR_ITERATIONS = 5;
 
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
+  const hasPolicyApi = api.getAdminAiModelPolicy instanceof Function;
+  const hasModelsApi = api.listAiModels instanceof Function;
+
+  if (!hasPolicyApi && !hasModelsApi) {
+    const status = await api.getEduAiApiKeyStatus();
+    return {
+      status,
+      aiModels: [],
+      aiPolicy: null,
+      aiPolicyError: null,
+      aiPolicyAvailable: false,
+    };
+  }
+
   const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
     api.getEduAiApiKeyStatus(),
     loadAdminAiModels(),
@@ -73,24 +91,39 @@ export function normalizePolicy(
   const policy = raw ?? adminAiModelPolicySchema.parse({});
   const fallbackTutor = models[0]?.modelId ?? null;
 
-  const allowedTutorModelIds =
-    policy.allowedTutorModelIds ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+  // `raw` is typed as decoded, but it reaches here straight off the wire on any
+  // path that skipped `adminAiModelPolicySchema` (a stubbed `api`, a cached
+  // payload written by an older client), so every field is decoded again here
+  // rather than trusted. A field that fails its parse falls back; a list drops
+  // only the entries that fail, since one bad id should not blank the policy.
+  const rawAllowed = z
+    .array(z.unknown())
+    .safeParse(policy.allowedTutorModelIds)
+    .data?.flatMap((id) => z.string().safeParse(id).data ?? []);
 
-  const requestedTutor = policy.defaultTutorModelId ?? allowedTutorModelIds[0] ?? null;
+  const allowedTutorModelIds = rawAllowed ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+
+  const requestedTutor =
+    z.string().safeParse(policy.defaultTutorModelId).data ?? allowedTutorModelIds[0] ?? null;
   const defaultTutorModelId =
     requestedTutor !== null && allowedTutorModelIds.includes(requestedTutor)
       ? requestedTutor
       : (allowedTutorModelIds[0] ?? null);
 
+  const rawIterations =
+    z.number().safeParse(policy.maxSupervisorIterations).data ??
+    Number(policy.maxSupervisorIterations);
+
   return {
     allowedTutorModelIds,
     defaultTutorModelId,
-    defaultSupervisorModelId: policy.defaultSupervisorModelId ?? models[0]?.modelId ?? null,
-    dualLoopEnabled: policy.dualLoopEnabled ?? DEFAULT_POLICY.dualLoopEnabled,
-    maxSupervisorIterations:
-      policy.maxSupervisorIterations === undefined
-        ? DEFAULT_POLICY.maxSupervisorIterations
-        : clampSupervisorIterations(policy.maxSupervisorIterations),
+    defaultSupervisorModelId:
+      z.string().safeParse(policy.defaultSupervisorModelId).data ?? models[0]?.modelId ?? null,
+    dualLoopEnabled:
+      z.boolean().safeParse(policy.dualLoopEnabled).data ?? DEFAULT_POLICY.dualLoopEnabled,
+    maxSupervisorIterations: Number.isFinite(rawIterations)
+      ? clampSupervisorIterations(rawIterations)
+      : DEFAULT_POLICY.maxSupervisorIterations,
   };
 }
 
@@ -100,6 +133,7 @@ function clampSupervisorIterations(value: number): number {
 
 async function loadAdminAiPolicy() {
   try {
+    if (!(api.getAdminAiModelPolicy instanceof Function)) return { policy: null, error: null };
     const policy = await api.getAdminAiModelPolicy();
     return { policy, error: null };
   } catch {
@@ -113,10 +147,15 @@ async function loadAdminAiPolicy() {
 
 async function loadAdminAiModels() {
   try {
-    const models = await api.listAiModels();
-    return {
-      models: models.map((model, index) => toModelOption(model, index)),
-    };
+    if (!(api.listAiModels instanceof Function)) return { models: [] };
+    // Same reason as `normalizePolicy`: decode each row rather than trust the
+    // declared element type, and drop only the rows that fail so one malformed
+    // entry cannot empty the model picker.
+    const rawModels = await api.listAiModels();
+    const models = (z.array(z.unknown()).safeParse(rawModels).data ?? [])
+      .flatMap((model) => aiModelSchema.safeParse(model).data ?? [])
+      .map((model, index) => toModelOption(model, index));
+    return { models };
   } catch {
     const models: AdminAiModelOption[] = [];
     return { models };

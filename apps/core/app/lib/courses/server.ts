@@ -43,6 +43,7 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asJsonObject } from "~/lib/json-value";
 
 async function parseCreateCourseBody(
   request: Request,
@@ -62,13 +63,9 @@ async function parseCreateCourseBody(
         response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
       };
     }
-    if (
-      opts?.forceInstructorUserIds?.length &&
-      body &&
-      typeof body === "object" &&
-      !Array.isArray(body)
-    ) {
-      body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
+    const bodyFields = asJsonObject(body);
+    if (opts?.forceInstructorUserIds?.length && bodyFields) {
+      body = { ...bodyFields, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
     if (!parsed.success) {
@@ -88,7 +85,7 @@ async function parseCreateCourseBody(
 
   if (instructorUserIds.length === 0) {
     const rawInstructorUserIds = formData.get("instructorUserIds");
-    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
+    if (!(rawInstructorUserIds instanceof File) && rawInstructorUserIds) {
       try {
         const parsed = JSON.parse(rawInstructorUserIds);
         if (Array.isArray(parsed)) {

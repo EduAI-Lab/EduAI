@@ -23,6 +23,7 @@ import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.s
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -59,84 +60,94 @@ async function requireAdmin(request: Request) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { response } = await requireAdmin(request);
-  if (response) return response;
+  return withErrorResponse(
+    async () => {
+      const { response } = await requireAdmin(request);
+      if (response) return response;
 
-  if (params.id) {
-    const report = await getBugReportById(params.id);
-    if (!report) {
-      return json(404, { error: "REPORT_NOT_FOUND" });
-    }
-    return json(200, report);
-  }
+      if (params.id) {
+        const report = await getBugReportById(params.id);
+        if (!report) {
+          return json(404, { error: "REPORT_NOT_FOUND" });
+        }
+        return json(200, report);
+      }
 
-  const url = new URL(request.url);
-  const sourceParam = url.searchParams.get("source");
-  const statusParam = url.searchParams.get("status");
+      const url = new URL(request.url);
+      const sourceParam = url.searchParams.get("source");
+      const statusParam = url.searchParams.get("status");
 
-  let source: Parameters<typeof listBugReports>[0]["source"];
-  if (sourceParam !== null) {
-    if (!isBugReportSource(sourceParam)) {
-      return json(400, { error: "INVALID_SOURCE" });
-    }
-    source = sourceParam;
-  }
+      let source: Parameters<typeof listBugReports>[0]["source"];
+      if (sourceParam !== null) {
+        if (!isBugReportSource(sourceParam)) {
+          return json(400, { error: "INVALID_SOURCE" });
+        }
+        source = sourceParam;
+      }
 
-  let status: Parameters<typeof listBugReports>[0]["status"];
-  if (statusParam !== null) {
-    if (!isBugReportStatus(statusParam)) {
-      return json(400, { error: "INVALID_STATUS" });
-    }
-    status = statusParam;
-  }
+      let status: Parameters<typeof listBugReports>[0]["status"];
+      if (statusParam !== null) {
+        if (!isBugReportStatus(statusParam)) {
+          return json(400, { error: "INVALID_STATUS" });
+        }
+        status = statusParam;
+      }
 
-  const limit = parseInt(url.searchParams.get("limit") ?? "50", 10) || 50;
-  const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
+      const limit = parseInt(url.searchParams.get("limit") ?? "50", 10) || 50;
+      const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
 
-  const result = await listBugReports({ source, status, limit, offset });
+      const result = await listBugReports({ source, status, limit, offset });
 
-  return json(200, result);
+      return json(200, result);
+    },
+    { request },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  if (request.method !== "PATCH") {
-    return json(405, { error: "Method not allowed" });
-  }
+  return withErrorResponse(
+    async () => {
+      if (request.method !== "PATCH") {
+        return json(405, { error: "Method not allowed" });
+      }
 
-  const { response, session } = await requireAdmin(request);
-  if (response) return response;
+      const { response, session } = await requireAdmin(request);
+      if (response) return response;
 
-  const requestContext = getRequestContext(request);
+      const requestContext = getRequestContext(request);
 
-  const reportId = params.id;
-  if (!reportId) {
-    return json(400, { error: "REPORT_ID_REQUIRED" });
-  }
+      const reportId = params.id;
+      if (!reportId) {
+        return json(400, { error: "REPORT_ID_REQUIRED" });
+      }
 
-  const body = await request.json().catch(() => ({}));
-  if (!isBugReportStatus(body?.status)) {
-    return json(422, {
-      error: "VALIDATION_ERROR",
-      fields: { status: "must be UNHANDLED, IN_PROGRESS, or RESOLVED" },
-    });
-  }
+      const body = await request.json().catch(() => ({}));
+      if (!isBugReportStatus(body?.status)) {
+        return json(422, {
+          error: "VALIDATION_ERROR",
+          fields: { status: "must be UNHANDLED, IN_PROGRESS, or RESOLVED" },
+        });
+      }
 
-  const result = await updateBugReportStatus(reportId, body.status);
-  if (!result) {
-    return json(404, { error: "REPORT_NOT_FOUND" });
-  }
+      const result = await updateBugReportStatus(reportId, body.status);
+      if (!result) {
+        return json(404, { error: "REPORT_NOT_FOUND" });
+      }
 
-  fireAndForget(
-    logAuditAction({
-      ...getActorContext(session?.user ?? null),
-      ...requestContext,
-      actionCode: "BUG_REPORT_STATUS_CHANGED",
-      category: "BUG_REPORT",
-      entityType: "BugReport",
-      entityId: reportId,
-      details: { status: body.status },
-    }),
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "BUG_REPORT_STATUS_CHANGED",
+          category: "BUG_REPORT",
+          entityType: "BugReport",
+          entityId: reportId,
+          details: { status: body.status },
+        }),
+      );
+
+      return json(200, result);
+    },
+    { request },
   );
-
-  return json(200, result);
 }

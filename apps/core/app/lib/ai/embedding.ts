@@ -251,7 +251,7 @@ function isEmbeddingTimeoutError(cause: unknown): boolean {
   while (current && !seen.has(current)) {
     seen.add(current);
     if (current instanceof EmbeddingRequestTimeoutError) return true;
-    if (typeof current !== "object") return false;
+    if (!(current instanceof Object)) return false;
 
     const candidate = current as {
       name?: unknown;
@@ -324,7 +324,7 @@ function isTransientEmbeddingError(cause: unknown): boolean {
   if (isEmbeddingTimeoutError(cause)) return true;
 
   const status =
-    cause && typeof cause === "object" && "status" in cause
+    cause instanceof Object && "status" in cause
       ? Number((cause as { status?: unknown }).status)
       : NaN;
   if (status === 429 || status === 503) return true;

@@ -154,7 +154,7 @@ test.describe("AI Tutor routes accessible to all authenticated users", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.data)).toBe(true);
-    expect(typeof body.total).toBe("number");
+    expect(body.total).toEqual(expect.any(Number));
   });
 
   // #1043: the contract is required-mode — a half-supplied pair is a 400, and

@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { isBrowser } from "../lib/runtime-env";
 
 class ResizeObserverMock {
   observe() {}
@@ -6,13 +7,13 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-if (typeof globalThis.ResizeObserver === "undefined") {
+if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
 }
 
 // happy-dom does not implement matchMedia, which the use-mobile hook (used by
 // SidebarProvider and other responsive components) relies on.
-if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+if (isBrowser() && !window.matchMedia) {
   window.matchMedia = ((query: string) => ({
     matches: false,
     media: query,

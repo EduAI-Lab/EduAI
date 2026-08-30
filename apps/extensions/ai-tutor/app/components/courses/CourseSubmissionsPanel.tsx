@@ -235,12 +235,8 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const activeFeedback = activeRow?.aiFeedback?.message ?? null;
 
   const activeResponse = activeRow?.response ?? null;
-  const activeHasText =
-    typeof activeResponse?.answerText === "string" && activeResponse.answerText.trim() !== "";
-  const activeOptionIndex =
-    !activeHasText && typeof activeResponse?.answerOption === "number"
-      ? activeResponse.answerOption
-      : null;
+  const activeHasText = (activeResponse?.answerText ?? "").trim() !== "";
+  const activeOptionIndex = !activeHasText ? (activeResponse?.answerOption ?? null) : null;
   // MCQ verdict tints the option chip; ungraded stays neutral (mirrors SubmissionCard).
   const activeOptionState =
     activeOptionIndex == null
