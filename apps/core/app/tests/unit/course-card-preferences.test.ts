@@ -14,7 +14,7 @@ import {
 
 describe("course-card-preferences", () => {
   beforeEach(() => {
-    if (typeof localStorage !== "undefined") {
+    if (globalThis.localStorage) {
       localStorage.clear();
     }
   });

@@ -63,6 +63,7 @@ import {
   providerRequiresByokKey,
 } from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
+import { z } from "zod";
 import { cn } from "~/lib/utils";
 import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
@@ -70,6 +71,7 @@ import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
 // see MARKDOWN_STYLES below.
 import "~/styles/chat-markdown.css";
+import { randomId } from "@eduai/ui/runtime-env";
 
 /**
  * KaTeX's stylesheet is loaded on demand, only for messages that actually
@@ -163,24 +165,45 @@ type StudentAiChatProps = {
 // `isDefaultTutor` flag on each /ai-models entry — prefer that over this.
 const DEFAULT_MODEL_ID = "google:gemini-2.5-flash";
 
+/**
+ * The boolean spellings of "may a student pick this model", in precedence
+ * order. They accumulated as the /ai-models contract changed and any given
+ * deployment sends at most one, so the first field actually present wins.
+ */
+const STUDENT_POLICY_FLAGS = [
+  "studentSelectable",
+  "isStudentSelectable",
+  "allowedForStudents",
+  "isAllowed",
+] as const satisfies readonly (keyof StudentSelectableModel)[];
+
+function studentPolicyFlag(model: StudentSelectableModel): boolean | undefined {
+  for (const key of STUDENT_POLICY_FLAGS) {
+    // Only an actual boolean counts as a decision: `/ai-models` carries these
+    // four spellings through unvalidated, and a `null` there means "not
+    // configured", not "blocked".
+    const value = model[key];
+    if (value === true || value === false) return value;
+  }
+  return undefined;
+}
+
+/** `availability` counts only when the API actually sent a string; a `null` or a
+ * non-string there is "not configured", the same as an absent field. */
+function hasAvailability(model: StudentSelectableModel): boolean {
+  return z.string().safeParse(model.availability).success;
+}
+
 // Detects whether the API has decorated this model with any student-policy field.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
-  return (
-    typeof model.studentSelectable === "boolean" ||
-    typeof model.isStudentSelectable === "boolean" ||
-    typeof model.allowedForStudents === "boolean" ||
-    typeof model.isAllowed === "boolean" ||
-    typeof model.availability === "string"
-  );
+  return studentPolicyFlag(model) !== undefined || hasAvailability(model);
 }
 
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
-  if (typeof model.studentSelectable === "boolean") return model.studentSelectable;
-  if (typeof model.isStudentSelectable === "boolean") return model.isStudentSelectable;
-  if (typeof model.allowedForStudents === "boolean") return model.allowedForStudents;
-  if (typeof model.isAllowed === "boolean") return model.isAllowed;
-  if (typeof model.availability === "string") return model.availability === "allowed";
+  const flag = studentPolicyFlag(model);
+  if (flag !== undefined) return flag;
+  if (hasAvailability(model)) return model.availability === "allowed";
   return true;
 }
 
@@ -480,12 +503,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
       const topicId = currentTopicId ?? undefined;
-      const normalizedStudentAnswer =
-        typeof studentAnswer === "number"
-          ? studentAnswer
-          : typeof studentAnswer === "string" && studentAnswer.trim()
-            ? studentAnswer.trim()
-            : undefined;
+      const answerText = z.string().safeParse(studentAnswer);
+      const normalizedStudentAnswer = answerText.success
+        ? answerText.data.trim() || undefined
+        : (z.number().safeParse(studentAnswer).data ?? undefined);
 
       const messageId = generateMessageId();
 
@@ -1157,8 +1178,5 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 export default StudentAiChat;
 
 function generateMessageId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId();
 }

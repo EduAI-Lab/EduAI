@@ -5,6 +5,8 @@
  * composer and Settings → Providers share one source of truth.
  */
 
+import { isBrowser } from "@eduai/ui/runtime-env";
+import { z } from "zod";
 export type ProviderId = "google" | "openai" | "opencode";
 
 /** Sentinel used in UI state when the encrypted key is owned by Core. */
@@ -85,7 +87,7 @@ export function getApiKeysStorageKey(userId: string): string {
  * no trustworthy owner, so migrating it to whichever user signs in next would
  * recreate the cross-account disclosure this boundary prevents. */
 export function discardLegacyApiKeysFromStorage(): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   try {
     localStorage.removeItem(API_KEYS_STORAGE_KEY);
   } catch {
@@ -96,17 +98,18 @@ export function discardLegacyApiKeysFromStorage(): void {
 /** Read/write helpers are wrapped to survive SSR-like environments and browser
  * storage failures without ever falling back to another account's namespace. */
 export function loadApiKeysFromStorage(userId: string | null | undefined): Record<string, string> {
-  if (typeof window === "undefined" || !userId) return {};
+  if (!isBrowser() || !userId) return {};
   try {
     discardLegacyApiKeysFromStorage();
     const stored = localStorage.getItem(getApiKeysStorageKey(userId));
     if (!stored) return {};
-    const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const parsed = z.record(z.unknown()).safeParse(JSON.parse(stored));
+    if (!parsed.success) return {};
     return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
-      ),
+      Object.entries(parsed.data).flatMap(([provider, value]) => {
+        const key = z.string().min(1).safeParse(value);
+        return key.success ? [[provider, key.data] as const] : [];
+      }),
     );
   } catch {
     return {};
@@ -117,7 +120,7 @@ export function saveApiKeysToStorage(
   userId: string | null | undefined,
   keys: Record<string, string>,
 ): void {
-  if (typeof window === "undefined" || !userId) return;
+  if (!isBrowser() || !userId) return;
   try {
     discardLegacyApiKeysFromStorage();
     const storageKey = getApiKeysStorageKey(userId);
@@ -133,18 +136,14 @@ export function saveApiKeysToStorage(
 
 /** Removes one account-scoped legacy key after its Core replacement succeeds. */
 export function removeApiKeyFromStorage(userId: string | null | undefined, provider: string): void {
-  if (typeof window === "undefined" || !userId) return;
+  if (!isBrowser() || !userId) return;
   try {
     const storageKey = getApiKeysStorageKey(userId);
     const stored = localStorage.getItem(storageKey);
     if (!stored) return;
-    const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-    const keys = Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
-      ),
-    );
+    const parsed = z.record(z.string().min(1)).safeParse(JSON.parse(stored));
+    if (!parsed.success) return;
+    const keys = { ...parsed.data };
     delete keys[provider];
     saveApiKeysToStorage(userId, keys);
   } catch {
@@ -154,7 +153,7 @@ export function removeApiKeyFromStorage(userId: string | null | undefined, provi
 }
 
 export function clearApiKeysForUser(userId: string | null | undefined): void {
-  if (typeof window === "undefined" || !userId) return;
+  if (!isBrowser() || !userId) return;
   try {
     localStorage.removeItem(getApiKeysStorageKey(userId));
   } catch {

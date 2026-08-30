@@ -19,6 +19,10 @@ import {
 
 vi.mock("../../src/services/systemSettings.js", () => ({
   getEffectiveEduAiApiKey: vi.fn(),
+  serviceAuthHeader: () => {
+    const key = process.env.EDUAI_API_KEY;
+    return key ? { Authorization: `Bearer ${key}` } : {};
+  },
 }));
 import { getEffectiveEduAiApiKey } from "../../src/services/systemSettings.js";
 

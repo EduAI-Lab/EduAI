@@ -1,4 +1,5 @@
 import { lazy, type ComponentType, type ComponentProps } from "react";
+import { hasDocument } from "../lib/runtime-env";
 
 type StreamdownProps = ComponentProps<typeof import("streamdown").Streamdown>;
 
@@ -27,9 +28,7 @@ function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
     // render would flash unstyled math (#1342). Failures are swallowed: a
     // missing stylesheet should degrade to unstyled math, not suspend the
     // message forever (React.lazy caches rejections permanently).
-    loadKatexStyles && typeof document !== "undefined"
-      ? loadKatexStyles().catch(() => undefined)
-      : undefined,
+    loadKatexStyles && hasDocument() ? loadKatexStyles().catch(() => undefined) : undefined,
   ]).then(([streamdown, codeMod, mathMod]) => {
     const plugins = {
       code: codeMod.code,

@@ -9,7 +9,7 @@ import { auth } from "~/lib/auth/server";
 
 function cookieHeaderFrom(response: Response): string {
   const setCookies =
-    typeof response.headers.getSetCookie === "function"
+    response.headers.getSetCookie instanceof Function
       ? response.headers.getSetCookie()
       : [response.headers.get("set-cookie") ?? ""];
   return setCookies

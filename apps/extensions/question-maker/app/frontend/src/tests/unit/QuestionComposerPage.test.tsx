@@ -61,7 +61,7 @@ const {
     apiKeyStorage: {
       buildApiKeysForModel: vi.fn(async () => ({})),
       getProviderFromModel: vi.fn(() => "openai"),
-      setApiKey: vi.fn(async () => {}),
+      setApiKey: vi.fn(async () => ({ storedRemotely: false })),
     },
     routeParams: { current: { courseId: "5" } as RouteParams },
     searchParamsBox: { current: new URLSearchParams() },

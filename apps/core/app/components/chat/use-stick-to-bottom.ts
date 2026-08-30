@@ -81,7 +81,7 @@ export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLE
       const pane = paneRef.current;
       if (!pane) return;
       setPinnedState(true);
-      if (typeof pane.scrollTo === "function") {
+      if (pane.scrollTo instanceof Function) {
         if (behavior === "smooth") {
           smoothScrollingRef.current = true;
           if (smoothScrollTimerRef.current) clearTimeout(smoothScrollTimerRef.current);
@@ -136,7 +136,7 @@ export function useStickToBottom<Pane extends HTMLElement, Content extends HTMLE
 
   useEffect(() => {
     const content = contentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    if (!content || !("ResizeObserver" in globalThis)) return;
 
     const observer = new ResizeObserver(() => {
       if (pinnedRef.current) scrollToBottom("auto");

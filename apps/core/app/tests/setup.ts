@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 // Unrelated chat route files reuse identities like `user-1`. Skip the daily
 // cap there so they do not share a 50/day Redis bucket. Suites that cover
@@ -18,13 +19,13 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-if (typeof globalThis.ResizeObserver === "undefined") {
+if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
 }
 
 // jsdom does not implement matchMedia, which the use-mobile hook (used by
 // SidebarProvider and other responsive components) relies on.
-if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+if (isBrowser() && !window.matchMedia) {
   window.matchMedia = ((query: string) => ({
     matches: false,
     media: query,

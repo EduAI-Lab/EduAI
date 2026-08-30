@@ -48,7 +48,7 @@ test.describe("AI Tutor INSTRUCTOR content authoring", () => {
     expect(modRes.status()).toBe(201);
 
     const module = await modRes.json();
-    expect(typeof module.id).toBe("number");
+    expect(module.id).toEqual(expect.any(Number));
     expect(module.title).toBe("Week 1: Introduction");
     expect(module.isPublished).toBe(false);
   });
@@ -71,7 +71,7 @@ test.describe("AI Tutor INSTRUCTOR content authoring", () => {
     expect(lessonRes.status()).toBe(201);
 
     const lesson = await lessonRes.json();
-    expect(typeof lesson.id).toBe("number");
+    expect(lesson.id).toEqual(expect.any(Number));
     expect(lesson.title).toBe("Lesson 1");
     expect(lesson.isPublished).toBe(false);
   });
@@ -403,8 +403,8 @@ test.describe("AI Tutor admin endpoints", () => {
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(25);
-    expect(typeof body.total).toBe("number");
-    expect(typeof body.stats.total).toBe("number");
+    expect(body.total).toEqual(expect.any(Number));
+    expect(body.stats.total).toEqual(expect.any(Number));
   });
 
   test("ADMIN GET /api/admin/courses returns 200 with a page of courses", async ({ request }) => {
@@ -414,7 +414,7 @@ test.describe("AI Tutor admin endpoints", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.data)).toBe(true);
-    expect(typeof body.total).toBe("number");
+    expect(body.total).toEqual(expect.any(Number));
   });
 
   test("PATCH /api/admin/users/:userId/role returns 410 (roles are managed by EduAI)", async ({

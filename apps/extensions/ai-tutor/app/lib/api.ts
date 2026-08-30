@@ -832,7 +832,7 @@ export const api = {
     return http(`/api/courses/${courseId}/bank-questions${suffix}`).then((data) => ({
       questions: (data.questions ?? []) as BankQuestion[],
       hasMore: data.hasMore === true,
-      nextOffset: typeof data.nextOffset === "number" ? data.nextOffset : undefined,
+      nextOffset: z.number().safeParse(data.nextOffset).data,
     }));
   },
   submitAnswer: (activityId: number, payload: any) =>

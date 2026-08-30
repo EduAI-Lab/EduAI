@@ -37,6 +37,7 @@ const setApiKey = vi.fn().mockResolvedValue(undefined);
 const removeApiKey = vi.fn();
 const requiresApiKey = vi.fn().mockReturnValue(false);
 vi.mock("@/services/apiKeyStorage", () => ({
+  CORE_STORED_KEY: "__core_stored__",
   apiKeyStorage: {
     getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
     getApiKey: (...args: unknown[]) => getApiKey(...args),

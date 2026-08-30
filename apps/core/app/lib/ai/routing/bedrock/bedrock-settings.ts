@@ -102,7 +102,7 @@ export function hasPositiveBedrockCap(settings: BedrockOverflowSettings): boolea
 }
 
 export function isBedrockProviderName(name: string | undefined): boolean {
-  return typeof name === "string" && name.trim().toLowerCase() === "bedrock";
+  return (name ?? "").trim().toLowerCase() === "bedrock";
 }
 
 export const BEDROCK_USER_SETTINGS_ERROR =

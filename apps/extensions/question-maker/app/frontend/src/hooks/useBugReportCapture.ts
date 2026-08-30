@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import html2canvas from "html2canvas";
+import { isBrowser } from "@eduai/ui/runtime-env";
+import { isString } from "@eduai/ui/primitive-union";
 
 interface ConsoleEntry {
   level: string;
@@ -37,7 +39,7 @@ export function useBugReportCapture(enabled: boolean) {
   } | null>(null);
 
   useEffect(() => {
-    if (!enabled || typeof window === "undefined") {
+    if (!enabled || !isBrowser()) {
       if (originalsRef.current && patchedRef.current) {
         console.log = originalsRef.current.log;
         console.warn = originalsRef.current.warn;
@@ -75,7 +77,7 @@ export function useBugReportCapture(enabled: boolean) {
         message: args
           .map((a) => {
             try {
-              return typeof a === "string" ? a : JSON.stringify(a);
+              return isString(a) ? a : JSON.stringify(a);
             } catch {
               return String(a);
             }
@@ -104,7 +106,7 @@ export function useBugReportCapture(enabled: boolean) {
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method || "GET";
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
       const start = performance.now();
       let status: number | null = null;
 
@@ -140,7 +142,7 @@ export function useBugReportCapture(enabled: boolean) {
   }, [enabled]);
 
   const captureScreenshot = useCallback(async (): Promise<string | null> => {
-    if (!enabled || typeof window === "undefined") return null;
+    if (!enabled || !isBrowser()) return null;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
     const generation = captureGenerationRef.current;

@@ -25,7 +25,7 @@ export async function resolvePasswordReuseUserId({
   getSessionUserId: () => Promise<string | null>;
 }): Promise<string | null> {
   if (TOKEN_RESET_PATHS.has(path)) {
-    if (typeof token !== "string" || token.length === 0) return null;
+    if (!token) return null;
     const verificationId = `reset-password:${token}`;
     const verification = await prisma.verification.findUnique({
       where: { id: verificationId },

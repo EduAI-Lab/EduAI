@@ -6,6 +6,7 @@
 import { termLabel } from "@eduai/ui";
 import { Course } from "../types/question";
 import { EduAICourseOption } from "../services/eduaiService";
+import { isNumber, isString } from "@eduai/ui/primitive-union";
 
 export function normalizeCourseCode(value: string | null | undefined): string {
   return value ? value.replace(/\s+/g, "").toLowerCase() : "";
@@ -17,8 +18,8 @@ export function normalizeCourseCode(value: string | null | undefined): string {
  * year is known, so nav labels can omit the "(…)" suffix entirely.
  */
 export function formatCourseTermYear(course: Pick<Course, "term" | "year">): string | null {
-  const term = typeof course.term === "string" ? course.term.trim() : "";
-  const year = typeof course.year === "number" && Number.isFinite(course.year) ? course.year : null;
+  const term = isString(course.term) ? course.term.trim() : "";
+  const year = isNumber(course.year) && Number.isFinite(course.year) ? course.year : null;
   if (!term && year === null) return null;
   return termLabel(term, year);
 }
