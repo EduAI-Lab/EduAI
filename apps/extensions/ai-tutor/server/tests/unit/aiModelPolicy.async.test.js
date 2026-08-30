@@ -327,6 +327,51 @@ describe("resolveTutorModelSelection", () => {
       status: 403,
     });
   });
+
+  // #1645: the admin allow-list is absolute. A student's own provider key is a
+  // fallback for reaching an ALLOWED model when UBC inference is down, never a
+  // way to run a model the admin left off the list. The route takes no key
+  // argument — holding a key cannot widen the gate.
+  it("rejects a BYOK model the admin left off the allow-list (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    // openai:gpt-4o-mini is a BYOK-provider model absent from the allow-list. A
+    // personal key does not admit it — the allow-list is absolute.
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+    ]);
+
+    await expect(resolveTutorModelSelection("openai:gpt-4o-mini")).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  it("rejects a catalog model the admin left admin-only (#1645)", async () => {
+    mockGetSystemSetting.mockResolvedValue({
+      value: JSON.stringify({ allowedTutorModelIds: ["google:gemini-2.5-flash"] }),
+    });
+    // openai:gpt-4o is active in the catalog but NOT allow-listed → admin-only.
+    // It stays forbidden: a personal key can't reopen a model the policy closed.
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({
+        id: "1",
+        modelId: "gemini-2.5-flash",
+        name: "Gemini Flash",
+        provider: "google",
+      }),
+      catalogModel({ id: "2", modelId: "gpt-4o", name: "GPT-4o", provider: "openai" }),
+    ]);
+
+    await expect(resolveTutorModelSelection("openai:gpt-4o")).rejects.toMatchObject({
+      status: 403,
+    });
+  });
 });
 
 describe("resolveSupervisorSettings", () => {

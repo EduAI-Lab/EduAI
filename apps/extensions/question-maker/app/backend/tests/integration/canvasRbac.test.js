@@ -179,7 +179,7 @@ describe("canvas_course_mappings + export are instructor-only (§18)", () => {
     canvas.getCanvasCourseMapping.mockResolvedValue({ canvasCourseId: "c1" });
     const res = await request(app).get("/api/canvas/mapping/1").set("Cookie", "session=v");
     expect(res.status).toBe(200);
-    expect(canvas.getCanvasCourseMapping).toHaveBeenCalledWith("owner-1", 1);
+    expect(canvas.getCanvasCourseMapping).toHaveBeenCalledWith("owner-1", 1, "session=v");
   });
 
   it("INSTRUCTOR exports an assessment → uses caller creds + owner mapping", async () => {
@@ -190,6 +190,15 @@ describe("canvas_course_mappings + export are instructor-only (§18)", () => {
       .set("Cookie", "session=v")
       .send({ canvasCourseId: "c1" });
     expect(res.status).toBe(200);
-    expect(canvas.exportAssessmentToCanvas).toHaveBeenCalledWith("5", "c1", "owner-1", "session=v");
+    // A request that says nothing about publishing gets the published default (#1556).
+    expect(canvas.exportAssessmentToCanvas).toHaveBeenCalledWith(
+      "5",
+      "c1",
+      "owner-1",
+      "session=v",
+      {
+        published: true,
+      },
+    );
   });
 });

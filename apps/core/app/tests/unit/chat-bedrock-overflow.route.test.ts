@@ -130,6 +130,7 @@ vi.mock("~/lib/api-keys/access.server", () => ({
 
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
+import { action as cancelAction } from "~/routes/api/chat.cancel";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
@@ -140,15 +141,46 @@ import { parseChatMode } from "~/lib/agent-tools";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: RouteRequestBody) {
+function makeRequest(body: RouteRequestBody, requestId?: string) {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (requestId) headers.set("X-EduAI-Request-Id", requestId);
+
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     }),
     params: {},
     context: {} as never,
+  } as never;
+}
+
+function makeCancelRequest(requestId: string) {
+  return {
+    request: new Request("http://localhost/api/chat/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }),
+    }),
+    params: {},
+    context: {} as never,
+  } as never;
+}
+
+function streamingResult() {
+  return {
+    toDataStreamResponse: vi.fn(() => new Response("streamed answer")),
+    consumeStream: vi.fn().mockResolvedValue(undefined),
+    text: Promise.resolve("Overflowed to Bedrock."),
+    usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
+    finishReason: Promise.resolve("stop"),
+    sources: Promise.resolve([]),
+    reasoning: Promise.resolve(undefined),
+    response: Promise.resolve({
+      id: "resp-1",
+      messages: [{ id: "msg-1", role: "assistant", content: "Overflowed to Bedrock." }],
+    }),
   } as never;
 }
 
@@ -341,5 +373,41 @@ describe("Bedrock overflow after admission timeout (#1441)", () => {
     expect(callArgs?.experimental_output).toBeUndefined();
     const body = await res.json();
     expect(body.content).toBe("Overflowed to Bedrock.");
+  });
+
+  it("keeps request cancellation registered through Bedrock overflow", async () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
+    const requestId = "9f1ac5c9-2abf-4b1e-b2f9-dbc1697e0aac";
+    let resolveStream: ((value: ReturnType<typeof streamingResult>) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    vi.mocked(streamText).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+          markStarted?.();
+        }) as never,
+    );
+
+    const chatAction = action(makeRequest(baseBody({ streaming: true }), requestId));
+    await started;
+    const abortSignal = vi.mocked(streamText).mock.calls.at(-1)?.[0]?.abortSignal;
+    expect(abortSignal?.aborted).toBe(false);
+
+    const cancelResponse = await cancelAction(makeCancelRequest(requestId));
+    expect(cancelResponse.status).toBe(204);
+    expect(abortSignal?.aborted).toBe(true);
+
+    resolveStream?.(streamingResult());
+    await chatAction;
   });
 });

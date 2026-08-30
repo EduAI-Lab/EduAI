@@ -41,6 +41,7 @@ import {
   acquireAiAdmission,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
@@ -142,6 +143,11 @@ import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.serve
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import {
+  ChatDailyLimitSettingsUnavailableError,
+  consumeLocalChatDailyCap,
+  refundLocalChatDailyCap,
+} from "~/lib/chat-daily-limits.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
@@ -676,6 +682,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // already been persisted (#1621 review) — otherwise the client can't
   // resume the same thread on retry even though nothing was lost server-side.
   let chat: Awaited<ReturnType<typeof prisma.chat.findFirst>> = null;
+  const activeRequestId = request.headers.get("X-EduAI-Request-Id")?.trim() || null;
   try {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
@@ -1657,6 +1664,65 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Charge the resolved provider:model, not Auto. Skip regenerateOnly
+    // previews so a content preview does not spend a daily token. Recorded
+    // so a later Bedrock overflow (admission timeout / fleet exhaustion) can
+    // refund this charge — that turn ends up running on cloud, not local.
+    let localDailyCapCharge: { userId: string; reservationToken: string } | null = null;
+    if (!regenerateOnly) {
+      let dailyCap;
+      try {
+        dailyCap = await consumeLocalChatDailyCap({
+          userId: actingUser.id,
+          role: actingUser.role ?? undefined,
+          model: resolvedModelId,
+        });
+        // #1547 review: reservationToken is only present when this call
+        // actually charged (checkRateLimit's contract) — checking for it
+        // specifically, rather than just truthy `dailyCap`, means a refund
+        // is never attempted for a charge that never happened (dailyCap is
+        // also truthy, just with `limited: true`, when the cap was already
+        // exhausted — but that path returns 429 below before this variable
+        // is ever read again).
+        if (dailyCap?.reservationToken) {
+          localDailyCapCharge = {
+            userId: actingUser.id,
+            reservationToken: dailyCap.reservationToken,
+          };
+        }
+      } catch (error) {
+        if (error instanceof ChatDailyLimitSettingsUnavailableError) {
+          return chatApiReject(
+            503,
+            {
+              error: "Daily message limits could not be loaded. Please try again shortly.",
+            },
+            { chatMode, userId: actingUser.id },
+          );
+        }
+        throw error;
+      }
+      if (dailyCap?.limited) {
+        const requestContext = getRequestContext(request);
+        fireAndForget(
+          logSecurityEvent({
+            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+            ...requestContext,
+            actionCode: "RATE_LIMIT_EXCEEDED",
+            outcome: "DENIED",
+            entityType: "Chat",
+            details: { userId: actingUser.id, scope: "daily" },
+          }),
+        );
+        return chatApiReject(
+          429,
+          { error: "RATE_LIMITED", retryAfter: dailyCap.retryAfter },
+          { chatMode, userId: actingUser.id },
+          { "Retry-After": String(dailyCap.retryAfter) },
+        );
+      }
+    }
+
     // Persist the user's message(s) now — the request has already cleared
     // every structural/content validation gate above (course-scope image
     // support, model image-capability), so anything that fails from here on
@@ -2608,7 +2674,17 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+    const applyBedrockOverflow = async (overflow: BedrockOverflowActivation) => {
+      // This turn is landing on Bedrock (cloud), not the local model it was
+      // reserved against — refund that reservation so it does not count
+      // toward the user's local daily cap. Awaited (#1547 review): a
+      // fire-and-forget refund let a very-fast follow-up request from the
+      // same user observe the still-charged bucket before the refund landed,
+      // occasionally 429ing a request that should have been allowed.
+      if (localDailyCapCharge) {
+        await refundLocalChatDailyCap(localDailyCapCharge);
+        localDailyCapCharge = null;
+      }
       resolvedModelId = overflow.resolvedModelId;
       const nextParsed = parseModelIdentifier(resolvedModelId);
       if (!nextParsed) {
@@ -2641,14 +2717,37 @@ ${buildEmptyCourseRagBlock()}`;
 
     const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
+    const streamAbortController = new AbortController();
+    const abortStreamFromRequest = () => streamAbortController.abort();
+    if (request.signal.aborted) abortStreamFromRequest();
+    else request.signal.addEventListener("abort", abortStreamFromRequest, { once: true });
+    let unregisterCancellation: (() => void) | undefined;
+    const cleanupStreamCancellation = () => {
+      unregisterCancellation?.();
+      unregisterCancellation = undefined;
+      request.signal.removeEventListener("abort", abortStreamFromRequest);
+    };
+    if (activeRequestId) {
+      unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
+        streamAbortController.abort();
+      });
+    }
+    const releaseAdmission = (keepCancellation = false) => {
+      if (admissionRelease) {
+        admissionRelease();
+        admissionRelease = null;
+      }
+      if (!keepCancellation) cleanupStreamCancellation();
+    };
     let admissionWaitedMs = 0;
     if (needsAdmission) {
       try {
-        const slot = await acquireAiAdmission(request.signal);
+        const slot = await acquireAiAdmission(streamAbortController.signal);
         admissionRelease = slot.release;
         admissionWaitedMs = slot.waitedMs;
       } catch (err) {
-        if (isClientAbort(err, request.signal)) {
+        if (isClientAbort(err, streamAbortController.signal)) {
+          releaseAdmission();
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
@@ -2656,12 +2755,13 @@ ${buildEmptyCourseRagBlock()}`;
             userId: actingUser.id,
           });
           if (overflow) {
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             chatApiTrace("bedrock overflow after admission timeout", {
               resolvedModelId,
               serverId: overflow.serverId,
             });
           } else {
+            releaseAdmission();
             return new Response(
               JSON.stringify({
                 error: "Server busy — too many concurrent AI requests. Try again shortly.",
@@ -2674,16 +2774,11 @@ ${buildEmptyCourseRagBlock()}`;
             );
           }
         } else {
+          releaseAdmission();
           throw err;
         }
       }
     }
-    const releaseAdmission = () => {
-      if (admissionRelease) {
-        admissionRelease();
-        admissionRelease = null;
-      }
-    };
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
@@ -2755,7 +2850,7 @@ ${buildEmptyCourseRagBlock()}`;
         ...(streamConfig as Parameters<typeof streamText>[0]),
         experimental_output: structuredOutput,
         providerOptions: usageProviderOptions(parsedModel.providerId),
-        abortSignal: request.signal,
+        abortSignal: streamAbortController.signal,
         onChunk: probe
           ? () => {
               probe.hooks.signalReady();
@@ -2863,7 +2958,7 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
-      if (isClientAbort(error, request.signal)) {
+      if (isClientAbort(error, streamAbortController.signal)) {
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -2919,9 +3014,12 @@ ${buildEmptyCourseRagBlock()}`;
             if (!overflow) {
               throw error;
             }
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             shouldProbeFleetStream = false;
-            releaseAdmission();
+            // The local slot is no longer needed, but the request-specific
+            // cancellation handle must survive while the Bedrock fallback
+            // stream is running.
+            releaseAdmission(true);
             chatApiTrace("bedrock overflow after fleet exhausted", {
               resolvedModelId,
               serverId: overflow.serverId,
@@ -2931,7 +3029,7 @@ ${buildEmptyCourseRagBlock()}`;
           }
         } catch (retryError) {
           releaseAdmission();
-          if (isClientAbort(retryError, request.signal)) {
+          if (isClientAbort(retryError, streamAbortController.signal)) {
             return clientAbortResponse();
           }
           logStreamError(retryError, streamTrace);
@@ -3145,7 +3243,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (oversightStage === "provider") {
@@ -3351,7 +3449,16 @@ ${buildEmptyCourseRagBlock()}`;
           telemetryServerId ?? fleetPick?.serverId ?? null,
         ),
       );
-      const release = admissionRelease;
+      // `admissionRelease` is cleared below so outer error paths cannot release
+      // a slot after ownership transfers to the response body. Capture the
+      // acquired callback by value first: closing over `releaseAdmission()` here
+      // would read the now-null mutable variable and leak every completed
+      // streaming turn until AI_MAX_INFLIGHT is exhausted.
+      const acquiredAdmissionRelease = admissionRelease;
+      const release = () => {
+        acquiredAdmissionRelease?.();
+        cleanupStreamCancellation();
+      };
       admissionRelease = null;
       const dataStreamOptions: Parameters<typeof result.toDataStreamResponse>[0] = {
         headers,
@@ -3364,7 +3471,11 @@ ${buildEmptyCourseRagBlock()}`;
       if (liveStreamData) {
         dataStreamOptions.data = liveStreamData;
       }
-      return withAdmissionRelease(result.toDataStreamResponse(dataStreamOptions), release);
+      return withAdmissionRelease(
+        result.toDataStreamResponse(dataStreamOptions),
+        release,
+        streamAbortController.signal,
+      );
     } else {
       let providerResultResolved = false;
       try {
@@ -3461,7 +3572,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
       } catch (error) {
         releaseAdmission();
-        if (isClientAbort(error, request.signal)) {
+        if (isClientAbort(error, streamAbortController.signal)) {
           return clientAbortResponse();
         }
         if (!providerResultResolved) {
