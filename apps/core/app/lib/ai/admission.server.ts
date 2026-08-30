@@ -142,6 +142,7 @@ export async function acquireAiAdmission(signal?: AbortSignal): Promise<{
 export function withAdmissionRelease(
   response: Response,
   release: (() => void) | null | undefined,
+  signal?: AbortSignal,
 ): Response {
   if (!release) return response;
   if (!response.body) {
@@ -150,15 +151,32 @@ export function withAdmissionRelease(
   }
 
   let released = false;
+  let onAbort: (() => void) | undefined;
   const releaseOnce = () => {
     if (released) return;
     released = true;
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
     release();
   };
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
   const reader = response.body.getReader();
+
+  // A client-side stop aborts the route request, but a framework/proxy is not
+  // required to cancel the Response body's reader. Tie that abort directly to
+  // the upstream stream so a stalled transport cannot strand an admission
+  // slot and block every later local-model request.
+  onAbort = () => {
+    void reader
+      .cancel()
+      .catch(() => {})
+      .finally(releaseOnce);
+  };
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   void (async () => {
     try {

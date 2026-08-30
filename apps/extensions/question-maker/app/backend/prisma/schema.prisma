@@ -21,8 +21,8 @@ model User {
 
   courses                    Course[]
   courseAccess               CourseAccess[]
-  createdQuestions           QuestionMetadata[]    @relation("QuestionMetadataCreator")
-  createdVariants            Variants[]            @relation("VariantsCreator")
+  createdQuestions           QuestionMetadata[]          @relation("QuestionMetadataCreator")
+  createdVariants            Variants[]                  @relation("VariantsCreator")
   canvasCourseMappings       CanvasCourseMapping[]
   canvasBankMappings         CanvasBankMapping[]
   canvasBankQuestionMappings CanvasBankQuestionMapping[]
@@ -45,7 +45,7 @@ model Course {
   topics                  Topics[]
   questionMetadata        QuestionMetadata[]
   assessments             Assessments[]
-  accessGrants             CourseAccess[]
+  accessGrants            CourseAccess[]
   canvasMapping           CanvasCourseMapping?
   variantSelectionCursors VariantSelectionCursor[]
 
@@ -109,9 +109,9 @@ model QuestionMetadata {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
 
-  course                     Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  primaryTopic               Topics                     @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
-  creator                    User?                      @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  course                     Course                      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  primaryTopic               Topics                      @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
+  creator                    User?                       @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   variants                   Variants[]
   selectionCursors           VariantSelectionCursor[]
   canvasBankQuestionMappings CanvasBankQuestionMapping[]
@@ -174,31 +174,35 @@ enum AssessmentType {
 /// references, not Core IDs) — translated to coreTopicId at push time.
 /// `coreQuestionId` is set once the variant is approved and pushed to Core.
 model Variants {
-  id                 Int                   @id @default(autoincrement())
-  questionText       String                @map("question_text")
-  difficulty         VariantDifficulty     @default(medium)
-  reasoningLevel     VariantReasoningLevel @default(factual) @map("reasoning_level")
-  questionMetadataId Int                   @map("question_metadata_id")
-  assessmentId       Int?                  @map("assessment_id")
+  id                  Int                   @id @default(autoincrement())
+  questionText        String                @map("question_text")
+  difficulty          VariantDifficulty     @default(medium)
+  reasoningLevel      VariantReasoningLevel @default(factual) @map("reasoning_level")
+  questionMetadataId  Int                   @map("question_metadata_id")
+  assessmentId        Int?                  @map("assessment_id")
   /// Array of local topics.id CUIDs; translated to coreTopicId at push time
-  secondaryTopicsId  String[]              @default([]) @map("secondary_topics_id")
-  referenceId        Int?                  @map("reference_id")
-  isAiGenerated      Boolean               @default(false) @map("is_ai_generated")
+  secondaryTopicsId   String[]              @default([]) @map("secondary_topics_id")
+  referenceId         Int?                  @map("reference_id")
+  isAiGenerated       Boolean               @default(false) @map("is_ai_generated")
   /// All new variants start as drafts and need review before being added to assessments.
-  isDraft            Boolean               @default(true) @map("is_draft")
-  answer             String?
+  isDraft             Boolean               @default(true) @map("is_draft")
+  answer              String?
   /// Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]
-  choices            Json?                 @db.JsonB
+  choices             Json?                 @db.JsonB
   /// When true, MCQ allows multiple correct letters in correctAnswers
-  selectAllThatApply Boolean               @default(false) @map("select_all_that_apply")
+  selectAllThatApply  Boolean               @default(false) @map("select_all_that_apply")
   /// JSON string[] of correct choice letters when selectAllThatApply; null for single-correct
-  correctAnswers     Json?                 @map("correct_answers") @db.JsonB
+  correctAnswers      Json?                 @map("correct_answers") @db.JsonB
   /// Core Question CUID; null until variant is approved and pushed to Core
-  coreQuestionId     String?               @unique @map("core_question_id")
+  coreQuestionId      String?               @unique @map("core_question_id")
+  /// Author's intent for whether other EduAI extensions may use this question
+  /// (#1555). Held locally because a draft has no Core row yet; pushed as the
+  /// Core Question's `testable` when the variant is approved.
+  shareWithExtensions Boolean               @default(false) @map("share_with_extensions")
   /// users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.
-  createdBy          String?               @map("created_by")
-  createdAt          DateTime              @default(now()) @map("created_at")
-  updatedAt          DateTime              @default(now()) @updatedAt @map("updated_at")
+  createdBy           String?               @map("created_by")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at")
 
   questionMetadata          QuestionMetadata         @relation(fields: [questionMetadataId], references: [id], onDelete: Cascade)
   assessment                Assessments?             @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
@@ -356,8 +360,8 @@ model CanvasBankQuestionMapping {
   createdAt                  DateTime @default(now()) @map("created_at")
   updatedAt                  DateTime @default(now()) @updatedAt @map("updated_at")
 
-  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  localQuestionMetadata  QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localQuestionMetadata QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
 
   @@unique([userId, canvasAssessmentQuestionId, localCourseId])
   @@index([localQuestionMetadataId])

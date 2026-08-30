@@ -27,6 +27,7 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { cancelChatRequest, fetchChatWithRequestId } from "./chat-request-cancellation";
 import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
@@ -70,7 +71,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -81,7 +82,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
-  const hasNoCourses = availableCourses.length === 0;
+  // An empty list only means "not enrolled" once the fetch has actually
+  // resolved. Answering the first message on `/chat` replaces the route with
+  // `/chat/:id`, which remounts this screen — without the loading gate the
+  // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
+  // overlay over the reply that was still streaming (#1517).
+  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
@@ -329,6 +335,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
   };
+  const activeRequestIdRef = useRef<string | null>(null);
+  const chatFetch = useCallback<typeof fetch>(
+    (input, init) => fetchChatWithRequestId(activeRequestIdRef, input, init),
+    [],
+  );
 
   const {
     messages,
@@ -342,6 +353,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     setInput,
   } = useChat({
     api: "/api/chat",
+    fetch: chatFetch,
     // Seed the composer from the route loader's transcript (DB is the source of
     // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
     initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
@@ -399,6 +411,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onFinish: (message) => {
+      activeRequestIdRef.current = null;
       // Server-owned source of truth for the Continue button.
       const hitLongOutputCap =
         message.role === "assistant" &&
@@ -457,6 +470,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onError: (error) => {
+      activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
@@ -580,6 +594,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
   );
 
+  // Shared with handleStop: a course change, New Chat, or history navigation
+  // away from an in-flight turn must cancel the server-side request the same
+  // way the Stop button does, not just abort the client fetch — otherwise a
+  // masked disconnect leaves generation and the admission slot running.
+  // cancelChatRequest/stop are both no-ops when nothing is in flight, so this
+  // is safe to call unconditionally from every exit path.
+  const stopActiveChatRequest = useCallback(() => {
+    cancelChatRequest(activeRequestIdRef);
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
+
   const handleCourseChange = useCallback(
     (code: string | null) => {
       const action = resolveCourseChangeAction({
@@ -595,7 +622,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         // A chat id can arrive in onResponse while the URL is still /chat. A
         // same-route navigation does not remount this component, so clear all
         // persisted/in-flight state before handing off the selected course.
-        stop();
+        stopActiveChatRequest();
         pendingNavigateChatId.current = null;
         pendingRoutedRegistryIdRef.current = null;
         setChatId(null);
@@ -620,17 +647,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       selectedCourseCode,
       setInput,
       setMessages,
-      stop,
+      stopActiveChatRequest,
     ],
   );
 
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
-    pendingRoutedRegistryIdRef.current = null;
-    setStreamingRoutedRegistryId(null);
-    stop();
-  }, [stop]);
+    stopActiveChatRequest();
+  }, [stopActiveChatRequest]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -704,17 +729,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   // Route is the source of truth: selecting history navigates to /chat/:chatId
   // (loader hydrates the transcript) instead of mutating composer state in place.
+  // Leaving a persisted chat mid-turn without cancelling would otherwise leak
+  // the server-side generation and its admission slot (same as course change).
   const handleSelectChat = useCallback(
     (id: string) => {
+      stopActiveChatRequest();
       navigate(`/chat/${id}`);
     },
-    [navigate],
+    [navigate, stopActiveChatRequest],
   );
 
   // New chat = a clean /chat route (no transcript, no restore).
   const handleNewChat = useCallback(() => {
+    stopActiveChatRequest();
     navigate("/chat");
-  }, [navigate]);
+  }, [navigate, stopActiveChatRequest]);
 
   const historyListProps = {
     chats,

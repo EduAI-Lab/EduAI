@@ -13,6 +13,7 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
 const captureApiKeysOwner = vi.hoisted(() => vi.fn());
+const chatState = vi.hoisted(() => ({ isLoading: false }));
 const {
   handleSubmitMock,
   handleInputChangeMock,
@@ -48,7 +49,7 @@ vi.mock("@ai-sdk/react", () => ({
       input: "",
       handleInputChange: handleInputChangeMock,
       handleSubmit: handleSubmitMock,
-      isLoading: false,
+      isLoading: chatState.isLoading,
       stop: stopChat,
       append: appendMock,
       setMessages,
@@ -61,14 +62,25 @@ vi.mock("~/lib/assistive-events.client", () => ({
   postAssistiveClientEvent: postAssistiveClientEventMock,
 }));
 
+const DEFAULT_COURSES = [
+  { id: "c1", code: "COSC 101", name: "Intro to CS" },
+  { id: "c2", code: "PHYS 121", name: "Mechanics" },
+];
+// Mutable so the not-enrolled tests can replay the in-flight fetch a remount
+// starts with (#1517); `resetCoursesState` restores it between tests.
+const coursesState = vi.hoisted(() => ({
+  courses: [] as Array<{ id: string; code: string; name: string }>,
+  loading: false,
+}));
+
+function resetCoursesState() {
+  coursesState.courses = DEFAULT_COURSES;
+  coursesState.loading = false;
+}
+resetCoursesState();
+
 vi.mock("~/hooks/api/use-courses", () => ({
-  useCourses: () => ({
-    courses: [
-      { id: "c1", code: "COSC 101", name: "Intro to CS" },
-      { id: "c2", code: "PHYS 121", name: "Mechanics" },
-    ],
-    loading: false,
-  }),
+  useCourses: () => coursesState,
 }));
 
 vi.mock("~/hooks/api/use-chat-history", () => ({
@@ -166,9 +178,11 @@ const autoRoutingData: ChatBaseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCoursesState();
   // append returns a Promise in the real AI SDK; the chip handler chains
   // .finally() on it to clear its in-flight guard, so the mock must resolve.
   appendMock.mockResolvedValue(undefined);
+  chatState.isLoading = false;
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -316,6 +330,163 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
+  it("sends a request-specific Stop beacon before stopping the chat", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    try {
+      renderChatScreen();
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+      const initialFetch = vi.mocked(globalThis.fetch).mock.calls.at(-1);
+      const requestId = new Headers(initialFetch?.[1]?.headers).get("X-EduAI-Request-Id");
+      expect(requestId).toEqual(expect.any(String));
+
+      await act(async () => {
+        captureCourseViewProps.mock.lastCall?.[0].onStop();
+      });
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(sendBeacon.mock.calls[0][0]).toBe("/api/chat/cancel");
+      const body = sendBeacon.mock.calls[0][1] as Blob;
+      expect(body.type).toBe("application/json");
+      expect(JSON.parse(await body.text())).toEqual({ requestId });
+      expect(stopChat).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
+  it("uses a same-origin keepalive request when sendBeacon is unavailable", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: undefined,
+    });
+
+    try {
+      renderChatScreen();
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+
+      await act(async () => {
+        captureCourseViewProps.mock.lastCall?.[0].onStop();
+      });
+
+      const fetchMock = vi.mocked(globalThis.fetch);
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "/api/chat/cancel",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "same-origin",
+          keepalive: true,
+        }),
+      );
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
+  it("falls back to keepalive when sendBeacon refuses to queue", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(false);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    try {
+      renderChatScreen();
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+
+      await act(async () => {
+        captureCourseViewProps.mock.lastCall?.[0].onStop();
+      });
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(globalThis.fetch)).toHaveBeenLastCalledWith(
+        "/api/chat/cancel",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "same-origin",
+          keepalive: true,
+        }),
+      );
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
+  it("cancels the server-side request before switching courses mid-turn (#1649 review)", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    try {
+      renderPersistedChatWithBlankChatRoute(makePersistedTranscript());
+      const options = captureUseChatOptions.mock.lastCall?.[0] as {
+        fetch: typeof fetch;
+      };
+
+      // Start an in-flight turn so activeRequestIdRef holds a live request id.
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+      const initialFetch = vi.mocked(globalThis.fetch).mock.calls.at(-1);
+      const requestId = new Headers(initialFetch?.[1]?.headers).get("X-EduAI-Request-Id");
+      expect(requestId).toEqual(expect.any(String));
+
+      chatState.isLoading = true;
+      const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
+      await act(async () => {
+        persistedViewProps.setSelectedCourseCode("PHYS 121");
+      });
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(sendBeacon.mock.calls[0][0]).toBe("/api/chat/cancel");
+      const body = sendBeacon.mock.calls[0][1] as Blob;
+      expect(JSON.parse(await body.text())).toEqual({ requestId });
+      expect(stopChat).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
   it("submits a suggested prompt directly via append, not through the input round-trip (#1644)", async () => {
     renderChatScreen();
 
@@ -1102,5 +1273,33 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/chat", expect.anything());
     expect(captureCourseViewProps.mock.lastCall?.[0].adhdAssist).toBe(true);
     fetchSpy.mockRestore();
+  });
+});
+
+describe("ChatScreen — not-enrolled overlay gating (#1517)", () => {
+  it("does not report no-courses while the course fetch is still in flight", () => {
+    // What a remount looks like: answering the first message on `/chat`
+    // replaces the route with `/chat/:id`, so useCourses restarts at `[]`.
+    coursesState.courses = [];
+    coursesState.loading = true;
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBeUndefined();
+  });
+
+  it("reports no-courses once the fetch resolves with an empty list", () => {
+    coursesState.courses = [];
+    coursesState.loading = false;
+
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBe("no-courses");
+  });
+
+  it("leaves chat enabled when the fetch resolves with courses", () => {
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBeUndefined();
   });
 });

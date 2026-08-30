@@ -12,7 +12,7 @@ export function normalizeCourseCode(value: string | null | undefined): string {
 }
 
 /**
- * Canonical compact term label, e.g. "2026W1", via the shared `@eduai/ui` term
+ * Canonical compact term label, e.g. "2026-27W1", via the shared `@eduai/ui` term
  * model — identical to AI Tutor and Core. Returns null when neither term nor
  * year is known, so nav labels can omit the "(…)" suffix entirely.
  */

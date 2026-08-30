@@ -38,8 +38,9 @@ function makeRes() {
 function makeApiReq(overrides = {}) {
   return {
     headers: {},
-    path: "/api/questions",
-    originalUrl: "/api/questions",
+    method: "GET",
+    path: "/api/assessments/1",
+    originalUrl: "/api/assessments/1",
     ...overrides,
   };
 }
@@ -129,6 +130,35 @@ describe("requireAuth", () => {
 
     expect(findOrCreateUser).toHaveBeenCalledWith(
       expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: false },
+    );
+  });
+
+  it("bypasses the user-row cache before mutating and side-effecting read handlers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+      }),
+    );
+
+    await requireAuth(makeApiReq({ method: "POST", path: "/api/questions" }), makeRes(), next);
+    await requireAuth(
+      makeApiReq({ path: "/api/course", originalUrl: "/api/course" }),
+      makeRes(),
+      next,
+    );
+
+    expect(findOrCreateUser).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: true },
+    );
+    expect(findOrCreateUser).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: "u1", email: "a@b.com", role: "STUDENT" }),
+      { skipCache: true },
     );
   });
 
@@ -262,6 +292,30 @@ describe("requireAuth", () => {
       success: false,
       error: "Authentication service unavailable",
     });
+  });
+
+  // A DB failure in the local-row upsert says nothing about the session, so it
+  // must not be reported as 401 — the frontend's 401 interceptor would sign a
+  // perfectly valid user out (#1388 review).
+  it("returns 503, not 401, when the local user row upsert fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+      }),
+    );
+    findOrCreateUser.mockRejectedValue(new Error("db down"));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, error: "Service temporarily unavailable" }),
+    );
   });
 
   // #225 edge-case audit SEAM-01 / #1197 fix: a Core 429 (IP rate limit) is

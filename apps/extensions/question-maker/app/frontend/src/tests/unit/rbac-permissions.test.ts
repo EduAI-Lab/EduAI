@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   canApproveVariant,
   canCreateQuestion,
+  canDeleteVariant,
+  canEditDraftVariant,
+  canEditQuestionMetadata,
+  canExportAssessment,
   canLinkCourse,
   canManageAssessment,
+  canManageCanvasIntegration,
+  canRunAiReview,
   canTriageBugReports,
+  canUseVariantWorkflow,
   canViewAssessment,
   resolvePlatformCourseAccess,
 } from "@/lib/rbac";
@@ -62,5 +69,50 @@ describe("QM RBAC permissions", () => {
     expect(canLinkCourse(unitAdmin)).toBe(true);
     expect(canLinkCourse(instructor)).toBe(true);
     expect(canLinkCourse(null)).toBe(false);
+  });
+
+  describe("canEditQuestionMetadata / canEditDraftVariant / canDeleteVariant", () => {
+    const ta = { id: "t1", role: "INSTRUCTOR" };
+
+    it("lets admin, unit, and instructor edit regardless of ownership", () => {
+      expect(canEditQuestionMetadata(admin, "admin")).toBe(true);
+      expect(canEditQuestionMetadata(unitAdmin, "unit")).toBe(true);
+      expect(canEditQuestionMetadata(instructor, "instructor")).toBe(true);
+    });
+
+    it("lets a TA edit only their own resource", () => {
+      expect(canEditQuestionMetadata(ta, "ta", { createdBy: "t1" })).toBe(true);
+      expect(canEditQuestionMetadata(ta, "ta", { createdBy: "other" })).toBe(false);
+      expect(canEditQuestionMetadata(ta, "ta")).toBe(false);
+    });
+
+    it("denies edit when access is null or unrecognized", () => {
+      expect(canEditQuestionMetadata(ta, null)).toBe(false);
+    });
+
+    it("mirrors the metadata rule for draft-variant edit and delete", () => {
+      expect(canEditDraftVariant(admin, "admin")).toBe(true);
+      expect(canEditDraftVariant(ta, "ta", { createdBy: "t1" })).toBe(true);
+      expect(canDeleteVariant(admin, "admin")).toBe(true);
+      expect(canDeleteVariant(ta, "ta", { createdBy: "other" })).toBe(false);
+    });
+  });
+
+  describe("assessment export / AI review / variant workflow / canvas", () => {
+    it("follows the same authoring-access rule as canManageAssessment", () => {
+      expect(canExportAssessment(instructor)).toBe(true);
+      expect(canExportAssessment(instructor, "ta")).toBe(false);
+      expect(canRunAiReview(admin)).toBe(true);
+      expect(canRunAiReview(instructor, "ta")).toBe(false);
+      expect(canUseVariantWorkflow(unitAdmin)).toBe(true);
+      expect(canUseVariantWorkflow(instructor, "ta")).toBe(false);
+    });
+
+    it("restricts Canvas integration management to authoring roles", () => {
+      expect(canManageCanvasIntegration(admin)).toBe(true);
+      expect(canManageCanvasIntegration(instructor)).toBe(true);
+      expect(canManageCanvasIntegration(instructor, "ta")).toBe(false);
+      expect(canManageCanvasIntegration(null)).toBe(false);
+    });
   });
 });

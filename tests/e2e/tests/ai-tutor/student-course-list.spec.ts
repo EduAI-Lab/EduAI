@@ -119,7 +119,7 @@ test.describe("AI Tutor STUDENT — course list filters and pagination", () => {
       await expect(page.getByText(w2.name).first()).toBeVisible();
 
       await page.getByRole("combobox").filter({ hasText: "Term" }).click();
-      await page.getByRole("option", { name: "2026W2", exact: true }).click();
+      await page.getByRole("option", { name: "2026-27W2", exact: true }).click();
       await expect(page).toHaveURL(/term=W2/, { timeout: 20_000 });
       await expect(page.getByText(w2.name).first()).toBeVisible();
       await expect(page.getByText(w1.name)).toHaveCount(0);
