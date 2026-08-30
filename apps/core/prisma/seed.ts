@@ -15,6 +15,11 @@ import {
   assertLocalDemoEnvironment,
   getLocalSeedPassword,
 } from "../app/lib/deployment-safety.server";
+import {
+  VLLM_MODELS,
+  VLLM_RETIRED_MODEL_IDS,
+  VLLM_ROUTING_TIER_ASSIGNMENTS,
+} from "./ai-model-catalog";
 
 export const prisma = new PrismaClient();
 
@@ -1133,25 +1138,9 @@ const COURSES: SeedCourse[] = [
  * manually until that gap is closed, or apply this seed step to production
  * deploys too.
  */
-// Keep these IDs aligned with the vLLM catalog in this file and in
-// `apps/core/prisma/sync-ai-providers.ts`. The values are the current
-// `ESTIMATED_FROM_TOKENS` estimates used by Auto's energy/carbon tie-breaks.
-export const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
-    routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
-  },
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
-    routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
+// The shared catalog is the source of truth for seeded vLLM models and their
+// `ESTIMATED_FROM_TOKENS` values used by Auto's energy/carbon tie-breaks.
+export const ROUTING_TIER_ASSIGNMENTS = VLLM_ROUTING_TIER_ASSIGNMENTS;
 
 export async function applyRoutingTierAssignments() {
   console.log("Applying routing tier and energy constants...");
@@ -1159,10 +1148,6 @@ export async function applyRoutingTierAssignments() {
   // Providers touched below, keyed by name, so the retired-vLLM-row cleanup
   // (after the loop) can reuse the same lookups instead of querying again.
   const providerByName = new Map<string, { id: string }>();
-  const currentVllmModelIds = new Set(
-    ROUTING_TIER_ASSIGNMENTS.filter((row) => row.providerName === "vllm").map((row) => row.modelId),
-  );
-
   for (const row of ROUTING_TIER_ASSIGNMENTS) {
     let provider = providerByName.get(row.providerName);
     if (!provider) {
@@ -1197,10 +1182,9 @@ export async function applyRoutingTierAssignments() {
     });
   }
 
-  // Clear the tier on any vLLM row this seed no longer assigns — e.g. after a
-  // fleet generation change (qwen2.5 -> qwen3.5), the old model IDs would
-  // otherwise keep a stale routerTier and stay selectable by loadTierRows()
-  // even though they are no longer the deployed models this seed manages.
+  // Clear only IDs from a known retired fleet generation. Do not clear every
+  // non-catalog row: an administrator may have added an active vLLM model and
+  // intentionally assigned it a tier through the admin UI.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -1211,7 +1195,7 @@ export async function applyRoutingTierAssignments() {
       where: {
         providerId: vllm.id,
         routerTier: { not: null },
-        modelId: { notIn: [...currentVllmModelIds] },
+        modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
       data: { routerTier: null },
     });
@@ -1368,24 +1352,7 @@ async function seedAIProvidersAndModels() {
     });
   }
 
-  const vllmModels = [
-    {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: false,
-    },
-    {
-      modelId: "qwen2.5-32b-instruct",
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
-      supportsTools: true,
-    },
-  ];
-
-  for (const m of vllmModels) {
+  for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
       update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools, supportsImages: false },

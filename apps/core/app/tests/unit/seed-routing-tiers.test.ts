@@ -72,9 +72,8 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
     }
   });
 
-  it("clears routerTier on a retired vLLM row no longer in the current assignment list", async () => {
-    const { applyRoutingTierAssignments, ROUTING_TIER_ASSIGNMENTS } =
-      await import("../../../prisma/seed");
+  it("clears only known retired rows and preserves admin-managed model rows", async () => {
+    const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
 
     await applyRoutingTierAssignments();
 
@@ -84,11 +83,14 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
         where: expect.objectContaining({
           providerId: VLLM_PROVIDER.id,
           routerTier: { not: null },
-          modelId: { notIn: currentIds },
+          modelId: { in: ["qwen3.5-2b-instruct", "qwen3.5-9b-instruct"] },
         }),
         data: { routerTier: null },
       }),
     );
+
+    const cleanup = aIModelUpdateMany.mock.calls.find(([args]) => args?.where?.modelId?.in)?.[0];
+    expect(cleanup?.where?.modelId?.notIn).toBeUndefined();
   });
 
   it("also clears any leftover tier on Google rows", async () => {

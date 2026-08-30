@@ -3,33 +3,18 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import {
+  VLLM_MODELS,
+  VLLM_RETIRED_MODEL_IDS,
+  VLLM_ROUTING_TIER_ASSIGNMENTS,
+} from "./ai-model-catalog";
 
 const prisma = new PrismaClient();
 
-const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
-    routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
-  },
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
-    routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
-
 async function applyRoutingTierAssignments() {
   const providerByName = new Map<string, { id: string }>();
-  const currentVllmModelIds = new Set(
-    ROUTING_TIER_ASSIGNMENTS.filter((row) => row.providerName === "vllm").map((row) => row.modelId),
-  );
 
-  for (const row of ROUTING_TIER_ASSIGNMENTS) {
+  for (const row of VLLM_ROUTING_TIER_ASSIGNMENTS) {
     let provider = providerByName.get(row.providerName);
     if (!provider) {
       provider =
@@ -72,7 +57,7 @@ async function applyRoutingTierAssignments() {
       where: {
         providerId: vllm.id,
         routerTier: { not: null },
-        modelId: { notIn: [...currentVllmModelIds] },
+        modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
       data: { routerTier: null },
     });
@@ -237,24 +222,7 @@ async function main() {
     });
   }
 
-  const vllmModels = [
-    {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: false,
-    },
-    {
-      modelId: "qwen2.5-32b-instruct",
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
-      supportsTools: true,
-    },
-  ];
-
-  for (const m of vllmModels) {
+  for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
       update: { isActive: true, supportsTools: m.supportsTools, supportsImages: false },
