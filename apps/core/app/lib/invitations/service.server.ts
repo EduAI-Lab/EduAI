@@ -335,10 +335,27 @@ export async function acceptInvitation(
     };
   }
 
-  // Sign-up just created the user; fetch it by its unique email to get the id.
-  const created = await prisma.user.findUnique({ where: { email: invite.email } });
-  if (!created) {
+  const signupBody: unknown = await signupResponse.json().catch(() => null);
+  const signupUser =
+    typeof signupBody === "object" &&
+    signupBody !== null &&
+    "user" in signupBody &&
+    typeof signupBody.user === "object" &&
+    signupBody.user !== null
+      ? signupBody.user
+      : null;
+  const createdId =
+    signupUser && "id" in signupUser && typeof signupUser.id === "string" ? signupUser.id : null;
+  if (!createdId) {
     return { ok: false, status: 500, error: "ACCOUNT_NOT_CREATED" };
+  }
+
+  // Better Auth deliberately returns a successful synthetic user for duplicate
+  // emails. Only the exact id returned by this sign-up proves ownership of the
+  // account that this request may promote or roll back.
+  const created = await prisma.user.findUnique({ where: { id: createdId } });
+  if (!created || created.email !== invite.email) {
+    return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
   // Promote the account and consume the invite. The final write is conditional

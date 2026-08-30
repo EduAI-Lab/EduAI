@@ -165,13 +165,6 @@ function confirmationRequired(
   });
 }
 
-/** Compatibility export. A model-controlled flag never satisfies confirmation. */
-export function requireWriteConfirmation(_confirmed?: boolean): MutationResult {
-  return confirmationRequired(
-    "Write not applied. A server-issued code in the latest raw admin message is required.",
-  );
-}
-
 /** Audit log + normalize write tool results for the model and UI. */
 export async function runAdminWriteTool(
   toolName: string,
