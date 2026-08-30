@@ -17,7 +17,12 @@ export function AIServiceIndicators() {
 
   return (
     <span data-tour="ai-status" className="hidden sm:inline-flex">
-      <SharedAIServiceIndicators cloud={cloud} ubc={ubc} onRefresh={refresh} />
+      <SharedAIServiceIndicators
+        cloud={cloud}
+        cloudLabel="Managed cloud AI"
+        ubc={ubc}
+        onRefresh={refresh}
+      />
     </span>
   );
 }

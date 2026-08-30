@@ -168,6 +168,7 @@ function AppLayoutInner() {
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
           <AIServiceIndicators
             cloud={aiStatus.cloud}
+            cloudLabel="Managed cloud AI"
             ubc={aiStatus.ubc}
             onRefresh={aiStatus.refresh}
           />
