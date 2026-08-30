@@ -129,10 +129,13 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
+  buildInstructorSystemPrompt,
   chatbotTypeFromMode,
   createChatTools,
+  isPrivilegedChatMode,
   parseChatMode,
   pickCoreAdminChatTools,
+  type AdminChatToolRegistry,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
@@ -996,7 +999,16 @@ export async function action({ request }: ActionFunctionArgs) {
     // chat is now course-scoped. Server-to-server callers (admin API key /
     // ai-tutor proxy) and platform admins in admin chatMode may still omit a course.
     const isApiKeyCaller = isServiceKeyCaller;
-    if (!effectiveCourseId && !isApiKeyCaller && chatMode !== "admin") {
+    // #1659 review: instructor mode always needs a course — unlike admin, it
+    // has no meaningful "no course" session — so it does NOT get the
+    // isApiKeyCaller exemption learning mode gets. Without this, a
+    // service-key caller could send chatMode "instructor" with no course and
+    // skip straight past the instructor RBAC check below (which only runs
+    // inside `if (effectiveCourseId)`), landing on the no-course tool stub
+    // instead of ever being denied for lacking a real course relationship.
+    const courseRequired =
+      chatMode === "admin" ? false : chatMode === "instructor" ? true : !isApiKeyCaller;
+    if (!effectiveCourseId && courseRequired) {
       return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -1044,6 +1056,19 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // #1659: instructor mode is scoped to ONE published course the caller
+      // actually teaches — reusing the same access decision every other
+      // course-scoped route uses, rather than a bespoke ownership check.
+      // access.level === "instructor" already means "an active INSTRUCTOR
+      // enrollment on courseId" (course-access.server.ts), so an ADMIN or
+      // UNIT_ADMIN without a real enrollment on this course is denied here
+      // too — they have /admin/chat for platform-wide ops instead.
+      if (chatMode === "instructor" && (access.level !== "instructor" || !course.isPublished)) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -1436,6 +1461,10 @@ export async function action({ request }: ActionFunctionArgs) {
     // image-bearing browser turns explicitly instead of retaining a hidden
     // multimodal path that the supported product cannot produce.
     // Admin/service-key integrations retain the existing multimodal routing.
+    // Instructor mode is deliberately NOT exempted here (unlike the other
+    // admin/instructor checks in this file, #1659 review): its tool registry
+    // and UI have no image affordance, so falling through to the default
+    // course-chat image rejection is the correct behavior, not a gap.
     if (imagesPresent && courseScopeContext && !isServiceKeyCaller && chatMode !== "admin") {
       return new Response(
         JSON.stringify({
@@ -1451,15 +1480,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Kick off the course-scope classifier alongside the RAG prefetch below so
     // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
-    // latency. Web-app chat only (#skip for admin preview and service-key
-    // callers — AI Tutor/Question Maker — per design; QM's generation-style
-    // prompts would false-positive against an "off-topic" gate).
+    // latency. Web-app chat only (#skip for admin/instructor preview and
+    // service-key callers — AI Tutor/Question Maker — per design; QM's
+    // generation-style prompts would false-positive against an "off-topic"
+    // gate, and instructor mode is course ops, not student tutoring).
     const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
       courseScopeGuardrailEnabled() &&
       effectiveCourse?.courseScopeGuardrailEnabled &&
       courseScopeContext &&
       !isServiceKeyCaller &&
-      chatMode !== "admin"
+      !isPrivilegedChatMode(chatMode)
         ? resolveCourseScopeVerdict({
             message: lastUserMessageTextForRouting,
             context: courseScopeContext,
@@ -1513,15 +1543,17 @@ export async function action({ request }: ActionFunctionArgs) {
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
-      // Admin mode never registers web tools (buildChatToolRegistry /
-      // webToolsEnabled are non-admin-only — see the admin branch below),
-      // so tool-capable web-lookup escalation only makes sense for non-admin
-      // chat. Mirrors `useToolCalling`'s gate later in this function
+      // Admin/instructor mode never registers web tools (buildChatToolRegistry /
+      // webToolsEnabled are learning-only — see the admin/instructor branch
+      // below), so tool-capable web-lookup escalation only makes sense for
+      // learning chat. Mirrors `useToolCalling`'s gate later in this function
       // (`supportsTools && !effectiveForceHybridRag`) without needing to
       // know the picked model yet: vLLM forces the tool-less hybrid path
       // unless `VLLM_CHAT_TOOLS=1`, regardless of which tier gets picked.
       const toolsEffectivelyAvailable =
-        chatMode !== "admin" && (await webToolsEnabledPromise) && isEffectiveToolCallingAvailable();
+        !isPrivilegedChatMode(chatMode) &&
+        (await webToolsEnabledPromise) &&
+        isEffectiveToolCallingAvailable();
       const routingContext = {
         courseId: effectiveCourseId,
         courseCode: courseCode ?? null,
@@ -1953,7 +1985,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let budgetReserveToolSteps = false;
     let budgetToolResultCap: number | undefined;
 
-    if (chatMode === "admin") {
+    if (isPrivilegedChatMode(chatMode)) {
       const rbacUser = {
         id: actingUser.id,
         role: actingUser.role,
@@ -1970,12 +2002,21 @@ export async function action({ request }: ActionFunctionArgs) {
         chatMode,
       );
 
+      // #1659: instructor mode's route gate above guarantees effectiveCourse
+      // is set (a course is required, and it was just resolved) — the
+      // fallbacks here are defensive only, never expected to be exercised.
       const buildDefaultSystemPrompt = () =>
-        buildAdminSystemPrompt({
-          customPrompt: resolvedSystemPrompt,
-        });
+        chatMode === "instructor"
+          ? buildInstructorSystemPrompt({
+              courseName: effectiveCourse?.name ?? effectiveCourseCode ?? "your course",
+              courseCode: effectiveCourse?.code ?? effectiveCourseCode ?? "",
+              customPrompt: resolvedSystemPrompt,
+            })
+          : buildAdminSystemPrompt({
+              customPrompt: resolvedSystemPrompt,
+            });
 
-      // Admin mode never reads `webToolsEnabled`, but we still must observe
+      // Admin/instructor mode never reads `webToolsEnabled`, but we still must observe
       // the same rejection semantics as the original serial `await getPolicy`
       // — so it is awaited alongside the model lookup rather than left to
       // float as an unhandled rejection. Both promises were already in
@@ -2006,7 +2047,18 @@ export async function action({ request }: ActionFunctionArgs) {
       // documents to the model (chat-mode.ts) — so small-context admin chat
       // stays usable instead of unconditionally failing ADMIN_CONTEXT_TOO_LARGE.
       // Larger-context models (OpenAI/Gemini rows) keep the full registry.
-      const effectiveAdminTools = contextWindow <= 32_768 ? pickCoreAdminChatTools(tools) : tools;
+      // #1659 review: this trim is admin-specific — instructor mode's own
+      // 4-tool registry is already far smaller than the 63-tool admin one
+      // this exists to shrink, so it is left untouched here.
+      // SAFETY: `pickCoreAdminChatTools` only ever runs when chatMode is
+      // literally "admin" (the `&&` short-circuits first), so `tools` is
+      // provably `AdminChatToolRegistry` there even though its static type —
+      // inferred from createChatTools' mode-generic return — is the union
+      // across all three chat modes.
+      const effectiveAdminTools =
+        chatMode === "admin" && contextWindow <= 32_768
+          ? pickCoreAdminChatTools(tools as AdminChatToolRegistry)
+          : tools;
 
       const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
@@ -2036,7 +2088,9 @@ export async function action({ request }: ActionFunctionArgs) {
           400,
           {
             error:
-              "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+              chatMode === "instructor"
+                ? "This course assistant requires a tool-capable model, which isn't configured yet. Ask an admin to enable one in Admin → AI Models, or add your own provider key in chat settings."
+                : "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
             code: "ADMIN_TOOLS_REQUIRED",
           },
           { model, chatId: chat?.id ?? null },
@@ -2392,9 +2446,10 @@ ${buildEmptyCourseRagBlock()}`;
     // Re-cap the completion after composeSecurityPrompt so the security block +
     // tool JSON schemas are inside the budget (the old flat 512 under-counted
     // ~17 admin tools and blew 16k windows: ContextWindowExceededError). Applied
-    // to every mode so output always fits `contextWindow − input`; only admin
-    // hard-rejects an over-budget prompt — its tool schemas can be unshrinkable,
-    // whereas other modes have already had history digested to fit.
+    // to every mode so output always fits `contextWindow − input`; only
+    // admin/instructor hard-reject an over-budget prompt — their tool schemas
+    // can be unshrinkable, whereas other modes have already had history
+    // digested to fit.
     if (budgetContextWindow != null) {
       const parsedStreamMaxTokens = z.number().safeParse(streamConfig.maxTokens);
       const desiredMaxOutput =
@@ -2426,7 +2481,7 @@ ${buildEmptyCourseRagBlock()}`;
         minOutput: 256,
       });
 
-      if (chatMode === "admin") {
+      if (isPrivilegedChatMode(chatMode)) {
         streamConfig.maxTokens = contextFitMaxTokens;
         if (longOutputCap.isLongOutputIntent) {
           const adminContextMaxTokens = streamConfig.maxTokens;
@@ -2434,9 +2489,10 @@ ${buildEmptyCourseRagBlock()}`;
           longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
         }
       } else {
-        // Non-admin already applied the long-output cap earlier; only tighten the
-        // completion so it still fits the window after history was digested —
-        // never loosen it, so the long-output flag/value are left intact.
+        // Non-admin/instructor already applied the long-output cap earlier;
+        // only tighten the completion so it still fits the window after
+        // history was digested — never loosen it, so the long-output
+        // flag/value are left intact.
         const current = parsedStreamMaxTokens.success ? parsedStreamMaxTokens.data : 0;
         streamConfig.maxTokens = Math.min(current, contextFitMaxTokens);
       }
@@ -2468,11 +2524,11 @@ ${buildEmptyCourseRagBlock()}`;
           safetyBuffer: 256,
         })
       ) {
-        if (chatMode === "admin") {
+        if (isPrivilegedChatMode(chatMode)) {
           return chatApiReject(
             400,
             {
-              error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+              error: `${chatMode === "instructor" ? "Course assistant" : "Admin chat"} prompt (system + ${toolCount} tools + history) is too large for this model's ${budgetContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
               code: "ADMIN_CONTEXT_TOO_LARGE",
               estimatedInputTokens,
               contextWindow: budgetContextWindow,
@@ -2501,7 +2557,7 @@ ${buildEmptyCourseRagBlock()}`;
     // Either path means a Sources footer should be expected (citation compliance).
     let adhdToolsUsed = Boolean(courseRagContextText);
     const needsOversight =
-      chatMode !== "admin" &&
+      !isPrivilegedChatMode(chatMode) &&
       effectiveAdhdAssist &&
       isAdhdOversightEnabled() &&
       (adhdProfileRequirements?.runDean ?? true);

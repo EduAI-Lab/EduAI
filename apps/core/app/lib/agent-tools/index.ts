@@ -1,5 +1,6 @@
 import type { ChatToolContext } from "./chat-mode";
 import { createAdminChatTools } from "./create-admin-chat-tools";
+import { createInstructorChatTools } from "./create-instructor-chat-tools";
 import { createLearningChatTools } from "./create-learning-chat-tools";
 import type { ChatMode } from "./chat-mode";
 
@@ -45,9 +46,11 @@ export {
 export { resolveAdminUserId } from "./admin-context.server";
 export {
   buildAdminSystemPrompt,
+  buildInstructorSystemPrompt,
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
   chatbotTypeFromMode,
+  isPrivilegedChatMode,
   parseChatMode,
   type ChatMode,
   type ChatToolContext,
@@ -63,8 +66,26 @@ export function createChatTools(
 ): ReturnType<typeof createAdminChatTools>;
 export function createChatTools(
   ctx: ChatToolContext,
+  mode: "instructor",
+): ReturnType<typeof createInstructorChatTools>;
+export function createChatTools(
+  ctx: ChatToolContext,
   mode: "learning",
 ): ReturnType<typeof createLearningChatTools>;
+// #1659: chat.ts's route calls this with the already-resolved but
+// non-literal `chatMode: ChatMode` (not narrowed to one of the three literals
+// above at that call site), so a fallback overload accepting the whole union
+// — and returning the union of all three registries — is needed alongside
+// the narrowing overloads, not instead of them.
+export function createChatTools(
+  ctx: ChatToolContext,
+  mode: ChatMode,
+):
+  | ReturnType<typeof createAdminChatTools>
+  | ReturnType<typeof createInstructorChatTools>
+  | ReturnType<typeof createLearningChatTools>;
 export function createChatTools(ctx: ChatToolContext, mode: ChatMode) {
-  return mode === "admin" ? createAdminChatTools(ctx) : createLearningChatTools(ctx);
+  if (mode === "admin") return createAdminChatTools(ctx);
+  if (mode === "instructor") return createInstructorChatTools(ctx);
+  return createLearningChatTools(ctx);
 }
