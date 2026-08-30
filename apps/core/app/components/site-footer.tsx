@@ -5,10 +5,11 @@ import { scrollToSection } from "~/lib/scroll-to-section";
 /**
  * Marketing footer.
  *
- * The link lists are explicit rather than derived from `siteConfig.navigation`:
- * that object also holds auth-gated destinations (/courses, /chat) which just
- * bounce a signed-out visitor to the login page, and its camelCase keys made
- * poor labels ("SignUp").
+ * The link lists are explicit rather than derived from `siteConfig.navigation`,
+ * whose camelCase keys made poor labels ("SignUp"). Only the auth entry points
+ * are listed: the landing page's loader redirects anyone with a session to
+ * /dashboard, so every reader of this footer is signed out and a /dashboard
+ * link would only bounce them through /login.
  */
 const sectionLinks = [
   { name: "About", href: "#about" },
@@ -18,7 +19,6 @@ const sectionLinks = [
 ];
 
 const productLinks = [
-  { name: "Dashboard", to: siteConfig.navigation.dashboard },
   { name: "Log in", to: siteConfig.navigation.login },
   { name: "Sign up", to: siteConfig.navigation.signUp },
 ];

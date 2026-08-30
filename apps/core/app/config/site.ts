@@ -12,9 +12,6 @@ export const siteConfig = {
   description: "Friendly, course-aware AI tools built by students and researchers at UBC Okanagan.",
   navigation: {
     home: "/",
-    dashboard: "/dashboard",
-    courses: "/courses",
-    chat: "/chat",
     login: "/login",
     signUp: "/auth/register",
   },

@@ -5,8 +5,9 @@ import { SiteNavigation } from "~/components/site-navigation";
 
 /**
  * The landing page is one scrolling document, so the header's nav items are
- * in-page anchors rather than routes, and the Dashboard entry point moved into
- * the page body (hero + closing CTA band).
+ * in-page anchors rather than routes. Nothing on this page links to the
+ * auth-gated dashboard: the route's loader redirects anyone with a session, so
+ * every reader of the header is signed out.
  */
 describe("SiteNavigation — rendering", () => {
   it("renders the in-page section anchors", () => {
@@ -40,7 +41,7 @@ describe("SiteNavigation — rendering", () => {
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/auth/register");
   });
 
-  it("no longer carries a Dashboard action — that lives on the page now", () => {
+  it("carries no Dashboard action — every reader of this header is signed out", () => {
     render(
       <MemoryRouter>
         <SiteNavigation />

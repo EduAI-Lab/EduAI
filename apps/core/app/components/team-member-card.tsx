@@ -32,17 +32,13 @@ export function TeamMemberCard({ member }: TeamMemberCardProps) {
 
   return (
     <>
+      {/* The card is NOT `role="button"`: that would make its subtree
+          presentational, so the member's name would stop being reachable as a
+          heading. The clickable surface is the real <button> at the bottom;
+          the card only forwards a mouse click to it as a convenience. */}
       <Card
-        role="button"
-        tabIndex={0}
         onClick={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-        className="group flex cursor-pointer flex-col overflow-hidden outline-none transition-colors hover:border-primary/30 dark:hover:border-primary/45 focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex cursor-pointer flex-col overflow-hidden transition-colors hover:border-primary/30 dark:hover:border-primary/45 focus-within:ring-2 focus-within:ring-ring"
       >
         <div className="relative aspect-[4/5] w-full bg-muted">
           {member.image ? (
@@ -76,10 +72,24 @@ export function TeamMemberCard({ member }: TeamMemberCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-3.5 py-2.5 text-[12px] font-medium text-muted-foreground transition-colors group-hover:text-primary-text">
+        {/* Twenty of these buttons sit on the page, so the member's name goes
+            into the accessible name to keep them distinguishable in a list of
+            links and buttons, without changing the visible label. */}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+          aria-label={`View profile: ${member.name}`}
+          className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-[12px] font-medium text-muted-foreground outline-none transition-colors group-hover:text-primary-text"
+        >
           <span>View profile</span>
-          <IconArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-        </div>
+          <IconArrowRight
+            aria-hidden="true"
+            className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+          />
+        </button>
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>

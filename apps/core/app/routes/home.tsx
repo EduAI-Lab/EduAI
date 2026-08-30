@@ -15,7 +15,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "EduAI Learning" },
+    { title: `${projectInfo.title} — course-aware AI at UBC Okanagan` },
     {
       name: "description",
       content:
@@ -62,13 +62,13 @@ export default function HomePage() {
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild size="lg">
-                  <Link to={siteConfig.navigation.dashboard}>
-                    Go to dashboard
+                  <Link to={siteConfig.navigation.signUp}>
+                    Create an account
                     <IconArrowRight className="ml-1 h-5 w-5" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline">
-                  <Link to={siteConfig.navigation.signUp}>Create an account</Link>
+                  <Link to={siteConfig.navigation.login}>Log in</Link>
                 </Button>
               </div>
             </div>
@@ -104,11 +104,11 @@ export default function HomePage() {
 
               <Card className="lg:self-stretch">
                 <CardContent className="flex flex-col justify-center px-6 py-8">
-                  <div className="flex flex-row items-center gap-3">
-                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
+                  <div className="mb-4 flex flex-row items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
                       <IconBulb className="h-6 w-6 text-primary-text" />
                     </div>
-                    <h2 className="mb-3 text-lg font-semibold text-card-foreground">Our vision</h2>
+                    <h3 className="text-lg font-semibold text-card-foreground">Our vision</h3>
                   </div>
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     {projectInfo.vision}
@@ -139,14 +139,14 @@ export default function HomePage() {
             className="mx-auto my-5 h-[3px] w-10 rounded-[2px] bg-[var(--gold)]"
           />
           <p className="mb-8 text-lg leading-relaxed text-primary-foreground/80">
-            Create a free account and point the tutor at your own slides and syllabus, or open the
-            dashboard if you are already set up.
+            Create a free account and point the tutor at your own slides and syllabus, or log in if
+            you are already set up.
           </p>
 
           <div className="flex flex-wrap justify-center gap-3">
             <Button asChild size="lg" variant="secondary">
-              <Link to={siteConfig.navigation.dashboard}>
-                Go to dashboard
+              <Link to={siteConfig.navigation.signUp}>
+                Create an account
                 <IconArrowRight className="ml-1 h-5 w-5" />
               </Link>
             </Button>
@@ -156,7 +156,7 @@ export default function HomePage() {
               variant="outline"
               className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10"
             >
-              <Link to={siteConfig.navigation.signUp}>Create an account</Link>
+              <Link to={siteConfig.navigation.login}>Log in</Link>
             </Button>
           </div>
         </div>

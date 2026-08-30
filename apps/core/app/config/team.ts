@@ -259,7 +259,7 @@ export const teamMembers: TeamMember[] = [
     biography:
       "Fourth-year Computer Science student at UBC Okanagan. Interested in full-stack development, reliable APIs, and building software that people will actually use.",
     contribution:
-      "Built and hardened features across EduAI Core, Question Maker, and AI Tutor, including Canvas and question-bank workflows, access-control and RBAC fixes, and AI Tutor admin/lesson flows. Strengthened platform reliability with pairwise (PICT) contract tests, end-to-end workflow coverage, and CI-facing quality work so cross-app changes stay secure and mergeable.",
+      "Built and hardened features across EduAI, Question Maker, and AI Tutor, including Canvas and question-bank workflows, access-control and RBAC fixes, and AI Tutor admin/lesson flows. Strengthened platform reliability with pairwise (PICT) contract tests, end-to-end workflow coverage, and CI-facing quality work so cross-app changes stay secure and mergeable.",
     techStack: ["React", "Node.js", "Python", "Java", "PostgreSQL", "Playwright", "Docker"],
     codeSnippet: "while (otherPR.merged) { pray(noConflict); }",
   },
@@ -296,7 +296,7 @@ export const teamMembers: TeamMember[] = [
     biography:
       "Gwantana Kiboigo is a Junior Computer Science student at UBC with experience in software engineering, full-stack development, and building reliable software systems. Through his work on EduAI, he has gained hands-on experience across frontend, backend, database, and infrastructure development, with a particular focus on security, system reliability, and maintainable application architecture.",
     contribution:
-      "Contributed to EduAI across Core, AI Tutor, and Question Maker, focusing on backend reliability, database integrity, AI service integration, and user management, while also resolving a multitude of bugs across the platform.",
+      "Contributed to EduAI across the core platform, AI Tutor, and Question Maker, focusing on backend reliability, database integrity, AI service integration, and user management, while also resolving a multitude of bugs across the platform.",
     techStack: [
       "React",
       "TypeScript/JavaScript",
@@ -312,7 +312,7 @@ export const teamMembers: TeamMember[] = [
     role: "student",
     name: "Yibing Wang",
     position: "Developer",
-    title: "Core Chat & Reliability",
+    title: "Platform Chat & Reliability",
     image: "/yibing.jpg",
     biography:
       "Yibing is a fourth year Computer Science student at UBCO with a minor in Data Science. She is interested in AI and software development, particularly LLM systems, backend development, and building practical AI applications.",

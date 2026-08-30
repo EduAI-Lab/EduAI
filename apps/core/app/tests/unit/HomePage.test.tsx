@@ -12,8 +12,7 @@ import { teamMembers } from "~/config/team";
 
 /**
  * Regression guard for the landing-page merge: the standalone /team route was
- * deleted and its roster, plus the Dashboard entry point that used to sit in
- * the header, now live on this one scrolling page.
+ * deleted and its roster now lives on this one scrolling page.
  */
 function renderHome() {
   return render(
@@ -40,14 +39,20 @@ describe("HomePage — single-scroll layout", () => {
     }
   });
 
-  it("offers the dashboard from the page body, in the hero and the closing CTA", () => {
+  it("pairs a sign-up and a log-in CTA in the hero and the closing band", () => {
+    renderHome();
+    expect(screen.getAllByRole("link", { name: /Create an account/ })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Log in" }).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("never points a signed-out reader at the auth-gated dashboard", () => {
     renderHome();
     const dashboardLinks = screen
       .getAllByRole("link")
       .filter((el) => el.getAttribute("href") === "/dashboard");
-    // hero + about card + closing CTA + footer
-    expect(dashboardLinks.length).toBeGreaterThanOrEqual(3);
-    expect(screen.getAllByRole("link", { name: /Go to dashboard/ })).toHaveLength(2);
+    // The loader redirects anyone with a session, so every reader here is
+    // signed out and a /dashboard link would only bounce them through /login.
+    expect(dashboardLinks).toHaveLength(0);
   });
 
   it("carries the anchor targets the header links to", () => {

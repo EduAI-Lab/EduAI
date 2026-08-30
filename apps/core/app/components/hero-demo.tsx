@@ -20,9 +20,10 @@ import { useMotionReducedPreference } from "~/components/assistive/ui-preference
  * then animates out and hands off to the next tool.
  *
  * Nothing here talks to a server: the transcripts are canned illustrations of
- * flows the real apps ship, kept short enough to read in one pass. Under the
- * account-level reduced-motion preference the reel stops animating and becomes
- * a plain tab panel with every beat already on screen.
+ * flows the real apps ship, kept short enough to read in one pass. Under either
+ * reduced-motion signal — the account preference or the OS setting — the reel
+ * stops animating and becomes a plain tab panel with every beat already on
+ * screen.
  */
 
 /** A single step in a scene's script. */
@@ -47,9 +48,34 @@ interface Scene {
 const TYPE_SPEED_MS = 26;
 const EXIT_MS = 420;
 
+/**
+ * Reduced motion for the reel = the account preference OR the OS setting.
+ *
+ * The landing page is public, so almost every viewer is signed out and their
+ * account preference is the `false` default; honouring only that would leave a
+ * visitor who has asked their OS for reduced motion watching an indefinitely
+ * looping animation (WCAG 2.2.2). The OS half is read in an effect rather than
+ * during render so the server and the first client render still agree.
+ */
+function useReelMotionReduced() {
+  const accountReduced = useMotionReducedPreference();
+  const [systemReduced, setSystemReduced] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!query) return;
+    setSystemReduced(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setSystemReduced(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  return accountReduced || systemReduced;
+}
+
 /** Reveals `text` one character at a time once the beat it lives in is visible. */
 function Typewriter({ text, className }: { text: string; className?: string }) {
-  const motionReduced = useMotionReducedPreference();
+  const motionReduced = useReelMotionReduced();
   const [count, setCount] = useState(motionReduced ? text.length : 0);
 
   useEffect(() => {
@@ -58,14 +84,14 @@ function Typewriter({ text, className }: { text: string; className?: string }) {
       return;
     }
     setCount(0);
+    // The tick counter lives outside the updater: clearing the interval from
+    // inside a setState callback makes the updater impure, and React may call
+    // it more than once per commit.
+    let revealed = 0;
     const timer = window.setInterval(() => {
-      setCount((current) => {
-        if (current >= text.length) {
-          window.clearInterval(timer);
-          return current;
-        }
-        return current + 1;
-      });
+      revealed += 1;
+      setCount(revealed);
+      if (revealed >= text.length) window.clearInterval(timer);
     }, TYPE_SPEED_MS);
     return () => window.clearInterval(timer);
   }, [text, motionReduced]);
@@ -195,7 +221,7 @@ function Tag({ children }: { children: ReactNode }) {
  * clock the beat delays use.
  */
 function useDelayedFlag(afterMs: number) {
-  const motionReduced = useMotionReducedPreference();
+  const motionReduced = useReelMotionReduced();
   const [flipped, setFlipped] = useState(motionReduced);
 
   useEffect(() => {
@@ -643,7 +669,7 @@ function DemoFrame({
 }
 
 export function HeroDemo({ className }: { className?: string }) {
-  const motionReduced = useMotionReducedPreference();
+  const motionReduced = useReelMotionReduced();
   const [sceneIndex, setSceneIndex] = useState(0);
   const [replayToken, setReplayToken] = useState(0);
   const [visibleBeats, setVisibleBeats] = useState(motionReduced ? Infinity : 0);

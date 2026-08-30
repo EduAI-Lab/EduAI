@@ -30,8 +30,9 @@ describe("SiteFooter — rendering", () => {
       </MemoryRouter>
     );
     expect(screen.getByRole("heading", { name: "Platform" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/auth/register");
+    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
   });
 
   it("does not emit a label for the removed camelCase config key", () => {
