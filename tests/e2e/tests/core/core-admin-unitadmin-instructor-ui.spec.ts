@@ -320,6 +320,14 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await injectSession(page, adminCtx);
       await page.goto(`${CORE_URL}/courses`);
       await page.waitForLoadState("networkidle");
+      // This dev/e2e database accumulates courses from every spec run
+      // (100+ at the time of writing), so the default unpaginated view
+      // doesn't reliably surface a freshly created course on the first
+      // page — search for it explicitly, same as courses-page.spec.ts /
+      // the UNIT_ADMIN cross-course-visibility test above.
+      const searchBox = page.getByRole("searchbox", { name: "Search courses" });
+      await expect(searchBox).toBeVisible({ timeout: 15_000 });
+      await searchBox.fill(courseCode);
       await page
         .getByRole("link", { name: new RegExp(courseCode) })
         .first()
@@ -333,9 +341,9 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       // button specifically (getByText alone is ambiguous — the Enrollments
       // tab's roster panel stays mounted off-screen and also renders this
       // same student name).
-      await expect(
-        page.getByRole("button", { name: new RegExp(studentName) }),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: new RegExp(studentName) })).toBeVisible({
+        timeout: 15_000,
+      });
       expect(student.name).toBe(studentName);
     } finally {
       await adminCtx.dispose();
