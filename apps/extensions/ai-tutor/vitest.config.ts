@@ -22,6 +22,10 @@ export default defineConfig({
     environment: "jsdom",
     include: ["app/tests/**/*.test.{ts,tsx}"],
     setupFiles: ["./app/tests/setup.ts"],
+    // student-preview-loader-gate.test.ts dynamically imports three full route
+    // modules inside one test body; on a cold cache that transform cost alone
+    // can exceed the 5s default, especially under CI's shared-runner load.
+    testTimeout: 15000,
     coverage: {
       provider: "v8",
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.

@@ -109,9 +109,13 @@ describe.each(rows.map((row, index) => [index, row]))(
       } else {
         expect(fetch).toHaveBeenCalled();
         const [, init] = vi.mocked(fetch).mock.calls[0];
-        // Cookie-only — never a Bearer service key on push
-        expect(init.headers.Authorization).toBeUndefined();
+        // The cookie is the identity: Core's POST /api/questions has no
+        // service-key branch, resolves course access from the session, and
+        // derives createdBy from it. The Bearer key alongside it is not a
+        // second auth path — it is what gets a server-to-server call past
+        // Core's cross-origin mutation guard, which otherwise 403s every push.
         expect(init.headers).toHaveProperty("cookie");
+        expect(init.headers.Authorization).toBe("Bearer test-key");
       }
     });
   },

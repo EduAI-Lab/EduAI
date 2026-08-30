@@ -83,6 +83,13 @@ export type DashboardRoleConfig = {
   leftPanelTitle: string;
   /** `greeting` is the precomputed time-of-day greeting ("Good morning", etc). */
   heroCopy: (firstName: string, greeting: string) => DashboardHeroCopy;
+  /**
+   * #1659 review: where "New chat" and each course card's "Chat" button send
+   * this role — the shared learning assistant (`/chat`, the default) or, for
+   * INSTRUCTOR, the course-scoped ops assistant (`/instructor/chat`, keyed by
+   * course id rather than `?courseCode=`).
+   */
+  chatHref?: string;
 };
 
 const ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
@@ -161,6 +168,7 @@ export const DASHBOARD_CONFIG = {
       heading: "Platform overview",
       subheading: "EduAI platform health and usage at a glance.",
     }),
+    chatHref: undefined,
   },
   UNIT_ADMIN: {
     statBuilder: ({
@@ -186,6 +194,7 @@ export const DASHBOARD_CONFIG = {
       heading: `Welcome back, ${firstName}.`,
       subheading: "Your unit courses and administration.",
     }),
+    chatHref: undefined,
   },
   INSTRUCTOR: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -203,6 +212,7 @@ export const DASHBOARD_CONFIG = {
       heading: `Welcome back, ${firstName}.`,
       subheading: "Your courses and teaching activity.",
     }),
+    chatHref: "/instructor/chat",
   },
   TA: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -217,6 +227,7 @@ export const DASHBOARD_CONFIG = {
       heading: `${greeting}, ${firstName}.`,
       subheading: "Your assigned courses and student activity.",
     }),
+    chatHref: undefined,
   },
   STUDENT: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -237,6 +248,7 @@ export const DASHBOARD_CONFIG = {
       heading: `${greeting}, ${firstName}.`,
       subheading: "Your AI-powered learning companion.",
     }),
+    chatHref: undefined,
   },
 } satisfies Record<EffectiveRole, DashboardRoleConfig>;
 
@@ -277,6 +289,7 @@ export function DashboardBody({
       leftPanelTitle={config.leftPanelTitle}
       recentChats={data.recentChats}
       analytics={<DashboardAnalytics stats={data.stats} loading={false} />}
+      chatHref={config.chatHref}
     />
   );
 }

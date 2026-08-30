@@ -42,6 +42,7 @@ vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn().mockReturnValue(false),
   parseChatMode: vi.fn().mockReturnValue("learning"),
   pickCoreAdminChatTools: vi.fn((tools) => tools),
   ADMIN_CORE_TOOL_NAMES: [],
@@ -89,6 +90,10 @@ vi.mock("~/lib/policy.server", () => ({
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logSecurityEvent: vi.fn().mockResolvedValue(undefined),
+  // The #1279 boundary logs every mapped 5xx; these cases stub the chat
+  // dependencies only as far as the limiter, so anything past it escapes to
+  // `withErrorResponse` and reaches this logger.
+  logSystemError: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -103,6 +108,14 @@ vi.mock("~/lib/prisma.server", () => ({
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("~/lib/chat-daily-limits.server", () => ({
+  consumeLocalChatDailyCap: vi.fn().mockResolvedValue(null),
+  getChatDailyLimitSettings: vi.fn().mockResolvedValue({
+    studentLimit: 50,
+    instructorLimit: 200,
+  }),
 }));
 
 import { streamText } from "ai";

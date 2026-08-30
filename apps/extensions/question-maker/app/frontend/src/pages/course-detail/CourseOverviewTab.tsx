@@ -26,7 +26,8 @@ interface CourseOverviewTabProps {
   canWrite: boolean;
   onAddQuestion: () => void;
   onNewAssessment: () => void;
-  onImportFromCanvas: () => void;
+  /** Omitted when the course has no Canvas link — the action is then hidden. */
+  onImportFromCanvas?: () => void;
 }
 
 export const CourseOverviewTab = ({
@@ -55,13 +56,17 @@ export const CourseOverviewTab = ({
       color: "#2FA67A",
       onClick: onNewAssessment,
     },
-    {
-      label: "Import from Canvas",
-      description: "Pull in a Canvas quiz",
-      icon: <IconDownload size={18} />,
-      color: "#D8902F",
-      onClick: onImportFromCanvas,
-    },
+    ...(onImportFromCanvas
+      ? [
+          {
+            label: "Import from Canvas",
+            description: "Pull in a Canvas quiz",
+            icon: <IconDownload size={18} />,
+            color: "#D8902F",
+            onClick: onImportFromCanvas,
+          },
+        ]
+      : []),
   ];
 
   return (

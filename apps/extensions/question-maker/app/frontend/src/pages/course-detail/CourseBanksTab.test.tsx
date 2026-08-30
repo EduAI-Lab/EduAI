@@ -29,6 +29,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={vi.fn()}
         onOpenBank={vi.fn()}
@@ -37,6 +38,21 @@ describe("CourseBanksTab", () => {
     expect(screen.getByText(/No question banks yet/i)).toBeInTheDocument();
     expect(screen.getByTestId("banks-tab-new-bank")).toBeInTheDocument();
     expect(screen.getByTestId("sync-canvas-bank-btn")).toBeInTheDocument();
+  });
+
+  it("hides the sync action when the course was not synced from Canvas", () => {
+    render(
+      <CourseBanksTab
+        banks={[]}
+        canWrite
+        isCanvasLinked={false}
+        onCreateBank={vi.fn()}
+        onSyncFromCanvas={vi.fn()}
+        onOpenBank={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("banks-tab-new-bank")).toBeInTheDocument();
+    expect(screen.queryByTestId("sync-canvas-bank-btn")).not.toBeInTheDocument();
   });
 
   it("opens a bank on card click", () => {
@@ -92,6 +108,7 @@ describe("CourseBanksTab", () => {
       <CourseBanksTab
         banks={[]}
         canWrite
+        isCanvasLinked
         onCreateBank={vi.fn()}
         onSyncFromCanvas={onSyncFromCanvas}
         onOpenBank={vi.fn()}

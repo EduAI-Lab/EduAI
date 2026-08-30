@@ -38,6 +38,7 @@ import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from "./syste
 import { logSafeError } from "../utils/safeErrors.js";
 
 export const DEFAULT_TUTOR_MODEL = "google:gemini-2.5-flash";
+
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
 // Hard floor/ceiling for supervisor iterations: 0 would disable supervision
 // (use dualLoopEnabled instead), >5 risks runaway cost on a per-request basis.
@@ -305,13 +306,19 @@ export async function resolveTutorModelSelection(requestedModelId) {
   const { policy } = await getAiModelPolicyState();
   const { allowedTutorModelIds, defaultTutorModelId } = policy;
 
-  if (requestedModelId && !allowedTutorModelIds.includes(requestedModelId)) {
-    const error = new Error("Selected tutor model is not allowed");
-    error.status = 403;
-    throw error;
-  }
+  if (!requestedModelId) return defaultTutorModelId || DEFAULT_TUTOR_MODEL;
+  if (allowedTutorModelIds.includes(requestedModelId)) return requestedModelId;
 
-  return requestedModelId || defaultTutorModelId || DEFAULT_TUTOR_MODEL;
+  // #1645: the admin allow-list is absolute. A student's own (BYOK) provider
+  // key is a fallback for reaching an ALLOWED model when UBC inference is down
+  // (Core's fleet fallback), never a way to run a model the admin left off the
+  // list. So a personal key does not widen this gate — a model not on the
+  // reconciled allow-list is rejected regardless of which keys the request
+  // holds. (`allowedTutorModelIds` is empty ⇒ unrestricted-within-the-catalog,
+  // so a nonexistent/hallucinated id still fails here.)
+  const error = new Error("Selected tutor model is not allowed");
+  error.status = 403;
+  throw error;
 }
 
 /**
