@@ -118,7 +118,8 @@ export function isStructuredAdhdAssistCandidate(options: {
 }
 
 function asNonEmptyString(value: JsonValue | undefined): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  const parsed = z.string().safeParse(value);
+  return parsed.success && parsed.data.trim() ? parsed.data.trim() : null;
 }
 
 function parseJsonObject(text: string): JsonObject | null {
