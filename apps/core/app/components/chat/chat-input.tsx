@@ -266,7 +266,7 @@ export function ChatInput({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          disabled={controlsDisabled || assistBusy}
+                          disabled={controlsDisabled || assistBusy || isLoading}
                           aria-pressed={adhdAssist}
                           aria-busy={assistBusy}
                           aria-label="Assistive mode"
