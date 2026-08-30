@@ -114,6 +114,7 @@ export default function AddActivityPanel({
   const [newTopicName, setNewTopicName] = useState("");
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
+  const [showTopicCreator, setShowTopicCreator] = useState(false);
 
   // "Start from" a shared bank question vs. writing the prompt manually.
   // Bank mode is offered only when the caller passes `courseOfferingId`.
@@ -762,34 +763,51 @@ export default function AddActivityPanel({
                   ))}
                 </SelectContent>
               </Select>
-              <div className="flex gap-2">
-                <Input
-                  value={newTopicName}
-                  onChange={(event) => {
-                    setNewTopicName(event.target.value);
-                    if (topicCreationError) setTopicCreationError(null);
-                  }}
-                  placeholder="New topic name"
-                  aria-label="New topic name"
-                  disabled={busy || creatingTopic}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleCreateTopic();
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleCreateTopic()}
-                  disabled={busy || creatingTopic || !newTopicName.trim()}
-                >
-                  <IconPlus className="size-4" aria-hidden="true" />
-                  {creatingTopic ? "Adding…" : "Add"}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                aria-expanded={showTopicCreator}
+                aria-controls="new-activity-topic-creator"
+                onClick={() => {
+                  setShowTopicCreator((open) => !open);
+                  setTopicCreationError(null);
+                }}
+                disabled={busy || creatingTopic}
+              >
+                <IconPlus className="size-4" aria-hidden="true" />
+                {showTopicCreator ? "Cancel" : "Add topic"}
+              </Button>
+              {showTopicCreator && (
+                <div id="new-activity-topic-creator" className="flex gap-2">
+                  <Input
+                    value={newTopicName}
+                    onChange={(event) => {
+                      setNewTopicName(event.target.value);
+                      if (topicCreationError) setTopicCreationError(null);
+                    }}
+                    placeholder="New topic name"
+                    aria-label="New topic name"
+                    disabled={busy || creatingTopic}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleCreateTopic();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleCreateTopic()}
+                    disabled={busy || creatingTopic || !newTopicName.trim()}
+                  >
+                    {creatingTopic ? "Adding…" : "Add"}
+                  </Button>
+                </div>
+              )}
               {topicCreationError && (
                 <p className="text-xs text-destructive">{topicCreationError}</p>
               )}

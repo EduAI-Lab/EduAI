@@ -54,6 +54,7 @@ export function ComposerMetadataFields({
   const [newTopicName, setNewTopicName] = useState("");
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
+  const [showTopicCreator, setShowTopicCreator] = useState(false);
 
   const handleCreateTopic = async () => {
     const name = newTopicName.trim();
@@ -65,6 +66,7 @@ export function ComposerMetadataFields({
       const topic = await onCreateTopic(name);
       setNewTopicName("");
       onPrimaryTopicChange(topic.id);
+      setShowTopicCreator(false);
     } catch (error) {
       console.error("Failed to create topic", error);
       setTopicCreationError("Could not create topic. Try a different name.");
@@ -143,33 +145,52 @@ export function ComposerMetadataFields({
               </p>
             )}
             {onCreateTopic && (
-              <div className="flex gap-2">
-                <Input
-                  value={newTopicName}
-                  onChange={(event) => {
-                    setNewTopicName(event.target.value);
-                    if (topicCreationError) setTopicCreationError(null);
-                  }}
-                  placeholder="New topic name"
-                  aria-label="New topic name"
-                  disabled={disabled || creatingTopic}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleCreateTopic();
-                    }
-                  }}
-                />
+              <>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleCreateTopic()}
-                  disabled={disabled || creatingTopic || !newTopicName.trim()}
+                  className="self-start"
+                  aria-expanded={showTopicCreator}
+                  aria-controls="composer-topic-creator"
+                  onClick={() => {
+                    setShowTopicCreator((open) => !open);
+                    setTopicCreationError(null);
+                  }}
+                  disabled={disabled || creatingTopic}
                 >
-                  {creatingTopic ? "Adding…" : "Add"}
+                  {showTopicCreator ? "Cancel" : "Add topic"}
                 </Button>
-              </div>
+                {showTopicCreator && (
+                  <div id="composer-topic-creator" className="flex gap-2">
+                    <Input
+                      value={newTopicName}
+                      onChange={(event) => {
+                        setNewTopicName(event.target.value);
+                        if (topicCreationError) setTopicCreationError(null);
+                      }}
+                      placeholder="New topic name"
+                      aria-label="New topic name"
+                      disabled={disabled || creatingTopic}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleCreateTopic();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCreateTopic()}
+                      disabled={disabled || creatingTopic || !newTopicName.trim()}
+                    >
+                      {creatingTopic ? "Adding…" : "Add"}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
             {topicCreationError && <p className="text-xs text-destructive">{topicCreationError}</p>}
             {errors?.primaryTopic && (
