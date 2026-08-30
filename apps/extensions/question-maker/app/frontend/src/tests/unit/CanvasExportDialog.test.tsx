@@ -196,7 +196,7 @@ describe("CanvasExportDialog", () => {
     await waitFor(() => expect(exportButton).toBeEnabled());
     fireEvent.click(exportButton);
 
-    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42, { published: true }));
+    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42, { published: false }));
     await waitFor(() =>
       expect(onExportSuccess).toHaveBeenCalledWith({
         quizId: 99,

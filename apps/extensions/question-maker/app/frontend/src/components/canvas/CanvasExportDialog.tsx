@@ -43,9 +43,9 @@ export const CanvasExportDialog = ({
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  // A published quiz is live to students the moment it lands, so the choice is
-  // surfaced rather than assumed — defaulting to published (#1556).
-  const [publishInCanvas, setPublishInCanvas] = useState(true);
+  // A published quiz is live to students the moment it lands, so require the
+  // instructor to opt in rather than making a new export visible by default.
+  const [publishInCanvas, setPublishInCanvas] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -60,8 +60,8 @@ export const CanvasExportDialog = ({
     if (open) {
       // `AssessmentBuilderPage` keeps this dialog mounted between exports, so
       // the publish choice is re-defaulted on every open rather than carrying
-      // one opt-out forward into unrelated later exports (#1556).
-      setPublishInCanvas(true);
+      // one opt-in forward into unrelated later exports (#1556).
+      setPublishInCanvas(false);
       loadIntegration();
     }
   }, [open]);
