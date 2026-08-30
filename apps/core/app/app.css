@@ -19,15 +19,6 @@
 /* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
  * Only Core-specific rules belong below. */
 
-/* Reserve the scrollbar gutter for the whole document. Opening a Radix Dialog
- * (e.g. the team-member cards on the landing page) locks body scroll and removes
- * the 12px classic scrollbar; without a reserved gutter the page reflows 12px
- * wider the instant a modal opens, which reads as the layout shifting/rescaling.
- * Reserving the gutter makes hiding the scrollbar a no-op for layout. */
-html {
-  scrollbar-gutter: stable;
-}
-
 /* The landing page is a single scrolling document whose header links are in-page
  * anchors — smooth scrolling makes the jump legible.
  *
