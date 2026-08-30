@@ -44,7 +44,7 @@ const pillars: Pillar[] = [
 
 export function ApproachSection() {
   return (
-    <section id="approach" className="scroll-mt-20 border-t border-border py-20">
+    <section id="approach" className="scroll-mt-20 py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="What makes EduAI different"

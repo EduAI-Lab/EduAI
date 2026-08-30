@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  IconMessages,
-  IconSparkles,
-  IconClipboardText,
-  IconChevronDown,
-  IconPlugConnected,
-  IconCheck,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconPlugConnected, IconCheck } from "@tabler/icons-react";
 import {
   Badge,
   Card,
@@ -16,10 +9,10 @@ import {
   CollapsibleTrigger,
   PageHeading,
 } from "@eduai/ui";
-import type { Icon } from "@tabler/icons-react";
 
 interface Product {
-  icon: Icon;
+  /** Path to the product's mark in `public/`. Rendered decorative — the name sits beside it. */
+  logo: string;
   name: string;
   kind: "platform" | "extension";
   tagline: string;
@@ -42,7 +35,7 @@ interface Product {
  * follows the theme toggle.
  */
 const core: Product = {
-  icon: IconMessages,
+  logo: "/eduai-graduation.svg",
   name: "EduAI",
   kind: "platform",
   tagline: "The core of the platform",
@@ -61,7 +54,7 @@ const core: Product = {
 
 const extensions: Product[] = [
   {
-    icon: IconSparkles,
+    logo: "/logo-ai-tutor.svg",
     name: "AI Tutor",
     kind: "extension",
     tagline: "",
@@ -78,7 +71,7 @@ const extensions: Product[] = [
     connection: "Plugs into EduAI for sign-in, course data, and the grounded model layer.",
   },
   {
-    icon: IconClipboardText,
+    logo: "/logo-question-maker.svg",
     name: "Question Maker",
     kind: "extension",
     tagline: "Assessments, made lighter",
@@ -111,28 +104,32 @@ function FeatureList({ features }: { features: string[] }) {
 
 function ProductCard({ product, featured = false }: { product: Product; featured?: boolean }) {
   const [open, setOpen] = useState(false);
-  const Icon = product.icon;
 
   return (
-    <Card
-      className={`border bg-background transition-colors ${
-        featured
-          ? "border-primary/40"
-          : "border-border hover:border-primary/30 dark:hover:border-primary/45"
-      }`}
-    >
+    <Card className="border border-border bg-background transition-colors hover:border-primary/30 dark:hover:border-primary/45">
       <CardContent className="p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-            <Icon className="h-6 w-6 text-primary-text" />
+          <div className="flex min-w-0 items-center gap-3">
+            <img
+              src={product.logo}
+              alt=""
+              aria-hidden="true"
+              width={48}
+              height={48}
+              className="h-12 w-12 shrink-0 rounded-lg"
+            />
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-foreground">{product.name}</h3>
+              {product.tagline ? (
+                <p className="text-sm font-medium text-primary-text">{product.tagline}</p>
+              ) : null}
+            </div>
           </div>
           <Badge variant={featured ? "secondary" : "outline"}>
             {product.kind === "platform" ? "Platform" : "Extension"}
           </Badge>
         </div>
 
-        <h3 className="text-lg font-semibold text-foreground">{product.name}</h3>
-        <p className="mb-2 text-sm font-medium text-primary-text">{product.tagline}</p>
         <p className="text-sm leading-relaxed text-muted-foreground">{product.description}</p>
 
         <Collapsible open={open} onOpenChange={setOpen}>
@@ -170,10 +167,7 @@ function ProductCard({ product, featured = false }: { product: Product; featured
 
 export function ProductsSection() {
   return (
-    <section
-      id="products"
-      className="scroll-mt-20 border-t border-border bg-muted/60 py-20 dark:bg-card"
-    >
+    <section id="products" className="scroll-mt-20 py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="What we build"
