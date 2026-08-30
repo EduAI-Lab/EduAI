@@ -110,6 +110,7 @@ function mockStream() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getUserProviderSettings).mockResolvedValue({});
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
   vi.mocked(resolveActiveChatModel).mockResolvedValue({

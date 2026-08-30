@@ -12,6 +12,8 @@ import {
   getEduAiBaseUrl,
   getEduAiCompletionUrl,
   getEduAiChatUrl,
+  upsertUserProviderSetting,
+  deleteUserProviderSetting,
   postCoreBugReport,
   listCoreAdminBugReports,
   getCoreAdminBugReport,
@@ -67,6 +69,44 @@ describe("base URL helpers", () => {
   it("getEduAiCompletionUrl / getEduAiChatUrl are derived from the base URL", () => {
     expect(getEduAiCompletionUrl()).toBe("http://eduai.test/api/completion");
     expect(getEduAiChatUrl()).toBe("http://eduai.test/api/chat");
+  });
+});
+
+describe("Core provider-setting mutations", () => {
+  it("forwards both the session cookie and service key for POST and DELETE", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({}));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await upsertUserProviderSetting("session=abc", {
+      providerName: "google",
+      isEnabled: true,
+      apiKey: "secret",
+    });
+    await deleteUserProviderSetting("session=abc", "google");
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "http://eduai.test/api/user-provider-settings",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer svc-key",
+          cookie: "session=abc",
+        }),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "http://eduai.test/api/user-provider-settings",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          Authorization: "Bearer svc-key",
+          cookie: "session=abc",
+        }),
+      }),
+    );
   });
 });
 
