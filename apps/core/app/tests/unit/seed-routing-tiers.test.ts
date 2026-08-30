@@ -77,7 +77,6 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
 
     await applyRoutingTierAssignments();
 
-    const currentIds = ROUTING_TIER_ASSIGNMENTS.map((row) => row.modelId);
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
