@@ -39,7 +39,7 @@ vi.mock("~/lib/canvas/client.server", () => ({
 
 vi.mock("~/lib/canvas/link-roster.server", () => ({
   LinkRosterError: class extends Error {},
-  linkCanvasRoster: vi.fn(),
+  linkCanvasRosterSelfService: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/sync.server", () => ({ syncCanvasCourses: vi.fn() }));

@@ -82,7 +82,7 @@ import { getAiTutorInstructorUrl } from "@/lib/coreUrl";
 import { MCQChoicesField } from "./MCQChoicesField";
 import { buildVariantMetadataUpdates } from "../../utils/questionMetadataEdit";
 import { reviewStatusConfirm } from "../../lib/review-status";
-import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from "../../utils/aiModels";
+import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../../utils/aiModels";
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -262,6 +262,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   const isViewMode = props.mode === "view";
   const viewProps = isViewMode ? (props as AddQuestionViewProps) : null;
   const viewEntry = viewProps?.entry ?? null;
+  const createProps = !isViewMode ? (props as AddQuestionCreateProps) : null;
 
   const [isToggling, setIsToggling] = useState(false);
   const [isTogglingDraft, setIsTogglingDraft] = useState(false);
@@ -287,7 +288,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
 
   // View-mode permissions
   const { canApproveVariant, canCreateQuestion, canEditResource, canDeleteResource } =
-    useQmPermissionsForCourse(viewEntry?.courseId ?? null);
+    useQmPermissionsForCourse(viewEntry?.courseId ?? createProps?.courseId ?? null);
 
   // View-mode derived values (only valid when viewEntry is non-null)
   const viewVariant = viewEntry?.variant ?? null;
@@ -519,7 +520,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   };
 
   // ── CREATE/VARIANT MODE state ────────────────────────────────────────────
-  const createProps = !isViewMode ? (props as AddQuestionCreateProps) : null;
   const open = isViewMode ? (viewProps!.open ?? Boolean(viewProps!.entry)) : createProps!.open;
 
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -773,8 +773,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         setAvailableEduCourses(eduCourses);
         if (models.length > 0) {
           setForm((prev) => {
-            if (models.some((model) => model.id === prev.generationModel)) return prev;
-            return { ...prev, generationModel: pickPreferredGenerationModel(models) };
+            return {
+              ...prev,
+              generationModel: pickConfiguredGenerationModel(models, prev.generationModel),
+            };
           });
         }
       } catch (optionsError) {
@@ -2394,47 +2396,52 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         </div>
 
         <DialogFooter className="pt-4 flex-col sm:flex-row gap-3" data-tour-id="aq-save-area">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="mark-as-reviewed"
-                checked={markAsReviewed}
-                onChange={(e) => {
-                  const reviewed = e.target.checked;
-                  setMarkAsReviewed(reviewed);
-                  // Sharing only takes effect on approval, so a question that
-                  // stops being reviewed stops being shared with it (#1555).
-                  if (!reviewed) setShareWithExtensions(false);
-                }}
-                disabled={isSubmitting}
-                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
-              />
-              <label htmlFor="mark-as-reviewed" className="text-sm text-foreground cursor-pointer">
-                Mark as reviewed
-              </label>
+          <PermissionGate allow={canApproveVariant}>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="mark-as-reviewed"
+                  checked={markAsReviewed}
+                  onChange={(e) => {
+                    const reviewed = e.target.checked;
+                    setMarkAsReviewed(reviewed);
+                    // Sharing only takes effect on approval, so a question that
+                    // stops being reviewed stops being shared with it (#1555).
+                    if (!reviewed) setShareWithExtensions(false);
+                  }}
+                  disabled={isSubmitting}
+                  className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+                />
+                <label
+                  htmlFor="mark-as-reviewed"
+                  className="text-sm text-foreground cursor-pointer"
+                >
+                  Mark as reviewed
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="share-with-extensions"
+                  data-testid="share-with-extensions"
+                  checked={shareWithExtensions}
+                  onChange={(e) => setShareWithExtensions(e.target.checked)}
+                  disabled={isSubmitting || !markAsReviewed}
+                  className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+                />
+                <label
+                  htmlFor="share-with-extensions"
+                  className={`text-sm cursor-pointer ${
+                    markAsReviewed ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  Usable by other EduAI extensions{" "}
+                  {!markAsReviewed && <span className="text-muted-foreground">(review first)</span>}
+                </label>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="share-with-extensions"
-                data-testid="share-with-extensions"
-                checked={shareWithExtensions}
-                onChange={(e) => setShareWithExtensions(e.target.checked)}
-                disabled={isSubmitting || !markAsReviewed}
-                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
-              />
-              <label
-                htmlFor="share-with-extensions"
-                className={`text-sm cursor-pointer ${
-                  markAsReviewed ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Usable by other EduAI extensions{" "}
-                {!markAsReviewed && <span className="text-muted-foreground">(review first)</span>}
-              </label>
-            </div>
-          </div>
+          </PermissionGate>
           <div className="flex gap-2 ml-auto">
             <Button type="button" variant="ghost" onClick={cp.onClose} disabled={isSubmitting}>
               Cancel

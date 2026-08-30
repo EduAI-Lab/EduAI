@@ -12,7 +12,7 @@
  * the server for courses, and narrows the static nav/app rows itself.
  */
 import * as React from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useMatches, useNavigate } from "react-router";
 import {
   CommandPalette as SharedCommandPalette,
   buildAppSwitcherGroup,
@@ -54,17 +54,27 @@ function matchesQuery(item: CommandPaletteItem, query: string): boolean {
 
 export function CommandPalette() {
   const navigate = useNavigate();
-  const { pathname, search } = useLocation();
+  const { search } = useLocation();
+  const matches = useMatches();
   const { user } = useLocalUser();
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [courseTotal, setCourseTotal] = React.useState(0);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query);
-  const localCourseId = Number(pathname.match(/^\/(?:instructor|student)\/courses\/(\d+)/)?.[1]);
-  const coreCourseId =
-    courses.find((course) => course.id === localCourseId)?.coreOfferingId ??
-    new URLSearchParams(search).get("coreCourseId");
+  // Course, module and other detail loaders publish the exact active course in
+  // their route data. Keep launcher context separate from the palette's bounded
+  // search results: those are empty before the dialog opens and change on every
+  // query, neither of which means the user left the active course.
+  const routeCourseId = matches
+    .map((match) => {
+      if (!match.data || typeof match.data !== "object" || !("course" in match.data)) return null;
+      const course = match.data.course;
+      if (!course || typeof course !== "object" || !("coreOfferingId" in course)) return null;
+      return typeof course.coreOfferingId === "string" ? course.coreOfferingId : null;
+    })
+    .find((id): id is string => Boolean(id));
+  const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // Only the newest request may write state — debouncing narrows the
   // out-of-order window but doesn't close it.

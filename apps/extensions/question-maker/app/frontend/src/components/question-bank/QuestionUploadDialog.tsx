@@ -72,7 +72,7 @@ import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
 import {
   FALLBACK_GENERATION_MODEL,
   isCampusModel,
-  pickPreferredGenerationModel,
+  pickConfiguredGenerationModel,
 } from "../../utils/aiModels";
 import type { OCRJob, StoredQuestion } from "../../types/ocr";
 import { toast } from "sonner";
@@ -460,9 +460,7 @@ export const QuestionUploadDialog = ({
       try {
         const models = await eduaiService.listModels();
         setAvailableModels(models);
-        setAiModel((prev) =>
-          models.some((m) => m.id === prev) ? prev : pickPreferredGenerationModel(models),
-        );
+        setAiModel((prev) => pickConfiguredGenerationModel(models, prev));
       } catch (error) {
         console.error("Failed to fetch AI models:", error);
         setAvailableModels([]);

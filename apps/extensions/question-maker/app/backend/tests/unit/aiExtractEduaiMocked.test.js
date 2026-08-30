@@ -176,4 +176,86 @@ describe("extractQuestionsFromText (EduAI mocked)", () => {
     expect(call.courseCode).toBe("COSC 121");
     expect(call.courseId).toBe("cuid-core-cosc121");
   });
+
+  it("forwards the shared operation signal and deadline to every provider call", async () => {
+    const controller = new AbortController();
+    const deadlineAt = Date.now() + 90_000;
+    generateQuestions.mockResolvedValue([
+      {
+        content: "Q?",
+        description: "Short",
+        difficulty: "medium",
+        type: "SA",
+      },
+    ]);
+
+    await extractQuestionsFromText(
+      "Some exam text for extraction.",
+      7,
+      "m",
+      {},
+      {
+        signal: controller.signal,
+        deadlineAt,
+      },
+    );
+
+    expect(generateQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal, deadlineAt }),
+    );
+    expect(enrichCourseDetail).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
+  it("stops before provider work when the shared operation is cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      extractQuestionsFromText(
+        "Some exam text for extraction.",
+        7,
+        "m",
+        {},
+        {
+          signal: controller.signal,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "QM_AI_OPERATION_DEADLINE" });
+    expect(findByPk).not.toHaveBeenCalled();
+    expect(generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it("does not retry after cancellation reaches an in-flight provider call", async () => {
+    const controller = new AbortController();
+    generateQuestions.mockImplementation(
+      ({ signal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("AI operation deadline exceeded");
+              error.code = "QM_AI_OPERATION_DEADLINE";
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    const extraction = extractQuestionsFromText(
+      "Some exam text for extraction.",
+      7,
+      "m",
+      {},
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(generateQuestions).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(extraction).rejects.toMatchObject({ code: "QM_AI_OPERATION_DEADLINE" });
+    expect(generateQuestions).toHaveBeenCalledOnce();
+  });
 });

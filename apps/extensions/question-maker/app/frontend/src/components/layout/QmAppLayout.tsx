@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
@@ -39,6 +39,7 @@ import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { toast } from "sonner";
+import { courseService } from "@/services/courseService";
 
 // A `Map` because the key is whatever path the router is on: an unlisted
 // route falls back to the app name rather than reading `undefined` off a
@@ -158,15 +159,29 @@ function QmAppLayoutInner() {
   const routeCourse = courses.find((course) => course.id === localCourseId);
   const requestedCoreCourseId = searchParams.get("coreCourseId")?.trim();
   const coreCourseId = routeCourse?.coreCourseId ?? requestedCoreCourseId;
+  const attemptedCourseImport = useRef<string | null>(null);
 
   useEffect(() => {
     if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
     const course = courses.find((item) => item.coreCourseId === requestedCoreCourseId);
-    if (!course) return;
-    navigate(
-      `/courses/${course.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
-      { replace: true },
-    );
+    if (course) {
+      navigate(
+        `/courses/${course.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
+        { replace: true },
+      );
+      return;
+    }
+    if (attemptedCourseImport.current === requestedCoreCourseId) return;
+    attemptedCourseImport.current = requestedCoreCourseId;
+    void courseService
+      .createCourse({ coreCourseId: requestedCoreCourseId })
+      .then((created) =>
+        navigate(
+          `/courses/${created.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
+          { replace: true },
+        ),
+      )
+      .catch(() => toast.error("Could not open this Core course in Question Maker"));
   }, [courses, isCoursesLoading, navigate, requestedCoreCourseId, routeCourse]);
   const handleLogout = () => {
     void logout().catch(() => {

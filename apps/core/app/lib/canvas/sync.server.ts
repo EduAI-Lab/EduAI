@@ -1,4 +1,4 @@
-import { EnrollmentRole } from "@prisma/client";
+import { EnrollmentRole, Prisma } from "@prisma/client";
 import type { CanvasCourseApi } from "~/lib/canvas/client.server";
 import {
   CANVAS_EXTERNAL_SOURCE,
@@ -49,37 +49,50 @@ async function syncSingleCanvasCourse(
   // deactivation sweeps cannot race. Capture the sweep boundary *after* the
   // lock so a waiting sync cannot preserve rows written by the preceding sync
   // (those rows would have lastSeenAt newer than a pre-lock syncStartedAt).
-  return prisma.$transaction(
-    async (tx) => {
-      // Lock the stable external identity before touching the course row. Unsync
-      // takes the same lock first, preventing row-lock/advisory-lock inversion.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-course:${canvasCourseId}`}))`;
-      const coreCourse = await upsertCoreCourseFromCanvas(canvasCourse, tx);
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${coreCourse.id}`}))`;
-      await ensureInstructorEnrollment(coreCourse.id, userId, tx);
-      const syncStartedAt = new Date();
+  const runSyncTransaction = () =>
+    prisma.$transaction(
+      async (tx) => {
+        // Lock the stable external identity before touching the course row. Unsync
+        // takes the same lock first, preventing row-lock/advisory-lock inversion.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-course:${canvasCourseId}`}))`;
+        const coreCourse = await upsertCoreCourseFromCanvas(canvasCourse, tx);
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${coreCourse.id}`}))`;
+        await ensureInstructorEnrollment(coreCourse.id, userId, tx);
+        const syncStartedAt = new Date();
 
-      const rosterMembersSynced = await syncCourseRoster({
-        credentials,
-        coreCourseId: coreCourse.id,
-        canvasCourseId,
-        syncedByUserId: userId,
-        syncStartedAt,
-        fetchImpl,
-        db: tx,
-      });
+        const rosterMembersSynced = await syncCourseRoster({
+          credentials,
+          coreCourseId: coreCourse.id,
+          canvasCourseId,
+          syncedByUserId: userId,
+          syncStartedAt,
+          fetchImpl,
+          db: tx,
+        });
 
-      const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id, tx);
-      await deactivateDroppedCanvasEnrollments(coreCourse.id, tx);
+        const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id, tx);
+        await deactivateDroppedCanvasEnrollments(coreCourse.id, tx);
 
-      return {
-        coreCourseId: coreCourse.id,
-        rosterMembersSynced,
-        enrollmentsLinked,
-      };
-    },
-    { maxWait: 15_000, timeout: 120_000 },
-  );
+        return {
+          coreCourseId: coreCourse.id,
+          rosterMembersSynced,
+          enrollmentsLinked,
+        };
+      },
+      { maxWait: 15_000, timeout: 120_000 },
+    );
+
+  try {
+    return await runSyncTransaction();
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+
+    // The failed transaction has rolled back. Retry once from the lock onward
+    // so a concurrent winner can be adopted without weakening roster atomicity.
+    return runSyncTransaction();
+  }
 }
 
 async function unsyncSingleCanvasCourse(

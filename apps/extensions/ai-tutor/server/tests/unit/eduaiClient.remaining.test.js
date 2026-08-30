@@ -559,6 +559,28 @@ describe("fetchCoreCourseSafe", () => {
 
     expect(mockFetch.mock.calls[0][1].signal).toBe(signal);
   });
+
+  it("bounds a Core call when no caller signal is supplied", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+
+    const result = expect(fetchCoreCourseSafe("core-1")).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    controller.abort(new DOMException("EduAI request timed out", "TimeoutError"));
+    await result;
+    expect(timeout).toHaveBeenCalledWith(15_000);
+  });
 });
 
 describe("fetchCoreTopicSafe", () => {

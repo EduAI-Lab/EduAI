@@ -10,7 +10,7 @@
  * Same mocked-DB pattern as questionRbac.test.js — no live Core or test DB required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockUpdate,
@@ -64,6 +64,8 @@ vi.mock("../../src/config/settings.js", () => {
     nodeEnv: "test",
     logLevel: "silent",
     maxQuestions: 5,
+    qmAiProviderCallLimit: 4,
+    qmAiOperationDeadlineMs: 50,
   };
   return { config: cfg, default: cfg };
 });
@@ -112,6 +114,8 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const { resetQmAiAdmissionForTests } = await import("../../src/middleware/aiAdmission.js");
+const request = () => supertest.agent(app).set("Authorization", "Bearer k");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const ADMIN = { id: "admin-1", role: "ADMIN", email: "admin@t.co", name: "Admin" };
@@ -143,6 +147,7 @@ function loadQuestion(createdBy) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetQmAiAdmissionForTests();
   mockDelete.mockResolvedValue(true);
   mockVisibleCourseWhere.mockResolvedValue({ userId: INSTRUCTOR.id });
 });
@@ -516,6 +521,54 @@ describe("POST /api/questions/extract", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([{ id: "extracted-1" }]);
+    expect(mockExtractQuestions).toHaveBeenCalledWith(
+      "Some OCR text",
+      1,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        cookie: "session=v",
+        signal: expect.any(AbortSignal),
+        deadlineAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("reserves the full four-call worst case for one chunk", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockExtractQuestions.mockResolvedValue([]);
+
+    const first = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+    const second = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(second.body.code).toBe("QM_AI_PROVIDER_BUDGET_EXCEEDED");
+  });
+
+  it("cancels extraction at the shared operation deadline", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockExtractQuestions.mockImplementation(
+      (_text, _courseId, _model, _apiKeys, { signal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+
+    const res = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe("QM_AI_OPERATION_DEADLINE");
+    expect(mockExtractQuestions).toHaveBeenCalledOnce();
   });
 });
 

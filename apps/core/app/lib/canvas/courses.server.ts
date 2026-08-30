@@ -209,16 +209,24 @@ export async function upsertCoreCourseFromCanvas(
       throw error;
     }
 
+    // PostgreSQL aborts an interactive transaction after a constraint error.
+    // Let its owner retry the whole transaction instead of querying through
+    // this unusable client. Root-client calls are independent transactions, so
+    // their existing winner-adoption path remains safe.
+    if (db !== prisma) {
+      throw error;
+    }
+
     // Some Prisma/database execution paths can still report the losing insert
     // as P2002. Adopt only a row with the same external identity; if none
     // exists, the conflict belongs to another invariant (for example a manual
     // course with the same code/start/section) and must remain visible.
-    const winner = await db.course.findUnique({ where: externalIdentity });
+    const winner = await prisma.course.findUnique({ where: externalIdentity });
     if (!winner) {
       throw error;
     }
 
-    return db.course.update({
+    return prisma.course.update({
       where: { id: winner.id },
       data: updates,
     });

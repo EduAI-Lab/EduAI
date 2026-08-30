@@ -9,7 +9,7 @@
  * Core or test DB required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockFindCoursesByProjectedCode,
@@ -77,6 +77,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
 vi.mock("../../src/services/eduaiService.js", () => ({ default: eduaiService }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const TA = { id: "ta-1", role: "STUDENT", email: "ta@t.co", name: "TA" };

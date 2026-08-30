@@ -64,6 +64,20 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // total. `total` is now the filtered total, so the pager stays honest.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
+  const coreCourseId = url.searchParams.get("coreCourseId")?.trim();
+  if (coreCourseId) {
+    const contextualPage = await api.listCourses({
+      page: 1,
+      pageSize: 1,
+      coreOfferingId: coreCourseId,
+    });
+    const contextualCourse = contextualPage.data[0];
+    if (contextualCourse) {
+      throw redirect(
+        `/instructor/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
+      );
+    }
+  }
   // Optional `?pageSize=` override (clamped to the same ceiling the API uses).
   // The default stays COURSE_LIST_PAGE_SIZE; e2e and bookmarkable narrow pages
   // can request a smaller window without seeding 200+ courses.
@@ -87,16 +101,6 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   if (pageSize != null) courseListParams.pageSize = pageSize;
 
   const [page, facets] = await Promise.all([api.listCourses(courseListParams), loadCourseFacets()]);
-
-  const coreCourseId = url.searchParams.get("coreCourseId")?.trim();
-  const contextualCourse = coreCourseId
-    ? page.data.find((course) => course.coreOfferingId === coreCourseId)
-    : null;
-  if (contextualCourse && coreCourseId) {
-    throw redirect(
-      `/instructor/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
-    );
-  }
 
   // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
   // hand-edited `?page=` past the end would otherwise render an empty list

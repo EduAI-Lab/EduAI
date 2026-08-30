@@ -67,7 +67,7 @@ import { buildAiReviewDocxBlob } from "../utils/aiReviewExportDocx";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
 import { useAiReviewHistory, type AiReviewHistoryItem } from "../hooks/use-ai-review-history";
 import { AI_REVIEW_HISTORY_MAX_ITEMS } from "../services/aiReviewHistoryStorage";
-import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
+import { pickConfiguredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
 import { toast } from "sonner";
 import { formatMetric, metricAsSeconds } from "../utils/aiReviewMetrics";
 
@@ -298,10 +298,8 @@ export function AssessmentVariantPage() {
 
   useEffect(() => {
     if (availableModels.length === 0) return;
-    const hasSelected = availableModels.some((m) => m.id === variantModel);
-    if (hasSelected) return;
-    setVariantModel(pickPreferredGenerationModel(availableModels));
-  }, [availableModels, variantModel]);
+    setVariantModel((current) => pickConfiguredGenerationModel(availableModels, current));
+  }, [availableModels]);
 
   useEffect(() => {
     if (!baselineAssessmentId) {
@@ -313,10 +311,8 @@ export function AssessmentVariantPage() {
 
   useEffect(() => {
     if (availableModels.length === 0) return;
-    const hasSelected = availableModels.some((m) => m.id === aiReviewModel);
-    if (hasSelected) return;
-    setAiReviewModel(pickPreferredGenerationModel(availableModels));
-  }, [availableModels, aiReviewModel]);
+    setAiReviewModel((current) => pickConfiguredGenerationModel(availableModels, current));
+  }, [availableModels]);
 
   const loadTopics = useCallback(async (courseId: number) => {
     const t = await courseService.getCourseTopics(courseId);

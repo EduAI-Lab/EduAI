@@ -157,10 +157,8 @@ export async function discoverCanvasMaterialsForCourse(
   );
   const excludedIds = new Set(exclusions.map((row) => row.canvasFileId));
 
-  // Discovery is fetched via GET and must stay safe/idempotent by default —
-  // the re-check writes `unpublishedAt` on already-imported materials, so it
-  // only runs when the caller explicitly opts in (the sync dialog's Discover
-  // action does; see `?recheck=true` in the loader).
+  // The GET loader stays read-only. The sync dialog explicitly opts into this
+  // reconciliation through its CSRF-protected POST action.
   if (options.recheckPublishState) {
     await syncUnpublishedState(canvasFiles, importedByExternalId);
   }

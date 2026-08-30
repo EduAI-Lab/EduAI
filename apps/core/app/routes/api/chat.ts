@@ -966,6 +966,7 @@ export async function action({ request }: ActionFunctionArgs) {
             return normalized === null ? [] : [normalized];
           }),
         );
+        const latestRawUserMessage = extractMessageText(normalizedIncomingMessages.at(-1));
 
         // Resolve course code to internal ID when needed.
         // Prefer exact match; fall back to common whitespace variants because
@@ -1143,6 +1144,7 @@ export async function action({ request }: ActionFunctionArgs) {
             // Defaulted off (was on) for easier testing
             courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
           };
+          effectiveCourseCode = course.code;
         }
 
         // §19 (#1606): a custom system prompt no longer REPLACES the EduAI base
@@ -1629,7 +1631,7 @@ export async function action({ request }: ActionFunctionArgs) {
             isEffectiveToolCallingAvailable();
           const routingContext = {
             courseId: effectiveCourseId,
-            courseCode: courseCode ?? null,
+            courseCode: effectiveCourseCode,
             imagesPresent,
             ragTopSimilarity,
             ragChunkCount,
@@ -2034,7 +2036,7 @@ export async function action({ request }: ActionFunctionArgs) {
               content: redirectText,
               model,
               finishReason: "stop",
-              courseCode,
+              courseCode: effectiveCourseCode,
               chatId: chat?.id,
               // Parity with the persisted message (withCourseScopeRedirectMetadata)
               // and the history-restore path (courseScopeRedirectFromMessage): the
@@ -2105,7 +2107,11 @@ export async function action({ request }: ActionFunctionArgs) {
               effectiveCourseId,
               effectiveCourseCode,
               restrictToStudentVisible: restrictRagToStudentVisible,
-              turnId: crypto.randomUUID(),
+              adminWriteConfirmation: {
+                chatId: chat.id,
+                turnId: crypto.randomUUID(),
+                latestUserMessage: latestRawUserMessage || null,
+              },
             },
             chatMode,
           );
@@ -2328,7 +2334,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     ${LATEST_TURN_FOCUS_INSTRUCTION}
 
-    ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+    ${effectiveCourseCode ? `Current course context: ${effectiveCourseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
     Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
           const defaultCourseSystemPrompt = [
@@ -2442,7 +2448,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
             let toolSystemPrompt = buildToolCallingSystemPrompt({
               basePrompt: baseSystemPrompt,
-              courseCode: courseCode ?? undefined,
+              courseCode: effectiveCourseCode ?? undefined,
               webToolsEnabled,
               hasPreloadedRag: Boolean(courseRagContextText),
             });
@@ -2842,9 +2848,13 @@ export async function action({ request }: ActionFunctionArgs) {
           request.signal.removeEventListener("abort", abortStreamFromRequest);
         };
         if (activeRequestId) {
-          unregisterCancellation = registerActiveChatCancellation(activeRequestId, () => {
-            streamAbortController.abort();
-          });
+          unregisterCancellation = registerActiveChatCancellation(
+            session.user.id,
+            activeRequestId,
+            () => {
+              streamAbortController.abort();
+            },
+          );
         }
         const releaseAdmission = (keepCancellation = false) => {
           if (admissionRelease) {
@@ -3348,7 +3358,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 sources: sources || [],
                 reasoning,
                 responseId: response?.id,
-                courseCode,
+                courseCode: effectiveCourseCode,
                 chatId: chat?.id,
                 ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
                 ragChunkCount: courseRagHits.length,
@@ -3672,7 +3682,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 sources: sources || [],
                 reasoning,
                 responseId: response?.id,
-                courseCode,
+                courseCode: effectiveCourseCode,
                 chatId: chat?.id,
                 ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
                 ragChunkCount: courseRagHits.length,

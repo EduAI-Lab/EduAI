@@ -658,7 +658,7 @@ async function seedLearnerData(
     await prisma.submission.create({
       data: {
         attemptNumber: 1,
-        response: { text: "first attempt — unsure" },
+        response: { answerText: "first attempt — unsure" },
         isCorrect: false,
         score: 0,
         userId: learner,
@@ -669,7 +669,7 @@ async function seedLearnerData(
     await prisma.submission.create({
       data: {
         attemptNumber: 2,
-        response: { text: "second attempt — corrected after a hint" },
+        response: { answerText: "second attempt — corrected after a hint" },
         isCorrect: true,
         score: 1,
         userId: learner,
@@ -681,7 +681,7 @@ async function seedLearnerData(
     await prisma.submission.create({
       data: {
         attemptNumber: 1,
-        response: { text: "got it on the first try" },
+        response: { answerText: "got it on the first try" },
         isCorrect: true,
         score: 1,
         userId: learner2,

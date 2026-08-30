@@ -39,6 +39,7 @@ import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
 import { useQmPermissions } from "../hooks/useQmPermissions";
 import { toast } from "sonner";
+import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -60,7 +61,6 @@ const PROVIDER_PLACEHOLDERS = {
   opencode: "OpenCode Go API key",
 } satisfies Record<AIProvider, string>;
 
-const DEFAULT_MODEL_KEY = "qm:default-model";
 const EXPORT_PREFS_KEY = "qm:export-prefs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export default function SettingsPage() {
 
   const [models, setModels] = useState<EduAIModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>(
-    () => localStorage.getItem(DEFAULT_MODEL_KEY) ?? "",
+    () => localStorage.getItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY) ?? "",
   );
 
   const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(() => readExportPrefs());
@@ -188,7 +188,7 @@ export default function SettingsPage() {
 
   const handleDefaultModelChange = (value: string): void => {
     setDefaultModel(value);
-    localStorage.setItem(DEFAULT_MODEL_KEY, value);
+    localStorage.setItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY, value);
     toast("Default model updated");
   };
 

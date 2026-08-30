@@ -1,12 +1,10 @@
-import { Form, Link, useActionData, useLoaderData, redirect } from "react-router";
-import { useState } from "react";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { RegisterForm } from "~/components/register-form";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
@@ -39,6 +37,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
 
   if (session?.user) {
+    if (session.user.emailVerified === false) {
+      return redirect("/auth/verify-email");
+    }
     const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(
       session.user.id,
       session.user.role,
@@ -98,6 +99,7 @@ export async function action({ request }: ActionFunctionArgs) {
         name: input.name,
         email: input.email,
         password: input.password,
+        callbackURL: "/onboarding/student-id",
       }),
     });
 
@@ -113,10 +115,7 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
-    const headers = new Headers();
-    appendAuthSetCookies(response, headers);
-
-    return redirect("/onboarding/student-id", { headers });
+    return redirect("/auth/verify-email");
   } catch (err: unknown) {
     const message = messageFromCause(err, "Sign up failed");
     return { formError: message };
@@ -124,7 +123,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function RegisterPage() {
-  const [isLoading, setIsLoading] = useState(false);
+  const isLoading = useNavigation().state !== "idle";
   const { registrationDisabled } = useLoaderData() as {
     registrationDisabled: boolean;
   };

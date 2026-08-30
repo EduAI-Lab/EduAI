@@ -237,4 +237,31 @@ describe("importQuizFromCanvas — per-question fetch failures", () => {
     expect(assessmentDelete).toHaveBeenCalledWith({ where: { id: 11 } });
     expect(transaction).toHaveBeenCalledTimes(1);
   });
+
+  it("reports a stable compensation failure when cleanup cannot remove the partial import", async () => {
+    const secondQuestion = { ...listItem, id: 8, question_name: "Q2", position: 2 };
+    const originalError = new Error("database failed: secret=do-not-return");
+    proxyCoreListQuizQuestions.mockResolvedValue({ data: [listItem, secondQuestion] });
+    proxyCoreGetQuizQuestion.mockResolvedValue({ data: { ...listItem, answers: [] } });
+    questionMetadataCreate.mockImplementationOnce(async () => ({ id: 33 }));
+    questionMetadataCreate.mockRejectedValueOnce(originalError);
+    transaction.mockRejectedValueOnce(new Error("cleanup failed: secret=do-not-return"));
+
+    const thrown = await runImport().catch((error) => error);
+
+    expect(thrown).toMatchObject({
+      status: 502,
+      code: "CANVAS_IMPORT_COMPENSATION_FAILED",
+      body: {
+        error: "CANVAS_IMPORT_COMPENSATION_FAILED",
+        assessmentId: 11,
+        sectionId: 22,
+      },
+      message: expect.stringContaining("before retrying"),
+    });
+    expect(thrown.message).not.toContain("secret");
+    expect(thrown.cause).toBe(originalError);
+    expect(Object.keys(thrown)).not.toContain("cause");
+    expect(JSON.stringify(thrown)).not.toContain("secret");
+  });
 });

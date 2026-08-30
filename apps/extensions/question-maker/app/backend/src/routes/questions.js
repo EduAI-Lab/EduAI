@@ -55,7 +55,12 @@ import { parseQuestionListFilters } from "../utils/questionListQuery.js";
 import { parseApprovalTarget, prepareApprovalQuestions } from "../utils/questionApproval.js";
 import { resolveVisibleCourseWhereForUser } from "../services/courseListService.js";
 import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
-import { qmAiUserRateLimit, validateGenerationBudget } from "../middleware/aiAdmission.js";
+import {
+  qmAiProviderCallAdmission,
+  qmAiUserRateLimit,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
+import { chunkByQuestionBlocks, normalizeExtractText } from "../services/extractionUtils.js";
 
 const router = express.Router();
 
@@ -63,6 +68,50 @@ const qmMaxExtractTextChars = () =>
   Number.isInteger(config.qmMaxExtractTextChars) && config.qmMaxExtractTextChars > 0
     ? config.qmMaxExtractTextChars
     : 120_000;
+
+const positiveConfigInt = (value, fallback) =>
+  Number.isInteger(value) && value > 0 ? value : fallback;
+
+const extractAdmission = qmAiProviderCallAdmission({
+  validate: (body = {}) => {
+    const text = body?.text;
+    if (typeof text !== "string" || !text.trim()) {
+      return {
+        status: 400,
+        code: "QM_EXTRACT_TEXT_REQUIRED",
+        message: "Text content is required for extraction",
+      };
+    }
+
+    const maxTextChars = qmMaxExtractTextChars();
+    if (text.length > maxTextChars) {
+      return {
+        status: 413,
+        code: "QM_EXTRACT_TEXT_TOO_LARGE",
+        message: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      };
+    }
+
+    const { chunks } = chunkByQuestionBlocks(normalizeExtractText(text), 5000);
+    const maxChunks = positiveConfigInt(config.qmMaxExtractChunks, 24);
+    if (chunks.length > maxChunks) {
+      return {
+        status: 413,
+        code: "QM_EXTRACT_CHUNK_LIMIT",
+        message: `OCR text produces ${chunks.length} chunks; the maximum is ${maxChunks}`,
+      };
+    }
+
+    // Each chunk gets one extraction attempt and one retry. Each attempt may
+    // make one JSON-repair call, so reserve the complete upstream fanout.
+    const logicalCalls = Math.min(
+      chunks.length * 2,
+      positiveConfigInt(config.qmMaxExtractProviderCalls, 36),
+    );
+    return { providerCalls: logicalCalls * 2 };
+  },
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -598,29 +647,17 @@ router.post(
 router.post(
   "/extract",
   authenticateToken,
-  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   qmAiUserRateLimit,
+  extractAdmission,
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
       const { text, model, apiKeys } = req.body;
 
-      if (!text || typeof text !== "string" || !text.trim()) {
-        return res.status(400).json({
-          success: false,
-          error: "Text content is required for extraction",
-        });
-      }
-
-      const maxTextChars = qmMaxExtractTextChars();
-      if (text.length > maxTextChars) {
-        return res.status(413).json({
-          success: false,
-          error: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
-        });
-      }
-
       const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys, {
         cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation.signal,
+        deadlineAt: req.aiOperation.deadlineAt,
       });
 
       res.json({

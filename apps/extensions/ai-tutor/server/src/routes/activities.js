@@ -83,7 +83,11 @@ import {
   GuideRequestSchema,
   TeachRequestSchema,
 } from "../../../shared/schemas/aiGuidance.js";
-import { CreateActivitySchema, UpdateActivitySchema } from "../../../shared/schemas/activity.js";
+import {
+  CreateActivitySchema,
+  SubmitAnswerSchema,
+  UpdateActivitySchema,
+} from "../../../shared/schemas/activity.js";
 import { getCoreCourseId } from "../utils/coreCourseId.js";
 import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import { gateCourseThrough } from "../middleware/liveCoursePrincipal.js";
@@ -1121,8 +1125,6 @@ router.post("/questions/:id/answer", async (req, res) => {
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: "Authentication required" });
 
-  const { answerText, answerOption } = req.body || {};
-
   try {
     // Load activity with course offering context for authorization
     const activity = await prisma.activity.findUnique({
@@ -1167,6 +1169,35 @@ router.post("/questions/:id/answer", async (req, res) => {
     ) {
       return res.status(403).json({ error: "Activity is not available" });
     }
+
+    const parsedAnswer = SubmitAnswerSchema.safeParse(req.body);
+    if (!parsedAnswer.success) {
+      return res.status(400).json({ error: "Provide exactly one valid answer" });
+    }
+
+    const questionType = activity.config?.questionType ?? "MCQ";
+    if (questionType === "MCQ") {
+      const options = Array.isArray(activity.config?.options)
+        ? activity.config.options
+        : Array.isArray(activity.config?.options?.choices)
+          ? activity.config.options.choices
+          : null;
+      if (
+        !("answerOption" in parsedAnswer.data) ||
+        options === null ||
+        parsedAnswer.data.answerOption >= options.length
+      ) {
+        return res.status(400).json({ error: "answerOption is invalid for this question" });
+      }
+    } else if (questionType === "SHORT_TEXT") {
+      if (!("answerText" in parsedAnswer.data)) {
+        return res.status(400).json({ error: "answerText is required for this question" });
+      }
+    } else {
+      return res.status(400).json({ error: "Activity question type is invalid" });
+    }
+
+    const { answerText, answerOption } = parsedAnswer.data;
 
     const { isCorrect } = evaluateQuestion(activity, {
       answerText,

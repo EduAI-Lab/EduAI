@@ -6,7 +6,7 @@
  * component/context is mocked so this exercises only QmAppLayout's own logic.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 let pathnameValue = "/dashboard";
 let searchParamsValue = new URLSearchParams();
@@ -20,10 +20,10 @@ let coursesValue: any[] = [];
 let isCoursesLoadingValue = false;
 let guidedTourHandlerValue: (() => void) | null = null;
 let userValue: any = { id: "1", name: "Ada", email: "ada@example.com", role: "instructor" };
-const { toastErrorFn, toastFn } = vi.hoisted(() => {
+const { toastErrorFn, toastFn, createCourse } = vi.hoisted(() => {
   const toastErrorFn = vi.fn();
   const toastFn = Object.assign(vi.fn(), { error: toastErrorFn });
-  return { toastErrorFn, toastFn };
+  return { toastErrorFn, toastFn, createCourse: vi.fn() };
 });
 
 vi.mock("sonner", () => ({ toast: toastFn }));
@@ -139,6 +139,10 @@ vi.mock("@/lib/apps", () => ({
   getLauncherApps: () => [],
 }));
 
+vi.mock("@/services/courseService", () => ({
+  courseService: { createCourse },
+}));
+
 import { QmAppLayout, QmAccessShell } from "@/components/layout/QmAppLayout";
 
 afterEach(() => {
@@ -242,6 +246,19 @@ describe("QmAppLayout", () => {
     render(<QmAppLayout />);
     fireEvent.click(screen.getByTestId("ai-indicators"));
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("opens a Core course that has not been mirrored yet", async () => {
+    searchParamsValue = new URLSearchParams("coreCourseId=core-new");
+    createCourse.mockResolvedValueOnce({ id: 42, coreCourseId: "core-new" });
+
+    render(<QmAppLayout />);
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/courses/42?tab=overview&coreCourseId=core-new", {
+        replace: true,
+      }),
+    );
   });
 });
 

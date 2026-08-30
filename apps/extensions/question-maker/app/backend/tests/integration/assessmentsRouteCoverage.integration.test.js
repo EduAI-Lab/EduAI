@@ -9,7 +9,7 @@
  * Same mocked-DB pattern as assessmentRbac.test.js — no live Core or test DB required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   svc,
@@ -79,6 +79,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };

@@ -6,7 +6,7 @@
  * No DB / live Core: questionService, schema, and the RBAC Core reads are mocked.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockUpdate,
@@ -79,6 +79,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 // Core's platform role for a course TA is STUDENT; the course-level TA role
 // comes from the active enrollment mocked by authAs(..., 'TA').

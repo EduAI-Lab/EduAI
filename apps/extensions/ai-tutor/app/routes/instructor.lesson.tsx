@@ -146,6 +146,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   });
 
   return {
+    course: { coreOfferingId: lesson.coreOfferingId },
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
@@ -1241,7 +1242,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                           onValueChange={(nextValues) =>
                                             handleActivitySecondaryChange(activity.id, nextValues)
                                           }
-                                          disabled={loadingTopics}
+                                          disabled={loadingTopics || isUpdatingTopics}
                                           placeholder="Add secondary topics…"
                                           searchPlaceholder="Search topics…"
                                           emptyText="No other topics."

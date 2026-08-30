@@ -43,6 +43,16 @@ describe("getLauncherApps", () => {
       "https://qm.example.edu/?coreCourseId=core%2F7+8",
     ]);
   });
+
+  it("keeps undeployed extension URLs empty when course context is present", () => {
+    const apps = getLauncherApps({
+      currentAppId: "core",
+      urls: { ...URLS, aiTutor: "" },
+      coreCourseId: "course-1",
+    });
+
+    expect(apps.find((app) => app.id === "ai-tutor")?.url).toBe("");
+  });
 });
 
 // ── RBAC gate, composed with the existing visibleAppsForRole ──────────────────

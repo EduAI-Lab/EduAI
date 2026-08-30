@@ -138,6 +138,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   ]);
 
   return {
+    course: { coreOfferingId: lesson.coreOfferingId },
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
@@ -355,10 +356,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     if (!activity || !user || !canSubmitAnswers) return;
     setSubmitting(true);
     try {
-      const payload: any = { userId: user.id };
-      if (activity.type === "MCQ") payload.answerOption = mcq;
-      else payload.answerText = text;
-      const res = await api.submitAnswer(activity.id, payload);
+      let res;
+      if (activity.type === "MCQ") {
+        if (mcq === null) return;
+        res = await api.submitAnswer(activity.id, { answerOption: mcq });
+      } else {
+        if (!text.trim()) return;
+        res = await api.submitAnswer(activity.id, { answerText: text });
+      }
       setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
 
       setOrderedActivities((prev) =>

@@ -86,6 +86,10 @@ export const SyncCanvasMaterialsSchema = z.object({
 
 export type SyncCanvasMaterialsInput = z.infer<typeof SyncCanvasMaterialsSchema>;
 
+export const DiscoverCanvasMaterialsSchema = z.object({
+  intent: z.literal("discover"),
+});
+
 export const ExcludeCanvasMaterialSchema = z.object({
   canvasFileId: z.coerce.string().min(1, "canvasFileId is required"),
 });

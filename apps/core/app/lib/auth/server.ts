@@ -20,6 +20,8 @@ import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { asText } from "~/lib/json-value";
+import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
+import { buildEmailVerificationEmail } from "../email/templates/email-verification";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -47,6 +49,26 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    requireEmailVerification: true,
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }, request) => {
+      // Invitation acceptance already proves mailbox control and promotes the
+      // account to emailVerified in the same flow. The marker is stripped at
+      // the public auth boundary, so only the trusted server sub-request can
+      // skip this otherwise automatic self-signup email.
+      if (request?.headers.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
+
+      await sendEmail(
+        buildEmailVerificationEmail({
+          to: user.email,
+          verificationUrl: url,
+        }),
+      );
+    },
   },
   plugins: [
     apiKey({
@@ -206,23 +228,41 @@ export const auth = betterAuth({
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
+      if (process.env.NODE_ENV === "production" && !isSmtpConfigured()) {
+        throw new APIError("SERVICE_UNAVAILABLE", {
+          message: "Registration is temporarily unavailable. Please try again later.",
+          code: "EMAIL_DELIVERY_UNAVAILABLE",
+        });
+      }
     }),
     // #971: shared session-resolution guard. `/get-session` is the endpoint
     // every `auth.api.getSession()` call in the app resolves to (they all run
     // through this same hook pipeline, not just HTTP requests), so gating
     // here closes the guard for every caller at once instead of patching
     // each route individually. Handles the case where a user is deactivated
-    // *after* already holding a valid session: the next request treats them
-    // as signed out and the now-orphaned session row is deleted so a leaked
-    // or cached cookie can't be replayed later.
+    // or an unverified user already holds a session minted before email
+    // verification became mandatory: the next request treats them as signed
+    // out and deletes the now-orphaned session row so a leaked or cached
+    // cookie can't be replayed later.
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/get-session") return;
-      const returned = ctx.context.returned as
-        | { session?: { token?: string }; user?: { isActive?: boolean } }
-        | null
-        | undefined;
-      if (!returned?.user || returned.user.isActive !== false) return;
-      const token = returned.session?.token;
+      const returned: unknown = ctx.context.returned;
+      if (!returned || typeof returned !== "object" || !("user" in returned)) return;
+      const user = returned.user;
+      if (!user || typeof user !== "object") return;
+      const isBlocked =
+        ("isActive" in user && user.isActive === false) ||
+        ("emailVerified" in user && user.emailVerified === false);
+      if (!isBlocked) return;
+
+      const session = "session" in returned ? returned.session : null;
+      const token =
+        session &&
+        typeof session === "object" &&
+        "token" in session &&
+        typeof session.token === "string"
+          ? session.token
+          : null;
       if (token) {
         await prisma.session.deleteMany({ where: { token } }).catch(() => {});
       }

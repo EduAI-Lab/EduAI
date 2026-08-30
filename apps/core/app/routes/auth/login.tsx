@@ -1,5 +1,6 @@
 import { useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
 import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
 import { LoginForm } from "~/components/login-form";
@@ -22,6 +23,21 @@ import {
 } from "~/lib/multipart.server";
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+const authErrorSchema = z.object({
+  code: z.string().optional(),
+  error: z.string().optional(),
+  message: z.string().optional(),
+});
+
+const signInResponseSchema = z.object({
+  user: z
+    .object({
+      id: z.string(),
+      role: z.string().nullable().optional(),
+    })
+    .optional(),
+});
 
 function formBodyErrorResponse(cause: unknown): Response | null {
   if (cause instanceof MultipartBodyTooLargeError) {
@@ -102,7 +118,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // that is not sent to other *.eduai.ok.ubc.ca subdomains. Skip auto-redirect so
   // the user can sign in again and receive a cross-subdomain cookie.
   if (session?.user && !forceReauth) {
-    return redirect(redirectTo);
+    return redirect(session.user.emailVerified === false ? "/auth/verify-email" : redirectTo);
   }
 
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
@@ -167,13 +183,16 @@ export async function action({ request }: ActionFunctionArgs) {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
+        callbackURL: "/onboarding/student-id",
       }),
     });
 
     const response = await auth.handler(authRequest);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorPayload: unknown = await response.json().catch(() => null);
+      const parsedError = authErrorSchema.safeParse(errorPayload);
+      const errorData = parsedError.success ? parsedError.data : {};
       fireAndForget(
         logSecurityEvent({
           ...getActorContext(null),
@@ -187,11 +206,11 @@ export async function action({ request }: ActionFunctionArgs) {
           details: { email: input.email },
         }),
       );
+      if (errorData.code === "EMAIL_NOT_VERIFIED") {
+        return redirect("/auth/verify-email");
+      }
       return {
-        formError:
-          (errorData as { message?: string }).message ||
-          (errorData as { error?: string }).error ||
-          `Sign in failed (${response.status})`,
+        formError: errorData.message || errorData.error || `Sign in failed (${response.status})`,
       };
     }
 
@@ -201,10 +220,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
-    const signedIn = (await response
+    const signedInPayload: unknown = await response
       .clone()
       .json()
-      .catch(() => null)) as { user?: { id?: string; role?: string | null } } | null;
+      .catch(() => null);
+    const parsedSignedIn = signInResponseSchema.safeParse(signedInPayload);
+    const signedIn = parsedSignedIn.success ? parsedSignedIn.data : null;
     let signedInUser = signedIn?.user?.id
       ? { id: signedIn.user.id, role: signedIn.user.role ?? null }
       : null;

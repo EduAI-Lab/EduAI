@@ -15,6 +15,7 @@ import {
   AdmissionTimeoutError,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { isClientRequestedBedrockModel } from "~/lib/ai/routing/bedrock/overflow.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -114,6 +115,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const payload = validation.request;
+      if (isClientRequestedBedrockModel(payload.model.trim())) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+            code: "BEDROCK_NOT_SELECTABLE",
+          }),
+          { status: 400, headers: JSON_HEADERS },
+        );
+      }
+
       const model = payload.model;
       const modelPolicy = await resolveCompletionModelPolicy(model);
       if (!modelPolicy.ok) {
@@ -155,9 +167,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
       let outcome;
       try {
+        // Bedrock is activated only by the capped server-side overflow path. Never
+        // let client provider settings make the shared AWS credential reachable.
+        const apiKeys = { ...payload.apiKeys };
+        delete apiKeys.bedrock;
         outcome = await runCompletion({
           model,
-          apiKeys: payload.apiKeys,
+          apiKeys,
           systemPrompt: payload.systemPrompt,
           messages: payload.messages,
           streaming: payload.streaming,

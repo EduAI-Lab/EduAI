@@ -265,7 +265,7 @@ export const exportAssessmentToCanvas = async (
       } catch (cleanupError) {
         cleanupFailed = true;
         logger.error(
-          { cleanupError, canvasCourseId, quizId: createdQuiz.id },
+          { err: cleanupError, canvasCourseId, quizId: createdQuiz.id },
           "Failed to remove a partial Canvas quiz after export failure",
         );
       }
@@ -1015,6 +1015,7 @@ export const importQuizFromCanvas = async (
       sectionId: section.id,
     };
   } catch (error) {
+    let cleanupFailed = false;
     try {
       await cleanupImportedQuizRows({
         assessmentId: assessment?.id,
@@ -1023,9 +1024,10 @@ export const importQuizFromCanvas = async (
         variantIds,
       });
     } catch (cleanupError) {
+      cleanupFailed = true;
       logger.error(
         {
-          cleanupError,
+          err: cleanupError,
           assessmentId: assessment?.id,
           sectionId: section?.id,
           questionMetadataIds,
@@ -1033,6 +1035,20 @@ export const importQuizFromCanvas = async (
         },
         "Failed to clean up a partial Canvas quiz import",
       );
+    }
+    if (cleanupFailed) {
+      const compensationError = canvasError(
+        "Canvas quiz import failed and the partial assessment could not be removed. Delete the partial import before retrying.",
+        502,
+        {
+          error: "CANVAS_IMPORT_COMPENSATION_FAILED",
+          assessmentId: assessment?.id,
+          sectionId: section?.id,
+        },
+      );
+      compensationError.code = "CANVAS_IMPORT_COMPENSATION_FAILED";
+      Object.defineProperty(compensationError, "cause", { value: error });
+      throw compensationError;
     }
     rethrowCoreCanvasError(error, "import quiz from Canvas");
   }

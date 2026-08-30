@@ -67,7 +67,7 @@ const DEFAULT_CHOICES: MCQChoice[] = [
   { letter: "D", text: "" },
 ];
 
-import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from "../utils/aiModels";
+import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../utils/aiModels";
 import { toast } from "sonner";
 
 const DEFAULT_MODEL = FALLBACK_GENERATION_MODEL;
@@ -142,7 +142,7 @@ export function QuestionComposerPage() {
     mode === "edit" ? Number(questionIdParam) : variantOfParam ? Number(variantOfParam) : null;
 
   // ── Permissions guard ────────────────────────────────────────────────────
-  const { canCreateQuestion, hasCourseAccess, accessLoading } =
+  const { canApproveVariant, canCreateQuestion, hasCourseAccess, accessLoading } =
     useQmPermissionsForCourse(validCourseId);
   const canWrite = hasCourseAccess && !accessLoading && canCreateQuestion;
 
@@ -253,8 +253,11 @@ export function QuestionComposerPage() {
         setAvailableModels(models);
         setAvailableEduCourses(eduCourses);
         setForm((prev) => {
-          if (models.length === 0 || models.some((m) => m.id === prev.generationModel)) return prev;
-          return { ...prev, generationModel: pickPreferredGenerationModel(models) };
+          if (models.length === 0) return prev;
+          return {
+            ...prev,
+            generationModel: pickConfiguredGenerationModel(models, prev.generationModel),
+          };
         });
       } catch {
         if (!cancelled) {
@@ -1128,7 +1131,7 @@ export function QuestionComposerPage() {
               // being reviewed stops being shared with it (#1555).
               if (!reviewed) setShareWithExtensions(false);
             }}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canApproveVariant}
             className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
           />
           <Label
@@ -1146,7 +1149,7 @@ export function QuestionComposerPage() {
             data-testid="share-with-extensions"
             checked={shareWithExtensions}
             onChange={(e) => setShareWithExtensions(e.target.checked)}
-            disabled={isSubmitting || !markAsReviewed}
+            disabled={isSubmitting || !canApproveVariant || !markAsReviewed}
             className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
           />
           <Label

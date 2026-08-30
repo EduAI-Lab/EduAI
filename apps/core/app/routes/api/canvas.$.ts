@@ -9,12 +9,7 @@ import {
   listCanvasCoursesWithSyncState,
   validateInstructorCanvasCourseIds,
 } from "~/lib/canvas/courses.server";
-import {
-  canLinkCanvasRoster,
-  canManageCanvasIntegration,
-  isCanvasLinkRosterRateLimited,
-  isCanvasSyncRateLimited,
-} from "~/lib/canvas/guards.server";
+import { canManageCanvasIntegration, isCanvasSyncRateLimited } from "~/lib/canvas/guards.server";
 import {
   deleteCanvasIntegration,
   getCanvasIntegrationPublic,
@@ -36,7 +31,7 @@ import {
   listCanvasQuestionBankQuestions,
   listCanvasQuestionBanks,
 } from "~/lib/canvas/question-banks.server";
-import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
+import { LinkRosterError, linkCanvasRosterSelfService } from "~/lib/canvas/link-roster.server";
 import {
   CanvasCourseIdQuerySchema,
   ConnectCanvasSchema,
@@ -505,6 +500,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         }
 
         if (subpath === "sync") {
+          if (session.user.role !== "ADMIN" && session.user.role !== "INSTRUCTOR") {
+            return json({ success: false, error: "FORBIDDEN" }, 403);
+          }
           if (isCanvasSyncRateLimited(userId)) {
             fireAndForget(
               logSecurityEvent({
@@ -779,14 +777,6 @@ async function handleLinkRosterRequest(
     return json({ success: false, error: "Method not allowed" }, 405);
   }
 
-  if (!canLinkCanvasRoster(role)) {
-    return json({ success: false, error: "Forbidden: students and TAs only" }, 403);
-  }
-
-  if (isCanvasLinkRosterRateLimited(userId)) {
-    return json({ success: false, error: "Too many link attempts. Please try again later." }, 429);
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -808,7 +798,7 @@ async function handleLinkRosterRequest(
   }
 
   try {
-    const linkResult = await linkCanvasRoster(userId, result.data.studentNumber);
+    const linkResult = await linkCanvasRosterSelfService(userId, role, result.data.studentNumber);
     return json({
       success: true,
       message: "Canvas enrollments linked successfully",

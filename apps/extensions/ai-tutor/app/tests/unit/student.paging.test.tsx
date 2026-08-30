@@ -56,7 +56,13 @@ vi.mock("~/components/StudentAiChat", () => ({ default: () => null }));
 import StudentCourseModules from "~/routes/student.course";
 import StudentLessonPlayer from "~/routes/student.lesson";
 
-const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
+const course = {
+  id: 1,
+  coreOfferingId: "core-course-1",
+  title: "Course 1",
+  code: "COSC 101",
+  isPublished: true,
+};
 
 describe("student.course — paged module grid (#1207)", () => {
   const wrap = (

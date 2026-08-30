@@ -37,7 +37,7 @@ export interface GetLauncherAppsOptions {
 
 function courseUrl(base: string, appId: LauncherAppId, coreCourseId?: string | null): string {
   const id = coreCourseId?.trim();
-  if (!id) return base;
+  if (!id || !base) return base;
   const url = new URL(base);
   if (appId === "core") url.pathname = `/courses/${encodeURIComponent(id)}`;
   else url.searchParams.set("coreCourseId", id);

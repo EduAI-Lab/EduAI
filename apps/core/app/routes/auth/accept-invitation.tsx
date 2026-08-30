@@ -128,7 +128,11 @@ export async function action({ request }: ActionFunctionArgs) {
   );
 
   const needsOnboarding = await userNeedsStudentIdOnboarding(result.user.id, result.user.role);
-  const destination = needsOnboarding ? "/onboarding/student-id" : "/dashboard";
+  const destination = result.headers.has("Set-Cookie")
+    ? needsOnboarding
+      ? "/onboarding/student-id"
+      : "/dashboard"
+    : "/auth/login";
   return redirect(destination, { headers: result.headers });
 }
 

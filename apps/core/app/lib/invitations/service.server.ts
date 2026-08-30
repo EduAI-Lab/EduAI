@@ -326,16 +326,12 @@ export async function acceptInvitation(
     }),
   });
 
-  const response = await auth.handler(authRequest);
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => ({}))) as {
-      message?: string;
-      code?: string;
-    };
+  const signupResponse = await auth.handler(authRequest);
+  if (!signupResponse.ok) {
     return {
       ok: false,
-      status: response.status === 422 ? 409 : response.status,
-      error: detail.code || detail.message || "SIGNUP_FAILED",
+      status: signupResponse.status === 422 ? 409 : signupResponse.status,
+      error: "SIGNUP_FAILED",
     };
   }
 
@@ -408,8 +404,20 @@ export async function acceptInvitation(
     return { ok: false, status: 500, error: "SIGNUP_FAILED" };
   }
 
+  // Requiring email verification intentionally suppresses Better Auth's
+  // sign-up session. Invitation acceptance proves mailbox control and marks
+  // the account verified above, so create its session through the normal
+  // credential sign-in endpoint after the promotion transaction commits.
+  const signInRequest = buildAuthSubRequest("/api/auth/sign-in/email", request, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: invite.email, password: input.password }),
+  });
+  const signInResponse = await auth.handler(signInRequest);
   const headers = new Headers();
-  appendAuthSetCookies(response, headers);
+  if (signInResponse.ok) {
+    appendAuthSetCookies(signInResponse, headers);
+  }
 
   return { ok: true, headers, invitationId: invite.id, user: updatedUser };
 }

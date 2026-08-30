@@ -13,6 +13,7 @@ export default [
   route("/login", "routes/login.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
+  route("/auth/verify-email", "routes/auth/verify-email.tsx"),
   route("/auth/logout", "routes/auth/logout.tsx"),
   route("/auth/accept-invitation", "routes/auth/accept-invitation.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),

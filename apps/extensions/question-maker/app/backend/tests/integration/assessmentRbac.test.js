@@ -7,7 +7,7 @@
  * No DB / live Core: services, schema, and RBAC Core reads are mocked.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const { svc, sectionSvc, variantSvc, mockCourseFindOne, mockAssessmentFindOne, mockEnrollments } =
   vi.hoisted(() => ({
@@ -79,6 +79,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };

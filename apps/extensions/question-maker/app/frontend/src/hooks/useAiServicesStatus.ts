@@ -29,28 +29,45 @@ import { useAiServiceStatus, type AiServiceStatusPair, type ServiceStatus } from
 import eduaiService from "../services/eduaiService";
 import {
   apiKeyStorage,
+  CLOUD_PROVIDERS,
   isCloudProvider,
   isCampusProvider,
   type ProviderApiKeys,
 } from "../services/apiKeyStorage";
+import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
 
 async function probeCloud(signal: AbortSignal): Promise<ServiceStatus> {
-  let cloudKeys: ProviderApiKeys = {};
+  let storedKeys: Record<string, string> = {};
   try {
-    const stored = await apiKeyStorage.getAllApiKeys();
-    cloudKeys = Object.fromEntries(
-      Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }]),
-    );
+    storedKeys = await apiKeyStorage.getAllApiKeys();
   } catch {
     // treat unreadable storage as no key
   }
 
-  if (Object.keys(cloudKeys).length === 0) {
+  let configuredProvider: string | undefined;
+  try {
+    configuredProvider = localStorage.getItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY)?.split(":")[0];
+  } catch {
+    // Storage may be unavailable in privacy-restricted browser contexts.
+  }
+  const provider =
+    (isCloudProvider(configuredProvider) && storedKeys[configuredProvider]
+      ? configuredProvider
+      : undefined) ?? CLOUD_PROVIDERS.find((candidate) => storedKeys[candidate]);
+
+  if (!provider) {
     return {
       state: "outage",
       detail: "Cloud AI · Not configured — add a provider key in Settings.",
     };
   }
+
+  // The backend intentionally accepts exactly one active provider path. Probe
+  // the configured default (or the first available key) instead of forwarding
+  // every saved credential and turning a valid multi-key setup into a 400.
+  const cloudKeys: ProviderApiKeys = {
+    [provider]: { apiKey: storedKeys[provider], isEnabled: true },
+  };
 
   try {
     const res = await eduaiService.testApiKey(cloudKeys, { signal });

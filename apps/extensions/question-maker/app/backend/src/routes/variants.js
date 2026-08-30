@@ -104,6 +104,12 @@ router.post(
         return res.status(400).json({ success: false, error: enumError });
       }
 
+      if (isDraft === false && req.courseAccess.rank < LEVELS.instructor.rank) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Only instructors can approve variants" });
+      }
+
       const variant = await createVariant(
         req.params.id,
         {

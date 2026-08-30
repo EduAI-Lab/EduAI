@@ -64,7 +64,19 @@ async function signUp(email: string, password: string): Promise<{ res: Response;
     body: JSON.stringify({ name: "Reuse Gate Test", email, password }),
   });
   const res = await auth.handler(req);
-  return { res, cookie: cookieHeaderFrom(res) };
+  if (!res.ok) return { res, cookie: "" };
+
+  // These rows exercise password-reuse policy, not email verification. Make
+  // the fixture verified explicitly and obtain its cookie via normal sign-in.
+  await prisma.user.update({ where: { email }, data: { emailVerified: true } });
+  const signInRes = await auth.handler(
+    buildAuthSubRequest("/api/auth/sign-in/email", base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  );
+  return { res, cookie: cookieHeaderFrom(signInRes) };
 }
 
 async function messageOf(res: Response): Promise<string | undefined> {

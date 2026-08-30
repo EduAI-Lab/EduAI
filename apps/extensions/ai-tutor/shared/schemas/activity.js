@@ -42,8 +42,14 @@ export const UpdateActivitySchema = z.object({
   enableCustomMode: z.boolean().optional(),
 });
 
+export const SubmitAnswerSchema = z.union([
+  z.object({ answerOption: z.number().int().nonnegative() }).strict(),
+  z.object({ answerText: z.string().trim().min(1).max(10_000) }).strict(),
+]);
+
 export default {
   MCQOptionsSchema,
   CreateActivitySchema,
   UpdateActivitySchema,
+  SubmitAnswerSchema,
 };
