@@ -10,6 +10,7 @@ import {
 } from "~/lib/ai/eduai-diagram-type";
 import { userRequestedDiagram, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import { jsonObjectSchema, type JsonObject, type JsonValue } from "~/lib/json-value";
+import { z } from "zod";
 
 /**
  * The model supplies semantics; the application supplies the learner-facing
