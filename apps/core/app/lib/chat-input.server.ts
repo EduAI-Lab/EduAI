@@ -7,6 +7,7 @@
  */
 
 import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
 import { BoundedBodyError, readBoundedBody } from "~/lib/net/bounded-body.server";
 
 export const CHAT_MAX_BODY_BYTES_DEFAULT = 2 * 1024 * 1024;
@@ -123,11 +124,12 @@ export async function readBoundedChatJson(
 }
 
 function serializedContentChars(content: JsonValue | undefined): number {
-  if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return 0;
+  const text = asText(content);
+  if (text !== null) return text.length;
+  const parts = asJsonArray(content);
+  if (!parts) return 0;
   try {
-    const serialized = JSON.stringify(content);
-    return typeof serialized === "string" ? serialized.length : 0;
+    return JSON.stringify(parts).length;
   } catch {
     return 0;
   }
@@ -143,15 +145,15 @@ export function validateChatBody(
   overrides: ChatInputLimitOverrides = {},
 ): ChatBodyValidationResult {
   const limits = resolveChatInputLimits(overrides);
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
+  const body = asJsonObject(input);
+  if (!body) {
     return { ok: false, status: 400, error: "Invalid chat request body" };
   }
 
-  const body = input;
-  if (body.messages !== undefined && !Array.isArray(body.messages)) {
+  if (body.messages !== undefined && asJsonArray(body.messages) === null) {
     return { ok: false, status: 422, error: "messages must be an array" };
   }
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = asJsonArray(body.messages) ?? [];
   if (messages.length > limits.maxMessages) {
     return {
       ok: false,
@@ -162,10 +164,10 @@ export function validateChatBody(
 
   let totalMessageChars = 0;
   for (const message of messages) {
-    if (!message || typeof message !== "object" || Array.isArray(message)) {
+    const candidate = asJsonObject(message);
+    if (!candidate) {
       return { ok: false, status: 422, error: "each message must be an object" };
     }
-    const candidate = message;
     const contentChars = serializedContentChars(candidate.content);
     if (contentChars > limits.maxMessageChars) {
       return {

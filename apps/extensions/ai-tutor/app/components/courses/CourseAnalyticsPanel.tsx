@@ -64,7 +64,9 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
   }, [courseId]);
 
   const stats = useMemo(() => {
-    const rated = rows.filter((row) => typeof row.averageRating === "number");
+    const rated = rows.filter(
+      (row) => row.averageRating !== null && row.averageRating !== undefined,
+    );
     const avgRating =
       rated.length > 0
         ? rated.reduce((sum, row) => sum + (row.averageRating ?? 0), 0) / rated.length

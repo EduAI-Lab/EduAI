@@ -73,7 +73,7 @@ export function CommandPalette() {
         const page = await api.listCourses({ search: debouncedQuery.trim() || undefined });
         if (latestRequest.current !== requestId) return;
         setCourses(Array.isArray(page.data) ? page.data : []);
-        setCourseTotal(typeof page.total === "number" ? page.total : 0);
+        setCourseTotal(page.total ?? 0);
       } catch {
         // Leave whatever was already listed; the next keystroke or reopen retries.
       }

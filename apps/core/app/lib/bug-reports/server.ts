@@ -1,10 +1,11 @@
 import type { JsonValue } from "~/lib/json-value";
+import { z } from "zod";
+import { jsonObjectSchema } from "~/lib/json-value";
 import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { redactDiagnosticLogString, sanitizeSensitiveData } from "~/lib/redact.server";
 
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
-type BugReportSource = (typeof VALID_SOURCES)[number];
 
 const VALID_BUG_TYPES = Object.values(BugReportType);
 
@@ -49,13 +50,14 @@ type CappedString = { ok: true; value: string | null } | { ok: false; reason: st
  * Matches prior createBugReport coercion while adding #979 size caps.
  */
 function optionalCappedString(value: JsonValue | undefined, maxChars: number): CappedString {
-  if (typeof value !== "string") {
+  const text = z.string().safeParse(value);
+  if (!text.success) {
     return { ok: true, value: null };
   }
-  if (value.length > maxChars) {
+  if (text.data.length > maxChars) {
     return { ok: false, reason: `exceeds ${maxChars} chars` };
   }
-  return { ok: true, value };
+  return { ok: true, value: text.data };
 }
 
 /** A diagnostic blob after redaction and truncation; null when there was none. */
@@ -69,10 +71,11 @@ function prepareDiagnosticLogs(
   value: JsonValue | undefined,
   maxChars: number,
 ): PreparedDiagnosticLogs {
-  if (typeof value !== "string") {
+  const text = z.string().safeParse(value);
+  if (!text.success) {
     return { ok: true, value: null };
   }
-  const redacted = redactDiagnosticLogString(value);
+  const redacted = redactDiagnosticLogString(text.data);
   return {
     ok: true,
     value: redacted.length > maxChars ? redacted.slice(0, maxChars) : redacted,
@@ -88,11 +91,12 @@ function prepareContext(
   value: JsonValue | undefined,
 ): Prisma.InputJsonValue | typeof Prisma.DbNull {
   // Non-object / array context was previously coerced to DbNull — keep that behavior.
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const envelope = jsonObjectSchema.safeParse(value);
+  if (!envelope.success) {
     return Prisma.DbNull;
   }
 
-  const sanitized = sanitizeSensitiveData(value);
+  const sanitized = sanitizeSensitiveData(envelope.data);
   let serialized: string;
   try {
     serialized = JSON.stringify(sanitized);
@@ -107,26 +111,42 @@ function prepareContext(
   return sanitized as Prisma.InputJsonValue;
 }
 
+/**
+ * The submitted body, checked only for being a plain object.
+ *
+ * Deliberately shallow. `context` is diagnostic garnish that can legitimately
+ * carry a value JSON cannot hold — a `BigInt` out of a caller's telemetry, say
+ * — and `prepareContext` drops that to `DbNull` rather than losing the report
+ * over it. Walking the whole tree here would reject the submission instead, so
+ * each field is decoded on its own below. Values are `JsonValue` because that
+ * is what `createBugReport` accepts.
+ */
+const bugReportBodySchema = z.record(z.custom<JsonValue | undefined>());
+
 export async function createBugReport(raw: JsonValue | undefined): Promise<CreateBugReportResult> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  const envelope = bugReportBodySchema.safeParse(raw);
+  if (!envelope.success) {
     return validationError({ body: "invalid payload" });
   }
 
-  const p = raw;
+  const p = envelope.data;
 
-  if (!VALID_SOURCES.includes(p.source as BugReportSource)) {
+  const source = z.enum(VALID_SOURCES).safeParse(p.source);
+  if (!source.success) {
     return validationError({ source: "must be AI_TUTOR or QUESTION_MAKER" });
   }
 
-  if (typeof p.userId !== "string" || p.userId.trim().length === 0) {
+  const userId = z.string().trim().min(1).safeParse(p.userId);
+  if (!userId.success) {
     return validationError({ userId: "required string" });
   }
 
-  if (typeof p.description !== "string") {
+  const description = z.string().safeParse(p.description);
+  if (!description.success) {
     return validationError({ description: "required string" });
   }
 
-  if (p.description.length > BUG_REPORT_FIELD_LIMITS.description) {
+  if (description.data.length > BUG_REPORT_FIELD_LIMITS.description) {
     return validationError({
       description: `exceeds ${BUG_REPORT_FIELD_LIMITS.description} chars`,
     });
@@ -134,10 +154,11 @@ export async function createBugReport(raw: JsonValue | undefined): Promise<Creat
 
   let bugType: BugReportType | null = null;
   if (p.bugType !== undefined && p.bugType !== null) {
-    if (!VALID_BUG_TYPES.includes(p.bugType as BugReportType)) {
+    const decoded = z.nativeEnum(BugReportType).safeParse(p.bugType);
+    if (!decoded.success) {
       return validationError({ bugType: `must be one of: ${VALID_BUG_TYPES.join(", ")}` });
     }
-    bugType = p.bugType as BugReportType;
+    bugType = decoded.data;
   }
 
   const consoleLogs = prepareDiagnosticLogs(p.consoleLogs, BUG_REPORT_FIELD_LIMITS.consoleLogs);
@@ -150,12 +171,13 @@ export async function createBugReport(raw: JsonValue | undefined): Promise<Creat
   // Non-image-data-URL values are also dropped to null (#1570): the screenshot
   // is rendered to an admin as an `<a href>`, so only a real base64 image data
   // URL may be stored — never a `javascript:`/`http(s):`/arbitrary string.
+  const screenshot = z.string().safeParse(p.screenshot);
   const screenshotValue =
-    typeof p.screenshot === "string" &&
-    p.screenshot.length > 0 &&
-    p.screenshot.length <= BUG_REPORT_FIELD_LIMITS.screenshot &&
-    SCREENSHOT_DATA_URL_RE.test(p.screenshot)
-      ? p.screenshot
+    screenshot.success &&
+    screenshot.data.length > 0 &&
+    screenshot.data.length <= BUG_REPORT_FIELD_LIMITS.screenshot &&
+    SCREENSHOT_DATA_URL_RE.test(screenshot.data)
+      ? screenshot.data
       : null;
 
   const pageUrl = optionalCappedString(p.pageUrl, BUG_REPORT_FIELD_LIMITS.pageUrl);
@@ -170,20 +192,21 @@ export async function createBugReport(raw: JsonValue | undefined): Promise<Creat
 
   const context = prepareContext(p.context);
 
-  const userId = p.userId.trim();
-
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId.data },
+    select: { id: true },
+  });
   if (!user) {
     return { ok: false, status: 422, error: "USER_NOT_FOUND" };
   }
 
   const report = await prisma.bugReport.create({
     data: {
-      source: p.source as BugReportSource,
-      userId,
-      description: p.description,
+      source: source.data,
+      userId: userId.data,
+      description: description.data,
       bugType,
-      isAnonymous: typeof p.isAnonymous === "boolean" ? p.isAnonymous : false,
+      isAnonymous: z.boolean().catch(false).parse(p.isAnonymous),
       consoleLogs: consoleLogs.value,
       networkLogs: networkLogs.value,
       screenshot: screenshotValue,
@@ -200,7 +223,7 @@ const VALID_STATUSES = ["UNHANDLED", "IN_PROGRESS", "RESOLVED"] as const;
 type BugReportStatus = (typeof VALID_STATUSES)[number];
 
 export function isBugReportStatus(value: JsonValue | undefined): value is BugReportStatus {
-  return typeof value === "string" && (VALID_STATUSES as readonly string[]).includes(value);
+  return z.enum(VALID_STATUSES).safeParse(value).success;
 }
 
 const ADMIN_LIST_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
@@ -208,7 +231,7 @@ const ADMIN_LIST_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 export function isBugReportSource(
   value: JsonValue | undefined,
 ): value is (typeof ADMIN_LIST_SOURCES)[number] {
-  return typeof value === "string" && (ADMIN_LIST_SOURCES as readonly string[]).includes(value);
+  return z.enum(ADMIN_LIST_SOURCES).safeParse(value).success;
 }
 
 function maskReporter(r: {

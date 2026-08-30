@@ -9,6 +9,7 @@ import type { JsonObject, JsonValue } from "@eduai/types";
 
 import api from "./api";
 import type { ChatTab, ChatMessage } from "./student-chat-history-types";
+import { z } from "zod";
 
 export type { ChatTab, ChatMessage };
 
@@ -36,21 +37,17 @@ export async function loadSessionMessages(
     .map((m) => ({
       id: m.id,
       role: m.role as "user" | "assistant",
-      content: typeof m.content === "string" ? m.content : extractText(m.content),
+      content: z.string().safeParse(m.content).data ?? extractText(m.content),
     }));
 }
 
 /** One `{ type: "text", text }` entry of an AI-SDK message's `parts` array. */
 type TextPart = { type: "text"; text: string };
 
+const textPartSchema = z.object({ type: z.literal("text"), text: z.string() });
+
 function isTextPart(part: JsonValue): part is JsonObject & TextPart {
-  return (
-    !!part &&
-    typeof part === "object" &&
-    !Array.isArray(part) &&
-    part.type === "text" &&
-    typeof part.text === "string"
-  );
+  return textPartSchema.safeParse(part).success;
 }
 
 /**
@@ -59,9 +56,11 @@ function isTextPart(part: JsonValue): part is JsonObject & TextPart {
  * `parts` array; anything else has no text to show.
  */
 function extractText(content: JsonValue | undefined): string {
-  if (!content || typeof content !== "object" || Array.isArray(content)) return "";
-  if (typeof content.content === "string") return content.content;
-  const parts = content.parts;
+  const fields = z.record(z.custom<JsonValue | undefined>()).safeParse(content);
+  if (!fields.success) return "";
+  const inner = z.string().safeParse(fields.data.content);
+  if (inner.success) return inner.data;
+  const parts = fields.data.parts;
   if (!Array.isArray(parts)) return "";
   return parts
     .filter(isTextPart)

@@ -102,7 +102,7 @@ async function main() {
     const oracle = normalizeOracleTier(row.min_adequate_tier);
     if (!prompt || oracle == null) continue;
 
-    const ragContextKey = typeof row.rag_context === "string" ? row.rag_context : "none";
+    const ragContextKey = String(row.rag_context ?? "none");
     const ragProxy = RAG_CONTEXT_PROXY.get(ragContextKey) ?? null;
     const courseRagNeeded = ragContextKey !== "none";
 

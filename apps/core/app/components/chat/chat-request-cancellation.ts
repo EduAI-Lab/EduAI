@@ -21,7 +21,7 @@ export function cancelChatRequest(activeRequestIdRef: ActiveRequestIdRef): void 
 
   const body = JSON.stringify({ requestId });
   let queued = false;
-  if (typeof navigator.sendBeacon === "function") {
+  if (navigator.sendBeacon instanceof Function) {
     try {
       queued = navigator.sendBeacon(
         "/api/chat/cancel",

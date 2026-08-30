@@ -15,6 +15,7 @@
 // (#1088). `termInfoFromDate` is the one place that does this attribution —
 // use it instead of pairing `termFromMonth` with `date.getFullYear()`.
 
+import { isString } from "./primitive-union";
 import { parseDateInputValue } from "./date-input";
 
 export const TERM_CODES = ["W1", "W2", "S1", "S2"] as const;
@@ -153,14 +154,14 @@ export function normalizeTerm(
     // it as UTC midnight and re-deriving via the Vancouver offset can shift it
     // into the previous day (and term) near a month boundary — read the month
     // straight from the string instead of round-tripping through a timezone.
-    if (typeof startDate === "string") {
+    if (isString(startDate)) {
       const dateOnly = startDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (dateOnly) return termFromMonth(Number(dateOnly[2]) - 1);
     }
     const date = startDate instanceof Date ? startDate : new Date(startDate);
     if (!Number.isNaN(date.getTime())) return termFromDate(date);
   }
-  if (typeof raw !== "string") return null;
+  if (!isString(raw)) return null;
   const s = raw.trim().toUpperCase();
   if (!s) return null;
   if (isTermCode(s)) return s;
@@ -191,7 +192,7 @@ export function termLabel(term?: string | null, year?: number | string | null): 
   if (code && year != null) return `${academicYearSpan(code, year)}${code}`;
   if (code) return code;
   if (year != null) return String(year);
-  const raw = typeof term === "string" ? term.trim() : "";
+  const raw = isString(term) ? term.trim() : "";
   return raw || "No term scheduled";
 }
 
@@ -255,7 +256,7 @@ export function termLabelLong(term?: string | null, year?: number | string | nul
   if (code && year != null) return `${academicYearSpan(code, year)} ${termName(code)}`;
   if (code) return termName(code);
   if (year != null) return String(year);
-  const raw = typeof term === "string" ? term.trim() : "";
+  const raw = isString(term) ? term.trim() : "";
   return raw || "No term scheduled";
 }
 
@@ -288,8 +289,9 @@ export function termSortKey(info: TermInfo): number {
     // parsing it as UTC midnight and reading local fields can shift it into
     // the previous day (and term/year) near a boundary. Read the fields
     // straight from the string instead (same guard as `normalizeTerm`).
-    const dateOnly =
-      typeof info.startDate === "string" ? info.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+    const dateOnly = isString(info.startDate)
+      ? info.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      : null;
     if (dateOnly) {
       code = termFromMonth(Number(dateOnly[2]) - 1);
       const calendarYear = Number(dateOnly[1]);

@@ -1,5 +1,6 @@
 import type { JsonObject } from "~/lib/json-value";
 import { useState, useEffect, useCallback } from "react";
+import { asText } from "~/lib/json-value";
 
 export interface CourseMaterial {
   id: string;
@@ -214,9 +215,7 @@ export function useCourseMaterials(courseId: string) {
       // field read below is checked for its own type first.
       const body = (await res.json().catch(() => ({}))) as JsonObject;
       if (!res.ok) {
-        throw new Error(
-          typeof body.error === "string" ? body.error : `Upload failed (${res.status})`,
-        );
+        throw new Error(asText(body.error) ?? `Upload failed (${res.status})`);
       }
 
       const materialId = body.materialId as string;

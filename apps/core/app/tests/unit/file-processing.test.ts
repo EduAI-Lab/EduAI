@@ -982,7 +982,7 @@ describe("extractPdfText", () => {
       arrayBuffer: async () => toArrayBuffer(buildTinyValidPdf()),
     };
     const result = await extractPdfText(file as any);
-    expect(typeof result.content).toBe("string");
+    expect(result.content).toEqual(expect.any(String));
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
     expect(result.metadata?.processingMethod).toBe("@opendocsg/pdf2md");
   });
@@ -1164,7 +1164,7 @@ describe("processUploadedFile", () => {
     const metadata = result.metadata as JsonObject | undefined;
     expect(metadata?.isEnhanced).toBe(true);
     expect(metadata?.processingLibrary).toBe("Native text extraction");
-    expect(typeof metadata?.chunkCount).toBe("number");
+    expect(metadata?.chunkCount).toEqual(expect.any(Number));
     expect(metadata?.extractedAt).toBeInstanceOf(Date);
   });
 

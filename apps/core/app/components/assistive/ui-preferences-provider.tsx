@@ -13,6 +13,7 @@ import type { PreferenceUpdates } from "~/lib/user-preferences";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 import { DEFAULT_UI_PREFERENCES, type UiDensity } from "~/lib/ui-preferences";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 type UiPreferencesContextValue = {
   motionReduced: boolean;
@@ -100,7 +101,7 @@ export function useUiPreferences(): UiPreferencesContextValue {
 export function useMotionReducedPreference(): boolean {
   const ctx = useContext(UiPreferencesContext);
   if (ctx) return ctx.motionReduced;
-  if (typeof window === "undefined") return false;
+  if (!isBrowser()) return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

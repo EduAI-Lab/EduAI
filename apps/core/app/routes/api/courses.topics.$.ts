@@ -18,6 +18,7 @@ import {
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asText } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
@@ -329,9 +330,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           if (!serviceAuth) {
             // For TA own-only resolution we need the concrete topic id; the legacy
             // body shape also allows delete-by-name.
-            let topicId: string | undefined =
-              typeof body?.topicId === "string" ? body.topicId : params.topicId;
-            if (!topicId && typeof body?.name === "string") {
+            let topicId: string | undefined = asText(body?.topicId) ?? params.topicId;
+            if (!topicId && asText(body?.name) !== null) {
               const byName = await prisma.courseTopic.findFirst({
                 where: { courseId, name: body.name, deletedAt: null },
                 select: { id: true },

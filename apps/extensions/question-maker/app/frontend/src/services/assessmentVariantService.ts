@@ -114,7 +114,12 @@ export interface VariantAiReviewResult {
   courseId: number;
   model: string;
   rubricUsed: string;
-  reviewTimeMs: number;
+  /**
+   * Nullable because the review body is assembled by a model and reaches the
+   * client unvalidated. Both consumers already rendered "n/a" for a missing
+   * measurement; the type now says so instead of leaving them to guess.
+   */
+  reviewTimeMs: number | null;
   comparedSlots: number;
   baselineSlotCount: number;
   variantSlotCount: number;
@@ -124,7 +129,7 @@ export interface VariantAiReviewResult {
     usable_with_edits: number;
     unusable: number;
   };
-  usableQuestionPercentage: number;
+  usableQuestionPercentage: number | null;
   compositeWeights: Record<string, number>;
   usabilityMultiplier: Record<string, number>;
   usabilityPenaltyApplied: boolean;

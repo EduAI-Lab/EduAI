@@ -2,6 +2,7 @@ import { useSyncExternalStore, useCallback } from "react";
 import { useCurrentUserId } from "~/contexts/current-user";
 import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { LOCAL_INFERENCE_PROVIDERS } from "~/lib/ai/provider-types";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 /**
  * Sentinel stored in the client-side state when the real key lives in the DB.
@@ -66,7 +67,7 @@ function normalizeOwnerId(userId: string | null): string {
 // uses client-side logout/login navigation, so the same module can serve two
 // different users without a document reload.
 function ensureLoaded(userId: string | null) {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
 
   const ownerId = normalizeOwnerId(userId);
   if (storeOwnerId !== ownerId) {

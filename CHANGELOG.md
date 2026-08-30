@@ -1,9 +1,18 @@
 # Changelog
 
+All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
+
+> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
+
 ## [Week 15 — August 10–16, 2026]
 
 ### Changed
 
+- [ai-tutor] perf: Index the content-tree foreign keys and the per-user column that had no usable leading-column index, turning the seq scans behind every `CourseOffering → Module → Lesson → Activity → Submission` hop, their cascade/restrict deletes, and the "my courses" read into index scans (34ms → 0.11ms on `Activity.lessonId` at 200k rows), and drop the redundant `AiChatSession(userId, activityId)` prefix index. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
+
+### Tests
+
+- [ai-tutor] test: Add `foreignKeyIndexes.test.js`, a schema guard that audits the live test database for foreign keys whose leading column has no usable index, pins the unindexed set to the one documented deferral, checks the per-user column the FK audit cannot see, and proves the audit reacts by dropping an index inside a rolled-back transaction. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
 - [question-maker] perf: Memoize known user ids in `findOrCreateUser` so `requireAuth` skips the deliberately no-op `user.upsert` on side-effect-free read requests, while mutating requests still upsert before dependent writes; the TTL lets a removed row self-heal. Closes #1388. (@abdullahmoh21, 2026-08-11) — [#1467](https://github.com/EduAI-Lab/EduAI/pull/1467)
 - [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query, and the section-delete and variant-unlink paths made transactional. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
 ## [Week 18 — August 24–30, 2026]
@@ -167,6 +176,7 @@
 - [core] feat: Add a shared typed-error hierarchy in `@eduai/types` (`AppError` plus `ValidationError`/`UnauthenticatedError`/`ForbiddenError`/`NotFoundError`/`ConflictError`/`ServiceUnavailableError`, `isAppError`, and a `normalizeError` route-boundary normalizer), and adopt it at Core's API boundary via a `withErrorResponse` wrapper on `api/users.$`, `api/ai-models.$`, `api/ai-providers.$`, `api/invitations` and `api/invitations.$id`. Unhandled failures inside these loaders/actions previously escaped to React Router instead of Core's `{ error: "CODE" }` envelope; the wrapper maps any thrown error to a stable status/code without leaking Prisma model or column text (P2002 collapses to a generic `CONFLICT`, never the constraint's field names; a `PrismaClientInitializationError`, whose connectivity code lives on `errorCode` rather than `code`, now maps to 503 instead of a generic 500). Server-side failures (status ≥ 500) are logged via `logSystemError` with route/method context before they are mapped, so an outage the boundary swallows into the envelope still reaches operational logs instead of vanishing with React Router's `onError` hook. `normalizeError` is scoped to Core here — AI Tutor and question-maker independently landed their own sanitized boundaries (`utils/safeErrors.js` and a hardened `errorHandler`), so this PR no longer touches them. Core's remaining ~47 route handlers, which run a second `{ success, error }` envelope, are tracked separately in #1560. Part of #1279. (@yta3216, 2026-08-20) — [#1515](https://github.com/EduAI-Lab/EduAI/pull/1515)
 ### Changed
 
+- [monorepo] refactor: Replace every runtime `typeof` check outside the JS surfaces with a decode at the I/O boundary or a named domain predicate, and promote `no-runtime-typeof` from `warn` to `error`. Closes #1599. (@abdullahmoh21, 2026-08-24) — [#1629](https://github.com/EduAI-Lab/EduAI/pull/1629)
 - [monorepo] refactor: Decode provider errors, Firecrawl results, chat payloads and AI-Tutor API responses at their I/O boundaries with zod instead of asserting their shapes, clearing the six highest-count anti-slop files bar a documented `no-runtime-typeof` exemption on the polymorphic tool-result walk in `chat-rag.ts` and two unconverted `as Promise<T>` lesson reads in `api.ts`. Closes #1596. (@abdullahmoh21, 2026-08-23) — [#1616](https://github.com/EduAI-Lab/EduAI/pull/1616)
 - [monorepo] refactor: Replace all 164 conditional empty-object spreads with explicit property omission so a field is either stated or absent, and promote `no-conditional-empty-object-spread` from `warn` to `error`. Closes #1597. (@abdullahmoh21, 2026-08-23) — #PR
 - [monorepo] refactor: Give every open dictionary, `unknown` parameter and widened literal across the monorepo a named contract, and promote `no-unsafe-dictionary-type`, `no-unknown-parameters` and `no-known-value-widening` from `warn` to `error`. Closes #1598. (@abdullahmoh21, 2026-08-24) — #PR

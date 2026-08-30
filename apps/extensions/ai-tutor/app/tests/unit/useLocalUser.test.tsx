@@ -53,9 +53,9 @@ describe("useLocalUser", () => {
     });
 
     expect(result.current.user).toEqual(testUser);
-    expect(typeof result.current.saveAuth).toBe("function");
-    expect(typeof result.current.logout).toBe("function");
-    expect(typeof result.current.setUser).toBe("function");
+    expect(result.current.saveAuth).toEqual(expect.any(Function));
+    expect(result.current.logout).toEqual(expect.any(Function));
+    expect(result.current.setUser).toEqual(expect.any(Function));
   });
 });
 

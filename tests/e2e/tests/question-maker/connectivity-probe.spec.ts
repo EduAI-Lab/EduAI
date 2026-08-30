@@ -46,7 +46,7 @@ test.describe("Question Maker connectivity probe (course-free, #1109)", () => {
     const body = await res.json();
 
     // The probe always resolves a provider path (never resolves course access).
-    expect(typeof body.provider).toBe("string");
+    expect(body.provider).toEqual(expect.any(String));
     expect(body.provider.length).toBeGreaterThan(0);
 
     if (body.success === true) {

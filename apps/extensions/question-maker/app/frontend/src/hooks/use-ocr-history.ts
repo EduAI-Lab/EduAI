@@ -9,6 +9,7 @@ import {
   HISTORY_RETENTION_DAYS,
   MAX_STORED_QUESTIONS_PER_JOB,
 } from "../types/ocr";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 export interface UseOCRHistoryReturn {
   jobs: OCRJob[];
@@ -37,7 +38,7 @@ const pruneOldJobs = (jobs: OCRJob[]): OCRJob[] => {
 };
 
 const loadFromStorage = (storageKey: string | null): OCRJob[] => {
-  if (typeof window === "undefined" || !storageKey) return [];
+  if (!isBrowser() || !storageKey) return [];
   try {
     // Never assign a legacy global history to whichever account happens to sign in next.
     localStorage.removeItem(OCR_HISTORY_KEY);
@@ -54,7 +55,7 @@ const loadFromStorage = (storageKey: string | null): OCRJob[] => {
 };
 
 const saveToStorage = (storageKey: string | null, jobs: OCRJob[]): boolean => {
-  if (typeof window === "undefined" || !storageKey) return false;
+  if (!isBrowser() || !storageKey) return false;
   try {
     const limitedJobs = jobs.slice(0, MAX_HISTORY_ITEMS);
     if (limitedJobs.length === 0) {

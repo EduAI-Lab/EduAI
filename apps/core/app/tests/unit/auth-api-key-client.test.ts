@@ -4,8 +4,8 @@ import { authClient } from "~/lib/auth/client";
 describe("Better Auth apiKey client plugin", () => {
   it("exposes list/create/delete helpers for Settings server keys", () => {
     expect(authClient.apiKey).toBeDefined();
-    expect(typeof authClient.apiKey.list).toBe("function");
-    expect(typeof authClient.apiKey.create).toBe("function");
-    expect(typeof authClient.apiKey.delete).toBe("function");
+    expect(authClient.apiKey.list).toEqual(expect.any(Function));
+    expect(authClient.apiKey.create).toEqual(expect.any(Function));
+    expect(authClient.apiKey.delete).toEqual(expect.any(Function));
   });
 });

@@ -32,6 +32,7 @@ import {
 } from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asText } from "~/lib/json-value";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
@@ -169,7 +170,7 @@ function serializeRows(rows: LogRowLike[]) {
       createdAt:
         createdAt instanceof Date
           ? createdAt.toISOString()
-          : typeof createdAt === "string"
+          : asText(createdAt) !== null
             ? createdAt
             : "",
     };

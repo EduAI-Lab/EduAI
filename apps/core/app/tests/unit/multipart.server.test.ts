@@ -73,7 +73,7 @@ async function requestThroughNodeAdapter(
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (!address || typeof address === "string") {
+  if (!address || !(address instanceof Object)) {
     server.close();
     throw new Error("test server did not bind to a TCP port");
   }
