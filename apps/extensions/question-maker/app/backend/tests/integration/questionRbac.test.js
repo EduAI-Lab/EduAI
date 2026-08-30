@@ -83,11 +83,20 @@ const { default: app } = await import("../../src/app.js");
 // Core's platform role for a course TA is STUDENT; the course-level TA role
 // comes from the active enrollment mocked by authAs(..., 'TA').
 const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
-const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const INSTRUCTOR = {
+  id: "inst-1",
+  role: "INSTRUCTOR",
+  email: "i@t.co",
+  name: "I",
+};
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
 
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
-const OTHER_COURSE = { id: 2, userId: "owner-1", coreCourseId: "cuid-other-course" };
+const OTHER_COURSE = {
+  id: 2,
+  userId: "owner-1",
+  coreCourseId: "cuid-other-course",
+};
 
 function authAs(user, enrollRole) {
   vi.stubGlobal(
@@ -136,11 +145,14 @@ describe("course-level TA access is enrollment-scoped (§16)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("keeps the unscoped list restricted to platform authoring roles", async () => {
+  it("returns the TA's server-scoped aggregate list", async () => {
     authAs(TA, "TA");
     const res = await request(app).get("/api/questions").set("Cookie", "session=v");
-    expect(res.status).toBe(403);
-    expect(mockList).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(
+      TA.id,
+      expect.objectContaining({ courseWhere: expect.any(Object) }),
+    );
   });
 
   it("rejects a TA editing another author's question", async () => {
@@ -172,10 +184,12 @@ describe("INSTRUCTOR may edit/delete any question in the course (C)", () => {
   it("creates a question and records createdBy = caller", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     mockCreate.mockResolvedValue({ id: 9 });
-    const res = await request(app)
-      .post("/api/questions")
-      .set("Cookie", "session=v")
-      .send({ courseId: 1, primaryTopicId: "t1", type: "MCQ", description: "q" });
+    const res = await request(app).post("/api/questions").set("Cookie", "session=v").send({
+      courseId: 1,
+      primaryTopicId: "t1",
+      type: "MCQ",
+      description: "q",
+    });
     expect(res.status).toBe(201);
     // scoped by course owner, authored by caller
     expect(mockCreate).toHaveBeenCalledWith(

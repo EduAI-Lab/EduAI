@@ -91,6 +91,24 @@ export async function setup() {
 
   const prismaBin = findBin("prisma");
 
+  const dropContentTsv = () => {
+    try {
+      execSync(
+        `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        { env: pgEnv, stdio: "pipe" },
+      );
+    } catch {
+      execSync(
+        `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        { stdio: "pipe" },
+      );
+    }
+  };
+
+  // A previous integration run leaves the raw generated column in place.
+  // Prisma cannot alter generated columns, so remove it before schema sync.
+  dropContentTsv();
+
   // Sync schema to test DB (idempotent, no migration history needed)
   execBin(prismaBin, ["db", "push", "--accept-data-loss", "--skip-generate"], {
     cwd: appRoot,
@@ -108,17 +126,7 @@ export async function setup() {
   // 'NEVER' instead of 'ALWAYS', and inserts 23502 on a stray NOT NULL).
   // Drop whatever db push created first so the migration's ADD COLUMN is the
   // one that actually runs.
-  try {
-    execSync(
-      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
-      { env: pgEnv, stdio: "pipe" },
-    );
-  } catch {
-    execSync(
-      `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
-      { stdio: "pipe" },
-    );
-  }
+  dropContentTsv();
 
   // db push provisions only schema.prisma, so apply the idempotent raw migration
   // afterward to keep integration databases aligned with deployed databases.
@@ -139,7 +147,11 @@ export async function setup() {
       "--schema",
       resolve(appRoot, "prisma", "schema.prisma"),
     ],
-    { cwd: appRoot, env: { ...process.env, DATABASE_URL: dbUrl }, stdio: "pipe" },
+    {
+      cwd: appRoot,
+      env: { ...process.env, DATABASE_URL: dbUrl },
+      stdio: "pipe",
+    },
   );
 
   // Prisma cannot represent an ivfflat index on Unsupported(vector), and

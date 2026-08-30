@@ -26,7 +26,11 @@ afterEach(() => {
 
 describe("QmAppGate", () => {
   it("shows a loader while auth is resolving", () => {
-    useAuthMock.mockReturnValue({ user: null, isLoading: true, authError: null });
+    useAuthMock.mockReturnValue({
+      user: null,
+      isLoading: true,
+      authError: null,
+    });
     render(
       <QmAppGate>
         <p>private content</p>
@@ -36,7 +40,11 @@ describe("QmAppGate", () => {
   });
 
   it("redirects to Core login when loading finishes with no user and no error", async () => {
-    useAuthMock.mockReturnValue({ user: null, isLoading: false, authError: null });
+    useAuthMock.mockReturnValue({
+      user: null,
+      isLoading: false,
+      authError: null,
+    });
     render(
       <QmAppGate>
         <p>private content</p>
@@ -48,7 +56,7 @@ describe("QmAppGate", () => {
 
   it("shows access denied for a role that cannot use QM", () => {
     useAuthMock.mockReturnValue({
-      user: { id: "u1", role: "STUDENT" },
+      user: { id: "u1", role: "GUEST" },
       isLoading: false,
       authError: null,
     });
@@ -61,9 +69,9 @@ describe("QmAppGate", () => {
     expect(screen.queryByText("private content")).not.toBeInTheDocument();
   });
 
-  it("renders children for an authorized role", () => {
+  it.each(["INSTRUCTOR", "STUDENT"])("renders children for an authorized %s role", (role) => {
     useAuthMock.mockReturnValue({
-      user: { id: "u1", role: "INSTRUCTOR" },
+      user: { id: "u1", role },
       isLoading: false,
       authError: null,
     });

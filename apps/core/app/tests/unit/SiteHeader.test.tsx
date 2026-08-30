@@ -59,9 +59,7 @@ describe("CoreHeaderActions", () => {
       </ThemeProvider>,
     );
     expect(screen.getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /switch to (dark|light) mode/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Toggle color theme" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Report a bug" })).toBeInTheDocument();
   });
 
