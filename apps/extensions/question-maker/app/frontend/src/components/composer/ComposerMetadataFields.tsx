@@ -3,7 +3,8 @@
  * (Combobox), secondary topics (MultiSelect), and an optional description/label.
  * Built for the full-page layout; uses @eduai/ui primitives + CSS vars only.
  */
-import { Label, Input, Combobox, MultiSelect } from "@eduai/ui";
+import { useState } from "react";
+import { Label, Input, Button, Combobox, MultiSelect } from "@eduai/ui";
 
 import type { QuestionDifficulty, ReasoningLevel } from "../../types/question";
 import type { Topic } from "../../types/topic";
@@ -32,6 +33,7 @@ interface ComposerMetadataFieldsProps {
   onPrimaryTopicChange: (value: string) => void;
   onSecondaryTopicsChange: (value: string[]) => void;
   onDescriptionChange: (value: string) => void;
+  onCreateTopic?: (name: string) => Promise<Topic>;
 }
 
 export function ComposerMetadataFields({
@@ -47,7 +49,30 @@ export function ComposerMetadataFields({
   onPrimaryTopicChange,
   onSecondaryTopicsChange,
   onDescriptionChange,
+  onCreateTopic,
 }: ComposerMetadataFieldsProps) {
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
+
+  const handleCreateTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name || !onCreateTopic) return;
+
+    setCreatingTopic(true);
+    setTopicCreationError(null);
+    try {
+      const topic = await onCreateTopic(name);
+      setNewTopicName("");
+      onPrimaryTopicChange(topic.id);
+    } catch (error) {
+      console.error("Failed to create topic", error);
+      setTopicCreationError("Could not create topic. Try a different name.");
+    } finally {
+      setCreatingTopic(false);
+    }
+  };
+
   const topicOptions = topics.map((t) => ({ value: t.id.toString(), label: t.name }));
   const secondaryOptions = topics
     .filter((t) => t.id.toString() !== value.primaryTopicId)
@@ -114,9 +139,39 @@ export function ComposerMetadataFields({
             />
             {topics.length === 0 && !topicsLoading && (
               <p className="text-xs text-muted-foreground">
-                No topics yet. Add them in Core, then re-sync.
+                No topics yet. Add one below to continue.
               </p>
             )}
+            {onCreateTopic && (
+              <div className="flex gap-2">
+                <Input
+                  value={newTopicName}
+                  onChange={(event) => {
+                    setNewTopicName(event.target.value);
+                    if (topicCreationError) setTopicCreationError(null);
+                  }}
+                  placeholder="New topic name"
+                  aria-label="New topic name"
+                  disabled={disabled || creatingTopic}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleCreateTopic();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleCreateTopic()}
+                  disabled={disabled || creatingTopic || !newTopicName.trim()}
+                >
+                  {creatingTopic ? "Adding…" : "Add"}
+                </Button>
+              </div>
+            )}
+            {topicCreationError && <p className="text-xs text-destructive">{topicCreationError}</p>}
             {errors?.primaryTopic && (
               <p className="text-xs text-destructive">{errors.primaryTopic}</p>
             )}

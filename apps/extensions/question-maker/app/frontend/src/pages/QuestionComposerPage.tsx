@@ -418,6 +418,17 @@ export function QuestionComposerPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleCreateTopic = async (name: string): Promise<Topic> => {
+    if (!validCourseId) throw new Error("Select a course before creating a topic.");
+
+    const topic = await courseService.createTopic(validCourseId, name);
+    setTopics((current) => {
+      if (current.some((existing) => existing.id === topic.id)) return current;
+      return [...current, topic].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return topic;
+  };
+
   const metadataValue: ComposerMetadataValue = {
     difficulty: form.difficulty,
     reasoningLevel: form.reasoningLevel,
@@ -1034,6 +1045,7 @@ export function QuestionComposerPage() {
                 onPrimaryTopicChange={(v) => setField("primaryTopicId", v)}
                 onSecondaryTopicsChange={(v) => setField("secondaryTopicIds", v)}
                 onDescriptionChange={(v) => setField("description", v)}
+                onCreateTopic={mode === "variant" ? undefined : handleCreateTopic}
               />
             </CardContent>
           </Card>
