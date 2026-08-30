@@ -118,21 +118,14 @@ export const teamMembers: TeamMember[] = [
     name: "Ahab Masud Siddiqui",
     position: "Developer",
     title: "System Design & UX",
-    image: "/AA.JPG",
+    image: "/ahab.jpg",
     biography:
-      "As a junior in Computer Science and Data science at UBC and a International Undergraduate Research Award recipient (IURA), I've accumulated strong skills in software development. Specific experience lies within building full-stack web applications and AI/ML projects. I've worked under the supervision of multiple professors developing EduAI and Hospital Wayfinding mobile application using Swift and Flutter. I'm eager to contribute to EduAI and collaborate with a passionate research team.",
+      "Ahab is an International Undergraduate Research Award recipient for 2026, working on an ADHD-assistive tutoring platform for neurodivergent learners, and is a lead software developer for EduAi.",
     contribution:
-      " Made system design, architecture, and accessibility-focused UI decisions for an ADHD-assistive AI chatbot, alongside full-stack development on the EduAI platform.",
-    techStack: [
-      "React Native & RR7",
-      "Node.js",
-      "TensorFlow",
-      "Docker",
-      "Vite+TypeScript",
-      "Next.js",
-    ],
+      "Ahab built EduAI's assistive tutoring chatbot to rethink how answers reach students with ADHD and learning differences. It intercepts and restructures tutor responses into short, digestible chunks before students see them, quietly reducing cognitive load for the learners who need it most. He also shaped EduAI into a platform anyone across any discipline can actually use, grounding every decision in UDL principles and UBCO accessibility standards. His work spans the full stack: requirements gathering, RBAC across 3 monorepos, UI/UX redesign, and AWS Bedrock as a fallback when UBC's GPUs hit their limit.",
+    techStack: ["RR7", "Node.js", "TypeScript", "PostgreSQL", "Prisma", "AWS Bedrock"],
     codeSnippet:
-      "IURA 2026, Software Engineering Intern,Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
+      "While(vibe=true) { clauding(); synthesizing();orchestrating();cultivating(); germinating(); }",
   },
   {
     id: 8,
@@ -275,7 +268,7 @@ export const teamMembers: TeamMember[] = [
     role: "student",
     name: "Ariq Muldi",
     position: "Project Lead",
-    title: "Project Lead",
+    title: "Engineering Standards & Review",
     image: "/ariq.jpg",
     biography:
       "Ariq Muldi is a 5th year Bachelor of Science, Honours in Computer Science, Minor in Data Science student who was the project lead for EduAI in summer of 2026. He was responsible for the team structure, delivery process, and engineering standards behind the summer build.",
