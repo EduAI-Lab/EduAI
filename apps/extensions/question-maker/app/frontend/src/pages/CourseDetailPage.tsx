@@ -741,6 +741,7 @@ export const CourseDetailPage = () => {
         );
       }
       setSelectedVariant(null);
+      setDeleteVariantModalOpen(false);
     } catch (error) {
       console.error("Failed to delete variant", error);
       toast.error("Failed to delete question", { description: "Please try again." });
@@ -872,6 +873,7 @@ export const CourseDetailPage = () => {
         description: `"${assessmentToDelete.name}" has been removed.`,
       });
       setAssessmentToDelete(null);
+      setDeleteAssessmentModalOpen(false);
     } catch {
       toast.error("Failed to delete assessment", { description: "Please try again." });
     } finally {

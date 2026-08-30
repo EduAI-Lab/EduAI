@@ -65,7 +65,7 @@ describe("getLauncherApps + visibleAppsForRole — RBAC gate", () => {
     expect(ids).not.toContain("question-maker");
   });
 
-  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"])("shows Question Maker to %s", (role) => {
+  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN", "TA"])("shows Question Maker to %s", (role) => {
     const ids = visibleAppsForRole(apps, role).map((a) => a.id);
     expect(ids).toContain("question-maker");
   });

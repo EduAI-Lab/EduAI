@@ -8,9 +8,9 @@ describe("canAccessQm", () => {
     expect(canAccessQm("UNIT_ADMIN")).toBe(true);
   });
 
-  it("allows platform students through for course-level TA resolution", () => {
-    expect(canAccessQm("STUDENT")).toBe(true);
-    expect(canAccessQm("TA")).toBe(false);
+  it("allows verified course TAs without admitting ordinary students", () => {
+    expect(canAccessQm("TA")).toBe(true);
+    expect(canAccessQm("STUDENT")).toBe(false);
   });
 
   it("blocks missing role", () => {

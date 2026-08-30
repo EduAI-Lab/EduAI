@@ -26,10 +26,28 @@ vi.mock("../../src/config/settings.js", () => {
 
 const { default: app } = await import("../../src/app.js");
 
-function authAs(user) {
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: () => Promise.resolve(body),
+  };
+}
+
+function authAs(user, courses = []) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }),
+    vi.fn().mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/sessions/validate")) return Promise.resolve(jsonResponse({ user }));
+      if (url.includes("/api/courses")) {
+        return Promise.resolve(
+          jsonResponse({ data: courses, total: courses.length, page: 1, pageSize: 100 }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected Core request: ${url}`));
+    }),
   );
 }
 
@@ -49,5 +67,29 @@ describe("GET /api/auth/me isBugReportAdmin (role-only, ADMIN)", () => {
     expect(res.status).toBe(200);
     // Even though inst@test.com is in the legacy allowlist, role-only gating wins.
     expect(res.body.user.isBugReportAdmin).toBe(false);
+  });
+
+  it("marks a platform student as a TA only when Core reports a live TA enrollment", async () => {
+    authAs({ id: "ta", email: "ta@test.com", role: "STUDENT", name: "T" }, [
+      { id: "course-1", callerEnrollmentRole: "TA" },
+    ]);
+    const res = await request(app).get("/api/auth/me").set("Cookie", "session=v");
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: "STUDENT", questionMakerRole: "TA" });
+  });
+
+  it("fails closed when Core cannot verify a student's course role", async () => {
+    authAs({ id: "s", email: "student@test.com", role: "STUDENT", name: "S" });
+    fetch.mockImplementationOnce(() =>
+      Promise.resolve(
+        jsonResponse({
+          user: { id: "s", email: "student@test.com", role: "STUDENT", name: "S" },
+        }),
+      ),
+    );
+    fetch.mockRejectedValueOnce(new Error("Core unavailable"));
+    const res = await request(app).get("/api/auth/me").set("Cookie", "session=v");
+    expect(res.status).toBe(503);
+    expect(res.body.user).toBeUndefined();
   });
 });

@@ -159,6 +159,8 @@ function QmAppLayoutInner() {
   const routeCourse = courses.find((course) => course.id === localCourseId);
   const requestedCoreCourseId = searchParams.get("coreCourseId")?.trim();
   const coreCourseId = routeCourse?.coreCourseId ?? requestedCoreCourseId;
+  const navigationUser = user ? { ...user, role: user.questionMakerRole ?? user.role } : user;
+  const questionMakerRole = navigationUser?.role;
   const attemptedCourseImport = useRef<string | null>(null);
 
   useEffect(() => {
@@ -199,21 +201,21 @@ function QmAppLayoutInner() {
     }
   };
 
-  const navMain = getNavForUser(user).map((item) => ({
+  const navMain = getNavForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navSecondary = getNavSecondaryForUser(user).map((item) => ({
+  const navSecondary = getNavSecondaryForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navFooter = getFooterNavForUser(user).map((item) => ({
+  const navFooter = getFooterNavForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
@@ -245,10 +247,15 @@ function QmAppLayoutInner() {
         launcher: {
           apps: getLauncherApps(coreCourseId),
           currentAppId: CURRENT_APP_ID,
-          role: user?.role,
+          role: questionMakerRole,
         },
         user: user
-          ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
+          ? {
+              name: user.name ?? user.email,
+              email: user.email,
+              image: user.image,
+              role: questionMakerRole,
+            }
           : { name: "Guest", email: "", role: "GUEST" },
         navUser: user
           ? {

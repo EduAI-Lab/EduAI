@@ -8,7 +8,7 @@ import { courseService } from "../services/courseService";
 
 export const useCourses = () => {
   const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCourses = useCallback(async () => {

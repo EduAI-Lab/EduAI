@@ -191,6 +191,19 @@ describe("QmAppLayout", () => {
     expect(screen.getByTestId("app-shell").dataset.classname).toBeUndefined();
   });
 
+  it("uses the course-scoped TA role for the shared app launcher", () => {
+    userValue = {
+      id: "ta-1",
+      name: "Taylor",
+      email: "ta@example.com",
+      role: "STUDENT",
+      questionMakerRole: "TA",
+    };
+    render(<QmAppLayout />);
+    expect(capturedAppShellProps.sidebar.launcher.role).toBe("TA");
+    expect(capturedAppShellProps.sidebar.user.role).toBe("TA");
+  });
+
   it('falls back to "Question Maker" for an unmapped path', () => {
     pathnameValue = "/some/unknown/path";
     render(<QmAppLayout />);

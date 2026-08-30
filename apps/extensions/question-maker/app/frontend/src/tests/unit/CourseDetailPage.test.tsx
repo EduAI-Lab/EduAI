@@ -513,6 +513,7 @@ describe("CourseDetailPage main content", () => {
     expect(within(dialog).getByText("Delete question?")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(questionService.deleteQuestion).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 
   it("reports a variant-delete failure", async () => {
@@ -633,6 +634,7 @@ describe("CourseDetailPage assessments tab", () => {
     expect(within(dialog).getByText('Delete assessment "Quiz 1"?')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(assessmentService.deleteAssessment).toHaveBeenCalledWith(100));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 
   it("reports an assessment-deletion failure", async () => {

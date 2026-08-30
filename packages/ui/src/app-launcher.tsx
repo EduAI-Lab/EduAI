@@ -14,7 +14,7 @@ import { cn } from "./utils";
  * (rbac-matrix §4) so every app's switcher agrees on who sees QM. Export it so
  * each consumer builds its app list from the same source of truth.
  */
-export const QUESTION_MAKER_ROLES = ["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"] as const;
+export const QUESTION_MAKER_ROLES = ["INSTRUCTOR", "ADMIN", "UNIT_ADMIN", "TA"] as const;
 
 /** A launchable EduAI app / extension (Core, AI Tutor, Question Maker, …). */
 export interface LauncherApp {

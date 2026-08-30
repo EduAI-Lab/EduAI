@@ -69,9 +69,23 @@ describe("QmAppGate", () => {
     expect(screen.queryByText("private content")).not.toBeInTheDocument();
   });
 
-  it.each(["INSTRUCTOR", "STUDENT"])("renders children for an authorized %s role", (role) => {
+  it.each(["INSTRUCTOR", "TA"])("renders children for an authorized %s role", (role) => {
     useAuthMock.mockReturnValue({
       user: { id: "u1", role },
+      isLoading: false,
+      authError: null,
+    });
+    render(
+      <QmAppGate>
+        <p>private content</p>
+      </QmAppGate>,
+    );
+    expect(screen.getByText("private content")).toBeInTheDocument();
+  });
+
+  it("uses the live Question Maker role without promoting the platform role", () => {
+    useAuthMock.mockReturnValue({
+      user: { id: "u1", role: "STUDENT", questionMakerRole: "TA" },
       isLoading: false,
       authError: null,
     });
