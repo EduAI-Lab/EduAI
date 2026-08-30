@@ -21,6 +21,8 @@ interface CourseBanksTabProps {
   canWrite: boolean;
   isLoading?: boolean;
   loadError?: string | null;
+  /** Canvas bank sync is offered only for courses synced from Canvas. */
+  isCanvasLinked: boolean;
   onCreateBank: (name: string) => Promise<void> | void;
   onSyncFromCanvas: () => void;
   onOpenBank: (bankId: string) => void;
@@ -31,6 +33,7 @@ export function CourseBanksTab({
   canWrite,
   isLoading = false,
   loadError = null,
+  isCanvasLinked,
   onCreateBank,
   onSyncFromCanvas,
   onOpenBank,
@@ -83,7 +86,7 @@ export function CourseBanksTab({
               New bank
             </Button>
           )}
-          {canWrite && (
+          {canWrite && isCanvasLinked && (
             <Button
               type="button"
               variant="outline"

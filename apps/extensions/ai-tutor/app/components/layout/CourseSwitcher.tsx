@@ -11,7 +11,11 @@
  */
 import * as React from "react";
 import { useNavigate } from "react-router";
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
+import {
+  CourseSwitcher as SharedCourseSwitcher,
+  courseSwitcherSublabel,
+  type CourseSwitcherOption,
+} from "@eduai/ui";
 
 import api from "~/lib/api";
 import { useDebouncedValue } from "~/hooks/useDebouncedValue";
@@ -74,7 +78,24 @@ export function CourseSwitcher({
   const options: CourseSwitcherOption[] = pending
     ? []
     : courses.length > 0
-      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? "Untitled course") }))
+      ? courses.map((c) => {
+          // `splitTitle` yields the code as the label and the name as the
+          // sublabel; the shared helper re-forms that sublabel with the term so
+          // two offerings of one course code are distinguishable. `term`/`year`
+          // are read through from Core (server/src/utils/mappers.js).
+          const split = splitTitle(c.title ?? "Untitled course");
+          return {
+            id: c.id,
+            label: split.label,
+            sublabel:
+              courseSwitcherSublabel({
+                code: split.sublabel ? split.label : null,
+                name: split.sublabel ?? split.label,
+                term: c.term,
+                year: c.year,
+              }) ?? split.sublabel,
+          };
+        })
       : searching
         ? []
         : [{ id: courseId, ...current }];

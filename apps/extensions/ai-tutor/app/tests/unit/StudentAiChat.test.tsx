@@ -29,14 +29,27 @@ import type { Activity } from "~/lib/types";
 import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
-const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
-  mockGetKey: vi.fn((): string => "test-provider-key"),
-  mockSetKey: vi.fn(),
-  mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
-}));
+// #1645: the composer reads the held-keys map to decide whether the selected
+// model needs a personal key and to forward every held key to Core for the
+// fleet-down fallback. Named so the mutable ref has an owning contract.
+type HeldKeysRef = { current: Record<string, string> };
+
+const { mockGetKey, mockSetKey, mockValidateKey, mockKeysRef } = vi.hoisted(() => {
+  // Kept as a stable ref so its identity survives re-renders.
+  const keysRef: HeldKeysRef = {
+    current: { google: "test-provider-key" },
+  };
+  return {
+    mockGetKey: vi.fn((): string => "test-provider-key"),
+    mockSetKey: vi.fn(),
+    mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
+    mockKeysRef: keysRef,
+  };
+});
 
 vi.mock("~/hooks/use-api-keys", () => ({
   useApiKeys: () => ({
+    keys: mockKeysRef.current,
     loaded: true,
     getKey: mockGetKey,
     setKey: mockSetKey,
@@ -202,6 +215,7 @@ async function typeAndSend(text: string, placeholder = "Describe where you need 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetKey.mockReturnValue("test-provider-key");
+  mockKeysRef.current = { google: "test-provider-key" };
   mockValidateKey.mockResolvedValue({ valid: true });
   listSuggestedPrompts.mockResolvedValue([]);
   listAiModels.mockResolvedValue([
@@ -237,6 +251,120 @@ describe("StudentAiChat — default model selection from isDefaultTutor (#1004)"
     expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
       modelId: "google:gemini-2.5-pro",
     });
+  });
+});
+
+// ── #1645 — BYOK is a fallback, not a precondition ─────────────────────────
+
+describe("StudentAiChat — BYOK as fallback (#1645)", () => {
+  it("enables the composer and sends with no key for a UBC-hosted model", async () => {
+    // No BYOK key held at all, but the catalogue offers a UBC-hosted vLLM model.
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue([{ id: "v1", modelId: "vllm:llama-3", modelName: "Llama 3" }]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    // Composer is usable — the "connect a provider" gate must NOT be shown.
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    const params = sendGuideMessage.mock.calls[0][1];
+    expect(params).toMatchObject({ modelId: "vllm:llama-3" });
+    // A UBC-hosted model forwards no personal key.
+    expect(params.apiKey).toBeUndefined();
+  });
+
+  it("blocks the composer for a BYOK model when no key is held", async () => {
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    // Catalogue offers only a BYOK (google) model, and the student has no key.
+    listAiModels.mockResolvedValue([
+      { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+    ]);
+    renderChat();
+
+    await waitFor(() =>
+      expect(screen.getByText("Connect an AI provider to start")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByPlaceholderText("Describe where you need guidance…"),
+    ).not.toBeInTheDocument();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not populate the picker from a held key when the catalogue is empty (allow-list is absolute)", async () => {
+    // Admin catalogue is empty, but the student holds an OpenAI key. The key is
+    // a fallback for reaching an *allowed* model, never a way to conjure one the
+    // admin never allowed — so the picker stays empty and the composer blocked
+    // rather than offering a model Core would 422.
+    mockKeysRef.current = { openai: "sk-openai" };
+    mockGetKey.mockReturnValue("sk-openai");
+    listAiModels.mockResolvedValue([]);
+    renderChat();
+
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not surface a model the admin allow-list omits, even with a held key", async () => {
+    // A student model policy is active and every catalogue model is disallowed
+    // for students (studentSelectable:false). A held key must NOT reopen any of
+    // them: the picker is empty and the composer stays blocked.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "g1",
+        modelId: "google:gemini-2.5-flash",
+        modelName: "Gemini 2.5 Flash",
+        studentSelectable: false,
+      },
+      {
+        id: "g2",
+        modelId: "google:gemini-2.5-pro",
+        modelName: "Gemini 2.5 Pro",
+        studentSelectable: false,
+      },
+    ]);
+    renderChat();
+
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("offers only the allow-listed catalog models when a policy is active (a held key adds nothing)", async () => {
+    // Policy is active (the allowed UBC model carries a policy flag). The picker
+    // offers exactly that allowed model; the student's held google key does not
+    // add any extra entry.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "v1",
+        modelId: "vllm:llama-3",
+        modelName: "Llama 3",
+        studentSelectable: true,
+        isDefaultTutor: true,
+      },
+    ]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
+    // The policy-limited notice appears because a policy is active; the only
+    // picker entry is the allowed UBC model, and no BYOK entry was merged in.
+    expect(
+      screen.getByText("Tutor model choices are limited by your course configuration."),
+    ).toBeInTheDocument();
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({ modelId: "vllm:llama-3" });
   });
 });
 

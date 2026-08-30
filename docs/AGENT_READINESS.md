@@ -168,6 +168,7 @@ Tracked in `manifest.ts` with `readiness: "partial"` and a `gaps` array. Example
 | Method | Path | Reason |
 | ------ | ---- | ------ |
 | POST | `/api/chat` | Streaming, persistence, apiKeys — use narrow tools instead |
+| POST | `/api/chat/cancel` | Browser-only request-specific stream cancellation |
 | GET/DELETE | `/api/chats/:chatId` | Chat UI persistence, not ops |
 | POST | `/api/courses/:courseId/materials` | File upload — search via RAG instead |
 | * | `/api/auth/*` | Better Auth handler |

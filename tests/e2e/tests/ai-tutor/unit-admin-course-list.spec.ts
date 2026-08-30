@@ -120,7 +120,7 @@ test.describe("UNIT_ADMIN course list", () => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/instructor`);
     await searchFor(page, ua.course.code);
 
-    await chooseFilter(page, "Term", "2026W1");
+    await chooseFilter(page, "Term", "2026-27W1");
 
     await expect(courseLink(page, ua.course.atCourseId)).toBeVisible();
   });

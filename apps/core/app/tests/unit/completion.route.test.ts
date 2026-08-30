@@ -215,6 +215,51 @@ describe("POST /api/completion review regressions", () => {
     });
   });
 
+  it("falls back to a keyed BYOK provider on fleet outage and forwards the complete held-key map (#1645)", async () => {
+    // The UBC fleet is down for the selected vLLM model, but the caller holds
+    // keys for multiple BYOK providers. Core must switch to the first usable
+    // fallback (openai:gpt-4o-mini, the default order) AND build the provider
+    // registry from EVERY held key — not only the fallback's — so a request
+    // path forcing FleetUnavailableError proves the full map reaches the
+    // provider layer (reviewer follow-up: resolver-only mocks can't show this).
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError("internal fleet host details"),
+    );
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "vllm:test-model",
+          apiKeys: {
+            vllm: { isEnabled: true, baseUrl: "http://localhost:8001" },
+            openai: { isEnabled: true, apiKey: "sk-openai-do-not-leak" },
+            google: { isEnabled: true, apiKey: "sk-google-do-not-leak" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    // The response reports the fallback model actually used, not the down vLLM one.
+    await expect(res.json()).resolves.toEqual(
+      expect.objectContaining({ model: "openai:gpt-4o-mini" }),
+    );
+
+    // The registry was built from the COMPLETE held-key map: the fallback
+    // provider's key AND every other held key (so a later outage could reach a
+    // different one), not just the selected provider's.
+    const registryArg = vi.mocked(createAIProviderRegistry).mock.calls.at(-1)?.[0] as Record<
+      string,
+      { apiKey?: string }
+    >;
+    expect(registryArg).toMatchObject({
+      openai: expect.objectContaining({ apiKey: "sk-openai-do-not-leak" }),
+      google: expect.objectContaining({ apiKey: "sk-google-do-not-leak" }),
+    });
+  });
+
   it("normalizes a transient upstream failure and valid retry hint", async () => {
     vi.mocked(streamText).mockRejectedValue(
       new APICallError({

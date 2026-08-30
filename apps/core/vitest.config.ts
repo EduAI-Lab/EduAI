@@ -16,6 +16,10 @@ export default defineConfig({
     fileParallelism: true,
     maxWorkers: process.env.CI ? 2 : undefined,
     env: {
+      // Plain object spread (see vitest.shared.ts's own comment on this
+      // pattern) — `env` fully replaces rather than merges, so base's
+      // NODE_OPTIONS must be spread in explicitly here too.
+      ...base.test?.env,
       VITEST_SKIP_PRISMA_EAGER_CONNECT: "1",
       // Route fixtures intentionally reuse identities such as `user-1`.
       // Keep unrelated unit files from sharing a small Redis bucket; focused

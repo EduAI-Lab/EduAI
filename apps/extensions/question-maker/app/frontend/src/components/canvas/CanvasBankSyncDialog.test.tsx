@@ -22,6 +22,7 @@ vi.mock("../../services/canvasService", () => ({
   default: {
     getIntegration: vi.fn(),
     getCourses: vi.fn(),
+    getCourseMapping: vi.fn(),
     connectCanvasWithFallback: vi.fn(),
     getQuestionBanks: vi.fn(),
     importQuestionBank: vi.fn(),
@@ -56,9 +57,11 @@ describe("CanvasBankSyncDialog", () => {
       isTestMode: true,
       isConnected: true,
     });
-    vi.mocked(canvasService.getCourses).mockResolvedValue([
-      { id: 1, name: "CS 101", course_code: "CS101" },
-    ]);
+    vi.mocked(canvasService.getCourseMapping).mockResolvedValue({
+      localCourseId: 9,
+      canvasCourseId: 1,
+      canvasCourseName: "CS 101",
+    });
     vi.mocked(canvasService.getQuestionBanks).mockResolvedValue([
       { id: 10, title: "Chapter 1", question_count: 2 },
     ]);
@@ -76,7 +79,7 @@ describe("CanvasBankSyncDialog", () => {
     ]);
   });
 
-  it("disables sync until Canvas course and bank are selected", async () => {
+  it("disables sync until a Canvas bank is selected", async () => {
     render(<CanvasBankSyncDialog open onClose={vi.fn()} localCourseId={9} />);
 
     await waitFor(() => {
@@ -87,13 +90,38 @@ describe("CanvasBankSyncDialog", () => {
     expect(syncBtn).toBeDisabled();
   });
 
-  it("shows connect form when Canvas is not connected", async () => {
+  it("loads banks from the Canvas course linked to the open course", async () => {
+    render(<CanvasBankSyncDialog open onClose={vi.fn()} localCourseId={9} />);
+
+    await waitFor(() => {
+      expect(canvasService.getQuestionBanks).toHaveBeenCalledWith(1);
+    });
+    expect(canvasService.getCourses).not.toHaveBeenCalled();
+    expect(await screen.findByText("CS 101")).toBeInTheDocument();
+  });
+
+  it("blocks sync when the open course has no linked Canvas course", async () => {
+    vi.mocked(canvasService.getCourseMapping).mockResolvedValue(null);
+
+    render(<CanvasBankSyncDialog open onClose={vi.fn()} localCourseId={9} />);
+
+    expect(
+      await screen.findByText(
+        /This course is not linked to a Canvas course\. Sync the course from Canvas/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("sync-bank-submit")).toBeDisabled();
+    expect(canvasService.getQuestionBanks).not.toHaveBeenCalled();
+  });
+
+  it("points at EduAI settings instead of a connect form when Canvas is disconnected", async () => {
     vi.mocked(canvasService.getIntegration).mockResolvedValue(null);
 
     render(<CanvasBankSyncDialog open onClose={vi.fn()} localCourseId={9} />);
 
-    await waitFor(() => {
-      expect(screen.getByLabelText("Canvas Instance URL")).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/Canvas is not connected/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Canvas Instance URL")).not.toBeInTheDocument();
+    expect(screen.queryByText("Change Connection")).not.toBeInTheDocument();
+    expect(screen.getByTestId("sync-bank-submit")).toBeDisabled();
   });
 });

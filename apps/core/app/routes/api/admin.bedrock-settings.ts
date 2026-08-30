@@ -15,6 +15,7 @@ import {
   setBedrockOverflowSettings,
 } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
 import { isBedrockTokenConfigured } from "~/lib/ai/routing/bedrock/overflow.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 const limitSchema = z.number().int().min(0).max(BEDROCK_LIMIT_MAX);
 
@@ -27,54 +28,64 @@ const UpdateBedrockOverflowSettingsSchema = z.object({
 });
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { response: adminGuard } = await requireAdmin(request);
-  if (adminGuard) return adminGuard;
+  return withErrorResponse(
+    async () => {
+      const { response: adminGuard } = await requireAdmin(request);
+      if (adminGuard) return adminGuard;
 
-  return json({
-    settings: await getBedrockOverflowSettings(),
-    tokenConfigured: isBedrockTokenConfigured(),
-    definitions: BEDROCK_OVERFLOW_SETTING_DEFINITIONS,
-  });
+      return json({
+        settings: await getBedrockOverflowSettings(),
+        tokenConfigured: isBedrockTokenConfigured(),
+        definitions: BEDROCK_OVERFLOW_SETTING_DEFINITIONS,
+      });
+    },
+    { request },
+  );
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (request.method !== "PATCH" && request.method !== "PUT") {
-    return json({ error: "Method not allowed" }, 405);
-  }
+  return withErrorResponse(
+    async () => {
+      if (request.method !== "PATCH" && request.method !== "PUT") {
+        return json({ error: "Method not allowed" }, 405);
+      }
 
-  const { response: adminGuard, session } = await requireAdmin(request);
-  if (adminGuard) return adminGuard;
-  if (!session?.user) {
-    return json({ error: "Forbidden: Admins only" }, 403);
-  }
+      const { response: adminGuard, session } = await requireAdmin(request);
+      if (adminGuard) return adminGuard;
+      if (!session?.user) {
+        return json({ error: "Forbidden: Admins only" }, 403);
+      }
 
-  const parsed = UpdateBedrockOverflowSettingsSchema.safeParse(
-    await request.json().catch(() => null),
+      const parsed = UpdateBedrockOverflowSettingsSchema.safeParse(
+        await request.json().catch(() => null),
+      );
+      if (!parsed.success) {
+        return json({ error: "Invalid input", details: parsed.error.flatten() }, 400);
+      }
+
+      const settings = await setBedrockOverflowSettings(
+        normalizeBedrockOverflowSettings(parsed.data),
+        session.user.id,
+      );
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session.user),
+          ...getRequestContext(request),
+          actionCode: "BEDROCK_OVERFLOW_SETTINGS_UPDATED",
+          category: "AI_CONFIG",
+          entityType: "BedrockOverflow",
+          entityId: "bedrock.overflow",
+          entityLabel: "AWS Bedrock overflow",
+          details: settings,
+        }),
+      );
+
+      return json({
+        settings,
+        tokenConfigured: isBedrockTokenConfigured(),
+      });
+    },
+    { request },
   );
-  if (!parsed.success) {
-    return json({ error: "Invalid input", details: parsed.error.flatten() }, 400);
-  }
-
-  const settings = await setBedrockOverflowSettings(
-    normalizeBedrockOverflowSettings(parsed.data),
-    session.user.id,
-  );
-
-  fireAndForget(
-    logAuditAction({
-      ...getActorContext(session.user),
-      ...getRequestContext(request),
-      actionCode: "BEDROCK_OVERFLOW_SETTINGS_UPDATED",
-      category: "AI_CONFIG",
-      entityType: "BedrockOverflow",
-      entityId: "bedrock.overflow",
-      entityLabel: "AWS Bedrock overflow",
-      details: settings,
-    }),
-  );
-
-  return json({
-    settings,
-    tokenConfigured: isBedrockTokenConfigured(),
-  });
 }
