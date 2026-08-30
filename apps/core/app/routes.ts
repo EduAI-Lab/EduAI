@@ -73,6 +73,7 @@ export default [
   route("/admin/invitations", "routes/admin.invitations.tsx"),
   route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
   route("/admin/chat", "routes/admin.chat.tsx"),
+  route("/instructor/chat", "routes/instructor.chat.tsx"),
   route("/admin/settings", "routes/admin.settings.tsx"),
   route("/admin/logs", "routes/admin.logs.tsx"),
   route("/unit-admin/invitations", "routes/unit-admin.invitations.tsx"),

@@ -12,6 +12,13 @@ export type ChatCourseOption = {
   id: string;
   name: string;
   code: string;
+  /**
+   * Optional disambiguation label shown instead of the bare code when a
+   * caller's course list contains more than one offering sharing the same
+   * `code` (Course.code is not globally unique — only (code, startDate,
+   * section) is — #1659 review). Falls back to `code` when absent.
+   */
+  label?: string;
 };
 
 /** Minimal message shape for live chat + in-flight tool/progress detection. */
@@ -41,6 +48,12 @@ export type ChatViewSharedProps = {
   selectedCourseCode: string | null;
   setSelectedCourseCode: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
+  /**
+   * Which field of `ChatCourseOption` the selector keys/emits through
+   * `selectedCourseCode`/`setSelectedCourseCode` — "code" (default) or "id".
+   * See `ChatCourseOption.label` / chat-input.tsx's `courseSelectionKey`.
+   */
+  courseSelectionKey?: "code" | "id";
   messages: ChatViewMessage[];
   input: string;
   isLoading: boolean;

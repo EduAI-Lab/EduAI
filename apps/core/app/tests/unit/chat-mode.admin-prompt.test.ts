@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAdminSystemPrompt,
+  buildInstructorSystemPrompt,
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
   chatbotTypeFromMode,
@@ -50,6 +51,43 @@ describe("buildAdminSystemPrompt", () => {
     expect(prompt).toContain("listUsers with email=");
     expect(prompt).toContain("do NOT guess a different email");
     expect(prompt).toContain("NEVER replace an admin-supplied email");
+  });
+});
+
+// #1659 review (ariqmuldi, PR #1666): buildInstructorSystemPrompt's actual
+// output — the scope note, and both the custom-prompt and default-prompt
+// branches — was never asserted anywhere; every route test mocks it away
+// (buildInstructorSystemPrompt: vi.fn().mockReturnValue("")). Mirrors
+// buildAdminSystemPrompt's coverage above. Lower stakes than the tool
+// pinning itself (this function's own docstring says so — it's a "keep the
+// model honest" nicety, not the enforcement boundary), but cheap to add.
+describe("buildInstructorSystemPrompt", () => {
+  const base = { courseName: "Intro to CS", courseCode: "COSC 101" };
+
+  it("appends the course-scope note even when a custom prompt override is set", () => {
+    const prompt = buildInstructorSystemPrompt({
+      ...base,
+      customPrompt: "Custom instructor instructions.",
+    });
+    expect(prompt).toContain("Custom instructor instructions.");
+    expect(prompt).toContain("You can only see COSC 101 — Intro to CS.");
+  });
+
+  it("names the course and lists the read-only tools in the default prompt", () => {
+    const prompt = buildInstructorSystemPrompt(base);
+    expect(prompt).toContain("COSC 101 — Intro to CS");
+    expect(prompt).toContain("getCourse");
+    expect(prompt).toContain("listCourseEnrollments");
+    expect(prompt).toContain("listCourseTopics");
+    expect(prompt).toContain("getCourseTopic");
+  });
+
+  it("disclaims platform user management, bug triage, and other courses", () => {
+    const prompt = buildInstructorSystemPrompt(base);
+    expect(prompt).toContain("no access to other courses, platform user management, or bug triage");
+    expect(prompt).toContain(
+      "You do NOT tutor students, search course materials, or manage other courses/users",
+    );
   });
 });
 
