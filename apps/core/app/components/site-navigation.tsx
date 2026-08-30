@@ -25,7 +25,14 @@ export function SiteNavigation() {
         <div className="flex h-16 items-center justify-between gap-4">
           <div className="flex items-center gap-8">
             <Link to={siteConfig.navigation.home} className="flex items-center gap-2.5">
-              <span aria-hidden="true" className="h-6 w-1 rounded-[2px] bg-[var(--gold)]" />
+              <img
+                src="/eduai-graduation.svg"
+                alt=""
+                aria-hidden="true"
+                width={28}
+                height={28}
+                className="h-7 w-7 rounded-md"
+              />
               <span className="text-base font-semibold text-foreground">{siteConfig.name}</span>
             </Link>
 
