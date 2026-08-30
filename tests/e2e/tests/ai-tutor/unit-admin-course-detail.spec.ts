@@ -25,6 +25,14 @@ let coursePath: string;
 const MODULE_TITLE = "Course Detail Module";
 /** A module in the *second* in-unit course — the import dialog's copy source. */
 const SOURCE_MODULE_TITLE = "Importable Source Module";
+/**
+ * Every tab but Content paints its copy only after its own fetch resolves, so
+ * the first assertion after a tab switch is waiting on a request, not on a
+ * render. Playwright's 5s default is not enough for that under merge-queue
+ * load — this is the queue's most frequent red. Matches the timeout
+ * admin-course-oversight.spec.ts already gives the same Submissions copy.
+ */
+const PANEL_LOAD_TIMEOUT = 20_000;
 
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
@@ -103,7 +111,9 @@ test.describe("UNIT_ADMIN course detail", () => {
 
     await openTab(page, "Submissions");
 
-    await expect(page.getByText("Student answer attempts in this course.")).toBeVisible();
+    await expect(page.getByText("Student answer attempts in this course.")).toBeVisible({
+      timeout: PANEL_LOAD_TIMEOUT,
+    });
     for (const tile of ["Needs grading", "Correct", "Pass rate"]) {
       await expect(page.getByText(tile, { exact: true })).toBeVisible();
     }
@@ -114,7 +124,9 @@ test.describe("UNIT_ADMIN course detail", () => {
 
     await openTab(page, "Feedback");
 
-    await expect(page.getByText("Student activity feedback in this course.")).toBeVisible();
+    await expect(page.getByText("Student activity feedback in this course.")).toBeVisible({
+      timeout: PANEL_LOAD_TIMEOUT,
+    });
     await expect(page.getByRole("button", { name: "Apply filters" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Previous" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
@@ -123,7 +135,9 @@ test.describe("UNIT_ADMIN course detail", () => {
   test("the Feedback filters validate, apply and clear", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
     await openTab(page, "Feedback");
-    await expect(page.getByText("Student activity feedback in this course.")).toBeVisible();
+    await expect(page.getByText("Student activity feedback in this course.")).toBeVisible({
+      timeout: PANEL_LOAD_TIMEOUT,
+    });
 
     // A non-numeric Activity ID is rejected in the client before any request —
     // an assertion that holds whether or not the course has feedback rows, so
@@ -149,7 +163,9 @@ test.describe("UNIT_ADMIN course detail", () => {
     await openTab(page, "Analytics");
 
     for (const tile of ["Students", "Submissions", "Accuracy", "Avg rating", "Help requests"]) {
-      await expect(page.getByText(tile, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText(tile, { exact: true }).first()).toBeVisible({
+        timeout: PANEL_LOAD_TIMEOUT,
+      });
     }
     // Panel titles are card titles, not headings.
     await expect(

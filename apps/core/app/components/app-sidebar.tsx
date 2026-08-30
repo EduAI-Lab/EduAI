@@ -42,6 +42,7 @@ const NAV_ICONS = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-chat": IconRobot,
+  "instructor-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
@@ -119,7 +120,9 @@ export function useCoreSidebarProps({
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
-  const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined;
+  const rootData = useRouteLoaderData("root") as
+    | { canInvite?: boolean; hasInstructorEnrollment?: boolean }
+    | undefined;
 
   // The cron admin page owns polling while it is open, so this always-mounted
   // sidebar never creates a concurrent request loop.
@@ -134,7 +137,17 @@ export function useCoreSidebarProps({
   });
   const autoNav = toNavMainItems(navItems, cronStatusColor);
   const navMain = navMainOverride ?? autoNav;
-  const navSecondary = navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user));
+  // #1666 review (Stavan): Course Assistant must survive navigation beyond
+  // /dashboard — sourced from the root loader (every route shares it) rather
+  // than the raw session `user`, which has no notion of course enrollment.
+  const navSecondary =
+    navSecondaryOverride ??
+    toNavSecondaryItems(
+      getNavSecondaryForUser({
+        ...user,
+        hasInstructorEnrollment: rootData?.hasInstructorEnrollment,
+      }),
+    );
 
   const logo = (
     <>

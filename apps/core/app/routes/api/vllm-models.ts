@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function resolveVllmBaseUrl(raw: string): string {
   let base = raw.replace(/\/$/, "");
@@ -23,77 +24,84 @@ function formatVllmFetchError(err: { name?: string; code?: string; message?: str
   ) {
     return "Use http:// not https:// for VLLM_BASE_URL (vLLM speaks plain HTTP)";
   }
-  return err.message || "Failed to connect to vLLM proxy";
+  // Never surface a raw `err.message` — an upstream/transport error would
+  // stringify its internals (host, driver detail) into the response (#1560).
+  return "Failed to connect to vLLM proxy";
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getRequestSession(request);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return new Response("Forbidden: Admins only", { status: 403 });
-  }
+  return withErrorResponse(
+    async () => {
+      const session = await getRequestSession(request);
+      if (!session?.user || session.user.role !== "ADMIN") {
+        return new Response("Forbidden: Admins only", { status: 403 });
+      }
 
-  const vllmPort = process.env.VLLM_PORT || "8001";
-  const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
-  const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = resolveVllmApiKey();
-  if (!apiKey) {
-    return Response.json(
-      { error: "VLLM_API_KEY is not configured (required in production)" },
-      { status: 503 },
-    );
-  }
+      const vllmPort = process.env.VLLM_PORT || "8001";
+      const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
+      const baseUrl = resolveVllmBaseUrl(rawBase);
+      const apiKey = resolveVllmApiKey();
+      if (!apiKey) {
+        return Response.json(
+          { error: "VLLM_API_KEY is not configured (required in production)" },
+          { status: 503 },
+        );
+      }
 
-  try {
-    const modelsUrl = `${baseUrl}/models`;
-    const response = await fetch(modelsUrl, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      signal: AbortSignal.timeout(10000),
-    });
+      try {
+        const modelsUrl = `${baseUrl}/models`;
+        const response = await fetch(modelsUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          signal: AbortSignal.timeout(10000),
+        });
 
-    if (!response.ok) {
-      return new Response(
-        JSON.stringify({
-          error: `Failed to fetch vLLM models: ${response.status} ${response.statusText}`,
-          baseUrl: modelsUrl,
-          hint: "Check LiteLLM proxy on cmps01 (infra/cmps01/README.md)",
-        }),
-        {
-          status: response.status,
+        if (!response.ok) {
+          return new Response(
+            JSON.stringify({
+              error: `Failed to fetch vLLM models: ${response.status} ${response.statusText}`,
+              baseUrl: modelsUrl,
+              hint: "Check LiteLLM proxy on cmps01 (infra/cmps01/README.md)",
+            }),
+            {
+              status: response.status,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        const data = await response.json();
+        const models =
+          data.data?.map((model: { id: string; owned_by?: string; created?: number }) => ({
+            id: model.id,
+            owned_by: model.owned_by,
+            created: model.created,
+          })) ?? [];
+
+        return new Response(JSON.stringify({ models, baseUrl }), {
+          status: 200,
           headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
+        });
+      } catch (error: unknown) {
+        console.error("Error fetching vLLM models:", error);
+        const err = error as { name?: string; code?: string; message?: string };
 
-    const data = await response.json();
-    const models =
-      data.data?.map((model: { id: string; owned_by?: string; created?: number }) => ({
-        id: model.id,
-        owned_by: model.owned_by,
-        created: model.created,
-      })) ?? [];
-
-    return new Response(JSON.stringify({ models, baseUrl }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error: unknown) {
-    console.error("Error fetching vLLM models:", error);
-    const err = error as { name?: string; code?: string; message?: string };
-
-    return new Response(
-      JSON.stringify({
-        error: formatVllmFetchError(err),
-        baseUrl,
-        details: err.code || err.name || "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
+        return new Response(
+          JSON.stringify({
+            error: formatVllmFetchError(err),
+            baseUrl,
+            details: err.code || err.name || "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    },
+    { request },
+  );
 }

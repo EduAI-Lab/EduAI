@@ -49,6 +49,9 @@ function patchArgs(body: RouteRequestBody) {
 async function expectRootLoader(overrides: JsonObject) {
   return {
     canInvite: false,
+    // #1666 review: resolved once per navigation (root loader) so the
+    // sidebar/command-palette Course Assistant link survives every route.
+    hasInstructorEnrollment: false,
     assistive: false,
     motionReduced: false,
     density: "comfortable",

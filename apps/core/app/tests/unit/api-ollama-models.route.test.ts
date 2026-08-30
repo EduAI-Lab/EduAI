@@ -89,6 +89,17 @@ describe("GET /api/ollama-models", () => {
     expect(body.error).toContain("Connection refused");
   });
 
+  it("does not leak a raw error message into the 500 response (#1560)", async () => {
+    global.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error("connect ECONNRESET 10.0.0.5:11434 internal detail")) as never;
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to connect to Ollama server");
+    expect(body.error).not.toContain("10.0.0.5");
+  });
+
   it("re-throws a non-InvalidOllamaBaseUrlError from URL resolution", async () => {
     // A malformed baseUrl throws TypeError from `new URL()` inside the
     // resolver — that's not InvalidOllamaBaseUrlError, so it propagates.
