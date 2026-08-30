@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/ai/providers.server", () => ({
   resolveActiveChatModel: vi.fn(),
@@ -8,6 +8,7 @@ vi.mock("~/lib/ai/providers.server", () => ({
 import {
   resolveCompletionModelPolicy,
   resolveCompletionPrompt,
+  resolveFleetFallbackModel,
   validateCompletionRequest,
 } from "~/lib/ai/completion.server";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
@@ -203,5 +204,106 @@ describe("resolveCompletionModelPolicy", () => {
       error: "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
     });
     expect(resolveActiveChatModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveFleetFallbackModel (#1645)", () => {
+  const ORIGINAL_ENV = process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    else process.env.COMPLETION_FLEET_FALLBACK_MODELS = ORIGINAL_ENV;
+  });
+
+  it("returns null when the caller holds no BYOK key", async () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    await expect(resolveFleetFallbackModel({})).resolves.toBeNull();
+    await expect(resolveFleetFallbackModel({ openai: { isEnabled: true } })).resolves.toBeNull();
+  });
+
+  it("picks the first default candidate that is keyed, enabled, and catalog-active", async () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    // Default order prefers openai over google.
+    await expect(
+      resolveFleetFallbackModel({
+        openai: { isEnabled: true, apiKey: "sk-openai" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      modelId: "openai:gpt-4o-mini",
+      parsedModel: { providerId: "openai", modelId: "gpt-4o-mini" },
+    });
+  });
+
+  it("skips a candidate with no key and falls to the next", async () => {
+    delete process.env.COMPLETION_FLEET_FALLBACK_MODELS;
+    await expect(
+      resolveFleetFallbackModel({ google: { isEnabled: true, apiKey: "g-key" } }),
+    ).resolves.toEqual({
+      ok: true,
+      modelId: "google:gemini-2.5-flash",
+      parsedModel: { providerId: "google", modelId: "gemini-2.5-flash" },
+    });
+  });
+
+  it("honors COMPLETION_FLEET_FALLBACK_MODELS ordering and never returns a local provider", async () => {
+    process.env.COMPLETION_FLEET_FALLBACK_MODELS = "vllm:llama-3, google:gemini-2.5-pro";
+    // vllm is skipped even though it leads the list; the local fleet is exactly
+    // what failed.
+    await expect(
+      resolveFleetFallbackModel({
+        vllm: { isEnabled: true, apiKey: "should-not-matter" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      modelId: "google:gemini-2.5-pro",
+      parsedModel: { providerId: "google", modelId: "gemini-2.5-pro" },
+    });
+  });
+
+  it("skips a keyed-but-policy-failing earlier candidate for a usable later one", async () => {
+    process.env.COMPLETION_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
+    // Only google is active in the catalog; openai's catalog row is missing.
+    vi.mocked(resolveActiveChatModel).mockImplementation(async (modelId: string) =>
+      modelId.startsWith("google:")
+        ? { name: "Gemini", supportsTools: false, supportsImages: false, maxTokens: 1024 }
+        : null,
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // openai leads the order and is keyed+enabled, but its catalog row is gone,
+    // so the loop must fall through to the usable google candidate.
+    await expect(
+      resolveFleetFallbackModel({
+        openai: { isEnabled: true, apiKey: "sk-openai" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      modelId: "google:gemini-2.5-flash",
+      parsedModel: { providerId: "google", modelId: "gemini-2.5-flash" },
+    });
+    // The dead-on-arrival candidate is surfaced, not silently dropped.
+    expect(warn).toHaveBeenCalledWith(
+      "[completion] fleet fallback candidate unavailable in catalog",
+      expect.objectContaining({ candidate: "openai:gpt-4o-mini", providerId: "openai" }),
+    );
+    warn.mockRestore();
+  });
+
+  it("skips a disabled-but-keyed provider and falls to the next", async () => {
+    process.env.COMPLETION_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
+    // openai is keyed but disabled: it would be rejected downstream with a
+    // misleading INVALID_PROVIDER_CONFIG, so it must be skipped here.
+    await expect(
+      resolveFleetFallbackModel({
+        openai: { isEnabled: false, apiKey: "sk-openai" },
+        google: { isEnabled: true, apiKey: "g-key" },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      modelId: "google:gemini-2.5-flash",
+      parsedModel: { providerId: "google", modelId: "gemini-2.5-flash" },
+    });
   });
 });

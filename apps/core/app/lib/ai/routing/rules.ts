@@ -144,7 +144,10 @@ const RAG_REASONING_PATTERN =
 const DISTINCT_ENUMERATION_PATTERN =
   /\b(name|list|give|identify)\b.{0,40}\b(two|2|three|3)\b.{0,40}\bdistinct\b/i;
 
-function routingRagStrongSimilarity(): number {
+/** Exported so llm-classifier.ts can apply the same RAG-strength threshold
+ * the rule stack uses for `rule4_strong_rag_tier_1` — see
+ * `tierFromLlmClassification`'s RAG-aware de-escalation branch. */
+export function routingRagStrongSimilarity(): number {
   const raw = process.env.ROUTING_RAG_STRONG_SIM;
   if (raw === undefined || raw === "") return 0.8;
   const n = Number(raw);
@@ -240,7 +243,14 @@ export function needsDistinctEnumerationEscalation(lower: string): boolean {
   return DISTINCT_ENUMERATION_PATTERN.test(lower);
 }
 
-function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
+/** Exported so llm-classifier.ts's tierFromLlmClassification can apply the
+ * exact same strong-RAG definition the rule stack uses for
+ * `rule4_strong_rag_tier_1`, instead of re-deriving the predicate by hand —
+ * see the "auto-llm tier drift" investigation this was written to prevent
+ * from recurring. */
+export function hasStrongRagHit(
+  ctx: Pick<Phase1RouterContext, "ragTopSimilarity" | "ragChunkCount">,
+): boolean {
   const top1 = ctx.ragTopSimilarity;
   const chunks = ctx.ragChunkCount;
   return top1 != null && chunks != null && chunks >= 1 && top1 >= routingRagStrongSimilarity();

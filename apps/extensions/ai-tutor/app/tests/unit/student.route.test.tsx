@@ -5,7 +5,7 @@ import StudentHome from "~/routes/student";
 import type { Route } from "../../routes/+types/student";
 import { AuthProvider } from "~/hooks/useLocalUser";
 import { ShellBreadcrumbProvider } from "~/components/layout/ShellBreadcrumbContext";
-import type { Course } from "~/lib/types";
+import type { Course, Role } from "~/lib/types";
 
 /**
  * #1208: the route now reads `useNavigation`/`useSearchParams` to drive
@@ -13,7 +13,7 @@ import type { Course } from "~/lib/types";
  * plain `MemoryRouter` this used before.
  */
 export function renderStudentHome(
-  role: "STUDENT" | "TA",
+  role: Role,
   courses: Course[],
   overrides: Partial<Route.ComponentProps["loaderData"]> = {},
   initialEntry = "/student",
@@ -62,5 +62,14 @@ describe("StudentHome (#746 review: TA preview must stay student-shaped)", () =>
   it("renders the same student course grid for a TA previewing /student", () => {
     renderStudentHome("TA", courses as Course[]);
     expect(screen.getByText("Course 1")).toBeInTheDocument();
+  });
+});
+
+describe("StudentHome — StudentPreviewBanner exit link (#1660 follow-up)", () => {
+  const courses = [{ id: 1, title: "Course 1", isPublished: true }];
+
+  it("links an ADMIN previewer back to the instructor dashboard", () => {
+    renderStudentHome("ADMIN", courses as Course[]);
+    expect(screen.getByTestId("student-preview-exit")).toHaveAttribute("href", "/instructor");
   });
 });

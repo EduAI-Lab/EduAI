@@ -399,9 +399,13 @@ describeDb("Core wiring DB integration", () => {
     });
 
     it("returns { id, testable } on Core success", async () => {
+      // Reviewed, not draft: sharing rides on review, so the local write is
+      // conditional on the row still being the approved variant linked to the
+      // question Core was patched with (#1652 review). A draft holding a Core
+      // link is not a state the app can reach — un-review always clears it.
       await prisma.variants.update({
         where: { id: variantId },
-        data: { coreQuestionId: "cuid-core-q" },
+        data: { coreQuestionId: "cuid-core-q", isDraft: false },
       });
 
       vi.stubGlobal("fetch", makeFetch(coreOk({ id: "cuid-core-q", testable: true })));

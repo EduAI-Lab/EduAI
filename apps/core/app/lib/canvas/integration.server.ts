@@ -9,6 +9,7 @@ import {
 import type { CanvasIntegrationPublic, ConnectCanvasInput } from "~/lib/canvas/schemas";
 import {
   assertSafeCanvasSaveHost,
+  canonicalCanvasBaseUrl,
   parseAndValidateCanvasUrl,
   verifyCanvasCredentials,
 } from "~/lib/canvas/client.server";
@@ -107,6 +108,10 @@ export async function getCanvasIntegrationWithDecryptedKey(userId: string) {
 
 export async function saveCanvasIntegration(userId: string, input: ConnectCanvasInput) {
   const parsed = parseAndValidateCanvasUrl(input.canvasUrl);
+  // Persist the canonical origin + deployment sub-path rather than whatever the
+  // caller typed, so every derived request URL and audit record references one
+  // stable form.
+  const canvasUrl = canonicalCanvasBaseUrl(parsed);
 
   // Runs for test mode too. The DNS-backed check used to be reachable only via
   // verifyCanvasCredentials in the branch below, so a test-mode save could
@@ -123,7 +128,7 @@ export async function saveCanvasIntegration(userId: string, input: ConnectCanvas
       throw new Error("API key is required unless using test mode");
     }
     apiKeyPlaintext = apiKey;
-    await verifyCanvasCredentials(input.canvasUrl, apiKeyPlaintext);
+    await verifyCanvasCredentials(canvasUrl, apiKeyPlaintext);
   }
 
   const encryptedApiKey = encryptApiKeyIfNeeded(apiKeyPlaintext);
@@ -132,12 +137,12 @@ export async function saveCanvasIntegration(userId: string, input: ConnectCanvas
     where: { userId },
     create: {
       userId,
-      canvasUrl: input.canvasUrl,
+      canvasUrl,
       apiKey: encryptedApiKey,
       isTestMode: input.isTestMode,
     },
     update: {
-      canvasUrl: input.canvasUrl,
+      canvasUrl,
       apiKey: encryptedApiKey,
       isTestMode: input.isTestMode,
     },

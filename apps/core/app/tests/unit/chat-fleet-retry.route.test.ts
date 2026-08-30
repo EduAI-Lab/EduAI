@@ -35,6 +35,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("admin"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -43,6 +45,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+  requireServiceKey: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -105,7 +108,7 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -120,8 +123,10 @@ vi.mock("~/lib/api-keys/access.server", () => ({
 }));
 
 import { action } from "~/routes/api/chat";
+import { parseChatMode } from "~/lib/agent-tools";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { auth } from "~/lib/auth/server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import {
   FleetUnavailableError,
@@ -146,11 +151,11 @@ const pick2 = {
   reason: "interactive-round-robin-retry",
 };
 
-function makeRequest(body: RouteRequestBody) {
+function makeRequest(body: RouteRequestBody, headers: Record<string, string> = {}) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     }),
     params: {},
@@ -254,6 +259,52 @@ afterEach(() => {
 });
 
 describe("Fleet Slice 2 retry success marker (#876)", () => {
+  it("does not affinity-pin stateless service-key fleet requests", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    vi.mocked(parseChatMode).mockReturnValue("learning");
+    const successfulStream = (args: Parameters<typeof streamText>[0]) => {
+      args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
+      return {
+        get fullStream() {
+          return makeFullStream(
+            [{ type: "text-delta", text: "Service response." }],
+            args.onChunk as never,
+          );
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: Promise.resolve("Service response."),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-service",
+          messages: [{ id: "msg-service", role: "assistant", content: "Service response." }],
+        }),
+      } as never;
+    };
+    vi.mocked(streamText)
+      .mockImplementationOnce(() => {
+        throw new Error("first host unavailable");
+      })
+      .mockImplementationOnce(successfulStream as never);
+
+    const res = await action(
+      makeRequest(baseBody({ chatId: undefined, chatMode: "learning", courseId: undefined }), {
+        Authorization: "Bearer valid-service-key",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(resolveFleetHost).toHaveBeenCalledWith(
+      expect.objectContaining({ affinityKey: undefined }),
+    );
+    expect(resolveFleetHostAfterFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ affinityKey: undefined }),
+    );
+  });
+
   it("does not log fleetRetry: true when the alternate host also fails", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.mocked(streamText).mockImplementation(() => {
@@ -454,5 +505,59 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
       expect(upstreamCancelled).toBe(true);
       expect(getAiAdmissionStats().inflight).toBe(0);
     });
+  });
+
+  it("releases admission after a streaming response completes", async () => {
+    process.env.AI_MAX_INFLIGHT = "1";
+
+    vi.mocked(streamText).mockImplementation((args) => {
+      const upstream = new ReadableStream<{ type: string; text: string }>({
+        start(controller) {
+          const part = { type: "text-delta", text: "Hi" };
+          args.onChunk?.({ chunk: part } as never);
+          controller.enqueue(part);
+          controller.close();
+        },
+      });
+      let responseBranch = upstream;
+
+      return {
+        get fullStream() {
+          const [probeBranch, downstreamBranch] = responseBranch.tee();
+          responseBranch = downstreamBranch;
+          return probeBranch;
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        toDataStreamResponse: vi.fn(({ headers }: { headers?: Record<string, string> }) => {
+          const encoder = new TextEncoder();
+          return new Response(
+            responseBranch.pipeThrough(
+              new TransformStream<{ type: string; text: string }, Uint8Array>({
+                transform(part, controller) {
+                  controller.enqueue(encoder.encode(part.text));
+                },
+              }),
+            ),
+            { status: 200, headers },
+          );
+        }),
+        text: Promise.resolve("Hi"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 1 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi" }],
+        }),
+      } as never;
+    });
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+    expect(res.status).toBe(200);
+    expect(getAiAdmissionStats().inflight).toBe(1);
+
+    await res.text();
+    await vi.waitFor(() => expect(getAiAdmissionStats().inflight).toBe(0));
   });
 });

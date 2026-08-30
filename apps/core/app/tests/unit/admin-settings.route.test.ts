@@ -11,6 +11,13 @@ vi.mock("~/lib/environment-health.server", () => ({
   getEnvironmentHealth: vi.fn(() => ({ missingKeys: [] })),
 }));
 
+vi.mock("~/lib/chat-daily-limits.server", () => ({
+  getChatDailyLimitSettings: vi.fn().mockResolvedValue({
+    studentLimit: 50,
+    instructorLimit: 200,
+  }),
+}));
+
 vi.mock("~/lib/ai/routing/bedrock/overflow.server", () => ({
   isBedrockTokenConfigured: vi.fn(() => false),
 }));
@@ -68,6 +75,10 @@ describe("admin.settings loader", () => {
     expect(result).toEqual({
       user: { id: "admin-1", role: "ADMIN" },
       environmentHealth: { missingKeys: ["OPENAI_API_KEY"] },
+      chatDailyLimits: {
+        studentLimit: 50,
+        instructorLimit: 200,
+      },
       bedrockSettings: {
         enabled: false,
         dailyUserLimit: 0,

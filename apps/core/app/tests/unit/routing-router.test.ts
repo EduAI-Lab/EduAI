@@ -63,7 +63,7 @@ beforeEach(() => {
   mocks.classifyPromptForTier.mockResolvedValue({
     task: "chat",
     complexity: "high",
-    confidence: 0.9,
+    confidence: 90, // llmRouteSchema is 0-100, not a 0-1 probability
   });
   mocks.tierFromLlmClassification.mockReturnValue(3);
 });
@@ -102,6 +102,22 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
       rule: "llm_classifier",
       pickSource: "llm",
       imagesPresent: true,
+    });
+  });
+
+  it("passes RAG signals through to tierFromLlmClassification so it can de-escalate on strong retrieval", async () => {
+    const ragContext = {
+      courseId: "course-1",
+      imagesPresent: false,
+      ragTopSimilarity: 0.87,
+      ragChunkCount: 3,
+    };
+
+    await resolveRoutedModelLlm("compare X and Y from the notes", ragContext);
+
+    expect(mocks.tierFromLlmClassification).toHaveBeenCalledWith(expect.anything(), {
+      ragTopSimilarity: 0.87,
+      ragChunkCount: 3,
     });
   });
 

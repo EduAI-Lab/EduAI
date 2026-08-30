@@ -1,12 +1,12 @@
 # Agent readiness — endpoint & tool coverage
 
-**Date:** 2026-06-18 (updated 2026-07-02)  
-**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot), [#672](https://github.com/EduAI-Lab/EduAI/issues/672) (automated checks), [#828](https://github.com/EduAI-Lab/EduAI/issues/828) (idempotency)  
+**Date:** 2026-06-18 (updated 2026-08-27)  
+**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot), [#672](https://github.com/EduAI-Lab/EduAI/issues/672) (automated checks), [#828](https://github.com/EduAI-Lab/EduAI/issues/828) (idempotency), [#1658](https://github.com/EduAI-Lab/EduAI/issues/1658) / #1665 (admin `searchCourseMaterials` RAG tool)  
 **Related:** [`docs/implementations/api-wiring.md`](./implementations/api-wiring.md) · [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](./rag-ai/CHAT_RAG_PIPELINE.md)
 
 This document summarizes which Core REST endpoints and in-process chat tools are **ready for agents** today — exposed in the **Admin Chatbot** (`chatMode: admin`) or **Learning Chat** (`chatMode: learning`).
 
-The machine-readable source of truth is [`apps/core/app/lib/agent-readiness/manifest.ts`](../apps/core/app/lib/agent-readiness/manifest.ts).
+The machine-readable source of truth for **REST endpoints** is [`apps/core/app/lib/agent-readiness/manifest.ts`](../apps/core/app/lib/agent-readiness/manifest.ts) — its `adminChatTool` field links a REST route to the admin chat tool that exposes the same operation in-process. `manifest.ts` is scoped to `/api/*` routes only: an admin chat tool that has no REST equivalent (e.g. `searchCourseMaterials`, `getInformation` — both in-process RAG, like `findRelevantContent()`) intentionally has no manifest entry; it is documented directly in the tool tables below instead. For the full, authoritative list of admin tool *names*, read `Object.keys(createAdminChatTools(ctx))` in [`create-admin-chat-tools.ts`](../apps/core/app/lib/agent-tools/create-admin-chat-tools.ts) — the tables below are kept in sync with it by hand, and `apps/core/app/tests/unit/create-admin-chat-tools.test.ts` / `chat-admin-registry-budget.test.ts` exercise that registry directly.
 
 ---
 
@@ -15,10 +15,12 @@ The machine-readable source of truth is [`apps/core/app/lib/agent-readiness/mani
 | Surface | Ready today | Notes |
 | ------- | ----------- | ----- |
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
-| **Admin chat tools** | 27 tools (10 read, 17 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
+| **Admin chat tools** | 63 tools (25 read, 38 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat. 62 of 63 map 1:1 to a REST endpoint via `manifest.ts`'s `adminChatTool` field; `searchCourseMaterials` (#1658) is in-process RAG with no REST route, same as learning chat's `getInformation` |
 | **REST — manifest `ready`** | 65 / 87 endpoints (~75%) | Full inventory in `manifest.ts`; unit tests enforce coverage |
 | **REST — `partial`** | 0 endpoints | All gaps closed or reclassified |
 | **REST — `excluded`** | 22 endpoints | Auth, streaming chat, uploads, QM, test hooks — by design |
+
+**Small-context models:** the seeded self-hosted admin model resolves to a 16k context window, which cannot fit all 63 tool schemas at once (see `estimateToolDefinitionTokens` in `providers.server.ts`). `routes/api/chat.ts` trims the registry to `ADMIN_CORE_TOOL_NAMES` (the 18 tools in the "Read tools" and "Write tools" lists below, marked **core**) on any admin model with a ≤32k window; larger-context models (e.g. the seeded OpenAI/Gemini rows) get the full 63-tool registry. See `create-admin-chat-tools.ts` and `chat-admin-registry-budget.test.ts`.
 
 ---
 
@@ -40,42 +42,80 @@ Entry: `POST /api/chat` with `chatMode: "learning"`. See [`CHAT_RAG_PIPELINE.md`
 
 Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course context is passed per tool call (`courseId` or `courseCode`), not via a UI course selector.
 
-#### Read tools (10)
+**Core** below marks the 18 tools in `ADMIN_CORE_TOOL_NAMES` — the subset sent to admin models with a ≤32k context window (see the Summary note above); everything else is only sent to larger-context models.
 
-| Tool | REST equivalent | Handler |
-| ---- | --------------- | ------- |
-| `listCourses` | `GET /api/courses` | `listAccessibleCourses()` |
-| `getCourse` | `GET /api/courses/:id` | `getAccessibleCourse()` |
-| `listCourseEnrollments` | `GET /api/courses/:id/enrollments` | `listAdminCourseEnrollments()` |
-| `listCourseTopics` | `GET /api/courses/:id/topics` | `listAdminCourseTopics()` |
-| `getCourseTopic` | `GET /api/courses/:id/topics/:topicId` | `getAdminCourseTopic()` |
-| `listUsers` | `GET /api/users` | `listAdminUsers()` |
-| `listBugReports` | `GET /api/admin/bug-reports` | `listAdminBugReportsForChat()` |
-| `listInvitations` | `GET /api/invitations` | `listAdminInvitations()` |
-| `getCanvasIntegration` | `GET /api/canvas/integration` | `getAdminCanvasIntegration()` |
-| `listCanvasCourses` | `GET /api/canvas/courses` | `listAdminCanvasCourses()` |
+#### Read tools (25)
 
-#### Write tools (17) — require `confirmed: true`
+| Tool | Core | REST equivalent | Handler |
+| ---- | :--: | --------------- | ------- |
+| `listCourses` | ✓ | `GET /api/courses` | `listAccessibleCourses()` |
+| `getCourse` | ✓ | `GET /api/courses/:id` | `getAccessibleCourse()` |
+| `listCourseEnrollments` | ✓ | `GET /api/courses/:id/enrollments` | `listAdminCourseEnrollments()` |
+| `listCourseTopics` | ✓ | `GET /api/courses/:courseId/topics` | `listAdminCourseTopics()` |
+| `getCourseTopic` | ✓ | `GET /api/courses/:courseId/topics/:topicId` | `getAdminCourseTopic()` |
+| `searchCourseMaterials` | ✓ | *(none — RAG, not REST)* | `runCourseMaterialSearchTool()` (#1658; shared with learning chat's `getInformation`; never restricted to student-visible-only for ADMIN) |
+| `listUsers` | ✓ | `GET /api/users` | `listAdminUsers()` |
+| `listBugReports` | ✓ | `GET /api/admin/bug-reports` | `listAdminBugReportsForChat()` |
+| `listInvitations` | | `GET /api/invitations` | `listAdminInvitations()` |
+| `getCanvasIntegration` | | `GET /api/canvas/integration` | `getAdminCanvasIntegration()` |
+| `listCanvasCourses` | | `GET /api/canvas/courses` | `listAdminCanvasCourses()` |
+| `getCourseRagSettings` | | `GET /api/courses/:id/rag-settings` | `getAdminCourseRagSettings()` |
+| `listCourseMaterials` | | `GET /api/courses/:courseId/materials` | `listAdminCourseMaterials()` |
+| `listCanvasMaterials` | | `GET /api/courses/:courseId/canvas-materials` | `listAdminCanvasMaterials()` |
+| `getCourseEmbeddingSettings` | | `GET /api/courses/:courseId/embedding-settings` | `getAdminCourseEmbeddingSettings()` |
+| `getCourseReEmbedJob` | | `GET /api/courses/:courseId/re-embed/:jobId` | `getAdminCourseReEmbedJob()` |
+| `listCourseTAs` | | `GET /api/courses/:courseId/tas` | `listAdminCourseTAs()` |
+| `listCourseChats` | | `GET /api/courses/:courseId/chats` | `listAdminCourseChats()` |
+| `listUnitChats` | | `GET /api/units/:department/chats` | `listAdminUnitChats()` |
+| `getPolicies` | | `GET /api/policies` | `getAdminPolicies()` |
+| `listAiProviders` | | `GET /api/ai-providers` | `listAdminAiProviders()` |
+| `listOllamaModels` | | `GET /api/ollama-models` | `listAdminOllamaModels()` |
+| `listVllmModels` | | `GET /api/vllm-models` | `listAdminVllmModels()` |
+| `listCronJobs` | | `GET /api/admin/cron-jobs` | `listAdminCronJobs()` |
+| `getDashboardStats` | | `GET /api/dashboard/stats` | `getAdminDashboardStats()` |
 
-| Tool | REST equivalent | Idempotency / guards |
-| ---- | --------------- | -------------------- |
-| `createUser` | `POST /api/users` | `Idempotency-Key` header (centralized layer, #828) |
-| `updateUser` | `PATCH /api/users/:id` | Self-lockout guards |
-| `deleteUser` | `DELETE /api/users/:id` | Cannot delete self |
-| `createCourseEnrollment` | `POST /api/courses/:id/enrollments` | `idempotencyKey` on REST |
-| `updateCourseEnrollment` | `PATCH /api/courses/:id/enrollments/:id` | Instructor-floor rules |
-| `deactivateCourseEnrollment` | `DELETE /api/courses/:id/enrollments/:id` | Soft-delete |
-| `createCourseTopic` | `POST /api/courses/:id/topics` | 409 + `existingId` on REST |
-| `updateCourseTopic` | `PATCH /api/courses/:id/topics/:topicId` | — |
-| `deleteCourseTopic` | `DELETE /api/courses/:id/topics/:topicId` | Soft-delete |
-| `updateBugReportStatus` | `PATCH /api/admin/bug-reports/:id` | — |
-| `createInvitation` | `POST /api/invitations` | Sends accept-link email |
-| `revokeInvitation` | `DELETE /api/invitations/:id` | Pending invites only |
-| `resendInvitation` | `POST /api/invitations/:id` | Rotates token + re-sends email |
-| `connectCanvas` | `POST /api/canvas/connect` | Target instructor optional |
-| `syncCanvasCourses` | `POST /api/canvas/sync` | Canvas course id list |
-| `disconnectCanvas` | `DELETE /api/canvas/disconnect` | — |
-| `linkCanvasRoster` | `POST /api/canvas/link-roster` | Student number link for user |
+#### Write tools (38) — require `confirmed: true`
+
+| Tool | Core | REST equivalent | Idempotency / guards |
+| ---- | :--: | --------------- | -------------------- |
+| `createUser` | ✓ | `POST /api/users` | `Idempotency-Key` header (centralized layer, #828) |
+| `updateUser` | ✓ | `PATCH /api/users/:id` | Self-lockout guards |
+| `deleteUser` | ✓ | `DELETE /api/users/:id` | Cannot delete self |
+| `createCourseEnrollment` | ✓ | `POST /api/courses/:id/enrollments` | `idempotencyKey` on REST |
+| `updateCourseEnrollment` | ✓ | `PATCH /api/courses/:id/enrollments/:enrollmentId` | Instructor-floor rules |
+| `deactivateCourseEnrollment` | ✓ | `DELETE /api/courses/:id/enrollments/:enrollmentId` | Soft-delete |
+| `createCourseTopic` | ✓ | `POST /api/courses/:courseId/topics` | 409 + `existingId` on REST |
+| `updateCourseTopic` | ✓ | `PATCH /api/courses/:courseId/topics/:topicId` | — |
+| `deleteCourseTopic` | ✓ | `DELETE /api/courses/:courseId/topics/:topicId` | Soft-delete |
+| `updateBugReportStatus` | ✓ | `PATCH /api/admin/bug-reports/:id` | — |
+| `createInvitation` | | `POST /api/invitations` | Sends accept-link email |
+| `revokeInvitation` | | `DELETE /api/invitations/:id` | Pending invites only |
+| `resendInvitation` | | `POST /api/invitations/:id` | Rotates token + re-sends email |
+| `connectCanvas` | | `POST /api/canvas/connect` | Target instructor optional |
+| `syncCanvasCourses` | | `POST /api/canvas/sync` | Canvas course id list |
+| `disconnectCanvas` | | `DELETE /api/canvas/disconnect` | — |
+| `linkCanvasRoster` | | `POST /api/canvas/link-roster` | Student number link for user |
+| `createCourse` | | `POST /api/courses` | Requires ≥1 instructor id |
+| `updateCourse` | | `PATCH /api/courses/:id` | — |
+| `deleteCourse` | | `DELETE /api/courses/:id` | Soft-delete |
+| `publishCourse` | | `PATCH /api/courses/:id/publish` | — |
+| `unpublishCourse` | | `PATCH /api/courses/:id/unpublish` | — |
+| `updateCourseRagSettings` | | `PATCH /api/courses/:id/rag-settings` | Top-K / similarity threshold bounds |
+| `renameCourseMaterial` | | `PATCH /api/courses/:courseId/materials/:materialId` | — |
+| `deleteCourseMaterial` | | `DELETE /api/courses/:courseId/materials/:materialId` | Soft-delete |
+| `syncCanvasMaterials` | | `POST /api/courses/:courseId/canvas-materials` | Canvas file id list |
+| `updateCourseEmbeddingSettings` | | `PATCH /api/courses/:courseId/embedding-settings` | — |
+| `startCourseReEmbed` | | `POST /api/courses/:courseId/re-embed` | Background job |
+| `addCourseTA` | | `POST /api/courses/:courseId/tas` | — |
+| `removeCourseTA` | | `DELETE /api/courses/:courseId/tas` | — |
+| `updatePolicy` | | `PATCH /api/policies` | Boolean flags only |
+| `createAiProvider` | | `POST /api/ai-providers` | — |
+| `updateAiProvider` | | `PATCH /api/ai-providers/:id` | — |
+| `deleteAiProvider` | | `DELETE /api/ai-providers/:id` | — |
+| `createAiModel` | | `POST /api/ai-models` | — |
+| `updateAiModel` | | `PATCH /api/ai-models/:id` | — |
+| `deleteAiModel` | | `DELETE /api/ai-models/:id` | — |
+| `triggerCronJob` | | `POST /api/admin/cron-jobs` | `idempotencyKey` — retries reuse an in-flight/completed trigger |
 
 Write path: `runConfirmedAdminWriteTool()` — first call with `confirmed: false` previews; admin confirms in chat; second call with `confirmed: true` executes.
 
@@ -128,6 +168,7 @@ Tracked in `manifest.ts` with `readiness: "partial"` and a `gaps` array. Example
 | Method | Path | Reason |
 | ------ | ---- | ------ |
 | POST | `/api/chat` | Streaming, persistence, apiKeys — use narrow tools instead |
+| POST | `/api/chat/cancel` | Browser-only request-specific stream cancellation |
 | GET/DELETE | `/api/chats/:chatId` | Chat UI persistence, not ops |
 | POST | `/api/courses/:courseId/materials` | File upload — search via RAG instead |
 | * | `/api/auth/*` | Better Auth handler |

@@ -43,6 +43,8 @@ vi.mock("~/lib/agent-tools", () => ({
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -92,7 +94,7 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
@@ -101,6 +103,14 @@ vi.mock("~/lib/prisma.server", () => ({
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("~/lib/chat-daily-limits.server", () => ({
+  consumeLocalChatDailyCap: vi.fn().mockResolvedValue(null),
+  getChatDailyLimitSettings: vi.fn().mockResolvedValue({
+    studentLimit: 50,
+    instructorLimit: 200,
+  }),
 }));
 
 import { streamText } from "ai";

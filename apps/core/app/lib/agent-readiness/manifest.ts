@@ -161,6 +161,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/chat/cancel",
+    readiness: "excluded",
+    reason: "Browser-only request-specific streaming cancellation; not an agent operation",
+    routeFile: "routes/api/chat.cancel.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/ai-jobs/:jobId",
     readiness: "excluded",
@@ -803,6 +810,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     errorEnvelope: "standard",
     routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
   }),
   entry({
     method: "GET",

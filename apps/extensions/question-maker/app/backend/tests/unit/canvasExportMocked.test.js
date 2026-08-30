@@ -1,45 +1,50 @@
 /**
- * exportAssessmentToCanvas with mocked axios (Canvas API), schema models, and getAssessmentById.
+ * exportAssessmentToCanvas with mocked Core quiz proxies, schema models, and getAssessmentById.
  * No real HTTP or database.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const axiosRequest = vi.fn();
 const getAssessmentById = vi.fn();
-const integrationFindOne = vi.fn();
 const mappingFindOne = vi.fn();
 const mappingCreate = vi.fn();
-
-vi.mock("axios", () => ({
-  default: axiosRequest,
-}));
+const courseFindOne = vi.fn();
+const proxyCoreCanvasGetIntegration = vi.fn();
+const proxyCoreCreateQuiz = vi.fn();
+const proxyCoreCreateQuizQuestion = vi.fn();
 
 vi.mock("../../src/services/assessmentService.js", () => ({
   getAssessmentById,
   createAssessment: vi.fn(),
 }));
 
-vi.mock("../../src/services/questionService.js", () => ({
-  createQuestion: vi.fn(),
-}));
-
 vi.mock("../../src/services/assessmentSectionService.js", () => ({
   createAssessmentSection: vi.fn(),
 }));
 
+vi.mock("../../src/services/coreApiService.js", () => ({
+  proxyCoreCanvasGetIntegration,
+  proxyCoreCreateQuiz,
+  proxyCoreCreateQuizQuestion,
+  proxyCoreGetQuiz: vi.fn(),
+  proxyCoreListQuizQuestions: vi.fn(),
+  proxyCoreGetQuizQuestion: vi.fn(),
+  proxyCoreListQuizzes: vi.fn(),
+}));
+
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
-    canvasIntegration: { findUnique: integrationFindOne },
     canvasCourseMapping: { findUnique: mappingFindOne, create: mappingCreate },
     questionMetadata: {},
     variants: {},
     assessmentSections: {},
     sectionVariants: {},
-    course: {},
+    course: { findUnique: courseFindOne },
   },
 }));
 
 const { exportAssessmentToCanvas } = await import("../../src/services/canvasService.js");
+
+const TEST_COOKIE = "session=test";
 
 const sampleAssessment = () => ({
   id: 100,
@@ -68,47 +73,52 @@ const sampleAssessment = () => ({
   ],
 });
 
-describe("exportAssessmentToCanvas (Canvas API mocked via axios)", () => {
+describe("exportAssessmentToCanvas (Core quiz proxies mocked)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    integrationFindOne.mockResolvedValue({
-      isTestMode: false,
-      canvasUrl: "https://canvas.example.edu",
-      apiKey: "secret-token",
+    proxyCoreCanvasGetIntegration.mockResolvedValue({
+      success: true,
+      data: {
+        canvasUrl: "https://canvas.example.edu",
+        isTestMode: false,
+        isConnected: true,
+      },
     });
     getAssessmentById.mockResolvedValue(sampleAssessment());
-    mappingFindOne.mockResolvedValue(null);
+    // Export is pinned to the course's own Canvas link, so the happy path needs
+    // one. The mapping row is read twice: once by the link guard, once by the
+    // create-if-absent below it — hence the null on the second read.
+    mappingFindOne
+      .mockResolvedValueOnce({ localCourseId: 5, canvasCourseId: 999, canvasCourseName: null })
+      .mockResolvedValue(null);
     mappingCreate.mockResolvedValue({ id: 1 });
 
-    axiosRequest.mockImplementation((config) => {
-      const url = config.url || "";
-      if (
-        config.method === "POST" &&
-        /\/courses\/\d+\/quizzes$/.test(url) &&
-        !/\/quizzes\/\d+\/questions/.test(url)
-      ) {
-        return Promise.resolve({
-          data: { id: 501, title: "Unit export quiz" },
-        });
-      }
-      if (config.method === "POST" && /\/quizzes\/\d+\/questions/.test(url)) {
-        return Promise.resolve({ data: { id: 9001, position: 1 } });
-      }
-      return Promise.resolve({ data: {} });
+    proxyCoreCreateQuiz.mockResolvedValue({
+      success: true,
+      data: { id: 501, title: "Unit export quiz" },
+    });
+    proxyCoreCreateQuizQuestion.mockResolvedValue({
+      success: true,
+      data: { id: 9001, position: 1 },
     });
   });
 
-  it("POSTs quiz then questions to Canvas and saves course mapping", async () => {
-    const result = await exportAssessmentToCanvas(42, 100, 999);
+  it("creates quiz then questions via Core and saves course mapping", async () => {
+    const result = await exportAssessmentToCanvas(100, 999, 42, TEST_COOKIE);
 
-    expect(integrationFindOne).toHaveBeenCalledWith({ where: { userId: 42 } });
+    expect(proxyCoreCanvasGetIntegration).toHaveBeenCalledWith(TEST_COOKIE);
     expect(getAssessmentById).toHaveBeenCalledWith(100, 42);
-    expect(axiosRequest).toHaveBeenCalled();
-    const urls = axiosRequest.mock.calls.map((c) => c[0].url);
-    expect(
-      urls.some((u) => u.includes("/api/v1/courses/999/quizzes") && !u.includes("/questions")),
-    ).toBe(true);
-    expect(urls.some((u) => u.includes("/courses/999/quizzes/501/questions"))).toBe(true);
+    expect(proxyCoreCreateQuiz).toHaveBeenCalledWith(
+      TEST_COOKIE,
+      999,
+      expect.objectContaining({ title: "Unit export quiz", quiz_type: "assignment" }),
+    );
+    expect(proxyCoreCreateQuizQuestion).toHaveBeenCalledWith(
+      TEST_COOKIE,
+      999,
+      501,
+      expect.objectContaining({ question_type: "multiple_choice_question" }),
+    );
     expect(result).toEqual({
       quizId: 501,
       quizTitle: "Unit export quiz",
@@ -128,29 +138,45 @@ describe("exportAssessmentToCanvas (Canvas API mocked via axios)", () => {
     });
   });
 
-  it("throws when Canvas is not connected", async () => {
-    integrationFindOne.mockResolvedValue(null);
-    await expect(exportAssessmentToCanvas(1, 1, 1)).rejects.toThrow(
-      /Canvas integration not configured/i,
+  /**
+   * The mapping row below is created-if-absent and never updated, and
+   * `getCanvasCourseMapping` prefers it over Core's `externalId`. So an export
+   * into an arbitrary Canvas course used to mint a row that shadowed the
+   * genuine Core-synced link for every later quiz and bank import — silently
+   * and permanently re-pointing the course (#1652 review).
+   */
+  it("refuses to export into a Canvas course the local course is not linked to", async () => {
+    mappingFindOne.mockReset();
+    mappingFindOne.mockResolvedValue({
+      localCourseId: 5,
+      canvasCourseId: 111,
+      canvasCourseName: null,
+    });
+
+    await expect(exportAssessmentToCanvas(100, 999, 42, TEST_COOKIE)).rejects.toThrow(
+      /does not match the Canvas course linked/i,
     );
-    expect(axiosRequest).not.toHaveBeenCalled();
+    expect(proxyCoreCreateQuiz).not.toHaveBeenCalled();
+    expect(mappingCreate).not.toHaveBeenCalled();
   });
 
-  it("encodes both caller-provided and Canvas-returned IDs before building export paths", async () => {
-    axiosRequest
-      .mockResolvedValueOnce({ data: { id: "quiz?admin=true", title: "Unit export quiz" } })
-      .mockResolvedValueOnce({ data: { id: 9001, position: 1 } });
+  it("refuses to export from a course with no Canvas link at all", async () => {
+    mappingFindOne.mockReset();
+    mappingFindOne.mockResolvedValue(null);
+    courseFindOne.mockResolvedValue({ coreCourseId: null });
 
-    const result = await exportAssessmentToCanvas(42, 100, "../admin");
+    await expect(exportAssessmentToCanvas(100, 999, 42, TEST_COOKIE)).rejects.toThrow(
+      /not linked to Canvas/i,
+    );
+    expect(proxyCoreCreateQuiz).not.toHaveBeenCalled();
+    expect(mappingCreate).not.toHaveBeenCalled();
+  });
 
-    expect(axiosRequest.mock.calls[0][0].url).toBe(
-      "https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes",
+  it("throws when Canvas is not connected on Core", async () => {
+    proxyCoreCanvasGetIntegration.mockResolvedValue({ success: true, data: null });
+    await expect(exportAssessmentToCanvas(1, 1, 1, TEST_COOKIE)).rejects.toThrow(
+      /Canvas integration not configured/i,
     );
-    expect(axiosRequest.mock.calls[1][0].url).toBe(
-      "https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue/questions",
-    );
-    expect(result.canvasUrl).toBe(
-      "https://canvas.example.edu/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue",
-    );
+    expect(proxyCoreCreateQuiz).not.toHaveBeenCalled();
   });
 });

@@ -37,6 +37,7 @@ import { randomUUID } from "crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { prisma } from "../config/database.js";
 import { getEduAiCompletionUrl } from "./eduaiClient.js";
+import { serviceAuthHeader } from "./systemSettings.js";
 import { trimNonEmpty } from "../utils/coreCourseId.js";
 import { DEFAULT_TUTOR_MODEL } from "./aiModelPolicy.js";
 
@@ -50,6 +51,18 @@ function getModelProvider(modelId) {
   if (typeof modelId !== "string") return null;
   const provider = modelId.split(":", 1)[0]?.trim();
   return provider || null;
+}
+
+/**
+ * UBC-hosted providers are served with the deployment's own key — Core injects
+ * it from env (`resolveVllmApiKey`) and never needs the student's key — so a
+ * BYOK key is not required for them (#1645). Every other provider is BYOK and
+ * still requires the user's key. Mirrors Core's `PROVIDER_CONFIGS.requiresApiKey`
+ * (`vllm`/`ollama` are `false`) and the client's `providerRequiresByokKey`.
+ */
+const SERVER_HOSTED_PROVIDERS = new Set(["vllm", "ollama"]);
+function providerRequiresApiKey(provider) {
+  return provider ? !SERVER_HOSTED_PROVIDERS.has(provider) : true;
 }
 
 /**
@@ -94,6 +107,10 @@ function resolveProviderApiKeys({
     supervisorApiKey: supervisorProvider ? keys[supervisorProvider] || null : null,
     tutorProvider,
     supervisorProvider,
+    // #1645: the complete provider -> secret map. Forwarded verbatim to Core so
+    // its fleet-down fallback can pick ANY keyed BYOK provider, not just the one
+    // backing the selected model.
+    allKeys: keys,
   };
 }
 
@@ -106,7 +123,6 @@ const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try
 const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
 const SAFE_AI_LOG_EVENTS = new Set([
   "missing_session_cookie",
-  "missing_service_key",
   "missing_user_api_key",
   "invalid_model_id",
   "upstream_retry",
@@ -121,6 +137,7 @@ const SAFE_AI_LOG_EVENTS = new Set([
   "custom_response_failed",
   "guidance_route_failed",
   "custom_route_failed",
+  "service_key_unset",
 ]);
 const SAFE_AI_LOG_NUMBER_KEYS = ["status", "attempt", "maxAttempts", "durationMs", "timeoutMs"];
 const SAFE_AI_LOG_IDENTIFIER_KEYS = ["requestId", "correlationId", "traceId"];
@@ -318,6 +335,10 @@ async function callEduAI({
   modelId = null,
   cookie,
   userApiKey,
+  // #1645: every BYOK secret the student holds (provider -> key), so Core can
+  // fall back to another keyed provider when the UBC fleet is down. Falls back
+  // to just the selected provider's `userApiKey` when omitted.
+  providerApiKeys = null,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -339,13 +360,6 @@ async function callEduAI({
     throw error;
   }
 
-  if (!userApiKey) {
-    logAiGuidanceEvent("error", "missing_user_api_key");
-    const error = new Error("API key is required");
-    error.status = 400;
-    throw error;
-  }
-
   // Model IDs are namespaced "provider:model" (e.g. "google:gemini-2.5-flash");
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(":");
@@ -354,13 +368,35 @@ async function callEduAI({
     throw new Error("Invalid model ID format");
   }
 
+  // #1645: a BYOK key is required only for BYOK providers. UBC-hosted models
+  // (vllm/ollama) are served with the deployment key Core injects, so they may
+  // proceed with no student key at all.
+  if (providerRequiresApiKey(provider) && !userApiKey) {
+    logAiGuidanceEvent("error", "missing_user_api_key");
+    const error = new Error("API key is required");
+    error.status = 400;
+    throw error;
+  }
+
   const userMessageId = messageId || randomUUID();
-  const apiKeys = {
-    [provider]: {
-      apiKey: userApiKey,
-      isEnabled: true,
-    },
-  };
+  // Forward EVERY held BYOK key, not only the selected provider's, so Core's
+  // fleet-down fallback can switch to another keyed provider (#1645). The
+  // selected provider's `userApiKey` is still included even if it wasn't in the
+  // map. For UBC-hosted providers with no keys held at all this stays empty, so
+  // Core falls through to its own deployment settings.
+  const heldKeys = {};
+  if (providerApiKeys && typeof providerApiKeys === "object" && !Array.isArray(providerApiKeys)) {
+    for (const [providerId, secret] of Object.entries(providerApiKeys)) {
+      if (typeof secret === "string" && secret.trim()) heldKeys[providerId] = secret;
+    }
+  }
+  if (typeof userApiKey === "string" && userApiKey.trim() && !heldKeys[provider]) {
+    heldKeys[provider] = userApiKey;
+  }
+  const apiKeys = {};
+  for (const [providerId, secret] of Object.entries(heldKeys)) {
+    apiKeys[providerId] = { apiKey: secret, isEnabled: true };
+  }
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
   const trimmedCourseId = trimNonEmpty(courseId);
@@ -380,38 +416,47 @@ async function callEduAI({
     courseCode: trimmedCourseCode ?? undefined,
   };
 
+  // Core's mutation guard (`apps/core/app/root.tsx`) fails an unsafe-method
+  // request that carries a cookie closed with CROSS_ORIGIN_MUTATION unless it
+  // proves same-origin (Origin/Referer/Sec-Fetch-Site) or presents the service
+  // key. A server-to-server `fetch` adds no Origin/Referer, so in a split-origin
+  // topology the completion call is rejected before any model runs (#1647).
+  // Send the service-key Bearer like the other `eduaiClient` reads do; keep the
+  // cookie for user identity / rate-limiting. Omit the header when the key is
+  // unset so same-origin dev stacks are unaffected.
+  //
+  // The Bearer is the env `EDUAI_API_KEY` — the only source Core's guard
+  // validates against (`hasValidServiceKey` compares Core's own env key). A DB
+  // admin override can't authenticate here because Core never sees it, so
+  // `serviceAuthHeader` deliberately sends the shared env key (#1647 review).
+  const authHeader = serviceAuthHeader();
+  if (!authHeader.Authorization) {
+    // No env service key. Same-origin dev stacks are fine (the guard
+    // never triggers), but a split-origin deploy that reaches here will 403 at
+    // Core's mutation guard — leave a breadcrumb so that misconfig is
+    // diagnosable. The key itself is never logged.
+    logAiGuidanceEvent("warn", "service_key_unset");
+  }
+
   const callStartedAt = Date.now();
 
   try {
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
-    // Attach the shared service key when it is configured. callEduAI posts to
-    // /api/completion (not /api/chat): a learner session is enough to auth, and
-    // that route already uses the supplied systemPrompt as-is. The bearer is
-    // therefore optional here — it matches other Core calls and covers the
-    // no-session fallback. A missing key is an operator misconfiguration;
-    // throwing would turn it into an opaque tutoring outage, so we log
-    // missing_service_key and proceed.
-    const serviceKey = process.env.EDUAI_API_KEY;
-    if (!serviceKey) {
-      logAiGuidanceEvent("error", "missing_service_key");
-    }
-
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
-    const headers = {
-      "Content-Type": "application/json",
-      cookie,
-    };
-    if (serviceKey) {
-      headers.Authorization = `Bearer ${serviceKey}`;
-    }
-
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const attemptStartedAt = Date.now();
+      const headers = {
+        "Content-Type": "application/json",
+        cookie,
+      };
+      // `Object.assign` (not spread) keeps the `no-conditional-empty-object-spread`
+      // lint rule happy while still adding the Bearer only when a key exists.
+      Object.assign(headers, authHeader);
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
@@ -560,6 +605,7 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  providerApiKeys = null,
   courseCode = null,
   courseId = null,
   signal,
@@ -597,6 +643,7 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      providerApiKeys,
       courseCode,
       courseId,
       signal,
@@ -861,6 +908,7 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.supervisorApiKey,
+        providerApiKeys: context.providerApiKeys,
         courseCode: context.courseCode,
         courseId: context.courseId,
         signal: context.signal,
@@ -943,16 +991,21 @@ async function generateWithSupervisor({
     tutorModelId: effectiveTutorModelId,
     supervisorModelId: effectiveSupervisorModelId,
   });
-  if (!resolvedKeys.tutorApiKey) {
+  // #1645: BYOK providers still require the student's key; UBC-hosted tutor
+  // models (vllm/ollama) proceed with the deployment key Core injects.
+  if (providerRequiresApiKey(resolvedKeys.tutorProvider) && !resolvedKeys.tutorApiKey) {
     const error = new Error("API key is required for the selected tutor provider");
     error.status = 400;
     throw error;
   }
 
-  // A supervisor request is an independent provider call. If its provider
-  // has no own credential, safely skip that stage rather than relabelling the
-  // tutor secret and sending it to the wrong upstream.
-  const supervisionAvailable = Boolean(resolvedKeys.supervisorApiKey);
+  // A supervisor request is an independent provider call. It is available when
+  // its provider has its own credential OR is UBC-hosted (server key). For a
+  // BYOK supervisor provider with no key we skip that stage rather than
+  // relabelling the tutor secret and sending it to the wrong upstream.
+  const supervisionAvailable =
+    Boolean(resolvedKeys.supervisorApiKey) ||
+    !providerRequiresApiKey(resolvedKeys.supervisorProvider);
   const context = {
     originalStudentMessage,
     visibleContext,
@@ -962,6 +1015,7 @@ async function generateWithSupervisor({
     cookie,
     userApiKey: resolvedKeys.tutorApiKey,
     supervisorApiKey: resolvedKeys.supervisorApiKey,
+    providerApiKeys: resolvedKeys.allKeys,
     chatId,
     dualLoopEnabled: dualLoopEnabled && supervisionAvailable,
     maxSupervisorIterations,
@@ -986,6 +1040,7 @@ async function generateWithSupervisor({
       modelId: effectiveTutorModelId,
       cookie,
       userApiKey: resolvedKeys.tutorApiKey,
+      providerApiKeys: resolvedKeys.allKeys,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
       // the same turn; only the original turn reuses the caller's messageId.

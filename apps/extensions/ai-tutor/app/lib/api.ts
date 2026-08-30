@@ -42,6 +42,7 @@ import {
   bugReportStatusUpdatedSchema,
   chatMessagesSchema,
   chatSessionRowSchema,
+  courseDetailSchema,
   courseFacetsSchema,
   courseSchema,
   dashboardStatsSchema,
@@ -90,6 +91,7 @@ import type {
   User,
 } from "./types";
 import { getCoreLoginUrl } from "./coreUrl";
+import type { BankQuestion } from "./bankQuestionToActivityDraft";
 
 /**
  * Set by course endpoints (#1072 step 2) when a request degraded gracefully
@@ -201,6 +203,14 @@ export interface LessonContext {
 export interface LessonBreadcrumb extends LessonContext {
   module: ModuleDetail;
   course: Course;
+  /**
+   * The caller's enrollment role for THIS lesson's course, or `null` when they
+   * have no learner enrollment (elevated/instructor access, or unresolved). Use
+   * this — never the global `/api/me` effective role — to gate course-scoped
+   * capabilities such as answer submission: a user who is a TA here but a
+   * STUDENT in another course must be withheld here yet permitted there (#1626).
+   */
+  viewerEnrollmentRole: EnrollmentRole | null;
 }
 
 /**
@@ -362,6 +372,9 @@ export interface DashboardStats {
   openBugReports?: number;
   totalBugReports?: number;
   pendingSubmissions?: number;
+  /** Ungraded submissions across the caller's teaching/assisting courses — the
+   * grading queue depth surfaced on the instructor/TA dashboards (#1626). */
+  submissionsToReview?: number;
 }
 
 export interface AiTraceRow {
@@ -611,7 +624,7 @@ export const api = {
    * rarely, and re-fetching per keystroke would be pure waste.
    */
   listCourseFacets: () => decode(http("/api/courses/facets"), courseFacetsSchema),
-  courseById: (courseId: number) => http(`/api/courses/${courseId}`),
+  courseById: (courseId: number) => decode(http(`/api/courses/${courseId}`), courseDetailSchema),
   /**
    * Flip a course published. Course publish state is owned by EduAI Core, so
    * this proxies through to Core and re-reads it; `corePublishStale` on the
@@ -797,6 +810,30 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  /**
+   * Shared bank questions available to build an activity from (Task 2). The
+   * server already excludes long-answer AND select-all-that-apply questions
+   * (an activity's single `correctIndex` cannot represent either), so this
+   * must not re-filter. The server fills the page across as many Core pages as
+   * it needs, so a full run of unusable questions no longer yields an empty
+   * result. `hasMore` is surfaced as-is, never turned into a count, and
+   * `nextOffset` is the offset to resume from — see the route docblock.
+   */
+  listBankQuestions: (
+    courseId: number,
+    params: { topicId?: string; limit?: number; offset?: number } = {},
+  ): Promise<{ questions: BankQuestion[]; hasMore: boolean; nextOffset?: number }> => {
+    const query = new URLSearchParams();
+    if (params.topicId) query.set("topicId", params.topicId);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query}` : "";
+    return http(`/api/courses/${courseId}/bank-questions${suffix}`).then((data) => ({
+      questions: (data.questions ?? []) as BankQuestion[],
+      hasMore: data.hasMore === true,
+      nextOffset: typeof data.nextOffset === "number" ? data.nextOffset : undefined,
+    }));
+  },
   submitAnswer: (activityId: number, payload: any) =>
     decode(
       http(`/api/questions/${activityId}/answer`, {
@@ -820,7 +857,11 @@ export const api = {
       topicId?: string | number;
       message: string;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      // #1645: the full held-key map (provider -> secret), forwarded so Core's
+      // fleet-down fallback can switch to a BYOK provider the student holds but
+      // didn't select. `apiKey` remains the selected model's key.
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },
@@ -839,7 +880,8 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },
@@ -859,7 +901,8 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },

@@ -312,6 +312,14 @@ test.describe("AI Tutor ADMIN — activities", () => {
       await dialog.getByPlaceholder(/write the question/i).fill("Unfinished question");
       await dialog.getByPlaceholder("Option A").fill("A");
       await dialog.getByPlaceholder("Option B").fill("B");
+      // Marking a correct choice is a *separate* precondition that the submit
+      // handler checks before the topic guard (it has its own persistent "No
+      // correct answer selected yet." hint). Satisfy it so the missing main
+      // topic is the only thing left blocking submission — otherwise this test
+      // passes for the wrong reason, stopping at the earlier guard.
+      await dialog.getByRole("button", { name: "Mark option A correct" }).click();
+      await expect(dialog.getByRole("button", { name: "Option A (correct answer)" })).toBeVisible();
+
       await dialog.getByRole("button", { name: /^add activity$/i }).click();
 
       await expect(dialog.getByText("Select a main topic to continue.")).toBeVisible({

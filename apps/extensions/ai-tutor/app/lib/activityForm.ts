@@ -29,6 +29,15 @@ import type { Activity } from "./types";
  */
 export const AI_MODE_REQUIRED = "At least one AI mode must be enabled.";
 
+/**
+ * Refusal shown when an MCQ is submitted with no choice marked correct.
+ *
+ * The add form used to treat "No correct answer selected yet." as a passive
+ * hint and save anyway, silently keying the question to option A — so students
+ * were graded against a choice the author never picked.
+ */
+export const ANSWER_REQUIRED = "Mark one choice as the correct answer.";
+
 export type ActivityFormValues = {
   title: string;
   instructionsMd: string;
@@ -108,13 +117,61 @@ export type ActivityUpdateResult =
   | { payload?: undefined; error: string };
 
 /**
+ * Either a compacted MCQ payload or the reason the question is not
+ * submittable — one arm or the other, never both, the same shape contract as
+ * `ActivityUpdateResult` above. Named rather than spelled inline at each
+ * `return` so a caller that has checked `error` reads `options` and
+ * `correctIndex` without re-checking them.
+ */
+export type McqSubmissionResult =
+  | { options: string[]; correctIndex: number; error?: undefined }
+  | { options?: undefined; correctIndex?: undefined; error: string };
+
+/**
+ * Compacts an MCQ's choice list and remaps its answer key, or explains why the
+ * question is not submittable.
+ *
+ * Blank slots are dropped before submission and the surviving `correctIndex` is
+ * recomputed against the trimmed list — without this remap, the selected answer
+ * would point at the wrong (or a non-existent) choice once gaps are removed.
+ *
+ * Shared by both authoring paths. The edit form has always done this; the add
+ * form did not, so a two-option question reached students as four options with
+ * two empty, and a key that had never been remapped.
+ */
+export function buildMcqSubmission(choices: string[], correctIndex: number): McqSubmissionResult {
+  const trimmedChoices = choices.map((choice) => choice.trim());
+  const options: string[] = [];
+  let nextCorrectIndex = -1;
+
+  trimmedChoices.forEach((choice, index) => {
+    if (choice.length > 0) {
+      // Capture the correct answer's NEW position in the compacted list
+      // before we push — `options.length` here is the pre-push index.
+      if (index === correctIndex && nextCorrectIndex === -1) {
+        nextCorrectIndex = options.length;
+      }
+      options.push(choice);
+    }
+  });
+
+  if (options.length < 2) {
+    return { error: "Provide at least two answer choices." };
+  }
+
+  if (nextCorrectIndex === -1 || !options[nextCorrectIndex]) {
+    return { error: "Select a valid correct answer." };
+  }
+
+  return { options, correctIndex: nextCorrectIndex };
+}
+
+/**
  * Validates the editor state and produces the canonical update payload, or
  * an error string describing why the form is not yet submittable.
  *
- * For MCQ activities, blank choices are stripped before submission and the
- * surviving `correctIndex` is recomputed against the trimmed list — without
- * this remap, the previously selected answer would point at the wrong (or
- * non-existent) choice once gaps are removed.
+ * MCQ choice compaction and answer remapping are delegated to
+ * `buildMcqSubmission`, which the add-activity form shares.
  */
 export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateResult {
   const question = values.question.trim();
@@ -125,27 +182,12 @@ export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateRe
   const hints = parseHintsInput(values.hintsText);
 
   if (values.type === "MCQ") {
-    const trimmedChoices = values.choices.map((choice) => choice.trim());
-    const options: string[] = [];
-    let nextCorrectIndex = -1;
-
-    trimmedChoices.forEach((choice, index) => {
-      if (choice.length > 0) {
-        // Capture the correct answer's NEW position in the compacted list
-        // before we push — `options.length` here is the pre-push index.
-        if (index === values.correctIndex && nextCorrectIndex === -1) {
-          nextCorrectIndex = options.length;
-        }
-        options.push(choice);
-      }
-    });
-
-    if (options.length < 2) {
-      return { error: "Provide at least two answer choices." };
-    }
-
-    if (nextCorrectIndex === -1 || !options[nextCorrectIndex]) {
-      return { error: "Select a valid correct answer." };
+    const { options, correctIndex, error } = buildMcqSubmission(
+      values.choices,
+      values.correctIndex,
+    );
+    if (error || !options || correctIndex === undefined) {
+      return { error: error ?? "Invalid answer choices." };
     }
 
     return {
@@ -155,7 +197,7 @@ export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateRe
         question,
         type: values.type,
         options,
-        answer: { correctIndex: nextCorrectIndex },
+        answer: { correctIndex },
         hints,
       },
     };

@@ -107,7 +107,7 @@ node ./scripts/chat-latency-bench.mjs
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
-Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. Canceling a streaming HTTP response propagates to the provider and releases the admission slot; `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
+Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. The browser's Stop control sends a request-specific cancellation to Core, which aborts the matching provider stream and releases its admission slot; completed streams also release the slot they acquired. `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
 
 To capture the time-to-first-byte evidence for #942, set
 `CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline
@@ -119,6 +119,26 @@ TSV, so the two runs can be compared directly:
 CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
  ```
+
+For authenticated RAG fleet testing, use
+[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
+fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
+Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved
+`FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test
+database; it refuses to overwrite an existing fixture. The setup command
+prints a `courseId`; remove the fixture and its stress chats afterward by
+rerunning the helper with that ID and `--cleanup`.
+The harness signs in, verifies a two-turn RAG conversation, records chat
+continuity/citations and `X-Fleet-Server`, then runs the controlled
+16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated
+session. First-run results and raw
+artifacts are recorded in
+[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
+the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
+and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
+provide the per-server measurements and machine-readable artifact context.
+Those results are baseline evidence and do not replace a later load-aware
+rerun.
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 

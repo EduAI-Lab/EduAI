@@ -24,8 +24,18 @@ test("INSTRUCTOR creates an assessment blueprint through the Question Maker UI",
     await expect(
       assessmentsPanel.getByText("E2E Assessment Blueprint", { exact: true }),
     ).toBeVisible();
+
+    // Scope the empty-state assertion to the card this test just created. The
+    // panel is never empty to begin with: `createQmCourseForInstructor` goes
+    // through QM's Core-import flow, which seeds a starter "Practice Exam"
+    // (#578), and `AssessmentSection` renders this same <p> inside *every*
+    // card with no questions. A panel-wide `getByText` therefore matches both
+    // cards and trips strict mode.
+    const blueprintCard = assessmentsPanel.getByRole("button", {
+      name: /E2E Assessment Blueprint/,
+    });
     await expect(
-      assessmentsPanel.getByText(/No questions yet — open to start building/),
+      blueprintCard.getByText(/No questions yet — open to start building/),
     ).toBeVisible();
   } finally {
     await instructor.dispose();

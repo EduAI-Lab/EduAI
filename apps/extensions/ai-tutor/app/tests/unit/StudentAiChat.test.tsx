@@ -29,14 +29,27 @@ import type { Activity } from "~/lib/types";
 import type api from "~/lib/api";
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
-const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
-  mockGetKey: vi.fn((): string => "test-provider-key"),
-  mockSetKey: vi.fn(),
-  mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
-}));
+// #1645: the composer reads the held-keys map to decide whether the selected
+// model needs a personal key and to forward every held key to Core for the
+// fleet-down fallback. Named so the mutable ref has an owning contract.
+type HeldKeysRef = { current: Record<string, string> };
+
+const { mockGetKey, mockSetKey, mockValidateKey, mockKeysRef } = vi.hoisted(() => {
+  // Kept as a stable ref so its identity survives re-renders.
+  const keysRef: HeldKeysRef = {
+    current: { google: "test-provider-key" },
+  };
+  return {
+    mockGetKey: vi.fn((): string => "test-provider-key"),
+    mockSetKey: vi.fn(),
+    mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
+    mockKeysRef: keysRef,
+  };
+});
 
 vi.mock("~/hooks/use-api-keys", () => ({
   useApiKeys: () => ({
+    keys: mockKeysRef.current,
     loaded: true,
     getKey: mockGetKey,
     setKey: mockSetKey,
@@ -66,11 +79,23 @@ const {
   listSuggestedPrompts,
   listAiModels,
   ApiTimeoutError,
+  ApiHttpError,
 } = vi.hoisted(() => {
   class ApiTimeoutError extends Error {
     constructor(message = "Request timed out") {
       super(message);
       this.name = "ApiTimeoutError";
+    }
+  }
+  // #1660 review: StudentAiChat special-cases a 403 (preview role hitting
+  // the student-only AI tutoring gate) — the real class shape, mirrored here
+  // the same way ApiTimeoutError already is above.
+  class ApiHttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiHttpError";
+      this.status = status;
     }
   }
   return {
@@ -84,11 +109,13 @@ const {
         { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
       ]),
     ApiTimeoutError,
+    ApiHttpError,
   };
 });
 
 vi.mock("~/lib/api", () => ({
   ApiTimeoutError,
+  ApiHttpError,
   default: {
     listSuggestedPrompts,
     listAiModels,
@@ -147,8 +174,12 @@ function deferredGuideCall() {
   return { resolve, reject };
 }
 
-function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = ACTIVITY) {
-  return render(
+function chatTree(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return (
     <MemoryRouter>
       <StudentAiChat
         ref={ref}
@@ -161,9 +192,18 @@ function renderChat(ref?: React.Ref<StudentAiChatHandle>, activity: Activity = A
         currentTopicId={null}
         onSelectTopic={vi.fn()}
         studentAnswer={null}
+        isPreview={isPreview}
       />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderChat(
+  ref?: React.Ref<StudentAiChatHandle>,
+  activity: Activity = ACTIVITY,
+  isPreview?: boolean,
+) {
+  return render(chatTree(ref, activity, isPreview));
 }
 
 async function typeAndSend(text: string, placeholder = "Describe where you need guidance…") {
@@ -175,6 +215,7 @@ async function typeAndSend(text: string, placeholder = "Describe where you need 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetKey.mockReturnValue("test-provider-key");
+  mockKeysRef.current = { google: "test-provider-key" };
   mockValidateKey.mockResolvedValue({ valid: true });
   listSuggestedPrompts.mockResolvedValue([]);
   listAiModels.mockResolvedValue([
@@ -210,6 +251,120 @@ describe("StudentAiChat — default model selection from isDefaultTutor (#1004)"
     expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
       modelId: "google:gemini-2.5-pro",
     });
+  });
+});
+
+// ── #1645 — BYOK is a fallback, not a precondition ─────────────────────────
+
+describe("StudentAiChat — BYOK as fallback (#1645)", () => {
+  it("enables the composer and sends with no key for a UBC-hosted model", async () => {
+    // No BYOK key held at all, but the catalogue offers a UBC-hosted vLLM model.
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue([{ id: "v1", modelId: "vllm:llama-3", modelName: "Llama 3" }]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    // Composer is usable — the "connect a provider" gate must NOT be shown.
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    const params = sendGuideMessage.mock.calls[0][1];
+    expect(params).toMatchObject({ modelId: "vllm:llama-3" });
+    // A UBC-hosted model forwards no personal key.
+    expect(params.apiKey).toBeUndefined();
+  });
+
+  it("blocks the composer for a BYOK model when no key is held", async () => {
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    // Catalogue offers only a BYOK (google) model, and the student has no key.
+    listAiModels.mockResolvedValue([
+      { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+    ]);
+    renderChat();
+
+    await waitFor(() =>
+      expect(screen.getByText("Connect an AI provider to start")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByPlaceholderText("Describe where you need guidance…"),
+    ).not.toBeInTheDocument();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not populate the picker from a held key when the catalogue is empty (allow-list is absolute)", async () => {
+    // Admin catalogue is empty, but the student holds an OpenAI key. The key is
+    // a fallback for reaching an *allowed* model, never a way to conjure one the
+    // admin never allowed — so the picker stays empty and the composer blocked
+    // rather than offering a model Core would 422.
+    mockKeysRef.current = { openai: "sk-openai" };
+    mockGetKey.mockReturnValue("sk-openai");
+    listAiModels.mockResolvedValue([]);
+    renderChat();
+
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not surface a model the admin allow-list omits, even with a held key", async () => {
+    // A student model policy is active and every catalogue model is disallowed
+    // for students (studentSelectable:false). A held key must NOT reopen any of
+    // them: the picker is empty and the composer stays blocked.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "g1",
+        modelId: "google:gemini-2.5-flash",
+        modelName: "Gemini 2.5 Flash",
+        studentSelectable: false,
+      },
+      {
+        id: "g2",
+        modelId: "google:gemini-2.5-pro",
+        modelName: "Gemini 2.5 Pro",
+        studentSelectable: false,
+      },
+    ]);
+    renderChat();
+
+    await waitFor(() => expect(screen.getByText("No AI models configured.")).toBeInTheDocument());
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(sendGuideMessage).not.toHaveBeenCalled();
+  });
+
+  it("offers only the allow-listed catalog models when a policy is active (a held key adds nothing)", async () => {
+    // Policy is active (the allowed UBC model carries a policy flag). The picker
+    // offers exactly that allowed model; the student's held google key does not
+    // add any extra entry.
+    mockKeysRef.current = { google: "g-key" };
+    mockGetKey.mockReturnValue("g-key");
+    listAiModels.mockResolvedValue([
+      {
+        id: "v1",
+        modelId: "vllm:llama-3",
+        modelName: "Llama 3",
+        studentSelectable: true,
+        isDefaultTutor: true,
+      },
+    ]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    expect(screen.queryByText("No AI models configured.")).not.toBeInTheDocument();
+    // The policy-limited notice appears because a policy is active; the only
+    // picker entry is the allowed UBC model, and no BYOK entry was merged in.
+    expect(
+      screen.getByText("Tutor model choices are limited by your course configuration."),
+    ).toBeInTheDocument();
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({ modelId: "vllm:llama-3" });
   });
 });
 
@@ -447,6 +602,54 @@ describe("StudentAiChat — send/receive round trip (#1003)", () => {
   });
 });
 
+// ── #1660 review (ariqmuldi, PR #1667): honest 403 message gated on isPreview ──
+
+describe("StudentAiChat — 403 message only for an actual previewer (#1660 review)", () => {
+  it('shows the "read-only preview" message for a 403 when isPreview is true', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    renderChat(undefined, ACTIVITY, true);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "AI tutoring is only available to enrolled students — this is a read-only preview.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to the generic message for a 403 when isPreview is false — a real STUDENT/TA can also hit this endpoint\'s 403 for unrelated reasons (lagging enrollment sync, content unpublished mid-session), and should never be told they are "previewing"', async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Not enrolled in this course"));
+    renderChat(undefined, ACTIVITY, false);
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
+
+  it("rebuilds sendChat when isPreview flips on a still-mounted chat (AuthProvider role transition)", async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(403, "Only students can submit answers"));
+    const { rerender } = renderChat(undefined, ACTIVITY, true);
+
+    rerender(chatTree(undefined, ACTIVITY, false));
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI study buddy not available right now. Please try again later."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/read-only preview/i)).not.toBeInTheDocument();
+  });
+});
+
 // ── #1003: chatId threading ───────────────────────────────────────────────
 
 describe("StudentAiChat — chatId threading (#1003)", () => {
@@ -655,5 +858,74 @@ describe("StudentAiChat — cuid topic ids reach the tutor", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Base cases" }));
 
     await waitFor(() => expect(onSelectTopic).toHaveBeenCalledWith(SECONDARY_TOPIC_ID));
+  });
+});
+
+// #1626: a course TA holds the learner surface but the tutoring routes 403 a
+// non-STUDENT enrollment, so the composer must be withheld rather than left as a
+// dead control — even with a BYOK key present (`mockGetKey` returns one here).
+// The gate fails closed on every non-"allowed" state, so an unresolved role
+// (pending / unverified breadcrumb) withholds the composer just like a TA does.
+describe("StudentAiChat — withheld for a non-STUDENT course role (#1626)", () => {
+  function renderState(studyBuddyState: "pending" | "unverified" | "withheld") {
+    return render(
+      <MemoryRouter>
+        <StudentAiChat
+          activity={ACTIVITY}
+          isUserReady
+          knowledgeLevel="beginner"
+          onSelectKnowledgeLevel={vi.fn()}
+          onAdjustKnowledgeLevel={vi.fn()}
+          topicOptions={[]}
+          currentTopicId={null}
+          onSelectTopic={vi.fn()}
+          studentAnswer={null}
+          studyBuddyState={studyBuddyState}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  function expectNoComposerOrControls() {
+    // Neither the connect-a-provider prompt nor a live composer is offered, and
+    // no model / new-chat / history controls — the whole surface is withheld,
+    // not merely disabled.
+    expect(screen.queryByText(/Connect an AI provider to start/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/where you need guidance|Ask about the topic|Ask a question/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new chat/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /chat history/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  }
+
+  it("shows the withheld notice and no composer or connect state for a resolved TA", async () => {
+    renderState("withheld");
+
+    // The panel title still renders so the TA sees the study buddy exists…
+    expect(screen.getByText("AI study buddy")).toBeInTheDocument();
+    // …but the withheld notice replaces the conversation.
+    expect(screen.getByText(/study buddy is available to students enrolled/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed while the per-course role is unresolved (pending breadcrumb)", async () => {
+    renderState("pending");
+
+    // A genuine student sees a transient "checking access" — not the TA notice —
+    // but the composer stays withheld so a TA + BYOK key can't chat in the window.
+    expect(screen.getByText(/checking your access/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/study buddy is available to students enrolled/i),
+    ).not.toBeInTheDocument();
+    expectNoComposerOrControls();
+  });
+
+  it("fails closed when the breadcrumb failed (unverified)", async () => {
+    renderState("unverified");
+
+    expect(screen.getByText(/couldn't verify your access/i)).toBeInTheDocument();
+    expectNoComposerOrControls();
   });
 });
