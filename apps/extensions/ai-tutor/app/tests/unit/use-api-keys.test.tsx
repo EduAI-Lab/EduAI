@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useLocalUser, type AuthUser } from "~/hooks/useLocalUser";
 import api from "~/lib/api";
 import { useApiKeys } from "~/hooks/use-api-keys";
-import { getApiKeysStorageKey, saveApiKeysToStorage } from "~/lib/provider-keys";
+import { CORE_STORED_KEY, getApiKeysStorageKey, saveApiKeysToStorage } from "~/lib/provider-keys";
 
 vi.mock("~/lib/api", async () => {
   const actual = await vi.importActual<typeof import("~/lib/api")>("~/lib/api");
@@ -30,7 +30,11 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe("useApiKeys", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.clearAllMocks();
     vi.mocked(api.validateApiKey).mockReset().mockResolvedValue({ valid: true });
+    vi.mocked(api.getUserProviderSettings).mockRejectedValue(new Error("Core unavailable"));
+    vi.mocked(api.saveUserProviderSetting).mockResolvedValue(undefined);
+    vi.mocked(api.deleteUserProviderSetting).mockResolvedValue(undefined);
   });
 
   it("starts unloaded and becomes loaded after mount, hydrating from storage", async () => {
@@ -52,30 +56,34 @@ describe("useApiKeys", () => {
     expect(result.current.getKey("openai")).toBe("");
   });
 
-  it("setKey stores the key in state and localStorage", async () => {
+  it("setKey stores the key in Core and marks it as remotely stored", async () => {
     const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
-    act(() => {
-      result.current.setKey("openai", "sk-test");
+    await act(async () => {
+      await result.current.setKey("openai", "sk-test");
     });
 
-    expect(result.current.keys.openai).toBe("sk-test");
-    expect(JSON.parse(localStorage.getItem(getApiKeysStorageKey(firstUser.id)) ?? "{}")).toEqual({
-      openai: "sk-test",
+    expect(result.current.keys.openai).toBe(CORE_STORED_KEY);
+    expect(api.saveUserProviderSetting).toHaveBeenCalledWith({
+      providerName: "openai",
+      isEnabled: true,
+      apiKey: "sk-test",
     });
+    expect(localStorage.getItem(getApiKeysStorageKey(firstUser.id))).toBeNull();
   });
 
-  it("removeKey deletes the key from state and localStorage", async () => {
+  it("removeKey deletes the key from Core and localStorage", async () => {
     saveApiKeysToStorage(firstUser.id, { google: "abc", openai: "def" });
     const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
-    act(() => {
-      result.current.removeKey("google");
+    await act(async () => {
+      await result.current.removeKey("google");
     });
 
     expect(result.current.keys).toEqual({ openai: "def" });
+    expect(api.deleteUserProviderSetting).toHaveBeenCalledWith("google");
     expect(JSON.parse(localStorage.getItem(getApiKeysStorageKey(firstUser.id)) ?? "{}")).toEqual({
       openai: "def",
     });
@@ -105,15 +113,18 @@ describe("useApiKeys", () => {
     const { result } = renderHook(() => useApiKeys(), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.loaded).toBe(true));
-    act(() => {
-      result.current.setKey("opencode", "opencode-secret");
+    await act(async () => {
+      await result.current.setKey("opencode", "opencode-secret");
     });
 
-    expect(result.current.getKey("opencode")).toBe("opencode-secret");
+    expect(result.current.getKey("opencode")).toBe(CORE_STORED_KEY);
     expect(result.current.hasKey("opencode")).toBe(true);
-    expect(JSON.parse(localStorage.getItem(getApiKeysStorageKey(firstUser.id)) ?? "{}")).toEqual({
-      opencode: "opencode-secret",
+    expect(api.saveUserProviderSetting).toHaveBeenCalledWith({
+      providerName: "opencode",
+      isEnabled: true,
+      apiKey: "opencode-secret",
     });
+    expect(localStorage.getItem(getApiKeysStorageKey(firstUser.id))).toBeNull();
   });
 });
 
