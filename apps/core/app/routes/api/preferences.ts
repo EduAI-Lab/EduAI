@@ -12,6 +12,7 @@ import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -37,44 +38,54 @@ function rowToResponse(row: {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getRequestSession(request);
-  if (!session?.user) {
-    return json(401, { error: "Unauthorized" });
-  }
+  return withErrorResponse(
+    async () => {
+      const session = await getRequestSession(request);
+      if (!session?.user) {
+        return json(401, { error: "Unauthorized" });
+      }
 
-  const row = await prisma.userPreference.findUnique({
-    where: { userId: session.user.id },
-    select: {
-      assistDefault: true,
-      lastCourseCode: true,
-      motionReduced: true,
-      density: true,
-      theme: true,
+      const row = await prisma.userPreference.findUnique({
+        where: { userId: session.user.id },
+        select: {
+          assistDefault: true,
+          lastCourseCode: true,
+          motionReduced: true,
+          density: true,
+          theme: true,
+        },
+      });
+
+      if (!row) {
+        return json(200, DEFAULT_ACCOUNT_PREFERENCES);
+      }
+
+      return json(200, rowToResponse(row));
     },
-  });
-
-  if (!row) {
-    return json(200, DEFAULT_ACCOUNT_PREFERENCES);
-  }
-
-  return json(200, rowToResponse(row));
+    { request },
+  );
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (request.method !== "PATCH" && request.method !== "POST") {
-    return json(405, { error: "Method not allowed" });
-  }
+  return withErrorResponse(
+    async () => {
+      if (request.method !== "PATCH" && request.method !== "POST") {
+        return json(405, { error: "Method not allowed" });
+      }
 
-  const session = await getRequestSession(request);
-  if (!session?.user) {
-    return json(401, { error: "Unauthorized" });
-  }
+      const session = await getRequestSession(request);
+      if (!session?.user) {
+        return json(401, { error: "Unauthorized" });
+      }
 
-  const updates = parsePreferenceUpdates(await request.json().catch(() => null));
-  if (Object.keys(updates).length === 0) {
-    return json(400, { error: "No valid preference fields provided" });
-  }
+      const updates = parsePreferenceUpdates(await request.json().catch(() => null));
+      if (Object.keys(updates).length === 0) {
+        return json(400, { error: "No valid preference fields provided" });
+      }
 
-  const saved = await saveUserPreference(session.user.id, updates);
-  return json(200, saved);
+      const saved = await saveUserPreference(session.user.id, updates);
+      return json(200, saved);
+    },
+    { request },
+  );
 }

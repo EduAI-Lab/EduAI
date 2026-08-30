@@ -18,6 +18,7 @@ import {
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
@@ -69,320 +70,331 @@ async function canManageTopic(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.courseId;
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
 
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "Course ID is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const topicId = params.topicId;
-
-  // Service-key path (extensions): unscoped, never goes through user RBAC.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    const serviceKeyGuard = await requireServiceKey(request);
-    if (serviceKeyGuard) return serviceKeyGuard;
-    return topicsGetResponse(courseId, topicId);
-  }
-
-  const session = await getRequestSession(request);
-
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read
-  // soft-deleted topics — including those in a soft-deleted course. The access
-  // resolver below filters `deletedAt: null` (→ 404 on deleted courses), so
-  // ADMIN reads bypass it here, mirroring courses.id.ts. No-op for non-ADMIN.
-  if (wantsIncludeDeleted(request, session.user)) {
-    // The access resolver (skipped here) is what 404s a nonexistent course, so
-    // check existence explicitly — otherwise an unknown id returns 200 {topics: []}
-    // instead of 404 COURSE_NOT_FOUND. Mirrors courses.id.ts.
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      select: { id: true },
-    });
-    if (!course) {
-      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return topicsGetResponse(courseId, topicId, true);
-  }
-
-  // §8 view tier: any course relationship; students need a published course.
-  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
-
-  if (!course) {
-    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  if (!access || (access.level === "student" && !course.isPublished)) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  return topicsGetResponse(courseId, topicId);
-}
-
-export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.courseId;
-
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "Course ID is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  let serviceAuth = false;
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    const serviceKeyGuard = await requireServiceKey(request);
-    if (serviceKeyGuard) return serviceKeyGuard;
-    serviceAuth = true;
-  }
-
-  let session = null;
-  let access: AccessLevel | null = null;
-  if (!serviceAuth) {
-    session = await getRequestSession(request);
-
-    if (!session?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const resolved = await resolveCourseAccessGate(session.user, courseId);
-    if (!resolved.course) {
-      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    access = resolved.access;
-  }
-
-  const forbidden = () =>
-    new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-
-  const requestContext = getRequestContext(request);
-
-  switch (request.method) {
-    case "POST": {
-      // §8: create topic — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus a TA
-      // when the tas.canManageTopics grant is on.
-      if (
-        !serviceAuth &&
-        (!access ||
-          (access.rank < 2 && !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
-      ) {
-        return forbidden();
-      }
-
-      const body = await request.json();
-      const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
-
-      if (result.status !== "201") {
-        if (result.status === "409") {
-          return new Response(
-            JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
-            { status: 409, headers: { "Content-Type": "application/json" } },
-          );
-        }
-        if (result.status === "404") {
-          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return new Response(
-          JSON.stringify({
-            error: "Invalid input",
-            // JSON.stringify drops an undefined value, so a result without
-            // field errors still serializes to a bare `{ error }`.
-            details: result.details ?? undefined,
-          }),
-          {
-            status: Number(result.status),
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(session?.user ?? null),
-          ...requestContext,
-          actionCode: "TOPIC_CREATED",
-          category: "TOPIC",
-          entityType: "CourseTopic",
-          entityId: result.topic.id,
-          entityLabel: result.topic.name,
-          details: { courseId },
-        }),
-      );
-
-      return new Response(JSON.stringify(result.topic), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    case "PATCH": {
-      const topicId = params.topicId;
-      if (!topicId) {
-        return new Response(JSON.stringify({ error: "TOPIC_ID_REQUIRED" }), {
+      if (!courseId) {
+        return new Response(JSON.stringify({ error: "Course ID is required" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      if (
-        !serviceAuth &&
-        (!access ||
-          !session?.user ||
-          !(await canManageTopic(
-            access,
-            session.user.id,
-            courseId,
-            topicId,
-            access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
-          )))
-      ) {
-        return forbidden();
+      const topicId = params.topicId;
+
+      // Service-key path (extensions): unscoped, never goes through user RBAC.
+      if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+        const serviceKeyGuard = await requireServiceKey(request);
+        if (serviceKeyGuard) return serviceKeyGuard;
+        return topicsGetResponse(courseId, topicId);
       }
 
-      const body = await request.json();
-      const result = await updateCourseTopic(courseId, topicId, body);
+      const session = await getRequestSession(request);
 
-      if (result.status === "200") {
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session?.user ?? null),
-            ...requestContext,
-            actionCode: "TOPIC_UPDATED",
-            category: "TOPIC",
-            entityType: "CourseTopic",
-            entityId: result.topic.id,
-            entityLabel: result.topic.name,
-            details: { courseId },
-          }),
-        );
-
-        return new Response(JSON.stringify(result.topic), {
-          status: 200,
+      if (!session?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (result.status === "409") {
-        return new Response(
-          JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
-          { status: 409, headers: { "Content-Type": "application/json" } },
-        );
+
+      // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read
+      // soft-deleted topics — including those in a soft-deleted course. The access
+      // resolver below filters `deletedAt: null` (→ 404 on deleted courses), so
+      // ADMIN reads bypass it here, mirroring courses.id.ts. No-op for non-ADMIN.
+      if (wantsIncludeDeleted(request, session.user)) {
+        // The access resolver (skipped here) is what 404s a nonexistent course, so
+        // check existence explicitly — otherwise an unknown id returns 200 {topics: []}
+        // instead of 404 COURSE_NOT_FOUND. Mirrors courses.id.ts.
+        const course = await prisma.course.findUnique({
+          where: { id: courseId },
+          select: { id: true },
+        });
+        if (!course) {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return topicsGetResponse(courseId, topicId, true);
       }
-      if (result.status === "404") {
-        return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
+
+      // §8 view tier: any course relationship; students need a published course.
+      const { course, access } = await resolveCourseAccessGate(session.user, courseId);
+
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
           status: 404,
           headers: { "Content-Type": "application/json" },
         });
       }
-      return new Response(
-        JSON.stringify({
-          error: "Invalid input",
-          // JSON.stringify drops an undefined value, so a result without field
-          // errors still serializes to a bare `{ error }`.
-          details: result.details ?? undefined,
-        }),
-        { status: Number(result.status), headers: { "Content-Type": "application/json" } },
-      );
-    }
 
-    case "DELETE": {
-      const body = await request.json();
-
-      if (!serviceAuth) {
-        // For TA own-only resolution we need the concrete topic id; the legacy
-        // body shape also allows delete-by-name.
-        let topicId: string | undefined =
-          typeof body?.topicId === "string" ? body.topicId : params.topicId;
-        if (!topicId && typeof body?.name === "string") {
-          const byName = await prisma.courseTopic.findFirst({
-            where: { courseId, name: body.name, deletedAt: null },
-            select: { id: true },
-          });
-          topicId = byName?.id;
-        }
-
-        if (
-          !access ||
-          !session?.user ||
-          !(await canManageTopic(
-            access,
-            session.user.id,
-            courseId,
-            topicId,
-            access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
-          ))
-        ) {
-          return forbidden();
-        }
-      }
-
-      const result = await deleteCourseTopic(courseId, body, session?.user.id ?? null);
-
-      if (result.status !== "204") {
-        const responseBody =
-          result.status === "404"
-            ? { error: "Topic not found" }
-            : {
-                error: "Invalid input",
-                // JSON.stringify drops an undefined value, so a result without
-                // field errors still serializes to a bare `{ error }`.
-                details: result.details ?? undefined,
-              };
-        return new Response(JSON.stringify(responseBody), {
-          status: Number(result.status),
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(session?.user ?? null),
-          ...requestContext,
-          actionCode: "TOPIC_DELETED",
-          category: "TOPIC",
-          entityType: "CourseTopic",
-          entityId: result.topic.id,
-          entityLabel: result.topic.name,
-          details: { courseId },
-        }),
-      );
+      return topicsGetResponse(courseId, topicId);
+    },
+    { request },
+  );
+}
 
-      return new Response(null, { status: 204 });
-    }
+export async function action({ request, params }: ActionFunctionArgs) {
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
 
-    default:
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { "Content-Type": "application/json" },
-      });
-  }
+      if (!courseId) {
+        return new Response(JSON.stringify({ error: "Course ID is required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      let serviceAuth = false;
+      if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+        const serviceKeyGuard = await requireServiceKey(request);
+        if (serviceKeyGuard) return serviceKeyGuard;
+        serviceAuth = true;
+      }
+
+      let session = null;
+      let access: AccessLevel | null = null;
+      if (!serviceAuth) {
+        session = await getRequestSession(request);
+
+        if (!session?.user) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const resolved = await resolveCourseAccessGate(session.user, courseId);
+        if (!resolved.course) {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        access = resolved.access;
+      }
+
+      const forbidden = () =>
+        new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      const requestContext = getRequestContext(request);
+
+      switch (request.method) {
+        case "POST": {
+          // §8: create topic — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus a TA
+          // when the tas.canManageTopics grant is on.
+          if (
+            !serviceAuth &&
+            (!access ||
+              (access.rank < 2 &&
+                !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
+          ) {
+            return forbidden();
+          }
+
+          const body = await request.json();
+          const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
+
+          if (result.status !== "201") {
+            if (result.status === "409") {
+              return new Response(
+                JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
+                { status: 409, headers: { "Content-Type": "application/json" } },
+              );
+            }
+            if (result.status === "404") {
+              return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+                status: 404,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+            return new Response(
+              JSON.stringify({
+                error: "Invalid input",
+                // JSON.stringify drops an undefined value, so a result without
+                // field errors still serializes to a bare `{ error }`.
+                details: result.details ?? undefined,
+              }),
+              {
+                status: Number(result.status),
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "TOPIC_CREATED",
+              category: "TOPIC",
+              entityType: "CourseTopic",
+              entityId: result.topic.id,
+              entityLabel: result.topic.name,
+              details: { courseId },
+            }),
+          );
+
+          return new Response(JSON.stringify(result.topic), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        case "PATCH": {
+          const topicId = params.topicId;
+          if (!topicId) {
+            return new Response(JSON.stringify({ error: "TOPIC_ID_REQUIRED" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          if (
+            !serviceAuth &&
+            (!access ||
+              !session?.user ||
+              !(await canManageTopic(
+                access,
+                session.user.id,
+                courseId,
+                topicId,
+                access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
+              )))
+          ) {
+            return forbidden();
+          }
+
+          const body = await request.json();
+          const result = await updateCourseTopic(courseId, topicId, body);
+
+          if (result.status === "200") {
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "TOPIC_UPDATED",
+                category: "TOPIC",
+                entityType: "CourseTopic",
+                entityId: result.topic.id,
+                entityLabel: result.topic.name,
+                details: { courseId },
+              }),
+            );
+
+            return new Response(JSON.stringify(result.topic), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          if (result.status === "409") {
+            return new Response(
+              JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
+              { status: 409, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (result.status === "404") {
+            return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              error: "Invalid input",
+              // JSON.stringify drops an undefined value, so a result without field
+              // errors still serializes to a bare `{ error }`.
+              details: result.details ?? undefined,
+            }),
+            { status: Number(result.status), headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        case "DELETE": {
+          const body = await request.json();
+
+          if (!serviceAuth) {
+            // For TA own-only resolution we need the concrete topic id; the legacy
+            // body shape also allows delete-by-name.
+            let topicId: string | undefined =
+              typeof body?.topicId === "string" ? body.topicId : params.topicId;
+            if (!topicId && typeof body?.name === "string") {
+              const byName = await prisma.courseTopic.findFirst({
+                where: { courseId, name: body.name, deletedAt: null },
+                select: { id: true },
+              });
+              topicId = byName?.id;
+            }
+
+            if (
+              !access ||
+              !session?.user ||
+              !(await canManageTopic(
+                access,
+                session.user.id,
+                courseId,
+                topicId,
+                access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
+              ))
+            ) {
+              return forbidden();
+            }
+          }
+
+          const result = await deleteCourseTopic(courseId, body, session?.user.id ?? null);
+
+          if (result.status !== "204") {
+            const responseBody =
+              result.status === "404"
+                ? { error: "Topic not found" }
+                : {
+                    error: "Invalid input",
+                    // JSON.stringify drops an undefined value, so a result without
+                    // field errors still serializes to a bare `{ error }`.
+                    details: result.details ?? undefined,
+                  };
+            return new Response(JSON.stringify(responseBody), {
+              status: Number(result.status),
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "TOPIC_DELETED",
+              category: "TOPIC",
+              entityType: "CourseTopic",
+              entityId: result.topic.id,
+              entityLabel: result.topic.name,
+              details: { courseId },
+            }),
+          );
+
+          return new Response(null, { status: 204 });
+        }
+
+        default:
+          return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json" },
+          });
+      }
+    },
+    { request },
+  );
 }

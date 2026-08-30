@@ -279,13 +279,15 @@ function toDashboardRecentChat(chat: ChatHistoryItem): DashboardRecentChat {
   };
 }
 
-/** Keep only the five fields the course-card panel renders. */
+/** Keep only the fields the course-card panel renders. */
 function toDashboardCourse(course: {
   id: string;
   code: string;
   name: string;
   term: string;
   year: number;
+  isPublished: boolean;
+  callerEnrollmentRole?: string | null;
 }): DashboardCourse {
   return {
     id: course.id,
@@ -293,6 +295,8 @@ function toDashboardCourse(course: {
     name: course.name,
     term: course.term,
     year: course.year,
+    isPublished: course.isPublished,
+    callerEnrollmentRole: course.callerEnrollmentRole ?? null,
   };
 }
 

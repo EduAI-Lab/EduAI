@@ -569,7 +569,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     );
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Internal server error");
+    expect(body.error).toBe("INTERNAL_ERROR");
     expect(body).not.toHaveProperty("details");
     expect(JSON.stringify(body)).not.toContain("db-pass");
     expect(JSON.stringify(body)).not.toContain("api_key");

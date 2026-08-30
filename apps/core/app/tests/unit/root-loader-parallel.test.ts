@@ -29,6 +29,7 @@ vi.mock("~/lib/cron-scheduler.server", () => ({
 
 const prismaMock = vi.hoisted(() => ({
   userPreference: { findUnique: vi.fn() },
+  enrollment: { findFirst: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -44,6 +45,7 @@ type RootData = {
   density: string;
   theme: string;
   canInvite: boolean;
+  hasInstructorEnrollment: boolean;
   policies: Record<string, boolean>;
 };
 
@@ -75,6 +77,7 @@ beforeEach(() => {
   vi.mocked(getPolicies).mockResolvedValue({} as never);
   vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(null);
   prismaMock.userPreference.findUnique.mockResolvedValue(null);
+  prismaMock.enrollment.findFirst.mockResolvedValue(null);
 });
 
 describe("root loader — guest", () => {
@@ -242,5 +245,51 @@ describe("root loader — canInvite", () => {
     vi.mocked(getPolicies).mockResolvedValue({ "unitAdmins.canInvite": true } as never);
 
     expect(((await run()) as RootData).canInvite).toBe(false);
+  });
+});
+
+// #1666 review (Stavan): resolved once per navigation (root loader) so the
+// sidebar/command-palette Course Assistant link is correct on every route,
+// not just the one page that happened to fetch this caller's courses.
+describe("root loader — hasInstructorEnrollment (#1666 review)", () => {
+  it("is true for a STUDENT with a real active INSTRUCTOR enrollment", async () => {
+    signedInAs("STUDENT");
+    prismaMock.enrollment.findFirst.mockResolvedValue({ id: "enr-1" });
+
+    const data = (await run()) as RootData;
+
+    expect(data.hasInstructorEnrollment).toBe(true);
+    expect(prismaMock.enrollment.findFirst).toHaveBeenCalledWith({
+      where: { userId: "u1", role: "INSTRUCTOR", isActive: true },
+      select: { id: true },
+    });
+  });
+
+  it("is false for a STUDENT with no active INSTRUCTOR enrollment", async () => {
+    signedInAs("STUDENT");
+    prismaMock.enrollment.findFirst.mockResolvedValue(null);
+
+    expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
+  });
+
+  // resolveAccess (course-access.server.ts) always resolves ADMIN to
+  // admin-level, never instructor-level, no matter their enrollment — an
+  // ADMIN can never actually pass /instructor/chat's own gate, so showing
+  // the link for one (even with a stray enrollment row) would be a dead
+  // link. Matches instructor.chat.tsx's own loader exclusion.
+  it("is false for ADMIN without even querying the enrollment table", async () => {
+    signedInAs("ADMIN");
+
+    const data = (await run()) as RootData;
+
+    expect(data.hasInstructorEnrollment).toBe(false);
+    expect(prismaMock.enrollment.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("is false for a guest", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
+    expect(prismaMock.enrollment.findFirst).not.toHaveBeenCalled();
   });
 });
