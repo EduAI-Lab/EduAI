@@ -483,6 +483,10 @@ describe("CourseDetailManagerView — enrollments tab", () => {
     const props = renderView();
     clickTab(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
+    expect(props.onRemoveEnrollment).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }),
+    );
     await waitFor(() => expect(props.onRemoveEnrollment).toHaveBeenCalledWith("enr-1"));
     await waitFor(() =>
       expect(screen.getByText("Student removed from course")).toBeInTheDocument(),
@@ -494,6 +498,9 @@ describe("CourseDetailManagerView — enrollments tab", () => {
     renderView({ onRemoveEnrollment });
     clickTab(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }),
+    );
     await waitFor(() =>
       expect(screen.getByText(/could not remove student from course/i)).toBeInTheDocument(),
     );
