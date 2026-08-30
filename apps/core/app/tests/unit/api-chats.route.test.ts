@@ -82,7 +82,10 @@ describe("GET /api/chats", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await loader(makeArgs());
     expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({ error: "Internal server error" });
+    // The route no longer hand-rolls a 500 body; an unexpected throw escapes to
+    // the #1279 `withErrorResponse` boundary, which returns the uniform code
+    // envelope and never leaks the underlying message.
+    await expect(res.json()).resolves.toEqual({ error: "INTERNAL_ERROR" });
     consoleSpy.mockRestore();
   });
 });

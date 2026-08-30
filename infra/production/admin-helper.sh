@@ -12,7 +12,7 @@ readonly APACHE_VHOST="/etc/apache2/sites-available/my.eduai.ok.ubc.ca.conf"
 readonly AI_TUTOR_ENV="/etc/eduai/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV="/etc/eduai/aitutor-db.env"
 readonly AI_TUTOR_UNIT="/etc/systemd/system/eduai-aitutor-server.service"
-readonly AI_TUTOR_VHOST="/etc/apache2/sites-available/aitutor.ok.ubc.ca.conf"
+readonly AI_TUTOR_VHOST="/etc/apache2/sites-available/aitutor.eduai.ok.ubc.ca.conf"
 readonly AI_TUTOR_DB_NAME="eduai-aitutor-db"
 readonly AI_TUTOR_DB_VOLUME="eduai-aitutor-db-data"
 readonly TEMPLATE_DIR="/etc/eduai/production-templates"
@@ -22,7 +22,7 @@ readonly APACHE_SOURCE="$TEMPLATE_DIR/my.eduai.ok.ubc.ca.conf"
 readonly AI_TUTOR_ENV_SOURCE="$TEMPLATE_DIR/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV_SOURCE="$TEMPLATE_DIR/aitutor-db.env"
 readonly AI_TUTOR_UNIT_SOURCE="$TEMPLATE_DIR/eduai-aitutor-server.service"
-readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.ok.ubc.ca.conf"
+readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.eduai.ok.ubc.ca.conf"
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 release_arg() {
@@ -121,7 +121,7 @@ case "${1:-}" in
     [ -f "$AI_TUTOR_VHOST_SOURCE" ] || die "AI Tutor Apache source does not exist: $AI_TUTOR_VHOST_SOURCE"
     install -o root -g root -m 0644 "$AI_TUTOR_VHOST_SOURCE" "$AI_TUTOR_VHOST"
     a2enmod headers proxy proxy_http ssl >/dev/null
-    a2ensite aitutor.ok.ubc.ca.conf >/dev/null
+    a2ensite aitutor.eduai.ok.ubc.ca.conf >/dev/null
     apache2ctl configtest
     echo "Installed and validated $AI_TUTOR_VHOST"
     ;;
@@ -164,8 +164,8 @@ case "${1:-}" in
     set_env_value "$CORE_ENV" COOKIE_DOMAIN ".ok.ubc.ca"
     set_env_value "$CORE_ENV" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
     set_env_value "$CORE_ENV" VITE_EDUAI_URL "https://my.eduai.ok.ubc.ca"
-    set_env_value "$CORE_ENV" VITE_AI_TUTOR_URL "https://aitutor.ok.ubc.ca"
-    set_env_value "$CORE_ENV" VITE_QUESTION_MAKER_URL "https://questionmaker.ok.ubc.ca"
+    set_env_value "$CORE_ENV" VITE_AI_TUTOR_URL "https://aitutor.eduai.ok.ubc.ca"
+    set_env_value "$CORE_ENV" VITE_QUESTION_MAKER_URL "https://questionmaker.eduai.ok.ubc.ca"
     chown root:eduai "$CORE_ENV"
     chmod 0640 "$CORE_ENV"
 
@@ -198,7 +198,7 @@ case "${1:-}" in
     set_env_value "$AI_TUTOR_ENV" EDUAI_BASE_URL "https://my.eduai.ok.ubc.ca/api"
     set_env_value "$AI_TUTOR_ENV" EDUAI_API_KEY "$service_key"
     set_env_value "$AI_TUTOR_ENV" EDUAI_ENFORCE_URL_CONSISTENCY 1
-    set_env_value "$AI_TUTOR_ENV" CORS_ORIGINS "https://aitutor.ok.ubc.ca"
+    set_env_value "$AI_TUTOR_ENV" CORS_ORIGINS "https://aitutor.eduai.ok.ubc.ca"
     chown root:eduai "$AI_TUTOR_ENV"
     chmod 0640 "$AI_TUTOR_ENV"
     "$0" aitutor-db-install

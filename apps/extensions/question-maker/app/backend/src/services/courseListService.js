@@ -198,7 +198,7 @@ export async function enrichRowWithCourse(row) {
 
 /**
  * Legacy-shaped "semester" display string derived from a Core-projected term/year,
- * e.g. "Winter Term 1 2026" (#1072 §4 step 8 / #1077). QM's `Assessments.semester`
+ * e.g. "2026-27 Winter Term 1" (#1072 §4 step 8 / #1077). QM's `Assessments.semester`
  * column is derive-only now — nothing persists free-form semester text anymore.
  * Mirrors `termLabelLong` in packages/ui/src/lib/term.ts; duplicated here in plain
  * JS because QM's backend has no dependency on the frontend-only @eduai/ui package.
@@ -209,7 +209,9 @@ export async function enrichRowWithCourse(row) {
  * A W2 course spanning Jan-Apr is labelled with the PREVIOUS calendar year
  * (#1088; see `termInfoFromDate` in packages/ui/src/lib/term.ts). QM does no
  * date-based derivation of its own, so it inherits this convention for free
- * via read-through — nothing to change here beyond this note.
+ * via read-through — nothing to change here beyond this note. A Winter label
+ * therefore spans both calendar years ("2026-27"), as a transcript does; a
+ * Summer session sits in one year and takes no span.
  */
 const SEMESTER_TERM_NAMES = {
   W1: "Winter Term 1",
@@ -218,9 +220,17 @@ const SEMESTER_TERM_NAMES = {
   S2: "Summer Term 2",
 };
 
+/** "2026" for a Summer session, "2026-27" for a Winter one. */
+function academicYearSpan(term, year) {
+  if (term !== "W1" && term !== "W2") return String(year);
+  const startYear = Number(year);
+  if (!Number.isFinite(startYear)) return String(year);
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
 export function formatSemesterDisplay(term, year) {
   const name = term ? SEMESTER_TERM_NAMES[term] : null;
-  if (name && year != null) return `${name} ${year}`;
+  if (name && year != null) return `${academicYearSpan(term, year)} ${name}`;
   if (name) return name;
   if (year != null) return String(year);
   return "Unscheduled";

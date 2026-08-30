@@ -300,8 +300,9 @@ export const auth = betterAuth({
   },
   advanced: {
     useSecureCookies,
-    // Only enable when COOKIE_DOMAIN is set (e.g. ".eduai.ok.ubc.ca" in prod).
-    // On dev without it, cross-subdomain derivation can break session cookies.
+    // Only enable for a real public suffix (e.g. ".eduai.ok.ubc.ca"). Loopback
+    // COOKIE_DOMAIN values are ignored — Domain=localhost plus the host-only
+    // expiry on login deletes the session that was just issued.
     crossSubDomainCookies: cookieDomain
       ? { enabled: true, domain: cookieDomain }
       : { enabled: false },

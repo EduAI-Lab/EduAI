@@ -9,67 +9,73 @@ import type { ActionFunctionArgs } from "react-router";
 import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { asText } from "~/lib/json-value";
+import { withErrorResponse } from "~/lib/errors.server";
 
 // TA is a course-level Enrollment role, not a platform UserRole — tests needing
 // a TA should seed an Enrollment(role=TA) instead of promoting a platform role.
 const VALID_ROLES = new Set<string>(Object.values(UserRole));
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (process.env.NODE_ENV !== "test") {
-    return new Response(null, { status: 404 });
-  }
+  return withErrorResponse(
+    async () => {
+      if (process.env.NODE_ENV !== "test") {
+        return new Response(null, { status: 404 });
+      }
 
-  const secret = process.env.E2E_SEED_SECRET;
-  if (!secret) {
-    return new Response(null, { status: 404 });
-  }
+      const secret = process.env.E2E_SEED_SECRET;
+      if (!secret) {
+        return new Response(null, { status: 404 });
+      }
 
-  if (request.method !== "POST") {
-    return new Response(null, { status: 405 });
-  }
+      if (request.method !== "POST") {
+        return new Response(null, { status: 405 });
+      }
 
-  const body = await request.json().catch(() => null);
-  if (!body || body.secret !== secret) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      const body = await request.json().catch(() => null);
+      if (!body || body.secret !== secret) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  const { email, role } = body ?? {};
-  if (asText(email) === null || asText(role) === null) {
-    return new Response(JSON.stringify({ error: "email and role required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      const { email, role } = body ?? {};
+      if (asText(email) === null || asText(role) === null) {
+        return new Response(JSON.stringify({ error: "email and role required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  if (!VALID_ROLES.has(role)) {
-    return new Response(
-      JSON.stringify({ error: `Invalid role. Must be one of: ${[...VALID_ROLES].join(", ")}` }),
-      {
-        status: 400,
+      if (!VALID_ROLES.has(role)) {
+        return new Response(
+          JSON.stringify({ error: `Invalid role. Must be one of: ${[...VALID_ROLES].join(", ")}` }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) {
+        return new Response(JSON.stringify({ error: "USER_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const updated = await prisma.user.update({
+        where: { email },
+        data: { role: role as UserRole },
+        select: { id: true, email: true, role: true, name: true },
+      });
+
+      return new Response(JSON.stringify(updated), {
+        status: 200,
         headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    return new Response(JSON.stringify({ error: "USER_NOT_FOUND" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const updated = await prisma.user.update({
-    where: { email },
-    data: { role: role as UserRole },
-    select: { id: true, email: true, role: true, name: true },
-  });
-
-  return new Response(JSON.stringify(updated), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+      });
+    },
+    { request },
+  );
 }

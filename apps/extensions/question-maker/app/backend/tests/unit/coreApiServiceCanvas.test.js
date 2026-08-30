@@ -40,10 +40,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** A user-scoped read: the cookie is the only credential, never the service key. */
 function expectCookieOnlyFetch(url, opts) {
   expect(url).toMatch(/^http:\/\/core\.test\/api\/canvas/);
   expect(opts.headers.cookie).toBe(COOKIE);
   expect(opts.headers.Authorization).toBeUndefined();
+}
+
+/**
+ * A mutation: still cookie-identified, but paired with the service key. Core's
+ * cross-origin guard rejects a cookie-bearing unsafe method that carries no
+ * browser Origin/Referer/Sec-Fetch-Site with a 403 CROSS_ORIGIN_MUTATION, and
+ * takes a valid service key as its only non-browser bypass (#1556).
+ */
+function expectCookieMutationFetch(url, opts) {
+  expect(url).toMatch(/^http:\/\/core\.test\/api\/canvas/);
+  expect(opts.headers.cookie).toBe(COOKIE);
+  expect(opts.headers.Authorization).toBe("Bearer test-service-key");
 }
 
 describe("proxyCoreCanvasGetIntegration", () => {
@@ -74,7 +87,7 @@ describe("proxyCoreCanvasConnect", () => {
     expect(url).toBe("http://core.test/api/canvas/connect");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual(body);
-    expectCookieOnlyFetch(url, opts);
+    expectCookieMutationFetch(url, opts);
   });
 });
 
@@ -90,7 +103,7 @@ describe("proxyCoreCanvasDisconnect", () => {
     const [url, opts] = fetch.mock.calls[0];
     expect(url).toBe("http://core.test/api/canvas/disconnect");
     expect(opts.method).toBe("DELETE");
-    expectCookieOnlyFetch(url, opts);
+    expectCookieMutationFetch(url, opts);
   });
 });
 
@@ -172,7 +185,7 @@ describe("proxyCoreCreateQuiz", () => {
     expect(url).toBe("http://core.test/api/canvas/quizzes");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual({ canvasCourseId: 42, quiz });
-    expectCookieOnlyFetch(url, opts);
+    expectCookieMutationFetch(url, opts);
   });
 });
 
@@ -187,7 +200,7 @@ describe("proxyCoreCreateQuizQuestion", () => {
     expect(url).toBe("http://core.test/api/canvas/quizzes/7/questions");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual({ canvasCourseId: 42, question });
-    expectCookieOnlyFetch(url, opts);
+    expectCookieMutationFetch(url, opts);
   });
 });
 

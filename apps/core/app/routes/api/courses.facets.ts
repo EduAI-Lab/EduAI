@@ -1,6 +1,12 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { getCourseFacets } from "~/lib/courses/server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  return getCourseFacets(request);
+  return withErrorResponse(
+    async () => {
+      return getCourseFacets(request);
+    },
+    { request },
+  );
 }

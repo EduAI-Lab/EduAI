@@ -22,24 +22,23 @@ import express from "express";
 import {
   createVariant,
   updateVariant,
-  linkVariantToCore,
-  rollbackVariantApproval,
   deleteVariant,
   getVariantsByQuestion,
+  applyVariantShareChoice,
+  clearVariantCoreLinkIfUnchanged,
 } from "../services/questionService.js";
-import { prisma } from "../config/database.js";
 import { patchQuestionTestableOnCore } from "../services/coreApiService.js";
+import { VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from "../services/coreWiringService.js";
 import {
-  pushVariantToCore,
-  VALID_DIFFICULTIES,
-  VALID_REASONING_LEVELS,
-} from "../services/coreWiringService.js";
-import { shouldPushApprovedVariantToCore } from "../services/variant-push-gate.js";
+  publishApprovedVariant,
+  respondToPublishFailure,
+  restoreVariantSharingOnCore,
+  withdrawVariantFromCore,
+} from "../services/variant-publish.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { QM_AUTHORIZED } from "../middleware/roles.js";
 import { requireQuestionAccess, requireVariantAccess } from "../middleware/resourceAccess.js";
 import { LEVELS } from "../middleware/courseAccess.js";
-import { logger } from "../utils/logger.js";
 import { parsePaginationParams, pageOf } from "../utils/pagination.js";
 
 const router = express.Router();
@@ -90,6 +89,7 @@ router.post(
         referenceId,
         isAiGenerated,
         isDraft,
+        shareWithExtensions,
       } = req.body;
 
       if (!questionText || !questionText.trim()) {
@@ -119,10 +119,26 @@ router.post(
           referenceId,
           isAiGenerated,
           isDraft,
+          shareWithExtensions,
           createdBy: req.user.id,
         },
         req.qmCourse.userId,
       );
+
+      // A variant created already reviewed has to reach Core here: approved
+      // with no coreQuestionId is `approvalInFlight`, a state that can never be
+      // reverted, so skipping the push would strand it permanently.
+      if (variant?.isDraft === false) {
+        const publishResult = await publishApprovedVariant({
+          variant,
+          ownerId: req.qmCourse.userId,
+          cookie: req.headers.cookie,
+        });
+        if (respondToPublishFailure(res, publishResult)) return;
+        if (publishResult.outcome === "linked") {
+          variant.coreQuestionId = publishResult.coreQuestionId;
+        }
+      }
 
       res.status(201).json({
         success: true,
@@ -177,6 +193,7 @@ router.put(
         referenceId,
         isAiGenerated,
         isDraft: isDraftRaw,
+        shareWithExtensions,
       } = req.body;
       const isDraft = parseIsDraft(isDraftRaw);
 
@@ -223,7 +240,12 @@ router.put(
           correctAnswers === undefined &&
           referenceId === undefined;
         if (!reverting && !aiTagOnly && !approvalRetry) {
-          return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
+          return res.status(409).json({
+            success: false,
+            code: "VARIANT_LOCKED",
+            error:
+              "This question is reviewed, so its content is locked. Move it back to draft to reopen it for editing.",
+          });
         }
         // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
         if (aiTagOnly && access.level === "ta" && current.createdBy !== req.user.id) {
@@ -244,7 +266,29 @@ router.put(
         }
       }
 
-      const variant = await updateVariant(
+      // Un-reviewing a published variant withdraws its Core question first.
+      // `updateVariant` drops `coreQuestionId` inside the fence, so once that
+      // has run there is nothing left to point at the Core row — and a Core
+      // question left `testable` would keep being served to other extensions
+      // for a question that is no longer reviewed (#1652 review). Disabling it
+      // is idempotent, so a stale snapshot at worst repeats a withdrawal that
+      // already happened.
+      let withdrawnCoreQuestionId = null;
+      if (isDraft === true && current.isDraft === false && current.coreQuestionId) {
+        const withdrawal = await withdrawVariantFromCore(current.coreQuestionId);
+        if (withdrawal.outcome === "failed") {
+          return res.status(502).json({
+            success: false,
+            code: "CORE_WITHDRAW_FAILED",
+            error:
+              "Could not withdraw this question from EduAI, so it was left reviewed. Please retry.",
+          });
+        }
+        withdrawnCoreQuestionId = current.coreQuestionId;
+      }
+
+      let variant;
+      const updateArgs = [
         req.params.variantId,
         {
           questionText,
@@ -259,111 +303,64 @@ router.put(
           referenceId,
           isAiGenerated,
           isDraft,
+          shareWithExtensions,
         },
         req.qmCourse.userId,
         {
           isInstructorPlus,
           accessLevel: access.level,
           requestUserId: req.user.id,
+          // Lets the fence reject an un-review whose withdrawal was decided
+          // against a link that is no longer the current one (#1652 review).
+          withdrawnCoreQuestionId,
         },
-      );
+      ];
 
-      // State-based push: fires whenever the caller sets isDraft=false and the variant is not yet
-      // linked to Core. The stable idempotencyKey makes repeated calls to Core safe.
-      if (isDraft === false && shouldPushApprovedVariantToCore(variant)) {
-        const course = variant.questionMetadata?.course;
-        if (course?.coreCourseId) {
-          try {
-            const pushResult = await pushVariantToCore(variant, course, req.headers.cookie);
-            const linkResult = await linkVariantToCore(
-              variant.id,
-              req.qmCourse.userId,
-              variant,
-              pushResult.coreQuestionId,
-            );
-            if (!linkResult.applied) {
-              return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
-            }
-            // Prisma's update() returns a new object rather than mutating `variant`
-            // in place (unlike Sequelize's `.update()`) — patch it locally so the
-            // response below reflects the freshly-linked Core id.
-            variant.coreQuestionId = linkResult.variant.coreQuestionId;
-          } catch (coreErr) {
-            // Roll approval back to draft before returning an error. updateVariant
-            // already persisted isDraft:false; leaving it approved would trip
-            // VARIANT_LOCKED on the next approve and block the promised retry.
-            let rollbackFailed = false;
-            try {
-              const rollbackResult = await rollbackVariantApproval(
-                variant.id,
-                req.qmCourse.userId,
-                variant,
-              );
-              // A concurrent retry may have moved the row to another state;
-              // only a demonstrably draft row makes the error response below
-              // truthful. Treat any other outcome as an explicit local/Core
-              // consistency failure instead of claiming rollback succeeded.
-              if (rollbackResult?.variant?.isDraft !== true) {
-                rollbackFailed = true;
-              }
-            } catch (rollbackErr) {
-              rollbackFailed = true;
-              logger.error(
-                { err: rollbackErr, variantId: variant.id },
-                "Failed to roll variant back after Core push failure",
-              );
-            }
-
-            if (rollbackFailed) {
-              return res.status(500).json({
-                success: false,
-                error: "VARIANT_ROLLBACK_FAILED",
-                message:
-                  "Core publish failed and the local approval rollback could not be confirmed.",
-              });
-            }
-
-            if (coreErr.status === 422) {
-              const errBody = coreErr.body ?? {};
-              if (
-                errBody.error === "INVALID_TOPIC_IDS" &&
-                Array.isArray(errBody.deletedTopicIds) &&
-                errBody.deletedTopicIds.length > 0
-              ) {
-                await prisma.topics.updateMany({
-                  where: { coreTopicId: { in: errBody.deletedTopicIds } },
-                  data: { coreTopicId: null },
-                });
-                return res.status(422).json({
-                  success: false,
-                  error: "INVALID_TOPIC_IDS",
-                  message:
-                    "Some topics have been deleted in Core. Please update topic assignments and re-approve.",
-                  deletedTopicIds: errBody.deletedTopicIds,
-                });
-              }
-              if (errBody.error === "DUPLICATE_TOPIC") {
-                return res.status(422).json({
-                  success: false,
-                  error: "DUPLICATE_TOPIC",
-                  message:
-                    "The primary topic also appears in secondary topics. Fix the topic list and re-approve.",
-                });
-              }
-            }
-            // #225 SEAM-03 / #1197: any other push failure (Core down, 5xx,
-            // network error) must not report success — returning 200 would let
-            // the UI show a question as published when it isn't.
-            logger.warn(
-              { err: coreErr },
-              "Core question push failed; rolled variant back to draft",
-            );
+      try {
+        variant = await updateVariant(...updateArgs);
+      } catch (updateError) {
+        // Core was already withdrawn above and this write was meant to be the
+        // matching local half. Leaving it undone is not a clean failure: QM
+        // would still read reviewed, linked and shared while Core reads
+        // `testable=false`, and nothing re-asserts Core afterwards, so the
+        // question is invisible to other extensions for good. Put the
+        // withdrawal back so the request fails to exactly where it started —
+        // the state a retry can repair (#1652 review). The fence's own
+        // UNREVIEW_STATE_CHANGED throws through here too, which is why the
+        // restore re-reads rather than trusting the snapshot.
+        if (withdrawnCoreQuestionId) {
+          const restoration = await restoreVariantSharingOnCore({
+            variantId: req.params.variantId,
+            ownerId: req.qmCourse.userId,
+            coreQuestionId: withdrawnCoreQuestionId,
+          });
+          if (restoration.outcome === "failed") {
             return res.status(502).json({
               success: false,
-              error: "CORE_PUSH_FAILED",
-              message: "Could not publish to Core. Variant left as draft — please retry.",
+              code: "CORE_WITHDRAW_COMPENSATION_FAILED",
+              error:
+                "This question was not moved back to draft, and its EduAI copy could not be restored. Reload before trying again.",
             });
           }
+        }
+        throw updateError;
+      }
+
+      // State-based push: fires whenever the caller sets isDraft=false and the
+      // variant is not yet linked to Core. The stable idempotencyKey makes
+      // repeated calls to Core safe. Shared with the create route so an
+      // already-reviewed new variant publishes the same way.
+      if (isDraft === false) {
+        const publishResult = await publishApprovedVariant({
+          variant,
+          ownerId: req.qmCourse.userId,
+          cookie: req.headers.cookie,
+        });
+        if (respondToPublishFailure(res, publishResult)) return;
+        if (publishResult.outcome === "linked") {
+          // Prisma's update() returns a new object rather than mutating
+          // `variant` in place, so patch it locally for the response below.
+          variant.coreQuestionId = publishResult.coreQuestionId;
         }
       }
 
@@ -400,11 +397,54 @@ router.patch(
           .json({ success: false, error: "Variant has not been pushed to Core yet" });
       }
 
+      // `req.variant` is a pre-fence snapshot, so everything below is written
+      // conditionally: Core is patched first, then the local row is updated
+      // only while it is still the approved variant linked to the question that
+      // was patched. A concurrent un-review otherwise leaves a draft flagged as
+      // shared, or re-enables a Core question that was just withdrawn (#1652
+      // review).
       const result = await patchQuestionTestableOnCore(variant.coreQuestionId, testable);
 
       if (result === null) {
-        await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
+        await clearVariantCoreLinkIfUnchanged(
+          variant.id,
+          req.qmCourse.userId,
+          variant.coreQuestionId,
+        );
         return res.status(404).json({ success: false, error: "QUESTION_NOT_FOUND" });
+      }
+
+      // Record the same choice locally (#1555): the authoring checkbox reads
+      // this column, so leaving it behind would show a stale answer to the very
+      // next person who opens the question.
+      const applied = await applyVariantShareChoice(
+        variant.id,
+        req.qmCourse.userId,
+        variant.coreQuestionId,
+        testable,
+      );
+
+      if (!applied.applied) {
+        // The row moved on under us. Undo the Core write so the question is not
+        // left shared on the strength of a choice that was never persisted; a
+        // concurrent un-review's own withdrawal makes this a no-op.
+        if (testable) {
+          const compensation = await withdrawVariantFromCore(variant.coreQuestionId);
+          if (compensation.outcome === "failed") {
+            return res.status(502).json({
+              success: false,
+              code: "CORE_SHARE_COMPENSATION_FAILED",
+              error:
+                "This question changed while your sharing choice was in flight, and EduAI could not be reverted. Please retry.",
+            });
+          }
+        }
+        return res.status(409).json({
+          success: false,
+          code: "VARIANT_STATE_CHANGED",
+          error:
+            "This question changed while your sharing choice was in flight, so it was not applied. Please reopen it and try again.",
+        });
       }
 
       res.json({ success: true, data: result });

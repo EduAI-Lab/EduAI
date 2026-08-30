@@ -36,6 +36,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
+import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -124,274 +125,279 @@ async function resolveMaterialsAccess(
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json(400, { error: "Course ID is required" });
-  }
-
-  const resolved = await resolveMaterialsAccess(request, courseId);
-  if (resolved.response) return resolved.response;
-  const { user, access, isPublished } = resolved;
-
-  const requestContext = getRequestContext(request);
-
-  switch (request.method) {
-    case "POST": {
-      // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
-      // Students cannot upload materials UNLESS the students.canUploadMaterials
-      // grant is explicitly enabled (off by default).
-      const studentUploadAllowed =
-        access.level === "student" && (await getPolicy("students.canUploadMaterials"));
-      if (access.rank < 1 && !studentUploadAllowed) {
-        return denyByPolicy({
-          request,
-          policyKey: "students.canUploadMaterials",
-          user,
-          action: "material.upload",
-          courseId,
-        });
-      }
-      // §7/§19: a student may upload only in a PUBLISHED course — mirror the
-      // list gate (loader 403s students in unpublished courses) so student
-      // content can't be seeded into a draft course's RAG corpus. Higher ranks
-      // legitimately work in unpublished courses. This is a publish-state gate,
-      // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
-      // on, so don't mislabel the audit trail with it — return a distinct 403.
-      if (access.level === "student" && !isPublished) {
-        return json(403, { error: "COURSE_NOT_PUBLISHED" });
-      }
-      // Gate: a TA is allowed by default; deny only when the gate is off.
-      if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
-        return denyByPolicy({
-          request,
-          policyKey: "tas.canManageMaterials",
-          user,
-          action: "material.upload",
-          courseId,
-        });
-      }
-      return uploadMaterial(request, courseId, user, requestContext);
-    }
-
-    case "PATCH":
-    case "PUT": {
-      const materialId = params.materialId;
-      if (!materialId) {
-        return json(400, { error: "MATERIAL_ID_REQUIRED" });
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json(400, { error: "Course ID is required" });
       }
 
-      let body: { title?: unknown; visibleToStudents?: unknown; availableAt?: unknown };
-      try {
-        body = await request.json();
-      } catch {
-        return json(400, { error: "INVALID_BODY" });
-      }
+      const resolved = await resolveMaterialsAccess(request, courseId);
+      if (resolved.response) return resolved.response;
+      const { user, access, isPublished } = resolved;
 
-      const hasTitle = body.title !== undefined;
-      const hasVisibility = body.visibleToStudents !== undefined;
-      const hasAvailableAt = body.availableAt !== undefined;
+      const requestContext = getRequestContext(request);
 
-      // Only the fields the request actually carried are written, so this
-      // starts empty and is filled key by key below.
-      const data: Prisma.CourseMaterialUpdateInput = {};
-
-      if (hasTitle) {
-        const rawTitle = z.string().safeParse(body.title).data?.trim() ?? "";
-        if (!rawTitle) {
-          return json(400, { error: "TITLE_REQUIRED" });
-        }
-        if (rawTitle.length > 255) {
-          return json(400, { error: "TITLE_TOO_LONG" });
-        }
-        data.title = rawTitle;
-      }
-
-      if (hasVisibility) {
-        const visibleToStudents = z.boolean().safeParse(body.visibleToStudents);
-        if (!visibleToStudents.success) {
-          return json(400, { error: "INVALID_VISIBILITY" });
-        }
-        data.visibleToStudents = visibleToStudents.data;
-      }
-
-      if (hasAvailableAt) {
-        // null clears the schedule; a valid ISO string sets a future/past reveal.
-        const availableAt = z.string().safeParse(body.availableAt);
-        if (body.availableAt === null) {
-          data.availableAt = null;
-        } else if (availableAt.success) {
-          const parsed = new Date(availableAt.data);
-          if (Number.isNaN(parsed.getTime())) {
-            return json(400, { error: "INVALID_AVAILABLE_AT" });
+      switch (request.method) {
+        case "POST": {
+          // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
+          // Students cannot upload materials UNLESS the students.canUploadMaterials
+          // grant is explicitly enabled (off by default).
+          const studentUploadAllowed =
+            access.level === "student" && (await getPolicy("students.canUploadMaterials"));
+          if (access.rank < 1 && !studentUploadAllowed) {
+            return denyByPolicy({
+              request,
+              policyKey: "students.canUploadMaterials",
+              user,
+              action: "material.upload",
+              courseId,
+            });
           }
-          data.availableAt = parsed;
-        } else {
-          return json(400, { error: "INVALID_AVAILABLE_AT" });
+          // §7/§19: a student may upload only in a PUBLISHED course — mirror the
+          // list gate (loader 403s students in unpublished courses) so student
+          // content can't be seeded into a draft course's RAG corpus. Higher ranks
+          // legitimately work in unpublished courses. This is a publish-state gate,
+          // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
+          // on, so don't mislabel the audit trail with it — return a distinct 403.
+          if (access.level === "student" && !isPublished) {
+            return json(403, { error: "COURSE_NOT_PUBLISHED" });
+          }
+          // Gate: a TA is allowed by default; deny only when the gate is off.
+          if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
+            return denyByPolicy({
+              request,
+              policyKey: "tas.canManageMaterials",
+              user,
+              action: "material.upload",
+              courseId,
+            });
+          }
+          return uploadMaterial(request, courseId, user, requestContext);
         }
+
+        case "PATCH":
+        case "PUT": {
+          const materialId = params.materialId;
+          if (!materialId) {
+            return json(400, { error: "MATERIAL_ID_REQUIRED" });
+          }
+
+          let body: { title?: unknown; visibleToStudents?: unknown; availableAt?: unknown };
+          try {
+            body = await request.json();
+          } catch {
+            return json(400, { error: "INVALID_BODY" });
+          }
+
+          const hasTitle = body.title !== undefined;
+          const hasVisibility = body.visibleToStudents !== undefined;
+          const hasAvailableAt = body.availableAt !== undefined;
+
+          // Only the fields the request actually carried are written, so this
+          // starts empty and is filled key by key below.
+          const data: Prisma.CourseMaterialUpdateInput = {};
+
+          if (hasTitle) {
+            const rawTitle = z.string().safeParse(body.title).data?.trim() ?? "";
+            if (!rawTitle) {
+              return json(400, { error: "TITLE_REQUIRED" });
+            }
+            if (rawTitle.length > 255) {
+              return json(400, { error: "TITLE_TOO_LONG" });
+            }
+            data.title = rawTitle;
+          }
+
+          if (hasVisibility) {
+            const visibleToStudents = z.boolean().safeParse(body.visibleToStudents);
+            if (!visibleToStudents.success) {
+              return json(400, { error: "INVALID_VISIBILITY" });
+            }
+            data.visibleToStudents = visibleToStudents.data;
+          }
+
+          if (hasAvailableAt) {
+            // null clears the schedule; a valid ISO string sets a future/past reveal.
+            const availableAt = z.string().safeParse(body.availableAt);
+            if (body.availableAt === null) {
+              data.availableAt = null;
+            } else if (availableAt.success) {
+              const parsed = new Date(availableAt.data);
+              if (Number.isNaN(parsed.getTime())) {
+                return json(400, { error: "INVALID_AVAILABLE_AT" });
+              }
+              data.availableAt = parsed;
+            } else {
+              return json(400, { error: "INVALID_AVAILABLE_AT" });
+            }
+          }
+
+          if (Object.keys(data).length === 0) {
+            return json(400, { error: "NO_FIELDS" });
+          }
+
+          const material = await prisma.courseMaterial.findFirst({
+            where: { id: materialId, courseId, deletedAt: null },
+            select: {
+              id: true,
+              uploadedBy: true,
+              title: true,
+              visibleToStudents: true,
+              availableAt: true,
+            },
+          });
+          if (!material) {
+            return json(404, { error: "MATERIAL_NOT_FOUND" });
+          }
+
+          // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
+          // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
+          // The TA carve-out covers renames only; student-visibility controls
+          // (visibleToStudents / availableAt) require instructor/admin/unit access,
+          // matching the UI that hides the visibility eye from TAs.
+          const changesVisibility = hasVisibility || hasAvailableAt;
+          const isOwnTaEdit =
+            access.level === "ta" && material.uploadedBy === user.id && !changesVisibility;
+          if (access.rank < 2 && !isOwnTaEdit) {
+            return json(403, { error: "Forbidden" });
+          }
+
+          const updated = await prisma.courseMaterial.update({
+            where: { id: materialId },
+            data,
+            select: {
+              id: true,
+              title: true,
+              visibleToStudents: true,
+              availableAt: true,
+            },
+          });
+
+          // Distinguish a pure rename from a visibility change so the audit trail
+          // stays legible; a combined edit records under MATERIAL_UPDATED.
+          const visibilityChanged = hasVisibility || hasAvailableAt;
+          const actionCode = !visibilityChanged
+            ? "MATERIAL_RENAMED"
+            : hasTitle
+              ? "MATERIAL_UPDATED"
+              : "MATERIAL_VISIBILITY_CHANGED";
+
+          // The audit entry records only the fields this edit actually changed, so a
+          // rename does not leave visibility columns in the trail and vice versa.
+          const details: MaterialEditAuditDetails = { courseId };
+          if (hasTitle) {
+            details.previousTitle = material.title;
+            details.newTitle = updated.title;
+          }
+          if (visibilityChanged) {
+            details.previousVisibleToStudents = material.visibleToStudents;
+            details.newVisibleToStudents = updated.visibleToStudents;
+            details.previousAvailableAt = material.availableAt;
+            details.newAvailableAt = updated.availableAt;
+          }
+
+          const { fireAndForget, logAuditAction } = await import("~/lib/logging.server");
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(user ?? null),
+              ...requestContext,
+              actionCode,
+              category: "MATERIAL",
+              entityType: "CourseMaterial",
+              entityId: materialId,
+              entityLabel: updated.title,
+              details,
+            }),
+          );
+
+          return json(200, { success: true, material: updated });
+        }
+
+        case "DELETE": {
+          const materialId = params.materialId;
+          if (!materialId) {
+            return json(400, { error: "MATERIAL_ID_REQUIRED" });
+          }
+
+          const material = await prisma.courseMaterial.findFirst({
+            where: { id: materialId, courseId, deletedAt: null },
+            select: {
+              id: true,
+              uploadedBy: true,
+              title: true,
+              status: true,
+              duplicateOfId: true,
+            },
+          });
+          if (!material) {
+            return json(404, { error: "MATERIAL_NOT_FOUND" });
+          }
+
+          // tas.canManageMaterials is a single gate covering upload AND delete, so
+          // an off flag must also block TA deletes (including own uploads).
+          if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
+            return denyByPolicy({
+              request,
+              policyKey: "tas.canManageMaterials",
+              user,
+              action: "material.delete",
+              courseId,
+            });
+          }
+
+          // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
+          // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
+          // TA denied.
+          const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
+
+          // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
+          // receipt row that the client reads and then deletes. Students may upload
+          // when `students.canUploadMaterials` is on, but rank 0 cannot delete — so
+          // without this carve-out every student duplicate leaves a dead receipt in
+          // the course's material list, one per retry. Scoped as narrowly as the
+          // receipt itself: the caller's own row, FAILED, and pointing at a winner.
+          // It grants nothing over real material, which is never FAILED with a
+          // `duplicateOfId`.
+          const isOwnDuplicateReceipt =
+            material.uploadedBy === user.id &&
+            material.status === "FAILED" &&
+            material.duplicateOfId !== null;
+
+          if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
+            return json(403, { error: "Forbidden" });
+          }
+
+          // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
+          await prisma.courseMaterial.update({
+            where: { id: materialId },
+            data: { deletedAt: new Date(), deletedBy: user.id },
+          });
+
+          const { fireAndForget: fireAndForgetDelete, logAuditAction: logAuditActionDelete } =
+            await import("~/lib/logging.server");
+          fireAndForgetDelete(
+            logAuditActionDelete({
+              ...getActorContext(user ?? null),
+              ...requestContext,
+              actionCode: "MATERIAL_DELETED",
+              category: "MATERIAL",
+              entityType: "CourseMaterial",
+              entityId: materialId,
+              entityLabel: material.title,
+              details: { courseId },
+            }),
+          );
+
+          return new Response(null, { status: 204 });
+        }
+
+        default:
+          return json(405, { error: "Method not allowed" });
       }
-
-      if (Object.keys(data).length === 0) {
-        return json(400, { error: "NO_FIELDS" });
-      }
-
-      const material = await prisma.courseMaterial.findFirst({
-        where: { id: materialId, courseId, deletedAt: null },
-        select: {
-          id: true,
-          uploadedBy: true,
-          title: true,
-          visibleToStudents: true,
-          availableAt: true,
-        },
-      });
-      if (!material) {
-        return json(404, { error: "MATERIAL_NOT_FOUND" });
-      }
-
-      // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
-      // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
-      // The TA carve-out covers renames only; student-visibility controls
-      // (visibleToStudents / availableAt) require instructor/admin/unit access,
-      // matching the UI that hides the visibility eye from TAs.
-      const changesVisibility = hasVisibility || hasAvailableAt;
-      const isOwnTaEdit =
-        access.level === "ta" && material.uploadedBy === user.id && !changesVisibility;
-      if (access.rank < 2 && !isOwnTaEdit) {
-        return json(403, { error: "Forbidden" });
-      }
-
-      const updated = await prisma.courseMaterial.update({
-        where: { id: materialId },
-        data,
-        select: {
-          id: true,
-          title: true,
-          visibleToStudents: true,
-          availableAt: true,
-        },
-      });
-
-      // Distinguish a pure rename from a visibility change so the audit trail
-      // stays legible; a combined edit records under MATERIAL_UPDATED.
-      const visibilityChanged = hasVisibility || hasAvailableAt;
-      const actionCode = !visibilityChanged
-        ? "MATERIAL_RENAMED"
-        : hasTitle
-          ? "MATERIAL_UPDATED"
-          : "MATERIAL_VISIBILITY_CHANGED";
-
-      // The audit entry records only the fields this edit actually changed, so a
-      // rename does not leave visibility columns in the trail and vice versa.
-      const details: MaterialEditAuditDetails = { courseId };
-      if (hasTitle) {
-        details.previousTitle = material.title;
-        details.newTitle = updated.title;
-      }
-      if (visibilityChanged) {
-        details.previousVisibleToStudents = material.visibleToStudents;
-        details.newVisibleToStudents = updated.visibleToStudents;
-        details.previousAvailableAt = material.availableAt;
-        details.newAvailableAt = updated.availableAt;
-      }
-
-      const { fireAndForget, logAuditAction } = await import("~/lib/logging.server");
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(user ?? null),
-          ...requestContext,
-          actionCode,
-          category: "MATERIAL",
-          entityType: "CourseMaterial",
-          entityId: materialId,
-          entityLabel: updated.title,
-          details,
-        }),
-      );
-
-      return json(200, { success: true, material: updated });
-    }
-
-    case "DELETE": {
-      const materialId = params.materialId;
-      if (!materialId) {
-        return json(400, { error: "MATERIAL_ID_REQUIRED" });
-      }
-
-      const material = await prisma.courseMaterial.findFirst({
-        where: { id: materialId, courseId, deletedAt: null },
-        select: {
-          id: true,
-          uploadedBy: true,
-          title: true,
-          status: true,
-          duplicateOfId: true,
-        },
-      });
-      if (!material) {
-        return json(404, { error: "MATERIAL_NOT_FOUND" });
-      }
-
-      // tas.canManageMaterials is a single gate covering upload AND delete, so
-      // an off flag must also block TA deletes (including own uploads).
-      if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
-        return denyByPolicy({
-          request,
-          policyKey: "tas.canManageMaterials",
-          user,
-          action: "material.delete",
-          courseId,
-        });
-      }
-
-      // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
-      // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
-      // TA denied.
-      const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
-
-      // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
-      // receipt row that the client reads and then deletes. Students may upload
-      // when `students.canUploadMaterials` is on, but rank 0 cannot delete — so
-      // without this carve-out every student duplicate leaves a dead receipt in
-      // the course's material list, one per retry. Scoped as narrowly as the
-      // receipt itself: the caller's own row, FAILED, and pointing at a winner.
-      // It grants nothing over real material, which is never FAILED with a
-      // `duplicateOfId`.
-      const isOwnDuplicateReceipt =
-        material.uploadedBy === user.id &&
-        material.status === "FAILED" &&
-        material.duplicateOfId !== null;
-
-      if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
-        return json(403, { error: "Forbidden" });
-      }
-
-      // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
-      await prisma.courseMaterial.update({
-        where: { id: materialId },
-        data: { deletedAt: new Date(), deletedBy: user.id },
-      });
-
-      const { fireAndForget: fireAndForgetDelete, logAuditAction: logAuditActionDelete } =
-        await import("~/lib/logging.server");
-      fireAndForgetDelete(
-        logAuditActionDelete({
-          ...getActorContext(user ?? null),
-          ...requestContext,
-          actionCode: "MATERIAL_DELETED",
-          category: "MATERIAL",
-          entityType: "CourseMaterial",
-          entityId: materialId,
-          entityLabel: material.title,
-          details: { courseId },
-        }),
-      );
-
-      return new Response(null, { status: 204 });
-    }
-
-    default:
-      return json(405, { error: "Method not allowed" });
-  }
+    },
+    { request },
+  );
 }
 
 const DUPLICATE_CONTENT_MESSAGE = "A file with identical content already exists in this course";
@@ -713,139 +719,144 @@ async function materialsListResponse(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.courseId;
-  const materialId = params.materialId;
-  if (!courseId) {
-    return json(400, { error: "Course ID is required" });
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      const materialId = params.materialId;
+      if (!courseId) {
+        return json(400, { error: "Course ID is required" });
+      }
 
-  const cursorParams = parseCursorParams(new URL(request.url).searchParams);
+      const cursorParams = parseCursorParams(new URL(request.url).searchParams);
 
-  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
-  // soft-deleted materials — including those in a soft-deleted course. The access
-  // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
-  // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
-  const session = await getRequestSession(request);
-  if (wantsIncludeDeleted(request, session?.user)) {
-    // The access resolver (skipped here) is what 404s a nonexistent course, so
-    // check existence explicitly — otherwise an unknown id returns 200 {[]},
-    // indistinguishable from "course exists, no materials". Mirrors courses.id.ts.
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      select: { id: true },
-    });
-    if (!course) {
-      return json(404, { error: "COURSE_NOT_FOUND" });
-    }
-    return materialsListResponse(courseId, true, cursorParams);
-  }
-
-  const resolved = await resolveMaterialsAccess(request, courseId);
-  if (resolved.response) return resolved.response;
-  const { user, access, isPublished } = resolved;
-
-  // §7/§19: students can view materials only in published courses.
-  if (access.level === "student" && !isPublished) {
-    return json(403, { error: "Forbidden" });
-  }
-
-  // Policy gate (students.canViewMaterials, default true): layers on top of the
-  // publish gate — off means students cannot list materials at all.
-  if (access.level === "student" && !(await getPolicy("students.canViewMaterials"))) {
-    return denyByPolicy({
-      request,
-      policyKey: "students.canViewMaterials",
-      user,
-      action: "material.list",
-      courseId,
-    });
-  }
-
-  const excludedCanvasFileIds =
-    access.level === "student"
-      ? (
-          await prisma.canvasMaterialExclusion.findMany({
-            where: { courseId },
-            select: { canvasFileId: true },
-          })
-        ).map((row) => row.canvasFileId)
-      : [];
-
-  const studentGate =
-    access.level === "student" ? studentVisibilityWhere(new Date(), excludedCanvasFileIds) : {};
-
-  if (materialId) {
-    const material = await prisma.courseMaterial.findFirst({
-      where: { id: materialId, courseId, deletedAt: null, ...studentGate },
-      select: {
-        id: true,
-        title: true,
-        mimeType: true,
-        fileSize: true,
-        status: true,
-        createdAt: true,
-        rawText: true,
-      },
-    });
-
-    if (!material) {
-      // A student-gated miss is ambiguous: either the material doesn't exist
-      // (or is soft-deleted) or it exists but studentGate excluded it. Only
-      // students can hit the latter case (studentGate is `{}` for staff, so
-      // this findFirst is otherwise identical to the existence check below).
-      // Distinguish them with one extra query so hidden-but-real material
-      // reports 403, matching #1180's spec, instead of the indistinguishable
-      // 404 a folded WHERE clause would otherwise produce.
-      if (access.level === "student") {
-        const exists = await prisma.courseMaterial.findFirst({
-          where: { id: materialId, courseId, deletedAt: null },
+      // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+      // soft-deleted materials — including those in a soft-deleted course. The access
+      // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
+      // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
+      const session = await getRequestSession(request);
+      if (wantsIncludeDeleted(request, session?.user)) {
+        // The access resolver (skipped here) is what 404s a nonexistent course, so
+        // check existence explicitly — otherwise an unknown id returns 200 {[]},
+        // indistinguishable from "course exists, no materials". Mirrors courses.id.ts.
+        const course = await prisma.course.findUnique({
+          where: { id: courseId },
           select: { id: true },
         });
-        if (exists) {
-          return json(403, { error: "Forbidden" });
+        if (!course) {
+          return json(404, { error: "COURSE_NOT_FOUND" });
         }
+        return materialsListResponse(courseId, true, cursorParams);
       }
-      return json(404, { error: "Material not found" });
-    }
 
-    if (material.status !== "READY") {
-      return json(409, { error: "Material is not ready for preview" });
-    }
+      const resolved = await resolveMaterialsAccess(request, courseId);
+      if (resolved.response) return resolved.response;
+      const { user, access, isPublished } = resolved;
 
-    const rawText = material.rawText ?? "";
-    const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
-    const { rawText: _rawText, ...meta } = material;
+      // §7/§19: students can view materials only in published courses.
+      if (access.level === "student" && !isPublished) {
+        return json(403, { error: "Forbidden" });
+      }
 
-    return json(200, {
-      material: meta,
-      excerpt: truncated ? rawText.slice(0, PREVIEW_EXCERPT_MAX) : rawText,
-      truncated,
-    });
-  }
+      // Policy gate (students.canViewMaterials, default true): layers on top of the
+      // publish gate — off means students cannot list materials at all.
+      if (access.level === "student" && !(await getPolicy("students.canViewMaterials"))) {
+        return denyByPolicy({
+          request,
+          policyKey: "students.canViewMaterials",
+          user,
+          action: "material.list",
+          courseId,
+        });
+      }
 
-  const { cursor, limit } = cursorParams;
-  const pageArgs = {
-    where: { courseId, deletedAt: null, ...studentGate },
-    select: MATERIAL_LIST_SELECT,
-    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
-    take: limit + 1,
-  };
-  // A cursor page resumes past the cursor row itself; the first page sends
-  // neither key, so Prisma never sees a half-specified pair.
-  const rows = cursor
-    ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
-    : await prisma.courseMaterial.findMany(pageArgs);
-  const { page, nextCursor } = splitPage(rows, limit);
+      const excludedCanvasFileIds =
+        access.level === "student"
+          ? (
+              await prisma.canvasMaterialExclusion.findMany({
+                where: { courseId },
+                select: { canvasFileId: true },
+              })
+            ).map((row) => row.canvasFileId)
+          : [];
 
-  // Staff receive the scheduling fields so the management UI can render and edit
-  // them; students never do (they only ever see already-visible materials).
-  const staff = isStaffAccess(access);
-  return json(200, {
-    materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
-      const row = { ...material, chunkCount: _count?.chunks ?? 0 };
-      if (!staff) return row;
-      return { ...row, visibleToStudents, availableAt };
-    }),
-    nextCursor,
-  });
+      const studentGate =
+        access.level === "student" ? studentVisibilityWhere(new Date(), excludedCanvasFileIds) : {};
+
+      if (materialId) {
+        const material = await prisma.courseMaterial.findFirst({
+          where: { id: materialId, courseId, deletedAt: null, ...studentGate },
+          select: {
+            id: true,
+            title: true,
+            mimeType: true,
+            fileSize: true,
+            status: true,
+            createdAt: true,
+            rawText: true,
+          },
+        });
+
+        if (!material) {
+          // A student-gated miss is ambiguous: either the material doesn't exist
+          // (or is soft-deleted) or it exists but studentGate excluded it. Only
+          // students can hit the latter case (studentGate is `{}` for staff, so
+          // this findFirst is otherwise identical to the existence check below).
+          // Distinguish them with one extra query so hidden-but-real material
+          // reports 403, matching #1180's spec, instead of the indistinguishable
+          // 404 a folded WHERE clause would otherwise produce.
+          if (access.level === "student") {
+            const exists = await prisma.courseMaterial.findFirst({
+              where: { id: materialId, courseId, deletedAt: null },
+              select: { id: true },
+            });
+            if (exists) {
+              return json(403, { error: "Forbidden" });
+            }
+          }
+          return json(404, { error: "Material not found" });
+        }
+
+        if (material.status !== "READY") {
+          return json(409, { error: "Material is not ready for preview" });
+        }
+
+        const rawText = material.rawText ?? "";
+        const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
+        const { rawText: _rawText, ...meta } = material;
+
+        return json(200, {
+          material: meta,
+          excerpt: truncated ? rawText.slice(0, PREVIEW_EXCERPT_MAX) : rawText,
+          truncated,
+        });
+      }
+
+      const { cursor, limit } = cursorParams;
+      const pageArgs = {
+        where: { courseId, deletedAt: null, ...studentGate },
+        select: MATERIAL_LIST_SELECT,
+        orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+        take: limit + 1,
+      };
+      // A cursor page resumes past the cursor row itself; the first page sends
+      // neither key, so Prisma never sees a half-specified pair.
+      const rows = cursor
+        ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+        : await prisma.courseMaterial.findMany(pageArgs);
+      const { page, nextCursor } = splitPage(rows, limit);
+
+      // Staff receive the scheduling fields so the management UI can render and edit
+      // them; students never do (they only ever see already-visible materials).
+      const staff = isStaffAccess(access);
+      return json(200, {
+        materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
+          const row = { ...material, chunkCount: _count?.chunks ?? 0 };
+          if (!staff) return row;
+          return { ...row, visibleToStudents, availableAt };
+        }),
+        nextCursor,
+      });
+    },
+    { request },
+  );
 }

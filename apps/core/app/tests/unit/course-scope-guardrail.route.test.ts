@@ -39,8 +39,10 @@ vi.mock("~/lib/ai/embedding", () => ({
 vi.mock("~/lib/agent-tools", () => ({
   ADMIN_CORE_TOOL_NAMES: [],
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
+  buildInstructorSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn((mode: JsonValue) => (mode === "admin" ? "ADMIN" : "LEARNING")),
   createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn((mode: JsonValue) => mode === "admin" || mode === "instructor"),
   parseChatMode: vi.fn((v: JsonValue) => (v === "admin" ? "admin" : "learning")),
   pickCoreAdminChatTools: vi.fn((tools: JsonValue) => tools),
 }));

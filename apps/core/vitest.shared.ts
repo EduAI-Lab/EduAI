@@ -43,6 +43,22 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
       environment: "happy-dom",
       fileParallelism: false,
       setupFiles: ["./app/tests/setup.ts"],
+      // Node 22+'s own global `localStorage`/`sessionStorage` (Web Storage
+      // API) is defined on the realm before happy-dom installs its working
+      // shim, and happy-dom cannot override it — Node's version is a real
+      // accessor that logs "[ExperimentalWarning]: localStorage is not
+      // available because --localstorage-file was not provided" and returns
+      // undefined, so any test calling `localStorage.clear()` etc. directly
+      // (not through `window.localStorage`) throws "Cannot read properties
+      // of undefined". `NODE_OPTIONS` here is read by each pool worker's own
+      // Node process at its own startup (set via its spawn env, before that
+      // worker's realm ever defines the global), letting happy-dom's shim
+      // through unshadowed. (Confirmed: vitest 4's `poolOptions.*.execArgv`
+      // no longer exists on the public config type, so `env` is the actual
+      // mechanism here, not that older API.)
+      env: {
+        NODE_OPTIONS: "--no-experimental-webstorage",
+      },
     },
   };
 }
