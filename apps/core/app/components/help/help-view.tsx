@@ -127,7 +127,7 @@ export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean
   });
 
   return (
-    <div className="flex flex-col gap-6 px-4 lg:px-6 pb-10">
+    <div className="flex flex-col gap-6 px-4 lg:px-6 pt-6 pb-10">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <PageHeading
           heading="Help & guide"

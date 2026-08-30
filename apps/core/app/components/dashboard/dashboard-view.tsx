@@ -317,7 +317,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
                 key={chat.id}
                 type="button"
                 onClick={() => handleOpen(chat)}
-                className="w-full text-left block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
+                className="w-full text-left block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2 min-w-0">
@@ -426,7 +426,7 @@ export function DashboardView({
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {stats.map((s, index) => (
-          <ScrollReveal key={s.label} index={index}>
+          <ScrollReveal key={s.label} index={index} parallax={false}>
             <StatCard label={s.label} value={s.value} trend={s.trend} trendLabel={s.trendLabel} />
           </ScrollReveal>
         ))}
@@ -434,7 +434,7 @@ export function DashboardView({
 
       {/* Analytics charts */}
       {analytics && (
-        <ScrollReveal index={3}>
+        <ScrollReveal index={3} parallax={false}>
           <div data-tour="dashboard-analytics">{analytics}</div>
         </ScrollReveal>
       )}
@@ -442,7 +442,7 @@ export function DashboardView({
       {/* 2-column body */}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
         {/* Left — courses or quick actions */}
-        <ScrollReveal index={4}>
+        <ScrollReveal index={4} parallax={false}>
           <div>
             <div className="flex items-center justify-between mb-3.5">
               <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
@@ -469,7 +469,7 @@ export function DashboardView({
         </ScrollReveal>
 
         {/* Right — recent conversations */}
-        <ScrollReveal index={5}>
+        <ScrollReveal index={5} parallax={false}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between mb-3.5">
               <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>

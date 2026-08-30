@@ -45,7 +45,7 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
       <div className="space-y-8">
         <div className="space-y-6">
           <div className="flex items-center justify-center mb-6">
-            <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
+            <div className="bg-linear-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
               <IconShield className="h-8 w-8 text-primary-foreground" />
             </div>
           </div>
@@ -76,7 +76,7 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
             <PromptSuggestion
               key={index}
               onClick={() => onSelectPrompt(item.prompt)}
-              className="h-auto p-4 text-left"
+              className="h-auto rounded-xl p-4 text-left"
             >
               <div className="space-y-2">
                 <h4 className="font-medium text-sm">{item.title}</h4>

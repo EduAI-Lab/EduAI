@@ -9,10 +9,6 @@ export interface InstructorChatWelcomeProps {
   onSelectPrompt: (prompt: string) => void;
 }
 
-// #1659: no courseCode placeholder in these prompts — unlike admin chat (which
-// is platform-wide and must name a course), instructor chat is opened already
-// scoped to one course, so createInstructorChatTools ignores any course
-// argument anyway.
 const suggestedPrompts = [
   {
     title: "Course roster",
@@ -45,7 +41,7 @@ export function InstructorChatWelcome({
       <div className="space-y-8">
         <div className="space-y-6">
           <div className="flex items-center justify-center mb-6">
-            <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
+            <div className="bg-linear-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
               <IconChalkboardTeacher className="h-8 w-8 text-primary-foreground" />
             </div>
           </div>
@@ -76,7 +72,7 @@ export function InstructorChatWelcome({
             <PromptSuggestion
               key={index}
               onClick={() => onSelectPrompt(item.prompt)}
-              className="h-auto p-4 text-left"
+              className="h-auto rounded-xl p-4 text-left"
             >
               <div className="space-y-2">
                 <h4 className="font-medium text-sm">{item.title}</h4>
