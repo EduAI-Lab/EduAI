@@ -56,6 +56,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
 const {
   listCoursesForUser,
   listCoursesPageForUser,
+  resolveVisibleCourseWhereForUser,
   resetCourseAccessSyncForTests,
   enrichCourseDetail,
   findCoursesByProjectedCode,
@@ -201,6 +202,54 @@ describe("listCoursesForUser", () => {
         accessGrants: {
           some: { userId: "unit-admin-1", department: { in: ["COSC"] } },
         },
+      });
+    });
+
+    it("includes a platform STUDENT's TA grant in the paginated course list", async () => {
+      mockListCoursesFromCore.mockResolvedValue([
+        { id: "core-1", callerEnrollmentRole: "TA", department: "COSC" },
+      ]);
+      mockFindMany
+        .mockResolvedValueOnce([{ id: 10, coreCourseId: "core-1" }])
+        .mockResolvedValueOnce([
+          {
+            id: 10,
+            // A live TA grant must win even when this caller owns the local row.
+            userId: "ta-1",
+            coreCourseId: "core-1",
+            accessGrants: [{ role: "TA", department: "COSC" }],
+          },
+        ]);
+      mockCount.mockResolvedValue(1);
+
+      const result = await listCoursesPageForUser(
+        { id: "ta-1", role: "STUDENT" },
+        { cookie: "session=ta", pagination: { offset: 0, limit: 25 } },
+      );
+
+      expect(result.total).toBe(1);
+      expect(result.courses[0].accessLevel).toBe("ta");
+      expect(mockCount.mock.calls[0][0].where.OR).toContainEqual({
+        accessGrants: {
+          some: { userId: "ta-1", role: { in: ["INSTRUCTOR", "TA"] } },
+        },
+      });
+    });
+
+    it("omits the owner fallback for a platform STUDENT aggregate read", async () => {
+      const where = await resolveVisibleCourseWhereForUser(
+        { id: "student-1", role: "STUDENT" },
+        { cookie: "session=student", includeOwnerFallback: false },
+      );
+
+      expect(where).toEqual({
+        OR: [
+          {
+            accessGrants: {
+              some: { userId: "student-1", role: { in: ["INSTRUCTOR", "TA"] } },
+            },
+          },
+        ],
       });
     });
 

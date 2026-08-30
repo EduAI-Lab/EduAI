@@ -727,6 +727,32 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
   throw new Error(`Unsupported question type: ${questionTypeRaw ?? "unknown"}`);
 };
 
+/** Removes every local row created by a failed quiz import. */
+async function cleanupImportedQuizRows({
+  assessmentId,
+  sectionId,
+  questionMetadataIds,
+  variantIds,
+}) {
+  if (!assessmentId) return;
+
+  await prisma.$transaction(async (tx) => {
+    if (sectionId) {
+      await tx.sectionVariants.deleteMany({ where: { sectionId } });
+    }
+    if (variantIds.length > 0) {
+      await tx.variants.deleteMany({ where: { id: { in: variantIds } } });
+    }
+    if (questionMetadataIds.length > 0) {
+      await tx.questionMetadata.deleteMany({ where: { id: { in: questionMetadataIds } } });
+    }
+    if (sectionId) {
+      await tx.assessmentSections.delete({ where: { id: sectionId } });
+    }
+    await tx.assessments.delete({ where: { id: assessmentId } });
+  });
+}
+
 /**
  * Imports a Canvas quiz into a local assessment, creating sections/questions/variants.
  *
@@ -744,6 +770,11 @@ export const importQuizFromCanvas = async (
   ownerId = callerId,
   cookie,
 ) => {
+  let assessment = null;
+  let section = null;
+  const questionMetadataIds = [];
+  const variantIds = [];
+
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
 
@@ -792,9 +823,17 @@ export const importQuizFromCanvas = async (
     const assessmentType = options.assessmentType || "Quiz";
     const assessmentName = options.assessmentName || quiz.title || "Imported Quiz";
 
+    const primaryTopicId = options.primaryTopicId || null;
+    if (!primaryTopicId) {
+      throw canvasError(
+        "Primary topic ID is required for importing questions. Please select a topic.",
+        400,
+      );
+    }
+
     // Create assessment (owner-scoped). Semester is derived from the course's
     // Core term (#1072 §4 step 8 / #1077) — no longer accepted from options.
-    const assessment = await createAssessment(ownerId, {
+    assessment = await createAssessment(ownerId, {
       type: assessmentType,
       name: assessmentName,
       courseId: localCourseId,
@@ -802,7 +841,7 @@ export const importQuizFromCanvas = async (
     });
 
     // Create a default section for all questions
-    const section = await createAssessmentSection(assessment.id, ownerId, {
+    section = await createAssessmentSection(assessment.id, ownerId, {
       name: "Imported Questions",
       description: "Questions imported from Canvas",
       position: 0,
@@ -811,14 +850,7 @@ export const importQuizFromCanvas = async (
     // Convert and import questions with graceful error handling
     const importedQuestions = [];
     const skippedQuestions = [];
-    const primaryTopicId = options.primaryTopicId || null;
-
-    if (!primaryTopicId) {
-      throw canvasError(
-        "Primary topic ID is required for importing questions. Please select a topic.",
-        400,
-      );
-    }
+    let persistenceError = null;
 
     for (let i = 0; i < canvasQuestions.length; i++) {
       const listItem = canvasQuestions[i];
@@ -861,13 +893,26 @@ export const importQuizFromCanvas = async (
         }
       }
 
+      let converted;
       try {
         // Try to convert the question - this will throw if unsupported
-        const converted = convertCanvasQuestionToVariant(canvasQuestion);
+        converted = convertCanvasQuestionToVariant(canvasQuestion);
         console.log(
           `${DEBUG_PREFIX} importQuizFromCanvas: converted question ${i + 1} => type=${converted.type} choices count=${converted.choices?.length ?? 0} answer=${converted.answer ?? "null"}`,
         );
+      } catch (error) {
+        const questionName = canvasQuestion.question_name || `Question ${i + 1}`;
+        const questionType = canvasQuestion.question_type || "unknown";
+        skippedQuestions.push({
+          position: canvasQuestion.position || i + 1,
+          name: questionName,
+          type: questionType,
+          reason: error.message || "Unknown error",
+        });
+        continue;
+      }
 
+      try {
         // Create question metadata
         const questionMetadata = await prisma.questionMetadata.create({
           data: {
@@ -879,6 +924,7 @@ export const importQuizFromCanvas = async (
             createdBy: callerId,
           },
         });
+        questionMetadataIds.push(questionMetadata.id);
 
         // Create variant
         console.log(
@@ -898,6 +944,7 @@ export const importQuizFromCanvas = async (
             createdBy: callerId,
           },
         });
+        variantIds.push(variant.id);
 
         // Link variant to section
         await prisma.sectionVariants.create({
@@ -913,7 +960,9 @@ export const importQuizFromCanvas = async (
           variantId: variant.id,
         });
       } catch (error) {
-        // If conversion or creation fails, skip this question but continue
+        // A persistence failure invalidates the whole import. Keep the original
+        // error so the outer cleanup path can roll back every local row.
+        persistenceError ??= error;
         const questionName = canvasQuestion.question_name || `Question ${i + 1}`;
         const questionType = canvasQuestion.question_type || "unknown";
         skippedQuestions.push({
@@ -925,6 +974,10 @@ export const importQuizFromCanvas = async (
         // Continue to next question
         continue;
       }
+    }
+
+    if (persistenceError) {
+      throw persistenceError;
     }
 
     // If no questions were imported at all, throw an error
@@ -962,6 +1015,25 @@ export const importQuizFromCanvas = async (
       sectionId: section.id,
     };
   } catch (error) {
+    try {
+      await cleanupImportedQuizRows({
+        assessmentId: assessment?.id,
+        sectionId: section?.id,
+        questionMetadataIds,
+        variantIds,
+      });
+    } catch (cleanupError) {
+      logger.error(
+        {
+          cleanupError,
+          assessmentId: assessment?.id,
+          sectionId: section?.id,
+          questionMetadataIds,
+          variantIds,
+        },
+        "Failed to clean up a partial Canvas quiz import",
+      );
+    }
     rethrowCoreCanvasError(error, "import quiz from Canvas");
   }
 };

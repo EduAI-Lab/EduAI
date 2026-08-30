@@ -8,12 +8,14 @@
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
  *    This is the source of truth for course-level TA access: Core sessions carry
  *    a platform STUDENT role for TAs, while the active enrollment resolves to
- *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes retain the
- *    platform authoring-role gate so this does not become blanket STUDENT access.
+ *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes derive a
+ *    server-side visibility predicate; platform STUDENT callers use live TA
+ *    grants only, without the owner fallback used by authoring-role callers.
  *  - #312: TA may edit/delete only question_metadata they created.
- *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
- *    remain caller-scoped; AI generation additionally requires a course context
- *    and uses a caller-keyed resource limiter.
+ *  - List/aggregate routes (list, stats, generate) remain caller-scoped; platform
+ *    STUDENT aggregate reads are limited to live TA grants. AI generation
+ *    additionally requires a course context and uses a caller-keyed resource
+ *    limiter.
  *  - POST /approve is the exception: no flat role gate — a course TA (platform
  *    STUDENT + TA enrollment) may create question_metadata shells, so the
  *    per-course gate alone authorizes that route (see its inline comment).
@@ -169,8 +171,8 @@ router.post(
  * view access to that course — including an enrolled TA who doesn't own it —
  * sees the whole bank: we verify course access (§16 view, min 'ta') and scope
  * by the course owner. Without a courseId the shared course-list visibility
- * predicate includes every course the caller can author in (ADMIN catalog,
- * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
+ * predicate includes every course visible to the caller; platform STUDENT users
+ * are limited to live TA grants and do not receive the owner fallback.
  */
 router.get("/", authenticateToken, async (req, res, next) => {
   try {
@@ -197,17 +199,12 @@ router.get("/", authenticateToken, async (req, res, next) => {
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
-      // The course-bank view is TA-capable only when a concrete course is
-      // supplied and resolved above. Keep the legacy caller-scoped aggregate
-      // path restricted to platform authoring roles; otherwise a STUDENT
-      // session would gain an unscoped list merely by clearing `courseId`.
-      if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Question bank courseId is required" });
-      }
+      // Platform STUDENT users can still be course TAs. The server-derived
+      // visibility predicate keeps this aggregate view limited to live TA
+      // grants; STUDENTs do not get the course-list owner fallback.
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
+        includeOwnerFallback: req.user.role !== "STUDENT",
       });
     }
 
@@ -253,13 +250,12 @@ router.get("/stats", authenticateToken, async (req, res, next) => {
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
-      if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Question bank courseId is required" });
-      }
+      // Platform STUDENT users can still be course TAs. The server-derived
+      // visibility predicate keeps these stats limited to live TA grants;
+      // STUDENTs do not get the course-list owner fallback.
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
+        includeOwnerFallback: req.user.role !== "STUDENT",
       });
     }
 

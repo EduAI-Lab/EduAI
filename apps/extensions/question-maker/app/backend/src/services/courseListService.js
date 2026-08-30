@@ -50,7 +50,7 @@ const CORE_UNAVAILABLE_NAME = "Course unavailable";
  * have department-only (no personal enrollment) access to a course, which
  * carries no real role to store. This sentinel fills the column without
  * colliding with any real Core enrollment role, so it never satisfies the
- * `role: 'INSTRUCTOR'` branch of the SQL visibility predicate below — only
+ * teaching-role branch of the SQL visibility predicate below — only
  * the department/unit-lock branch can grant access from a row like this.
  */
 const NO_ENROLLMENT_ROLE = "NONE";
@@ -440,7 +440,10 @@ export function resetCourseAccessSyncForTests() {
  * Keeping the access-mirror refresh and fail-closed fallback here prevents
  * question-bank aggregates from drifting from the course list's RBAC rules.
  */
-async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
+async function resolveCourseVisibilityContext(
+  reqUser,
+  { cookie, includeOwnerFallback = true } = {},
+) {
   let accessMirrorHealthy = true;
   if (reqUser.role === "ADMIN") {
     await listCoursesForUser(reqUser, { cookie });
@@ -458,37 +461,45 @@ async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
 
   const authorizedUnits =
     reqUser.role === "UNIT_ADMIN" ? await getAuthorizedUnits(reqUser, cookie) : [];
+  const ownerFallback = includeOwnerFallback
+    ? [
+        {
+          userId: reqUser.id,
+          // Owner fallback must fail CLOSED for linked courses when the
+          // Core access refresh failed: a linked course's real access can't
+          // be verified locally, so only QM-native/unlinked owned courses
+          // (`coreCourseId: null`) get automatic visibility here. When the
+          // mirror is healthy the fallback still applies to a linked course
+          // that has no synced grant at all (never enrolled in Core, e.g. a
+          // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
+          // creates the anchor and `syncCourseAccessMirror` writes the grant
+          // on separate throttles (routes/course.js), so a just-imported
+          // course would otherwise stay invisible until the next sync
+          // window. See #1270 review: narrowing this to unconditionally
+          // `coreCourseId: null` broke that auto-import path (cascade-delete
+          // E2E) and needs the import/grant timing gap closed first.
+          ...(accessMirrorHealthy
+            ? {
+                OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }],
+              }
+            : { coreCourseId: null }),
+        },
+      ]
+    : [];
   const where =
     reqUser.role === "ADMIN"
       ? {}
       : {
           OR: [
-            {
-              userId: reqUser.id,
-              // Owner fallback must fail CLOSED for linked courses when the
-              // Core access refresh failed: a linked course's real access can't
-              // be verified locally, so only QM-native/unlinked owned courses
-              // (`coreCourseId: null`) get automatic visibility here. When the
-              // mirror is healthy the fallback still applies to a linked course
-              // that has no synced grant at all (never enrolled in Core, e.g. a
-              // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
-              // creates the anchor and `syncCourseAccessMirror` writes the grant
-              // on separate throttles (routes/course.js), so a just-imported
-              // course would otherwise stay invisible until the next sync
-              // window. See #1270 review: narrowing this to unconditionally
-              // `coreCourseId: null` broke that auto-import path (cascade-delete
-              // E2E) and needs the import/grant timing gap closed first.
-              ...(accessMirrorHealthy
-                ? {
-                    OR: [
-                      { coreCourseId: null },
-                      { accessGrants: { none: { userId: reqUser.id } } },
-                    ],
-                  }
-                : { coreCourseId: null }),
-            },
+            ...ownerFallback,
             ...(accessMirrorHealthy
-              ? [{ accessGrants: { some: { userId: reqUser.id, role: "INSTRUCTOR" } } }]
+              ? [
+                  {
+                    accessGrants: {
+                      some: { userId: reqUser.id, role: { in: ["INSTRUCTOR", "TA"] } },
+                    },
+                  },
+                ]
               : []),
             ...(accessMirrorHealthy && reqUser.role === "UNIT_ADMIN" && authorizedUnits.length
               ? [
@@ -508,7 +519,8 @@ async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
 /**
  * Return the trusted Prisma CourseWhereInput for all courses visible to a
  * caller. This is intentionally server-derived; request query parameters must
- * never be accepted as a course predicate.
+ * never be accepted as a course predicate. Pass `includeOwnerFallback: false`
+ * for aggregate reads that must be limited to live enrollment/unit grants.
  */
 export async function resolveVisibleCourseWhereForUser(reqUser, opts = {}) {
   const { where } = await resolveCourseVisibilityContext(reqUser, opts);
@@ -547,9 +559,13 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
         ? "admin"
         : grant?.department && authorizedUnits.includes(grant.department)
           ? "unit"
-          : grant?.role === "INSTRUCTOR" || reqUser.id === course.userId
+          : grant?.role === "INSTRUCTOR"
             ? "instructor"
-            : null;
+            : grant?.role === "TA"
+              ? "ta"
+              : reqUser.id === course.userId
+                ? "instructor"
+                : null;
     const plainCourse = { ...course };
     delete plainCourse.accessGrants;
     return { ...plainCourse, accessLevel };

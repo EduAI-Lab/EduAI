@@ -26,7 +26,8 @@ export function BankDetailPage() {
   const { bankId } = useParams<{ bankId: string }>();
   const navigate = useNavigate();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
-  const { hasCourseAccess, accessLoading, canCreateQuestion } = useQmPermissionsForCourse(courseId);
+  const { hasCourseAccess, accessLoading, canManageAssessment } =
+    useQmPermissionsForCourse(courseId);
 
   const [bank, setBank] = useState<QuestionBank | null>(null);
   const [banksError, setBanksError] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function BankDetailPage() {
   const [removeTarget, setRemoveTarget] = useState<QuestionVariantEntry | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
-  const writesDisabled = accessLoading || !canCreateQuestion;
+  const writesDisabled = accessLoading || !canManageAssessment;
 
   const backToBanks = useCallback(() => {
     if (courseId) navigate(`/courses/${courseId}?tab=banks`);

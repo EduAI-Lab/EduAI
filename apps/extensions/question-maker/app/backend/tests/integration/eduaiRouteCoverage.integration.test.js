@@ -79,6 +79,8 @@ vi.mock("../../src/services/eduaiService.js", () => ({ default: eduaiService }))
 const { default: app } = await import("../../src/app.js");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const TA = { id: "ta-1", role: "STUDENT", email: "ta@t.co", name: "TA" };
+const STUDENT = { id: "student-1", role: "STUDENT", email: "s@t.co", name: "Student" };
 // ADMIN short-circuits resolveAccessForCourse before the coreCourseId check
 // (#1114), the only caller that can reach a course unlinked from Core.
 const ADMIN = { id: "admin-1", role: "ADMIN", email: "a@t.co", name: "A" };
@@ -526,6 +528,24 @@ describe("POST /api/eduai/generate-questions", () => {
 });
 
 describe("GET /api/eduai/courses", () => {
+  it("admits a platform STUDENT whose visible catalog is granted by a TA enrollment", async () => {
+    authAs(TA);
+    mockListCoursesForUser.mockResolvedValue([
+      { id: 1, coreCourseId: "c1", name: "TA course", code: "COSC 101" },
+    ]);
+
+    const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=ta");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([
+      expect.objectContaining({ id: "c1", name: "TA course", code: "COSC 101" }),
+    ]);
+    expect(mockListCoursesForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TA.id, role: "STUDENT" }),
+      { cookie: "session=ta" },
+    );
+  });
+
   it("returns only the caller-scoped QM/Core course catalog", async () => {
     authAs(INSTRUCTOR);
     mockListCoursesForUser.mockResolvedValue([
@@ -663,6 +683,33 @@ describe("GET /api/eduai/courses/:courseId/topics", () => {
 });
 
 describe("POST /api/eduai/test-api-key", () => {
+  it("allows a platform STUDENT with a live TA course", async () => {
+    authAs(TA);
+    mockListCoursesForUser.mockResolvedValue([{ accessLevel: "ta" }]);
+    eduaiService.testApiKey.mockResolvedValue({ success: true, provider: "vllm" });
+
+    const res = await request(app)
+      .post("/api/eduai/test-api-key")
+      .set("Cookie", "session=ta")
+      .send({ provider: "vllm", apiKeys: {} });
+
+    expect(res.status).toBe(200);
+    expect(eduaiService.testApiKey).toHaveBeenCalled();
+  });
+
+  it("denies an ordinary platform STUDENT before probing shared AI", async () => {
+    authAs(STUDENT);
+    mockListCoursesForUser.mockResolvedValue([]);
+
+    const res = await request(app)
+      .post("/api/eduai/test-api-key")
+      .set("Cookie", "session=student")
+      .send({ provider: "google", apiKeys: { google: "key" } });
+
+    expect(res.status).toBe(403);
+    expect(eduaiService.testApiKey).not.toHaveBeenCalled();
+  });
+
   it("returns 200 with the provider result on success", async () => {
     authAs(INSTRUCTOR);
     eduaiService.testApiKey.mockResolvedValue({
@@ -753,6 +800,27 @@ describe("POST /api/eduai/test-api-key", () => {
 });
 
 describe("GET /api/eduai/ai-models", () => {
+  it("allows a platform STUDENT with a live TA course", async () => {
+    authAs(TA);
+    mockListCoursesForUser.mockResolvedValue([{ accessLevel: "ta" }]);
+    eduaiService.listAIModels.mockResolvedValue([{ modelId: "ta-model" }]);
+
+    const res = await request(app).get("/api/eduai/ai-models").set("Cookie", "session=ta");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ modelId: "ta-model" }]);
+  });
+
+  it("denies an ordinary platform STUDENT before reading the model catalog", async () => {
+    authAs(STUDENT);
+    mockListCoursesForUser.mockResolvedValue([]);
+
+    const res = await request(app).get("/api/eduai/ai-models").set("Cookie", "session=student");
+
+    expect(res.status).toBe(403);
+    expect(eduaiService.listAIModels).not.toHaveBeenCalled();
+  });
+
   it("returns the live catalog when non-empty", async () => {
     authAs(INSTRUCTOR);
     eduaiService.listAIModels.mockResolvedValue([{ modelId: "live-model" }]);

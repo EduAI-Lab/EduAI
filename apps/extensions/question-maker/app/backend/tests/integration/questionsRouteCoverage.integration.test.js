@@ -193,8 +193,29 @@ describe("GET /api/questions/stats", () => {
     const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, { cookie: "session=v" });
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, {
+      cookie: "session=v",
+      includeOwnerFallback: true,
+    });
     expect(mockStats).toHaveBeenCalledWith(INSTRUCTOR.id, {
+      courseId: undefined,
+      courseWhere,
+    });
+  });
+
+  it("scopes global stats for a platform STUDENT course TA", async () => {
+    authAs(TA, null);
+    const courseWhere = { accessGrants: { some: { userId: TA.id, role: "TA" } } };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(TA, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockStats).toHaveBeenCalledWith(TA.id, {
       courseId: undefined,
       courseWhere,
     });
@@ -209,7 +230,10 @@ describe("GET /api/questions global visibility", () => {
     const res = await request(app).get("/api/questions").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, { cookie: "session=v" });
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, {
+      cookie: "session=v",
+      includeOwnerFallback: true,
+    });
     expect(mockList).toHaveBeenCalledWith(ADMIN.id, expect.objectContaining({ courseWhere: {} }));
   });
 
@@ -225,6 +249,44 @@ describe("GET /api/questions global visibility", () => {
     expect(res.status).toBe(200);
     expect(mockList).toHaveBeenCalledWith(
       INSTRUCTOR.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
+  });
+
+  it("uses visible TA courses for a platform STUDENT without owner fallback", async () => {
+    authAs(TA, null);
+    const courseWhere = { accessGrants: { some: { userId: TA.id, role: "TA" } } };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(TA, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockList).toHaveBeenCalledWith(
+      TA.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
+  });
+
+  it("returns 200 with an empty predicate path for an ordinary platform STUDENT", async () => {
+    authAs(STUDENT, null);
+    const courseWhere = {
+      accessGrants: { some: { userId: STUDENT.id, role: { in: ["INSTRUCTOR", "TA"] } } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(STUDENT, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockList).toHaveBeenCalledWith(
+      STUDENT.id,
       expect.objectContaining({ courseId: undefined, courseWhere }),
     );
   });

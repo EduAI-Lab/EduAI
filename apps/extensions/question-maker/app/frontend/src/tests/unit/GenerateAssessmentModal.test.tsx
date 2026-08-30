@@ -28,7 +28,7 @@ describe("GenerateAssessmentModal", () => {
     fireEvent.change(screen.getByLabelText(/Assessment name/), {
       target: { value: "Final Exam" },
     });
-    const btn = screen.getByText("Create Blueprint");
+    const btn = screen.getByText("Create assessment");
     expect(btn).not.toBeDisabled();
     fireEvent.click(btn);
     expect(onGenerate).toHaveBeenCalledWith(
@@ -50,7 +50,7 @@ describe("GenerateAssessmentModal", () => {
       />,
     );
     expect(screen.getByText("Edit assessment details")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     expect(onUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ courseId: 7, name: "Midterm", type: "Quiz" }),
     );

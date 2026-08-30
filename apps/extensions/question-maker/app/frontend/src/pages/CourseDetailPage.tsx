@@ -97,7 +97,13 @@ export const CourseDetailPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
-  const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(courseId);
+  const {
+    canCreateQuestion,
+    canManageAssessment,
+    canManageCanvas,
+    hasCourseAccess,
+    accessLoading,
+  } = useQmPermissionsForCourse(courseId);
   const { setGuidedTourHandler } = useQmLayout();
   const {
     startTour,
@@ -112,7 +118,8 @@ export const CourseDetailPage = () => {
   const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
 
   const tabParam = searchParams.get("tab");
-  const activeTab: ActiveTab = resolveCourseTab(tabParam, isCanvasLinked);
+  const canUseCanvas = canManageCanvas && hasCourseAccess;
+  const activeTab: ActiveTab = resolveCourseTab(tabParam, canUseCanvas ? isCanvasLinked : false);
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
       setSearchParams(
@@ -275,7 +282,7 @@ export const CourseDetailPage = () => {
 
   // Canvas link for this course, resolved from its Canvas course mapping.
   useEffect(() => {
-    if (!courseId) {
+    if (!courseId || !canUseCanvas) {
       setIsCanvasLinked(false);
       return;
     }
@@ -295,7 +302,7 @@ export const CourseDetailPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [canUseCanvas, courseId]);
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
@@ -1023,7 +1030,9 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          {isCanvasLinked !== false && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
+          {canUseCanvas && isCanvasLinked !== false && (
+            <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
+          )}
         </PageTabsList>
 
         <PageTabsContent value="overview" className="space-y-6">
@@ -1034,6 +1043,7 @@ export const CourseDetailPage = () => {
             analytics={courseAnalytics}
             analyticsStatus={analyticsStatus}
             canWrite={!writesDisabled}
+            canManageAssessment={canManageAssessment && hasCourseAccess}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab("assessments")}
             // Canvas import is scoped to the linked Canvas course, so the action
@@ -1041,7 +1051,9 @@ export const CourseDetailPage = () => {
             // review). `null` means "not resolved yet", which keeps the action
             // in place rather than flickering it out on every load.
             onImportFromCanvas={
-              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+              canUseCanvas && isCanvasLinked !== false
+                ? () => setIsCanvasImportOpen(true)
+                : undefined
             }
           />
         </PageTabsContent>
@@ -1077,10 +1089,10 @@ export const CourseDetailPage = () => {
         <PageTabsContent value="banks" className="space-y-6">
           <CourseBanksTab
             banks={banks}
-            canWrite={!writesDisabled}
+            canWrite={canManageAssessment && hasCourseAccess}
             isLoading={isBanksLoading}
             loadError={banksError}
-            isCanvasLinked={isCanvasLinked !== false}
+            isCanvasLinked={canUseCanvas && isCanvasLinked !== false}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}
@@ -1105,7 +1117,9 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={
-              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+              canUseCanvas && isCanvasLinked !== false
+                ? () => setIsCanvasImportOpen(true)
+                : undefined
             }
           />
           <ListPaginationBar
@@ -1118,10 +1132,10 @@ export const CourseDetailPage = () => {
         </PageTabsContent>
 
         <PageTabsContent value="canvas" className="space-y-6">
-          {courseId && isCanvasLinked !== false && (
+          {courseId && canUseCanvas && isCanvasLinked !== false && (
             <CourseCanvasTab
               courseId={courseId}
-              canWrite={!writesDisabled}
+              canWrite={canManageCanvas && hasCourseAccess}
               onImportFromCanvas={() => setIsCanvasImportOpen(true)}
             />
           )}

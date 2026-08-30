@@ -585,12 +585,15 @@ router.post(
  * Question banks are owned by EduAI Core; these routes proxy via questionBankService
  * using the local course's `coreCourseId`.
  */
-const bankAccess = requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam });
+const bankReadAccess = requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam });
+const bankWriteAccess = requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam });
 
 /** GET /api/course/:id/banks */
-router.get("/:id/banks", authenticateToken, bankAccess, async (req, res, next) => {
+router.get("/:id/banks", authenticateToken, bankReadAccess, async (req, res, next) => {
   try {
-    await ensureDefaultBank(req.qmCourse.id, req.user.id).catch(() => null);
+    if (req.courseAccess.rank >= 2) {
+      await ensureDefaultBank(req.qmCourse.id, req.user.id).catch(() => null);
+    }
     const banks = await listBanks(req.qmCourse.id, req.user.id);
     res.json({ success: true, data: banks });
   } catch (error) {
@@ -599,7 +602,7 @@ router.get("/:id/banks", authenticateToken, bankAccess, async (req, res, next) =
 });
 
 /** POST /api/course/:id/banks */
-router.post("/:id/banks", authenticateToken, bankAccess, async (req, res, next) => {
+router.post("/:id/banks", authenticateToken, bankWriteAccess, async (req, res, next) => {
   try {
     const bank = await createBank(req.qmCourse.id, req.user.id, {
       name: req.body?.name,
@@ -612,7 +615,7 @@ router.post("/:id/banks", authenticateToken, bankAccess, async (req, res, next) 
 });
 
 /** PUT /api/course/:id/banks/:bankId */
-router.put("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, res, next) => {
+router.put("/:id/banks/:bankId", authenticateToken, bankWriteAccess, async (req, res, next) => {
   try {
     const bank = await updateBank(req.qmCourse.id, req.user.id, req.params.bankId, {
       name: req.body?.name,
@@ -625,7 +628,7 @@ router.put("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, res,
 });
 
 /** DELETE /api/course/:id/banks/:bankId */
-router.delete("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, res, next) => {
+router.delete("/:id/banks/:bankId", authenticateToken, bankWriteAccess, async (req, res, next) => {
   try {
     const result = await deleteBank(req.qmCourse.id, req.user.id, req.params.bankId, {
       moveMembershipsToBankId: req.body?.moveMembershipsToBankId
@@ -642,7 +645,7 @@ router.delete("/:id/banks/:bankId", authenticateToken, bankAccess, async (req, r
 router.post(
   "/:id/banks/:bankId/questions",
   authenticateToken,
-  bankAccess,
+  bankWriteAccess,
   async (req, res, next) => {
     try {
       const questionMetadataId = Number(req.body?.questionMetadataId);
@@ -670,7 +673,7 @@ router.post(
 router.delete(
   "/:id/banks/:bankId/questions/:questionMetadataId",
   authenticateToken,
-  bankAccess,
+  bankWriteAccess,
   async (req, res, next) => {
     try {
       const result = await removeQuestionFromBank(

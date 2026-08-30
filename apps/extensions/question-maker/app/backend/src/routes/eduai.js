@@ -3,7 +3,7 @@
  * All routes require authentication and delegate to eduaiService for actual API interactions.
  */
 import express from "express";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { authenticateToken } from "../middleware/auth.js";
 import { QM_AUTHORIZED } from "../middleware/roles.js";
 import eduaiService from "../services/eduaiService.js";
 import {
@@ -148,7 +148,38 @@ function logEduaiRouteError(event, error) {
   console.error(event, safeRequestLogFields(error));
 }
 
-router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+// Core represents a course TA as platform STUDENT. Every course-bearing route
+// below resolves the caller's live enrollment at TA rank before reaching AI.
+router.use(authenticateToken);
+
+// Course-bearing routes below resolve live enrollment access themselves so a
+// platform STUDENT with a TA enrollment can use them. These two endpoints are
+// intentionally unscoped: the provider probe can spend shared AI capacity and
+// the model catalog is an admin-only Core surface. Let a live TA use the same
+// picker/status UX, while ordinary STUDENTs remain denied.
+const requireQmAuthoringOrLiveTa = async (req, res, next) => {
+  if (QM_AUTHORIZED.includes(req.user?.role)) return next();
+  if (req.user?.role !== "STUDENT") {
+    return res.status(403).json({
+      success: false,
+      error: "Question Maker authoring access required",
+    });
+  }
+
+  try {
+    const visibleCourses = await listCoursesForUser(req.user, {
+      cookie: req.headers.cookie ?? "",
+    });
+    if (visibleCourses.some((course) => course.accessLevel === "ta")) return next();
+  } catch {
+    // Fail closed when the live Core course snapshot is unavailable.
+  }
+
+  return res.status(403).json({
+    success: false,
+    error: "Question Maker authoring access required",
+  });
+};
 
 const chatAdmission = qmAiProviderCallAdmission({
   validate: validateChatAdmission,
@@ -437,57 +468,63 @@ router.get("/courses/:courseId/topics", async (req, res) => {
  * (e.g. `'ollama'` for the independent UBC status chip). Echoes back `provider`
  * so the UI can report which path is live.
  */
-router.post("/test-api-key", qmAiUserRateLimit, testApiKeyAdmission, async (req, res) => {
-  try {
-    const result = await eduaiService.testApiKey({
-      cookie: req.headers.cookie ?? "",
-      apiKeys: req.body?.apiKeys ?? {},
-      forceProvider: req.aiAdmission.provider || undefined,
-      signal: req.aiOperation?.signal,
-      deadlineAt: req.aiOperation?.deadlineAt,
-    });
+router.post(
+  "/test-api-key",
+  requireQmAuthoringOrLiveTa,
+  qmAiUserRateLimit,
+  testApiKeyAdmission,
+  async (req, res) => {
+    try {
+      const result = await eduaiService.testApiKey({
+        cookie: req.headers.cookie ?? "",
+        apiKeys: req.body?.apiKeys ?? {},
+        forceProvider: req.aiAdmission.provider || undefined,
+        signal: req.aiOperation?.signal,
+        deadlineAt: req.aiOperation?.deadlineAt,
+      });
 
-    if (result.success) {
-      res.json({
-        success: true,
-        message: result.message,
-        provider: result.provider,
-        data: result.response,
-      });
-    } else {
-      const status = Number(result.statusCode) === 429 ? 429 : 400;
-      res.status(status).json({
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          provider: result.provider,
+          data: result.response,
+        });
+      } else {
+        const status = Number(result.statusCode) === 429 ? 429 : 400;
+        res.status(status).json({
+          success: false,
+          provider: result.provider,
+          error:
+            status === 429
+              ? "AI provider rate limit exceeded; try again later"
+              : "EduAI API key test failed",
+          code: status === 429 ? "EDUAI_UPSTREAM_RATE_LIMITED" : "EDUAI_API_KEY_TEST_REJECTED",
+          statusCode: Number.isInteger(result.statusCode) ? result.statusCode : undefined,
+        });
+      }
+    } catch (error) {
+      logEduaiRouteError("EduAI API key test error", error);
+      if (
+        Number(error?.statusCode ?? error?.status) === 429 ||
+        isQmAiDeadlineError(error) ||
+        Number(error?.statusCode ?? error?.status) === 504
+      ) {
+        return sendStableAiFailure(
+          res,
+          error,
+          "EDUAI_API_KEY_TEST_FAILED",
+          "Failed to test EduAI API key",
+        );
+      }
+      res.status(500).json({
         success: false,
-        provider: result.provider,
-        error:
-          status === 429
-            ? "AI provider rate limit exceeded; try again later"
-            : "EduAI API key test failed",
-        code: status === 429 ? "EDUAI_UPSTREAM_RATE_LIMITED" : "EDUAI_API_KEY_TEST_REJECTED",
-        statusCode: Number.isInteger(result.statusCode) ? result.statusCode : undefined,
+        error: "Failed to test EduAI API key",
+        code: "EDUAI_API_KEY_TEST_FAILED",
       });
     }
-  } catch (error) {
-    logEduaiRouteError("EduAI API key test error", error);
-    if (
-      Number(error?.statusCode ?? error?.status) === 429 ||
-      isQmAiDeadlineError(error) ||
-      Number(error?.statusCode ?? error?.status) === 504
-    ) {
-      return sendStableAiFailure(
-        res,
-        error,
-        "EDUAI_API_KEY_TEST_FAILED",
-        "Failed to test EduAI API key",
-      );
-    }
-    res.status(500).json({
-      success: false,
-      error: "Failed to test EduAI API key",
-      code: "EDUAI_API_KEY_TEST_FAILED",
-    });
-  }
-});
+  },
+);
 
 /**
  * Minimal cloud/local model catalog used when EduAI Core's model list is
@@ -526,7 +563,7 @@ const FALLBACK_AI_MODELS = [
 ];
 
 /** GET /api/eduai/ai-models – returns the available AI model identifiers from EduAI. */
-router.get("/ai-models", async (req, res) => {
+router.get("/ai-models", requireQmAuthoringOrLiveTa, async (req, res) => {
   try {
     const models = await eduaiService.listAIModels({ cookie: req.headers.cookie ?? "" });
     if (Array.isArray(models) && models.length > 0) {

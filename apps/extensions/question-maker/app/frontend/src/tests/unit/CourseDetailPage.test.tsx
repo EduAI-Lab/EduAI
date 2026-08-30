@@ -381,6 +381,7 @@ function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
   });
   useQmPermissionsForCourseMock.mockReturnValue({
     canCreateQuestion: true,
+    canManageCanvas: true,
     hasCourseAccess: true,
     accessLoading: false,
   });

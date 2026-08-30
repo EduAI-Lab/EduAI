@@ -20,11 +20,18 @@ const proxyCoreListQuizQuestions = vi.fn();
 const proxyCoreGetQuizQuestion = vi.fn();
 
 const courseFindFirst = vi.fn();
+const assessmentDelete = vi.fn();
 const questionMetadataCreate = vi.fn();
+const questionMetadataDeleteMany = vi.fn();
 const variantsCreate = vi.fn();
+const variantsDeleteMany = vi.fn();
 const sectionVariantsCreate = vi.fn();
+const sectionVariantsDeleteMany = vi.fn();
+const assessmentSectionDelete = vi.fn();
 const mappingFindUnique = vi.fn();
 const mappingCreate = vi.fn();
+const transaction = vi.fn();
+const remainingAssessments = new Set();
 
 vi.mock("../../src/services/assessmentService.js", () => ({
   createAssessment,
@@ -55,11 +62,13 @@ vi.mock("../../src/services/coreApiService.js", () => ({
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: { findFirst: courseFindFirst },
-    questionMetadata: { create: questionMetadataCreate },
-    variants: { create: variantsCreate },
-    sectionVariants: { create: sectionVariantsCreate },
+    assessments: { delete: assessmentDelete },
+    assessmentSections: { delete: assessmentSectionDelete },
+    questionMetadata: { create: questionMetadataCreate, deleteMany: questionMetadataDeleteMany },
+    variants: { create: variantsCreate, deleteMany: variantsDeleteMany },
+    sectionVariants: { create: sectionVariantsCreate, deleteMany: sectionVariantsDeleteMany },
     canvasCourseMapping: { findUnique: mappingFindUnique, create: mappingCreate },
-    assessmentSections: {},
+    $transaction: transaction,
   },
 }));
 
@@ -101,11 +110,27 @@ function runImport() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  remainingAssessments.clear();
+  assessmentDelete.mockImplementation(async ({ where }) => {
+    remainingAssessments.delete(where.id);
+  });
+  transaction.mockImplementation(async (callback) =>
+    callback({
+      assessments: { delete: assessmentDelete },
+      assessmentSections: { delete: assessmentSectionDelete },
+      questionMetadata: { deleteMany: questionMetadataDeleteMany },
+      variants: { deleteMany: variantsDeleteMany },
+      sectionVariants: { deleteMany: sectionVariantsDeleteMany },
+    }),
+  );
   proxyCoreCanvasGetIntegration.mockResolvedValue({ data: { canvasUrl: "https://c.edu" } });
   proxyCoreGetQuiz.mockResolvedValue({ data: { id: 456, title: "Midterm" } });
   proxyCoreListQuizQuestions.mockResolvedValue({ data: [listItem] });
   courseFindFirst.mockResolvedValue({ id: 9 });
-  createAssessment.mockResolvedValue({ id: 11, name: "Midterm" });
+  createAssessment.mockImplementation(async () => {
+    remainingAssessments.add(11);
+    return { id: 11, name: "Midterm" };
+  });
   createAssessmentSection.mockResolvedValue({ id: 22 });
   questionMetadataCreate.mockResolvedValue({ id: 33 });
   variantsCreate.mockResolvedValue({ id: 44 });
@@ -178,5 +203,38 @@ describe("importQuizFromCanvas — per-question fetch failures", () => {
       code: "ECONNREFUSED",
     });
     expect(variantsCreate).not.toHaveBeenCalled();
+  });
+
+  it("cleans up the assessment when a later question fetch fails", async () => {
+    const secondQuestion = { ...listItem, id: 8, question_name: "Q2", position: 2 };
+    proxyCoreListQuizQuestions.mockResolvedValue({ data: [listItem, secondQuestion] });
+    proxyCoreGetQuizQuestion.mockImplementation(async (_cookie, _courseId, _quizId, questionId) => {
+      if (Number(questionId) === secondQuestion.id) {
+        throw coreFailure(502, "CANVAS_UNREACHABLE");
+      }
+      return { data: { ...listItem, answers: [] } };
+    });
+
+    await expect(runImport()).rejects.toMatchObject({
+      status: 502,
+      code: "CANVAS_UNREACHABLE",
+    });
+
+    expect(assessmentDelete).toHaveBeenCalledWith({ where: { id: 11 } });
+    expect(assessmentSectionDelete).toHaveBeenCalledWith({ where: { id: 22 } });
+    expect(sectionVariantsDeleteMany).toHaveBeenCalledWith({ where: { sectionId: 22 } });
+    expect(variantsDeleteMany).toHaveBeenCalledWith({ where: { id: { in: [44] } } });
+    expect(questionMetadataDeleteMany).toHaveBeenCalledWith({ where: { id: { in: [33] } } });
+    expect(remainingAssessments).toEqual(new Set());
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the first persistence error while cleaning up", async () => {
+    questionMetadataCreate.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(runImport()).rejects.toThrow("database unavailable");
+
+    expect(assessmentDelete).toHaveBeenCalledWith({ where: { id: 11 } });
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });
