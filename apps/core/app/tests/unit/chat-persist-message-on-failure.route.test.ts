@@ -124,6 +124,22 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+// The #1279 boundary logs every mapped 5xx; stub the persistence side so the
+// assertion reads the call rather than reaching for a database.
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: (promise: Promise<unknown>) => void promise,
+  logSystemError: vi.fn(async () => undefined),
+}));
+
+// The #914 producer is hard-disabled pre-MVP (`isAiJobQueueEnabled` returns
+// false), so its failure branch is only reachable from a test that opts the
+// route into the enqueue path explicitly. Default to "off" so every other case
+// in this file keeps taking the normal chat path.
+vi.mock("~/lib/queue/chat-producer.server", () => ({
+  isEnqueueRequested: vi.fn(() => false),
+  enqueueQuestionGeneration: vi.fn(),
+}));
+
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode failure paths stay admitted.
@@ -137,6 +153,10 @@ import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/
 import { resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { logSystemError } from "~/lib/logging.server";
+import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
+import { QueueFullError } from "~/lib/queue/queue-stats.server";
+import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
 const NEW_CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -255,7 +275,11 @@ describe("#1561 — user message survives a provider-gate failure", () => {
   // through to the outer catch-all instead. The user's message is already
   // persisted by then — the response must still carry X-Chat-Id, or a retry
   // spawns another orphaned chat despite nothing actually being lost.
-  it("returns X-Chat-Id from the outer catch-all when an unrouted exception fires after persistence", async () => {
+  // #1560: the unrouted exception now escapes to the shared `withErrorResponse`
+  // boundary instead of being converted in the route, so it takes the uniform
+  // `{ error: "CODE" }` envelope and gets structured 5xx logging — while the
+  // #1621 X-Chat-Id echo is preserved through the boundary's `headers` thunk.
+  it("returns X-Chat-Id from the error boundary when an unrouted exception fires after persistence", async () => {
     vi.mocked(resolveFleetHost).mockRejectedValue(new Error("boom: not a FleetUnavailableError"));
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -263,10 +287,81 @@ describe("#1561 — user message survives a provider-gate failure", () => {
     errorSpy.mockRestore();
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal server error" });
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+    expect(vi.mocked(logSystemError)).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "API", statusCode: 500 }),
+    );
 
     expect(prisma.chat.create).toHaveBeenCalledTimes(1);
     expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(1);
     expect(res.headers.get("X-Chat-Id")).toBe(NEW_CHAT_ID);
+  });
+});
+
+// #1560 review round 3: the enqueue catch used to answer *every* throw with its
+// own `chatApiReject` body, so an unexpected fault (Prisma, a programming
+// error) never reached `withErrorResponse` — no uniform envelope, no structured
+// 5xx log. Only recognised enqueue failures are answered in the route now.
+describe("#1560 — enqueue failures narrow to typed errors", () => {
+  beforeEach(() => {
+    vi.mocked(isEnqueueRequested).mockReturnValue(true);
+  });
+
+  it("rethrows an unexpected enqueue error to the shared boundary", async () => {
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("boom: unexpected"));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await action(makeRequest(baseBody()));
+    errorSpy.mockRestore();
+
+    // Guard against passing for the wrong reason: the failure must come from the
+    // enqueue branch, not from some earlier gate.
+    expect(vi.mocked(enqueueQuestionGeneration)).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+    expect(vi.mocked(logSystemError)).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "API", statusCode: 500 }),
+    );
+  });
+
+  it("rethrows a Prisma failure to the shared boundary", async () => {
+    const prismaError = Object.assign(new Error("Unique constraint failed"), {
+      code: "P2002",
+      clientVersion: "5.0.0",
+    });
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(prismaError);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await action(makeRequest(baseBody()));
+    errorSpy.mockRestore();
+
+    // Guard against passing for the wrong reason: the failure must come from the
+    // enqueue branch, not from some earlier gate.
+    expect(vi.mocked(enqueueQuestionGeneration)).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    // The uniform envelope only — the raw Prisma message never reaches the client.
+    expect(await res.json()).toEqual({ error: "INTERNAL_ERROR" });
+  });
+
+  it("still answers a saturated queue with 429 and Retry-After", async () => {
+    const full = new QueueFullError("ai-jobs" as never, 100, 100);
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(full);
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe(String(full.retryAfterSeconds));
+    expect((await res.json()).error).toBe("AI job queue is full");
+  });
+
+  it("still answers an infrastructure outage with 503 (#1112)", async () => {
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(
+      new QueueUnavailableError("Queue unavailable"),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe("Queue unavailable");
   });
 });
