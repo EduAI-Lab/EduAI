@@ -55,10 +55,10 @@ test.describe("Core admin user list (GET /api/users)", () => {
     const { data: users } = await res.json();
     const sample = users[0];
 
-    expect(typeof sample.id).toBe("string");
-    expect(typeof sample.email).toBe("string");
-    expect(typeof sample.role).toBe("string");
-    expect(typeof sample.isActive).toBe("boolean");
+    expect(sample.id).toEqual(expect.any(String));
+    expect(sample.email).toEqual(expect.any(String));
+    expect(sample.role).toEqual(expect.any(String));
+    expect(sample.isActive).toEqual(expect.any(Boolean));
   });
 
   test("ADMIN user list includes a newly registered user", async ({ playwright }) => {
@@ -184,7 +184,7 @@ test.describe("Core invitation flow", () => {
       const { invitation, acceptUrl } = await createRes.json();
       expect(invitation.email).toBe(inviteeEmail);
       expect(invitation.role).toBe("INSTRUCTOR");
-      expect(typeof acceptUrl).toBe("string");
+      expect(acceptUrl).toEqual(expect.any(String));
 
       // Extract the plain token from the accept URL
       const token = new URL(acceptUrl).searchParams.get("token");

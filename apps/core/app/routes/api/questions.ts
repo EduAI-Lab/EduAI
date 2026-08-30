@@ -15,6 +15,7 @@ import type { JsonObject } from "~/lib/json-value";
 import { MAX_CREATE_QUESTION_BODY_BYTES, validateCreateQuestion } from "~/lib/questions/schema";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { asPresentText } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
 function json(status: number, body: JsonResponseBody) {
@@ -184,11 +185,9 @@ export async function action({ request }: ActionFunctionArgs) {
       // Peek courseId before idempotency so course access cannot be skipped on replay.
       const bodyPreview = boundedBody.body;
 
-      if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
-        const { course, access } = await resolveCourseAccessGate(
-          session.user,
-          bodyPreview.courseId,
-        );
+      const previewCourseId = asPresentText(bodyPreview?.courseId);
+      if (previewCourseId !== null) {
+        const { course, access } = await resolveCourseAccessGate(session.user, previewCourseId);
         if (!course) {
           return json(404, { error: "COURSE_NOT_FOUND" });
         }

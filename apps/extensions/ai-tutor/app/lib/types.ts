@@ -268,6 +268,26 @@ export type Lesson = {
   progress?: Progress;
 };
 
+/**
+ * The stored answer for an activity. The Prisma column is untyped JSON, so the
+ * object arm names only the two fields the UI reads (the decoder preserves any
+ * others at runtime without describing them), while the scalar arms are legacy
+ * rows holding a bare correct index or a bare expected string. Read it through
+ * `readActivityAnswer` rather than reaching into it directly — a stored field
+ * is not guaranteed to hold the type it is named for.
+ */
+export type ActivityAnswer = ActivityAnswerFields | number | string;
+
+/**
+ * The decoded answer fields the activity UI reads. A field is absent unless it
+ * genuinely held the type it is named for, so callers branch on `undefined`
+ * alone rather than re-checking the value.
+ */
+export type ActivityAnswerFields = {
+  correctIndex?: number;
+  text?: string;
+};
+
 export type Activity = {
   id: number;
   title?: string | null;
@@ -276,7 +296,7 @@ export type Activity = {
   question: string;
   type: "MCQ" | "SHORT_TEXT";
   options: { choices?: string[] } | null;
-  answer?: any;
+  answer?: ActivityAnswer | null;
   hints: string[];
   promptTemplateId?: number | null;
   promptTemplate?: { id: number; name: string } | null;

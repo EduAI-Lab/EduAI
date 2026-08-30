@@ -73,5 +73,10 @@ export function didHitAppliedLongOutputCap({
   maxTokens: number;
   completionTokens: number | null | undefined;
 }): boolean {
-  return capApplied && typeof completionTokens === "number" && completionTokens >= maxTokens;
+  return (
+    capApplied &&
+    completionTokens !== null &&
+    completionTokens !== undefined &&
+    completionTokens >= maxTokens
+  );
 }

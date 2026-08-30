@@ -116,10 +116,10 @@ beforeEach(() => {
   updateMany.mockImplementation(async (args: Prisma.CourseReEmbedJobUpdateManyArgs) => {
     const result = await update(args);
     const jobId =
-      typeof args === "object" && args !== null && "where" in args
+      args instanceof Object && "where" in args
         ? ((args as { where?: { id?: unknown } }).where?.id as string | undefined)
         : undefined;
-    const patch = result && typeof result === "object" ? result : undefined;
+    const patch = result instanceof Object ? result : undefined;
     lastUpdatedJob = { ...claimedJob, ...patch };
     if (jobId) lastUpdatedJob.id = jobId;
     return { count: 1 };

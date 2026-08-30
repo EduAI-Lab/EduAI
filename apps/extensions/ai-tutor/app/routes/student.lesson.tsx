@@ -512,7 +512,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
     try {
       const feedbackApi = api as FeedbackApi;
-      if (typeof feedbackApi.submitActivityFeedback !== "function") {
+      if (!(feedbackApi.submitActivityFeedback instanceof Function)) {
         throw new Error("Feedback service not available");
       }
 

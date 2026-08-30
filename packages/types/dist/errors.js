@@ -12,6 +12,13 @@
  * never imports Prisma or Zod. Framework-shaped errors are recognised by
  * duck-typing instead — see `normalizeError`.
  *
+ * That dependency-free duck-typing is also why this file is a standing
+ * `anti-slop/no-runtime-typeof` exemption. Every `typeof` below inspects a
+ * value that was *thrown* — from any app, any framework, any realm — so there
+ * is no I/O boundary to parse at and, by the constraint above, no zod to parse
+ * with. The checks are suppressed per-line so the rule can still reach zero
+ * elsewhere and be promoted to `error` (#1599).
+ *
  * `message` is developer-facing by default and is NOT sent to clients unless
  * the error opts in via `expose`. Every subclass here exposes its message,
  * because those messages are authored for users; anything unrecognised is
@@ -117,8 +124,12 @@ export function isAppError(cause) {
     if (!(cause instanceof Error))
         return false;
     const candidate = cause;
-    return (typeof candidate.status === "number" &&
+    return (
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof
+    typeof candidate.status === "number" &&
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof
         typeof candidate.code === "string" &&
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof
         typeof candidate.expose === "boolean");
 }
 const GENERIC_MESSAGE = "Internal server error";
@@ -172,6 +183,7 @@ const PRISMA_MESSAGE = new Map([
 function isPrismaKnownRequestError(cause) {
     return (cause instanceof Error &&
         cause.name === "PrismaClientKnownRequestError" &&
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof
         typeof cause.code === "string");
 }
 /**
@@ -262,7 +274,9 @@ export function normalizeError(cause) {
     // Express (and the apps' pre-#1279 errors) put the status on the cause.
     if (cause instanceof Error) {
         const withStatus = cause;
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof
         const raw = typeof withStatus.status === "number" ? withStatus.status : withStatus.statusCode;
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof
         if (typeof raw === "number" && raw >= 400 && raw < 600) {
             // A 4xx carrying an explicit status was constructed deliberately, so its
             // message is intended for the caller. A 5xx is still withheld.
@@ -275,7 +289,9 @@ export function normalizeError(cause) {
             // restated as a status gate so it also covers errors this module has
             // never heard of.
             const ownCode = cause.code;
-            const code = exposed && typeof ownCode === "string" && ownCode.length > 0 ? ownCode : codeForStatus(raw);
+            const code = 
+            // oxlint-disable-next-line anti-slop/no-runtime-typeof
+            exposed && typeof ownCode === "string" && ownCode.length > 0 ? ownCode : codeForStatus(raw);
             return {
                 status: raw,
                 code,

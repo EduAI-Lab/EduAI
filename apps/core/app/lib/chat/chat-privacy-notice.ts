@@ -1,11 +1,12 @@
 export const CHAT_PRIVACY_NOTICE_KEY = "eduai:chat-privacy-notice";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 function storageKey(userId: string): string {
   return `${CHAT_PRIVACY_NOTICE_KEY}:${userId}`;
 }
 
 export function hasAcknowledgedChatPrivacyNotice(userId: string): boolean {
-  if (typeof window === "undefined") return true;
+  if (!isBrowser()) return true;
   try {
     return window.localStorage.getItem(storageKey(userId)) === "1";
   } catch {
@@ -14,7 +15,7 @@ export function hasAcknowledgedChatPrivacyNotice(userId: string): boolean {
 }
 
 export function acknowledgeChatPrivacyNotice(userId: string): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   try {
     window.localStorage.setItem(storageKey(userId), "1");
   } catch {

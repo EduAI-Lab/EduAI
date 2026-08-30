@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import eduaiService from "../services/eduaiService";
 import { apiKeyStorage, isCloudProvider } from "../services/apiKeyStorage";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 type Status = "loading" | "ok" | "error";
 
@@ -53,7 +54,7 @@ const MAX_RETRIES = 6; // ~ 1+2+4+8+8+8 = 31s of automatic retrying before givin
 // non-retryable "needs sign-in" error, and any manual/explicit refresh — so a
 // fresh error afterwards starts backing off from 1s again.
 const clearRetry = (resetAttempts = true) => {
-  if (typeof window !== "undefined" && retryTimeout !== null) {
+  if (isBrowser() && retryTimeout !== null) {
     window.clearTimeout(retryTimeout);
   }
   retryTimeout = null;
@@ -61,7 +62,7 @@ const clearRetry = (resetAttempts = true) => {
 };
 
 const scheduleRetryIfNeeded = () => {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   if (retryTimeout !== null) return;
   if (retryAttempt >= MAX_RETRIES) return;
 

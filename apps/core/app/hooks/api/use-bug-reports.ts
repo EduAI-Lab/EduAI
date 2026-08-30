@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "~/hooks/api/config";
 import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
 import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
+import { asFiniteNumber } from "~/lib/json-value";
 
 /**
  * The admin list endpoint returns the full row — including the captured
@@ -43,7 +44,7 @@ export function useBugReports() {
       // reporterName/reporterEmail rename, and flattening the `context` blob's
       // course/module/lesson/activity ids that `getContextLabel` reads.
       setReports(data.reports.map(normalizeAdminBugReportRow));
-      setTotal(typeof data.total === "number" ? data.total : null);
+      setTotal(asFiniteNumber(data.total));
     } catch (err) {
       console.error("Failed to fetch bug reports:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch bug reports");

@@ -45,8 +45,7 @@ async function main() {
     toolExec,
   );
   if (
-    typeof preview === "object" &&
-    preview !== null &&
+    preview instanceof Object &&
     "writeSucceeded" in preview &&
     preview.writeSucceeded === false &&
     "error" in preview &&
@@ -76,12 +75,7 @@ async function main() {
     },
     toolExec,
   );
-  if (
-    typeof created === "object" &&
-    created !== null &&
-    "writeSucceeded" in created &&
-    created.writeSucceeded === true
-  ) {
+  if (created instanceof Object && "writeSucceeded" in created && created.writeSucceeded === true) {
     console.log("OK: createUser confirmed=true → writeSucceeded");
   } else {
     console.error("FAIL: createUser confirmed=true", created);
@@ -101,8 +95,7 @@ async function main() {
   // 3. listUsers includes new user
   const listed = await tools.listUsers.execute({ limit: 200 }, toolExec);
   if (
-    typeof listed === "object" &&
-    listed !== null &&
+    listed instanceof Object &&
     "users" in listed &&
     Array.isArray((listed as { users: { email: string }[] }).users) &&
     (listed as { users: { email: string }[] }).users.some((u) => u.email === testEmail)
@@ -128,8 +121,7 @@ async function main() {
         toolExec,
       );
       if (
-        typeof enrollPreview === "object" &&
-        enrollPreview !== null &&
+        enrollPreview instanceof Object &&
         "error" in enrollPreview &&
         enrollPreview.error === "CONFIRMATION_REQUIRED"
       ) {
@@ -145,12 +137,7 @@ async function main() {
 
   // 5. cleanup
   const deleted = await deleteAdminUser({ id: admin.id, role: admin.role }, inDb.id);
-  if (
-    typeof deleted === "object" &&
-    deleted !== null &&
-    "writeSucceeded" in deleted &&
-    deleted.writeSucceeded === true
-  ) {
+  if (deleted instanceof Object && "writeSucceeded" in deleted && deleted.writeSucceeded === true) {
     console.log("OK: cleanup deleteAdminUser");
   } else {
     console.error("WARN: cleanup delete failed", deleted);

@@ -31,6 +31,7 @@ import { cancelChatRequest, fetchChatWithRequestId } from "./chat-request-cancel
 import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId, isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
@@ -139,8 +140,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     () => {
       const hydrated: Record<string, string> = {};
       for (const message of editableTranscript?.messages ?? []) {
-        const id =
-          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const id = asPresentText(message.id);
         const resolvedModelId = resolvedModelIdFromMessage(message);
         if (id && resolvedModelId) hydrated[id] = resolvedModelId;
       }
@@ -158,8 +158,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     () => {
       const hydrated: Record<string, boolean> = {};
       for (const message of editableTranscript?.messages ?? []) {
-        const id =
-          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const id = asPresentText(message.id);
         if (id && resolvedModelIdFromMessage(message)) {
           hydrated[id] = wasAutoRoutedFromMessage(message);
         }
@@ -214,13 +213,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     for (const message of editableTranscript?.messages ?? []) {
       const metadata = message.metadata as LongOutputMessageMetadata | undefined;
 
-      if (
-        typeof message.id === "string" &&
-        message.id.trim().length > 0 &&
-        message.role === "assistant" &&
-        metadata?.hitLongOutputCap === true
-      ) {
-        cappedIds.add(message.id);
+      const messageId = asPresentText(message.id);
+      if (messageId && message.role === "assistant" && metadata?.hitLongOutputCap === true) {
+        cappedIds.add(messageId);
       }
     }
 
@@ -388,11 +383,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       const hitLongOutputCap =
         message.role === "assistant" &&
         message.annotations?.some(
-          (annotation) =>
-            annotation !== null &&
-            typeof annotation === "object" &&
-            !Array.isArray(annotation) &&
-            (annotation as JsonObject).hitLongOutputCap === true,
+          (annotation) => asJsonObject(annotation)?.hitLongOutputCap === true,
         );
 
       if (hitLongOutputCap) {
@@ -502,7 +493,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               throw new Error(`Regenerate failed with ${response.status}`);
             }
             const data = await response.json();
-            const rawContent = typeof data.content === "string" ? data.content : undefined;
+            const rawContent = asText(data.content);
             content = rawContent?.trim() ? rawContent : undefined;
             if (!content) {
               throw new Error("Regenerate returned empty content");

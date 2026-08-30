@@ -37,7 +37,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { FleetServer, JobType } from "./types";
 
 const DEFAULT_CONFIG_PATH = "./fleet.config.json";
-const VALID_JOB_TYPES: JobType[] = ["interactive", "background"];
+const VALID_JOB_TYPES = ["interactive", "background"] as const satisfies readonly JobType[];
 
 export class FleetConfigError extends Error {
   constructor(message: string) {
@@ -60,32 +60,30 @@ function normalizeBaseUrl(url: string): string {
 
 /** Validates one raw JSON server entry into a `FleetServer`, or throws with a pointer to the bad field. */
 function parseServerEntry(raw: JsonValue | undefined, index: number): FleetServer {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  const entry = asJsonObject(raw);
+  if (!entry) {
     throw new FleetConfigError(`fleet config servers[${index}] must be an object`);
   }
-  const entry = raw;
 
-  if (typeof entry.id !== "string" || !entry.id.trim()) {
+  const id = asPresentText(entry.id);
+  if (id === null) {
     throw new FleetConfigError(`fleet config servers[${index}].id must be a non-empty string`);
   }
-  if (typeof entry.baseUrl !== "string" || !entry.baseUrl.trim()) {
+  const baseUrl = asPresentText(entry.baseUrl);
+  if (baseUrl === null) {
     throw new FleetConfigError(`fleet config servers[${index}].baseUrl must be a non-empty string`);
   }
   try {
     // eslint-disable-next-line no-new -- validation only, discard the URL instance
-    new URL(entry.baseUrl);
+    new URL(baseUrl);
   } catch {
     throw new FleetConfigError(
-      `fleet config servers[${index}].baseUrl is not a valid URL: ${entry.baseUrl}`,
+      `fleet config servers[${index}].baseUrl is not a valid URL: ${baseUrl}`,
     );
   }
 
-  const jobTypesRaw = entry.jobTypes;
-  if (
-    !Array.isArray(jobTypesRaw) ||
-    jobTypesRaw.length === 0 ||
-    !jobTypesRaw.every((j) => typeof j === "string" && VALID_JOB_TYPES.includes(j as JobType))
-  ) {
+  const jobTypes = z.array(z.enum(VALID_JOB_TYPES)).nonempty().safeParse(entry.jobTypes);
+  if (!jobTypes.success) {
     throw new FleetConfigError(
       `fleet config servers[${index}].jobTypes must be a non-empty array of "interactive" | "background"`,
     );
@@ -96,21 +94,21 @@ function parseServerEntry(raw: JsonValue | undefined, index: number): FleetServe
   // runs swap models often enough that a static list would just go stale.
   // Omit it entirely and the fleet still works; the admin UI shows whatever
   // the live health probe reports.
-  const modelsRaw = entry.models;
   let models: string[] = [];
-  if (modelsRaw !== undefined) {
-    if (!Array.isArray(modelsRaw) || !modelsRaw.every((m) => typeof m === "string" && m.trim())) {
+  if (entry.models !== undefined) {
+    const decoded = z.array(z.string().trim().min(1)).safeParse(entry.models);
+    if (!decoded.success) {
       throw new FleetConfigError(
         `fleet config servers[${index}].models, if present, must be an array of strings`,
       );
     }
-    models = modelsRaw as string[];
+    models = decoded.data;
   }
 
   return {
-    id: entry.id.trim(),
-    baseUrl: normalizeBaseUrl(entry.baseUrl.trim()),
-    jobTypes: jobTypesRaw as JobType[],
+    id,
+    baseUrl: normalizeBaseUrl(baseUrl),
+    jobTypes: [...jobTypes.data],
     models,
   };
 }
@@ -144,19 +142,14 @@ export function loadFleetConfigFile(): FleetConfigFile | null {
     throw new FleetConfigError(`fleet config file at ${path} is not valid JSON: ${String(err)}`);
   }
 
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !Array.isArray((parsed as { servers?: unknown }).servers)
-  ) {
+  const serverList = z.object({ servers: z.array(jsonValueSchema) }).safeParse(parsed);
+  if (!serverList.success) {
     throw new FleetConfigError(
       `fleet config file at ${path} must have a top-level "servers" array`,
     );
   }
 
-  const servers = (parsed as { servers: JsonValue[] }).servers.map((entry, index) =>
-    parseServerEntry(entry, index),
-  );
+  const servers = serverList.data.servers.map((entry, index) => parseServerEntry(entry, index));
 
   const ids = new Set<string>();
   for (const server of servers) {

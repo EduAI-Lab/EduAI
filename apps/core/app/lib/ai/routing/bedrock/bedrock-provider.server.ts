@@ -108,8 +108,14 @@ function bedrockEndpoint(region: string, modelId: string, stream: boolean): stri
  * tool calls and results are rendered inline so the model still sees that they
  * happened.
  */
+/**
+ * The string arm of a prompt content union. Its arms differ only by primitive
+ * type, so this decodes rather than re-checks the shape at each branch.
+ */
+const isPromptText = <T>(value: string | T): value is string => z.string().safeParse(value).success;
+
 function collectText(content: BedrockPromptContent): string {
-  if (typeof content === "string") return content;
+  if (isPromptText(content)) return content;
   const parts: string[] = [];
   for (const part of content) {
     switch (part.type) {
@@ -122,7 +128,7 @@ function collectText(content: BedrockPromptContent): string {
       case "tool-result":
         parts.push(
           `[tool result ${part.toolName}] ${
-            typeof part.result === "string" ? part.result : JSON.stringify(part.result)
+            isPromptText(part.result) ? part.result : JSON.stringify(part.result)
           }`,
         );
         break;

@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { cn } from "./utils";
+import { isString } from "./lib/primitive-union";
 
 export interface SegmentedControlOption<T extends string = string> {
   value: T;
@@ -42,8 +43,9 @@ export function SegmentedControl<T extends string = string>({
     >
       {options.map((option) => {
         const selected = value === option.value;
-        const labelText =
-          typeof option.label === "string" ? option.label : (option.ariaLabel ?? option.value);
+        const labelText = isString(option.label)
+          ? option.label
+          : (option.ariaLabel ?? option.value);
 
         return (
           <button

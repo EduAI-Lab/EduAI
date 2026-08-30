@@ -1,4 +1,5 @@
 import { sanitizeTextContent } from "~/lib/ai/file-processing";
+import { z } from "zod";
 
 const DEFAULT_SYSTEM_PROMPT_MAX_CHARS = 8_192;
 const SYSTEM_PROMPT_MAX_CHARS_CEILING = 32_768;
@@ -108,7 +109,7 @@ ${trimmed}
 export const ALLOWED_CLIENT_MESSAGE_ROLES = new Set(["user"]);
 
 export function filterIncomingClientMessages<T extends { role?: unknown }>(messages: T[]): T[] {
-  return messages.filter(
-    (message) => typeof message.role === "string" && ALLOWED_CLIENT_MESSAGE_ROLES.has(message.role),
+  return messages.filter((message) =>
+    ALLOWED_CLIENT_MESSAGE_ROLES.has(z.string().safeParse(message.role).data ?? ""),
   );
 }

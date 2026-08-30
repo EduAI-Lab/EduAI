@@ -119,7 +119,7 @@ describe("useGuidedTour", () => {
     });
     // No direct getter for the override map; just confirm register/unregister don't throw
     // and return a stable function.
-    expect(typeof unregister!).toBe("function");
+    expect(unregister!).toBeInstanceOf(Function);
     act(() => unregister());
   });
 

@@ -56,7 +56,7 @@ export async function readBoundedFormData(request: Request, maxBytes: number): P
       if (error instanceof BoundedBodyError) throw new MultipartBodyInvalidError(error.message);
       throw error;
     }
-    if (typeof request.formData === "function") return request.formData();
+    if (request.formData instanceof Function) return request.formData();
     throw new MultipartBodyInvalidError("Request body is missing");
   }
 

@@ -103,7 +103,7 @@ type SqlFragment = { strings: readonly string[]; values: SqlValue[] };
 type SqlValue = SqlFragment | JsonValue | undefined;
 
 function isSqlFragment(value: SqlValue): value is SqlFragment {
-  return value !== null && typeof value === "object" && "strings" in value && "values" in value;
+  return value instanceof Object && "strings" in value && "values" in value;
 }
 
 function renderSqlValue(value: SqlValue): string {
@@ -388,7 +388,7 @@ function capturedFragmentSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   return capturedParams(callIndex)
     .filter(
       (p): p is { strings: string[] } =>
-        typeof p === "object" && p !== null && Array.isArray((p as { strings?: unknown }).strings),
+        p instanceof Object && Array.isArray((p as { strings?: unknown }).strings),
     )
     .map((f) => f.strings.join(" "))
     .join(" ");

@@ -27,6 +27,8 @@
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { isBrowser } from "@eduai/ui/runtime-env";
+
 const DENSITY_STORAGE_KEY = "eduai:density";
 const REDUCE_MOTION_STORAGE_KEY = "eduai:reduce-motion";
 
@@ -42,7 +44,7 @@ type UiPreferencesContextValue = {
 const UiPreferencesContext = createContext<UiPreferencesContextValue | null>(null);
 
 function readStored(key: string): string | null {
-  if (typeof window === "undefined") return null;
+  if (!isBrowser()) return null;
   try {
     return window.localStorage.getItem(key);
   } catch {

@@ -19,7 +19,7 @@ export function useAutoStartMainTour({
       onStart();
     };
 
-    if (typeof window.requestIdleCallback === "function") {
+    if (window.requestIdleCallback) {
       const id = window.requestIdleCallback(start, { timeout: 2000 });
       return () => window.cancelIdleCallback?.(id);
     }
