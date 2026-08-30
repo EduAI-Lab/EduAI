@@ -21,6 +21,7 @@ import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 
@@ -419,6 +420,61 @@ export function resolveCompletionPrompt(
   };
 }
 
+/**
+ * Ordered BYOK fallback models used when the UBC vLLM fleet is unavailable
+ * (#1645). Only BYOK providers belong here — the point is to use the caller's
+ * own key when server-hosted inference cannot serve the request. Override with
+ * `COMPLETION_FLEET_FALLBACK_MODELS` (comma-separated `provider:model` in
+ * preference order).
+ */
+export const DEFAULT_FLEET_FALLBACK_MODELS = "openai:gpt-4o-mini,google:gemini-2.5-flash";
+
+/**
+ * Pick the first fallback model, in configured preference order, that is usable
+ * right now: its BYOK provider must be keyed AND enabled AND its `provider:model`
+ * id must resolve to an active Core catalog row (`resolveCompletionModelPolicy`).
+ * Returns that model's policy result so the caller reuses the parsed model, or
+ * null when no candidate qualifies — in which case the fleet outage stays a hard
+ * failure.
+ *
+ * Skipping earlier candidates that fail these checks is deliberate (#1645
+ * review): an earlier keyed-but-policy-failing (or disabled) candidate must not
+ * abandon a usable later one. A candidate that is keyed+enabled but whose
+ * catalog row is missing/inactive is logged as a warn breadcrumb (no secrets)
+ * so the otherwise-silent dead-on-arrival case is visible in logs.
+ */
+export async function resolveFleetFallbackModel(
+  userSettings: UserProviderSettings,
+): Promise<Extract<CompletionModelPolicyResult, { ok: true }> | null> {
+  const configured = process.env.COMPLETION_FLEET_FALLBACK_MODELS?.trim();
+  const candidates = (configured || DEFAULT_FLEET_FALLBACK_MODELS)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const parsed = parseModelIdentifier(candidate);
+    if (!parsed) continue;
+    // Local/UBC-hosted providers are exactly what just failed — skip them.
+    if (parsed.providerId === "vllm" || parsed.providerId === "ollama") continue;
+    const settings = userSettings[parsed.providerId];
+    // Require a held key AND an enabled provider. A disabled-but-keyed provider
+    // would otherwise be chosen here and then rejected downstream with a
+    // misleading INVALID_PROVIDER_CONFIG (#1645 review nit).
+    if (!settings?.apiKey || !settings.apiKey.trim() || !settings.isEnabled) continue;
+    const policy = await resolveCompletionModelPolicy(candidate);
+    if (policy.ok) return policy;
+    // Keyed + enabled but the catalog has no active row for it: this fallback is
+    // dead on arrival. Surface it (no secrets) and try the next ordered candidate.
+    console.warn("[completion] fleet fallback candidate unavailable in catalog", {
+      candidate,
+      providerId: parsed.providerId,
+      status: policy.status,
+    });
+  }
+  return null;
+}
+
 export async function runCompletion(request: CompletionRequest) {
   // The abort signal is the one field that is not JSON; the bounds checks below
   // only look at the payload, so validate the request without it.
@@ -469,8 +525,12 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
-  const parsedModel = modelPolicy.parsedModel;
-  const validatedModelId =
+  // Built before fleet resolution so a fleet outage can consult the caller's
+  // BYOK keys for a fallback provider (#1645).
+  const userProviderSettings = toUserProviderSettings(apiKeysParsed.data);
+
+  let parsedModel = modelPolicy.parsedModel;
+  let validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
   let fleetBaseUrl: string | undefined;
   let fleetServerId: string | undefined;
@@ -483,10 +543,18 @@ export async function runCompletion(request: CompletionRequest) {
       fleetBaseUrl = fleetPick?.baseUrl;
       fleetServerId = fleetPick?.serverId;
     } catch (error) {
-      if (error instanceof FleetUnavailableError) {
+      if (!(error instanceof FleetUnavailableError)) throw error;
+      // #1645: the UBC fleet is down. Before hard-failing, fall back to the first
+      // BYOK provider (in configured order) the caller keyed+enabled AND that has
+      // an active Core catalog row. If none qualifies, keep MODEL_UNAVAILABLE.
+      const fallbackPolicy = await resolveFleetFallbackModel(userProviderSettings);
+      if (!fallbackPolicy) {
         return createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE");
       }
-      throw error;
+      parsedModel = fallbackPolicy.parsedModel;
+      validatedModelId =
+        `${parsedModel.providerId}:${parsedModel.modelId}` as `${string}:${string}`;
+      // A BYOK provider needs no fleet host; leave fleetBaseUrl/fleetServerId unset.
     }
   }
 

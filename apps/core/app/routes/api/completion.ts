@@ -208,7 +208,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
       const release = admissionRelease;
       admissionRelease = null;
-      return withAdmissionRelease(response, release);
+      return withAdmissionRelease(response, release, request.signal);
     } catch (error) {
       releaseAdmission();
       throw error;

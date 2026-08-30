@@ -4,7 +4,7 @@ import {
   EduAiEnrollmentListSchema,
   EduAiQuestionListSchema,
 } from "../schemas/eduai.js";
-import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+import { getEffectiveEduAiApiKey, serviceAuthHeader } from "./systemSettings.js";
 // TODO(#1647-followup): the inline `Bearer ${process.env.EDUAI_API_KEY}` reads
 // below predate `serviceAuthHeader()`/`getEffectiveEduAiApiKey` and still read
 // the env key directly (throwing on unset). Migrate them to the effective key
@@ -102,7 +102,7 @@ async function requestEduAi(path, options = {}) {
   const url = `${getEduAiBaseUrl()}${path}`;
   // Caller-supplied headers still win over the forwarded session cookie, which
   // is why they are applied last.
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", ...serviceAuthHeader() };
   if (cookie) headers.cookie = cookie;
   Object.assign(headers, options.headers);
 

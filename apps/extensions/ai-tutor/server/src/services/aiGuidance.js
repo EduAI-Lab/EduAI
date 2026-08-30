@@ -55,6 +55,18 @@ function getModelProvider(modelId) {
 }
 
 /**
+ * UBC-hosted providers are served with the deployment's own key — Core injects
+ * it from env (`resolveVllmApiKey`) and never needs the student's key — so a
+ * BYOK key is not required for them (#1645). Every other provider is BYOK and
+ * still requires the user's key. Mirrors Core's `PROVIDER_CONFIGS.requiresApiKey`
+ * (`vllm`/`ollama` are `false`) and the client's `providerRequiresByokKey`.
+ */
+const SERVER_HOSTED_PROVIDERS = new Set(["vllm", "ollama"]);
+function providerRequiresApiKey(provider) {
+  return provider ? !SERVER_HOSTED_PROVIDERS.has(provider) : true;
+}
+
+/**
  * Associate BYOK secrets with their real provider. The legacy `apiKey` field
  * is intentionally scoped to the tutor model only; it must never be copied to
  * a supervisor request when policy selects another provider. Callers that
@@ -96,6 +108,10 @@ function resolveProviderApiKeys({
     supervisorApiKey: supervisorProvider ? keys[supervisorProvider] || null : null,
     tutorProvider,
     supervisorProvider,
+    // #1645: the complete provider -> secret map. Forwarded verbatim to Core so
+    // its fleet-down fallback can pick ANY keyed BYOK provider, not just the one
+    // backing the selected model.
+    allKeys: keys,
   };
 }
 
@@ -320,6 +336,10 @@ async function callEduAI({
   modelId = null,
   cookie,
   userApiKey,
+  // #1645: every BYOK secret the student holds (provider -> key), so Core can
+  // fall back to another keyed provider when the UBC fleet is down. Falls back
+  // to just the selected provider's `userApiKey` when omitted.
+  providerApiKeys = null,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -341,13 +361,6 @@ async function callEduAI({
     throw error;
   }
 
-  if (!userApiKey) {
-    logAiGuidanceEvent("error", "missing_user_api_key");
-    const error = new Error("API key is required");
-    error.status = 400;
-    throw error;
-  }
-
   // Model IDs are namespaced "provider:model" (e.g. "google:gemini-2.5-flash");
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(":");
@@ -356,10 +369,54 @@ async function callEduAI({
     throw new Error("Invalid model ID format");
   }
 
+  // #1645: a BYOK key is required only for BYOK providers. UBC-hosted models
+  // (vllm/ollama) are served with the deployment key Core injects, so they may
+  // proceed with no student key at all.
+  if (providerRequiresApiKey(provider) && !userApiKey) {
+    logAiGuidanceEvent("error", "missing_user_api_key");
+    const error = new Error("API key is required");
+    error.status = 400;
+    throw error;
+  }
+
   const userMessageId = messageId || randomUUID();
-  const providerSettings = { isEnabled: true };
-  if (userApiKey !== CORE_STORED_KEY) providerSettings.apiKey = userApiKey;
-  const apiKeys = { [provider]: providerSettings };
+  // Forward EVERY held BYOK key, not only the selected provider's, so Core's
+  // fleet-down fallback can switch to another keyed provider (#1645). The
+  // selected provider's `userApiKey` is still included even if it wasn't in the
+  // map. For UBC-hosted providers with no keys held at all this stays empty, so
+  // Core falls through to its own deployment settings.
+  const heldKeys = {};
+  const storedProviders = new Set();
+  if (providerApiKeys && typeof providerApiKeys === "object" && !Array.isArray(providerApiKeys)) {
+    for (const [providerId, secret] of Object.entries(providerApiKeys)) {
+      const value =
+        typeof secret === "string"
+          ? secret
+          : secret && typeof secret === "object" && typeof secret.apiKey === "string"
+            ? secret.apiKey
+            : null;
+      if (!value || !value.trim()) continue;
+      if (value === CORE_STORED_KEY) storedProviders.add(providerId);
+      else heldKeys[providerId] = value;
+    }
+  }
+  if (
+    typeof userApiKey === "string" &&
+    userApiKey.trim() &&
+    userApiKey !== CORE_STORED_KEY &&
+    !heldKeys[provider]
+  ) {
+    heldKeys[provider] = userApiKey;
+  } else if (userApiKey === CORE_STORED_KEY) {
+    storedProviders.add(provider);
+  }
+  const apiKeys = {};
+  for (const [providerId, secret] of Object.entries(heldKeys)) {
+    apiKeys[providerId] = { apiKey: secret, isEnabled: true };
+  }
+  for (const storedProvider of storedProviders) {
+    if (!apiKeys[storedProvider]) apiKeys[storedProvider] = { isEnabled: true };
+  }
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
   const trimmedCourseId = trimNonEmpty(courseId);
@@ -568,6 +625,7 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  providerApiKeys = null,
   courseCode = null,
   courseId = null,
   signal,
@@ -605,6 +663,7 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      providerApiKeys,
       courseCode,
       courseId,
       signal,
@@ -869,6 +928,7 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.supervisorApiKey,
+        providerApiKeys: context.providerApiKeys,
         courseCode: context.courseCode,
         courseId: context.courseId,
         signal: context.signal,
@@ -951,16 +1011,21 @@ async function generateWithSupervisor({
     tutorModelId: effectiveTutorModelId,
     supervisorModelId: effectiveSupervisorModelId,
   });
-  if (!resolvedKeys.tutorApiKey) {
+  // #1645: BYOK providers still require the student's key; UBC-hosted tutor
+  // models (vllm/ollama) proceed with the deployment key Core injects.
+  if (providerRequiresApiKey(resolvedKeys.tutorProvider) && !resolvedKeys.tutorApiKey) {
     const error = new Error("API key is required for the selected tutor provider");
     error.status = 400;
     throw error;
   }
 
-  // A supervisor request is an independent provider call. If its provider
-  // has no own credential, safely skip that stage rather than relabelling the
-  // tutor secret and sending it to the wrong upstream.
-  const supervisionAvailable = Boolean(resolvedKeys.supervisorApiKey);
+  // A supervisor request is an independent provider call. It is available when
+  // its provider has its own credential OR is UBC-hosted (server key). For a
+  // BYOK supervisor provider with no key we skip that stage rather than
+  // relabelling the tutor secret and sending it to the wrong upstream.
+  const supervisionAvailable =
+    Boolean(resolvedKeys.supervisorApiKey) ||
+    !providerRequiresApiKey(resolvedKeys.supervisorProvider);
   const context = {
     originalStudentMessage,
     visibleContext,
@@ -970,6 +1035,7 @@ async function generateWithSupervisor({
     cookie,
     userApiKey: resolvedKeys.tutorApiKey,
     supervisorApiKey: resolvedKeys.supervisorApiKey,
+    providerApiKeys: resolvedKeys.allKeys,
     chatId,
     dualLoopEnabled: dualLoopEnabled && supervisionAvailable,
     maxSupervisorIterations,
@@ -994,6 +1060,7 @@ async function generateWithSupervisor({
       modelId: effectiveTutorModelId,
       cookie,
       userApiKey: resolvedKeys.tutorApiKey,
+      providerApiKeys: resolvedKeys.allKeys,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
       // the same turn; only the original turn reuses the caller's messageId.

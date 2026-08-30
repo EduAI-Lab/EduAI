@@ -191,6 +191,26 @@ const removeApiKeyForCurrentUser = (provider: AIProvider): void => {
   if (scope) localStorage.removeItem(storageKeyFor(scope.userId, provider));
 };
 
+const migrateLocalApiKeyToCore = async (
+  provider: AIProvider,
+  apiKey: string,
+  scope: AccountScope,
+): Promise<boolean> => {
+  try {
+    const response = await fetch("/api/eduai/provider-settings", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerName: provider, isEnabled: true, apiKey }),
+    });
+    if (!response.ok) return false;
+    if (isCurrentScope(scope)) removeApiKeyForCurrentUser(provider);
+    return isCurrentScope(scope);
+  } catch {
+    return false;
+  }
+};
+
 export const apiKeyStorage = {
   async getProviderSettings(): Promise<ProviderSettingStatus[]> {
     const response = await fetch("/api/eduai/provider-settings", { credentials: "include" });
@@ -357,12 +377,23 @@ export const apiKeyStorage = {
     if (remote?.isEnabled && remote.hasKey) {
       return { [provider]: { isEnabled: true } };
     }
-    if (remoteAvailable) return {};
-
     const apiKey = await getApiKeyForUser(scope.userId, provider);
-    if (!isCurrentScope(scope) || !apiKey) {
+    if (!isCurrentScope(scope)) {
       return {};
     }
+
+    if (remoteAvailable) {
+      // A successful Core response with no row means this provider has not
+      // been migrated yet. Re-home an existing local fallback, but leave an
+      // explicit disabled/no-key row authoritative.
+      if (remote) return {};
+      if (!apiKey) return {};
+      if (await migrateLocalApiKeyToCore(provider, apiKey, scope)) {
+        return { [provider]: { isEnabled: true } };
+      }
+    }
+
+    if (!apiKey) return {};
 
     return {
       [provider]: {

@@ -2,6 +2,7 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { ChatDailyLimitSettingsCard } from "~/components/settings/chat-daily-limit-settings";
 import { BedrockOverflowSettingsCard } from "~/components/settings/bedrock-overflow-settings";
 import {
   Card,
@@ -26,6 +27,8 @@ import { apiFetch } from "~/hooks/api/config";
 import { usePolicies } from "~/hooks/api/use-policies";
 import { getEnvironmentHealth } from "~/lib/environment-health.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { getChatDailyLimitSettings } from "~/lib/chat-daily-limits.server";
+import type { ChatDailyLimitSettings } from "~/lib/chat-daily-limits";
 import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
 import { isBedrockTokenConfigured } from "~/lib/ai/routing/bedrock/overflow.server";
 import type { BedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings";
@@ -88,13 +91,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     user: session.user,
     environmentHealth: getEnvironmentHealth(),
+    // Caps are edited on this page, so they load with the document. Policy
+    // toggles stay on usePolicies() because those are live client updates.
+    chatDailyLimits: await getChatDailyLimitSettings(),
     bedrockSettings: await getBedrockOverflowSettings(),
     bedrockTokenConfigured: isBedrockTokenConfigured(),
   };
 }
 
 export default function AdminSettingsPage() {
-  const { user, environmentHealth, bedrockSettings, bedrockTokenConfigured } =
+  const { user, environmentHealth, chatDailyLimits, bedrockSettings, bedrockTokenConfigured } =
     useLoaderData<typeof loader>();
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies();
 
@@ -158,6 +164,15 @@ export default function AdminSettingsPage() {
                   </AlertDescription>
                 </Alert>
               ) : null}
+              <ChatDailyLimitSettingsCard
+                initialSettings={chatDailyLimits}
+                onSave={async (settings: ChatDailyLimitSettings) => {
+                  await apiFetch("/api/admin/chat-daily-limits", {
+                    method: "PATCH",
+                    body: JSON.stringify(settings),
+                  });
+                }}
+              />
               <BedrockOverflowSettingsCard
                 initialSettings={bedrockSettings}
                 tokenConfigured={bedrockTokenConfigured}

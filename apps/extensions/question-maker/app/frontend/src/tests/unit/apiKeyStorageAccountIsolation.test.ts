@@ -85,7 +85,7 @@ describe("apiKeyStorage account isolation", () => {
     expect(await apiKeyStorage.getAllApiKeys()).toEqual({ google: CORE_STORED_KEY });
   });
 
-  it("falls back to the legacy browser key only when the Core request itself fails, not when Core answers empty", async () => {
+  it("migrates a local fallback when Core answers empty, but preserves it if migration fails", async () => {
     apiKeyStorage.setAuthenticatedUser("instructor-a");
 
     // Seed a legacy-encrypted browser copy via a Core-unreachable save.
@@ -93,18 +93,38 @@ describe("apiKeyStorage account isolation", () => {
     const seedResult = await apiKeyStorage.setApiKey("google", "legacy-secret");
     expect(seedResult).toEqual({ storedRemotely: false });
 
-    // Core reachable but returns no row for this provider — must NOT read the
-    // legacy browser copy back (Core's empty answer is authoritative).
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    // Core reachable but returns no row for this provider — migrate the
+    // legacy browser copy into Core and only clear it after POST succeeds.
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => [],
     } as Response);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as Response);
+    expect(await apiKeyStorage.buildApiKeysForModel("google:gemini-2.5-flash")).toEqual({
+      google: { isEnabled: true },
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/eduai/provider-settings",
+      expect.objectContaining({ method: "POST" }),
+    );
     expect(await apiKeyStorage.getApiKey("google")).toBeNull();
 
-    // Core unreachable — the legacy browser copy is the only signal available,
-    // so it is used.
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("network down"));
-    expect(await apiKeyStorage.getApiKey("google")).toBe("legacy-secret");
+    // A failed migration leaves the local copy available for degraded use.
+    await apiKeyStorage.setApiKey("google", "legacy-secret");
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    } as Response);
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    expect(await apiKeyStorage.buildApiKeysForModel("google:gemini-2.5-flash")).toEqual({
+      google: { apiKey: "legacy-secret", isEnabled: true },
+    });
   });
 });

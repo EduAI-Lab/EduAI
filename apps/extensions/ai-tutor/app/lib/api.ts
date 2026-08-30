@@ -858,7 +858,11 @@ export const api = {
       topicId?: string | number;
       message: string;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      // #1645: the full held-key map (provider -> secret), forwarded so Core's
+      // fleet-down fallback can switch to a BYOK provider the student holds but
+      // didn't select. `apiKey` remains the selected model's key.
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },
@@ -877,7 +881,8 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },
@@ -897,7 +902,8 @@ export const api = {
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
-      apiKey: string;
+      apiKey?: string;
+      apiKeys?: Record<string, string>;
       chatId?: string | null;
       messageId?: string;
     },

@@ -176,7 +176,7 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
     }
   });
 
-  test("the composer's Model select is present but disabled with an empty catalogue", async ({
+  test("the composer's Model select is present but disabled with an empty catalogue, even with a BYOK key", async ({
     page,
     playwright,
   }) => {
@@ -186,6 +186,7 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
       codePrefix: "CMS",
     });
     try {
+      // seedByokKey defaults to the `google` provider.
       await seedByokKey(page, studentId);
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
@@ -194,8 +195,12 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
 
       const model = chat.getByRole("combobox", { name: "Model" });
       await expect(model).toBeVisible({ timeout: 20_000 });
-      // The e2e Core catalogue is empty, so the select is disabled rather than
-      // offering a model the tutor cannot actually reach.
+      // #1645: the admin allow-list is absolute — a held BYOK key never widens
+      // the picker. The e2e Core catalogue is empty, so there is nothing the
+      // tutor can actually reach and the select stays disabled rather than
+      // offering a model that would 422 at Core. (The personal key is still a
+      // fallback: Core covers with it when the fleet is down for an ALLOWED
+      // model — but it is not a way to pick a model the admin never allowed.)
       await expect(model).toBeDisabled();
     } finally {
       await seeded.dispose();

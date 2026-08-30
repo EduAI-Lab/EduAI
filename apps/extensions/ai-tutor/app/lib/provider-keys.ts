@@ -37,6 +37,25 @@ const PROVIDER_LABELS = new Map<string, string>([
   ["opencode", "OpenCode Go"],
 ]);
 
+/**
+ * Providers that need the student's own (BYOK) key to serve a request. Every
+ * provider a student can configure a key for (see `PROVIDERS`) is BYOK; UBC-
+ * hosted providers (`vllm`, `ollama`) are backed by the server's own key and
+ * never require one from the browser. Kept as a set so the composer gate can
+ * ask "does the SELECTED model need my key?" instead of "do I hold any key?"
+ * (#1645 — a personal key must be a fallback, not a precondition).
+ */
+const BYOK_PROVIDER_IDS = new Set<string>(PROVIDERS.map((provider) => provider.id));
+
+/**
+ * Whether the given provider requires a browser-local BYOK key. UBC-hosted
+ * inference (anything not in `BYOK_PROVIDER_IDS`, e.g. `vllm`/`ollama`) is
+ * served with the server's key, so those models are usable with no key.
+ */
+export function providerRequiresByokKey(provider: string): boolean {
+  return BYOK_PROVIDER_IDS.has(provider);
+}
+
 /** Legacy unscoped localStorage key. It is deliberately discarded because its
  * owner cannot be established safely on a shared browser. */
 export const API_KEYS_STORAGE_KEY = "ai-provider-keys";
