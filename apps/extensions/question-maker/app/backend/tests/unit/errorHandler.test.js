@@ -10,6 +10,9 @@ import { notFound, errorHandler } from "../../src/middleware/errorHandler.js";
 const { logger } = vi.hoisted(() => ({ logger: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock("../../src/utils/logger.js", () => ({ logger }));
 
+const { forgetUserRow } = vi.hoisted(() => ({ forgetUserRow: vi.fn() }));
+vi.mock("../../src/services/authService.js", () => ({ forgetUserRow }));
+
 function prismaError(code, meta) {
   return new Prisma.PrismaClientKnownRequestError("Prisma error", {
     code,
@@ -116,6 +119,41 @@ describe("errorHandler middleware", () => {
     errorHandler(err, makeReq(), res, () => {});
     expect(res._status).toBe(400);
     expect(res._body.error).toBe("Referenced resource does not exist");
+  });
+
+  // #1388: a cache hit skips the upsert, so a local user row wiped out of band
+  // (seed/restore) only surfaces here, as an FK violation on the first
+  // dependent write. Evicting the memo is what bounds that to a single failed
+  // request instead of the whole TTL window.
+  it("evicts the caller's memoized user row on P2003 so the next request re-upserts", () => {
+    forgetUserRow.mockClear();
+    const res = makeRes();
+    const req = { ...makeReq(), user: { id: "u1" } };
+
+    errorHandler(prismaError("P2003"), req, res, () => {});
+
+    expect(res._status).toBe(400);
+    expect(forgetUserRow).toHaveBeenCalledWith("u1");
+  });
+
+  it("does not evict anything on P2003 when the request has no authenticated user", () => {
+    forgetUserRow.mockClear();
+    const res = makeRes();
+
+    errorHandler(prismaError("P2003"), makeReq(), res, () => {});
+
+    expect(res._status).toBe(400);
+    expect(forgetUserRow).toHaveBeenCalledWith(undefined);
+  });
+
+  it("leaves the memoized user row alone for FK-unrelated Prisma errors", () => {
+    forgetUserRow.mockClear();
+    const req = { ...makeReq(), user: { id: "u1" } };
+
+    errorHandler(prismaError("P2025"), req, makeRes(), () => {});
+    errorHandler(prismaError("P2002", { target: ["email"] }), req, makeRes(), () => {});
+
+    expect(forgetUserRow).not.toHaveBeenCalled();
   });
 
   it('maps a JsonWebTokenError to 401 with "Invalid token"', () => {

@@ -105,6 +105,14 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock("~/lib/chat-daily-limits.server", () => ({
+  consumeLocalChatDailyCap: vi.fn().mockResolvedValue(null),
+  getChatDailyLimitSettings: vi.fn().mockResolvedValue({
+    studentLimit: 50,
+    instructorLimit: 200,
+  }),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { requireServiceKey } from "~/lib/auth/guards.server";
