@@ -2,7 +2,9 @@
  * Question parameters panel: type, primary topic, secondary topics, difficulty, reasoning,
  * description, and assessment. Uses a compact multi-column grid to minimise vertical space.
  */
-import { Label, Textarea, MultiSelect } from "@eduai/ui";
+import { Button, Input, Label, Textarea, MultiSelect } from "@eduai/ui";
+import { useState } from "react";
+import { IconPlus } from "@tabler/icons-react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import {
@@ -39,6 +41,7 @@ interface QuestionMetadataPanelProps {
   mode: "new" | "variant";
   primaryTopicName?: string;
   onToggleSecondaryTopic: (topicId: string, checked: boolean) => void;
+  onCreateTopic?: (name: string) => Promise<Topic>;
 }
 
 const difficultyOptions: QuestionDifficulty[] = ["easy", "medium", "hard"];
@@ -60,7 +63,30 @@ export function QuestionMetadataPanel({
   mode,
   primaryTopicName,
   onToggleSecondaryTopic,
+  onCreateTopic,
 }: QuestionMetadataPanelProps) {
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
+
+  const handleCreateTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name || !onCreateTopic) return;
+
+    setCreatingTopic(true);
+    setTopicCreationError(null);
+    try {
+      const topic = await onCreateTopic(name);
+      setNewTopicName("");
+      if (mode === "new") onChange("primaryTopicId", topic.id);
+    } catch (error) {
+      console.error("Failed to create topic", error);
+      setTopicCreationError("Could not create topic. Try a different name.");
+    } finally {
+      setCreatingTopic(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {/* Row 1: Type + Primary Topic + Difficulty + Reasoning — 4 cols on lg, 2 on sm */}
@@ -103,7 +129,7 @@ export function QuestionMetadataPanel({
             <>
               {topics.length === 0 && !isAuxLoading && (
                 <p className="text-xs text-muted-foreground">
-                  No topics yet. Add in Core then re-sync.
+                  No topics yet. Add one below to continue.
                 </p>
               )}
               <Select
@@ -136,6 +162,39 @@ export function QuestionMetadataPanel({
                   )}
                 </SelectContent>
               </Select>
+              {onCreateTopic && (
+                <div className="flex gap-2">
+                  <Input
+                    value={newTopicName}
+                    onChange={(event) => {
+                      setNewTopicName(event.target.value);
+                      if (topicCreationError) setTopicCreationError(null);
+                    }}
+                    placeholder="New topic name"
+                    aria-label="New topic name"
+                    disabled={disabled || creatingTopic}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleCreateTopic();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleCreateTopic()}
+                    disabled={disabled || creatingTopic || !newTopicName.trim()}
+                  >
+                    <IconPlus className="size-4" aria-hidden="true" />
+                    {creatingTopic ? "Adding…" : "Add"}
+                  </Button>
+                </div>
+              )}
+              {topicCreationError && (
+                <p className="text-xs text-destructive">{topicCreationError}</p>
+              )}
             </>
           )}
         </div>

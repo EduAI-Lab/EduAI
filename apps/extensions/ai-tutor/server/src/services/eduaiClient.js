@@ -510,6 +510,48 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   }
 }
 
+/** Create a topic in the Core course and return its Core identity. */
+export async function createEduAiCourseTopic(externalCourseId, name) {
+  if (!externalCourseId) {
+    throw Object.assign(new Error("Core course id is required"), { status: 400 });
+  }
+
+  const serviceKey = await getEffectiveEduAiApiKey();
+  if (!serviceKey) {
+    throw Object.assign(new Error("EDUAI_API_KEY not configured"), { status: 503 });
+  }
+
+  const response = await fetch(`${getEduAiBaseUrl()}/courses/${externalCourseId}/topics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ name }),
+  });
+  const body = await response.json().catch(() => ({}));
+
+  // Core treats topic names as unique within a course. Reusing the existing
+  // id keeps the AI Tutor mirror linked when two authoring tabs race.
+  if (response.status === 409 && body?.existingId) {
+    return { id: body.existingId, name };
+  }
+
+  if (!response.ok) {
+    const error = new Error(
+      body?.error || `EduAI topic creation failed with status ${response.status}`,
+    );
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+
+  if (!body?.id) {
+    throw Object.assign(new Error("Core returned an invalid topic"), { status: 502, body });
+  }
+  return { id: body.id, name: body.name ?? name };
+}
+
 export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;

@@ -98,6 +98,7 @@ export default function AddActivityPanel({
     total: topicsTotal,
     loading: loadingTopics,
     error: topicsError,
+    createTopic,
     loadMore: loadMoreTopics,
     loadingMore: loadingMoreTopics,
     refresh: refreshTopics,
@@ -110,6 +111,9 @@ export default function AddActivityPanel({
   const [textAnswer, setTextAnswer] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
 
   // "Start from" a shared bank question vs. writing the prompt manually.
   // Bank mode is offered only when the caller passes `courseOfferingId`.
@@ -313,6 +317,25 @@ export default function AddActivityPanel({
     selectionTokenRef.current += 1;
     setSource("manual");
     setBankSource(null);
+  };
+
+  const handleCreateTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name) return;
+
+    setCreatingTopic(true);
+    setTopicCreationError(null);
+    try {
+      const topic = await createTopic(name);
+      setNewTopicName("");
+      setSelectedMainTopicId(String(topic.id));
+      setShowTopicCreator(false);
+    } catch (error) {
+      console.error("Failed to create topic", error);
+      setTopicCreationError("Could not create topic. Try a different name.");
+    } finally {
+      setCreatingTopic(false);
+    }
   };
 
   const addChoice = () => {
@@ -739,6 +762,37 @@ export default function AddActivityPanel({
                   ))}
                 </SelectContent>
               </Select>
+              <div className="flex gap-2">
+                <Input
+                  value={newTopicName}
+                  onChange={(event) => {
+                    setNewTopicName(event.target.value);
+                    if (topicCreationError) setTopicCreationError(null);
+                  }}
+                  placeholder="New topic name"
+                  aria-label="New topic name"
+                  disabled={busy || creatingTopic}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleCreateTopic();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleCreateTopic()}
+                  disabled={busy || creatingTopic || !newTopicName.trim()}
+                >
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  {creatingTopic ? "Adding…" : "Add"}
+                </Button>
+              </div>
+              {topicCreationError && (
+                <p className="text-xs text-destructive">{topicCreationError}</p>
+              )}
               {topicSelectionError && (
                 <p className="text-xs text-destructive">{topicSelectionError}</p>
               )}
@@ -765,7 +819,7 @@ export default function AddActivityPanel({
               )}
               {!loadingTopics && !topicsError && topics.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No topics on this course yet. Add some on EduAI Core, then try again.
+                  No topics on this course yet. Add one above to continue.
                 </p>
               )}
             </div>

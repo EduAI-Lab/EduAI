@@ -22,12 +22,14 @@ import {
 } from "../helpers.js";
 
 const listEduAiCourseTopics = vi.fn();
+const createEduAiCourseTopic = vi.fn();
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
     listEduAiCourseTopics: (...args) => listEduAiCourseTopics(...args),
+    createEduAiCourseTopic: (...args) => createEduAiCourseTopic(...args),
   };
 });
 
@@ -47,6 +49,7 @@ describe("Topics routes", () => {
       },
     );
     listEduAiCourseTopics.mockReset();
+    createEduAiCourseTopic.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     app = await createApp({ mockUser: prof });
@@ -194,12 +197,8 @@ describe("Topics routes", () => {
 
   describe("POST /api/courses/:courseId/topics", () => {
     // #1072 step 4: `CourseOffering` is a pure anchor with a required,
-    // unique `coreOfferingId` — every course is Core-linked ("imported") by
-    // construction now, so the "native course, manual topic creation"
-    // scenario this endpoint was built for can no longer occur. Manual
-    // topic creation is unconditionally blocked (see the "imported courses"
-    // test below); the former 201/409-on-duplicate cases tested a course
-    // shape that no longer exists.
+    // unique `coreOfferingId`; creation therefore writes Core first and
+    // mirrors the new topic locally.
 
     it("returns 400 on empty name", async () => {
       const res = await request(app)
@@ -230,13 +229,24 @@ describe("Topics routes", () => {
       expect(res.status).toBe(403);
     });
 
-    it("returns 403 for imported courses (coreOfferingId set) — the only shape a CourseOffering can have (#1072 step 4)", async () => {
+    it("creates the topic in Core and mirrors it locally", async () => {
+      createEduAiCourseTopic.mockResolvedValue({ id: "core-new", name: "Created Topic" });
+
       const res = await request(app)
         .post(`/api/courses/${seed.course.id}/topics`)
-        .send({ name: "Blocked Topic" });
+        .send({ name: "Created Topic" });
 
-      expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/imported/i);
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ id: expect.any(String), name: "Created Topic" });
+      expect(createEduAiCourseTopic).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        "Created Topic",
+      );
+
+      const localTopic = await prisma.topic.findFirst({
+        where: { courseOfferingId: seed.course.id, name: "Created Topic" },
+      });
+      expect(localTopic).toMatchObject({ coreTopicId: "core-new" });
     });
   });
 
