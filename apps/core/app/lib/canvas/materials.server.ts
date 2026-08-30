@@ -53,7 +53,7 @@ function normalizeMimeType(file: CanvasFileApi): string | null {
   // The filename selects the parser, while the bounded download path verifies
   // that the response MIME and file signature agree with this choice. Canvas
   // and CDN metadata commonly fall back to application/octet-stream.
-  const lowerName = (file.filename || file.display_name || "").toLowerCase();
+  const lowerName = (file.display_name || file.filename || "").toLowerCase();
   for (const [ext, mime] of EXTENSION_MIME) {
     if (lowerName.endsWith(ext)) {
       return mime;
@@ -294,14 +294,14 @@ export async function importSingleCanvasFile(
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
-  const uploadFile = new File([new Uint8Array(bytes)], file.filename || file.display_name, {
+  const displayName = file.display_name || file.filename || "canvas-file";
+  const uploadFile = new File([new Uint8Array(bytes)], displayName, {
     type: mimeType,
   });
 
   // Persist PROCESSING *before* extraction so a killed PDF worker cannot leave an
   // existing Canvas material stuck at READY, and new imports still get a FAILED row (#1018).
   let materialId: string;
-  const displayName = file.filename || file.display_name || "canvas-file";
   const provisionalTitle = displayName.replace(/\.[^/.]+$/, "") || displayName;
 
   if (existing) {

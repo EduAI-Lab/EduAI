@@ -338,10 +338,10 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toHaveLength(0);
     expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ fileSize: 5 }),
+        data: expect.objectContaining({ fileSize: 5, title: "Lecture 1" }),
       }),
     );
-    expect(processUploadedFile).toHaveBeenCalled();
+    expect(vi.mocked(processUploadedFile).mock.calls[0]?.[0].name).toBe("Lecture 1.txt");
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
   });
 
