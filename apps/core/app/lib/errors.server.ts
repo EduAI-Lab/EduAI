@@ -45,6 +45,18 @@ export function errorResponse(cause: unknown): Response {
 export interface RouteErrorContext {
   /** The incoming request — its method and path are recorded for triage. */
   request?: Request;
+  /**
+   * Extra response headers to attach to the mapped error response.
+   *
+   * A thunk, not a fixed object, because the values a route needs to echo back
+   * on failure are often only known partway through the body — `/api/chat` has
+   * to return `X-Chat-Id` for a chat it created before the throw so the client
+   * can resume that thread instead of spawning another one (#1621). Called only
+   * on the mapped path; a rethrown `Response` keeps its own headers. Entries
+   * with an `undefined` value are skipped, and a thrown/failed thunk must never
+   * mask the original error, so it is best-effort.
+   */
+  headers?: () => Record<string, string | undefined>;
 }
 
 /**
@@ -88,6 +100,30 @@ export async function withErrorResponse<T>(
         }),
       );
     }
-    return apiError(status, code, fields);
+    return withExtraHeaders(apiError(status, code, fields), context.headers);
   }
+}
+
+/**
+ * Copy a route's extra headers onto the mapped error response.
+ *
+ * The thunk runs inside the catch, where the original failure is what matters —
+ * so a thunk that itself throws is swallowed and the plain envelope is returned
+ * rather than replacing a real error with a secondary one.
+ */
+function withExtraHeaders(response: Response, headers: RouteErrorContext["headers"]): Response {
+  if (!headers) return response;
+  let extra: Record<string, string | undefined>;
+  try {
+    extra = headers();
+  } catch {
+    return response;
+  }
+  const entries = Object.entries(extra).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  if (entries.length === 0) return response;
+  const merged = new Headers(response.headers);
+  for (const [name, value] of entries) merged.set(name, value);
+  return new Response(response.body, { status: response.status, headers: merged });
 }
