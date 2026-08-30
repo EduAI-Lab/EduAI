@@ -229,6 +229,90 @@ describe("recordTopicAnalysisJobs", () => {
 
     expect(result[0]).toMatchObject({ jobId: "job-pending", resumable: true });
   });
+
+  /**
+   * WhiteKnight follow-up on #1699: a changed resync reuses an unchanged chunk's
+   * FAILED row (same checksum key) but used to leave its old batchKey and skip
+   * the run. A sibling chunk completing under the new batchKey then hid the
+   * failure and reported success with no retry.
+   */
+  it("recycles a reused FAILED chunk into the current batch and marks it resumable", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
+    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-failed-a",
+      status: "FAILED",
+      startedAt: null,
+    });
+    prismaMock.aiJob.update.mockResolvedValue({ id: "job-failed-a" });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+    });
+
+    expect(result).toEqual([{ jobId: "job-failed-a", created: false, resumable: true }]);
+
+    const update = prismaMock.aiJob.update.mock.calls[0][0];
+    expect(update.where).toEqual({ id: "job-failed-a" });
+    expect(update.data).toMatchObject({
+      status: "PENDING",
+      errorMessage: null,
+      completedAt: null,
+      startedAt: null,
+    });
+    expect(update.data.payload.input.batchKey).toBe(
+      topicAnalysisIdempotencyKey("course-1", ["sum-a"]),
+    );
+  });
+
+  it("re-runs a recycled FAILED chunk when the wider corpus changed", async () => {
+    // Two chunks: unchanged A (prior FAILED) and new B (fresh PENDING).
+    const materials = Array.from({ length: MAX_MATERIALS_PER_JOB + 1 }, (_, index) => ({
+      id: `m${index}`,
+      // Chunk 0 keeps its prior checksums; the extra material makes chunk 1 new.
+      checksum: index < MAX_MATERIALS_PER_JOB ? `sum-${index}` : "sum-extra-changed",
+    }));
+    prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
+    prismaMock.aiJob.create
+      .mockRejectedValueOnce(Object.assign(new Error("dup"), { code: "P2002" }))
+      .mockResolvedValueOnce({ id: "job-b-new" });
+    prismaMock.aiJob.findUnique
+      .mockResolvedValueOnce({
+        id: "job-a-failed",
+        status: "FAILED",
+        startedAt: null,
+      })
+      // runTopicAnalysisJob reads payload after claim for each run.
+      .mockResolvedValue({ payload: payload(), userId: "user-1" });
+    prismaMock.aiJob.update.mockResolvedValue({});
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+
+    startTopicAnalysis({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: materials.map((m) => m.id),
+    });
+
+    await vi.waitFor(() => expect(prismaMock.aiJob.create).toHaveBeenCalledTimes(2));
+    // Failed chunk A was recycled (PENDING + new batchKey) before either run.
+    await vi.waitFor(() =>
+      expect(
+        prismaMock.aiJob.update.mock.calls.some(
+          (call) => call[0].where?.id === "job-a-failed" && call[0].data?.status === "PENDING",
+        ),
+      ).toBe(true),
+    );
+    // Both the recycled failure and the new chunk were claimed and run.
+    await vi.waitFor(() => expect(prismaMock.aiJob.updateMany).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(
+        prismaMock.aiJob.update.mock.calls.filter((call) => call[0].data?.status === "COMPLETED")
+          .length,
+      ).toBe(2),
+    );
+  });
 });
 
 describe("startTopicAnalysis", () => {

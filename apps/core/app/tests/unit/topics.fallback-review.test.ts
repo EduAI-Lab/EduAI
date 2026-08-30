@@ -452,6 +452,36 @@ describe("latestTopicAnalysisForCourse", () => {
     });
   });
 
+  /**
+   * After recordChunk recycles a reused FAILED row into the current batchKey
+   * (#1699 follow-up), the status reader must still surface that failure even
+   * when a later changed chunk completed under the same key.
+   */
+  it("reports FAILED when a recycled prior-failure chunk shares the current batchKey", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({
+        id: "chunk-changed",
+        batchKey: "batch-resync",
+        result: { created: 3, usedSource: "material-headings" },
+      }),
+      jobRow({
+        id: "chunk-unchanged-failed",
+        batchKey: "batch-resync",
+        status: "FAILED",
+        errorMessage: "model unreachable",
+        completedAt: null,
+        result: null,
+      }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(3);
+
+    expect((await latestTopicAnalysisForCourse("course-1")).job).toMatchObject({
+      id: "chunk-changed",
+      status: "FAILED",
+      errorMessage: "model unreachable",
+    });
+  });
+
   it("reads a pre-chunking row on its own", async () => {
     prismaMock.aiJob.findMany.mockResolvedValue([
       jobRow({ id: "legacy", batchKey: null }),

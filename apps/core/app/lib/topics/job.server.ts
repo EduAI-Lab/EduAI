@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { Prisma } from "@prisma/client";
+
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import { JobPayloadSchema, type JobPayload } from "~/lib/queue/job-schema";
@@ -193,6 +195,29 @@ async function recordChunk(
       select: { id: true, status: true, startedAt: true },
     });
     if (!existing) return null;
+
+    // A changed resync of the wider corpus derives a new batchKey, but an
+    // unchanged chunk still hashes to the same bullJobId and reuses this row.
+    // A prior FAILED row still carries its old batchKey and is neither created
+    // nor resumable — so startTopicAnalysis would skip it, the status reader
+    // would group only the new batchKey, and a sibling chunk completing would
+    // hide the failure. Recycle the row into this batch and make it PENDING so
+    // it is run again and counted with its siblings.
+    if (existing.status === "FAILED") {
+      await prisma.aiJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "PENDING",
+          payload,
+          errorMessage: null,
+          completedAt: null,
+          startedAt: null,
+          result: Prisma.DbNull,
+        },
+      });
+      return { jobId: existing.id, created: false, resumable: true };
+    }
+
     return {
       jobId: existing.id,
       created: false,
