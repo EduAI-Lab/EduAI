@@ -20,8 +20,6 @@ vi.mock("~/lib/api", async () => {
   };
 });
 
-import api from "~/lib/api";
-
 const firstUser: AuthUser = { id: "student-a", name: "Student A", role: "STUDENT" };
 const secondUser: AuthUser = { id: "student-b", name: "Student B", role: "STUDENT" };
 
