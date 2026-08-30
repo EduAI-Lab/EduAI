@@ -998,7 +998,7 @@ describe("testApiKey", () => {
     });
     expect(out.provider).toBe("opencode");
     const [, body] = axios.post.mock.calls.at(-1);
-    expect(body.model).toBe("opencode:muse-spark-1.2-contributor");
+    expect(body.model).toBe("opencode:deepseek-v4-flash");
     expect(body.apiKeys.opencode).toEqual({ apiKey: "opencode-secret", isEnabled: true });
   });
 });

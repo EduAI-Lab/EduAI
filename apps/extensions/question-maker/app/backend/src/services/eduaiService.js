@@ -48,7 +48,7 @@ const CLOUD_PROBE_MODELS = {
   openai: "openai:gpt-4o-mini",
   deepseek: "deepseek:deepseek-chat",
   anthropic: "anthropic:claude-3-5-haiku-latest",
-  opencode: "opencode:muse-spark-1.2-contributor",
+  opencode: "opencode:deepseek-v4-flash",
 };
 
 /** Strip ```json ... ``` / ``` ... ``` fences if the model wrapped its answer. */

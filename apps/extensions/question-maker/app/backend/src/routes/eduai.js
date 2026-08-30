@@ -541,13 +541,6 @@ const FALLBACK_AI_MODELS = [
   },
   {
     provider: "opencode",
-    modelId: "muse-spark-1.2-contributor",
-    name: "Muse Spark 1.2 Contributor (OpenCode Go)",
-    description: "OpenCode Go Responses API model. Prompts may be used for training.",
-    isActive: true,
-  },
-  {
-    provider: "opencode",
     modelId: "deepseek-v4-flash",
     name: "DeepSeek V4 Flash (OpenCode Go)",
     description: "Requires your own OpenCode Go subscription and API key.",
