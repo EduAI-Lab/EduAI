@@ -71,18 +71,23 @@ function stableCoreFailure(error, fallbackMessage) {
 // once so a live TA sees a newly materialized course on their first list.
 const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
+const inFlightMirrorByUser = new Map();
 
 function runCoreImportMirror(userId, role, cookie, waitForCompletion = false) {
+  const inFlight = inFlightMirrorByUser.get(userId);
+  if (inFlight) return waitForCompletion ? inFlight : undefined;
+
   const now = Date.now();
   const last = lastMirrorAtByUser.get(userId) ?? 0;
   if (now - last < CORE_MIRROR_THROTTLE_MS) return;
   lastMirrorAtByUser.set(userId, now);
 
-  const mirror = importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "").catch(
-    (err) => {
+  const mirror = importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "")
+    .catch((err) => {
       logger.warn({ err, userId }, "Core course mirror failed on list");
-    },
-  );
+    })
+    .finally(() => inFlightMirrorByUser.delete(userId));
+  inFlightMirrorByUser.set(userId, mirror);
   if (waitForCompletion) return mirror;
   void mirror;
 }
@@ -90,6 +95,7 @@ function runCoreImportMirror(userId, role, cookie, waitForCompletion = false) {
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */
 export function resetCoreImportThrottleForTests() {
   lastMirrorAtByUser.clear();
+  inFlightMirrorByUser.clear();
 }
 
 /**
@@ -140,7 +146,9 @@ router.post("/", authenticateToken, async (req, res, next) => {
     if (req.user.role === "INSTRUCTOR" || req.user.role === "STUDENT") {
       let enrollments = [];
       try {
-        const data = await getCourseEnrollmentsFromCore(coreCourseId, { cookie });
+        const data = await getCourseEnrollmentsFromCore(coreCourseId, {
+          cookie,
+        });
         enrollments = data?.enrollments ?? [];
       } catch (err) {
         const status = Number.isInteger(err?.status) ? err.status : 502;
@@ -216,7 +224,9 @@ router.get("/", authenticateToken, async (req, res, next) => {
       ? await prisma.course.findMany({
           where: { id: { in: visibleIds } },
           include: {
-            questionMetadata: { select: { id: true, type: true, description: true } },
+            questionMetadata: {
+              select: { id: true, type: true, description: true },
+            },
             topics: { select: { id: true, name: true } },
           },
         })
@@ -309,7 +319,10 @@ router.get(
         },
       });
 
-      res.json({ success: true, data: await enrichCourseDetail(courseData, { cookie }) });
+      res.json({
+        success: true,
+        data: await enrichCourseDetail(courseData, { cookie }),
+      });
     } catch (error) {
       next(error);
     }
@@ -334,7 +347,9 @@ router.put(
       res.json({
         success: true,
         message: "Course updated successfully",
-        data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
+        data: await enrichCourseDetail(courseData, {
+          cookie: req.headers.cookie,
+        }),
       });
     } catch (error) {
       next(error);
@@ -372,7 +387,10 @@ router.get(
       // window is a true DB-level limit/offset. Params are optional — a caller
       // that sends none gets the first page at `defaultPageSize` instead of a 400
       // — but the response is never unbounded; `getCourseTopics` walks pages.
-      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+      const pagination = parsePaginationParams(req, {
+        required: false,
+        defaultPageSize: 200,
+      });
 
       const course = req.qmCourse;
 
@@ -574,7 +592,9 @@ router.post(
 
       let synced;
       try {
-        synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+        synced = await syncTopicsFromCoreForCourse(course, cookie, {
+          failOnCoreError: true,
+        });
       } catch (err) {
         const failure = stableCoreFailure(err, "Core request failed");
         logger.warn(failure.logFields, "Core topic sync failed");
@@ -595,8 +615,14 @@ router.post(
  * Question banks are owned by EduAI Core; these routes proxy via questionBankService
  * using the local course's `coreCourseId`.
  */
-const bankReadAccess = requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam });
-const bankWriteAccess = requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam });
+const bankReadAccess = requireCourseAccess({
+  min: "ta",
+  getCourseId: courseIdFromParam,
+});
+const bankWriteAccess = requireCourseAccess({
+  min: "instructor",
+  getCourseId: courseIdFromParam,
+});
 
 /** GET /api/course/:id/banks */
 router.get("/:id/banks", authenticateToken, bankReadAccess, async (req, res, next) => {

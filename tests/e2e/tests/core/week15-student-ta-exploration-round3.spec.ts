@@ -71,7 +71,9 @@ test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
   try {
     const secret = process.env.E2E_SEED_SECRET ?? "e2e-seed-secret";
-    const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, { data: { secret } });
+    const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, {
+      data: { secret },
+    });
     expect(res.ok(), `demo-data seed failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   } finally {
     await ctx.dispose();
@@ -162,7 +164,9 @@ test.describe("Chat composer — ADHD Assist toggle", () => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       // Known baseline before touching the toggle.
-      await ctx.post(`${CORE_URL}/api/preferences`, { data: { assistDefault: false } });
+      await ctx.post(`${CORE_URL}/api/preferences`, {
+        data: { assistDefault: false },
+      });
 
       const capturedAdhdAssist: (boolean | undefined)[] = [];
       await page.route("**/api/chat", async (route: Route) => {
@@ -408,16 +412,10 @@ test.describe("Chat composer — system prompt settings", () => {
 });
 
 // ===========================================================================
-// /api/chat failure modes — what the UI actually shows (or doesn't)
+// /api/chat failure modes
 // ===========================================================================
 
 test.describe("Chat composer — error handling per failure mode", () => {
-  // Idle Send/Stop are hard asserts — a stuck Stop fails the run.
-  // Missing error UI is the known #1510 drift: we assert the spec (an
-  // error state must be visible) and mark that check with test.fail() so a
-  // real fix surfaces as a newly-passing (and thus newly-failing
-  // test.fail) row. Same pattern as #1411/#1412 in
-  // ai-chat-gate.pict.test.js (`it.fails` against the spec oracle).
   const cases: Array<{
     name: string;
     mock: (route: Route) => Promise<void>;
@@ -453,7 +451,7 @@ test.describe("Chat composer — error handling per failure mode", () => {
   ];
 
   for (const { name, mock } of cases) {
-    test(`${name}: composer returns to idle; error UI is the #1510 expected-failure contract`, async ({
+    test(`${name}: composer returns to idle and surfaces an error toast`, async ({
       page,
       playwright,
     }) => {
@@ -474,9 +472,9 @@ test.describe("Chat composer — error handling per failure mode", () => {
         await openCourseChat(page);
 
         const sendButton = page.getByRole("button", { name: "Send message" });
-        const stopButton = page.getByRole("button", { name: "Stop generating" });
-        const errorText = page.getByText(/error|failed|try again|something went wrong/i);
-
+        const stopButton = page.getByRole("button", {
+          name: "Stop generating",
+        });
         await page.locator("#chat-message-input").fill("This request will fail.");
         await sendButton.click();
         await expect(
@@ -493,14 +491,10 @@ test.describe("Chat composer — error handling per failure mode", () => {
           `[${name}] Stop must not stay stuck after /api/chat fails`,
         ).toHaveCount(0);
 
-        // Called only after the idle-composer asserts, so a stuck Stop is a
-        // real failure. The remaining expect is the spec (error UI visible);
-        // it currently fails, which is the tracked #1510 contract.
-        test.fail(true, "Known bug #1510: /api/chat failures never surface error UI");
         await expect(
-          errorText,
-          `[${name}] /api/chat failure should surface error UI`,
-        ).toBeVisible();
+          page.getByText("Could not get a response", { exact: true }),
+          `[${name}] /api/chat failure should surface an error toast`,
+        ).toBeVisible({ timeout: 10_000 });
       } finally {
         await ctx.dispose();
       }
