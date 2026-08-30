@@ -9,15 +9,20 @@ describe("QM nav RBAC", () => {
     authorizedUnits: ["COSC"],
   };
   const instructor = { id: "i1", role: "INSTRUCTOR" as const };
+  const ta = { id: "t1", role: "TA" as const };
   const student = { id: "s1", role: "STUDENT" as const };
 
   it("includes core workspace links for authorized roles", () => {
-    for (const user of [admin, unitAdmin, instructor, student]) {
+    for (const user of [admin, unitAdmin, instructor, ta]) {
       const keys = getNavForUser(user).map((item) => item.key);
       expect(keys).toContain("dashboard");
       expect(keys).toContain("courses");
       expect(keys).toContain("library");
     }
+  });
+
+  it("does not show authoring navigation to an ordinary platform student", () => {
+    expect(getNavForUser(student)).toEqual([]);
   });
 
   it("points workspace links at live routes, not legacy redirects", () => {

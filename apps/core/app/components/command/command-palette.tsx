@@ -155,7 +155,9 @@ export function CommandPalette({ user }: { user: User }) {
   // #1666 review (Stavan): Course Assistant must survive navigation beyond
   // /dashboard — sourced from the root loader (every route shares it) rather
   // than the raw session `user`, which has no notion of course enrollment.
-  const rootData = useRouteLoaderData("root") as { hasInstructorEnrollment?: boolean } | undefined;
+  const rootData = useRouteLoaderData("root") as
+    | { hasInstructorEnrollment?: boolean; hasTeachingAssistantEnrollment?: boolean }
+    | undefined;
   const navUser = { ...user, hasInstructorEnrollment: rootData?.hasInstructorEnrollment };
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const [query, setQuery] = React.useState("");
@@ -206,7 +208,7 @@ export function CommandPalette({ user }: { user: User }) {
   const appGroup = buildAppSwitcherGroup({
     apps: getLauncherApps(coreCourseId),
     currentAppId: CURRENT_APP_ID,
-    role: user.role,
+    role: rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role,
   });
 
   const groups: CommandPaletteGroup[] = [

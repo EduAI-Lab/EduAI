@@ -1190,6 +1190,7 @@ export const CourseDetailPage = () => {
               assessmentId={selectedAssessmentForExport.id}
               assessmentName={selectedAssessmentForExport.name}
               courseId={courseId}
+              courseName={course.name}
               onExportSuccess={(result) => {
                 toast("Export successful!", {
                   description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}`,

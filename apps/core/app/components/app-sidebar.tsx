@@ -122,7 +122,11 @@ export function useCoreSidebarProps({
   // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
   const rootData = useRouteLoaderData("root") as
-    | { canInvite?: boolean; hasInstructorEnrollment?: boolean }
+    | {
+        canInvite?: boolean;
+        hasInstructorEnrollment?: boolean;
+        hasTeachingAssistantEnrollment?: boolean;
+      }
     | undefined;
 
   // The cron admin page owns polling while it is open, so this always-mounted
@@ -193,7 +197,7 @@ export function useCoreSidebarProps({
     launcher: {
       apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
-      role: user.role,
+      role: rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role,
     },
     user,
     navUser: {

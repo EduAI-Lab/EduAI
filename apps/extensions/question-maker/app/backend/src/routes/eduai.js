@@ -12,6 +12,7 @@ import {
   LEVELS,
 } from "../middleware/courseAccess.js";
 import { findCoursesByProjectedCode, listCoursesForUser } from "../services/courseListService.js";
+import { listCoursesFromCore } from "../services/coreApiService.js";
 import { prisma } from "../config/database.js";
 import { safeRequestLogFields } from "../utils/safeLogging.js";
 import {
@@ -167,10 +168,8 @@ const requireQmAuthoringOrLiveTa = async (req, res, next) => {
   }
 
   try {
-    const visibleCourses = await listCoursesForUser(req.user, {
-      cookie: req.headers.cookie ?? "",
-    });
-    if (visibleCourses.some((course) => course.accessLevel === "ta")) return next();
+    const coreCourses = await listCoursesFromCore(req.headers.cookie ?? "", { all: true });
+    if (coreCourses.some((course) => course?.callerEnrollmentRole === "TA")) return next();
   } catch {
     // Fail closed when the live Core course snapshot is unavailable.
   }

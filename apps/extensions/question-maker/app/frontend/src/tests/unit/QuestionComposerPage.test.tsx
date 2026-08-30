@@ -352,6 +352,35 @@ describe("QuestionComposerPage create mode", () => {
     );
   });
 
+  it("submits a draft without sharing when approval permission changes before save", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    const view = render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-text"));
+    fireEvent.click(screen.getByText("set-choices"));
+    fireEvent.click(screen.getByText("set-answer"));
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
+    fireEvent.click(screen.getByTestId("share-with-extensions"));
+
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canApproveVariant: false,
+      canCreateQuestion: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    view.rerender(<QuestionComposerPage />);
+    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+
+    await waitFor(() =>
+      expect(questionService.createVariant).toHaveBeenCalledWith(
+        99,
+        expect.objectContaining({ isDraft: true, shareWithExtensions: false }),
+      ),
+    );
+  });
+
   it("reports a save failure, translating the VARIANT_LOCKED code", async () => {
     questionService.createQuestion.mockRejectedValue({
       response: { data: { error: "VARIANT_LOCKED" } },

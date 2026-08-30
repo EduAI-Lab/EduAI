@@ -14,6 +14,7 @@ import supertest from "supertest";
 const {
   mockFindCoursesByProjectedCode,
   mockListCoursesForUser,
+  mockListCoursesFromCore,
   mockCourseFindMany,
   mockCourseFindUnique,
   mockEnrollments,
@@ -21,6 +22,7 @@ const {
 } = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
   mockListCoursesForUser: vi.fn(),
+  mockListCoursesFromCore: vi.fn(),
   mockCourseFindMany: vi.fn(),
   mockCourseFindUnique: vi.fn(),
   mockEnrollments: vi.fn(),
@@ -69,6 +71,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 vi.mock("../../src/services/coreApiService.js", () => ({
+  listCoursesFromCore: mockListCoursesFromCore,
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: vi.fn().mockResolvedValue({ id: "cuid-core-course", department: "COSC" }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
@@ -128,6 +131,7 @@ function accessibleCourseById(overrides = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockListCoursesForUser.mockResolvedValue([]);
+  mockListCoursesFromCore.mockResolvedValue([]);
   mockCourseFindMany.mockResolvedValue([]);
   mockCourseFindUnique.mockResolvedValue(null);
 });
@@ -686,7 +690,9 @@ describe("GET /api/eduai/courses/:courseId/topics", () => {
 describe("POST /api/eduai/test-api-key", () => {
   it("allows a platform STUDENT with a live TA course", async () => {
     authAs(TA);
-    mockListCoursesForUser.mockResolvedValue([{ accessLevel: "ta" }]);
+    mockListCoursesFromCore.mockResolvedValue([
+      { id: "core-unmaterialized", callerEnrollmentRole: "TA" },
+    ]);
     eduaiService.testApiKey.mockResolvedValue({ success: true, provider: "vllm" });
 
     const res = await request(app)
@@ -700,7 +706,9 @@ describe("POST /api/eduai/test-api-key", () => {
 
   it("denies an ordinary platform STUDENT before probing shared AI", async () => {
     authAs(STUDENT);
-    mockListCoursesForUser.mockResolvedValue([]);
+    mockListCoursesFromCore.mockResolvedValue([
+      { id: "core-student", callerEnrollmentRole: "STUDENT" },
+    ]);
 
     const res = await request(app)
       .post("/api/eduai/test-api-key")
@@ -803,7 +811,9 @@ describe("POST /api/eduai/test-api-key", () => {
 describe("GET /api/eduai/ai-models", () => {
   it("allows a platform STUDENT with a live TA course", async () => {
     authAs(TA);
-    mockListCoursesForUser.mockResolvedValue([{ accessLevel: "ta" }]);
+    mockListCoursesFromCore.mockResolvedValue([
+      { id: "core-unmaterialized", callerEnrollmentRole: "TA" },
+    ]);
     eduaiService.listAIModels.mockResolvedValue([{ modelId: "ta-model" }]);
 
     const res = await request(app).get("/api/eduai/ai-models").set("Cookie", "session=ta");
@@ -814,7 +824,9 @@ describe("GET /api/eduai/ai-models", () => {
 
   it("denies an ordinary platform STUDENT before reading the model catalog", async () => {
     authAs(STUDENT);
-    mockListCoursesForUser.mockResolvedValue([]);
+    mockListCoursesFromCore.mockResolvedValue([
+      { id: "core-student", callerEnrollmentRole: "STUDENT" },
+    ]);
 
     const res = await request(app).get("/api/eduai/ai-models").set("Cookie", "session=student");
 

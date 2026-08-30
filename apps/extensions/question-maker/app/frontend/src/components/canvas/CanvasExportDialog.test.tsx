@@ -19,7 +19,7 @@ vi.mock("@/hooks/useQmPermissions", () => ({
 vi.mock("../../services/canvasService", () => ({
   default: {
     getIntegration: vi.fn(),
-    getCourses: vi.fn(),
+    getCourseLink: vi.fn(),
     exportAssessment: vi.fn(),
     connectCanvasWithFallback: vi.fn(),
   },
@@ -39,9 +39,10 @@ describe("CanvasExportDialog", () => {
       isTestMode: true,
       isConnected: true,
     });
-    vi.mocked(canvasService.getCourses).mockResolvedValue([
-      { id: 1, name: "CS 101", course_code: "CS101" },
-    ]);
+    vi.mocked(canvasService.getCourseLink).mockResolvedValue({
+      status: "linked",
+      mapping: { localCourseId: 9, canvasCourseId: 1, canvasCourseName: "CS 101" },
+    });
     vi.mocked(canvasService.exportAssessment).mockResolvedValue({
       quizId: 7,
       canvasUrl: "https://canvas.test/courses/1/quizzes/7",

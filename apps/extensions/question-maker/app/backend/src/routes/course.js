@@ -7,8 +7,7 @@
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../config/database.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { INSTRUCTORS } from "../middleware/roles.js";
+import { authenticateToken } from "../middleware/auth.js";
 import { requireCourseAccess, resolveCourseAccessWithCourse } from "../middleware/courseAccess.js";
 import {
   pushTopicToCore,
@@ -66,29 +65,26 @@ function stableCoreFailure(error, fallbackMessage) {
   };
 }
 
-// The Core course mirror (`importTaughtCoursesFromCore`) is a background side
-// effect, not a dependency of the list response: it fetches Core's cookie-
-// scoped course list and writes local Course anchors + topic syncs. It
-// previously ran awaited on every GET /api/course, so every list paid a
-// serial Core-fetch + import waterfall before the caller's own courses were
-// even read. Mirrors ai-tutor's `runCoreMirror` (server/src/routes/
-// authentication.js): throttle to at most once per window per user, and fire
-// without awaiting so the list response never blocks on it. A freshly-
-// imported course therefore may not appear until the NEXT list call, not this
-// one — acceptable per #1072's unified contract.
+// The Core course mirror (`importTaughtCoursesFromCore`) fetches Core's cookie-
+// scoped course list and writes local anchors + topics. Throttle it per user;
+// instructors keep the non-blocking path, while platform-STUDENT callers wait
+// once so a live TA sees a newly materialized course on their first list.
 const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
 
-function runCoreImportMirror(userId, role, cookie) {
+function runCoreImportMirror(userId, role, cookie, waitForCompletion = false) {
   const now = Date.now();
   const last = lastMirrorAtByUser.get(userId) ?? 0;
   if (now - last < CORE_MIRROR_THROTTLE_MS) return;
   lastMirrorAtByUser.set(userId, now);
 
-  // Fire-and-forget — errors are logged, never surfaced to the list response.
-  void importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "").catch((err) => {
-    logger.warn({ err, userId }, "Core course mirror failed on list");
-  });
+  const mirror = importTaughtCoursesFromCore(userId, role ?? "STUDENT", cookie ?? "").catch(
+    (err) => {
+      logger.warn({ err, userId }, "Core course mirror failed on list");
+    },
+  );
+  if (waitForCompletion) return mirror;
+  void mirror;
 }
 
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */
@@ -103,18 +99,22 @@ export function resetCoreImportThrottleForTests() {
  * data (name/code included, #1072 §4 step 10), so every row is just a
  * caller-scoped `coreCourseId` anchor.
  *
- * #1114: only ADMIN / UNIT_ADMIN / INSTRUCTOR may create anchors, and an
- * INSTRUCTOR must hold an active teaching enrollment (INSTRUCTOR or TA) on
- * that Core course — scoped-list membership alone (e.g. STUDENT) is not
- * enough. Creation is serialized per coreCourseId via advisory lock so
+ * #1114: ADMIN / UNIT_ADMIN may create scoped anchors. INSTRUCTOR and the
+ * platform-STUDENT representation of a course TA must also hold an active
+ * teaching enrollment on that exact Core course. Scoped-list membership alone
+ * is not enough. Creation is serialized per coreCourseId via advisory lock so
  * concurrent ensures return the same persisted owner.
  */
-router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, next) => {
+router.post("/", authenticateToken, async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
     if (!coreCourseId || typeof coreCourseId !== "string") {
       return res.status(400).json({ success: false, error: "coreCourseId is required" });
+    }
+
+    if (!["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
     }
 
     const cookie = req.headers.cookie;
@@ -134,9 +134,10 @@ router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, n
       return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
     }
 
-    // Platform ADMIN/UNIT_ADMIN may materialize any scoped course; INSTRUCTOR
-    // must also hold a teaching enrollment on that Core course (#1114).
-    if (req.user.role === "INSTRUCTOR") {
+    // Platform ADMIN/UNIT_ADMIN may materialize any scoped course. Both an
+    // INSTRUCTOR and Core's platform-STUDENT representation of a TA must prove
+    // an active teaching enrollment on this exact course (#1114).
+    if (req.user.role === "INSTRUCTOR" || req.user.role === "STUDENT") {
       let enrollments = [];
       try {
         const data = await getCourseEnrollmentsFromCore(coreCourseId, { cookie });
@@ -187,7 +188,16 @@ router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const pagination = parsePaginationParams(req, { required: true });
 
-    runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
+    // A platform STUDENT may be a live course TA. Wait for their first mirror
+    // so a TA's initial dashboard and contextual app switch see the new anchor
+    // instead of requiring a manual refresh; ordinary student enrollments
+    // materialize nothing. Other roles retain the non-blocking mirror.
+    await runCoreImportMirror(
+      req.user.id,
+      req.user.role,
+      req.headers.cookie,
+      req.user.role === "STUDENT",
+    );
 
     const { includeStats = false } = req.query;
 

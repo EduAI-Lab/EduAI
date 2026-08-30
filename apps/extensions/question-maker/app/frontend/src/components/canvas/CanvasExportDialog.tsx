@@ -1,5 +1,5 @@
 /**
- * Dialog for exporting an assessment to Canvas, handling integration setup and course selection.
+ * Dialog for exporting an assessment to its linked Canvas course.
  * Validates inputs, triggers export, and surfaces success/error toasts.
  */
 import { useState, useEffect } from "react";
@@ -10,16 +10,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@eduai/ui";
 import { Button, Checkbox, Label, Input } from "@eduai/ui";
-import { PermissionGate } from "@eduai/ui";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
-import canvasService, { CanvasCourse, CanvasIntegration } from "../../services/canvasService";
+import canvasService from "../../services/canvasService";
 import { toast } from "sonner";
 
 interface CanvasExportDialogProps {
@@ -28,6 +22,7 @@ interface CanvasExportDialogProps {
   assessmentId: number;
   assessmentName: string;
   courseId?: number | null;
+  courseName?: string;
   onExportSuccess?: (result: { quizId: number; canvasUrl: string }) => void;
 }
 
@@ -37,17 +32,18 @@ export const CanvasExportDialog = ({
   assessmentId,
   assessmentName,
   courseId = null,
+  courseName,
   onExportSuccess,
 }: CanvasExportDialogProps) => {
   const { canManageCanvas } = useQmPermissionsForCourse(courseId);
-  const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
-  const [courses, setCourses] = useState<CanvasCourse[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [courseLink, setCourseLink] = useState<Awaited<
+    ReturnType<typeof canvasService.getCourseLink>
+  > | null>(null);
   // A published quiz is live to students the moment it lands, so require the
   // instructor to opt in rather than making a new export visible by default.
   const [publishInCanvas, setPublishInCanvas] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingCourses, setIsLoadingCourses] = useState(false);
+  const [isLoadingCourseLink, setIsLoadingCourseLink] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Connection form state
@@ -62,17 +58,18 @@ export const CanvasExportDialog = ({
       // the publish choice is re-defaulted on every open rather than carrying
       // one opt-in forward into unrelated later exports (#1556).
       setPublishInCanvas(false);
+      setCourseLink(null);
       loadIntegration();
     }
-  }, [open]);
+  }, [open, courseId]);
 
   const loadIntegration = async () => {
     try {
       const integrationData = await canvasService.getIntegration();
-      setIntegration(integrationData);
 
       if (integrationData?.isConnected) {
-        await loadCourses();
+        setShowConnectForm(false);
+        await loadCourseLink();
       } else {
         setShowConnectForm(true);
       }
@@ -81,18 +78,10 @@ export const CanvasExportDialog = ({
     }
   };
 
-  const loadCourses = async () => {
-    setIsLoadingCourses(true);
-    try {
-      const canvasCourses = await canvasService.getCourses();
-      setCourses(canvasCourses);
-    } catch (error: any) {
-      toast.error("Failed to load Canvas courses", {
-        description: error.response?.data?.error || "Please check your Canvas connection.",
-      });
-    } finally {
-      setIsLoadingCourses(false);
-    }
+  const loadCourseLink = async () => {
+    setIsLoadingCourseLink(true);
+    setCourseLink(courseId ? await canvasService.getCourseLink(courseId) : { status: "unlinked" });
+    setIsLoadingCourseLink(false);
   };
 
   const handleConnect = async () => {
@@ -108,18 +97,14 @@ export const CanvasExportDialog = ({
 
     setIsConnecting(true);
     try {
-      const { integration: result, usedTestMode } = await canvasService.connectCanvasWithFallback(
-        canvasUrl,
-        apiKey,
-      );
-      setIntegration(result);
+      const { usedTestMode } = await canvasService.connectCanvasWithFallback(canvasUrl, apiKey);
       setShowConnectForm(false);
       if (usedTestMode) {
         toast("Canvas test mode", {
           description: "Using mock Canvas data because live credentials were unavailable.",
         });
       }
-      await loadCourses();
+      await loadCourseLink();
     } catch (error: any) {
       toast.error("Failed to connect Canvas", {
         description: error.response?.data?.error || "Please check your credentials and try again.",
@@ -130,9 +115,9 @@ export const CanvasExportDialog = ({
   };
 
   const handleExport = async () => {
-    if (!selectedCourseId) {
-      toast.error("Course required", {
-        description: "Please select a Canvas course to export to.",
+    if (courseLink?.status !== "linked") {
+      toast.error("Canvas course link required", {
+        description: "Open a course that was fetched from Canvas before exporting.",
       });
       return;
     }
@@ -141,7 +126,7 @@ export const CanvasExportDialog = ({
     try {
       const result = await canvasService.exportAssessment(
         assessmentId,
-        parseInt(selectedCourseId),
+        courseLink.mapping.canvasCourseId,
         {
           published: publishInCanvas,
         },
@@ -222,54 +207,55 @@ export const CanvasExportDialog = ({
         ) : (
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="canvasCourse">Select Canvas Course</Label>
-              {isLoadingCourses ? (
-                <div className="text-sm text-muted-foreground">Loading courses...</div>
-              ) : courses.length === 0 ? (
+              <Label>Canvas course</Label>
+              {isLoadingCourseLink ? (
+                <div className="text-sm text-muted-foreground">Checking course link...</div>
+              ) : courseLink?.status === "linked" ? (
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                  {courseLink.mapping.canvasCourseName ||
+                    courseName ||
+                    `Canvas course ${courseLink.mapping.canvasCourseId}`}
+                </div>
+              ) : courseLink?.status === "unknown" ? (
                 <div className="text-sm text-muted-foreground">
-                  No courses found. Make sure you are enrolled as an instructor.
+                  Could not verify this course's Canvas link. Try again.
                 </div>
               ) : (
-                <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                  <SelectTrigger id="canvasCourse">
-                    <SelectValue placeholder="Select a course" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {courses.map((course) => (
-                      <SelectItem key={course.id} value={course.id.toString()}>
-                        {course.course_code ? `${course.course_code} - ` : ""}
-                        {course.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="text-sm text-muted-foreground">
+                  This Question Maker course is not linked to Canvas. Fetch it from Canvas in Core,
+                  then open that fetched course here.
+                </div>
               )}
             </div>
 
-            <label className="flex cursor-pointer items-start gap-2 pt-1">
-              <Checkbox
-                data-testid="export-publish-toggle"
-                checked={publishInCanvas}
-                onCheckedChange={(checked) => setPublishInCanvas(checked === true)}
-              />
-              <span className="text-sm">
-                Publish in Canvas
-                <span className="block text-xs text-muted-foreground">
-                  Published quizzes are visible to students right away. Leave this off to export a
-                  draft and publish it from Canvas yourself.
-                </span>
-              </span>
-            </label>
+            {courseLink?.status === "linked" && (
+              <>
+                <label className="flex cursor-pointer items-start gap-2 pt-1">
+                  <Checkbox
+                    data-testid="export-publish-toggle"
+                    checked={publishInCanvas}
+                    onCheckedChange={(checked) => setPublishInCanvas(checked === true)}
+                  />
+                  <span className="text-sm">
+                    Publish in Canvas
+                    <span className="block text-xs text-muted-foreground">
+                      Published quizzes are visible to students right away. Leave this off to export
+                      a draft and publish it from Canvas yourself.
+                    </span>
+                  </span>
+                </label>
 
-            <div className="flex items-center justify-end pt-2">
-              <Button
-                onClick={handleExport}
-                disabled={isLoading || !selectedCourseId || courses.length === 0}
-                data-testid="canvas-export-submit"
-              >
-                {isLoading ? "Exporting..." : "Export to Canvas"}
-              </Button>
-            </div>
+                <div className="flex items-center justify-end pt-2">
+                  <Button
+                    onClick={handleExport}
+                    disabled={isLoading}
+                    data-testid="canvas-export-submit"
+                  >
+                    {isLoading ? "Exporting..." : "Export to Canvas"}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
