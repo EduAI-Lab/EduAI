@@ -185,6 +185,13 @@ const GUEST_ROOT_PREFERENCES = {
   // `unitAdmins.canInvite` policy). Resolved server-side and read by the sidebar
   // so the Invitations link doesn't depend on a client-side policy fetch.
   canInvite: false,
+  // #1666 review (Stavan): whether this user holds a real active INSTRUCTOR
+  // enrollment on any course — the route/API already admit such a caller
+  // (platform STUDENT/TA/UNIT_ADMIN included) into /instructor/chat, so the
+  // sidebar/command-palette Course Assistant link must survive navigation
+  // to every route, not just the one page whose own loader happened to
+  // compute it. Resolved once here (root loader) rather than per-route.
+  hasInstructorEnrollment: false,
 } as const;
 
 /**
@@ -233,11 +240,32 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
   preferencePromise.catch(() => {});
 
+  // #1666 review (Stavan): resolved once per navigation, alongside the
+  // preference read, so the sidebar/command-palette Course Assistant link
+  // is correct on every route — not just the one page that happened to
+  // fetch this caller's courses. ADMIN excluded to match
+  // instructor.chat.tsx's own loader: resolveAccess always resolves ADMIN
+  // to admin-level, never instructor-level, no matter their enrollment, so
+  // an ADMIN can never actually pass /instructor/chat's gate.
+  const instructorEnrollmentPromise: Promise<boolean> =
+    session.user.role === "ADMIN"
+      ? Promise.resolve(false)
+      : prisma.enrollment
+          .findFirst({
+            where: { userId: session.user.id, role: "INSTRUCTOR", isActive: true },
+            select: { id: true },
+          })
+          .then((row) => row !== null);
+  instructorEnrollmentPromise.catch(() => {});
+
   if (!isExempt) {
     const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
     if (expiredRedirect) return expiredRedirect;
   }
-  const row = await preferencePromise;
+  const [row, hasInstructorEnrollment] = await Promise.all([
+    preferencePromise,
+    instructorEnrollmentPromise,
+  ]);
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
@@ -250,6 +278,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
+    hasInstructorEnrollment,
     policies,
   };
 }

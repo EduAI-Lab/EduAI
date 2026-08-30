@@ -34,6 +34,10 @@ vi.mock("~/components/chat/chat-transcript-viewer", () => ({
 
 const mockFetchChatTranscript = vi.mocked(fetchChatTranscript);
 
+// Baseline fixtures are enrollment-neutral (null) so plain-dashboard tests
+// exercise the default /chat routing, not the per-row instructor override —
+// tests that need a taught course spread these with their own
+// callerEnrollmentRole: "INSTRUCTOR" override.
 const course1: DashboardCourse = {
   id: "course-1",
   code: "CS101",
@@ -41,7 +45,7 @@ const course1: DashboardCourse = {
   term: "Fall",
   year: 2026,
   isPublished: true,
-  callerEnrollmentRole: "INSTRUCTOR",
+  callerEnrollmentRole: null,
 };
 
 const course2: DashboardCourse = {
@@ -51,7 +55,7 @@ const course2: DashboardCourse = {
   term: "Fall",
   year: 2026,
   isPublished: true,
-  callerEnrollmentRole: "INSTRUCTOR",
+  callerEnrollmentRole: null,
 };
 
 const chat1: DashboardRecentChat = {
@@ -194,8 +198,16 @@ describe("DashboardView", () => {
   // an unpublished course's card must not link there at all, rather than
   // silently landing on a different course or bouncing the instructor back.
   describe("unpublished courses on the instructor (/instructor/chat) dashboard", () => {
-    const publishedCourse: DashboardCourse = { ...course1, isPublished: true };
-    const unpublishedCourse: DashboardCourse = { ...course2, isPublished: false };
+    const publishedCourse: DashboardCourse = {
+      ...course1,
+      isPublished: true,
+      callerEnrollmentRole: "INSTRUCTOR",
+    };
+    const unpublishedCourse: DashboardCourse = {
+      ...course2,
+      isPublished: false,
+      callerEnrollmentRole: "INSTRUCTOR",
+    };
 
     it("disables the Chat action instead of linking to /instructor/chat for an unpublished course", () => {
       renderDashboard({
@@ -219,13 +231,31 @@ describe("DashboardView", () => {
       expect(router.state.location.search).toBe(`?courseId=${publishedCourse.id}`);
     });
 
-    it("does not disable an unpublished course's Chat action on the learning-assistant dashboard", () => {
-      // chatHref defaults to "/chat" here, which has no published-only
-      // constraint — the restriction is specific to /instructor/chat.
-      renderDashboard({ courses: [publishedCourse, unpublishedCourse] });
+    it("does not disable an unpublished, non-taught course's Chat action on the learning-assistant dashboard", () => {
+      // A course this user does not teach (callerEnrollmentRole !== "INSTRUCTOR")
+      // never routes to /instructor/chat regardless of panel chatHref, so
+      // isPublished — a purely /instructor/chat concern — never gates it.
+      const notTaughtUnpublished: DashboardCourse = {
+        ...course2,
+        isPublished: false,
+        callerEnrollmentRole: null,
+      };
+      renderDashboard({ courses: [course1, notTaughtUnpublished] });
 
       expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(2);
       expect(screen.queryByText("Unpublished")).not.toBeInTheDocument();
+    });
+
+    // #1666 review (Stavan): a course this user actually teaches must get
+    // the same instructor-routing gating no matter which dashboard renders
+    // its card — a taught-but-unpublished course is never a safe /chat
+    // fallback either, so this stays gated even on the plain learning
+    // dashboard (chatHref defaults to "/chat" here).
+    it("still disables an unpublished TAUGHT course's Chat action even on the learning-assistant dashboard", () => {
+      renderDashboard({ courses: [publishedCourse, unpublishedCourse] });
+
+      expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(1);
+      expect(screen.getByText("Unpublished")).toBeInTheDocument();
     });
   });
 
@@ -267,6 +297,26 @@ describe("DashboardView", () => {
 
       expect(screen.getAllByRole("button", { name: "Chat" })).toHaveLength(2);
       expect(screen.queryByText("Not teaching")).not.toBeInTheDocument();
+    });
+
+    // #1666 review (Stavan): "New chat" has no course of its own to key off,
+    // so a mixed-role user who teaches at least one course should still land
+    // on /instructor/chat (its own selector picks which course) instead of
+    // the learning assistant, matching what the sidebar already promises.
+    it("routes New chat to /instructor/chat when this STUDENT/TA-platform user teaches at least one course", () => {
+      const { router } = renderDashboard({ courses: [taughtCourse, taCourse] });
+
+      fireEvent.click(screen.getByRole("link", { name: /New chat/ }));
+
+      expect(router.state.location.pathname).toBe("/instructor/chat");
+    });
+
+    it("leaves New chat pointed at the role default when no course is actually taught", () => {
+      const { router } = renderDashboard({ courses: [taCourse] });
+
+      fireEvent.click(screen.getByRole("link", { name: /New chat/ }));
+
+      expect(router.state.location.pathname).toBe("/chat");
     });
   });
 

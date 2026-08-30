@@ -186,53 +186,73 @@ function CourseListPanel({
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
           {/*
-           * #1659 review: /instructor/chat only ever loads published courses
-           * (falling back to courses[0], or redirecting if none) — so a card
-           * for an unpublished course must not link there at all, rather than
-           * silently landing on a different course or bouncing the instructor
-           * back to the dashboard.
-           *
-           * #1666 review: the same applies to a mixed-role user's non-taught
-           * row — /instructor/chat's loader only lists courses with a real
-           * active INSTRUCTOR enrollment, so a card for a course this user
-           * only takes/TAs (callerEnrollmentRole !== "INSTRUCTOR") must not
-           * link there either.
+           * #1666 review (Stavan): this used to gate on the panel-wide
+           * `chatHref` prop (role-derived: INSTRUCTOR → /instructor/chat,
+           * everyone else → /chat) — but a mixed-role STUDENT/TA who really
+           * teaches THIS course still landed on /chat for it, since their
+           * platform role picks the STUDENT/TA config regardless of any
+           * individual course's enrollment. Each row now decides for
+           * itself, from its own recorded enrollment role, instead of
+           * inheriting one blanket destination for the whole panel.
            */}
-          {chatHref === "/instructor/chat" &&
-          (!course.isPublished || course.callerEnrollmentRole !== "INSTRUCTOR") ? (
-            <span
-              title={
-                course.callerEnrollmentRole !== "INSTRUCTOR"
-                  ? "You don't teach this course"
-                  : "Publish this course to open the ops assistant for it"
-              }
-              className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-[var(--radius-md)] whitespace-nowrap border border-border cursor-not-allowed"
-            >
-              {course.callerEnrollmentRole !== "INSTRUCTOR" ? "Not teaching" : "Unpublished"}
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                // Nested inside the row's <Link>; a nested <a> is invalid markup
-                // and hydration-mismatches, so navigate imperatively instead.
-                e.preventDefault();
-                e.stopPropagation();
-                // #1659 review: /instructor/chat keys its selector by course id
-                // (Course.code isn't globally unique); every other chat surface
-                // still keys by ?courseCode=.
-                const param =
-                  chatHref === "/instructor/chat"
-                    ? `courseId=${encodeURIComponent(course.id)}`
-                    : `courseCode=${encodeURIComponent(course.code)}`;
-                navigate(`${chatHref}?${param}`);
-              }}
-              className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
-              style={{ background: "var(--primary)" }}
-            >
-              Chat
-            </button>
-          )}
+          {(() => {
+            const rowChatHref =
+              course.callerEnrollmentRole === "INSTRUCTOR" ? "/instructor/chat" : chatHref;
+            const routesToInstructorChat = rowChatHref === "/instructor/chat";
+            // #1659 review: /instructor/chat only ever loads published
+            // courses (falling back to courses[0], or redirecting if none)
+            // — so a card for an unpublished course must not link there at
+            // all, rather than silently landing on a different course or
+            // bouncing back.
+            //
+            // #1666 review: a row can also land here via the panel-wide
+            // fallback (e.g. a TA'd course on the INSTRUCTOR dashboard,
+            // whose default chatHref is already /instructor/chat) without
+            // this caller actually teaching it — that must show the same
+            // kind of disabled state, not open the ops assistant for a
+            // course this row's own enrollment doesn't back.
+            const notTeaching =
+              routesToInstructorChat && course.callerEnrollmentRole !== "INSTRUCTOR";
+            const unpublished = routesToInstructorChat && !course.isPublished;
+            if (notTeaching || unpublished) {
+              return (
+                <span
+                  title={
+                    notTeaching
+                      ? "You don't teach this course"
+                      : "Publish this course to open the ops assistant for it"
+                  }
+                  className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-[var(--radius-md)] whitespace-nowrap border border-border cursor-not-allowed"
+                >
+                  {notTeaching ? "Not teaching" : "Unpublished"}
+                </span>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  // Nested inside the row's <Link>; a nested <a> is invalid
+                  // markup and hydration-mismatches, so navigate
+                  // imperatively instead.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // #1659 review: /instructor/chat keys its selector by
+                  // course id (Course.code isn't globally unique); every
+                  // other chat surface still keys by ?courseCode=.
+                  const param =
+                    rowChatHref === "/instructor/chat"
+                      ? `courseId=${encodeURIComponent(course.id)}`
+                      : `courseCode=${encodeURIComponent(course.code)}`;
+                  navigate(`${rowChatHref}?${param}`);
+                }}
+                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
+                style={{ background: "var(--primary)" }}
+              >
+                Chat
+              </button>
+            );
+          })()}
         </Link>
       ))}
     </div>
@@ -392,6 +412,14 @@ export function DashboardView({
 }: DashboardViewProps) {
   const showQuickActions = Boolean(quickActions && quickActions.length > 0);
   const panelTitle = leftPanelTitle ?? (showQuickActions ? "Quick actions" : "Your courses");
+  // #1666 review (Stavan): "New chat" has no course of its own to key off,
+  // so it can't route straight to a specific instructor-mode chat — but a
+  // mixed-role STUDENT/TA who teaches at least one course should still land
+  // on /instructor/chat (whose own course selector picks which one) rather
+  // than the learning assistant, matching what the sidebar's Course
+  // Assistant link already promises them.
+  const hasTaughtCourse = courses?.some((c) => c.callerEnrollmentRole === "INSTRUCTOR") ?? false;
+  const newChatHref = hasTaughtCourse ? "/instructor/chat" : chatHref;
 
   return (
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-8">
@@ -446,7 +474,7 @@ export function DashboardView({
             <div className="flex items-center justify-between mb-3.5">
               <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
               <Link
-                to={chatHref}
+                to={newChatHref}
                 className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
               >
                 New chat <IconChevronRight size={13} />
