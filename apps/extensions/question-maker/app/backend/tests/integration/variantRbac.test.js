@@ -522,6 +522,19 @@ describe("creating an already-approved variant publishes it (#1555 follow-up)", 
     expect(mockPushVariantToCore).not.toHaveBeenCalled();
   });
 
+  it.each([0, "", null])("rejects non-boolean isDraft values (%p)", async (isDraft) => {
+    authAs(TA, "TA");
+
+    const res = await request(app)
+      .post("/api/questions/5/variants")
+      .set("Cookie", "session=v")
+      .send({ questionText: "What is 2+2?", isDraft });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("isDraft must be a boolean");
+    expect(mockCreateVariant).not.toHaveBeenCalled();
+  });
+
   it("pushes to Core and links the returned question id", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     mockCreateVariant.mockResolvedValue(approved);

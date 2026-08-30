@@ -88,7 +88,7 @@ router.post(
         correctAnswers,
         referenceId,
         isAiGenerated,
-        isDraft,
+        isDraft: isDraftRaw,
         shareWithExtensions,
       } = req.body;
 
@@ -102,6 +102,11 @@ router.post(
       const enumError = validateVariantEnums({ difficulty, reasoningLevel });
       if (enumError) {
         return res.status(400).json({ success: false, error: enumError });
+      }
+
+      const isDraft = parseIsDraft(isDraftRaw);
+      if (isDraftRaw !== undefined && isDraft === undefined) {
+        return res.status(400).json({ success: false, error: "isDraft must be a boolean" });
       }
 
       if (isDraft === false && req.courseAccess.rank < LEVELS.instructor.rank) {
