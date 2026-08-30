@@ -1,3 +1,6 @@
+import type { JsonValue } from "@eduai/types";
+
+import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
 import {
@@ -39,22 +42,23 @@ type JobRow = {
   errorMessage: string | null;
   createdAt: Date;
   completedAt: Date | null;
-  result: unknown;
-  payload: unknown;
+  result: JsonValue | null;
+  payload: JsonValue | null;
 };
 
 /** The `batchKey` a chunk row carries, or null for a row written before chunking. */
 function batchKeyOf(row: JobRow): string | null {
-  const payload = row.payload;
-  if (payload === null || typeof payload !== "object") return null;
-  const input = (payload as { input?: unknown }).input;
-  if (input === null || typeof input !== "object") return null;
-  const key = (input as { batchKey?: unknown }).batchKey;
-  return typeof key === "string" && key.length > 0 ? key : null;
+  const input = asJsonObject(asJsonObject(row.payload)?.input);
+  return asPresentText(input?.batchKey);
 }
 
-function resultOf(row: JobRow): { created?: unknown; usedSource?: unknown } | null {
-  return (row.result ?? null) as { created?: unknown; usedSource?: unknown } | null;
+function resultOf(row: JobRow): { created: number | null; usedSource: string | null } | null {
+  const result = asJsonObject(row.result);
+  if (!result) return null;
+  return {
+    created: asFiniteNumber(result.created),
+    usedSource: asText(result.usedSource),
+  };
 }
 
 const IN_FLIGHT = new Set(["PENDING", "RUNNING"]);
@@ -86,15 +90,20 @@ function aggregateBatch(chunks: JobRow[], newest: JobRow) {
 
   const createdCounts = chunks
     .map((chunk) => resultOf(chunk)?.created)
-    .filter((count): count is number => typeof count === "number");
+    .filter((count): count is number => count !== null && count !== undefined);
 
   // The source that actually produced topics is the informative one; a chunk of
   // untitled material reporting "none" should not label the whole batch.
   const producing = chunks.find((chunk) => {
-    const result = resultOf(chunk);
-    return typeof result?.created === "number" && result.created > 0;
+    const created = resultOf(chunk)?.created;
+    return created !== null && created !== undefined && created > 0;
   });
-  const usedSourceFrom = producing ?? chunks.find((chunk) => resultOf(chunk)?.usedSource != null);
+  const usedSourceFrom =
+    producing ??
+    chunks.find((chunk) => {
+      const source = resultOf(chunk)?.usedSource;
+      return source !== null && source !== undefined;
+    });
   const usedSource = resultOf(usedSourceFrom ?? newest)?.usedSource;
 
   const completedAts = chunks
@@ -119,7 +128,7 @@ function aggregateBatch(chunks: JobRow[], newest: JobRow) {
         ? new Date(Math.max(...completedAts.map((at) => at.getTime()))).toISOString()
         : null,
     created: createdCounts.length > 0 ? createdCounts.reduce((a, b) => a + b, 0) : null,
-    usedSource: typeof usedSource === "string" ? usedSource : null,
+    usedSource: usedSource ?? null,
   };
 }
 

@@ -38,8 +38,9 @@ export function TopicOriginBadge({ topic }: { topic: CourseTopic }) {
   const origin = topic.origin;
   if (!origin || origin === "HUMAN") return null;
 
-  const confidence =
-    typeof topic.confidence === "number" ? ` · ${Math.round(topic.confidence * 100)}%` : "";
+  const confidence = Number.isFinite(topic.confidence)
+    ? ` · ${Math.round(topic.confidence * 100)}%`
+    : "";
 
   return (
     <Badge variant={origin === "AI" ? "outline" : "secondary"} className="font-normal">

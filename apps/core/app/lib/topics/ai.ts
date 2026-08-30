@@ -5,6 +5,7 @@ import {
   MAX_TOPIC_NAME_LENGTH,
   type TopicCandidate,
 } from "~/lib/topics/candidates";
+import { asJsonArray, asJsonObject, asText, parseJsonText } from "~/lib/json-value";
 
 /** Upper bound on topics the model may propose for one course. */
 export const MAX_AI_TOPICS = 20;
@@ -83,25 +84,17 @@ export function parseTopicAnalysisResponse(
   content: string,
   materialIds: string[],
 ): TopicCandidate[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripCodeFence(content));
-  } catch {
-    return [];
-  }
-
-  const topics =
-    parsed !== null && typeof parsed === "object" && "topics" in parsed
-      ? (parsed as { topics: unknown }).topics
-      : null;
-  if (!Array.isArray(topics)) return [];
+  const parsed = parseJsonText(stripCodeFence(content));
+  const topics = asJsonArray(asJsonObject(parsed)?.topics);
+  if (!topics) return [];
 
   const seen = new Set<string>();
   const candidates: TopicCandidate[] = [];
 
   for (const entry of topics) {
-    if (typeof entry !== "string") continue;
-    const name = cleanTopicName(entry);
+    const rawName = asText(entry);
+    if (rawName === null) continue;
+    const name = cleanTopicName(rawName);
     if (!isUsableTopicName(name) || seen.has(name)) continue;
     seen.add(name);
 

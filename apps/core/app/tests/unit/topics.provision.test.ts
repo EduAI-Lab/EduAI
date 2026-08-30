@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   courseMaterial: { findMany: vi.fn() },
@@ -157,7 +158,9 @@ describe("provisionCourseTopics — resilience", () => {
       material({ rawText: "Chapter 1 — A\nChapter 2 — B" }),
     ]);
     prismaMock.courseTopic.create
-      .mockRejectedValueOnce(Object.assign(new Error("dup"), { code: "P2002" }))
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+      )
       .mockResolvedValueOnce({ name: "Chapter 2 — B" });
 
     const result = await provisionCourseTopics(baseArgs());

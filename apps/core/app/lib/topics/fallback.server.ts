@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import prisma from "~/lib/prisma.server";
 
 /**
@@ -60,10 +62,5 @@ async function restoreSoftDeletedFallback(courseId: string): Promise<boolean> {
 }
 
 function isUniqueViolation(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code?: unknown }).code === "P2002"
-  );
+  return cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002";
 }

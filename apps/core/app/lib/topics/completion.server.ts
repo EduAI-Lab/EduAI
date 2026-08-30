@@ -1,5 +1,6 @@
 import type { SupportedProvider } from "~/lib/ai/provider-types";
 import { runCompletion } from "~/lib/ai/completion.server";
+import { asFiniteNumber } from "~/lib/json-value";
 import type { RunTopicCompletion } from "~/lib/topics/provision.server";
 
 /** Model used when nothing else is configured — matches the async-worker default. */
@@ -83,7 +84,7 @@ export const runTopicAnalysisCompletion: RunTopicCompletion = async ({ systemPro
     const detail = "error" in completion && completion.error ? String(completion.error) : "unknown";
     throw new TopicAnalysisProviderError(
       `Topic analysis provider call failed (${model}): ${detail}`,
-      typeof status === "number" ? status : undefined,
+      asFiniteNumber(status) ?? undefined,
     );
   }
 

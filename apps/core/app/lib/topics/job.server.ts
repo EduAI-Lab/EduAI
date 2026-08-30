@@ -411,10 +411,5 @@ export function startTopicAnalysis(args: StartTopicAnalysisArgs): void {
 }
 
 function isUniqueViolation(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code?: unknown }).code === "P2002"
-  );
+  return cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002";
 }

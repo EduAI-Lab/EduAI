@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   courseMaterial: { findMany: vi.fn() },
@@ -111,7 +112,9 @@ describe("recordTopicAnalysisJobs", () => {
 
   it("adopts the existing job when the same batch is retried", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
-    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
     prismaMock.aiJob.findUnique.mockResolvedValue({
       id: "job-existing",
       status: "RUNNING",
@@ -196,7 +199,9 @@ describe("recordTopicAnalysisJobs", () => {
 
   it("marks an abandoned RUNNING row resumable once its lease lapses", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
-    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
     prismaMock.aiJob.findUnique.mockResolvedValue({
       id: "job-stale",
       status: "RUNNING",
@@ -214,7 +219,9 @@ describe("recordTopicAnalysisJobs", () => {
 
   it("marks a PENDING row nothing ever picked up resumable", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-1" }]);
-    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
     prismaMock.aiJob.findUnique.mockResolvedValue({
       id: "job-pending",
       status: "PENDING",
@@ -238,7 +245,9 @@ describe("recordTopicAnalysisJobs", () => {
    */
   it("recycles a reused FAILED chunk into the current batch and marks it resumable", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
-    prismaMock.aiJob.create.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
     prismaMock.aiJob.findUnique.mockResolvedValue({
       id: "job-failed-a",
       status: "FAILED",
@@ -276,7 +285,9 @@ describe("recordTopicAnalysisJobs", () => {
     }));
     prismaMock.courseMaterial.findMany.mockResolvedValue(materials);
     prismaMock.aiJob.create
-      .mockRejectedValueOnce(Object.assign(new Error("dup"), { code: "P2002" }))
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+      )
       .mockResolvedValueOnce({ id: "job-b-new" });
     prismaMock.aiJob.findUnique
       .mockResolvedValueOnce({

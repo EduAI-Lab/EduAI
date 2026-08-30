@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import { listCanvasCourseModules } from "~/lib/canvas/client.server";
 import { requireCanvasCredentials } from "~/lib/canvas/courses.server";
 import prisma from "~/lib/prisma.server";
@@ -231,10 +233,5 @@ async function persistCandidates(
 }
 
 function isUniqueViolation(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code?: unknown }).code === "P2002"
-  );
+  return cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002";
 }

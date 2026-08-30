@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   courseTopic: {
@@ -86,7 +87,7 @@ describe("ensureCourseHasTopic", () => {
   it("restores a soft-deleted fallback rather than leaving the course unauthorable", async () => {
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockRejectedValue(
-      Object.assign(new Error("dup"), { code: "P2002" }),
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
     );
     prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 1 });
 
@@ -100,7 +101,7 @@ describe("ensureCourseHasTopic", () => {
   it("reports no work done when a concurrent caller won the race", async () => {
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockRejectedValue(
-      Object.assign(new Error("dup"), { code: "P2002" }),
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
     );
     prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 0 });
 
