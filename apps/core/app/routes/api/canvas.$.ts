@@ -305,6 +305,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               return queryOrError;
             }
             const { canvasCourseId } = queryOrError;
+            await validateInstructorCanvasCourseIds(userId, [String(canvasCourseId)]);
 
             switch (quizRoute.kind) {
               case "list": {
@@ -382,38 +383,50 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               return credentialsOrError;
             }
 
+            const queryOrError = parseCanvasCourseIdQuery(request);
+            if (queryOrError instanceof Response) {
+              return queryOrError;
+            }
+            const { canvasCourseId } = queryOrError;
+            await validateInstructorCanvasCourseIds(userId, [String(canvasCourseId)]);
+
+            const assertBankBelongsToCourse = async (bankId: number) => {
+              const banks = await listCanvasQuestionBanks(credentialsOrError, canvasCourseId);
+              if (!banks.some((bank) => bank.id === bankId)) {
+                throw new InvalidCanvasCourseAccessError([String(canvasCourseId)]);
+              }
+            };
+
             switch (bankRoute.kind) {
               case "list": {
-                const queryOrError = parseCanvasCourseIdQuery(request);
-                if (queryOrError instanceof Response) {
-                  return queryOrError;
-                }
                 const data = await auditedCanvasRead(
                   actorContext,
                   requestContext,
                   {
                     entityType: "CanvasQuestionBankList",
-                    entityId: String(queryOrError.canvasCourseId),
-                    details: { canvasCourseId: queryOrError.canvasCourseId },
+                    entityId: String(canvasCourseId),
+                    details: { canvasCourseId },
                   },
-                  () => listCanvasQuestionBanks(credentialsOrError, queryOrError.canvasCourseId),
+                  () => listCanvasQuestionBanks(credentialsOrError, canvasCourseId),
                 );
                 return json({ success: true, data });
               }
               case "bank": {
+                await assertBankBelongsToCourse(bankRoute.bankId);
                 const data = await auditedCanvasRead(
                   actorContext,
                   requestContext,
                   {
                     entityType: "CanvasQuestionBank",
                     entityId: String(bankRoute.bankId),
-                    details: { bankId: bankRoute.bankId },
+                    details: { canvasCourseId, bankId: bankRoute.bankId },
                   },
                   () => getCanvasQuestionBank(credentialsOrError, bankRoute.bankId),
                 );
                 return json({ success: true, data });
               }
               case "questions": {
+                await assertBankBelongsToCourse(bankRoute.bankId);
                 const url = new URL(request.url);
                 const page = Math.max(1, Number(url.searchParams.get("page") || 1) || 1);
                 const perPage = Math.min(
@@ -426,7 +439,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                   {
                     entityType: "CanvasQuestionBankQuestionList",
                     entityId: String(bankRoute.bankId),
-                    details: { bankId: bankRoute.bankId, page, perPage },
+                    details: { canvasCourseId, bankId: bankRoute.bankId, page, perPage },
                   },
                   () =>
                     listCanvasQuestionBankQuestions(credentialsOrError, bankRoute.bankId, {
@@ -566,6 +579,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               return credentialsOrError;
             }
 
+            await validateInstructorCanvasCourseIds(userId, [String(result.data.canvasCourseId)]);
             const data = await createCanvasQuiz(
               credentialsOrError,
               result.data.canvasCourseId,
@@ -616,6 +630,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               return credentialsOrError;
             }
 
+            await validateInstructorCanvasCourseIds(userId, [String(result.data.canvasCourseId)]);
             const data = await createCanvasQuizQuestion(
               credentialsOrError,
               result.data.canvasCourseId,
@@ -655,6 +670,8 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
 
           const credentialsOrError = await loadCanvasCredentialsOrError(userId);
           if (credentialsOrError instanceof Response) return credentialsOrError;
+
+          await validateInstructorCanvasCourseIds(userId, [String(queryOrError.canvasCourseId)]);
 
           const data = await deleteCanvasQuiz(
             credentialsOrError,

@@ -182,6 +182,18 @@ describe("POST /api/canvas/export/:assessmentId", () => {
     const res = await request(app).post("/api/canvas/export/5").set("Cookie", "session=v").send({});
     expect(res.status).toBe(400);
   });
+
+  it("rejects a non-boolean published flag", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/canvas/export/5")
+      .set("Cookie", "session=v")
+      .send({ canvasCourseId: "c1", published: "false" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/published must be a boolean/i);
+    expect(canvas.exportAssessmentToCanvas).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/canvas/courses/:canvasCourseId/quizzes", () => {

@@ -25,12 +25,12 @@ afterEach(() => {
 });
 
 describe("OpenCode key validation", () => {
-  it("uses a provider-specific default deadline for the slower chat probe", () => {
+  it("uses a provider-specific default deadline for the slower Responses probe", () => {
     expect(__getKeyValidationTimeoutMsForTests("opencode")).toBe(45_000);
     expect(__getKeyValidationTimeoutMsForTests("google")).toBe(5_000);
   });
 
-  it("uses a bounded chat-completions probe and forwards the key only as Bearer auth", async () => {
+  it("uses a bounded Responses probe and forwards the key only as Bearer auth", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -44,10 +44,10 @@ describe("OpenCode key validation", () => {
     expect(response.body).toEqual({ valid: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(String(url)).toBe("https://opencode.ai/zen/go/v1/responses");
     expect(String(url)).not.toContain("opencode-secret");
     expect(options.headers).toMatchObject({ Authorization: "Bearer opencode-secret" });
-    expect(options.body).toContain("deepseek-v4-flash");
+    expect(options.body).toContain("muse-spark-1.2-contributor");
   });
 
   it("returns valid false for OpenCode 401 responses", async () => {

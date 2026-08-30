@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
   AIServiceIndicators,
@@ -74,12 +74,22 @@ function HeaderBreadcrumbs() {
 }
 
 function AppLayoutInner() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
   const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const routeCourseId = matches
+    .map((match) => {
+      if (!match.data || typeof match.data !== "object" || !("course" in match.data)) return null;
+      const course = match.data.course;
+      if (!course || typeof course !== "object" || !("coreOfferingId" in course)) return null;
+      return typeof course.coreOfferingId === "string" ? course.coreOfferingId : null;
+    })
+    .find(Boolean);
+  const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -132,7 +142,11 @@ function AppLayoutInner() {
         navSecondary: [{ title: "Help", url: "/help", icon: IconHelpCircle }],
         currentPath: pathname,
         LinkComponent: Link,
-        launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user.role },
+        launcher: {
+          apps: getLauncherApps(coreCourseId),
+          currentAppId: CURRENT_APP_ID,
+          role: user.role,
+        },
         user: { name: user.name, email: user.email ?? "", role: user.role },
         navUser: {
           items: [

@@ -10,6 +10,7 @@ import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 
 let pathnameValue = "/dashboard";
 let searchParamsValue = new URLSearchParams();
+const navigate = vi.fn();
 const startTour = vi.fn();
 const logout = vi.fn();
 const refresh = vi.fn();
@@ -29,6 +30,7 @@ vi.mock("sonner", () => ({ toast: toastFn }));
 
 vi.mock("react-router", () => ({
   useLocation: () => ({ pathname: pathnameValue }),
+  useNavigate: () => navigate,
   useSearchParams: () => [searchParamsValue],
   Link: ({ children, to }: any) => <a href={to}>{children}</a>,
   Outlet: () => <div data-testid="outlet" />,

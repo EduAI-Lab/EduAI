@@ -39,6 +39,7 @@ export {
 
 /** OpenCode's hosted OpenAI-compatible endpoint; never client-configurable. */
 export const OPENCODE_BASE_URL = "https://opencode.ai/zen/go/v1";
+export const OPENCODE_RESPONSES_MODEL_ID = "muse-spark-1.2-contributor";
 
 /**
  * Resolves a local-inference base URL (Ollama/vLLM) with logging instead of
@@ -201,15 +202,29 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     );
   }
 
-  // OpenCode Zen (OpenAI-compatible). Keep the endpoint fixed: unlike local
-  // inference providers, accepting a request-supplied base URL would permit an
-  // arbitrary upstream and make the provider identity misleading.
+  // OpenCode Go mixes API protocols by model. Muse uses the Responses API;
+  // DeepSeek and the other OpenAI-compatible models use Chat Completions.
+  // Keep the endpoint fixed so a request cannot redefine the provider.
   if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) {
-    providers.opencode = createOpenAICompatible({
+    const key = userSettings.opencode.apiKey;
+    const chat = createOpenAICompatible({
       name: "opencode",
       baseURL: OPENCODE_BASE_URL,
-      apiKey: userSettings.opencode.apiKey,
+      apiKey: key,
     });
+    const responses = createOpenAI({
+      name: "opencode",
+      baseURL: OPENCODE_BASE_URL,
+      apiKey: key,
+      compatibility: "compatible",
+    });
+    providers.opencode = {
+      languageModel: (modelId) =>
+        modelId === OPENCODE_RESPONSES_MODEL_ID
+          ? responses.responses(modelId)
+          : chat.languageModel(modelId),
+      textEmbeddingModel: (modelId) => chat.textEmbeddingModel(modelId),
+    };
   }
 
   // Bedrock is overflow-only (#1441). Never honor client apiKey/baseUrl —

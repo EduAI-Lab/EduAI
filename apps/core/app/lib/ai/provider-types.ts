@@ -71,7 +71,7 @@ export const PROVIDER_CONFIGS = {
   opencode: {
     id: "opencode",
     name: "OpenCode Go",
-    description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+    description: "OpenCode Go subscription models, including Muse Spark and DeepSeek V4 Flash",
     requiresApiKey: true,
     defaultBaseUrl: "https://opencode.ai/zen/go/v1",
     // Its key is account-scoped BYOK, so there is no deployment env var.

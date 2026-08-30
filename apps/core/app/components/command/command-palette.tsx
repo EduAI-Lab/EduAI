@@ -10,7 +10,7 @@
  * trigger it.
  */
 import * as React from "react";
-import { useNavigate, useRouteLoaderData } from "react-router";
+import { useLocation, useNavigate, useRouteLoaderData } from "react-router";
 import {
   IconDashboard,
   IconBooks,
@@ -150,6 +150,8 @@ export function matchesQuery(value: string, query: string): boolean {
 
 export function CommandPalette({ user }: { user: User }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const coreCourseId = pathname.match(/^\/courses\/([^/]+)/)?.[1] ?? null;
   // #1666 review (Stavan): Course Assistant must survive navigation beyond
   // /dashboard — sourced from the root loader (every route shares it) rather
   // than the raw session `user`, which has no notion of course enrollment.
@@ -202,7 +204,7 @@ export function CommandPalette({ user }: { user: User }) {
     .filter((item) => matchesQuery(item.value, query));
 
   const appGroup = buildAppSwitcherGroup({
-    apps: getLauncherApps(),
+    apps: getLauncherApps(coreCourseId),
     currentAppId: CURRENT_APP_ID,
     role: user.role,
   });

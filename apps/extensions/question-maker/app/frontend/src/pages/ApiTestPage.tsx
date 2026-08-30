@@ -772,6 +772,9 @@ export const ApiTestPage = () => {
                     <SelectItem value="opencode:deepseek-v4-flash">
                       DeepSeek V4 Flash (OpenCode Go)
                     </SelectItem>
+                    <SelectItem value="opencode:muse-spark-1.2-contributor">
+                      Muse Spark 1.2 Contributor (OpenCode Go)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -856,6 +859,9 @@ export const ApiTestPage = () => {
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
                     <SelectItem value="opencode:deepseek-v4-flash">
                       DeepSeek V4 Flash (OpenCode Go)
+                    </SelectItem>
+                    <SelectItem value="opencode:muse-spark-1.2-contributor">
+                      Muse Spark 1.2 Contributor (OpenCode Go)
                     </SelectItem>
                   </SelectContent>
                 </Select>

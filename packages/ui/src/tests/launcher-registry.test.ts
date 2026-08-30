@@ -34,6 +34,15 @@ describe("getLauncherApps", () => {
     expect(asAiTutor).toEqual(asCore);
     expect(asQm).toEqual(asCore);
   });
+
+  it("preserves canonical course context across apps", () => {
+    const apps = getLauncherApps({ currentAppId: "core", urls: URLS, coreCourseId: "core/7 8" });
+    expect(apps.map((app) => app.url)).toEqual([
+      `https://core.example.edu/courses/${encodeURIComponent("core/7 8")}`,
+      "https://tutor.example.edu/?coreCourseId=core%2F7+8",
+      "https://qm.example.edu/?coreCourseId=core%2F7+8",
+    ]);
+  });
 });
 
 // ── RBAC gate, composed with the existing visibleAppsForRole ──────────────────

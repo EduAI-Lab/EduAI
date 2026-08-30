@@ -12,7 +12,7 @@
  * the server for courses, and narrows the static nav/app rows itself.
  */
 import * as React from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   CommandPalette as SharedCommandPalette,
   buildAppSwitcherGroup,
@@ -54,12 +54,17 @@ function matchesQuery(item: CommandPaletteItem, query: string): boolean {
 
 export function CommandPalette() {
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
   const { user } = useLocalUser();
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [courseTotal, setCourseTotal] = React.useState(0);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query);
+  const localCourseId = Number(pathname.match(/^\/(?:instructor|student)\/courses\/(\d+)/)?.[1]);
+  const coreCourseId =
+    courses.find((course) => course.id === localCourseId)?.coreOfferingId ??
+    new URLSearchParams(search).get("coreCourseId");
 
   // Only the newest request may write state — debouncing narrows the
   // out-of-order window but doesn't close it.
@@ -141,7 +146,7 @@ export function CommandPalette() {
   }
 
   const appGroup = buildAppSwitcherGroup({
-    apps: getLauncherApps(),
+    apps: getLauncherApps(coreCourseId),
     currentAppId: CURRENT_APP_ID,
     role: user.role,
   });

@@ -70,6 +70,7 @@ async function call(method: string, subpath: string, body?: RouteRequestBody) {
 
 beforeAll(async () => {
   vi.stubEnv("ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+  vi.stubEnv("CANVAS_ALLOW_LOCAL_HTTP", "true");
 
   const instructor = await prisma.user.create({
     data: {

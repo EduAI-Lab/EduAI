@@ -10,6 +10,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { IconHistory } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
@@ -488,6 +489,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onError: (error) => {
       activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
+      toast.error("Could not get a response", {
+        description: error.message || "Please try again.",
+      });
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
       pendingAdhdAssistRef.current = false;

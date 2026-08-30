@@ -24,7 +24,7 @@ describe("AiProviderKeySchema", () => {
 });
 
 describe("validateProviderKey", () => {
-  it("uses the fixed OpenCode chat probe and forwards the key only as Bearer auth", async () => {
+  it("uses the fixed OpenCode Responses probe and forwards the key only as Bearer auth", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -40,12 +40,13 @@ describe("validateProviderKey", () => {
     expect(result).toEqual({ valid: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, options] = fetchImpl.mock.calls[0];
-    expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(String(url)).toBe("https://opencode.ai/zen/go/v1/responses");
     expect(String(url)).not.toContain("opencode-secret");
     expect(options.headers).toMatchObject({ Authorization: "Bearer opencode-secret" });
     expect(JSON.parse(options.body)).toMatchObject({
       model: OPENCODE_VALIDATION_MODEL,
-      max_tokens: 1,
+      input: "Reply with OK.",
+      max_output_tokens: 32,
       stream: false,
     });
   });

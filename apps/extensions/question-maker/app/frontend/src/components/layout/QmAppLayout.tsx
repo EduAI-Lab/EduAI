@@ -1,5 +1,5 @@
-import { type ReactNode } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { useEffect, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
   AppShell,
@@ -146,6 +146,7 @@ const qmLogo = (
 
 function QmAppLayoutInner() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, logout } = useAuth();
   const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
@@ -153,6 +154,20 @@ function QmAppLayoutInner() {
   const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
+  const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
+  const routeCourse = courses.find((course) => course.id === localCourseId);
+  const requestedCoreCourseId = searchParams.get("coreCourseId")?.trim();
+  const coreCourseId = routeCourse?.coreCourseId ?? requestedCoreCourseId;
+
+  useEffect(() => {
+    if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
+    const course = courses.find((item) => item.coreCourseId === requestedCoreCourseId);
+    if (!course) return;
+    navigate(
+      `/courses/${course.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
+      { replace: true },
+    );
+  }, [courses, isCoursesLoading, navigate, requestedCoreCourseId, routeCourse]);
   const handleLogout = () => {
     void logout().catch(() => {
       toast.error("Could not log out", {
@@ -212,7 +227,11 @@ function QmAppLayoutInner() {
         ),
         currentPath: pathname,
         LinkComponent: Link,
-        launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
+        launcher: {
+          apps: getLauncherApps(coreCourseId),
+          currentAppId: CURRENT_APP_ID,
+          role: user?.role,
+        },
         user: user
           ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
           : { name: "Guest", email: "", role: "GUEST" },

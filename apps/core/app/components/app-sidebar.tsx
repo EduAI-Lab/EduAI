@@ -117,6 +117,7 @@ export function useCoreSidebarProps({
 }: UseCoreSidebarPropsOptions): AppSidebarProps {
   const { isEnabled } = usePolicyGate();
   const { pathname } = useLocation();
+  const coreCourseId = pathname.match(/^\/courses\/([^/]+)/)?.[1] ?? null;
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
@@ -190,7 +191,7 @@ export function useCoreSidebarProps({
     currentPath: pathname,
     LinkComponent: Link,
     launcher: {
-      apps: getLauncherApps(),
+      apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
       role: user.role,
     },

@@ -371,7 +371,12 @@ export class CanvasVerificationError extends Error {
  * talked into an unencrypted request to a loopback address.
  */
 function allowsLocalHttpCanvas(): boolean {
-  return process.env.NODE_ENV !== "production";
+  return process.env.NODE_ENV !== "production" && process.env.CANVAS_ALLOW_LOCAL_HTTP === "true";
+}
+
+function isAllowedLocalCanvasPort(hostname: string, port: string): boolean {
+  if (hostname === LOCAL_CANVAS_DOCKER_HOST) return port === "" || port === "80" || port === "8080";
+  return port === "8080";
 }
 
 /**
@@ -407,7 +412,10 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
   // Scoped to http: the allowance exists for the dev docker Canvas, so an
   // https URL aimed at a loopback address gets the IP check like any other.
   const isAllowedLocalHost =
-    parsed.protocol === "http:" && HTTP_ALLOWED_HOSTNAMES.has(hostname) && allowsLocalHttpCanvas();
+    parsed.protocol === "http:" &&
+    HTTP_ALLOWED_HOSTNAMES.has(hostname) &&
+    isAllowedLocalCanvasPort(hostname, parsed.port) &&
+    allowsLocalHttpCanvas();
 
   if (!isAllowedLocalHost) {
     // "localhost" is a name, so the IP-literal check below can't see it, but

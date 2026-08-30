@@ -88,6 +88,16 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
 
   const [page, facets] = await Promise.all([api.listCourses(courseListParams), loadCourseFacets()]);
 
+  const coreCourseId = url.searchParams.get("coreCourseId")?.trim();
+  const contextualCourse = coreCourseId
+    ? page.data.find((course) => course.coreOfferingId === coreCourseId)
+    : null;
+  if (contextualCourse && coreCourseId) {
+    throw redirect(
+      `/instructor/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
+    );
+  }
+
   // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
   // hand-edited `?page=` past the end would otherwise render an empty list
   // while the pager reports a non-zero total. Redirect (rather than silently

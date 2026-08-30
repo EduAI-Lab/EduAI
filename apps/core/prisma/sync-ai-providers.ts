@@ -134,7 +134,7 @@ async function main() {
     where: { name: "opencode" },
     update: {
       displayName: "OpenCode Go",
-      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      description: "OpenCode Go subscription models, including Muse Spark and DeepSeek V4 Flash",
       requiresApiKey: true,
       defaultBaseUrl: "https://opencode.ai/zen/go/v1",
       isActive: true,
@@ -142,7 +142,7 @@ async function main() {
     create: {
       name: "opencode",
       displayName: "OpenCode Go",
-      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      description: "OpenCode Go subscription models, including Muse Spark and DeepSeek V4 Flash",
       requiresApiKey: true,
       defaultBaseUrl: "https://opencode.ai/zen/go/v1",
       isActive: true,
@@ -284,30 +284,42 @@ async function main() {
     data: { isActive: false, routerTier: null },
   });
 
-  await prisma.aIModel.upsert({
-    where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },
-    update: {
-      name: "DeepSeek V4 Flash (OpenCode Go)",
-      description: "OpenCode Go subscription model",
-      maxTokens: 32768,
-      isActive: true,
-      type: "CHAT",
-      supportsImages: false,
-      supportsTools: false,
-      supportsStreaming: true,
-    },
-    create: {
+  const opencodeModels = [
+    {
       modelId: "deepseek-v4-flash",
       name: "DeepSeek V4 Flash (OpenCode Go)",
-      description: "OpenCode Go subscription model",
+      description: "Fast OpenCode Go chat-completions model",
       maxTokens: 32768,
-      type: "CHAT",
-      supportsImages: false,
       supportsTools: false,
-      supportsStreaming: true,
-      providerId: opencode.id,
     },
-  });
+    {
+      modelId: "muse-spark-1.2-contributor",
+      name: "Muse Spark 1.2 Contributor (OpenCode Go)",
+      description: "Low-cost OpenCode Go Responses API model; prompts may be used for training",
+      maxTokens: null,
+      supportsTools: false,
+    },
+  ];
+
+  for (const model of opencodeModels) {
+    await prisma.aIModel.upsert({
+      where: { providerId_modelId: { providerId: opencode.id, modelId: model.modelId } },
+      update: {
+        ...model,
+        isActive: true,
+        type: "CHAT",
+        supportsImages: false,
+        supportsStreaming: true,
+      },
+      create: {
+        ...model,
+        type: "CHAT",
+        supportsImages: false,
+        supportsStreaming: true,
+        providerId: opencode.id,
+      },
+    });
+  }
 
   await applyRoutingTierAssignments();
   console.log("[sync-ai-providers] Done (vLLM + OpenCode providers and models synced)");

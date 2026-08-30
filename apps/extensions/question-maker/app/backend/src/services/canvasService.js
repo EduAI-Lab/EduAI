@@ -1052,11 +1052,12 @@ export const getCanvasQuestionBanks = async (cookie, canvasCourseId) => {
 };
 
 /** Fetches a single Canvas question bank (via Core). */
-export const getCanvasQuestionBank = async (cookie, canvasBankId) => {
+export const getCanvasQuestionBank = async (cookie, canvasCourseId, canvasBankId) => {
   try {
     await loadCoreCanvasIntegration(cookie);
+    const courseId = parseCanvasNumericId(canvasCourseId, "canvasCourseId");
     const bankId = parseCanvasNumericId(canvasBankId, "canvasBankId");
-    const response = await proxyCoreGetQuestionBank(cookie, bankId);
+    const response = await proxyCoreGetQuestionBank(cookie, courseId, bankId);
     return response.data;
   } catch (error) {
     rethrowCoreCanvasError(error, "get Canvas question bank");
@@ -1067,9 +1068,15 @@ export const getCanvasQuestionBank = async (cookie, canvasBankId) => {
  * Lists assessment questions in a Canvas question bank (follows page query when provided).
  * @returns {{ questions: object[], truncated: boolean }}
  */
-export const getCanvasQuestionBankQuestions = async (cookie, canvasBankId, opts = {}) => {
+export const getCanvasQuestionBankQuestions = async (
+  cookie,
+  canvasCourseId,
+  canvasBankId,
+  opts = {},
+) => {
   try {
     const integration = await loadCoreCanvasIntegration(cookie);
+    const courseId = parseCanvasNumericId(canvasCourseId, "canvasCourseId");
     const bankId = parseCanvasNumericId(canvasBankId, "canvasBankId");
     const page = opts.page || 1;
     const perPage = opts.perPage || 100;
@@ -1078,7 +1085,7 @@ export const getCanvasQuestionBankQuestions = async (cookie, canvasBankId, opts 
     let truncated = false;
 
     for (;;) {
-      const response = await proxyCoreListQuestionBankQuestions(cookie, bankId, {
+      const response = await proxyCoreListQuestionBankQuestions(cookie, courseId, bankId, {
         page: currentPage,
         perPage,
       });
@@ -1181,9 +1188,14 @@ export const importQuestionBankFromCanvas = async (
       throw err;
     }
 
-    const remoteBank = await getCanvasQuestionBank(cookie, parsedCanvasBankId);
+    const remoteBank = await getCanvasQuestionBank(
+      cookie,
+      parsedCanvasCourseId,
+      parsedCanvasBankId,
+    );
     const { questions: remoteQuestions, truncated } = await getCanvasQuestionBankQuestions(
       cookie,
+      parsedCanvasCourseId,
       parsedCanvasBankId,
     );
 

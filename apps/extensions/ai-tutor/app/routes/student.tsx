@@ -61,6 +61,16 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
     loadCourseFacets(),
   ]);
 
+  const coreCourseId = url.searchParams.get("coreCourseId")?.trim();
+  const contextualCourse = coreCourseId
+    ? page.data.find((course) => course.coreOfferingId === coreCourseId)
+    : null;
+  if (contextualCourse && coreCourseId) {
+    throw redirect(
+      `/student/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
+    );
+  }
+
   // Same upper-bound guard as the instructor list (#1162): rebuild from
   // `url.searchParams` so the search/filter params survive the redirect.
   const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));

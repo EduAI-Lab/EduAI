@@ -72,9 +72,13 @@ describe("normalizeSupervisorVerdict", () => {
     });
   });
 
-  it("coerces truthy approved to true", () => {
-    expect(normalizeSupervisorVerdict({ approved: 1 }).approved).toBe(true);
-    expect(normalizeSupervisorVerdict({ approved: "yes" }).approved).toBe(true);
+  it("requires approved to be the boolean true", () => {
+    expect(normalizeSupervisorVerdict({ approved: 1 }).approved).toBe(false);
+    expect(normalizeSupervisorVerdict({ approved: "yes" }).approved).toBe(false);
+  });
+
+  it('fails closed for the string "false" returned by a supervisor', () => {
+    expect(normalizeSupervisorVerdict({ approved: "false" }).approved).toBe(false);
   });
 
   it("coerces falsy approved to false", () => {
@@ -82,6 +86,11 @@ describe("normalizeSupervisorVerdict", () => {
     expect(normalizeSupervisorVerdict({ approved: "" }).approved).toBe(false);
     expect(normalizeSupervisorVerdict({ approved: null }).approved).toBe(false);
     expect(normalizeSupervisorVerdict({ approved: undefined }).approved).toBe(false);
+  });
+
+  it("fails closed for a malformed verdict", () => {
+    expect(normalizeSupervisorVerdict(null).approved).toBe(false);
+    expect(normalizeSupervisorVerdict([]).approved).toBe(false);
   });
 
   it("defaults reason to empty string when missing", () => {

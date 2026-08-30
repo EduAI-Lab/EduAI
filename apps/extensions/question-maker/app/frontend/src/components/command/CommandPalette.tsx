@@ -55,9 +55,13 @@ function paletteNavItems(user: Parameters<typeof getNavForUser>[0]) {
 
 export function CommandPalette() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { displayCourses } = useDisplayCourses();
   const { user } = useAuth();
+  const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
+  const coreCourseId =
+    displayCourses.find((course) => course.id === localCourseId)?.coreCourseId ??
+    new URLSearchParams(search).get("coreCourseId");
 
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
@@ -131,7 +135,7 @@ export function CommandPalette() {
       })),
     },
     buildAppSwitcherGroup({
-      apps: getLauncherApps(),
+      apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
       role: user?.role,
     }),

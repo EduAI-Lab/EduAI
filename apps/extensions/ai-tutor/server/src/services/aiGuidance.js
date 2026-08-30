@@ -575,15 +575,17 @@ function stripMarkdownFence(rawText) {
  * student-facing fallback so callers never need to null-check.
  */
 function normalizeSupervisorVerdict(verdict) {
+  const value = verdict && typeof verdict === "object" && !Array.isArray(verdict) ? verdict : {};
+
   return {
-    approved: Boolean(verdict.approved),
-    reason: verdict.reason || "",
+    approved: value.approved === true,
+    reason: value.reason || "",
     feedbackToTutor:
-      verdict.feedbackToTutor ||
-      verdict.suggestion ||
+      value.feedbackToTutor ||
+      value.suggestion ||
       "Revise the response to stay more Socratic and avoid directly revealing the answer.",
     safeResponseToStudent:
-      verdict.safeResponseToStudent ||
+      value.safeResponseToStudent ||
       "Let’s take one smaller step. Focus on the key concept behind the question and explain which part feels most uncertain.",
   };
 }
