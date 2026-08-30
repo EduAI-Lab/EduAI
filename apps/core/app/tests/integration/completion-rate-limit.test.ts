@@ -165,6 +165,7 @@ describe("POST /api/completion distributed rate limit (#1113)", () => {
     await expect(checkRateLimit(key, 1, 60_000)).resolves.toEqual({
       limited: false,
       retryAfter: 0,
+      reservationToken: expect.any(String),
     });
     resetRateLimitsForTests();
     const secondDecision = await checkRateLimit(key, 1, 60_000);

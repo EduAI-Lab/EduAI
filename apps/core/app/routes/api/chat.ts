@@ -120,6 +120,11 @@ import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.serve
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import {
+  ChatDailyLimitSettingsUnavailableError,
+  consumeLocalChatDailyCap,
+  refundLocalChatDailyCap,
+} from "~/lib/chat-daily-limits.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
@@ -1634,6 +1639,65 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Charge the resolved provider:model, not Auto. Skip regenerateOnly
+    // previews so a content preview does not spend a daily token. Recorded
+    // so a later Bedrock overflow (admission timeout / fleet exhaustion) can
+    // refund this charge — that turn ends up running on cloud, not local.
+    let localDailyCapCharge: { userId: string; reservationToken: string } | null = null;
+    if (!regenerateOnly) {
+      let dailyCap;
+      try {
+        dailyCap = await consumeLocalChatDailyCap({
+          userId: actingUser.id,
+          role: actingUser.role ?? undefined,
+          model: resolvedModelId,
+        });
+        // #1547 review: reservationToken is only present when this call
+        // actually charged (checkRateLimit's contract) — checking for it
+        // specifically, rather than just truthy `dailyCap`, means a refund
+        // is never attempted for a charge that never happened (dailyCap is
+        // also truthy, just with `limited: true`, when the cap was already
+        // exhausted — but that path returns 429 below before this variable
+        // is ever read again).
+        if (dailyCap?.reservationToken) {
+          localDailyCapCharge = {
+            userId: actingUser.id,
+            reservationToken: dailyCap.reservationToken,
+          };
+        }
+      } catch (error) {
+        if (error instanceof ChatDailyLimitSettingsUnavailableError) {
+          return chatApiReject(
+            503,
+            {
+              error: "Daily message limits could not be loaded. Please try again shortly.",
+            },
+            { chatMode, userId: actingUser.id },
+          );
+        }
+        throw error;
+      }
+      if (dailyCap?.limited) {
+        const requestContext = getRequestContext(request);
+        fireAndForget(
+          logSecurityEvent({
+            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+            ...requestContext,
+            actionCode: "RATE_LIMIT_EXCEEDED",
+            outcome: "DENIED",
+            entityType: "Chat",
+            details: { userId: actingUser.id, scope: "daily" },
+          }),
+        );
+        return chatApiReject(
+          429,
+          { error: "RATE_LIMITED", retryAfter: dailyCap.retryAfter },
+          { chatMode, userId: actingUser.id },
+          { "Retry-After": String(dailyCap.retryAfter) },
+        );
+      }
+    }
+
     // Persist the user's message(s) now — the request has already cleared
     // every structural/content validation gate above (course-scope image
     // support, model image-capability), so anything that fails from here on
@@ -2579,7 +2643,17 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+    const applyBedrockOverflow = async (overflow: BedrockOverflowActivation) => {
+      // This turn is landing on Bedrock (cloud), not the local model it was
+      // reserved against — refund that reservation so it does not count
+      // toward the user's local daily cap. Awaited (#1547 review): a
+      // fire-and-forget refund let a very-fast follow-up request from the
+      // same user observe the still-charged bucket before the refund landed,
+      // occasionally 429ing a request that should have been allowed.
+      if (localDailyCapCharge) {
+        await refundLocalChatDailyCap(localDailyCapCharge);
+        localDailyCapCharge = null;
+      }
       resolvedModelId = overflow.resolvedModelId;
       const nextParsed = parseModelIdentifier(resolvedModelId);
       if (!nextParsed) {
@@ -2639,7 +2713,7 @@ ${buildEmptyCourseRagBlock()}`;
             userId: actingUser.id,
           });
           if (overflow) {
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             chatApiTrace("bedrock overflow after admission timeout", {
               resolvedModelId,
               serverId: overflow.serverId,
@@ -2896,7 +2970,7 @@ ${buildEmptyCourseRagBlock()}`;
             if (!overflow) {
               throw error;
             }
-            applyBedrockOverflow(overflow);
+            await applyBedrockOverflow(overflow);
             shouldProbeFleetStream = false;
             // The local slot is no longer needed, but the request-specific
             // cancellation handle must survive while the Bedrock fallback
