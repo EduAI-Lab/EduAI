@@ -296,7 +296,7 @@ describe("api methods", () => {
     ];
 
     for (const method of expectedMethods) {
-      expect(typeof api[method]).toBe("function");
+      expect(api[method]).toEqual(expect.any(Function));
     }
   });
 

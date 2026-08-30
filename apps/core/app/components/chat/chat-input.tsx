@@ -35,7 +35,16 @@ interface ChatInputProps {
   onStop?: () => void;
   selectedCourseId: string | null;
   setSelectedCourseId: (value: string | null) => void;
-  availableCourses: Array<{ id: string; name: string; code: string }>;
+  availableCourses: Array<{ id: string; name: string; code: string; label?: string }>;
+  /**
+   * Which field of `availableCourses` the selector keys/emits: "code"
+   * (default — matches learning-mode chat's `?courseCode=` URL param and
+   * persisted `chat.courseCode` contract) or "id". Course.code is NOT
+   * globally unique (only (code, startDate, section) is — #1659 review), so
+   * instructor chat, whose loader already resolves a real course id, keys by
+   * "id" instead so duplicate-code offerings can't collide.
+   */
+  courseSelectionKey?: "code" | "id";
   selectedModel: string;
   setSelectedModel: (value: string) => void;
   chatModels: Array<{
@@ -87,6 +96,7 @@ export function ChatInput({
   selectedCourseId,
   setSelectedCourseId,
   availableCourses,
+  courseSelectionKey = "code",
   selectedModel,
   setSelectedModel,
   chatModels,
@@ -122,8 +132,11 @@ export function ChatInput({
     onSubmit(formEvent);
   };
 
+  const selectedCourse = selectedCourseId
+    ? availableCourses.find((c) => c[courseSelectionKey] === selectedCourseId)
+    : undefined;
   const selectedCourseLabel = selectedCourseId
-    ? (availableCourses.find((c) => c.code === selectedCourseId)?.code ?? selectedCourseId)
+    ? (selectedCourse?.label ?? selectedCourse?.code ?? selectedCourseId)
     : null;
 
   // A regenerate-in-flight preview must block a normal send too — otherwise
@@ -199,11 +212,13 @@ export function ChatInput({
                     <DropdownMenuContent align="start" side="top" className="min-w-[220px]">
                       {availableCourses.map((course) => (
                         <DropdownMenuItem
-                          key={course.code}
-                          onSelect={() => setSelectedCourseId(course.code)}
-                          className={selectedCourseId === course.code ? "bg-primary/5" : ""}
+                          key={course.id}
+                          onSelect={() => setSelectedCourseId(course[courseSelectionKey])}
+                          className={
+                            selectedCourseId === course[courseSelectionKey] ? "bg-primary/5" : ""
+                          }
                         >
-                          <span className="mr-1 font-semibold">{course.code}</span>
+                          <span className="mr-1 font-semibold">{course.label ?? course.code}</span>
                           <span className="truncate text-muted-foreground">— {course.name}</span>
                         </DropdownMenuItem>
                       ))}

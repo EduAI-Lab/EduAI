@@ -6,6 +6,8 @@ import type { AiServiceStatusPair, ServiceStatus } from "@eduai/ui";
 import type {
   Activity,
   ActivityAnalyticsRow,
+  ActivityAnswer,
+  ActivityAnswerFields,
   ActivityAnswerResult,
   ActivityFeedbackResult,
   ActivityFeedbackRow,
@@ -178,6 +180,47 @@ export const topicSchema = z
   .object({ id: z.union([z.string(), z.number()]), name: z.string() })
   .passthrough() satisfies z.ZodType<Topic>;
 
+/**
+ * The stored answer for an activity, as the Prisma JSON column actually holds
+ * it. That column is untyped, so this is the only place its shape is stated:
+ * the object arm carries the two fields the UI reads, and the scalar arms are
+ * legacy rows that stored a bare correct index or a bare expected string
+ * (`server/src/services/activityEvaluation.js` still reads both forms).
+ *
+ * Each object field recovers independently, the same way
+ * `adminAiModelPolicySchema` does below: a malformed `text` must drop that one
+ * field rather than reject the activity and blank the whole lesson.
+ */
+export const activityAnswerSchema = z
+  .union([
+    z
+      .object({
+        correctIndex: z.number().int().optional().catch(undefined),
+        text: z.string().optional().catch(undefined),
+      })
+      .passthrough(),
+    z.number(),
+    z.string(),
+  ])
+  .nullish()
+  .catch(null);
+
+/**
+ * The two fields the activity UI reads, decoded. A missing answer, a legacy
+ * scalar answer or a field of the wrong type each yield an absent field rather
+ * than a value the caller would have to re-check, so callers can branch on
+ * `undefined` alone.
+ */
+export function readActivityAnswer(
+  answer: ActivityAnswer | null | undefined,
+): ActivityAnswerFields {
+  const parsed = activityAnswerSchema.safeParse(answer);
+  if (!parsed.success || parsed.data === null || parsed.data === undefined) return {};
+  if (!(parsed.data instanceof Object)) return {};
+  const { correctIndex, text } = parsed.data;
+  return { correctIndex, text };
+}
+
 export const activitySchema = z
   .object({
     id: z.number(),
@@ -190,7 +233,7 @@ export const activitySchema = z
       .object({ choices: z.array(z.string()).optional() })
       .passthrough()
       .nullable(),
-    answer: z.any().optional(),
+    answer: activityAnswerSchema,
     hints: z.array(z.string()),
     promptTemplateId: z.number().nullish(),
     promptTemplate: z.object({ id: z.number(), name: z.string() }).passthrough().nullish(),
@@ -203,7 +246,11 @@ export const activitySchema = z
     customPromptTitle: z.string().nullable(),
     completionStatus: completionStatusSchema.optional(),
   })
-  .passthrough() satisfies z.ZodType<Activity>;
+  // The input is stated as `unknown` rather than `Activity` because `answer`
+  // recovers from a malformed value instead of rejecting it, so what this
+  // accepts is genuinely wider than what it produces. The output is still
+  // pinned to `Activity`.
+  .passthrough() satisfies z.ZodType<Activity, z.ZodTypeDef, unknown>;
 
 export const aiModelSchema = z
   .object({

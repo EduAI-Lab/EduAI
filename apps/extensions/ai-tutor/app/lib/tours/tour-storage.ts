@@ -1,8 +1,9 @@
 import type { Role } from "~/lib/types";
 import type { AppTourDefinition, AppTourId } from "./tour-types";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 export function markTourCompleted(tour: AppTourDefinition) {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   window.localStorage.setItem(tour.completionKey, "true");
 }
 

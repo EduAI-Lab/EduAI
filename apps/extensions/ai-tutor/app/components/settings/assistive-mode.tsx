@@ -26,6 +26,7 @@
  * marked `reading-surface`.
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 const ASSISTIVE_STORAGE_KEY = "eduai:assistive";
 
@@ -37,7 +38,7 @@ type AssistiveModeContextValue = {
 const AssistiveModeContext = createContext<AssistiveModeContextValue | null>(null);
 
 function readInitialAssistive(): boolean {
-  if (typeof window === "undefined") return false;
+  if (!isBrowser()) return false;
   try {
     return window.localStorage.getItem(ASSISTIVE_STORAGE_KEY) === "true";
   } catch {

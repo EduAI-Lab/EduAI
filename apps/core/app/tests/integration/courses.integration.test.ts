@@ -238,9 +238,9 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.data)).toBe(true);
-    expect(typeof body.total).toBe("number");
-    expect(typeof body.page).toBe("number");
-    expect(typeof body.pageSize).toBe("number");
+    expect(body.total).toEqual(expect.any(Number));
+    expect(body.page).toEqual(expect.any(Number));
+    expect(body.pageSize).toEqual(expect.any(Number));
   });
 
   it("includes the seeded course in the response", async () => {

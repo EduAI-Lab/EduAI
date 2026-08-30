@@ -12,11 +12,11 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-if (typeof globalThis.ResizeObserver === "undefined") {
+if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
 }
 
-if (typeof window.matchMedia === "undefined") {
+if (!window.matchMedia) {
   window.matchMedia = (query: string) => ({
     matches: false,
     media: query,
@@ -29,7 +29,7 @@ if (typeof window.matchMedia === "undefined") {
   });
 }
 
-if (typeof Element.prototype.scrollIntoView !== "function") {
+if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
@@ -37,7 +37,7 @@ if (typeof Element.prototype.scrollIntoView !== "function") {
 // Capture API on open. jsdom does not implement it, so without these the
 // listbox never opens and no `option` is ever rendered — a combobox looks
 // permanently empty rather than failing loudly.
-if (typeof Element.prototype.hasPointerCapture !== "function") {
+if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.setPointerCapture = () => {};
   Element.prototype.releasePointerCapture = () => {};

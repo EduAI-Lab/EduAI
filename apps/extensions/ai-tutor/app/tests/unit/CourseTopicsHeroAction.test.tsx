@@ -61,8 +61,8 @@ describe("CourseTopicsHeroAction (ai-tutor adapter)", () => {
     const props = mockSharedComponent.mock.calls.at(-1)![0];
     expect(props.canManage).toBe(true);
     expect(props.isLinked).toBe(false);
-    expect(typeof props.onCreateTopic).toBe("function");
-    expect(typeof props.onCreateError).toBe("function");
+    expect(props.onCreateTopic).toBeInstanceOf(Function);
+    expect(props.onCreateError).toBeInstanceOf(Function);
   });
 
   it("marks isLinked=true for EduAI-sourced courses (coreOfferingId set)", () => {

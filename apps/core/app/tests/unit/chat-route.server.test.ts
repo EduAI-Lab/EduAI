@@ -51,6 +51,7 @@ const CHAT_ACCESS = {
     adhdAssist: false,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-02T00:00:00Z"),
+    chatbotType: "LEARNING" as const,
     course: { id: "c1", code: "COSC 101", name: "Intro" },
     user: { id: "owner-1", name: "Alex Patel", email: "student1@eduai.local" },
   },

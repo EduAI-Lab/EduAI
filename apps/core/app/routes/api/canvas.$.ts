@@ -51,13 +51,14 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  return handleCanvasRequest(request);
+  return withErrorResponse(() => handleCanvasRequest(request), { request });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  return handleCanvasRequest(request);
+  return withErrorResponse(() => handleCanvasRequest(request), { request });
 }
 
 function canvasSubpath(pathname: string): string {

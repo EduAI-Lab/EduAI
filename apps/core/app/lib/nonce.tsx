@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { hasDocument } from "@eduai/ui/runtime-env";
 
 /**
  * Carries the per-request CSP nonce from the server entry down to `root.tsx`,
@@ -26,7 +27,7 @@ export function useNonce(): string {
  * usable in DOM implementations that do not yet implement that property.
  */
 export function readDocumentNonce(): string {
-  if (typeof document === "undefined") return "";
+  if (!hasDocument()) return "";
 
   for (const element of document.querySelectorAll<HTMLScriptElement>("script")) {
     const nonce = element.nonce || element.getAttribute("nonce") || "";

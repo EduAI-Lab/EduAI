@@ -11,6 +11,7 @@ import { Label } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
+import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
 
 export type LogsTab = "audit" | "security" | "system" | "servers";
 
@@ -100,8 +101,9 @@ function buildQueryString(
   const params = new URLSearchParams();
 
   // Preserving existing values keeps tab/filter transitions bookmarkable.
-  for (const [key, value] of Object.entries(current)) {
-    if (typeof value !== "string") continue;
+  for (const [key, rawValue] of Object.entries(current)) {
+    const value = asText(rawValue);
+    if (value === null) continue;
     if (value.trim() || (value === "" && PRESERVE_EMPTY_STRING_KEYS.has(key))) {
       params.set(key, value.trim());
     }
@@ -153,12 +155,13 @@ export function buildLogsTabLinks(query: LogsQueryState) {
  * Formats timestamps consistently across all log tabs.
  */
 function formatTimestamp(value: JsonValue | undefined) {
-  if (typeof value !== "string") {
+  const text = asText(value);
+  if (text === null) {
     return "-";
   }
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? text : parsed.toLocaleString();
 }
 
 /**
@@ -176,17 +179,10 @@ function getRowValue(row: JsonObject, key: string) {
  * Combines live user-join data with stored actorRole so actor attribution remains readable over time.
  */
 function formatActorDisplay(row: JsonObject) {
-  const user = row.user;
-  const userRecord =
-    typeof user === "object" && user !== null && !Array.isArray(user) ? user : null;
+  const userRecord = asJsonObject(row.user);
 
-  const actorNameRaw = userRecord?.name;
-  const actorRoleRaw = row.actorRole ?? userRecord?.role;
-
-  const actorName =
-    typeof actorNameRaw === "string" && actorNameRaw.trim() ? actorNameRaw.trim() : null;
-  const actorRole =
-    typeof actorRoleRaw === "string" && actorRoleRaw.trim() ? actorRoleRaw.trim() : null;
+  const actorName = asPresentText(userRecord?.name);
+  const actorRole = asPresentText(row.actorRole ?? userRecord?.role);
 
   if (actorName && actorRole) {
     return `${actorName} (${actorRole})`;

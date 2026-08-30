@@ -57,8 +57,8 @@ describe("loadDashboardData query gating", () => {
       countOnly: true,
       isActive: true,
     });
-    expect(typeof data.userTotal).toBe("number");
-    expect(typeof data.activeCourseTotal).toBe("number");
+    expect(data.userTotal).toEqual(expect.any(Number));
+    expect(data.activeCourseTotal).toEqual(expect.any(Number));
     expect(data.courses).toEqual([]);
   });
 
@@ -95,5 +95,40 @@ describe("loadDashboardData query gating", () => {
     expect(data.courses).toHaveLength(1);
     expect(data.userTotal).toBeUndefined();
     expect(data.activeCourseTotal).toBeUndefined();
+  });
+
+  // #1666 review: /instructor/chat's dashboard card must be able to tell an
+  // unpublished course apart from a published one (to disable its Chat
+  // action), so `isPublished` has to survive `toDashboardCourse`'s narrowing
+  // of the full course row down to what the card renders.
+  it("INSTRUCTOR's course rows carry isPublished through to DashboardCourse", async () => {
+    mockListCourses.mockResolvedValue({
+      courses: [
+        {
+          id: "c1",
+          code: "COSC 121",
+          name: "Intro to CS",
+          term: "Fall",
+          year: 2026,
+          isPublished: true,
+        },
+        {
+          id: "c2",
+          code: "COSC 221",
+          name: "Data Structures",
+          term: "Fall",
+          year: 2026,
+          isPublished: false,
+        },
+      ],
+      total: 2,
+    } as never);
+
+    const data = await loadDashboardData(userWith("INSTRUCTOR"));
+
+    expect(data.courses).toEqual([
+      expect.objectContaining({ id: "c1", isPublished: true }),
+      expect.objectContaining({ id: "c2", isPublished: false }),
+    ]);
   });
 });

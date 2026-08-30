@@ -51,6 +51,7 @@ import {
   updateAdminPolicy,
 } from "./admin-platform.server";
 import type { ToolInput } from "./tool-input";
+import { asText } from "~/lib/json-value";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 /**
@@ -745,7 +746,7 @@ export async function deleteAdminCourseTopic(
 function isToolError(result: {
   error?: string;
 }): result is { error: string; fields?: Record<string, string> } {
-  return typeof result.error === "string";
+  return asText(result.error) !== null;
 }
 
 function mapToolError(result: { error: string; fields?: Record<string, string> }): MutationResult {

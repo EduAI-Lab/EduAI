@@ -15,6 +15,7 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 import { main as runSeed } from "../../../prisma/seed";
+import { withErrorResponse } from "~/lib/errors.server";
 
 let seedChain: Promise<unknown> = Promise.resolve();
 
@@ -28,52 +29,60 @@ function enqueueSeed<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (process.env.NODE_ENV !== "test") {
-    return new Response(null, { status: 404 });
-  }
+  return withErrorResponse(
+    async () => {
+      if (process.env.NODE_ENV !== "test") {
+        return new Response(null, { status: 404 });
+      }
 
-  const secret = process.env.E2E_SEED_SECRET;
-  if (!secret) {
-    return new Response(null, { status: 404 });
-  }
+      const secret = process.env.E2E_SEED_SECRET;
+      if (!secret) {
+        return new Response(null, { status: 404 });
+      }
 
-  if (request.method !== "POST") {
-    return new Response(null, { status: 405 });
-  }
+      if (request.method !== "POST") {
+        return new Response(null, { status: 405 });
+      }
 
-  const body = await request.json().catch(() => null);
-  if (!body || body.secret !== secret) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      const body = await request.json().catch(() => null);
+      if (!body || body.secret !== secret) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  // seedPasswords -> student-id.server.ts's encrypted student-number storage
-  // requires ENCRYPTION_KEY, which the E2E docker stack doesn't set (it's only
-  // ever needed by the Canvas student-ID feature, never exercised by an E2E
-  // spec before this hook). Fall back to a fixed test key rather than adding
-  // it to docker-compose.e2e.yml, which affects every PR's CI run — this
-  // route is already unreachable outside NODE_ENV=test + E2E_SEED_SECRET.
-  process.env.ENCRYPTION_KEY ??= "e2e-test-encryption-key-not-for-production";
+      // seedPasswords -> student-id.server.ts's encrypted student-number storage
+      // requires ENCRYPTION_KEY, which the E2E docker stack doesn't set (it's only
+      // ever needed by the Canvas student-ID feature, never exercised by an E2E
+      // spec before this hook). Fall back to a fixed test key rather than adding
+      // it to docker-compose.e2e.yml, which affects every PR's CI run — this
+      // route is already unreachable outside NODE_ENV=test + E2E_SEED_SECRET.
+      process.env.ENCRYPTION_KEY ??= "e2e-test-encryption-key-not-for-production";
 
-  // Development's seed refuses fixtures unless NODE_ENV=development and
-  // EDUAI_LOCAL_SEED_PASSWORD is set. This route is already unreachable
-  // outside NODE_ENV=test + E2E_SEED_SECRET, so pass the password explicitly
-  // instead of mutating NODE_ENV. Keep the same fallback the week15 specs use.
-  const seedPassword = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
+      // Development's seed refuses fixtures unless NODE_ENV=development and
+      // EDUAI_LOCAL_SEED_PASSWORD is set. This route is already unreachable
+      // outside NODE_ENV=test + E2E_SEED_SECRET, so pass the password explicitly
+      // instead of mutating NODE_ENV. Keep the same fallback the week15 specs use.
+      const seedPassword = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
 
-  try {
-    await enqueueSeed(() => runSeed({ seedPassword }));
-  } catch (e) {
-    return new Response(
-      JSON.stringify({ error: "SEED_FAILED", message: e instanceof Error ? e.message : String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
+      try {
+        await enqueueSeed(() => runSeed({ seedPassword }));
+      } catch (e) {
+        return new Response(
+          JSON.stringify({
+            error: "SEED_FAILED",
+            message: e instanceof Error ? e.message : String(e),
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      }
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    { request },
+  );
 }

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { apiError, jsonResponse } from "~/lib/api-error.server";
 import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asJsonObject, asPresentText } from "~/lib/json-value";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const IN_PROGRESS_REPLAY_WAIT_MS = 5_000;
@@ -32,10 +33,11 @@ export function hashRequestBody(body: JsonValue | undefined): string {
     body === undefined
       ? ""
       : JSON.stringify(body, (_key, value: JsonValue) => {
-          if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+          const fields = asJsonObject(value);
+          if (fields) {
             const sorted: JsonObject = {};
-            for (const k of Object.keys(value).sort()) {
-              sorted[k] = value[k];
+            for (const k of Object.keys(fields).sort()) {
+              sorted[k] = fields[k];
             }
             return sorted;
           }
@@ -55,16 +57,12 @@ export function extractIdempotencyKey(
   const header = request.headers.get(IDEMPOTENCY_HEADER)?.trim();
   if (header) return header;
 
-  const fromBody = body?.idempotencyKey;
-  if (typeof fromBody === "string" && fromBody.trim().length > 0) {
-    return fromBody.trim();
-  }
-  return undefined;
+  return asPresentText(body?.idempotencyKey) ?? undefined;
 }
 
 /** Body copy without `idempotencyKey` for request-hash comparison. */
 export function bodyForIdempotencyHash(body: JsonObject | null | undefined): JsonObject | null {
-  if (!body || typeof body !== "object") return body ?? null;
+  if (!body) return null;
   const { idempotencyKey: _ignored, ...rest } = body;
   return rest;
 }
@@ -395,8 +393,7 @@ export async function withIdempotency(
       .clone()
       .json()
       .catch(() => null)) as JsonValue | null;
-    body =
-      rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : null;
+    body = asJsonObject(rawBody ?? undefined);
   }
 
   const key = extractIdempotencyKey(opts.request, body);

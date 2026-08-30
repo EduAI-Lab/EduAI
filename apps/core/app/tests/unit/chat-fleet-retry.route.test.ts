@@ -34,6 +34,7 @@ vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn().mockReturnValue(true),
   parseChatMode: vi.fn().mockReturnValue("admin"),
   pickCoreAdminChatTools: vi.fn((tools) => tools),
   ADMIN_CORE_TOOL_NAMES: [],
@@ -385,7 +386,7 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(logMessages.some((m) => m.includes("retry attempt"))).toBe(true);
     expect(logMessages.some((m) => m.includes("fleetRetry: true"))).toBe(true);
     const sidecarCalls = fetchSpy.mock.calls.filter(([input]) => {
-      const url = typeof input === "string" ? input : (input as Request).url;
+      const url = input instanceof Request ? input.url : String(input);
       return url.includes("/measure-start") || url.includes("/measure-stop");
     });
     expect(sidecarCalls).toHaveLength(0);
