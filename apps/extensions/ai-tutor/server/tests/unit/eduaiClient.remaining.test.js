@@ -25,6 +25,7 @@ import {
   deleteCoreEnrollment,
   fetchCoreCourseSafe,
   fetchCoreTopicSafe,
+  createEduAiCourseTopic,
 } from "../../src/services/eduaiClient.js";
 
 beforeEach(() => {
@@ -581,5 +582,42 @@ describe("fetchCoreTopicSafe", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(502, "bad gateway")));
 
     await expect(fetchCoreTopicSafe("core-1", "topic-1")).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe("createEduAiCourseTopic", () => {
+  it("POSTs with the service key and a timeout signal", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "topic-1", name: "Graphs" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(createEduAiCourseTopic("core-1", "Graphs")).resolves.toEqual({
+      id: "topic-1",
+      name: "Graphs",
+    });
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://eduai.test/api/courses/core-1/topics");
+    expect(options.method).toBe("POST");
+    expect(options.headers.Authorization).toBe("Bearer svc-key");
+    expect(JSON.parse(options.body)).toEqual({ name: "Graphs" });
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("reuses the existing Core topic on a duplicate response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ error: "TOPIC_ALREADY_EXISTS", existingId: "topic-1" }),
+      }),
+    );
+
+    await expect(createEduAiCourseTopic("core-1", "Graphs")).resolves.toEqual({
+      id: "topic-1",
+      name: "Graphs",
+    });
   });
 });

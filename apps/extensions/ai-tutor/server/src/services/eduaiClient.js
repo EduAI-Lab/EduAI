@@ -46,6 +46,9 @@ export const CORE_PAGE_SIZE = 200;
  */
 const CORE_MAX_PAGES = 50;
 
+// Mutations should fail fast when Core is reachable but not responding.
+const CORE_TOPIC_CREATE_TIMEOUT_MS = 5_000;
+
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
 }
@@ -528,6 +531,7 @@ export async function createEduAiCourseTopic(externalCourseId, name) {
       Authorization: `Bearer ${serviceKey}`,
     },
     body: JSON.stringify({ name }),
+    signal: AbortSignal.timeout(CORE_TOPIC_CREATE_TIMEOUT_MS),
   });
   const body = await response.json().catch(() => ({}));
 
