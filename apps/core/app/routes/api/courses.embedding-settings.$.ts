@@ -15,6 +15,7 @@ import {
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asJsonObject } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
 async function requireManageSession(request: Request) {
@@ -104,8 +105,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // `reEmbed` rides along on the same body but is not part of the settings
       // update, so it is read here rather than in the settings parser.
-      const reEmbedAfterSave =
-        body !== null && typeof body === "object" && !Array.isArray(body) && body.reEmbed === true;
+      const reEmbedAfterSave = asJsonObject(body)?.reEmbed === true;
 
       const current = {
         embeddingProvider: course.embeddingProvider,

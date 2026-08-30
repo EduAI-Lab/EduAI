@@ -5,6 +5,7 @@ import { serializeReEmbedJob, startOrResumeReEmbedJob } from "~/lib/ai/re-embed-
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
 
 async function readIdempotencyKey(request: Request): Promise<string | undefined> {
@@ -16,8 +17,9 @@ async function readIdempotencyKey(request: Request): Promise<string | undefined>
 
   try {
     const body = (await request.json()) as { idempotencyKey?: unknown };
-    if (typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()) {
-      return body.idempotencyKey.trim();
+    const idempotencyKey = z.string().trim().min(1).safeParse(body.idempotencyKey);
+    if (idempotencyKey.success) {
+      return idempotencyKey.data;
     }
   } catch {
     // Empty / non-JSON body is fine — re-embed historically accepted no body.

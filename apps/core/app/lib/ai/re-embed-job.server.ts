@@ -79,7 +79,7 @@ const SAFE_RE_EMBED_ERROR_MESSAGES = new Set([
 ]);
 
 function publicReEmbedErrorMessage(errorMessage: string | null | undefined): string | null {
-  if (typeof errorMessage !== "string" || !errorMessage) return null;
+  if (!errorMessage) return null;
   return SAFE_RE_EMBED_ERROR_MESSAGES.has(errorMessage)
     ? errorMessage
     : RE_EMBED_PROVIDER_FAILURE_MESSAGE;
@@ -164,8 +164,7 @@ function settingsFromJob(job: ReEmbedJobRecord): EffectiveEmbeddingSettings {
 
 function isIdempotencyConflict(cause: unknown): boolean {
   return (
-    typeof cause === "object" &&
-    cause !== null &&
+    cause instanceof Object &&
     (cause as { code?: unknown }).code === "P2002" &&
     ((cause as { meta?: { target?: unknown } }).meta?.target as string[] | undefined)?.some(
       (value) => value === "idempotencyKey",
@@ -465,7 +464,7 @@ async function claimReEmbedJob(jobId: string): Promise<ClaimedReEmbedJob | null>
 async function compensatePendingStart(jobId: string): Promise<void> {
   const client = reEmbedJobClient() as any;
   try {
-    if (typeof (client as { deleteMany?: unknown }).deleteMany === "function") {
+    if ((client as { deleteMany?: unknown }).deleteMany instanceof Function) {
       await (client as any).deleteMany({ where: { id: jobId, status: "PENDING" } });
     } else {
       await (client as any).delete({ where: { id: jobId } });

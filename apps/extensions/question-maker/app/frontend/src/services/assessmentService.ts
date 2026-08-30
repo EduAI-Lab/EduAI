@@ -14,6 +14,7 @@ import {
   AssessmentSectionCreateInput,
   SectionVariantLink,
 } from "../types/question";
+import { isNumber } from "@eduai/ui/primitive-union";
 
 type GetAssessmentsOptions = {
   courseId?: number;
@@ -42,13 +43,13 @@ function unwrapPaginatedList<T>(data: JsonValue): PaginatedList<T> {
       offset: 0,
     };
   }
-  if (data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)) {
+  if (data instanceof Object && Array.isArray((data as { items?: unknown }).items)) {
     const page = data as PaginatedList<T>;
     return {
       items: page.items,
-      total: typeof page.total === "number" ? page.total : page.items.length,
-      limit: typeof page.limit === "number" ? page.limit : page.items.length,
-      offset: typeof page.offset === "number" ? page.offset : 0,
+      total: isNumber(page.total) ? page.total : page.items.length,
+      limit: isNumber(page.limit) ? page.limit : page.items.length,
+      offset: isNumber(page.offset) ? page.offset : 0,
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };

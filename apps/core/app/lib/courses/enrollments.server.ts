@@ -3,11 +3,13 @@ import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { splitPage, type CursorParams } from "~/lib/cursor-list.server";
+import { z } from "zod";
+import { asPresentText } from "~/lib/json-value";
 
 const ENROLLMENT_ROLES = ["STUDENT", "TA", "INSTRUCTOR"] as const;
 
 export function isEnrollmentRole(value: JsonValue | undefined): value is EnrollmentRole {
-  return typeof value === "string" && (ENROLLMENT_ROLES as readonly string[]).includes(value);
+  return z.enum(ENROLLMENT_ROLES).safeParse(value).success;
 }
 
 /**
@@ -163,7 +165,8 @@ export async function addEnrollment(
   payload: AddEnrollmentPayload,
   actorRank: number,
 ) {
-  if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
+  const userId = asPresentText(payload.userId);
+  if (userId === null || !isEnrollmentRole(payload.role)) {
     return {
       status: "422",
       error: "VALIDATION_ERROR",
@@ -176,7 +179,7 @@ export async function addEnrollment(
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
+    where: { id: userId },
     select: { id: true },
   });
   if (!user) {
@@ -187,7 +190,7 @@ export async function addEnrollment(
     const enrollment = await prisma.enrollment.create({
       data: {
         courseId,
-        userId: payload.userId,
+        userId,
         role: payload.role,
         isActive: true,
       },
@@ -200,7 +203,7 @@ export async function addEnrollment(
       // rather than 409 — a removed TA/student must be re-addable, e.g. after a
       // TA is removed and then re-enrolled (#685 review).
       const existing = await prisma.enrollment.findUnique({
-        where: { courseId_userId: { courseId, userId: payload.userId } },
+        where: { courseId_userId: { courseId, userId } },
       });
       if (existing && !existing.isActive) {
         const enrollment = await prisma.enrollment.update({

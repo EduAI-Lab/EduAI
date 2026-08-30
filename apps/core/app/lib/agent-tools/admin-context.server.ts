@@ -1,6 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import { listBugReports } from "~/lib/bug-reports/server";
+import { z } from "zod";
 import {
   listAccessibleCourses,
   getAccessibleCourse,
@@ -97,6 +98,11 @@ export async function resolveAdminCourseId(
   return { error: "courseId or courseCode required" };
 }
 
+/** The back-compat calling convention: a bare limit instead of an options object. */
+const isBareLimit = (
+  opts: { limit?: number; email?: string; query?: string } | number,
+): opts is number => z.number().safeParse(opts).success;
+
 /** ADMIN-only user directory (read-only). Supports email / free-text search. */
 export async function listAdminUsers(
   user: RbacUser,
@@ -106,7 +112,7 @@ export async function listAdminUsers(
   if (denied) return denied;
 
   // Back-compat: older callers passed a bare limit number.
-  const normalized = typeof opts === "number" ? { limit: opts } : opts;
+  const normalized = isBareLimit(opts) ? { limit: opts } : opts;
   const clampedLimit = Math.min(
     Math.max(Math.floor(normalized.limit ?? DEFAULT_LIST_LIMIT), 1),
     MAX_LIST_LIMIT,
@@ -211,7 +217,7 @@ export async function listAdminCourseEnrollments(
     courseId,
     userId,
     user: userEmail ? { email: { equals: userEmail, mode: "insensitive" as const } } : undefined,
-    isActive: typeof opts.isActive === "boolean" ? opts.isActive : undefined,
+    isActive: z.boolean().safeParse(opts.isActive).data,
     enrolledAt: enrolledAtFilter,
   };
 

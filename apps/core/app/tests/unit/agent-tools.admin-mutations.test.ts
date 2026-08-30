@@ -181,7 +181,7 @@ const STUDENT = { id: "student-1", role: "STUDENT" };
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation(async <T>(arg: T | ((tx: typeof prismaMock) => T)) =>
-    typeof arg === "function" ? (arg as (tx: typeof prismaMock) => T)(prismaMock) : arg,
+    arg instanceof Function ? (arg as (tx: typeof prismaMock) => T)(prismaMock) : arg,
   );
   prismaMock.$executeRaw.mockResolvedValue(undefined);
 });

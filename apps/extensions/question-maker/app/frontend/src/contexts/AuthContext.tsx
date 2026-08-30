@@ -16,6 +16,7 @@ import {
 import { clearOCRHistoryForUser, OCR_HISTORY_KEY } from "../types/ocr";
 import { isAxiosError } from "axios";
 import { getCoreLoginUrl } from "../lib/coreUrl";
+import { isString } from "@eduai/ui/primitive-union";
 
 interface AuthContextType {
   user: User | null;
@@ -111,7 +112,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       let message = `Logout failed: ${response.status}`;
       try {
         const payload = (await response.json()) as { error?: unknown };
-        if (typeof payload?.error === "string" && payload.error.trim()) {
+        if (isString(payload?.error) && payload.error.trim()) {
           message = payload.error;
         }
       } catch {

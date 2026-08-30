@@ -272,9 +272,9 @@ export async function seedStudentSubmission(
     expect(mirrorRes.status()).toBe(201);
 
     const answerBody =
-      typeof opts.answerText === "string"
-        ? { answerText: opts.answerText }
-        : { answerOption: opts.answerOption ?? 1 };
+      opts.answerText === undefined
+        ? { answerOption: opts.answerOption ?? 1 }
+        : { answerText: opts.answerText };
     const answerRes = await studentCtx.post(`${AT}/api/questions/${activityId}/answer`, {
       data: answerBody,
     });

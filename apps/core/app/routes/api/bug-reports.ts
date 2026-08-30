@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asJsonObject } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
 /**
@@ -68,8 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
         );
       }
 
-      const source =
-        body && typeof body === "object" && !Array.isArray(body) ? body.source : undefined;
+      const source = asJsonObject(body)?.source;
       const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
       let sessionUserId: string | null = null;
 
@@ -89,8 +89,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       // For session-auth requests, override userId and source from the verified session.
       if (sessionUserId) {
-        const fields: JsonObject =
-          body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+        const fields: JsonObject = { ...asJsonObject(body) };
         fields.userId = sessionUserId;
         fields.source = "CORE";
         body = fields;

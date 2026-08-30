@@ -1,4 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
 import { useState } from "react";
 import { Card, CardContent, Button } from "@eduai/ui";
 import {
@@ -9,17 +10,21 @@ import {
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */
 function partText(part: JsonValue | undefined): string {
-  return part && typeof part === "object" && !Array.isArray(part) && typeof part.text === "string"
-    ? part.text
-    : "";
+  return asText(asJsonObject(part)?.text) ?? "";
 }
 
 function messageText(content: JsonValue | undefined): string {
-  if (typeof content === "string") return content;
-  if (content && typeof content === "object" && !Array.isArray(content)) {
-    if (typeof content.content === "string") return content.content;
-    if (Array.isArray(content.parts)) return content.parts.map(partText).join("");
-    if (Array.isArray(content.content)) return content.content.map(partText).join("");
+  const plain = asText(content);
+  if (plain !== null) return plain;
+
+  const fields = asJsonObject(content);
+  if (fields) {
+    const inner = asText(fields.content);
+    if (inner !== null) return inner;
+    const parts = asJsonArray(fields.parts);
+    if (parts) return parts.map(partText).join("");
+    const contentParts = asJsonArray(fields.content);
+    if (contentParts) return contentParts.map(partText).join("");
   }
   return "";
 }

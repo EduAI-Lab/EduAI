@@ -8,6 +8,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import { asText } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
 // TA is a course-level Enrollment role, not a platform UserRole — tests needing
@@ -39,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const { email, role } = body ?? {};
-      if (typeof email !== "string" || typeof role !== "string") {
+      if (asText(email) === null || asText(role) === null) {
         return new Response(JSON.stringify({ error: "email and role required" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },

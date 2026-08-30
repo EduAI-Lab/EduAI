@@ -60,8 +60,7 @@ export function useAiReviewHistory(): UseAiReviewHistoryReturn {
     (nextItems) => {
       setHistory((previous) => {
         if (previous.storageKey !== storageKey) return previous;
-        const resolvedItems =
-          typeof nextItems === "function" ? nextItems(previous.items) : nextItems;
+        const resolvedItems = nextItems instanceof Function ? nextItems(previous.items) : nextItems;
         return { ...previous, items: resolvedItems };
       });
     },

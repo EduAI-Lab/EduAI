@@ -26,8 +26,9 @@
     "anti-slop/no-unknown-parameters": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
 
+    "anti-slop/no-runtime-typeof": "error",
+
     "anti-slop/no-chained-type-assertions": "warn",
-    "anti-slop/no-runtime-typeof": "warn",
     "anti-slop/require-safety-comment-for-type-assertion": "warn",
     // "hack" is ordinary prose, not a marker — it flagged a comment accurately
     // describing a workaround that had already been deleted. The other three

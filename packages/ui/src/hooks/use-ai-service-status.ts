@@ -31,6 +31,7 @@
 import * as React from "react";
 
 import type { ServiceStatus } from "../ai-service-indicators";
+import { hasDocument } from "../lib/runtime-env";
 
 /** The `{ cloud, ubc }` pair every AI-status data source resolves to. */
 export interface AiServiceStatusPair {
@@ -123,7 +124,7 @@ export function useAiServiceStatus(
     let inFlight: AbortController | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const isHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+    const isHidden = () => hasDocument() && document.visibilityState === "hidden";
 
     const clearTimer = () => {
       if (timer) clearTimeout(timer);
@@ -171,7 +172,7 @@ export function useAiServiceStatus(
 
     refreshRef.current = () => void load();
     void load();
-    if (typeof document !== "undefined") {
+    if (hasDocument()) {
       document.addEventListener("visibilitychange", onVisibility);
     }
 
@@ -179,7 +180,7 @@ export function useAiServiceStatus(
       cancelled = true;
       clearTimer();
       inFlight?.abort();
-      if (typeof document !== "undefined") {
+      if (hasDocument()) {
         document.removeEventListener("visibilitychange", onVisibility);
       }
     };

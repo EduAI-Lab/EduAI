@@ -146,7 +146,7 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
 /** Run the updater `setSearchParams` was called with against the current URL. */
 const resultingParams = () => {
   const updater = mockSetSearchParams.mock.calls.at(-1)?.[0];
-  return typeof updater === "function"
+  return updater instanceof Function
     ? (updater(new URLSearchParams(currentSearchParams)) as URLSearchParams)
     : (updater as URLSearchParams);
 };

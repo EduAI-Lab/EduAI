@@ -10,6 +10,7 @@ import { auth, authBaseURL } from "~/lib/auth/server";
 import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
+import { messageFromCause } from "~/lib/form-errors";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -212,7 +213,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // from the freshly-issued cookies so a successful login is never logged as
     // anonymous if better-auth's response shape changes.
     if (!signedInUser) {
-      const setCookies = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+      const setCookies = headers.getSetCookie instanceof Function ? headers.getSetCookie() : [];
       const cookieHeader = setCookies
         .map((cookie) => cookie.split(";")[0])
         .filter(Boolean)
@@ -242,10 +243,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
-    let message = "Sign in failed";
-    if (typeof err === "object" && err && "message" in err) {
-      message = String((err as { message?: string }).message ?? message);
-    }
+    const message = messageFromCause(err, "Sign in failed");
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),

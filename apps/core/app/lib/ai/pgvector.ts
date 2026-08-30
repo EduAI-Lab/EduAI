@@ -12,7 +12,7 @@ export function formatPgVectorLiteral(embedding: number[]): string {
   const parts: string[] = Array.from({ length: embedding.length });
   for (let i = 0; i < embedding.length; i++) {
     const value = embedding[i];
-    if (typeof value !== "number" || !Number.isFinite(value)) {
+    if (!Number.isFinite(value)) {
       throw new Error(`Invalid embedding value at index ${i}`);
     }
     parts[i] = String(value);

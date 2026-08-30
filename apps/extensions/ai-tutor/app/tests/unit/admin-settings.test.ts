@@ -98,7 +98,7 @@ describe("formatApiKeyUpdatedTime", () => {
 
   it("formats a valid ISO date", () => {
     const result = formatApiKeyUpdatedTime("2026-03-10T08:00:00.000Z");
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result).not.toBeNull();
   });
 });

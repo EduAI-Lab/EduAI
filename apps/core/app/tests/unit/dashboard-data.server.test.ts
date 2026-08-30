@@ -57,8 +57,8 @@ describe("loadDashboardData query gating", () => {
       countOnly: true,
       isActive: true,
     });
-    expect(typeof data.userTotal).toBe("number");
-    expect(typeof data.activeCourseTotal).toBe("number");
+    expect(data.userTotal).toEqual(expect.any(Number));
+    expect(data.activeCourseTotal).toEqual(expect.any(Number));
     expect(data.courses).toEqual([]);
   });
 
