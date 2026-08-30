@@ -1,9 +1,18 @@
 # Changelog
 
+All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
+
+> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
+
 ## [Week 15 — August 10–16, 2026]
 
 ### Changed
 
+- [ai-tutor] perf: Index the content-tree foreign keys and the per-user column that had no usable leading-column index, turning the seq scans behind every `CourseOffering → Module → Lesson → Activity → Submission` hop, their cascade/restrict deletes, and the "my courses" read into index scans (34ms → 0.11ms on `Activity.lessonId` at 200k rows), and drop the redundant `AiChatSession(userId, activityId)` prefix index. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
+
+### Tests
+
+- [ai-tutor] test: Add `foreignKeyIndexes.test.js`, a schema guard that audits the live test database for foreign keys whose leading column has no usable index, pins the unindexed set to the one documented deferral, checks the per-user column the FK audit cannot see, and proves the audit reacts by dropping an index inside a rolled-back transaction. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
 - [question-maker] perf: Memoize known user ids in `findOrCreateUser` so `requireAuth` skips the deliberately no-op `user.upsert` on side-effect-free read requests, while mutating requests still upsert before dependent writes; the TTL lets a removed row self-heal. Closes #1388. (@abdullahmoh21, 2026-08-11) — [#1467](https://github.com/EduAI-Lab/EduAI/pull/1467)
 - [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query, and the section-delete and variant-unlink paths made transactional. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
 ## [Week 18 — August 24–30, 2026]

@@ -197,6 +197,18 @@ export async function clickSidebar(page: Page, label: string): Promise<void> {
  * painted before it is interactive, so a bare click is silently dropped.
  */
 export async function openTab(page: Page, label: string | RegExp): Promise<void> {
+  // Wait for the shell before touching the tablist. `_app.tsx` renders a bare
+  // `<Outlet />` while `useLocalUser()` is still resolving `/api/me`, then
+  // swaps in `<AppShell><Outlet /></AppShell>` once the user lands — a
+  // different tree position, so the route remounts and its `activeTab` state
+  // resets to the default. A tab clicked before that swap goes selected and is
+  // then silently reverted, which reads as "the panel never rendered". The
+  // sidebar only exists in the post-swap tree, so this is the point after
+  // which no auth-driven remount can undo the click.
+  await expect(sidebar(page).getByRole("link", { name: "Dashboard", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+
   const tab = page.getByRole("tab", { name: label });
   await expect(tab).toBeVisible({ timeout: 30_000 });
 
