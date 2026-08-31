@@ -4,6 +4,7 @@
  */
 import api from "./api";
 import { apiKeyStorage } from "./apiKeyStorage";
+import type { AssessmentType } from "../types/question";
 
 export type StudyRole = "reference_baseline" | "generated_variant" | null;
 
@@ -182,7 +183,7 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    assessmentTypeOverride?: string;
+    assessmentTypeOverride?: AssessmentType;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-variants`, payload);
     return response.data.data;
@@ -195,7 +196,7 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    assessmentTypeOverride?: string;
+    assessmentTypeOverride?: AssessmentType;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-by-metadata`, payload);
     return response.data.data;

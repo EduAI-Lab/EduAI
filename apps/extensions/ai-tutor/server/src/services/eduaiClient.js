@@ -12,6 +12,7 @@ import { getEffectiveEduAiApiKey, serviceAuthHeader } from "./systemSettings.js"
 // contract per call site, so it is kept out of the #1647 fix. `listEduAiModels`
 // (~:592) already uses the effective key as the reference pattern.
 const DEFAULT_BASE_URL = "http://localhost:5174/api";
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 function normalizeBaseUrl(rawUrl) {
   if (!rawUrl) return DEFAULT_BASE_URL;
@@ -60,12 +61,12 @@ export function getEduAiChatUrl() {
  *
  * Pass `options.cookie` (the raw Cookie header forwarded from the request)
  * for user-scoped calls. Omit for unauthenticated endpoints.
- * Pass `options.signal` (e.g. `AbortSignal.timeout(3000)`) to bound how long
- * a caller will wait — a Core that's up but slow/hung otherwise blocks the
- * socket with no timeout of its own.
+ * Pass `options.signal` (e.g. `AbortSignal.timeout(3000)`) to choose a caller
+ * deadline. Otherwise this client applies a finite default.
  */
 async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === "string" ? options.cookie : "";
+  const signal = options.signal ?? AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
 
   const url = `${getEduAiBaseUrl()}${path}`;
   // Caller-supplied headers still win over the forwarded session cookie, which
@@ -78,7 +79,7 @@ async function requestEduAi(path, options = {}) {
     method: options.method ?? "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal,
+    signal,
   });
 
   if (!response.ok) {

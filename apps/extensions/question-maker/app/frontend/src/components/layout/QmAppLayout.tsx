@@ -1,5 +1,5 @@
-import { type ReactNode } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
   AppShell,
@@ -39,6 +39,7 @@ import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { toast } from "sonner";
+import { courseService } from "@/services/courseService";
 
 // A `Map` because the key is whatever path the router is on: an unlisted
 // route falls back to the app name rather than reading `undefined` off a
@@ -146,6 +147,7 @@ const qmLogo = (
 
 function QmAppLayoutInner() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, logout } = useAuth();
   const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
@@ -153,6 +155,36 @@ function QmAppLayoutInner() {
   const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
+  const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
+  const routeCourse = courses.find((course) => course.id === localCourseId);
+  const requestedCoreCourseId = searchParams.get("coreCourseId")?.trim();
+  const coreCourseId = routeCourse?.coreCourseId ?? requestedCoreCourseId;
+  const navigationUser = user ? { ...user, role: user.questionMakerRole ?? user.role } : user;
+  const questionMakerRole = navigationUser?.role;
+  const attemptedCourseImport = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
+    const course = courses.find((item) => item.coreCourseId === requestedCoreCourseId);
+    if (course) {
+      navigate(
+        `/courses/${course.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
+        { replace: true },
+      );
+      return;
+    }
+    if (attemptedCourseImport.current === requestedCoreCourseId) return;
+    attemptedCourseImport.current = requestedCoreCourseId;
+    void courseService
+      .createCourse({ coreCourseId: requestedCoreCourseId })
+      .then((created) =>
+        navigate(
+          `/courses/${created.id}?tab=overview&coreCourseId=${encodeURIComponent(requestedCoreCourseId)}`,
+          { replace: true },
+        ),
+      )
+      .catch(() => toast.error("Could not open this Core course in Question Maker"));
+  }, [courses, isCoursesLoading, navigate, requestedCoreCourseId, routeCourse]);
   const handleLogout = () => {
     void logout().catch(() => {
       toast.error("Could not log out", {
@@ -169,21 +201,21 @@ function QmAppLayoutInner() {
     }
   };
 
-  const navMain = getNavForUser(user).map((item) => ({
+  const navMain = getNavForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navSecondary = getNavSecondaryForUser(user).map((item) => ({
+  const navSecondary = getNavSecondaryForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navFooter = getFooterNavForUser(user).map((item) => ({
+  const navFooter = getFooterNavForUser(navigationUser).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
@@ -212,9 +244,18 @@ function QmAppLayoutInner() {
         ),
         currentPath: pathname,
         LinkComponent: Link,
-        launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
+        launcher: {
+          apps: getLauncherApps(coreCourseId),
+          currentAppId: CURRENT_APP_ID,
+          role: questionMakerRole,
+        },
         user: user
-          ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
+          ? {
+              name: user.name ?? user.email,
+              email: user.email,
+              image: user.image,
+              role: questionMakerRole,
+            }
           : { name: "Guest", email: "", role: "GUEST" },
         navUser: user
           ? {

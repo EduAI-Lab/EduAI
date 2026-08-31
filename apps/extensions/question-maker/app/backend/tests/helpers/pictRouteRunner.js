@@ -31,6 +31,7 @@ export function describePictRoute(
         const res = await request(app)
           [method](typeof path === "function" ? path(row) : path)
           .set("Cookie", "session=v")
+          .set("Sec-Fetch-Site", "same-origin")
           .send(body);
 
         const expected = oracle(row);

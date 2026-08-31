@@ -4,7 +4,7 @@
  * needed for the request-budget guards.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const { mockGenerate } = vi.hoisted(() => ({ mockGenerate: vi.fn() }));
 
@@ -49,6 +49,7 @@ vi.mock("../../src/services/aiService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { config } = await import("../../src/config/settings.js");
 
 const TEST_USER = {

@@ -1,7 +1,7 @@
 /**
  * PICT model (#1188, census docs/PICT_CENSUS.md § S9): POST
  * /api/eduai/generate-questions (../../src/routes/eduai.js) forks on the
- * platform-role flat gate, required-field validation (prompt; courseId OR
+ * authenticated platform-role coverage, required-field validation (prompt; courseId OR
  * courseCode), numQuestions vs config.maxQuestions, and content-aware course
  * access — then, once admitted, forwards numQuestions/mcqRequiredChoiceCount/
  * distributions downstream unchanged (defaulted or clamped). One oracle
@@ -61,7 +61,9 @@ vi.mock("../../src/services/coreApiService.js", async () => {
   return mockCoreApiService(mockEnrollments);
 });
 
-vi.mock("../../src/services/eduaiService.js", () => ({ default: eduaiService }));
+vi.mock("../../src/services/eduaiService.js", () => ({
+  default: eduaiService,
+}));
 
 const { default: app } = await import("../../src/app.js");
 
@@ -76,7 +78,12 @@ const {
   PROVIDED_REASONING_DISTRIBUTION,
 } = oracle;
 
-const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const INSTRUCTOR = {
+  id: "inst-1",
+  role: "INSTRUCTOR",
+  email: "i@t.co",
+  name: "I",
+};
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
 const QM_COURSE_ID = 1;
 

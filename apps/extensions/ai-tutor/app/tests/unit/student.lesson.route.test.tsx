@@ -130,7 +130,7 @@ describe("student.lesson — answer submission", () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
     });
 
-    expect(mockSubmitAnswer).toHaveBeenCalledWith(1, { userId: "u1", answerOption: 1 });
+    expect(mockSubmitAnswer).toHaveBeenCalledWith(1, { answerOption: 1 });
     expect(await screen.findByText("Correct!")).toBeInTheDocument();
   });
 
@@ -178,7 +178,7 @@ describe("student.lesson — answer submission", () => {
       fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
     });
 
-    expect(mockSubmitAnswer).toHaveBeenCalledWith(2, { userId: "u1", answerText: "4" });
+    expect(mockSubmitAnswer).toHaveBeenCalledWith(2, { answerText: "4" });
   });
 });
 

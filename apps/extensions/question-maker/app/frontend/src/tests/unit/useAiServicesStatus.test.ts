@@ -20,6 +20,7 @@ vi.mock("@/services/eduaiService", () => ({
 
 vi.mock("@/services/apiKeyStorage", () => ({
   apiKeyStorage: { getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args) },
+  CLOUD_PROVIDERS: ["google", "openai", "deepseek", "anthropic", "opencode"],
   isCloudProvider: (...args: unknown[]) => isCloudProvider(...args),
   isCampusProvider: (...args: unknown[]) => isCampusProvider(...args),
 }));
@@ -60,6 +61,7 @@ describe("useAiServicesStatus probes", () => {
     isCampusProvider.mockReset().mockReturnValue(false);
     capturedFetcher = undefined;
     capturedIntervalMs = undefined;
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -104,6 +106,26 @@ describe("useAiServicesStatus probes", () => {
 
     expect(cloud.state).toBe("operational");
     expect(cloud.detail).toMatch(/online/i);
+  });
+
+  it("probes only the configured provider when several cloud keys are saved", async () => {
+    localStorage.setItem("qm:default-model", "openai:gpt-4o-mini");
+    getAllApiKeys.mockResolvedValue({ google: "google-key", openai: "openai-key" });
+    isCloudProvider.mockImplementation((provider) => provider === "openai");
+    testApiKey.mockImplementation((_keys: ProviderApiKeys, opts?: { forceProvider?: string }) =>
+      opts?.forceProvider === "vllm"
+        ? Promise.resolve({ configured: false })
+        : Promise.resolve({ success: true, provider: "openai" }),
+    );
+    const fetcher = mountAndGetFetcher();
+
+    const { cloud } = await fetcher(new AbortController().signal);
+
+    expect(cloud.state).toBe("operational");
+    const cloudCall = testApiKey.mock.calls.find((c) => !c[1]?.forceProvider);
+    expect(cloudCall?.[0]).toEqual({
+      openai: { apiKey: "openai-key", isEnabled: true },
+    });
   });
 
   it("reports cloud outage when validation returns an error", async () => {
@@ -188,9 +210,7 @@ describe("useAiServicesStatus probes", () => {
     await fetcher(signal);
 
     // Cloud probe: testApiKey(keys, { signal }).
-    const cloudCall = testApiKey.mock.calls.find(
-      (c) => c[1] && !("forceProvider" in c[1] && c[1].forceProvider),
-    );
+    const cloudCall = testApiKey.mock.calls.find((c) => !c[1]?.forceProvider);
     // UBC probe: testApiKey({}, { forceProvider: 'vllm', signal }).
     const ubcCall = testApiKey.mock.calls.find((c) => c[1]?.forceProvider === "vllm");
 

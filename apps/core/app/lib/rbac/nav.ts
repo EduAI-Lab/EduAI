@@ -68,12 +68,6 @@ export function getNavForUser(user: NavUser, opts: NavOptions = {}): (NavItem | 
   return nav;
 }
 
-/** ADMIN / UNIT_ADMIN use global chat; others use course-scoped chat (§10). */
-export function usesGlobalChat(user: NavUser): boolean {
-  const role = user.role ?? "STUDENT";
-  return role === "ADMIN" || role === "UNIT_ADMIN";
-}
-
 /**
  * Secondary sidebar links (bottom of sidebar). Cross-app links (Question Maker,
  * AI Tutor) moved to the footer AppLauncher, which enforces the same role gate.

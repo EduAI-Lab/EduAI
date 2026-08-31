@@ -85,7 +85,7 @@ const confirmedWrite = z
   .boolean()
   .default(false)
   .describe(
-    "false until the admin explicitly confirms in a later chat message; then true to apply the write (same-generation confirmed:true is rejected)",
+    "Protocol only, not authorization. Use false to get a server confirmationCode. Use true only after the latest admin message contains exactly that code on a later turn.",
   );
 
 const enrollmentRole = z.enum(["STUDENT", "TA", "INSTRUCTOR"]);
@@ -173,13 +173,20 @@ export function pickCoreAdminChatTools(
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
   const { user, effectiveCourseId, effectiveCourseCode } = ctx;
-  const turnId = ctx.turnId ?? null;
   const confirmWrite = (
     toolName: string,
     confirmed: boolean,
     run: () => Promise<MutationResult>,
     payload: ToolInput = {},
-  ) => runConfirmedAdminWriteTool(toolName, user, confirmed, run, payload, turnId);
+  ) =>
+    runConfirmedAdminWriteTool({
+      toolName,
+      actor: user,
+      confirmed,
+      run,
+      payload,
+      confirmation: ctx.adminWriteConfirmation,
+    });
 
   const resolveCourse = (courseId?: string, courseCode?: string) =>
     resolveAdminCourseId(user, {

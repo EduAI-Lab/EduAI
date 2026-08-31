@@ -9,6 +9,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { AddQuestionDialog } from "../../components/questions/AddQuestionDialog";
 
+const permissionState = vi.hoisted(() => ({ canApproveVariant: true }));
+
 // The dialog reaches for AI models / course details on mount; without this the
 // real axios client fires XHRs into jsdom and leaves unhandled rejections.
 vi.mock("../../services/api", () => ({
@@ -28,7 +30,7 @@ vi.mock("sonner", () => ({
 vi.mock("@/hooks/useQmPermissions", () => ({
   useQmPermissionsForCourse: () => ({
     canManageCanvas: true,
-    canApproveVariant: true,
+    canApproveVariant: permissionState.canApproveVariant,
     canCreateQuestion: true,
     canEditResource: () => true,
     canDeleteResource: () => true,
@@ -76,6 +78,10 @@ vi.mock("../../services/apiKeyStorage", () => ({
     getKey: vi.fn().mockReturnValue(null),
   },
 }));
+
+beforeEach(() => {
+  permissionState.canApproveVariant = true;
+});
 
 function renderDialog(open: boolean) {
   return render(
@@ -143,6 +149,16 @@ describe("AddQuestionDialog share-with-extensions choice", () => {
 
     expect(box).not.toBeChecked();
     expect(box).toBeDisabled();
+  });
+
+  it("hides review and sharing choices for a TA while keeping draft save available", async () => {
+    cleanup();
+    permissionState.canApproveVariant = false;
+    renderDialog(true);
+
+    expect(screen.queryByLabelText("Mark as reviewed")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("share-with-extensions")).not.toBeInTheDocument();
+    expect(await screen.findByText("Save as Draft")).toBeInTheDocument();
   });
 });
 

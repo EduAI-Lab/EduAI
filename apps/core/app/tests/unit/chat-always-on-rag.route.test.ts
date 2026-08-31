@@ -98,6 +98,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { EmbeddingRequestTimeoutError, findRelevantContent } from "~/lib/ai/embedding";
 import { getChatModelCapabilities, resolveModelContextWindow } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
@@ -248,6 +249,51 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
+    });
+
+    it("keeps a conflicting caller courseCode pinned to the authorized courseId", async () => {
+      vi.mocked(prisma.chat.create).mockResolvedValue({
+        id: CHAT_ID,
+        userId: "user-1",
+        chatbotType: "LEARNING",
+        courseId: COURSE_ID,
+        systemPrompt: null,
+        title: null,
+        adhdAssist: false,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      });
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+
+      const response = await action(
+        makeRequest(
+          baseBody({
+            chatId: undefined,
+            courseCode: "MATH 999",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "user-1" }),
+        COURSE_ID,
+      );
+      expect(findRelevantContent).toHaveBeenCalledWith(
+        expect.any(String),
+        COURSE_ID,
+        expect.any(Number),
+        undefined,
+        true,
+        { signal: expect.any(AbortSignal) },
+      );
+      expect(prisma.chat.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ courseId: COURSE_ID }),
+      });
+      expect(lastStreamConfig().system).toContain("Current course context: COSC101");
+      expect(lastStreamConfig().system).not.toContain("MATH 999");
+      await expect(response.json()).resolves.toMatchObject({ courseCode: "COSC101" });
     });
 
     it("injects grounding block for course-intent queries", async () => {

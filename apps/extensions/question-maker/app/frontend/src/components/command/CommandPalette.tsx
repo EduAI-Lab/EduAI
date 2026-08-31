@@ -27,6 +27,7 @@ import {
   IconLayoutDashboard,
 } from "@tabler/icons-react";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
+import { useQmPermissions } from "@/hooks/useQmPermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
@@ -55,9 +56,14 @@ function paletteNavItems(user: Parameters<typeof getNavForUser>[0]) {
 
 export function CommandPalette() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { displayCourses } = useDisplayCourses();
   const { user } = useAuth();
+  const { canManageCanvas } = useQmPermissions();
+  const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
+  const coreCourseId =
+    displayCourses.find((course) => course.id === localCourseId)?.coreCourseId ??
+    new URLSearchParams(search).get("coreCourseId");
 
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
@@ -84,7 +90,7 @@ export function CommandPalette() {
     },
     {
       heading: currentCourse ? currentCourse.code || currentCourse.name : "This course",
-      items: courseId
+      items: currentCourse
         ? [
             {
               label: "New question",
@@ -107,11 +113,15 @@ export function CommandPalette() {
               icon: <IconFolderOpen className={iconClass} />,
               onSelect: () => navigate(`/courses/${courseId}?tab=topics`),
             },
-            {
-              label: "Canvas",
-              icon: <IconSchool className={iconClass} />,
-              onSelect: () => navigate(`/courses/${courseId}?tab=canvas`),
-            },
+            ...(canManageCanvas
+              ? [
+                  {
+                    label: "Canvas",
+                    icon: <IconSchool className={iconClass} />,
+                    onSelect: () => navigate(`/courses/${courseId}?tab=canvas`),
+                  },
+                ]
+              : []),
             {
               label: "Overview",
               icon: <IconLayoutDashboard className={iconClass} />,
@@ -131,7 +141,7 @@ export function CommandPalette() {
       })),
     },
     buildAppSwitcherGroup({
-      apps: getLauncherApps(),
+      apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
       role: user?.role,
     }),

@@ -34,6 +34,25 @@ describe("getLauncherApps", () => {
     expect(asAiTutor).toEqual(asCore);
     expect(asQm).toEqual(asCore);
   });
+
+  it("preserves canonical course context across apps", () => {
+    const apps = getLauncherApps({ currentAppId: "core", urls: URLS, coreCourseId: "core/7 8" });
+    expect(apps.map((app) => app.url)).toEqual([
+      `https://core.example.edu/courses/${encodeURIComponent("core/7 8")}`,
+      "https://tutor.example.edu/?coreCourseId=core%2F7+8",
+      "https://qm.example.edu/?coreCourseId=core%2F7+8",
+    ]);
+  });
+
+  it("keeps undeployed extension URLs empty when course context is present", () => {
+    const apps = getLauncherApps({
+      currentAppId: "core",
+      urls: { ...URLS, aiTutor: "" },
+      coreCourseId: "course-1",
+    });
+
+    expect(apps.find((app) => app.id === "ai-tutor")?.url).toBe("");
+  });
 });
 
 // ── RBAC gate, composed with the existing visibleAppsForRole ──────────────────
@@ -46,7 +65,7 @@ describe("getLauncherApps + visibleAppsForRole — RBAC gate", () => {
     expect(ids).not.toContain("question-maker");
   });
 
-  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"])("shows Question Maker to %s", (role) => {
+  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN", "TA"])("shows Question Maker to %s", (role) => {
     const ids = visibleAppsForRole(apps, role).map((a) => a.id);
     expect(ids).toContain("question-maker");
   });

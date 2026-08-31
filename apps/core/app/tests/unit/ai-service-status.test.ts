@@ -264,8 +264,17 @@ describe("getAiServiceStatus (legacy single-URL mode)", () => {
     const status = await mod.getAiServiceStatus();
     expect(status.ubc.state).toBe("operational");
     // Ollama has no /metrics load probe.
-    expect(callsTo(fetchMock, "/tags")).toBe(1);
+    expect(callsTo(fetchMock, "/api/tags")).toBe(1);
     expect(callsTo(fetchMock, "/metrics")).toBe(0);
+  });
+
+  it("reports ubc outage when the Ollama health endpoint returns an error", async () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama.test/";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not found", { status: 404 })));
+    const mod = await freshModule();
+
+    const status = await mod.getAiServiceStatus();
+    expect(status.ubc.state).toBe("outage");
   });
 
   it("reports ubc outage when configured URLs are unreachable", async () => {

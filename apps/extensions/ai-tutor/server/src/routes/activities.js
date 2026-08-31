@@ -83,7 +83,11 @@ import {
   GuideRequestSchema,
   TeachRequestSchema,
 } from "../../../shared/schemas/aiGuidance.js";
-import { CreateActivitySchema, UpdateActivitySchema } from "../../../shared/schemas/activity.js";
+import {
+  CreateActivitySchema,
+  SubmitAnswerSchema,
+  UpdateActivitySchema,
+} from "../../../shared/schemas/activity.js";
 import { getCoreCourseId } from "../utils/coreCourseId.js";
 import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import { gateCourseThrough } from "../middleware/liveCoursePrincipal.js";
@@ -1111,6 +1115,33 @@ router.get(
  * Why: `attemptNumber` is allocated transactionally and guarded by a database
  * uniqueness constraint rather than trusted from the client.
  */
+function validateSubmissionAnswer(activity, body) {
+  const parsed = SubmitAnswerSchema.safeParse(body);
+  if (!parsed.success) return "Provide exactly one valid answer";
+
+  const questionType = activity.config?.questionType ?? "MCQ";
+  if (questionType === "MCQ") {
+    const options = [activity.config?.options, activity.config?.options?.choices].find(
+      Array.isArray,
+    );
+    if (
+      !options ||
+      !("answerOption" in parsed.data) ||
+      parsed.data.answerOption >= options.length
+    ) {
+      return "answerOption is invalid for this question";
+    }
+  } else if (questionType === "SHORT_TEXT") {
+    if (!("answerText" in parsed.data)) {
+      return "answerText is required for this question";
+    }
+  } else {
+    return "Activity question type is invalid";
+  }
+
+  return parsed.data;
+}
+
 router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
   if (!Number.isFinite(activityId)) {
@@ -1120,8 +1151,6 @@ router.post("/questions/:id/answer", async (req, res) => {
   // Always use the authenticated user; never trust body.userId
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: "Authentication required" });
-
-  const { answerText, answerOption } = req.body || {};
 
   try {
     // Load activity with course offering context for authorization
@@ -1168,6 +1197,13 @@ router.post("/questions/:id/answer", async (req, res) => {
       return res.status(403).json({ error: "Activity is not available" });
     }
 
+    const parsedAnswer = validateSubmissionAnswer(activity, req.body);
+    if (typeof parsedAnswer === "string") {
+      return res.status(400).json({ error: parsedAnswer });
+    }
+
+    const { answerText, answerOption } = parsedAnswer;
+
     const { isCorrect } = evaluateQuestion(activity, {
       answerText,
       answerOption,
@@ -1186,13 +1222,11 @@ router.post("/questions/:id/answer", async (req, res) => {
       isCorrect,
     });
 
-    if (authUser.role === "STUDENT") {
-      await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
-    }
-    const feedbackAlreadySubmitted =
-      authUser.role === "STUDENT"
-        ? await hasActivityFeedback({ userId: authUser.id, activityId })
-        : true;
+    await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
+    const feedbackAlreadySubmitted = await hasActivityFeedback({
+      userId: authUser.id,
+      activityId,
+    });
 
     res.json({
       ok: true,

@@ -1,16 +1,16 @@
 /**
  * DB-backed test for importQuizFromCanvas's per-question skip path (#3).
  *
- * When a question fails to convert (unsupported type) or persist, the loop is meant to
+ * When a question fails to convert (unsupported type), the loop is meant to
  * record it in `skippedQuestions` and continue. The catch block referenced `canvasQuestion`,
  * which was `let`-declared inside the `try` and therefore out of scope in the `catch` —
  * so any skip threw `ReferenceError: canvasQuestion is not defined`, which escaped the loop
  * and aborted the ENTIRE import with a generic error instead of skipping one question.
  *
- * We force the failure by making prisma.questionMetadata.create reject, which drives the
- * same catch. Before the fix the import rejects with the ReferenceError message; after the
- * fix the question is skipped and the loop ends with its intentional "No questions could be
- * imported" guard (proving the catch ran without throwing on `canvasQuestion`).
+ * We force the conversion failure with an unsupported Canvas type. Before the fix the import
+ * rejects with the ReferenceError message; after the fix the question is skipped and the loop
+ * ends with its intentional "No questions could be imported" guard (proving the catch ran
+ * without throwing on `canvasQuestion`).
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
@@ -115,23 +115,20 @@ describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
   });
 
   it("skips a failing question without a ReferenceError in the catch", async () => {
-    const spy = vi
-      .spyOn(prisma.questionMetadata, "create")
-      .mockRejectedValue(new Error("simulated insert failure"));
-    try {
-      const promise = canvas.importQuizFromCanvas(
-        USER.id,
-        101,
-        1,
-        courseId,
-        { primaryTopicId: topicId },
-        USER.id,
-        TEST_COOKIE,
-      );
-      await expect(promise).rejects.toThrow(/No questions could be imported/);
-      await expect(promise).rejects.not.toThrow(/canvasQuestion is not defined/);
-    } finally {
-      spy.mockRestore();
-    }
+    mockCoreCanvas.proxyCoreGetQuizQuestion.mockResolvedValueOnce({
+      success: true,
+      data: { ...mockQuizQuestion, question_type: "unsupported_question" },
+    });
+    const promise = canvas.importQuizFromCanvas(
+      USER.id,
+      101,
+      1,
+      courseId,
+      { primaryTopicId: topicId },
+      USER.id,
+      TEST_COOKIE,
+    );
+    await expect(promise).rejects.toThrow(/No questions could be imported/);
+    await expect(promise).rejects.not.toThrow(/canvasQuestion is not defined/);
   });
 });

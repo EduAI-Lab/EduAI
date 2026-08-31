@@ -10,6 +10,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - Refresh deployment documentation from the repository implementation and read-only audits of eduai-dev, my-eduai, cmps01, cmps02, and cmps03.
 - Organize s378, production, provisioning, sudoers, cron/backups, inference-fleet, and AWS Bedrock guardrails runbooks around current service boundaries and operational procedures.
 - Record observed inference roles and model state, including CMPS03's unresolved readiness boundary, while separating deployed capacity from potential upgrades.
+## 2026.08.30
+
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1705
+- Consolidate RAG/AI documentation around current EduAI Core behavior, including chat/RAG flow, embeddings, model routing, vLLM fleet operations, testing, performance, and s378 development operations.
+- Remove dated latency, sprint, routing, team-guide, and ingestion-test material while retaining maintainable future-developer guidance and relevant fixtures.
+- Reframe HELPME references as potential upgrades and document Qwen 3.5 2B/9B current tiers with Qwen 3.8 27B planned capacity.
 
 ## [Week 15 — August 10–16, 2026]
 

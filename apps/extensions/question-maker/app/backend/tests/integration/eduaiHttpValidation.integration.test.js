@@ -4,13 +4,14 @@
  * No DB required — all 400 guards fire before any model access.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const TEST_USER = {
   id: "cuid-test-user",

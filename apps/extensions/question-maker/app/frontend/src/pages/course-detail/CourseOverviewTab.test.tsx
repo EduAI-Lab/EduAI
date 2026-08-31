@@ -19,6 +19,7 @@ const baseProps = {
   analytics: {} as never,
   analyticsStatus: "unavailable" as const,
   canWrite: true,
+  canManageAssessment: true,
   onAddQuestion: vi.fn(),
   onNewAssessment: vi.fn(),
 };
@@ -42,5 +43,13 @@ describe("CourseOverviewTab Canvas quick action", () => {
     // The other quick actions are unaffected.
     expect(screen.getByText("Add question")).toBeInTheDocument();
     expect(screen.getByText("New assessment")).toBeInTheDocument();
+  });
+
+  it("keeps TA question authoring while hiding instructor-only actions", () => {
+    render(<CourseOverviewTab {...baseProps} canManageAssessment={false} />);
+
+    expect(screen.getByText("Add question")).toBeInTheDocument();
+    expect(screen.queryByText("New assessment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Import from Canvas")).not.toBeInTheDocument();
   });
 });

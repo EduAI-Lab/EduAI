@@ -179,18 +179,27 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               </TableCell>
               <TableCell>
                 <div className="flex items-center space-x-2">
-                  <Switch checked={model.isActive} onCheckedChange={() => onToggleActive(model)} />
+                  <Switch
+                    aria-label={`${model.isActive ? "Disable" : "Enable"} ${model.name}`}
+                    checked={model.isActive}
+                    onCheckedChange={() => onToggleActive(model)}
+                  />
                   <span className="text-sm">{model.isActive ? "Active" : "Inactive"}</span>
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => onEdit(model)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Edit ${model.name}`}
+                    onClick={() => onEdit(model)}
+                  >
                     <IconEdit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label={`Delete ${model.name}`}>
                         <IconTrash className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>

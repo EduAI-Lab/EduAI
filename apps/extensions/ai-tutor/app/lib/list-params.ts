@@ -14,6 +14,8 @@
  * `app/components/common/ListSearchInput.tsx`, `app/lib/api.ts` (`ListParams`).
  */
 import { redirect } from "react-router";
+import type { CourseListParams } from "./api";
+import type { Course } from "./types";
 
 /**
  * Mirror of the server's `MAX_SEARCH_LENGTH` (`server/src/utils/pagination.js`),
@@ -72,6 +74,27 @@ export function redirectPastEnd(
   const url = new URL(request.url);
   url.searchParams.set("page", String(lastPage));
   throw redirect(`${url.pathname}${url.search}`);
+}
+
+type ContextualCourseLookup = (
+  params: Pick<CourseListParams, "page" | "pageSize" | "coreOfferingId">,
+) => Promise<{ data: Array<Pick<Course, "id">> }>;
+export async function redirectToContextualCourse(
+  request: Request,
+  role: "student" | "instructor",
+  listCourses: ContextualCourseLookup,
+): Promise<void> {
+  const coreCourseId = new URL(request.url).searchParams.get("coreCourseId")?.trim();
+  if (!coreCourseId) return;
+
+  const contextualCourse = (
+    await listCourses({ page: 1, pageSize: 1, coreOfferingId: coreCourseId })
+  ).data[0];
+  if (contextualCourse) {
+    throw redirect(
+      `/${role}/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
+    );
+  }
 }
 
 /**

@@ -767,9 +767,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   <div className="space-y-1.5">
                     <Label htmlFor="import-source-course">Choose course to copy</Label>
                     <Select
-                      value={
-                        selectedSourceCourseId != null ? String(selectedSourceCourseId) : undefined
-                      }
+                      value={selectedSourceCourseId != null ? String(selectedSourceCourseId) : ""}
                       onValueChange={(value) => {
                         const nextValue = value ? Number(value) : null;
                         void handleSourceCourseSelection(nextValue);

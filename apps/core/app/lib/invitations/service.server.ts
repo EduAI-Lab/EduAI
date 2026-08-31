@@ -1,4 +1,5 @@
 import type { Invitation } from "@prisma/client";
+import { z } from "zod";
 
 import prisma from "~/lib/prisma.server";
 import { auth, authBaseURL } from "~/lib/auth/server";
@@ -13,6 +14,7 @@ import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
 import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
+const signupResponseSchema = z.object({ user: z.object({ id: z.string().min(1) }) });
 
 /** Invitation shape safe to return over the API — never includes `tokenHash`. */
 export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
@@ -65,6 +67,34 @@ function buildAcceptUrl(token: string): string {
 function toPublic(invitation: Invitation): PublicInvitation {
   const { tokenHash: _tokenHash, ...rest } = invitation;
   return { ...rest, isExpired: rest.expiresAt.getTime() < Date.now() };
+}
+
+async function readSignupUserId(response: Response): Promise<string | null> {
+  const body: unknown = await response.json().catch(() => null);
+  const result = signupResponseSchema.safeParse(body);
+  return result.success ? result.data.user.id : null;
+}
+
+type AcceptInvitationFailure = Extract<AcceptInvitationResult, { ok: false }>;
+
+async function classifyInvitationConsumeRace(
+  invitationId: string,
+  token: string,
+): Promise<AcceptInvitationFailure> {
+  const current = await prisma.invitation.findUnique({ where: { id: invitationId } });
+  if (!current || current.tokenHash !== hashToken(token)) {
+    return { ok: false, status: 409, error: "INVALID_TOKEN" };
+  }
+  if (current.status === "REVOKED") {
+    return { ok: false, status: 409, error: "INVITATION_REVOKED" };
+  }
+  if (current.status === "ACCEPTED") {
+    return { ok: false, status: 409, error: "INVITATION_USED" };
+  }
+  if (current.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
+  }
+  return { ok: false, status: 409, error: "INVALID_TOKEN" };
 }
 
 /** Send the invitation email; never throws (a delivery failure is logged). */
@@ -309,7 +339,7 @@ export async function acceptInvitation(
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
-  // Create the credential account + session through Better Auth. The marker
+  // Create the credential account through Better Auth. The marker
   // header exempts this from the public-registration gate (§6a): an invitee was
   // vetted by an admin/unit-admin, so account creation must work even when
   // `auth.allowPublicRegistration` is off.
@@ -326,30 +356,33 @@ export async function acceptInvitation(
     }),
   });
 
-  const response = await auth.handler(authRequest);
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => ({}))) as {
-      message?: string;
-      code?: string;
-    };
+  const signupResponse = await auth.handler(authRequest);
+  if (!signupResponse.ok) {
     return {
       ok: false,
-      status: response.status === 422 ? 409 : response.status,
-      error: detail.code || detail.message || "SIGNUP_FAILED",
+      status: signupResponse.status === 422 ? 409 : signupResponse.status,
+      error: "SIGNUP_FAILED",
     };
   }
 
-  // Sign-up just created the user; fetch it by its unique email to get the id.
-  const created = await prisma.user.findUnique({ where: { email: invite.email } });
-  if (!created) {
+  const createdId = await readSignupUserId(signupResponse);
+  if (!createdId) {
     return { ok: false, status: 500, error: "ACCOUNT_NOT_CREATED" };
+  }
+
+  // Better Auth deliberately returns a successful synthetic user for duplicate
+  // emails. Only the exact id returned by this sign-up proves ownership of the
+  // account that this request may promote or roll back.
+  const created = await prisma.user.findUnique({ where: { id: createdId } });
+  if (!created || created.email !== invite.email) {
+    return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
   // Promote the account and consume the invite. The final write is conditional
   // on the exact invitation id + original token hash + PENDING status + expiry
   // snapshot. If revoke/resend/another accept wins first, no stale accept can
   // overwrite it. If this transaction loses, roll the newly-created account
-  // (and its Better Auth session/account rows) back before returning.
+  // (and its Better Auth account row) back before returning.
   let updatedUser: { id: string; email: string; role: string };
   try {
     updatedUser = await prisma.$transaction(async (tx) => {
@@ -390,26 +423,25 @@ export async function acceptInvitation(
         console.error("[invitations] rollback of invited account failed", cleanupError),
       );
     if (error instanceof InvitationConsumeLostRaceError) {
-      const current = await prisma.invitation.findUnique({ where: { id: invite.id } });
-      if (!current || current.tokenHash !== hashToken(input.token)) {
-        return { ok: false, status: 409, error: "INVALID_TOKEN" };
-      }
-      if (current.status === "REVOKED") {
-        return { ok: false, status: 409, error: "INVITATION_REVOKED" };
-      }
-      if (current.status === "ACCEPTED") {
-        return { ok: false, status: 409, error: "INVITATION_USED" };
-      }
-      if (current.expiresAt.getTime() <= Date.now()) {
-        return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
-      }
-      return { ok: false, status: 409, error: "INVALID_TOKEN" };
+      return classifyInvitationConsumeRace(invite.id, input.token);
     }
     return { ok: false, status: 500, error: "SIGNUP_FAILED" };
   }
 
+  // Requiring email verification intentionally suppresses Better Auth's
+  // sign-up session. Invitation acceptance proves mailbox control and marks
+  // the account verified above, so create its session through the normal
+  // credential sign-in endpoint after the promotion transaction commits.
+  const signInRequest = buildAuthSubRequest("/api/auth/sign-in/email", request, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: invite.email, password: input.password }),
+  });
+  const signInResponse = await auth.handler(signInRequest);
   const headers = new Headers();
-  appendAuthSetCookies(response, headers);
+  if (signInResponse.ok) {
+    appendAuthSetCookies(signInResponse, headers);
+  }
 
   return { ok: true, headers, invitationId: invite.id, user: updatedUser };
 }

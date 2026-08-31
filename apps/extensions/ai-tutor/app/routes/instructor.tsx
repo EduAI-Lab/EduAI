@@ -47,6 +47,7 @@ import {
   useCourseListFilters,
 } from "~/lib/course-list-filters";
 import { loadCourseFacets } from "~/lib/course-facets";
+import { redirectToContextualCourse } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
@@ -64,6 +65,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // total. `total` is now the filtered total, so the pager stays honest.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
+  await redirectToContextualCourse(request, "instructor", api.listCourses);
   // Optional `?pageSize=` override (clamped to the same ceiling the API uses).
   // The default stays COURSE_LIST_PAGE_SIZE; e2e and bookmarkable narrow pages
   // can request a smaller window without seeding 200+ courses.

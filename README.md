@@ -33,7 +33,7 @@ EduAI/
 │   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
-│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
+│   ├── rag-ai/                      # EduAI chat, RAG, embeddings, routing, and performance
 │   └── implementations/             # schema-design, planned-core-tests, …
 ├── turbo.json                       # Turborepo task pipeline configuration
 ├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
@@ -86,7 +86,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
-| [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/README.md`](docs/rag-ai/README.md) | Current source-of-truth index for EduAI chat, RAG, embeddings, model/fleet routing, testing, performance, and dev operations |
 | [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
@@ -100,7 +100,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`infra/s378/GO-LIVE.md`](infra/s378/GO-LIVE.md) | Shared s378 go-live build, systemd, and health-check runbook |
 | [`infra/inference/README.md`](infra/inference/README.md) | Current inference-fleet contract and host-state snapshots |
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
-| [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
+| [`rag-ai/MODEL_ROUTING.md`](docs/rag-ai/MODEL_ROUTING.md) | Current Auto model-selection and vLLM fleet-routing contract |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
 | [`end-to-end-user-workflows/README.md`](docs/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
 
@@ -132,27 +132,13 @@ CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
  ```
 
-For authenticated RAG fleet testing, use
-[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
-fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
-Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved
-`FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test
-database; it refuses to overwrite an existing fixture. The setup command
-prints a `courseId`; remove the fixture and its stress chats afterward by
-rerunning the helper with that ID and `--cleanup`.
-The harness signs in, verifies a two-turn RAG conversation, records chat
-continuity/citations and `X-Fleet-Server`, then runs the controlled
-16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated
-session. First-run results and raw
-artifacts are recorded in
-[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
-the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
-and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
-provide the per-server measurements and machine-readable artifact context.
-Those results are baseline evidence and do not replace a later load-aware
-rerun.
+For authenticated RAG fleet testing, use the controlled harness and safety
+guidance in [`docs/rag-ai/PERFORMANCE.md`](docs/rag-ai/PERFORMANCE.md). The
+repository intentionally does not treat old dated benchmark reports as current
+baseline evidence; record the commit, model, deployment, fleet configuration,
+warm/cold state, and rate limits with every new run.
 
-**Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
+**Hybrid RAG** (optional): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
 **Long-output response caps** (`#152`): detected long-output requests default to `1200` output tokens, or `600` when ADHD Assist is enabled. Override these positive-integer limits with `CHAT_LONG_OUTPUT_MAX_TOKENS` and `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` in `apps/core/.env`. The cap never increases the model/provider's existing output limit. If a response reaches this cap, chat shows a durable **Continue** action.
 
@@ -386,8 +372,8 @@ npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
 These commands require `VLLM_FLEET_CHAT_URLS` and `EDUAI_API_KEY`.
 `VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat
 pool when it is not configured. See
-[`docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md)
-for routing details.
+[`docs/rag-ai/MODEL_ROUTING.md`](docs/rag-ai/MODEL_ROUTING.md) for routing
+details.
 
 To run tasks for a single app, use Turborepo's filter flag directly:
 

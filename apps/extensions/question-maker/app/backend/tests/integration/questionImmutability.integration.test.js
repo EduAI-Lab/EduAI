@@ -15,13 +15,14 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -153,7 +154,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
 
   /** Creates a question + draft variant, then approves the variant (triggering the first Core push). */
   async function createApprovedQuestion() {
-    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+    const createQ = await request().post("/api/questions").set(cookie()).send({
       description: "Immutability fixture",
       courseId,
       primaryTopicId: topicId,
@@ -162,7 +163,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
-    const createV = await request(app)
+    const createV = await request()
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({
@@ -179,7 +180,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     expect(createV.status).toBe(201);
     const vid = createV.body.data.id;
 
-    const approve = await request(app)
+    const approve = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false });
@@ -190,7 +191,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
   }
 
   async function createDraftQuestion() {
-    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+    const createQ = await request().post("/api/questions").set(cookie()).send({
       description: "Immutability fixture",
       courseId,
       primaryTopicId: topicId,
@@ -199,7 +200,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
-    const createV = await request(app)
+    const createV = await request()
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({
@@ -220,7 +221,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
   it("rejects a type change on a reviewed question (409 VARIANT_LOCKED)", async () => {
     const { qid } = await createApprovedQuestion();
 
-    const res = await request(app).put(`/api/questions/${qid}`).set(cookie()).send({ type: "SA" });
+    const res = await request().put(`/api/questions/${qid}`).set(cookie()).send({ type: "SA" });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("VARIANT_LOCKED");
@@ -229,7 +230,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
   it("rejects a primary topic change on a reviewed question (409 VARIANT_LOCKED)", async () => {
     const { qid } = await createApprovedQuestion();
 
-    const res = await request(app)
+    const res = await request()
       .put(`/api/questions/${qid}`)
       .set(cookie())
       .send({ primaryTopicId: otherTopicId });
@@ -241,7 +242,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
   it("rejects a secondary topics change on a reviewed variant (409 VARIANT_LOCKED, regression)", async () => {
     const { vid } = await createApprovedQuestion();
 
-    const res = await request(app)
+    const res = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ secondaryTopicsId: [otherTopicId] });
@@ -253,7 +254,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
   it("unrelated edits (e.g. description) still succeed on a reviewed question", async () => {
     const { qid } = await createApprovedQuestion();
 
-    const res = await request(app)
+    const res = await request()
       .put(`/api/questions/${qid}`)
       .set(cookie())
       .send({ description: "Updated description only" });
@@ -266,7 +267,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     const { qid, vid } = await createApprovedQuestion();
 
     // Un-review (instructor-only revert per §19/§16) clears the Core link (#1080).
-    const revert = await request(app)
+    const revert = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: true });
@@ -275,7 +276,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     expect(revert.body.data.coreQuestionId).toBeNull();
 
     // Now unlocked: the primary topic can change while the variant is a draft.
-    const editTopic = await request(app)
+    const editTopic = await request()
       .put(`/api/questions/${qid}`)
       .set(cookie())
       .send({ primaryTopicId: otherTopicId });
@@ -285,7 +286,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     // Re-approve: the state-based push guard (`!variant.coreQuestionId`) must
     // fire again now that the link was cleared, instead of treating the
     // variant as already-linked and skipping the push.
-    const reapprove = await request(app)
+    const reapprove = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false });
@@ -324,14 +325,14 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     };
 
     try {
-      const staleEdit = request(app)
+      const staleEdit = request()
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
         .send({ questionText: "edited after approval" })
         .then((response) => response);
       await reached.promise;
 
-      const approval = await request(app)
+      const approval = await request()
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
         .send({ isDraft: false });
@@ -384,7 +385,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     };
 
     try {
-      const metadataEdit = request(app)
+      const metadataEdit = request()
         .put(`/api/questions/${qid}`)
         .set(cookie())
         .send({ type: "SA" })
@@ -394,7 +395,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
         fenceReached.promise.then(() => "fence"),
         reviewedCheckReached.promise.then(() => "reviewed"),
       ]);
-      const approval = request(app)
+      const approval = request()
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
         .send({ isDraft: false })
@@ -441,7 +442,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       return successfulFetch(url, opts);
     });
 
-    const failedApproval = await request(app)
+    const failedApproval = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false });
@@ -452,7 +453,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     expect(rolledBack.coreQuestionId).toBeNull();
 
     fetchStub.mockImplementation(successfulFetch);
-    const retriedApproval = await request(app)
+    const retriedApproval = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false });
@@ -478,14 +479,14 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       return successfulFetch(url, opts);
     });
 
-    const approval = request(app)
+    const approval = request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false })
       .then((response) => response);
     await pushReached.promise;
 
-    const unreview = await request(app)
+    const unreview = await request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: true });
@@ -527,14 +528,14 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       return successfulFetch(url, opts);
     });
 
-    const firstApproval = request(app)
+    const firstApproval = request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false })
       .then((response) => response);
     await firstPushReached.promise;
 
-    const retryApproval = request(app)
+    const retryApproval = request()
       .put(`/api/questions/variants/${vid}`)
       .set(cookie())
       .send({ isDraft: false })
@@ -574,7 +575,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     });
 
     try {
-      const approval = request(app)
+      const approval = request()
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
         .send({ isDraft: false })
@@ -582,7 +583,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       await fenceReached.promise;
 
       let deleteSettled = false;
-      const deletion = request(app)
+      const deletion = request()
         .delete(`/api/questions/variants/${vid}`)
         .set(cookie())
         .then((response) => {
@@ -626,7 +627,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
     });
 
     try {
-      const approval = request(app)
+      const approval = request()
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
         .send({ isDraft: false })
@@ -634,7 +635,7 @@ describeDb("Reviewed questions are immutable (#1080)", () => {
       await fenceReached.promise;
 
       let deleteSettled = false;
-      const deletion = request(app)
+      const deletion = request()
         .delete(`/api/questions/${qid}`)
         .set(cookie())
         .then((response) => {

@@ -199,23 +199,14 @@ async function assertPostConditions(
 ) {
   const verdict = importReconcileOracle(row);
 
-  if (verdict.outcome === "skipped" && verdict.kind === "deleted") {
-    expect(built.existingMaterialId).not.toBeNull();
-    const material = await prisma.courseMaterial.findUnique({
-      where: { id: built.existingMaterialId! },
-    });
-    expect(material?.deletedAt).not.toBeNull();
-    expect(downloadCanvasFile).not.toHaveBeenCalled();
-    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
-    return;
-  }
-
   if (verdict.outcome === "skipped" && verdict.kind === "not-modified-fresh-ready") {
     expect(built.existingMaterialId).not.toBeNull();
     const material = await prisma.courseMaterial.findUnique({
       where: { id: built.existingMaterialId! },
     });
     expect(material?.status).toBe("READY");
+    expect(material?.deletedAt).toBeNull();
+    expect(material?.unpublishedAt).toBeNull();
     expect(material?.canvasUpdatedAt?.toISOString()).toBe(
       built.existingCanvasUpdatedAt?.toISOString(),
     );

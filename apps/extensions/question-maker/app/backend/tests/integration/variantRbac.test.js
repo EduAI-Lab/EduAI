@@ -10,7 +10,7 @@
  * drives the resolved course-access level; the session role drives requireRole.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockCreateVariant,
@@ -89,6 +89,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const TA = { id: "ta-1", email: "ta@test.com", role: "STUDENT", name: "Tee Ay" };
 const INSTRUCTOR = { id: "inst-1", email: "inst@test.com", role: "INSTRUCTOR", name: "Ins" };
@@ -506,6 +507,33 @@ describe("creating an already-approved variant publishes it (#1555 follow-up)", 
     coreQuestionId: null,
     questionMetadata: { id: 5, type: "SA", course: COURSE },
   };
+
+  it("does not let a course TA create an approved variant", async () => {
+    authAs(TA, "TA");
+
+    const res = await request(app)
+      .post("/api/questions/5/variants")
+      .set("Cookie", "session=v")
+      .send({ questionText: "What is 2+2?", isDraft: false });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Only instructors can approve variants");
+    expect(mockCreateVariant).not.toHaveBeenCalled();
+    expect(mockPushVariantToCore).not.toHaveBeenCalled();
+  });
+
+  it.each([0, "", null])("rejects non-boolean isDraft values (%p)", async (isDraft) => {
+    authAs(TA, "TA");
+
+    const res = await request(app)
+      .post("/api/questions/5/variants")
+      .set("Cookie", "session=v")
+      .send({ questionText: "What is 2+2?", isDraft });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("isDraft must be a boolean");
+    expect(mockCreateVariant).not.toHaveBeenCalled();
+  });
 
   it("pushes to Core and links the returned question id", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");

@@ -50,6 +50,17 @@ describe("termFromDate", () => {
 });
 
 describe("termInfoFromDate", () => {
+  it("uses Vancouver boundaries for both the term and year", () => {
+    expect(termInfoFromDate(new Date("2026-09-01T00:00:00Z"))).toEqual({
+      term: "S2",
+      year: 2026,
+    });
+    expect(termInfoFromDate(new Date("2026-01-01T00:00:00Z"))).toEqual({
+      term: "W1",
+      year: 2025,
+    });
+  });
+
   it("attributes a Jan-Apr date to the PREVIOUS year's W2 (#1088)", () => {
     expect(termInfoFromDate(new Date("2026-01-05T12:00:00Z"))).toEqual({ term: "W2", year: 2025 });
     expect(termInfoFromDate(new Date("2026-04-30T12:00:00Z"))).toEqual({ term: "W2", year: 2025 });

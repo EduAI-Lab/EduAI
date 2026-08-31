@@ -10,6 +10,7 @@ import {
   deriveSemesterDisplayForCourseId,
 } from "./courseListService.js";
 import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/questionOrder.js";
+import { assertAssessmentType } from "../utils/assessmentType.js";
 
 /** Keep foreign child-resource writes on the same typed 404 contract as other relation guards. */
 const relationNotFound = (message) => Object.assign(new Error(message), { status: 404 });
@@ -39,6 +40,8 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
   if (!type || !name) {
     throw new Error("Type and name are required");
   }
+
+  assertAssessmentType(type);
 
   if (!courseId) {
     throw new Error("Course ID is required");
@@ -241,6 +244,10 @@ export const getAssessmentById = async (assessmentId, userId) => {
 
 /** Updates assessment metadata/blueprint while enforcing ownership and valid course references. */
 export const updateAssessment = async (assessmentId, updateData, userId) => {
+  if (updateData.type !== undefined) {
+    assertAssessmentType(updateData.type);
+  }
+
   const assessment = await prisma.assessments.findFirst({
     where: { id: Number(assessmentId), course: { userId } },
   });

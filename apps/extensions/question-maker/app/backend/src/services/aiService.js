@@ -7,7 +7,12 @@ import { config } from "../config/settings.js";
 import { prisma } from "../config/database.js";
 import eduaiService from "./eduaiService.js";
 import { enrichCourseDetail } from "./courseListService.js";
-import { generationBudgetError, validateGenerationBudget } from "../middleware/aiAdmission.js";
+import {
+  assertQmAiDeadline,
+  generationBudgetError,
+  isQmAiDeadlineError,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
 import { toStableUpstreamError, safeRequestLogFields } from "../utils/safeLogging.js";
 import {
   normalizeExtractText,
@@ -319,8 +324,9 @@ const extractQuestionsWithEduAI = async (
   course,
   model = "google:gemini-2.5-flash",
   apiKeys = {},
-  { cookie } = {},
+  { cookie, signal, deadlineAt } = {},
 ) => {
+  assertQmAiDeadline({ signal, deadlineAt });
   const maxTextChars = qmMaxExtractTextChars();
   if (typeof text !== "string" || text.length > maxTextChars) {
     throw extractionBudgetError(
@@ -441,6 +447,7 @@ ${chunk}
     const extractionRetryUserPrompt = `Extract all questions from:\n"""${chunk}"""`;
 
     const runChunkExtraction = async (systemPrompt, userPrompt) => {
+      assertQmAiDeadline({ signal, deadlineAt });
       const elapsedMs = Date.now() - extractionStartedAt;
       const remainingMs = deadlineMs - elapsedMs;
       if (remainingMs <= 0) {
@@ -473,6 +480,8 @@ ${chunk}
         userPromptOverride: userPrompt,
         cookie,
         timeoutMs: callTimeoutMs,
+        signal,
+        deadlineAt,
       });
       const questions = await withTimeout(
         questionsPromise,
@@ -493,7 +502,10 @@ ${chunk}
       }
       extracted.push(...sanitized);
     } catch (error) {
-      if (typeof error?.code === "string" && error.code.startsWith("QM_EXTRACT_")) {
+      if (
+        isQmAiDeadlineError(error) ||
+        (typeof error?.code === "string" && error.code.startsWith("QM_EXTRACT_"))
+      ) {
         throw error;
       }
       console.warn("EduAI extraction chunk failed, retrying with simplified prompt", {
@@ -791,8 +803,9 @@ export const extractQuestionsFromText = async (
   courseId,
   model,
   apiKeys,
-  { cookie } = {},
+  { cookie, signal, deadlineAt } = {},
 ) => {
+  assertQmAiDeadline({ signal, deadlineAt });
   const maxTextChars = qmMaxExtractTextChars();
   if (typeof rawText === "string" && rawText.length > maxTextChars) {
     throw extractionBudgetError(
@@ -819,10 +832,13 @@ export const extractQuestionsFromText = async (
     where: { id: courseId },
     select: { id: true, coreCourseId: true },
   });
-  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
+  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie, signal }) : null;
+  assertQmAiDeadline({ signal, deadlineAt });
 
   const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, {
     cookie,
+    signal,
+    deadlineAt,
   });
   return extracted;
 };

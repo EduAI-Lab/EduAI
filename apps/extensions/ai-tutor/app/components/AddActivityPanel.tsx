@@ -130,7 +130,10 @@ export default function AddActivityPanel({
   const [bankErrorMessage, setBankErrorMessage] = useState<string | null>(null);
   // Shown as a chip once a bank question is applied; clearing it empties the
   // prefilled fields it set.
-  const [bankSource, setBankSource] = useState<{ id: string; label: string } | null>(null);
+  const [bankSource, setBankSource] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
   // Set when the bank question's topic name has no match in this course's
   // topic list. Never creates the topic — topic sync owns that table.
   const [unresolvedTopic, setUnresolvedTopic] = useState<string | null>(null);
@@ -269,7 +272,7 @@ export default function AddActivityPanel({
       // is guarded against re-defaulting while `unresolvedTopic` is set, but
       // only once it IS set — until the refresh settles there must be no
       // selection at all for the notice to be honest.
-      setUnresolvedTopic(null);
+      setUnresolvedTopic(draft.unresolvedTopicName);
       setSelectedMainTopicId("");
       void refreshTopics().then(() => {
         if (!mountedRef.current || selectionTokenRef.current !== token) return;
@@ -405,7 +408,10 @@ export default function AddActivityPanel({
         setAnswerError(submission.error ?? "Invalid answer choices.");
         return;
       }
-      mcq = { options: submission.options, correctIndex: submission.correctIndex };
+      mcq = {
+        options: submission.options,
+        correctIndex: submission.correctIndex,
+      };
     }
 
     setBusy(true);
@@ -739,7 +745,8 @@ export default function AddActivityPanel({
                 Main topic
               </Label>
               <Select
-                value={selectedMainTopicId !== "" ? selectedMainTopicId : undefined}
+                key={selectedMainTopicId === "" ? "empty" : "selected"}
+                value={selectedMainTopicId || undefined}
                 onValueChange={(value) => {
                   const newMainTopicId = value ?? "";
                   setSelectedMainTopicId(newMainTopicId);

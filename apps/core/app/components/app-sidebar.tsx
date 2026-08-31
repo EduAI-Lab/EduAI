@@ -31,6 +31,7 @@ import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import { getNavForUser, getNavSecondaryForUser, type NavItemKey } from "~/lib/rbac";
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
+import type { loader as rootLoader } from "~/root";
 
 const NAV_ICONS = {
   dashboard: IconDashboard,
@@ -117,12 +118,11 @@ export function useCoreSidebarProps({
 }: UseCoreSidebarPropsOptions): AppSidebarProps {
   const { isEnabled } = usePolicyGate();
   const { pathname } = useLocation();
+  const coreCourseId = pathname.match(/^\/courses\/([^/]+)/)?.[1] ?? null;
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
-  const rootData = useRouteLoaderData("root") as
-    | { canInvite?: boolean; hasInstructorEnrollment?: boolean }
-    | undefined;
+  const rootData = useRouteLoaderData<typeof rootLoader>("root");
 
   // The cron admin page owns polling while it is open, so this always-mounted
   // sidebar never creates a concurrent request loop.
@@ -190,9 +190,9 @@ export function useCoreSidebarProps({
     currentPath: pathname,
     LinkComponent: Link,
     launcher: {
-      apps: getLauncherApps(),
+      apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
-      role: user.role,
+      role: rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role,
     },
     user,
     navUser: {

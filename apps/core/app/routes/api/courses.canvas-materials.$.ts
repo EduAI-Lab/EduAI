@@ -15,7 +15,7 @@ import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
-import { SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
+import { DiscoverCanvasMaterialsSchema, SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
@@ -69,13 +69,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       if (resolved.response) return resolved.response;
 
       try {
-        const recheckPublishState = new URL(request.url).searchParams.get("recheck") === "true";
         const files = await discoverCanvasMaterialsForCourse(
           resolved.user.id,
           courseId,
           undefined,
           {
-            recheckPublishState,
+            recheckPublishState: false,
           },
         );
         return json(200, { success: true, data: { files } });
@@ -107,6 +106,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         body = await request.json();
       } catch {
         return json(400, { success: false, error: "Invalid JSON body" });
+      }
+
+      if (DiscoverCanvasMaterialsSchema.safeParse(body).success) {
+        try {
+          const files = await discoverCanvasMaterialsForCourse(
+            resolved.user.id,
+            courseId,
+            undefined,
+            { recheckPublishState: true },
+          );
+          return json(200, { success: true, data: { files } });
+        } catch (error) {
+          return mapCanvasMaterialsError(error);
+        }
       }
 
       const parsed = SyncCanvasMaterialsSchema.safeParse(body);

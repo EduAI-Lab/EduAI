@@ -19,7 +19,10 @@ import { createQmCourseForInstructor } from "../helpers/qm-courses";
 async function createUnitAdmin(
   request: APIRequestContext,
 ): Promise<{ email: string; password: string; name: string }> {
-  const user = await registerUser(request, { prefix: "qm-unit-admin", name: "E2E Unit Admin" });
+  const user = await registerUser(request, {
+    prefix: "qm-unit-admin",
+    name: "E2E Unit Admin",
+  });
   await promoteUser(request, user.email, "UNIT_ADMIN");
   return user;
 }
@@ -40,15 +43,16 @@ test.describe("Question Maker role access", () => {
 
     await expect(page.getByText("Access restricted", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Question Maker is available to instructors and administrators.", {
-        exact: false,
-      }),
+      page.getByText(
+        "Question Maker is available to instructors, administrators, and assigned teaching",
+        { exact: false },
+      ),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Question Library" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Back to EduAI" })).toBeVisible();
   });
 
-  test("TA enrollment follows the same explicit access boundary as a Student platform account", async ({
+  test("TA can author assigned courses but cannot open another instructor course", async ({
     page,
     playwright,
   }) => {
@@ -58,14 +62,28 @@ test.describe("Question Maker role access", () => {
 
     try {
       await createAdmin(adminContext, { prefix: "qm-ta-course-admin" });
-      await createInstructor(instructorContext, { prefix: "qm-ta-course-instructor" });
+      await createInstructor(instructorContext, {
+        prefix: "qm-ta-course-instructor",
+      });
       const ta = await registerUser(taContext, { prefix: "qm-ui-ta" });
 
       const taId = await getMyId(taContext);
-      const { coreCourseId } = await createQmCourseForInstructor(playwright, instructorContext, {
-        name: "QM TA Access Boundary",
-        code: "QM-TA-ACCESS",
-      });
+      const { coreCourseId, qmCourseId } = await createQmCourseForInstructor(
+        playwright,
+        instructorContext,
+        {
+          name: "QM TA Assigned Course",
+          code: "QM-TA-ASSIGNED",
+        },
+      );
+      const { qmCourseId: otherQmCourseId } = await createQmCourseForInstructor(
+        playwright,
+        instructorContext,
+        {
+          name: "QM TA Unassigned Course",
+          code: "QM-TA-UNASSIGNED",
+        },
+      );
 
       const enrollment = await adminContext.post(
         `${CORE_URL}/api/courses/${coreCourseId}/enrollments`,
@@ -77,11 +95,16 @@ test.describe("Question Maker role access", () => {
 
       await signInThroughPage(page, ta, `${QM_FRONTEND_URL}/dashboard`);
 
-      await expect(page.getByText("Access restricted", { exact: true })).toBeVisible();
-      await expect(
-        page.getByText("teaching assistants should use EduAI Core or AI Tutor", { exact: false }),
-      ).toBeVisible();
-      await expect(page.getByRole("link", { name: "Back to EduAI" })).toBeVisible();
+      await expect(page.getByText("Access restricted", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("QM TA Assigned Course", { exact: true })).toBeVisible();
+      await expect(page.getByText("QM TA Unassigned Course", { exact: true })).toHaveCount(0);
+
+      await page.goto(`${QM_FRONTEND_URL}/courses/${qmCourseId}`);
+      await expect(page.getByText("QM TA Assigned Course", { exact: true })).toBeVisible();
+
+      await page.goto(`${QM_FRONTEND_URL}/courses/${otherQmCourseId}`);
+      // CardTitle renders as a plain div (no heading role), so match on text.
+      await expect(page.getByText("Course not found")).toBeVisible();
     } finally {
       await adminContext.dispose();
       await instructorContext.dispose();
@@ -98,7 +121,9 @@ test.describe("Question Maker authoring and AI workflows", () => {
     const instructorContext = await playwright.request.newContext();
 
     try {
-      const instructor = await createInstructor(instructorContext, { prefix: "qm-ui-instructor" });
+      const instructor = await createInstructor(instructorContext, {
+        prefix: "qm-ui-instructor",
+      });
       const { qmCourseId } = await createQmCourseForInstructor(playwright, instructorContext, {
         name: "QM Instructor AI Workflow",
         code: "QM-INSTR-AI",
@@ -131,7 +156,11 @@ test.describe("Question Maker authoring and AI workflows", () => {
                 },
               ],
               count: 1,
-              course: { id: qmCourseId, name: "QM Instructor AI Workflow", code: "QM-INSTR-AI" },
+              course: {
+                id: qmCourseId,
+                name: "QM Instructor AI Workflow",
+                code: "QM-INSTR-AI",
+              },
             },
           }),
         });

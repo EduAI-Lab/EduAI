@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { listTeacherCanvasCourses } from "~/lib/canvas/client.server";
 import { mapCanvasCourseToCoreFields, resolveCanvasCourseDates } from "~/lib/canvas/courses.server";
 import { normalizeRosterEmail, normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
-import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import { SyncCanvasCoursesSchema, SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
 import {
   ubcTermFromDate,
   ubcAcademicYearFromDate,
@@ -302,6 +302,21 @@ describe("SyncCanvasCoursesSchema", () => {
     if (result.success) {
       expect(result.data.canvasCourseIds).toEqual(["1", "2"]);
     }
+  });
+
+  it("deduplicates ids and rejects oversized batches at the input boundary", () => {
+    const result = SyncCanvasCoursesSchema.safeParse({ canvasCourseIds: [1, "1", "2"] });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.canvasCourseIds).toEqual(["1", "2"]);
+
+    expect(
+      SyncCanvasCoursesSchema.safeParse({
+        canvasCourseIds: Array.from({ length: 101 }, (_, index) => String(index + 1)),
+      }).success,
+    ).toBe(false);
+    expect(
+      SyncCanvasMaterialsSchema.safeParse({ canvasFileIds: ["file-1", "file-1"] }),
+    ).toMatchObject({ success: true, data: { canvasFileIds: ["file-1"] } });
   });
 });
 
