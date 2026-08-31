@@ -1,4 +1,4 @@
--- Per-course embedding provider/model overrides (see LOCAL-EMBEDDINGS.md).
+-- Per-course embedding provider/model overrides (see docs/rag-ai/EMBEDDINGS.md).
 ALTER TABLE "courses"
   ADD COLUMN "embeddingProvider" TEXT,
   ADD COLUMN "embeddingModel" TEXT,
