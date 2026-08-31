@@ -6,7 +6,7 @@
 import type { ValidationResult } from "~/lib/validation-result";
 import type { ProviderV1 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
@@ -173,13 +173,32 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   // and the registry never disagree (#1568 review).
   const vllmRegistration = resolveVllmRegistration(userSettings);
   if (vllmRegistration) {
-    providers.vllm = createOpenAI({
+    const vllm = createOpenAI({
       apiKey: vllmRegistration.apiKey,
       baseURL: vllmRegistration.baseURL,
       // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
       compatibility: "strict",
       fetch: vllmThinkingDisabledFetch(),
     });
+    // `structuredOutputs` belongs to the language-model settings, not the
+    // createOpenAI provider settings. Without this wrapper the SDK silently
+    // downgrades a JSON-schema response format to ordinary Markdown, which
+    // lets 2B/9B omit Assist stages or the diagram payload.
+    type VllmChatSettings = Parameters<OpenAIProvider["chat"]>[1];
+    providers.vllm = Object.assign(
+      (modelId: string, settings?: VllmChatSettings) =>
+        vllm(modelId, { ...settings, structuredOutputs: true }),
+      vllm,
+      {
+        languageModel: (modelId: string, settings?: VllmChatSettings) =>
+          vllm.languageModel(modelId, {
+            ...settings,
+            structuredOutputs: true,
+          }),
+        chat: (modelId: string, settings?: VllmChatSettings) =>
+          vllm.chat(modelId, { ...settings, structuredOutputs: true }),
+      },
+    );
   }
 
   // OpenCode Zen (OpenAI-compatible). Keep the endpoint fixed: unlike local

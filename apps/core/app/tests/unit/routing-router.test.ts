@@ -31,6 +31,7 @@ vi.mock("~/lib/ai/routing/local-vllm", () => ({
 }));
 
 import {
+  resolveRoutedModel,
   resolveRoutedModelHybrid,
   resolveRoutedModelKnn,
   resolveRoutedModelLlm,
@@ -163,13 +164,47 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
   });
 });
 
+describe("Assist Auto routing", () => {
+  it("pins non-image Assist Auto to the retained 32B model", async () => {
+    const decision = await resolveRoutedModel("explain photosynthesis", {
+      courseId: "course-1",
+      imagesPresent: false,
+      adhdAssist: true,
+    });
+
+    expect(decision.modelId).toBe("vllm:qwen2.5-32b-instruct");
+    expect(decision.features).toMatchObject({
+      rule: "assist_auto_retained_model",
+      assistAutoPinned: true,
+    });
+    expect(mocks.matchPhase1Rules).not.toHaveBeenCalled();
+    expect(mocks.pickModelForSpec).not.toHaveBeenCalled();
+  });
+
+  it("does not pin image Assist Auto away from image-capable routing", async () => {
+    const decision = await resolveRoutedModel("describe this image", {
+      courseId: null,
+      imagesPresent: true,
+      adhdAssist: true,
+    });
+
+    expect(decision.features).not.toMatchObject({ assistAutoPinned: true });
+    expect(mocks.matchPhase1Rules).toHaveBeenCalled();
+  });
+});
+
 describe("requireTools is preserved through the fallback pick (#1403 review)", () => {
   const toolsContext = { courseId: null, imagesPresent: false };
 
   it("carries requireTools into the fallback exactTier pick when the primary minTier pick fails", async () => {
     mocks.matchPhase1Rules.mockReturnValue({
       rule: "rule2_web_lookup_tools_tier_3",
-      pick: { kind: "minTier", minTier: 3, requireTools: true, tieBreak: "carbon" },
+      pick: {
+        kind: "minTier",
+        minTier: 3,
+        requireTools: true,
+        tieBreak: "carbon",
+      },
     });
 
     mocks.pickModelForSpec.mockImplementation(async (pick) => {
@@ -207,7 +242,12 @@ describe("requireTools is preserved through the fallback pick (#1403 review)", (
   it("fallback succeeds with a tool-capable model when one exists at the fallback tier", async () => {
     mocks.matchPhase1Rules.mockReturnValue({
       rule: "rule2_web_lookup_tools_tier_3",
-      pick: { kind: "minTier", minTier: 3, requireTools: true, tieBreak: "carbon" },
+      pick: {
+        kind: "minTier",
+        minTier: 3,
+        requireTools: true,
+        tieBreak: "carbon",
+      },
     });
 
     mocks.pickModelForSpec.mockImplementation(async (pick) => {

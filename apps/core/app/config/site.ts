@@ -13,13 +13,8 @@ export const siteConfig = {
   navigation: {
     home: "/",
     team: "/team",
-    dashboard: "/dashboard", // change to Login for better wording
+    dashboard: "/dashboard",
     courses: "/courses",
     chat: "/chat",
   },
 };
-/// remove the line below EduAI Map
-// change the vision to create a : " provide a platform accesisble to UBC community , utilize gen ai and
-//
-// our vision is to establish a sustainable pedagogically driven framework that users across discplines can rely on to make ai enhanced teaching and learning more scalable, secure, accessible and inclusive.
-// remove the meet our research team button

@@ -195,7 +195,7 @@ export function BrandSwitcher({
               <button
                 type="button"
                 aria-label="Switch app"
-                className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground transition-colors cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
                 <IconApps className="size-[18px]" />
               </button>
@@ -250,7 +250,7 @@ export function AppSwitcher({ apps, currentAppId, role, className }: AppSwitcher
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="relative flex w-full items-center gap-[10px] rounded-[7px] px-[14px] py-[9px] text-[13.5px] outline-none select-none data-[state=open]:!bg-[var(--color-sidebar-hover)]"
+              className="relative flex w-full items-center gap-[10px] rounded-[7px] px-[14px] py-[9px] text-[13.5px] outline-none select-none cursor-pointer data-[state=open]:!bg-[var(--color-sidebar-hover)]"
               style={{
                 paddingLeft: "16px",
                 color: "rgba(255,255,255,0.82)",

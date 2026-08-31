@@ -89,4 +89,13 @@ export type ChatViewSharedProps = {
   wasAutoRoutedByMessageId?: Record<string, boolean>;
   /** Whether the in-flight request was made with an auto mode selected. */
   streamingWasAutoRouted?: boolean;
+  /**
+   * Whether Assist was on for the request that produced each assistant
+   * message, keyed by message id (#1671). Read this instead of the live
+   * `adhdAssist` toggle when deciding how to render a message, so flipping
+   * Assist mid-conversation doesn't retroactively reformat older messages.
+   */
+  adhdAssistByMessageId?: Record<string, boolean>;
+  /** Whether the in-flight request was made with Assist on. */
+  streamingAdhdAssist?: boolean;
 };

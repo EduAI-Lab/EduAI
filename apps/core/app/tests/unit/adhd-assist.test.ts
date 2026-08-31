@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  ADHD_ASSIST_AUTO_MODEL_ID,
   ADHD_ASSIST_POLICY_BLOCK,
   ADHD_ASSIST_POLICY_VERSION,
   composeSystemPrompt,
   ensureDiagramBeforeNext,
   hasDiagramBlock,
   resolveAdhdAssistPolicyBlock,
+  resolveAdhdAssistAutoModelId,
   resolveEffectiveAdhdAssist,
+  shouldUseRetainedAdhdAssistModel,
 } from "~/lib/ai/adhd-assist";
 
 describe("composeSystemPrompt", () => {
@@ -43,20 +46,29 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
   });
 
   it("uses greeting policy without Top summary when profile is greeting", () => {
-    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "greeting" });
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "greeting",
+    });
     expect(result).toContain("ADHD ASSIST MODE (greeting)");
     expect(result).toContain('Do NOT use "Top summary"');
     expect(result).not.toContain("Step ladder");
   });
 
   it("uses redirect policy for redirect profile", () => {
-    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "redirect",
+    });
     expect(result).toContain("ADHD ASSIST MODE (redirect)");
     expect(result).toContain("one-topic boundary");
   });
 
   it("redirect policy forbids explaining the second topic and caps sentences (#1313)", () => {
-    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "redirect",
+    });
     expect(result).toContain("Do NOT explain, define, or give any fact about the second topic");
     expect(result).toContain("Max 3 sentences total");
     expect(result).toContain("that instruction does not");
@@ -70,27 +82,96 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
 describe("resolveEffectiveAdhdAssist", () => {
   it("uses the body value when the field is present and true", () => {
-    expect(resolveEffectiveAdhdAssist({ hasField: true, bodyValue: true, chatValue: false })).toBe(
-      true,
-    );
+    expect(
+      resolveEffectiveAdhdAssist({
+        hasField: true,
+        bodyValue: true,
+        chatValue: false,
+      }),
+    ).toBe(true);
   });
 
   it("uses the body value when the field is present and false, even if chat is true", () => {
-    expect(resolveEffectiveAdhdAssist({ hasField: true, bodyValue: false, chatValue: true })).toBe(
-      false,
-    );
+    expect(
+      resolveEffectiveAdhdAssist({
+        hasField: true,
+        bodyValue: false,
+        chatValue: true,
+      }),
+    ).toBe(false);
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is true", () => {
-    expect(resolveEffectiveAdhdAssist({ hasField: false, bodyValue: false, chatValue: true })).toBe(
-      true,
-    );
+    expect(
+      resolveEffectiveAdhdAssist({
+        hasField: false,
+        bodyValue: false,
+        chatValue: true,
+      }),
+    ).toBe(true);
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is false", () => {
-    expect(resolveEffectiveAdhdAssist({ hasField: false, bodyValue: true, chatValue: false })).toBe(
-      false,
-    );
+    expect(
+      resolveEffectiveAdhdAssist({
+        hasField: false,
+        bodyValue: true,
+        chatValue: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("Assist Auto model contract", () => {
+  it("defaults to the retained Qwen2.5 32B model", () => {
+    const original = process.env.ADHD_ASSIST_AUTO_MODEL;
+    delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    expect(resolveAdhdAssistAutoModelId()).toBe(ADHD_ASSIST_AUTO_MODEL_ID);
+    if (original === undefined) delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    else process.env.ADHD_ASSIST_AUTO_MODEL = original;
+  });
+
+  it("allows a controlled deployment override", () => {
+    const original = process.env.ADHD_ASSIST_AUTO_MODEL;
+    process.env.ADHD_ASSIST_AUTO_MODEL = "vllm:qwen3.5-9b-instruct";
+    expect(resolveAdhdAssistAutoModelId()).toBe("vllm:qwen3.5-9b-instruct");
+    if (original === undefined) delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    else process.env.ADHD_ASSIST_AUTO_MODEL = original;
+  });
+
+  it("pins Assist only when the user chose Auto routing", () => {
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        routeWithAuto: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: true,
+        chatMode: "learning",
+        routeWithAuto: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "admin",
+        routeWithAuto: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        routeWithAuto: false,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -120,7 +201,10 @@ describe("v1.1 response-format rules", () => {
   });
 
   it("short profiles (core rules) also enforce anti-urgency and citations", () => {
-    const greeting = composeSystemPrompt("", { adhdAssist: true, profile: "greeting" });
+    const greeting = composeSystemPrompt("", {
+      adhdAssist: true,
+      profile: "greeting",
+    });
     expect(greeting).toContain("No urgency or time-pressure");
     expect(greeting).toContain("No condescension");
     expect(greeting).toContain('"Sources:" line');

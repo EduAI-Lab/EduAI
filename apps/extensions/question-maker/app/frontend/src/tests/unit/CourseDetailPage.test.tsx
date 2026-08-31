@@ -150,6 +150,8 @@ vi.mock("@eduai/ui", () => ({
   ),
   Alert: ({ children }: any) => <div role="alert">{children}</div>,
   AlertDescription: ({ children }: any) => <div>{children}</div>,
+  Skeleton: () => <div data-testid="skeleton" />,
+  cn: (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" "),
   resolvePaletteAccent: () => "#000",
   ConfirmDialog: ({ open, onConfirm, title, description, confirmLabel, isLoading }: any) =>
     open ? (
@@ -405,7 +407,7 @@ beforeEach(() => {
 });
 
 describe("CourseDetailPage gate states", () => {
-  it("shows a spinner while course or access is loading", () => {
+  it("shows a skeleton while course or access is loading", () => {
     useCourseFromRouteMock.mockReturnValue({
       course: null,
       courseId: null,
@@ -417,8 +419,8 @@ describe("CourseDetailPage gate states", () => {
       hasCourseAccess: false,
       accessLoading: false,
     });
-    const { container } = render(<CourseDetailPage />);
-    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    render(<CourseDetailPage />);
+    expect(screen.getByRole("status", { name: /Loading course detail/i })).toBeInTheDocument();
   });
 
   it("shows not-found card when the course does not exist", () => {

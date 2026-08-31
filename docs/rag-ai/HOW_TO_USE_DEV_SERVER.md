@@ -142,7 +142,7 @@ Restart after editing `.env`: `systemctl restart eduai-core`.
 
 **vLLM ops on cmps01:** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
 
-In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat. Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
+In the app: pick **`vllm:qwen3.5-2b-instruct`** or **`vllm:qwen3.5-9b-instruct`** in chat. Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npm run db:seed:reference` now creates the canonical campus catalog.
 
 ## Auth / login troubleshooting
 

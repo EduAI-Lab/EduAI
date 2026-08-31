@@ -356,16 +356,12 @@ test.describe("AI Tutor ADMIN — activities", () => {
     }
   });
 
-  test("a course with no Core topics is told where topics actually come from", async ({
+  test("a course with no Core topics offers inline topic creation", async ({
     page,
     playwright,
   }) => {
-    // Regression (BUG-5): the empty-topics hint used to say "Open the course
-    // page and use Sync topics from EduAI Core" — a control AI Tutor does not
-    // have (`CourseTopicsHeroAction` renders nothing for Core-linked courses,
-    // which is all of them since #1072, and there is no sync endpoint).
-    // Topics are Core-owned and arrive by sync-on-read, so the guidance now
-    // points at Core itself.
+    // Core-linked courses now expose an explicit, expandable creator in the
+    // Add Activity dialog, keeping topic creation inside the authoring flow.
     const seeded = await seedAtCourse(playwright, {
       name: "No Topics Authoring",
       codePrefix: "NOTP",
@@ -383,8 +379,9 @@ test.describe("AI Tutor ADMIN — activities", () => {
 
       const dialog = page.locator('[role="dialog"]');
       await expect(
-        dialog.getByText("No topics on this course yet. Add some on EduAI Core, then try again."),
+        dialog.getByText("No topics on this course yet. Add one above to continue."),
       ).toBeVisible({ timeout: 20_000 });
+      await expect(dialog.getByRole("button", { name: /add topic/i })).toBeVisible();
 
       // And it no longer names a control AI Tutor doesn't have.
       await expect(dialog.getByText(/sync topics from eduai/i)).toHaveCount(0);
