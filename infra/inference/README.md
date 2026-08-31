@@ -38,7 +38,7 @@ The standard application model IDs are:
 
 - small tier: `qwen3.5-2b-instruct`;
 - large tier: `qwen3.5-9b-instruct`, only where the host advertises it;
-- planned capacity: `qwen3.8-27b`, not currently deployed.
+- XL tier - : `qwen3.8-27b`, use for admin chat, instructors, 
 
 `qwen2.5-32b-instruct` on CMPS02 is a separate Assist Auto capability. It is not
 the standard large tier and must not be substituted for `qwen3.5-9b-instruct` in
