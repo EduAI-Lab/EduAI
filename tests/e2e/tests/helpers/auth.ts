@@ -210,3 +210,24 @@ export async function createAdmin(
   await signIn(request, { email: user.email, password: user.password });
   return user;
 }
+
+/**
+ * Register a new user, promote them to UNIT_ADMIN, and re-authenticate so the
+ * request context's session reflects the new role. `authorizedUnits` is left
+ * empty here — set it afterward via `PATCH /api/users/:id` (as an ADMIN) once
+ * the caller knows the target user's id, since the promote-only seam has no
+ * concept of unit scope.
+ */
+export async function createUnitAdmin(
+  request: APIRequestContext,
+  opts: { name?: string; prefix?: string } = {},
+): Promise<{ email: string; password: string; name: string }> {
+  const user = await registerUser(request, {
+    name: opts.name ?? "E2E Unit Admin",
+    prefix: opts.prefix ?? "unit-admin",
+  });
+  await promoteUser(request, user.email, "UNIT_ADMIN");
+  await signOut(request);
+  await signIn(request, { email: user.email, password: user.password });
+  return user;
+}

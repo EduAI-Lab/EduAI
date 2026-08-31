@@ -69,7 +69,7 @@ export function ChatHistoryList({
         )}
       >
         <div
-          className="w-12 h-12 rounded-[12px] flex items-center justify-center mb-3"
+          className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
           style={{ background: "var(--muted)" }}
         >
           <IconMessageCircle size={22} className="text-muted-foreground" stroke={1.5} />
@@ -93,7 +93,7 @@ export function ChatHistoryList({
             onClick={() => onSelect(chat.id)}
             aria-current={isActive ? "true" : undefined}
             className={cn(
-              "group flex items-start gap-2 px-3 py-2.5 mx-1 text-left rounded-lg transition-colors duration-150 hover:bg-muted/40",
+              "group flex items-start gap-2 px-3 py-2.5 mx-1 text-left rounded-lg transition-colors duration-150 cursor-pointer hover:bg-muted/40",
               isActive && "bg-muted/55",
             )}
           >
@@ -121,7 +121,7 @@ export function ChatHistoryList({
               tabIndex={-1}
               aria-label="Delete conversation"
               onClick={(e) => handleDelete(e, chat.id)}
-              className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
             >
               {deletingId === chat.id ? (
                 <IconLoader2 className="h-3.5 w-3.5 animate-spin" />

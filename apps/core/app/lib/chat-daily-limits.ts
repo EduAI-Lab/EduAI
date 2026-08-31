@@ -5,8 +5,6 @@
  * A cap of 0 means that role is not daily-capped.
  */
 
-import { UserRole } from "@prisma/client";
-
 import { LOCAL_INFERENCE_PROVIDERS, parseModelIdentifier } from "~/lib/ai/provider-types";
 
 export const CHAT_DAILY_LIMIT_PREFIX = "chat.daily.";
@@ -79,39 +77,6 @@ export function isLocalChatbotModel(model: string | undefined): boolean {
   const parsed = parseModelIdentifier(model);
   if (!parsed) return false;
   return LOCAL_INFERENCE_PROVIDERS.includes(parsed.providerId);
-}
-
-export function dailyLimitForRole(
-  role: string | undefined,
-  settings: ChatDailyLimitSettings,
-): number {
-  // No resolved role (service-key/stateless callers) follows the staff cap
-  // rather than the tighter student one.
-  if (role === undefined) return settings.instructorLimit;
-
-  // `role` arrives as a plain string (better-auth's session type does not
-  // carry the Prisma UserRole enum). Casting to UserRole here buys an
-  // exhaustive switch below: a new UserRole added to schema.prisma without a
-  // case below is a compile error at `_exhaustive`, forcing a conscious
-  // choice of tier instead of silently defaulting into the instructor cap.
-  // SAFETY: every caller in this codebase (chat.ts, chat-daily-limits.server.ts)
-  // sources `role` from `actingUser.role`/session data that Prisma populated
-  // from the UserRole column, so the runtime value is always a real member of
-  // the enum; the `default` branch below still throws defensively if that
-  // invariant is ever violated instead of misclassifying the caller's tier.
-  const typedRole = role as UserRole;
-  switch (typedRole) {
-    case UserRole.STUDENT:
-      return settings.studentLimit;
-    case UserRole.INSTRUCTOR:
-    case UserRole.ADMIN:
-    case UserRole.UNIT_ADMIN:
-      return settings.instructorLimit;
-    default: {
-      const _exhaustive: never = typedRole;
-      throw new Error(`dailyLimitForRole: unhandled role "${String(_exhaustive)}"`);
-    }
-  }
 }
 
 export function chatDailyLimitKey(userId: string): string {
