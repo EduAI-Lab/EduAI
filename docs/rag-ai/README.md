@@ -56,6 +56,7 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | **Measurement ledger** — TTFT/Total/tool-call rows per session; live probe table, Gemini quota FAQ, how to record a fresh row. |
 | [`VLLM.md`](./VLLM.md) | **vLLM on cmps01** — Docker + `VLLM_PORT=8001`, IT firewall, EduAI `vllm` provider, stress test vs Ollama, smoke test. |
 | [`latency/eduai-summer-2026/FINDINGS.md`](./latency/eduai-summer-2026/FINDINGS.md) | **Latency investigation** — Ollama cold/warm; vLLM bench pending. |
+| [`latency/eduai-summer-2026/CMPS03_OUTLIER_INVESTIGATION_2026-08-26.md`](./latency/eduai-summer-2026/CMPS03_OUTLIER_INVESTIGATION_2026-08-26.md) | **cmps03 outlier investigation (#1589)** — Repeats PR #1582's fleet-stress load ladder directly against cmps01/cmps03; the reported 7–9x outlier did not reproduce under single-model or combined dual-GPU load. Documents an unrelated vLLM version drift found and fixed along the way. |
 
 ---
 
@@ -100,6 +101,7 @@ docs/rag-ai/
 │       ├── SOLUTIONS_PLAN.md
 │       ├── TEAM_CHAT_LATENCY_SPRINT_GUIDE.md
 │       ├── TEAM_CHAT_LATENCY_AND_TOOLS.md
+│       ├── CMPS03_OUTLIER_INVESTIGATION_2026-08-26.md
 │       └── FINDINGS.md
 └── routing/
     └── eduai-summer-2026/

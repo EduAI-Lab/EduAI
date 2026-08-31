@@ -208,7 +208,7 @@ test.describe("UNIT_ADMIN dashboard", () => {
       await page.request.get(`${AI_TUTOR_API_URL}/api/me/dashboard-stats`)
     ).json();
     expect(stats.role).toBe("UNIT_ADMIN");
-    expect(typeof stats.totalCourses).toBe("number");
+    expect(stats.totalCourses).toEqual(expect.any(Number));
 
     // The out-of-unit course exists but is not reachable at all, which is what
     // keeps it out of every count above (see unit-admin-access-boundaries).

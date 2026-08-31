@@ -114,7 +114,12 @@ export interface VariantAiReviewResult {
   courseId: number;
   model: string;
   rubricUsed: string;
-  reviewTimeMs: number;
+  /**
+   * Nullable because the review body is assembled by a model and reaches the
+   * client unvalidated. Both consumers already rendered "n/a" for a missing
+   * measurement; the type now says so instead of leaving them to guess.
+   */
+  reviewTimeMs: number | null;
   comparedSlots: number;
   baselineSlotCount: number;
   variantSlotCount: number;
@@ -124,7 +129,7 @@ export interface VariantAiReviewResult {
     usable_with_edits: number;
     unusable: number;
   };
-  usableQuestionPercentage: number;
+  usableQuestionPercentage: number | null;
   compositeWeights: Record<string, number>;
   usabilityMultiplier: Record<string, number>;
   usabilityPenaltyApplied: boolean;
@@ -204,7 +209,7 @@ export const assessmentVariantService = {
     variantsToAdd?: number;
     variantPromptInstructions?: string | null;
   }): Promise<GenerateBankVariantsResult> {
-    const model = payload.model ?? "vllm:qwen2.5-32b-instruct";
+    const model = payload.model ?? "vllm:qwen3.5-9b-instruct";
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/generate-bank-variants`, {
       ...payload,
@@ -221,7 +226,7 @@ export const assessmentVariantService = {
     model?: string;
     rubricText?: string;
   }): Promise<VariantAiReviewResult> {
-    const model = payload.model ?? "vllm:qwen2.5-32b-instruct";
+    const model = payload.model ?? "vllm:qwen3.5-9b-instruct";
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/review-variant-ai`, {
       ...payload,

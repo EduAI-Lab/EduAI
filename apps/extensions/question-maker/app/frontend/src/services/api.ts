@@ -1,5 +1,6 @@
 import axios, { AxiosResponse, AxiosError } from "axios";
 import { getCoreLoginUrl } from "@/lib/coreUrl";
+import { isString } from "@eduai/ui/primitive-union";
 
 export const API_URL = (import.meta as any).env?.VITE_API_URL || "";
 
@@ -40,7 +41,7 @@ api.interceptors.response.use(
       const isSessionExpired =
         apiError === "Authentication required" ||
         (apiError === "Unauthorized" &&
-          typeof error.config?.url === "string" &&
+          isString(error.config?.url) &&
           error.config.url.includes("/api/auth/me"));
 
       if (isSessionExpired) {

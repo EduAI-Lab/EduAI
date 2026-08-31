@@ -413,6 +413,7 @@ const CHAT_ROW = {
   adhdAssist: false,
   createdAt: AT,
   updatedAt: AT,
+  chatbotType: "LEARNING",
 };
 
 describe("GET /api/chats/:chatId (course-authorized viewer)", () => {

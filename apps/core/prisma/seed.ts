@@ -15,6 +15,11 @@ import {
   assertLocalDemoEnvironment,
   getLocalSeedPassword,
 } from "../app/lib/deployment-safety.server";
+import {
+  CAMPUS_INTERACTIVE_MODEL_IDS,
+  LEGACY_CAMPUS_MODEL_IDS,
+  RETAINED_ASSIST_MODEL_ID,
+} from "../app/lib/ai/campus-model-catalog";
 
 export const prisma = new PrismaClient();
 
@@ -1114,18 +1119,25 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
+/** Research routing pool — Qwen3.5 2B/9B plus the retained Assist 32B model. */
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
     routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: 0.04,
+    averageCarbonGramsPerToken: 8.9e-7,
   },
   {
     providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
+    routerTier: "TIER_2" as const,
+    estEnergyJoulesPerToken: 0.2,
+    averageCarbonGramsPerToken: 4.45e-6,
+  },
+  {
+    providerName: "vllm",
+    modelId: RETAINED_ASSIST_MODEL_ID,
     routerTier: "TIER_3" as const,
     estEnergyJoulesPerToken: 0.5,
     averageCarbonGramsPerToken: 1.11e-5,
@@ -1319,14 +1331,21 @@ async function seedAIProvidersAndModels() {
 
   const vllmModels = [
     {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
+      name: "Qwen3.5 2B Instruct (vLLM)",
       description: "House chat — tier 1, hybrid RAG",
       maxTokens: 8192,
       supportsTools: false,
     },
     {
-      modelId: "qwen2.5-32b-instruct",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
+      name: "Qwen3.5 9B Instruct (vLLM)",
+      description: "Standard chat — tier 2, hybrid RAG",
+      maxTokens: 8192,
+      supportsTools: true,
+    },
+    {
+      modelId: RETAINED_ASSIST_MODEL_ID,
       name: "Qwen 2.5 32B AWQ (vLLM)",
       description: "Large tier — tools via Hermes parser",
       maxTokens: 8192,
@@ -1347,6 +1366,15 @@ async function seedAIProvidersAndModels() {
       },
     });
   }
+
+  // Do not leave superseded models available to Auto or the public picker.
+  await prisma.aIModel.updateMany({
+    where: {
+      providerId: vllm.id,
+      modelId: { in: [...LEGACY_CAMPUS_MODEL_IDS] },
+    },
+    data: { isActive: false, routerTier: null },
+  });
 
   await prisma.aIModel.upsert({
     where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },

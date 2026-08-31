@@ -35,12 +35,20 @@ vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn(),
 }));
 
-vi.mock("~/lib/agent-tools", () => ({
-  buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
-  chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
-  createChatTools: vi.fn().mockReturnValue({}),
-  parseChatMode: vi.fn().mockReturnValue("learning"),
-}));
+vi.mock("~/lib/agent-tools", async (importOriginal) => {
+  // Partial mock: chat.ts's recap/history-budget logic (#1639/#1557 merges)
+  // calls other real exports from this module (isPrivilegedChatMode and
+  // friends) on every mode, not just admin — keep those real and only fake
+  // the four this suite actually needs to control.
+  const actual = await importOriginal<typeof import("~/lib/agent-tools")>();
+  return {
+    ...actual,
+    buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
+    chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
+    createChatTools: vi.fn().mockReturnValue({}),
+    parseChatMode: vi.fn().mockReturnValue("learning"),
+  };
+});
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },

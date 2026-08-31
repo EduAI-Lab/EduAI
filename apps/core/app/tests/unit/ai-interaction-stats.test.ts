@@ -335,7 +335,7 @@ describe("getPeakUsageHours", () => {
 
     const hour3 = result.find((h) => h.hour === 3);
     expect(hour3?.count).toBe(1000);
-    expect(typeof hour3?.count).toBe("number");
+    expect(hour3?.count).toEqual(expect.any(Number));
   });
 
   it("returns all-zero hours when there are no interactions in the window", async () => {

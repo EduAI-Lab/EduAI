@@ -346,7 +346,7 @@ describe("POST /api/courses/:courseId/topics", () => {
     const topic = await res.json();
     expect(topic.name).toBe("Dynamic Programming");
     expect(topic.courseId).toBe(courseId);
-    expect(typeof topic.id).toBe("string");
+    expect(topic.id).toEqual(expect.any(String));
   });
 
   it("returns 201 with the created topic via service key — no session required", async () => {

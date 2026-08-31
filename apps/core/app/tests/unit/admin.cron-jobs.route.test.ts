@@ -5,6 +5,10 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(),
+}));
+
 vi.mock("~/lib/db.cron-jobs.server", () => ({
   KNOWN_CRON_JOBS: [
     {
@@ -33,6 +37,7 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
 
 import { loader, action } from "~/routes/api/admin.cron-jobs";
 import { auth } from "~/lib/auth/server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import {
   listCronJobStatuses,
   getRecentCronJobRuns,
@@ -67,6 +72,9 @@ function body(res: any): any {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: an ADMIN-role session's account is also active. The deactivated-
+  // admin regression tests below override this per call.
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(listCronJobStatuses).mockResolvedValue([]);
   vi.mocked(getRecentCronJobRuns).mockResolvedValue([]);
   vi.mocked(startCronRun).mockResolvedValue({
@@ -94,6 +102,19 @@ describe("GET /api/admin/cron-jobs (loader)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: STUDENT_USER } as any);
     const res = await loader(makeArgs(makeRequest("/api/admin/cron-jobs")));
     expect(status(res)).toBe(401);
+  });
+
+  // #1571-pattern gap found in a #1669 deep-audit pass: this route's local
+  // requireAdmin only checked the session's cached role, so a deactivated
+  // admin's still-live session kept full cron trigger/schedule access until
+  // the session naturally expired — unlike the shared `requireAdmin` guard,
+  // which was fixed for #1571 to re-check `isActive` against the DB.
+  it("returns 401 when the ADMIN-role session's account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: ADMIN_USER } as any);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await loader(makeArgs(makeRequest("/api/admin/cron-jobs")));
+    expect(status(res)).toBe(401);
+    expect(isActiveAdminUser).toHaveBeenCalledWith(ADMIN_USER.id);
   });
 
   it("returns all job statuses when no job query param is present", async () => {
@@ -151,6 +172,21 @@ describe("POST /api/admin/cron-jobs (action) — auth guard", () => {
       ),
     );
     expect(status(res)).toBe(401);
+  });
+
+  it("returns 401 when the ADMIN-role session's account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: ADMIN_USER } as any);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(401);
+    expect(startCronRun).not.toHaveBeenCalled();
   });
 });
 

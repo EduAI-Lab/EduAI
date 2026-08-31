@@ -33,7 +33,7 @@ test.describe("AI Tutor dashboard stats", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.role).toBe("STUDENT");
-    expect(typeof body.enrolledCourses).toBe("number");
+    expect(body.enrolledCourses).toEqual(expect.any(Number));
     expect(body).toHaveProperty("correctAnswerPercentage");
   });
 
@@ -44,7 +44,7 @@ test.describe("AI Tutor dashboard stats", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.role).toBe("INSTRUCTOR");
-    expect(typeof body.yourCourses).toBe("number");
+    expect(body.yourCourses).toEqual(expect.any(Number));
     expect(body).toHaveProperty("submissionsToReview");
   });
 });

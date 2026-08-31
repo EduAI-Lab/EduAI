@@ -5,6 +5,7 @@
  */
 
 import type { JsonValue } from "~/lib/json-value";
+import { asJsonObject, asText } from "~/lib/json-value";
 
 /** Minimum length for a complex password that mixes character classes. */
 export const MIN_COMPLEX_PASSWORD_LENGTH = 8;
@@ -100,9 +101,9 @@ export function extractPolicyPassword(
   if (!field) {
     return null;
   }
-  if (body === null || body === undefined || typeof body !== "object" || Array.isArray(body)) {
+  const fields = asJsonObject(body ?? undefined);
+  if (!fields) {
     return null;
   }
-  const value = body[field];
-  return typeof value === "string" ? value : null;
+  return asText(fields[field]);
 }

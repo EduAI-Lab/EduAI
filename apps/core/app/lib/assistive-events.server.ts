@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asBoolean, asFiniteNumber, asJsonObject, asText } from "~/lib/json-value";
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import {
@@ -120,11 +121,11 @@ export function isAssistiveClientEventType(value: string): value is AssistiveCli
 }
 
 export function sanitizeClientMetrics(metrics: JsonValue | undefined): Prisma.InputJsonValue {
-  if (metrics == null || typeof metrics !== "object" || Array.isArray(metrics)) {
+  const raw = asJsonObject(metrics);
+  if (!raw) {
     return {};
   }
 
-  const raw = metrics;
   const allowed = [
     "durationMs",
     "success",
@@ -140,28 +141,28 @@ export function sanitizeClientMetrics(metrics: JsonValue | undefined): Prisma.In
   for (const key of allowed) {
     const value = raw[key];
     if (value === undefined) continue;
-    if (key === "durationMs" && typeof value === "number" && Number.isFinite(value)) {
-      out[key] = Math.max(0, Math.round(value));
+    if (key === "durationMs") {
+      const duration = asFiniteNumber(value);
+      if (duration !== null) out[key] = Math.max(0, Math.round(duration));
       continue;
     }
-    if (key === "success" && typeof value === "boolean") {
-      out[key] = value;
+    if (key === "success") {
+      const success = asBoolean(value);
+      if (success !== null) out[key] = success;
       continue;
     }
-    if (
-      (key === "path" || key === "elementId" || key === "expandTarget") &&
-      typeof value === "string" &&
-      value.length <= 200
-    ) {
-      out[key] = value;
+    if (key === "path" || key === "elementId" || key === "expandTarget") {
+      const text = asText(value);
+      if (text !== null && text.length <= 200) out[key] = text;
       continue;
     }
     if (key === "fromMode" || key === "toMode") {
       if (value === true || value === false) out[key] = value;
       continue;
     }
-    if (key === "clientTimestamp" && typeof value === "string" && value.length <= 40) {
-      out[key] = value;
+    if (key === "clientTimestamp") {
+      const text = asText(value);
+      if (text !== null && text.length <= 40) out[key] = text;
     }
   }
 

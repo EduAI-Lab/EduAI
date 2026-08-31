@@ -1,4 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
 import type { FleetHealthResult } from "./types";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
@@ -25,19 +26,12 @@ function configuredDuration(name: string, fallback: number): number {
  * - `[]`: endpoint is healthy but hosts no models → do not fall back
  */
 function parseModelIds(payload: JsonValue | undefined): string[] | null {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const data = payload.data;
-  if (!Array.isArray(data)) return null;
+  const data = asJsonArray(asJsonObject(payload)?.data);
+  if (!data) return null;
   const ids: string[] = [];
   for (const entry of data) {
-    if (
-      entry &&
-      typeof entry === "object" &&
-      !Array.isArray(entry) &&
-      typeof entry.id === "string"
-    ) {
-      ids.push(entry.id);
-    }
+    const id = asText(asJsonObject(entry)?.id);
+    if (id !== null) ids.push(id);
   }
   return ids;
 }

@@ -84,14 +84,14 @@ export const ApiTestPage = () => {
   const [eduaiChatForm, setEduaiChatForm] = useState({
     courseCode: "COSC121",
     message: "",
-    model: "vllm:qwen2.5-32b-instruct",
+    model: "vllm:qwen3.5-9b-instruct",
   });
   const [eduaiChatResult, setEduaiChatResult] = useState<ResultState>(defaultResult);
 
   const [eduaiQuestionForm, setEduaiQuestionForm] = useState({
     courseCode: "COSC121",
     prompt: "",
-    model: "vllm:qwen2.5-32b-instruct",
+    model: "vllm:qwen3.5-9b-instruct",
     numQuestions: "5",
     difficultyEasy: "1",
     difficultyMedium: "2",
@@ -761,10 +761,10 @@ export const ApiTestPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vllm:qwen2.5-32b-instruct">
+                    <SelectItem value="vllm:qwen3.5-9b-instruct">
                       Qwen2.5 32B Instruct (UBC, no API key)
                     </SelectItem>
-                    <SelectItem value="vllm:qwen2.5-7b-instruct">
+                    <SelectItem value="vllm:qwen3.5-2b-instruct">
                       Qwen2.5 7B Instruct (UBC, no API key)
                     </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
@@ -846,10 +846,10 @@ export const ApiTestPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vllm:qwen2.5-32b-instruct">
+                    <SelectItem value="vllm:qwen3.5-9b-instruct">
                       Qwen2.5 32B Instruct (UBC, no API key)
                     </SelectItem>
-                    <SelectItem value="vllm:qwen2.5-7b-instruct">
+                    <SelectItem value="vllm:qwen3.5-2b-instruct">
                       Qwen2.5 7B Instruct (UBC, no API key)
                     </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>

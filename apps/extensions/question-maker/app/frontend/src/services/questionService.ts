@@ -19,6 +19,7 @@ import {
   ExtractedQuestion,
   MCQChoice,
 } from "../types/question";
+import { isNumber } from "@eduai/ui/primitive-union";
 
 /** Normalizes backend variant payload into frontend QuestionVariant shape. */
 const mapVariant = (variant: any): QuestionVariant => ({
@@ -106,14 +107,14 @@ function unwrapPaginatedList<T>(data: JsonValue, mapItem: (row: any) => T): Pagi
     const items = data.map(mapItem);
     return { items, total: items.length, limit: items.length, offset: 0 };
   }
-  if (data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)) {
+  if (data instanceof Object && Array.isArray((data as { items?: unknown }).items)) {
     const page = data as { items: any[]; total?: number; limit?: number; offset?: number };
     const items = page.items.map(mapItem);
     return {
       items,
-      total: typeof page.total === "number" ? page.total : items.length,
-      limit: typeof page.limit === "number" ? page.limit : items.length,
-      offset: typeof page.offset === "number" ? page.offset : 0,
+      total: isNumber(page.total) ? page.total : items.length,
+      limit: isNumber(page.limit) ? page.limit : items.length,
+      offset: isNumber(page.offset) ? page.offset : 0,
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };

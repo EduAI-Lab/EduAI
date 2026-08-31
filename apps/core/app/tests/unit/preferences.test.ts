@@ -159,3 +159,36 @@ describe("PATCH /api/preferences", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// #1453 — UI prefs are read by `session.user.id`, so nothing here may be
+// stored. The defaults path is a separate `return` and a 200 like any other, so
+// it needs the same guarantee or a user with no row saved leaks the previous
+// account's defaults-vs-stored distinction on a shared profile.
+describe("GET /api/preferences Cache-Control (#1453)", () => {
+  it("forbids storing a stored preference row", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue({
+      assistDefault: true,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    } as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the defaults returned when no row exists", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+});

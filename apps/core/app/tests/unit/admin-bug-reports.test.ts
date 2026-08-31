@@ -97,6 +97,10 @@ beforeEach(() => {
   vi.mocked(prisma.bugReport.findMany).mockResolvedValue([REPORT] as never);
   vi.mocked(prisma.bugReport.count).mockResolvedValue(1);
   vi.mocked(prisma.$queryRaw).mockResolvedValue([LIST_ROW] as never);
+  // Default: an ADMIN-role session's account is also active in the DB
+  // (`requireAdmin` re-checks this — #1571 pattern). The deactivated-admin
+  // regression test below overrides it per call.
+  vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "ADMIN", isActive: true } as never);
 });
 
 describe("GET /api/admin/bug-reports (#304)", () => {
@@ -108,6 +112,21 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it.each(["STUDENT", "INSTRUCTOR", "UNIT_ADMIN"])("returns 403 for %s", async (role) => {
     mockUser(role);
+    const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
+    expect(res.status).toBe(403);
+  });
+
+  // #1571-pattern gap found in a #1669 deep-audit pass: this route's local
+  // requireAdmin only checked the session's cached role, so a deactivated
+  // admin's still-live session kept full bug-report triage access — including
+  // full attachments, console/network logs, and status changes — until the
+  // session naturally expired.
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: false,
+    } as never);
     const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
     expect(res.status).toBe(403);
   });
@@ -268,6 +287,19 @@ describe("PATCH /api/admin/bug-reports/:id (#304)", () => {
       data: { status: "IN_PROGRESS" },
       select: { id: true, status: true },
     });
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: false,
+    } as never);
+    const res = await adminAction(
+      makeArgs("/api/admin/bug-reports/br-1", "PATCH", { status: "IN_PROGRESS" }, { id: "br-1" }),
+    );
+    expect(res.status).toBe(403);
+    expect(prisma.bugReport.update).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid status with 422", async () => {

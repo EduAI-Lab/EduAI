@@ -1,4 +1,5 @@
-import { parseJsonText, type JsonObject } from "~/lib/json-value";
+import { asJsonArray, parseJsonText } from "~/lib/json-value";
+import { z } from "zod";
 import { IconPuzzle } from "@tabler/icons-react";
 import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@eduai/ui";
 import { getEduAiAppUrl, getAiTutorAppUrl } from "~/lib/extension-urls";
@@ -18,33 +19,42 @@ export const CURRENT_APP_ID = "core";
  *
  * Malformed JSON is silently ignored so a bad value never breaks the sidebar.
  */
+/** Sidebar tint for an extension that did not choose one. */
+const DEFAULT_EXTENSION_COLOR = "oklch(0.580 0.150 300)";
+
+/**
+ * One entry of `VITE_EXTRA_EXTENSIONS`. `id`, `name` and `url` are the minimum
+ * an entry needs to be launchable; an entry missing any of them is dropped
+ * rather than rendered half-formed. A `color` that is present but empty falls
+ * back to the default, which is why it is `.min(1)`.
+ */
+const extraExtensionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  description: z.string().optional().catch(undefined),
+  color: z.string().min(1).optional().catch(undefined),
+});
+
 export function parseExtraExtensions(): LauncherApp[] {
   const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim();
   if (!raw) return [];
-  try {
-    const entries = parseJsonText(raw);
-    if (!Array.isArray(entries)) return [];
-    return entries
-      .filter(
-        (e): e is JsonObject & { id: string; name: string; url: string } =>
-          typeof e === "object" &&
-          e !== null &&
-          !Array.isArray(e) &&
-          typeof e.id === "string" &&
-          typeof e.name === "string" &&
-          typeof e.url === "string",
-      )
-      .map((e) => ({
-        id: e.id,
-        name: e.name,
-        url: e.url,
+  const entries = asJsonArray(parseJsonText(raw));
+  if (!entries) return [];
+  return entries.flatMap((entry) => {
+    const decoded = extraExtensionSchema.safeParse(entry);
+    if (!decoded.success) return [];
+    return [
+      {
+        id: decoded.data.id,
+        name: decoded.data.name,
+        url: decoded.data.url,
         icon: <IconPuzzle className="size-4" />,
-        description: typeof e.description === "string" ? e.description : undefined,
-        color: typeof e.color === "string" && e.color ? e.color : "oklch(0.580 0.150 300)",
-      }));
-  } catch {
-    return [];
-  }
+        description: decoded.data.description,
+        color: decoded.data.color ?? DEFAULT_EXTENSION_COLOR,
+      },
+    ];
+  });
 }
 
 /**

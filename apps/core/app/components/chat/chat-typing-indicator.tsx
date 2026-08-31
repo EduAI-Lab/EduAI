@@ -52,7 +52,7 @@ export function ChatTypingIndicator({
   timed: timedOverride,
   compact = false,
 }: ChatTypingIndicatorProps) {
-  const tickLocally = typeof startedAt === "number" && startedAt > 0;
+  const tickLocally = startedAt !== null && startedAt !== undefined && startedAt > 0;
   const [elapsedMs, setElapsedMs] = useState(() =>
     tickLocally ? Math.max(0, Date.now() - startedAt) : (elapsedOverride ?? 0),
   );

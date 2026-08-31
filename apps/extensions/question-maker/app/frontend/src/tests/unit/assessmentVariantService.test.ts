@@ -83,11 +83,11 @@ describe("assessmentVariantService.generateBankVariants", () => {
 
     await assessmentVariantService.generateBankVariants({ courseId: 1, questionIds: [1, 2] });
 
-    expect(buildApiKeysForModel).toHaveBeenCalledWith("vllm:qwen2.5-32b-instruct");
+    expect(buildApiKeysForModel).toHaveBeenCalledWith("vllm:qwen3.5-9b-instruct");
     expect(post).toHaveBeenCalledWith("/api/assessment-variant/generate-bank-variants", {
       courseId: 1,
       questionIds: [1, 2],
-      model: "vllm:qwen2.5-32b-instruct",
+      model: "vllm:qwen3.5-9b-instruct",
       apiKeys: { vllm: { isEnabled: true } },
     });
   });
@@ -125,7 +125,7 @@ describe("assessmentVariantService.reviewVariantWithAi", () => {
       baselineAssessmentId: 1,
       variantAssessmentId: 2,
       courseId: 3,
-      model: "vllm:qwen2.5-32b-instruct",
+      model: "vllm:qwen3.5-9b-instruct",
       apiKeys: {},
     });
   });

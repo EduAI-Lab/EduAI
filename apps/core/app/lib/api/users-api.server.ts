@@ -732,8 +732,7 @@ async function createUserFromBody(
     });
   } catch (error: unknown) {
     if (
-      error &&
-      typeof error === "object" &&
+      error instanceof Object &&
       "code" in error &&
       (error as { code: string }).code === "P2002"
     ) {

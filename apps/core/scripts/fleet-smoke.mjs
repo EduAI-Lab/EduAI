@@ -9,6 +9,38 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveSmokeApiKey } from "./lib/vllm-api-key.mjs";
+import {
+  missingExpectedFleetModels,
+  hostScopedMissingModels,
+} from "./lib/fleet-smoke-validation.mjs";
+
+/**
+ * Best-effort read of fleet.config.json's declared per-server `models` (see
+ * app/lib/ai/routing/fleet/config-file.ts for the authoritative schema/
+ * validation used by the app itself). This script is a standalone Node CLI
+ * with no bundler/path-alias resolution, so it re-reads the same gitignored
+ * file directly instead of importing the TS module. Returns {} (no host
+ * mapping known) rather than throwing on a missing/malformed file — smoke
+ * still runs in legacy env-var-only deployments; it just can't be host-aware
+ * without a config file to declare which host should serve which model.
+ */
+function loadDeclaredHostModels() {
+  const path = resolve(process.env.FLEET_CONFIG_PATH?.trim() || "./fleet.config.json");
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const servers = Array.isArray(parsed?.servers) ? parsed.servers : [];
+    const byHost = {};
+    for (const server of servers) {
+      if (!server?.id || !Array.isArray(server.models)) continue;
+      byHost[server.id] = server.models.map((m) => String(m).toLowerCase());
+    }
+    return byHost;
+  } catch (err) {
+    console.log(`WARN  could not read fleet.config.json for host-aware checks: ${String(err)}`);
+    return {};
+  }
+}
 
 function loadEnvFile() {
   const envPath = resolve(process.cwd(), ".env");
@@ -52,8 +84,11 @@ loadEnvFile();
 const apiKey = resolveSmokeApiKey();
 const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
-  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen2.5-7b-instruct,qwen2.5-32b-instruct",
+  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen3.5-2b-instruct,qwen3.5-9b-instruct",
 );
+const assistModel = (process.env.ADHD_ASSIST_AUTO_MODEL || "vllm:qwen2.5-32b-instruct")
+  .replace(/^vllm:/i, "")
+  .trim();
 
 const chatUrls = parseCommaList(process.env.VLLM_FLEET_CHAT_URLS);
 const heavyUrl = process.env.VLLM_FLEET_HEAVY_URL?.trim();
@@ -104,7 +139,7 @@ async function main() {
       "VLLM_FLEET_CHAT_URLS not set. Add to apps/core/.env:\n" +
         '  VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"\n' +
         '  VLLM_API_KEY="<same as CMPS01_INTERNAL_KEY on cmps01>"\n' +
-        '  VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"\n' +
+        '  VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b-instruct,qwen3.5-9b-instruct"\n' +
         "  # local/dev only may omit VLLM_API_KEY (defaults to vllm-local);" +
         " production requires an explicit key",
     );
@@ -130,6 +165,63 @@ async function main() {
 
   const okCount = results.filter((r) => r.ok).length;
   console.log(`\nSummary: ${okCount}/${results.length} hosts healthy`);
+  const missingFleetModels = missingExpectedFleetModels(results, expectedModels);
+  if (missingFleetModels.length > 0) {
+    console.error(
+      `FAIL  Fleet defaults missing from all healthy hosts: ${missingFleetModels.join(", ")}. ` +
+        "Provision the configured interactive fleet before enabling these defaults.",
+    );
+    process.exit(1);
+  }
+
+  const declaredHostModels = loadDeclaredHostModels();
+  const hasDeclaredHosts = Object.keys(declaredHostModels).length > 0;
+  // Host-aware: a model missing only from the union check above is a real
+  // failure, but "present somewhere across all healthy hosts" is a false
+  // green when the SPECIFIC host declared to serve it (e.g. cmps02 for the
+  // retained Assist model) is the one that's down. Without fleet.config.json
+  // there is no host->model declaration to be host-aware with, so this stays
+  // a warning rather than a failure in that legacy env-var-only mode.
+  const violations = hostScopedMissingModels(
+    results,
+    [...expectedModels, assistModel],
+    declaredHostModels,
+  );
+  for (const violation of violations) {
+    const detail =
+      violation.reason === "host-down"
+        ? `declared host ${violation.hostId} is unhealthy or unreachable`
+        : violation.reason === "not-advertised"
+          ? `declared host ${violation.hostId} is healthy but did not advertise it live`
+          : "not advertised by any healthy host";
+    const line = `${violation.reason === "missing-everywhere" ? "FAIL" : hasDeclaredHosts ? "FAIL" : "WARN"}  Host-scoped check: ${violation.modelId} — ${detail}.`;
+    if (violation.reason === "missing-everywhere" || hasDeclaredHosts) {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
+  }
+  if (violations.length > 0 && (hasDeclaredHosts || violations.some((v) => v.hostId === null))) {
+    console.error(
+      "FAIL  Host-scoped model coverage failed — see violations above. " +
+        (hasDeclaredHosts
+          ? "Provision/repair the declared host(s) in fleet.config.json before enabling routing."
+          : "Provision the configured fleet before enabling these defaults."),
+    );
+    process.exit(1);
+  }
+
+  const assistHosts = results.filter((result) =>
+    result.modelIds.some((modelId) => modelId.toLowerCase() === assistModel.toLowerCase()),
+  );
+  if (assistHosts.length === 0) {
+    console.error(
+      `FAIL  Assist Auto model ${assistModel} was not advertised by any healthy fleet host. ` +
+        "Provision it on the configured host (cmps02 in the production example) before enabling Assist Auto.",
+    );
+    process.exit(1);
+  }
+  console.log(`Assist Auto model ${assistModel}: ${assistHosts.map((host) => host.id).join(", ")}`);
   if (okCount >= 2) {
     console.log("Round-robin: send several chat requests and check X-Fleet-Server alternates.");
   }

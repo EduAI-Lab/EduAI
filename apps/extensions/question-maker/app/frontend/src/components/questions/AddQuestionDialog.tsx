@@ -59,6 +59,7 @@ import eduaiService, {
 } from "../../services/eduaiService";
 import { Course } from "../../types/question";
 import { apiKeyStorage } from "../../services/apiKeyStorage";
+import { isString } from "@eduai/ui/primitive-union";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
 import {
   IconHelpCircle,
@@ -841,7 +842,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   );
 
   const handleFieldChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    if (field === "primaryTopicId" && typeof value === "string") {
+    if (field === "primaryTopicId" && isString(value)) {
       setForm((prev) => ({
         ...prev,
         primaryTopicId: value,
@@ -1141,7 +1142,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             )
           : [];
         const resolvedAnswer =
-          typeof generated.answer === "string" && generated.answer.trim().length > 0
+          isString(generated.answer) && generated.answer.trim().length > 0
             ? generated.answer.trim()
             : "";
         let resolvedChoices: MCQChoice[] = prev.variantChoices;
@@ -1152,8 +1153,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         ) {
           resolvedChoices = generated.choices
             .map((c: any) => ({
-              letter: typeof c.letter === "string" ? c.letter.toUpperCase() : c.letter,
-              text: typeof c.text === "string" ? c.text.trim() : String(c.text || ""),
+              letter: isString(c.letter) ? c.letter.toUpperCase() : c.letter,
+              text: isString(c.text) ? c.text.trim() : String(c.text || ""),
             }))
             .filter((c: MCQChoice) => c.text.length > 0);
           if (resolvedChoices.length < 2) resolvedChoices = prev.variantChoices;
@@ -1183,7 +1184,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         const resolvedPrimaryTopicId =
           primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
         const resolvedDescription =
-          typeof generated.description === "string" && generated.description.trim().length > 0
+          isString(generated.description) && generated.description.trim().length > 0
             ? generated.description.trim()
             : prev.questionDescription.trim() || createDescriptionFromText(generated.content ?? "");
         return {
