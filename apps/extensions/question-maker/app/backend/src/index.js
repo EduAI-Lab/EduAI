@@ -62,6 +62,7 @@ const shutdown = (exitCode, signal) => {
     } finally {
       clearTimeout(timeout);
       logger.info("Shutdown complete");
+      await new Promise((resolve) => logger.flush(resolve));
       process.exit(timedOut ? 1 : shutdownExitCode);
     }
   })();

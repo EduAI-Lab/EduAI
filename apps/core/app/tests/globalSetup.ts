@@ -94,12 +94,12 @@ export async function setup() {
   const dropContentTsv = () => {
     try {
       execSync(
-        `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE IF EXISTS material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
         { env: pgEnv, stdio: "pipe" },
       );
     } catch {
       execSync(
-        `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE IF EXISTS material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
         { stdio: "pipe" },
       );
     }
