@@ -112,7 +112,7 @@ describe("executeAiJobPayload — model resolution", () => {
     await executeAiJobPayload(payload({ requestedModel: "auto" }));
 
     expect(runCompletionMock).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "vllm:qwen2.5-32b-instruct" }),
+      expect.objectContaining({ model: "vllm:qwen3.5-9b-instruct" }),
     );
     expect(errorSpy).toHaveBeenCalled();
   });

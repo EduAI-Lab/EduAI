@@ -232,7 +232,7 @@ function isTimeoutError(error: DecodedProviderError): boolean {
 export const PUBLIC_PROVIDER_SETUP_ERROR = "LLM provider setup failed";
 export const PUBLIC_PROVIDER_STREAM_ERROR = "LLM stream failed";
 export const PUBLIC_PROVIDER_TOOL_ARGUMENT_ERROR =
-  "Invalid arguments for tool — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).";
+  "Invalid arguments for tool — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen3.5-9b-instruct).";
 
 const MAX_DIAGNOSTIC_CHARS = 2_048;
 

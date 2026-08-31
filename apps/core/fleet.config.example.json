@@ -4,12 +4,14 @@
     {
       "id": "cmps01",
       "baseUrl": "http://cmps01.ok.ubc.ca:8001",
-      "jobTypes": ["interactive"]
+      "jobTypes": ["interactive"],
+      "models": ["qwen3.5-2b-instruct", "qwen3.5-9b-instruct"]
     },
     {
       "id": "cmps02",
       "baseUrl": "http://cmps02.ok.ubc.ca:8001",
-      "jobTypes": ["interactive"]
+      "jobTypes": ["interactive"],
+      "models": ["qwen2.5-32b-instruct"]
     },
     {
       "id": "cmps03",

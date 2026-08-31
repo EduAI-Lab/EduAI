@@ -71,7 +71,7 @@ async function run(label, routingContext, expectedHosts) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "vllm:qwen2.5-7b-instruct",
+      model: "vllm:qwen3.5-2b-instruct",
       apiKeys: {},
       systemPrompt: "Answer with only the word OK.",
       messages: [{ role: "user", content: "Health check" }],

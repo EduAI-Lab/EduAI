@@ -46,7 +46,7 @@ const MAX_COURSE_SCOPE_MESSAGE_CHARS = 4_000;
 const COURSE_SCOPE_HISTORY_OMISSION = " … ";
 
 function classifierModelId(): string {
-  return process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
+  return process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen3.5-2b-instruct";
 }
 
 function courseScopeMinConfidence(): number {

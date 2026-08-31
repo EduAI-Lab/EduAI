@@ -57,11 +57,18 @@ sudo install -o root -g eduai -m 0640 /path/to/eduai-core.env /etc/eduai/eduai-c
 sudo grep -nE '<[^>]+>|CHANGE_ME|REPLACE_ME' /etc/eduai/eduai-core.env
 ```
 
-Required secrets must be generated outside Git. Keep the initial fleet value limited to the reachable cmps host:
+Required secrets must be generated outside Git. This release requires the
+interactive cmps01 fleet and the retained Assist Auto model on cmps02:
 
 ```env
-VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001
+VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001
+VLLM_FLEET_DEFAULT_MODELS=qwen3.5-2b-instruct,qwen3.5-9b-instruct
+ADHD_ASSIST_AUTO_MODEL=vllm:qwen2.5-32b-instruct
 ```
+
+Run `cd apps/core && npm run fleet:smoke` from a host with campus access and
+do not enable the service until both hosts are healthy and cmps02 advertises
+`qwen2.5-32b-instruct`.
 
 ## 6. Install and enable Core
 
@@ -93,8 +100,8 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - `DATABASE_URL` connects as the dedicated application role.
 - Redis decision is documented; queue remains disabled if no worker exists.
 - cmps01 inference endpoint is reachable from production.
-- cmps02/03 are not configured until firewall access is confirmed.
-- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` is configured before the AI Tutor browser build.
+- cmps02 inference endpoint is reachable and advertises `qwen2.5-32b-instruct` for Assist Auto; cmps03 remains outside this rollout until firewall access and its model inventory are confirmed.
+- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` and `VITE_QUESTION_MAKER_URL=https://questionmaker.eduai.ok.ubc.ca` are configured before browser builds.
 - `COOKIE_DOMAIN=.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services; confirm no unrelated `*.ok.ubc.ca` service should receive the shared cookie.
 - The AI Tutor vhost relies on the certificate already covering `*.eduai.ok.ubc.ca` on this host (no explicit `SSLCertificateFile` in the template); confirm that coverage, and that Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.

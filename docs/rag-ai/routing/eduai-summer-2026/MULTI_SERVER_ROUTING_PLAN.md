@@ -137,7 +137,7 @@ Server pick happens **after** the model id is known. Hosts that do not serve tha
 ```env
 VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001
 VLLM_FLEET_HEAVY_URL=http://cmps03.ok.ubc.ca:8001
-VLLM_FLEET_DEFAULT_MODELS=qwen2.5-7b-instruct,qwen2.5-32b-instruct
+VLLM_FLEET_DEFAULT_MODELS=qwen3.5-2b-instruct,qwen3.5-9b-instruct
 VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 ```
 

@@ -82,7 +82,7 @@ export function parseClassifierJson(text: string): LlmRouteClassification {
 }
 
 function classifierModelId(): string {
-  return process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
+  return process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen3.5-2b-instruct";
 }
 
 function classifierMinConfidence(): number {
