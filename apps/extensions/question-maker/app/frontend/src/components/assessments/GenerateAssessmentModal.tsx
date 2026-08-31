@@ -21,7 +21,7 @@ import {
 } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import * as React from "react";
-import { AssessmentGenerationParams, AssessmentType } from "../../types/question";
+import { assessmentTypes, AssessmentGenerationParams, AssessmentType } from "../../types/question";
 
 interface GenerateAssessmentModalProps {
   open: boolean;
@@ -130,19 +130,20 @@ export const GenerateAssessmentModal = ({
             <Label htmlFor="assessmentType">Assessment type</Label>
             <Select
               value={assessmentType}
-              onValueChange={(value) => setAssessmentType(value as AssessmentType)}
+              onValueChange={(value) => {
+                const nextType = assessmentTypes.find((type) => type === value);
+                if (nextType) setAssessmentType(nextType);
+              }}
             >
               <SelectTrigger id="assessmentType">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
-                {(["Assignment", "Lab", "Quiz", "Midterm", "Final"] as AssessmentType[]).map(
-                  (type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ),
-                )}
+                {assessmentTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

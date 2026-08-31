@@ -438,8 +438,9 @@ export default function InstructorChatPage() {
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         selectedModelInfo={selectedModelInfo}
-        selectedCourseCode={selectedCourseId}
-        setSelectedCourseCode={handleCourseChange}
+        selectedCourseId={selectedCourseId}
+        selectedCourseCode={courses.find((course) => course.id === selectedCourseId)?.code ?? null}
+        setSelectedCourseId={handleCourseChange}
         availableCourses={courses}
         messages={messages}
         input={input}

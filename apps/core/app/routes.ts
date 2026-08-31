@@ -1,8 +1,7 @@
-import { type RouteConfig, index, route } from "@react-router/dev/routes";
+import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
-  route("/team", "routes/team.tsx"),
   route("/api/health", "routes/api/health.ts"),
   route("/api/ai-status", "routes/api/ai-status.ts"),
   route("/api/ai-jobs/:jobId", "routes/api.ai-jobs.$jobId.ts"),
@@ -13,12 +12,15 @@ export default [
   route("/login", "routes/login.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
+  route("/auth/verify-email", "routes/auth/verify-email.tsx"),
   route("/auth/logout", "routes/auth/logout.tsx"),
   route("/auth/accept-invitation", "routes/auth/accept-invitation.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
   route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
-  route("/chat", "routes/chat.tsx"),
-  route("/chat/:chatId", "routes/chat.$chatId.tsx"),
+  layout("routes/chat-layout.tsx", [
+    route("/chat", "routes/chat.tsx"),
+    route("/chat/:chatId", "routes/chat.$chatId.tsx"),
+  ]),
   route("/settings", "routes/settings.tsx"),
   route("/help", "routes/help.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),

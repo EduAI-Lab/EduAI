@@ -12,7 +12,7 @@ import type { BugReportSubmitData } from "@eduai/ui";
 const mockNavigate = vi.fn();
 vi.mock("react-router", async (importActual) => {
   const actual = await importActual<typeof import("react-router")>();
-  return { ...actual, useNavigate: () => mockNavigate };
+  return { ...actual, useMatches: () => [], useNavigate: () => mockNavigate };
 });
 
 let mockUser: { id: string; name: string; role: string; email?: string } | null = null;

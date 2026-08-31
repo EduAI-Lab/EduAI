@@ -163,6 +163,7 @@ function setDefaultMocks() {
   routeParams.current = { courseId: "5" };
   searchParamsBox.current = new URLSearchParams();
   useQmPermissionsForCourseMock.mockReturnValue({
+    canApproveVariant: true,
     canCreateQuestion: true,
     hasCourseAccess: true,
     accessLoading: false,
@@ -231,6 +232,21 @@ describe("QuestionComposerPage gate states", () => {
 });
 
 describe("QuestionComposerPage create mode", () => {
+  it("keeps draft creation available while disabling review and sharing for a TA", async () => {
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canApproveVariant: false,
+      canCreateQuestion: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+
+    expect(screen.getByRole("checkbox", { name: /^mark as reviewed/i })).toBeDisabled();
+    expect(screen.getByTestId("share-with-extensions")).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save question/i })).toBeEnabled();
+  });
+
   it("renders the composer shell with the create title", async () => {
     render(<QuestionComposerPage />);
     expect(await screen.findByText("New question")).toBeInTheDocument();
@@ -332,6 +348,35 @@ describe("QuestionComposerPage create mode", () => {
       expect(questionService.createVariant).toHaveBeenCalledWith(
         99,
         expect.objectContaining({ isDraft: false, shareWithExtensions: true }),
+      ),
+    );
+  });
+
+  it("submits a draft without sharing when approval permission changes before save", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    const view = render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-text"));
+    fireEvent.click(screen.getByText("set-choices"));
+    fireEvent.click(screen.getByText("set-answer"));
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
+    fireEvent.click(screen.getByTestId("share-with-extensions"));
+
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canApproveVariant: false,
+      canCreateQuestion: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    view.rerender(<QuestionComposerPage />);
+    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+
+    await waitFor(() =>
+      expect(questionService.createVariant).toHaveBeenCalledWith(
+        99,
+        expect.objectContaining({ isDraft: true, shareWithExtensions: false }),
       ),
     );
   });

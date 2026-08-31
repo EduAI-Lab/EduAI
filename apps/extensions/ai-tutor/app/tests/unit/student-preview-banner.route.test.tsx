@@ -153,6 +153,7 @@ function renderLesson(
   activities: React.ComponentProps<typeof StudentLessonPlayer>["loaderData"]["activities"] = [],
 ) {
   const loaderData: React.ComponentProps<typeof StudentLessonPlayer>["loaderData"] = {
+    course: { coreOfferingId: "core-course-3" },
     lesson: {
       id: 3,
       title: "Lesson 1",

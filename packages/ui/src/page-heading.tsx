@@ -4,12 +4,18 @@ export interface PageHeadingProps {
   heading: string;
   subheading?: React.ReactNode;
   className?: string;
+  headingClassName?: string;
 }
 
-export function PageHeading({ heading, subheading, className }: PageHeadingProps) {
+export function PageHeading({
+  heading,
+  subheading,
+  className,
+  headingClassName,
+}: PageHeadingProps) {
   return (
     <div className={className}>
-      <h2 className="text-2xl font-bold">{heading}</h2>
+      <h2 className={headingClassName ?? "text-2xl font-bold"}>{heading}</h2>
       <div
         style={{
           width: 40,

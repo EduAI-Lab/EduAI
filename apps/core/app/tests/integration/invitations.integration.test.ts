@@ -521,6 +521,7 @@ describe("accept flow", () => {
     expect(res.status).toBe(302); // redirected to /dashboard on success
     expect(res.headers.get("Location")).toBe("/dashboard");
     expect(res.headers.get("Set-Cookie")).toBeTruthy(); // logged in
+    expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(1);
 
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.role).toBe("INSTRUCTOR");

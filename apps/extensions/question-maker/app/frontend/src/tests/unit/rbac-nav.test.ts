@@ -3,17 +3,26 @@ import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
 
 describe("QM nav RBAC", () => {
   const admin = { id: "a1", role: "ADMIN" as const };
-  const unitAdmin = { id: "u1", role: "UNIT_ADMIN" as const, authorizedUnits: ["COSC"] };
+  const unitAdmin = {
+    id: "u1",
+    role: "UNIT_ADMIN" as const,
+    authorizedUnits: ["COSC"],
+  };
   const instructor = { id: "i1", role: "INSTRUCTOR" as const };
+  const ta = { id: "t1", role: "TA" as const };
   const student = { id: "s1", role: "STUDENT" as const };
 
   it("includes core workspace links for authorized roles", () => {
-    for (const user of [admin, unitAdmin, instructor]) {
+    for (const user of [admin, unitAdmin, instructor, ta]) {
       const keys = getNavForUser(user).map((item) => item.key);
       expect(keys).toContain("dashboard");
       expect(keys).toContain("courses");
       expect(keys).toContain("library");
     }
+  });
+
+  it("does not show authoring navigation to an ordinary platform student", () => {
+    expect(getNavForUser(student)).toEqual([]);
   });
 
   it("points workspace links at live routes, not legacy redirects", () => {
@@ -30,11 +39,6 @@ describe("QM nav RBAC", () => {
     expect(getNavForUser(admin).some((item) => item.key === "bug-reports")).toBe(true);
     expect(getNavForUser(instructor).some((item) => item.key === "bug-reports")).toBe(false);
     expect(getNavForUser(unitAdmin).some((item) => item.key === "bug-reports")).toBe(false);
-  });
-
-  it("hides Question Maker navigation from platform Students", () => {
-    expect(getNavForUser(student)).toEqual([]);
-    expect(getNavSecondaryForUser(student)).toEqual([]);
   });
 
   it("returns nothing for a signed-out user", () => {

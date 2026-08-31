@@ -120,6 +120,31 @@ describe("instructor clientLoader — filter threading", () => {
     expect(data.facets.terms).toEqual(["W1::2026"]);
   });
 
+  it("resolves contextual entry by exact Core id instead of the visible page", async () => {
+    listCourses.mockResolvedValueOnce({
+      data: [course({ id: 321, coreOfferingId: "core-321" })],
+      total: 1,
+      page: 1,
+      pageSize: 1,
+    });
+
+    let thrown: unknown;
+    try {
+      await runLoader("http://x/instructor?coreCourseId=core-321");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(listCourses).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 1,
+      coreOfferingId: "core-321",
+    });
+    expect(thrown).toBeInstanceOf(Response);
+    if (!(thrown instanceof Response)) throw new Error("Expected a redirect Response");
+    expect(thrown.headers.get("Location")).toBe("/instructor/courses/321?coreCourseId=core-321");
+  });
+
   it("returns the server total so the pager reflects the filtered set", async () => {
     listCourses.mockResolvedValue({ data: [course()], total: 42, page: 1, pageSize: 200 });
 

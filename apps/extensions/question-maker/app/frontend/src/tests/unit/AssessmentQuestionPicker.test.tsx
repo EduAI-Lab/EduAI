@@ -124,6 +124,12 @@ describe("AssessmentQuestionPicker", () => {
     expect(screen.getByText("1 question selected")).toBeInTheDocument();
   });
 
+  it("does not nest an interactive checkbox button inside a question button", () => {
+    const { container } = renderPicker();
+
+    expect(container.querySelector("button button")).toBeNull();
+  });
+
   it("selects and clears all filtered questions", () => {
     renderPicker();
     fireEvent.click(screen.getByText("Select all"));

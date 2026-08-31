@@ -40,6 +40,7 @@ export interface ServiceStatus {
 export interface AIServiceIndicatorsProps {
   cloud: ServiceStatus;
   ubc: ServiceStatus;
+  cloudLabel?: string;
   /** Called when a chip is clicked — wire to a re-check. Omit for static display. */
   onRefresh?: () => void;
   className?: string;
@@ -106,6 +107,7 @@ function Chip({
 export function AIServiceIndicators({
   cloud,
   ubc,
+  cloudLabel = "Cloud AI",
   onRefresh,
   className,
 }: AIServiceIndicatorsProps) {
@@ -120,7 +122,7 @@ export function AIServiceIndicators({
         <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
       </Chip>
       <Chip
-        label="Cloud AI"
+        label={cloudLabel}
         status={cloud}
         active={isServiceActive(cloud.state)}
         onClick={onRefresh}

@@ -33,6 +33,12 @@ describe("requireClientUser", () => {
     await expect(requireClientUser()).rejects.toMatchObject({ status: 302 });
   });
 
+  it("redirects instead of rendering a loader error when the API reports a 401", async () => {
+    vi.mocked(api.me).mockRejectedValue(new Error("Authentication required"));
+
+    await expect(requireClientUser()).rejects.toMatchObject({ status: 302 });
+  });
+
   it("allows a user whose role matches a single required role", async () => {
     vi.mocked(api.me).mockResolvedValue({
       user: { id: "1", name: "A", email: "a@x.com", role: "INSTRUCTOR" },

@@ -49,6 +49,7 @@ describe("question list/detail share projection", () => {
     const select = questionMetadataFindMany.mock.calls[0][0].include.variants.select;
     expect(select.coreQuestionId).toBe(true);
     expect(select.shareWithExtensions).toBe(true);
+    expect(select.createdBy).toBe(true);
   });
 
   it("selects them on the detail path too, so the two cannot drift", async () => {
@@ -57,5 +58,6 @@ describe("question list/detail share projection", () => {
     const select = questionMetadataFindFirst.mock.calls[0][0].include.variants.select;
     expect(select.coreQuestionId).toBe(true);
     expect(select.shareWithExtensions).toBe(true);
+    expect(select.createdBy).toBe(true);
   });
 });

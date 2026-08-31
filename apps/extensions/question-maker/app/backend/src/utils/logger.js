@@ -13,6 +13,7 @@ const consoleFallback = {
   error: (...args) => console.error("[error]", ...args),
   debug: noop,
   trace: noop,
+  flush: (callback = noop) => callback(),
   child: () => consoleFallback,
 };
 

@@ -140,7 +140,7 @@ describe("assessmentService CRUD", () => {
     await assessmentService.createAssessment({
       courseId: 1,
       name: "Midterm",
-      type: "Exam",
+      type: "Midterm",
       description: "d",
       primaryTopicIds: [1],
       secondaryTopicIds: [],
@@ -150,7 +150,7 @@ describe("assessmentService CRUD", () => {
       reasoningData: {} as any,
     });
     expect(post).toHaveBeenCalledWith("/api/assessments", {
-      type: "Exam",
+      type: "Midterm",
       name: "Midterm",
       description: "d",
       courseId: 1,
@@ -163,7 +163,7 @@ describe("assessmentService CRUD", () => {
     await assessmentService.updateAssessment(2, {
       courseId: 1,
       name: "Updated",
-      type: "Exam",
+      type: "Midterm",
       description: "",
       primaryTopicIds: [],
       secondaryTopicIds: [],

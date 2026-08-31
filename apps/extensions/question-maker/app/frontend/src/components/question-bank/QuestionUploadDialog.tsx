@@ -60,6 +60,7 @@ import {
   Question,
   QuestionDifficulty,
   QuestionType,
+  assessmentTypes,
 } from "../../types/question";
 import { MCQChoicesField } from "../questions/MCQChoicesField";
 import { Topic } from "../../types/topic";
@@ -72,7 +73,7 @@ import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
 import {
   FALLBACK_GENERATION_MODEL,
   isCampusModel,
-  pickPreferredGenerationModel,
+  pickConfiguredGenerationModel,
 } from "../../utils/aiModels";
 import type { OCRJob, StoredQuestion } from "../../types/ocr";
 import { toast } from "sonner";
@@ -125,8 +126,6 @@ const questionTypeLabels = {
   SA: "Short Answer",
   LA: "Long Answer",
 } satisfies Record<QuestionType, string>;
-const assessmentTypes = ["Assignment", "Lab", "Quiz", "Midterm", "Final"] as const;
-
 function QuestionFileUploadZone({
   id,
   disabled,
@@ -461,9 +460,7 @@ export const QuestionUploadDialog = ({
       try {
         const models = await eduaiService.listModels();
         setAvailableModels(models);
-        setAiModel((prev) =>
-          models.some((m) => m.id === prev) ? prev : pickPreferredGenerationModel(models),
-        );
+        setAiModel((prev) => pickConfiguredGenerationModel(models, prev));
       } catch (error) {
         console.error("Failed to fetch AI models:", error);
         setAvailableModels([]);
@@ -899,7 +896,10 @@ export const QuestionUploadDialog = ({
       setLastFileName(job.fileName);
       setCurrentJobId(job.id);
       if (job.assessmentDetails) {
-        setAssessmentType(job.assessmentDetails.type as (typeof assessmentTypes)[number]);
+        const restoredAssessmentType = assessmentTypes.find(
+          (type) => type === job.assessmentDetails?.type,
+        );
+        if (restoredAssessmentType) setAssessmentType(restoredAssessmentType);
         setAssessmentName(job.assessmentDetails.name);
       }
       toast("Questions restored", {
@@ -1174,9 +1174,10 @@ export const QuestionUploadDialog = ({
                       <Label htmlFor="assessment-type">Type</Label>
                       <Select
                         value={assessmentType}
-                        onValueChange={(value) =>
-                          setAssessmentType(value as (typeof assessmentTypes)[number])
-                        }
+                        onValueChange={(value) => {
+                          const nextType = assessmentTypes.find((type) => type === value);
+                          if (nextType) setAssessmentType(nextType);
+                        }}
                       >
                         <SelectTrigger id="assessment-type">
                           <SelectValue />

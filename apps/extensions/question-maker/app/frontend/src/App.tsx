@@ -123,6 +123,19 @@ function RedirectLegacyVariantRoute() {
   return <Navigate to="/courses" replace />;
 }
 
+function RedirectRootRoute() {
+  const [searchParams] = useSearchParams();
+  const coreCourseId = searchParams.get("coreCourseId")?.trim();
+  return (
+    <Navigate
+      to={
+        coreCourseId ? `/dashboard?coreCourseId=${encodeURIComponent(coreCourseId)}` : "/dashboard"
+      }
+      replace
+    />
+  );
+}
+
 function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
@@ -188,7 +201,7 @@ function App() {
                       {import.meta.env.DEV && <Route path="/api-test" element={<ApiTestPage />} />}
                       <Route path="/assessments/:id" element={<Navigate to="/courses" replace />} />
                       <Route path="/study" element={<RedirectLegacyStudyRoute />} />
-                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                      <Route path="/" element={<RedirectRootRoute />} />
                     </Routes>
                   </Suspense>
                   <Toaster position="top-right" />

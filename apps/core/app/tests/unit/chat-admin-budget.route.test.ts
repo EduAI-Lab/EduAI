@@ -156,6 +156,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { streamText } from "ai";
+import { createChatTools } from "~/lib/agent-tools";
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode paths stay admitted.
@@ -258,6 +259,17 @@ describe("POST /api/chat — admin 16k context budget (#1008)", () => {
   it("caps admin maxTokens so tool schemas + step reserve fit a 16k window", async () => {
     const res = await action(makeRequest(baseBody()));
     expect(res.status).toBe(200);
+    expect(vi.mocked(createChatTools)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { id: "admin-1", role: "ADMIN" },
+        adminWriteConfirmation: {
+          chatId: CHAT_ID,
+          turnId: expect.any(String),
+          latestUserMessage: "List users named alice@ubc.ca",
+        },
+      }),
+      "admin",
+    );
 
     const config = lastStreamConfig();
     expect(Object.keys(config.tools ?? {})).toHaveLength(ADMIN_TOOL_COUNT);

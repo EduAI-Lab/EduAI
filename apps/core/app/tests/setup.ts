@@ -2,6 +2,8 @@ import { vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { isBrowser } from "@eduai/ui/runtime-env";
 
+process.env.CANVAS_ALLOW_LOCAL_HTTP = "true";
+
 // Unrelated chat route files reuse identities like `user-1`. Skip the daily
 // cap there so they do not share a 50/day Redis bucket. Suites that cover
 // #1547 call `vi.unmock("~/lib/chat-daily-limits.server")`.

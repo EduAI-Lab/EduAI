@@ -271,6 +271,7 @@ export type Lesson = {
   position: number;
   isPublished: boolean;
   courseOfferingId?: number;
+  coreOfferingId?: string;
   moduleId?: number;
   progress?: Progress;
 };

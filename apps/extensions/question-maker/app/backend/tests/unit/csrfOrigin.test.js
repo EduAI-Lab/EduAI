@@ -5,6 +5,7 @@ vi.mock("../../src/config/settings.js", () => ({
     corsOrigins: ["https://qm.example.test"],
     corePublicOrigin: "https://core.example.test",
     extensionUrl: "https://qm.example.test",
+    eduaiApiKey: "verified-service-key",
   },
 }));
 
@@ -63,7 +64,7 @@ describe("csrfOriginGuard", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("allows trusted and server requests while rejecting explicit Fetch Metadata cross-site", () => {
+  it("accepts trusted Origin, Referer, and same-origin Fetch Metadata", () => {
     const trustedNext = vi.fn();
     csrfOriginGuard(
       request("PATCH", {
@@ -75,22 +76,69 @@ describe("csrfOriginGuard", () => {
     );
     expect(trustedNext).toHaveBeenCalledOnce();
 
-    const serverNext = vi.fn();
-    csrfOriginGuard(request("DELETE", { cookie: "session=abc" }), response(), serverNext);
-    expect(serverNext).toHaveBeenCalledOnce();
+    const refererNext = vi.fn();
+    csrfOriginGuard(
+      request("DELETE", {
+        cookie: "session=abc",
+        referer: "https://core.example.test/questions/1",
+      }),
+      response(),
+      refererNext,
+    );
+    expect(refererNext).toHaveBeenCalledOnce();
 
-    const crossSiteRes = response();
-    const crossSiteNext = vi.fn();
+    const metadataNext = vi.fn();
+    csrfOriginGuard(
+      request("POST", { cookie: "session=abc", "sec-fetch-site": "same-origin" }),
+      response(),
+      metadataNext,
+    );
+    expect(metadataNext).toHaveBeenCalledOnce();
+  });
+
+  it("rejects untrusted or missing fallback provenance", () => {
+    for (const headers of [
+      { cookie: "session=abc", referer: "https://evil.example.test/form" },
+      { cookie: "session=abc", referer: "not a URL" },
+      { cookie: "session=abc", "sec-fetch-site": "cross-site" },
+      { cookie: "session=abc", "sec-fetch-site": "same-site" },
+      { cookie: "session=abc" },
+    ]) {
+      const res = response();
+      const next = vi.fn();
+
+      csrfOriginGuard(request("POST", headers), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    }
+  });
+
+  it("bypasses provenance only for the verified service credential", () => {
+    const verifiedNext = vi.fn();
     csrfOriginGuard(
       request("POST", {
         cookie: "session=abc",
-        "sec-fetch-site": "CROSS-SITE",
+        authorization: "Bearer verified-service-key",
+        origin: "https://evil.example.test",
       }),
-      crossSiteRes,
-      crossSiteNext,
+      response(),
+      verifiedNext,
     );
-    expect(crossSiteRes.status).toHaveBeenCalledWith(403);
-    expect(crossSiteNext).not.toHaveBeenCalled();
+    expect(verifiedNext).toHaveBeenCalledOnce();
+
+    const unverifiedRes = response();
+    const unverifiedNext = vi.fn();
+    csrfOriginGuard(
+      request("POST", {
+        cookie: "session=abc",
+        authorization: "Bearer attacker-controlled",
+      }),
+      unverifiedRes,
+      unverifiedNext,
+    );
+    expect(unverifiedRes.status).toHaveBeenCalledWith(403);
+    expect(unverifiedNext).not.toHaveBeenCalled();
   });
 
   it("does not gate safe methods or requests without cookies", () => {

@@ -124,8 +124,8 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
         </>,
         <>
           Configure the AI Tutor loop policy and EduAI API integration in{" "}
-          <Link to="/settings" className={LINK}>
-            Settings
+          <Link to="/admin" className={LINK}>
+            Admin
           </Link>
           .
         </>,

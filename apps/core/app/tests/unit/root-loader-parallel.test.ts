@@ -29,7 +29,7 @@ vi.mock("~/lib/cron-scheduler.server", () => ({
 
 const prismaMock = vi.hoisted(() => ({
   userPreference: { findUnique: vi.fn() },
-  enrollment: { findFirst: vi.fn() },
+  enrollment: { findMany: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -46,6 +46,7 @@ type RootData = {
   theme: string;
   canInvite: boolean;
   hasInstructorEnrollment: boolean;
+  hasTeachingAssistantEnrollment: boolean;
   policies: Record<string, boolean>;
 };
 
@@ -77,7 +78,7 @@ beforeEach(() => {
   vi.mocked(getPolicies).mockResolvedValue({} as never);
   vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(null);
   prismaMock.userPreference.findUnique.mockResolvedValue(null);
-  prismaMock.enrollment.findFirst.mockResolvedValue(null);
+  prismaMock.enrollment.findMany.mockResolvedValue([]);
 });
 
 describe("root loader — guest", () => {
@@ -254,20 +255,21 @@ describe("root loader — canInvite", () => {
 describe("root loader — hasInstructorEnrollment (#1666 review)", () => {
   it("is true for a STUDENT with a real active INSTRUCTOR enrollment", async () => {
     signedInAs("STUDENT");
-    prismaMock.enrollment.findFirst.mockResolvedValue({ id: "enr-1" });
+    prismaMock.enrollment.findMany.mockResolvedValue([{ role: "INSTRUCTOR" }]);
 
     const data = (await run()) as RootData;
 
     expect(data.hasInstructorEnrollment).toBe(true);
-    expect(prismaMock.enrollment.findFirst).toHaveBeenCalledWith({
-      where: { userId: "u1", role: "INSTRUCTOR", isActive: true },
-      select: { id: true },
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
+      where: { userId: "u1", role: { in: ["INSTRUCTOR", "TA"] }, isActive: true },
+      select: { role: true },
+      distinct: ["role"],
     });
   });
 
   it("is false for a STUDENT with no active INSTRUCTOR enrollment", async () => {
     signedInAs("STUDENT");
-    prismaMock.enrollment.findFirst.mockResolvedValue(null);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
 
     expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
   });
@@ -283,13 +285,31 @@ describe("root loader — hasInstructorEnrollment (#1666 review)", () => {
     const data = (await run()) as RootData;
 
     expect(data.hasInstructorEnrollment).toBe(false);
-    expect(prismaMock.enrollment.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.enrollment.findMany).not.toHaveBeenCalled();
   });
 
   it("is false for a guest", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
     expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
-    expect(prismaMock.enrollment.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.enrollment.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("root loader — Question Maker TA projection", () => {
+  it("marks a platform STUDENT with an active TA enrollment", async () => {
+    signedInAs("STUDENT");
+    prismaMock.enrollment.findMany.mockResolvedValue([{ role: "TA" }]);
+
+    const data = (await run()) as RootData;
+
+    expect(data.hasTeachingAssistantEnrollment).toBe(true);
+    expect(data.hasInstructorEnrollment).toBe(false);
+  });
+
+  it("does not promote an ordinary platform STUDENT", async () => {
+    signedInAs("STUDENT");
+
+    expect(((await run()) as RootData).hasTeachingAssistantEnrollment).toBe(false);
   });
 });

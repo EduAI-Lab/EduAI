@@ -82,7 +82,7 @@ const TOPICS: HelpTopic[] = [
         </Link>{" "}
         to ask questions grounded in your course materials.
       </>,
-      "Course-scoped chats answer from that course's uploaded materials; general chats aren't tied to a course.",
+      "Course Chat conversations are tied to a selected course and use that course's uploaded materials.",
       "Your conversations are saved — reopen any of them from the dashboard or the chat history.",
     ],
   },

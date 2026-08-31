@@ -45,6 +45,7 @@ interface ApiKeysStore {
 }
 
 let storeState: ApiKeysStore = { data: {}, isLoading: true };
+const serverStoreState: ApiKeysStore = { data: {}, isLoading: true };
 let fetchInitiated = false;
 let storeOwnerId: string | null = null;
 let loadGeneration = 0;
@@ -140,7 +141,7 @@ export function useApiKeys(ownerIdOverride?: string | null) {
       return () => listeners.delete(listener);
     },
     () => storeState,
-    () => ({ data: {}, isLoading: true }) satisfies ApiKeysStore,
+    () => serverStoreState,
   );
 
   const apiKeys = store.data;

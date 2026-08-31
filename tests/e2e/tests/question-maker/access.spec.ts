@@ -116,12 +116,17 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
     expect(body.code).toBe("PAGINATION_REQUIRED");
   });
 
-  test("GET /api/questions is blocked for STUDENT (403)", async ({ request }) => {
+  test("GET /api/questions returns an empty TA-scoped page for a STUDENT", async ({ request }) => {
     await signUp(request, { email: uniqueEmail("qm-questions") });
 
-    // STUDENT role cannot list all questions — requires INSTRUCTOR or higher
+    // Platform STUDENT callers no longer receive a flat 403 on the course-less
+    // aggregate; the list is scoped to live TA grants, which a fresh STUDENT
+    // does not have — hence an empty page rather than authoring access.
     const res = await request.get(`${QM_BACKEND_URL}/api/questions`);
-    expect(res.status()).toBe(403);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.data.items).toEqual([]);
+    expect(body.data.total).toBe(0);
   });
 
   test("POST /api/course without coreCourseId returns 400", async ({ request }) => {

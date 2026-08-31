@@ -38,8 +38,9 @@ export function ChatConversationLayout({
   selectedModel,
   setSelectedModel,
   selectedModelInfo,
+  selectedCourseId,
   selectedCourseCode,
-  setSelectedCourseCode,
+  setSelectedCourseId,
   availableCourses,
   courseSelectionKey = "code",
   messages,
@@ -253,8 +254,8 @@ export function ChatConversationLayout({
         onInputChange={onInputChange}
         onSubmit={onSubmit}
         onStop={onStop}
-        selectedCourseId={selectedCourseCode}
-        setSelectedCourseId={setSelectedCourseCode}
+        selectedCourseId={selectedCourseId}
+        setSelectedCourseId={setSelectedCourseId}
         availableCourses={availableCourses}
         courseSelectionKey={courseSelectionKey}
         selectedModel={selectedModel}

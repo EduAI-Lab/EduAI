@@ -13,6 +13,8 @@ import prisma from "~/lib/prisma.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
 
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
 export class CanvasNotConnectedError extends Error {
   constructor() {
     super("Connect Canvas first");
@@ -158,7 +160,10 @@ export async function listCanvasCoursesWithSyncState(
 }
 
 /** Upserts a Core course from a Canvas course payload. */
-export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) {
+export async function upsertCoreCourseFromCanvas(
+  canvasCourse: CanvasCourseApi,
+  db: DbClient = prisma,
+) {
   const fields = mapCanvasCourseToCoreFields(canvasCourse);
   const externalIdentity = {
     externalSource_externalId: {
@@ -184,7 +189,7 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
     // The external identity unique key lets Prisma issue a database-native
     // upsert, so concurrent first syncs converge even when Canvas snapshots
     // differ in code or dates (and therefore in the legacy course triplet).
-    const course = await prisma.course.upsert({
+    const course = await db.course.upsert({
       where: externalIdentity,
       create: fields,
       update: updates,
@@ -192,15 +197,23 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
     // Native upsert does not report create-vs-update; ensureDefaultBank is
     // idempotent and race-safe, so newly synced courses always converge on a
     // default question bank even when concurrent first syncs race here.
-    await ensureDefaultBank(course.id);
+    await ensureDefaultBank(course.id, db);
     // #1624: a default bank is not enough to author against — Question Maker
     // also requires a topic. Provisioning runs later and asynchronously, so the
     // fallback is created here, up front, rather than leaving a window where a
     // freshly synced course is a hard authoring blocker. Also idempotent.
-    await ensureCourseHasTopic(course.id);
+    await ensureCourseHasTopic(course.id, db);
     return course;
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+
+    // PostgreSQL aborts an interactive transaction after a constraint error.
+    // Let its owner retry the whole transaction instead of querying through
+    // this unusable client. Root-client calls are independent transactions, so
+    // their existing winner-adoption path remains safe.
+    if (db !== prisma) {
       throw error;
     }
 
@@ -221,8 +234,12 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
 }
 
 /** Ensures the syncing instructor has an active INSTRUCTOR enrollment on the course. */
-export async function ensureInstructorEnrollment(courseId: string, userId: string) {
-  return prisma.enrollment.upsert({
+export async function ensureInstructorEnrollment(
+  courseId: string,
+  userId: string,
+  db: DbClient = prisma,
+) {
+  return db.enrollment.upsert({
     where: {
       courseId_userId: { courseId, userId },
     },

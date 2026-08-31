@@ -192,6 +192,10 @@ const GUEST_ROOT_PREFERENCES = {
   // to every route, not just the one page whose own loader happened to
   // compute it. Resolved once here (root loader) rather than per-route.
   hasInstructorEnrollment: false,
+  // Core stores course TAs as platform STUDENT users. Project that contextual
+  // role once so shared app launchers can expose Question Maker without also
+  // exposing it to ordinary students.
+  hasTeachingAssistantEnrollment: false,
 } as const;
 
 /**
@@ -247,25 +251,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // instructor.chat.tsx's own loader: resolveAccess always resolves ADMIN
   // to admin-level, never instructor-level, no matter their enrollment, so
   // an ADMIN can never actually pass /instructor/chat's gate.
-  const instructorEnrollmentPromise: Promise<boolean> =
+  const teachingEnrollmentsPromise =
     session.user.role === "ADMIN"
-      ? Promise.resolve(false)
-      : prisma.enrollment
-          .findFirst({
-            where: { userId: session.user.id, role: "INSTRUCTOR", isActive: true },
-            select: { id: true },
-          })
-          .then((row) => row !== null);
-  instructorEnrollmentPromise.catch(() => {});
+      ? Promise.resolve([])
+      : prisma.enrollment.findMany({
+          where: {
+            userId: session.user.id,
+            role: { in: ["INSTRUCTOR", "TA"] },
+            isActive: true,
+          },
+          select: { role: true },
+          distinct: ["role"],
+        });
+  teachingEnrollmentsPromise.catch(() => {});
 
   if (!isExempt) {
     const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
     if (expiredRedirect) return expiredRedirect;
   }
-  const [row, hasInstructorEnrollment] = await Promise.all([
+  const [row, teachingEnrollments] = await Promise.all([
     preferencePromise,
-    instructorEnrollmentPromise,
+    teachingEnrollmentsPromise,
   ]);
+  const hasInstructorEnrollment = teachingEnrollments.some(
+    (enrollment) => enrollment.role === "INSTRUCTOR",
+  );
+  const hasTeachingAssistantEnrollment = teachingEnrollments.some(
+    (enrollment) => enrollment.role === "TA",
+  );
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
@@ -279,6 +292,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
     hasInstructorEnrollment,
+    hasTeachingAssistantEnrollment,
     policies,
   };
 }

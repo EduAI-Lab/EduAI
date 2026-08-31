@@ -66,6 +66,6 @@ describe("POST /api/chat/cancel", () => {
     const res = await action(makeArgs({ requestId }));
 
     expect(res.status).toBe(204);
-    expect(cancelActiveChat).toHaveBeenCalledWith(requestId);
+    expect(cancelActiveChat).toHaveBeenCalledWith("u1", requestId);
   });
 });

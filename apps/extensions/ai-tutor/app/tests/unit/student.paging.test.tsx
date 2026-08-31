@@ -56,7 +56,13 @@ vi.mock("~/components/StudentAiChat", () => ({ default: () => null }));
 import StudentCourseModules from "~/routes/student.course";
 import StudentLessonPlayer from "~/routes/student.lesson";
 
-const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
+const course = {
+  id: 1,
+  coreOfferingId: "core-course-1",
+  title: "Course 1",
+  code: "COSC 101",
+  isPublished: true,
+};
 
 describe("student.course — paged module grid (#1207)", () => {
   const wrap = (
@@ -200,6 +206,32 @@ describe("student.lesson — paged activity walk (#1207)", () => {
 
     await waitFor(() => expect(mockActivitiesForLesson).toHaveBeenCalled());
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
+  });
+
+  it("waits at the loaded boundary until the next activity arrives", async () => {
+    let releaseNextPage!: (value: {
+      data: ReturnType<typeof activity>[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }) => void;
+    mockActivitiesForLesson.mockReturnValue(
+      new Promise((resolve) => {
+        releaseNextPage = resolve;
+      }),
+    );
+
+    await act(async () => {
+      wrap({ activities: [activity(1)], activitiesTotal: 2 });
+    });
+
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+
+    await act(async () => {
+      releaseNextPage({ data: [activity(2)], total: 2, page: 2, pageSize: 50 });
+    });
+
+    expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
   });
 
   it("shows the server-derived order text from the deferred breadcrumb", async () => {

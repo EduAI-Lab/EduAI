@@ -14,7 +14,7 @@ function getQuestionMakerUrl(): string {
  * Core, AI Tutor, and Question Maker agree on one canonical list; this app
  * only resolves its own per-env URLs and injects them.
  */
-export function getLauncherApps(): LauncherApp[] {
+export function getLauncherApps(coreCourseId?: string | null): LauncherApp[] {
   return getSharedLauncherApps({
     currentAppId: CURRENT_APP_ID,
     urls: {
@@ -22,5 +22,6 @@ export function getLauncherApps(): LauncherApp[] {
       aiTutor: getAiTutorUrl(),
       questionMaker: getQuestionMakerUrl(),
     },
+    coreCourseId,
   });
 }

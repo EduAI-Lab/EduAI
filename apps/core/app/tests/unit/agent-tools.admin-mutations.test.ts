@@ -282,22 +282,6 @@ describe("updateAdminBugReportStatus", () => {
   });
 });
 
-describe("requireWriteConfirmation", () => {
-  it("returns null when confirmed is true", async () => {
-    const { requireWriteConfirmation } = await import("~/lib/agent-tools/admin-mutations.server");
-    expect(requireWriteConfirmation(true)).toBeNull();
-  });
-
-  it("returns CONFIRMATION_REQUIRED when confirmed is false", async () => {
-    const { requireWriteConfirmation } = await import("~/lib/agent-tools/admin-mutations.server");
-    const result = requireWriteConfirmation(false);
-    expect(result).toMatchObject({
-      writeSucceeded: false,
-      error: "CONFIRMATION_REQUIRED",
-    });
-  });
-});
-
 describe("createAdminEnrollment via addEnrollment", () => {
   it("delegates to addEnrollment after resolving course", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
@@ -482,42 +466,73 @@ describe("runAdminWriteTool", () => {
 
 describe("runConfirmedAdminWriteTool", () => {
   it("registers a preview and requires confirmation when confirmed is false", async () => {
+    vi.mocked(registerWritePreview).mockReturnValue({
+      confirmationCode: "ADMIN-WRITE-test",
+      expiresAt: Date.now() + 60_000,
+    });
     const run = vi.fn();
-    const result = await runConfirmedAdminWriteTool(
-      "createUser",
-      ADMIN,
-      false,
+    const result = await runConfirmedAdminWriteTool({
+      toolName: "createUser",
+      actor: ADMIN,
+      confirmed: false,
       run,
-      { a: 1 },
-      "turn-1",
-    );
-    expect(registerWritePreview).toHaveBeenCalledWith(
-      ADMIN.id,
-      "createUser",
-      { __tool: "createUser", a: 1 },
-      undefined,
-      "turn-1",
-    );
+      payload: { a: 1 },
+      confirmation: {
+        chatId: "chat-1",
+        turnId: "turn-1",
+        latestUserMessage: "create it",
+      },
+    });
+    expect(registerWritePreview).toHaveBeenCalledWith({
+      actorId: ADMIN.id,
+      chatId: "chat-1",
+      toolName: "createUser",
+      payload: { __tool: "createUser", a: 1 },
+      turnId: "turn-1",
+    });
     expect(result).toMatchObject({ writeSucceeded: false, error: "CONFIRMATION_REQUIRED" });
     expect(run).not.toHaveBeenCalled();
   });
 
   it("rejects same-turn confirmation without consuming further", async () => {
-    vi.mocked(consumeWritePreview).mockReturnValue("same_turn");
+    vi.mocked(consumeWritePreview).mockReturnValue({
+      kind: "same_turn",
+      preview: { confirmationCode: "ADMIN-WRITE-test", expiresAt: Date.now() + 60_000 },
+    });
     const run = vi.fn();
-    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, true, run, {}, "turn-1");
+    const result = await runConfirmedAdminWriteTool({
+      toolName: "createUser",
+      actor: ADMIN,
+      confirmed: true,
+      run,
+      confirmation: {
+        chatId: "chat-1",
+        turnId: "turn-1",
+        latestUserMessage: "ADMIN-WRITE-test",
+      },
+    });
     expect(result).toMatchObject({
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
-      message: expect.stringContaining("same-generation"),
+      message: expect.stringContaining("later chat turn"),
     });
     expect(run).not.toHaveBeenCalled();
   });
 
   it("rejects confirmation when no matching preview exists", async () => {
-    vi.mocked(consumeWritePreview).mockReturnValue("missing");
+    vi.mocked(consumeWritePreview).mockReturnValue({ kind: "missing" });
     const run = vi.fn();
-    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, true, run);
+    const result = await runConfirmedAdminWriteTool({
+      toolName: "createUser",
+      actor: ADMIN,
+      confirmed: true,
+      run,
+      confirmation: {
+        chatId: "chat-1",
+        turnId: "turn-2",
+        latestUserMessage: "ADMIN-WRITE-test",
+      },
+    });
     expect(result).toMatchObject({
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
@@ -526,8 +541,8 @@ describe("runConfirmedAdminWriteTool", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("runs the write when confirmed and a matching preview was consumed", async () => {
-    vi.mocked(consumeWritePreview).mockReturnValue("ok");
+  it("runs the write only after the server gate consumes the exact confirmation", async () => {
+    vi.mocked(consumeWritePreview).mockReturnValue({ kind: "ok" });
     const run = vi.fn().mockResolvedValue({
       dataSource: "database",
       mutation: true,
@@ -535,7 +550,18 @@ describe("runConfirmedAdminWriteTool", () => {
       appliedAt: new Date().toISOString(),
       ok: true,
     });
-    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, true, run, { a: 1 });
+    const result = await runConfirmedAdminWriteTool({
+      toolName: "createUser",
+      actor: ADMIN,
+      confirmed: true,
+      run,
+      payload: { a: 1 },
+      confirmation: {
+        chatId: "chat-1",
+        turnId: "turn-2",
+        latestUserMessage: "ADMIN-WRITE-test",
+      },
+    });
     expect(run).toHaveBeenCalled();
     expect(result).toMatchObject({ ok: true, writeSucceeded: true });
   });

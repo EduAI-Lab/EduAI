@@ -68,6 +68,49 @@ async function generateGuideResponse() {
 }
 
 describe("AI guidance diagnostic redaction", () => {
+  it("never forwards free-form supervisor output to the tutor or student", async () => {
+    const canary = "HIDDEN_ANSWER_CANARY_42";
+    const rejectedVerdict = JSON.stringify({
+      approved: false,
+      reason: canary,
+      feedbackToTutor: canary,
+      safeResponseToStudent: canary,
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: "First draft." }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: rejectedVerdict }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: "Revised draft." }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: rejectedVerdict }) });
+
+    const { generateGuideResponse: generate } = await import("../../src/services/aiGuidance.js");
+    const result = await generate({
+      activity: {
+        mainTopic: { name: "Recursion" },
+        config: {
+          question: "What is a recursive base case?",
+          questionType: "SHORT_TEXT",
+          answer: { text: "42" },
+        },
+      },
+      knowledgeLevel: "beginner",
+      message: "Can you give me a hint?",
+      studentAnswer: null,
+      tutorModelId: "google:tutor-test",
+      supervisorModelId: "google:supervisor-test",
+      dualLoopEnabled: true,
+      maxSupervisorIterations: 2,
+      cookie: "session=redaction-test",
+      apiKey: "fake-test-key",
+    });
+
+    const secondTutorRequest = JSON.parse(global.fetch.mock.calls[2][1].body);
+    expect(secondTutorRequest.messages[0].content).not.toContain(canary);
+    expect(result.message).not.toContain(canary);
+    expect(JSON.stringify(result.trace)).not.toContain(canary);
+    expect(result.trace.finalOutcome).toBe("safe_fallback");
+  });
+
   it("drops upstream response bodies from retry and terminal error logs", async () => {
     const canary = "AUDIT_STUDENT_CONTENT_CANARY_7F3A";
     const upstreamBody = `${canary} retry-body cookie=session-secret provider_key=sk-secret`;

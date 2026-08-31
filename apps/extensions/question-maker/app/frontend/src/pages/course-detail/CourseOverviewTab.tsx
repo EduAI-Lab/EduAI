@@ -24,6 +24,7 @@ interface CourseOverviewTabProps {
   /** When set, Overview shows this instead of page-slice / partial pie totals. */
   analyticsStatus?: "loading" | "ready" | "unavailable";
   canWrite: boolean;
+  canManageAssessment: boolean;
   onAddQuestion: () => void;
   onNewAssessment: () => void;
   /** Omitted when the course has no Canvas link — the action is then hidden. */
@@ -37,25 +38,34 @@ export const CourseOverviewTab = ({
   analytics,
   analyticsStatus = "ready",
   canWrite,
+  canManageAssessment,
   onAddQuestion,
   onNewAssessment,
   onImportFromCanvas,
 }: CourseOverviewTabProps) => {
   const quickActions: QuickAction[] = [
-    {
-      label: "Add question",
-      description: "Open the composer",
-      icon: <IconPlus size={18} />,
-      color: "#4F7BE5",
-      onClick: onAddQuestion,
-    },
-    {
-      label: "New assessment",
-      description: "Build a quiz or exam",
-      icon: <IconClipboardPlus size={18} />,
-      color: "#2FA67A",
-      onClick: onNewAssessment,
-    },
+    ...(canWrite
+      ? [
+          {
+            label: "Add question",
+            description: "Open the composer",
+            icon: <IconPlus size={18} />,
+            color: "#4F7BE5",
+            onClick: onAddQuestion,
+          },
+        ]
+      : []),
+    ...(canManageAssessment
+      ? [
+          {
+            label: "New assessment",
+            description: "Build a quiz or exam",
+            icon: <IconClipboardPlus size={18} />,
+            color: "#2FA67A",
+            onClick: onNewAssessment,
+          },
+        ]
+      : []),
     ...(onImportFromCanvas
       ? [
           {
@@ -77,7 +87,9 @@ export const CourseOverviewTab = ({
         <StatCard label="Topics" value={topicsCount} />
       </div>
 
-      {canWrite && <QuickActionsPanel actions={quickActions} className="sm:grid-cols-3" />}
+      {quickActions.length > 0 && (
+        <QuickActionsPanel actions={quickActions} className="sm:grid-cols-3" />
+      )}
 
       {questionsCount === 0 ? (
         <EmptyState

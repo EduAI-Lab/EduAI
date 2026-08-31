@@ -9,7 +9,7 @@
  * Core or DB required.
  */
 import { vi, describe, it, expect, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -34,6 +34,7 @@ vi.mock("../../src/config/settings.js", () => {
 });
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { config } = await import("../../src/config/settings.js");
 
 const ADMIN = { id: "cuid-admin", email: "admin@test.com", role: "ADMIN", name: "Admin" };

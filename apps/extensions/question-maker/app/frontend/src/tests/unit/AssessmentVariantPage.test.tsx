@@ -198,7 +198,7 @@ function baselineAssessment(overrides: Partial<any> = {}) {
   return {
     id: 10,
     name: "Midterm",
-    type: "Mid",
+    type: "Midterm",
     courseId: 5,
     blueprintConfig: null,
     sections: [
@@ -242,7 +242,7 @@ function setDefaultMocks() {
 }
 
 async function selectBaseline() {
-  const option = await screen.findByText("Midterm (Mid)");
+  const option = await screen.findByText("Midterm (Midterm)");
   fireEvent.click(option);
 }
 
@@ -510,7 +510,7 @@ describe("AssessmentVariantPage — AI review step", () => {
   it("runs an AI review and renders the results", async () => {
     assessmentService.getAssessments.mockResolvedValue([
       baselineAssessment(),
-      { id: 20, name: "Variant exam", type: "Mid", courseId: 5 },
+      { id: 20, name: "Variant exam", type: "Midterm", courseId: 5 },
     ]);
     assessmentVariantService.reviewVariantWithAi.mockResolvedValue({
       baselineAssessmentId: 10,
@@ -561,7 +561,7 @@ describe("AssessmentVariantPage — AI review step", () => {
   it("reports an AI review failure", async () => {
     assessmentService.getAssessments.mockResolvedValue([
       baselineAssessment(),
-      { id: 20, name: "Variant exam", type: "Mid", courseId: 5 },
+      { id: 20, name: "Variant exam", type: "Midterm", courseId: 5 },
     ]);
     assessmentVariantService.reviewVariantWithAi.mockRejectedValue({
       response: { data: { error: "bad rubric" } },

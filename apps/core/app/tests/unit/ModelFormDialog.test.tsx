@@ -120,6 +120,8 @@ describe("ModelFormDialog — title", () => {
     );
     // Use heading role to avoid matching the submit button which also says "Create Model"
     expect(screen.getByRole("heading", { name: "Create Model" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Provider")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type")).toBeInTheDocument();
   });
 
   it("shows 'Edit Model' when a model is provided", () => {
