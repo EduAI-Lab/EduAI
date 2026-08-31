@@ -48,6 +48,13 @@ const returnedSessionSchema = z.object({
   session: z.object({ token: z.string().min(1) }).nullish(),
 });
 
+// SMTP-less environments (E2E stack, local dev without SMTP) cannot complete
+// email verification: fresh sign-ups would stay unverified and be signed out
+// by the /get-session guard below. Set BETTER_AUTH_DISABLE_EMAIL_VERIFICATION=1
+// to skip the verification requirement and mint new users pre-verified.
+// Production must never set this.
+const EMAIL_VERIFICATION_DISABLED = process.env.BETTER_AUTH_DISABLE_EMAIL_VERIFICATION === "1";
+
 export const auth = betterAuth({
   baseURL: authBaseURL,
   secret: process.env.BETTER_AUTH_SECRET,
@@ -58,12 +65,15 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
-    requireEmailVerification: true,
+    requireEmailVerification: !EMAIL_VERIFICATION_DISABLED,
   },
   emailVerification: {
-    sendOnSignUp: true,
-    sendOnSignIn: true,
-    autoSignInAfterVerification: true,
+    // All three flags only matter when verification is enforceable; in
+    // SMTP-less environments they stay off so better-auth never queues a
+    // verification email it cannot deliver.
+    sendOnSignUp: !EMAIL_VERIFICATION_DISABLED,
+    sendOnSignIn: !EMAIL_VERIFICATION_DISABLED,
+    autoSignInAfterVerification: !EMAIL_VERIFICATION_DISABLED,
     sendVerificationEmail: async ({ user, url }, request) => {
       // Invitation acceptance already proves mailbox control and promotes the
       // account to emailVerified in the same flow. The marker is stripped at
@@ -303,6 +313,17 @@ export const auth = betterAuth({
               passwordHash: account.password,
             });
           }
+        },
+      },
+    },
+    user: {
+      create: {
+        // SMTP-less environments (E2E stack, local dev without SMTP) cannot
+        // receive verification links; mint those accounts pre-verified so
+        // their sessions are not reaped by the /get-session guard above.
+        before: async (user) => {
+          if (!EMAIL_VERIFICATION_DISABLED) return;
+          return { data: { ...user, emailVerified: true } };
         },
       },
     },
