@@ -82,7 +82,7 @@ export function QuickActionsPanel({ actions, LinkComponent, className }: QuickAc
         const content = (
           <>
             <div
-              className="flex size-9 flex-shrink-0 items-center justify-center rounded-lg"
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg"
               style={{ background: `color-mix(in oklch, ${color} 15%, transparent)`, color }}
             >
               {action.icon}

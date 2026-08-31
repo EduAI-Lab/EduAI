@@ -107,9 +107,9 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
     },
   ];
   return (
-    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
-      <div className="flex flex-col gap-3 border-b border-border bg-gradient-to-br from-secondary/[0.10] via-accent/[0.05] to-transparent p-6 md:p-8">
-        <div className="flex size-11 items-center justify-center rounded-[var(--radius-lg)] bg-gradient-to-br from-secondary to-accent text-white shadow-[var(--shadow-sm)]">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
+      <div className="flex flex-col gap-3 border-b border-border bg-linear-to-br from-secondary/10 via-accent/5 to-transparent p-6 md:p-8">
+        <div className="flex size-11 items-center justify-center rounded-(--radius-lg) bg-linear-to-br from-secondary to-accent text-white shadow-sm">
           <IconSparkles className="size-6" />
         </div>
         <h2 className="text-lg font-semibold text-foreground">Welcome to Question Maker</h2>
@@ -145,13 +145,13 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
 function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; loading: boolean }) {
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
             className="flex animate-pulse items-center gap-4 border-b border-border px-5 py-4 last:border-b-0"
           >
-            <div className="h-11 w-1 flex-shrink-0 rounded-sm bg-muted" />
+            <div className="h-11 w-1 shrink-0 rounded-sm bg-muted" />
             <div className="flex-1 space-y-2">
               <div className="h-3.5 w-24 rounded bg-muted" />
               <div className="h-3 w-48 rounded bg-muted" />
@@ -163,7 +163,7 @@ function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; l
   }
 
   return (
-    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
       {courses.slice(0, 5).map((course, i) => (
         <Link
           key={course.id}
@@ -171,14 +171,14 @@ function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; l
           className="flex items-center gap-4 border-b border-border px-5 py-[14px] transition-colors last:border-b-0 hover:bg-muted/40"
         >
           <div
-            className="h-11 w-1 flex-shrink-0 rounded-sm"
+            className="h-11 w-1 shrink-0 rounded-sm"
             style={{ background: COURSE_COLORS[i % COURSE_COLORS.length] }}
           />
           <div className="min-w-0 flex-1">
             <span className="text-sm font-semibold text-foreground">{course.code}</span>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{course.name}</div>
           </div>
-          <IconChevronRight size={16} className="flex-shrink-0 text-muted-foreground" />
+          <IconChevronRight size={16} className="shrink-0 text-muted-foreground" />
         </Link>
       ))}
     </div>
@@ -194,7 +194,7 @@ function RecentActivityPanel({
 }) {
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -212,7 +212,7 @@ function RecentActivityPanel({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
       {items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
           <IconHistory size={24} className="mb-2 text-muted-foreground" />
@@ -227,10 +227,10 @@ function RecentActivityPanel({
               className="block w-full border-b border-border px-5 py-[14px] text-left transition-colors last:border-b-0 hover:bg-muted/40"
             >
               <div className="mb-1 flex items-center justify-between">
-                <span className="flex-shrink-0 text-[10px] font-semibold text-primary-text">
+                <span className="shrink-0 text-[10px] font-semibold text-primary-text">
                   {item.sublabel ?? "Activity"}
                 </span>
-                <span className="ml-2 flex-shrink-0 text-[11px] text-muted-foreground">
+                <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
                   {relativeTime(item.updatedAt)}
                 </span>
               </div>

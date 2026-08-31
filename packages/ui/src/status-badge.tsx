@@ -20,7 +20,7 @@ export function StatusBadge({
       }}
     >
       <span
-        className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        className="w-[5px] h-[5px] rounded-full shrink-0"
         style={{ background: active ? "var(--color-success-500)" : "var(--muted-foreground)" }}
       />
       {active ? activeLabel : inactiveLabel}

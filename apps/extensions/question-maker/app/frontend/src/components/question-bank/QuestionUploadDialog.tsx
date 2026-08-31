@@ -1143,7 +1143,7 @@ export const QuestionUploadDialog = ({
             <div className="flex flex-col gap-6 py-2 min-h-full md:flex-row">
               {/* Left: Assessment details — narrow, vertical fields */}
               {saveTarget === "bank" ? (
-                <Card className="flex-shrink-0 w-full md:w-[280px] border-dashed border-primary/30 bg-primary/10">
+                <Card className="shrink-0 w-full md:w-[280px] border-dashed border-primary/30 bg-primary/10">
                   <CardHeader className="space-y-1">
                     <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
                     <p className="text-xs text-muted-foreground">
@@ -1154,7 +1154,7 @@ export const QuestionUploadDialog = ({
               ) : (
                 <Card
                   data-tour-id="upload-assessment-meta"
-                  className="flex-shrink-0 w-full md:w-[280px]"
+                  className="shrink-0 w-full md:w-[280px]"
                 >
                   <CardHeader className="space-y-1">
                     <CardTitle className="text-base font-semibold">Assessment details</CardTitle>
@@ -1201,7 +1201,7 @@ export const QuestionUploadDialog = ({
               <div className="flex-1 min-w-0 flex flex-col gap-6 min-h-0">
                 {draftQuestions.length > 0 ? (
                   <>
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       <button
                         type="button"
                         onClick={() => setUploadSectionCollapsed((c) => !c)}
@@ -1380,7 +1380,7 @@ export const QuestionUploadDialog = ({
                       )}
                     </div>
                     <Card data-tour-id="upload-review" className="flex-1 min-h-0 flex flex-col">
-                      <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
+                      <CardHeader className="flex flex-row items-center justify-between shrink-0">
                         <CardTitle className="text-base font-semibold">
                           Review extracted questions ({draftQuestions.length})
                         </CardTitle>
@@ -1587,7 +1587,7 @@ export const QuestionUploadDialog = ({
                             ))}
                           </div>
                         </ScrollArea>
-                        <p className="pt-3 text-xs text-muted-foreground flex-shrink-0">
+                        <p className="pt-3 text-xs text-muted-foreground shrink-0">
                           The AI extraction is a starting point—adjust the question text,
                           instructions, difficulty, or answers before saving.
                         </p>

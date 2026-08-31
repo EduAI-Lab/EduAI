@@ -184,7 +184,7 @@ export const CanvasBankSyncDialog = ({
         className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
         data-testid="canvas-bank-sync-dialog"
       >
-        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle>Sync question bank from Canvas</DialogTitle>
           <DialogDescription>
             One-way import from Classic Canvas Assessment Question Banks into EduAI. Re-sync updates
@@ -278,7 +278,7 @@ export const CanvasBankSyncDialog = ({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
           <Button variant="outline" onClick={onClose}>
             {canManageCanvas ? "Cancel" : "Close"}
           </Button>

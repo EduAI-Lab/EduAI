@@ -119,7 +119,7 @@ const Fact = ({
     <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
       {label}
     </dt>
-    <dd className="mt-1 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line break-words">
+    <dd className="mt-1 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line wrap-break-word">
       {value}
     </dd>
   </div>
@@ -1420,7 +1420,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                         onClick={() => handleSelectVariant(item)}
                         aria-current={isActive}
                         className={cn(
-                          "min-w-[200px] shrink-0 rounded-[var(--radius-lg)] border p-3 text-left transition-colors md:min-w-0",
+                          "min-w-[200px] shrink-0 rounded-(--radius-lg) border p-3 text-left transition-colors md:min-w-0",
                           isActive
                             ? "border-accent bg-accent/10 ring-1 ring-accent"
                             : "border-border bg-card hover:border-accent hover:bg-muted/50",
@@ -1582,9 +1582,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                               <div
                                 key={index}
                                 className={cn(
-                                  "flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors",
+                                  "flex items-center gap-3 rounded-(--radius-lg) border px-4 py-3.5 transition-colors",
                                   isCorrect
-                                    ? "border-[var(--color-success-500)] bg-[var(--color-success-100)]"
+                                    ? "border-(--color-success-500) bg-(--color-success-100)"
                                     : "border-border bg-muted/40",
                                 )}
                               >
@@ -1592,7 +1592,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                   className={cn(
                                     "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                                     isCorrect
-                                      ? "bg-[var(--color-success-500)] text-white"
+                                      ? "bg-(--color-success-500) text-white"
                                       : "bg-muted text-muted-foreground",
                                   )}
                                 >
@@ -1602,7 +1602,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                   {choice.text}
                                 </span>
                                 {isCorrect && (
-                                  <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />
+                                  <IconCircleCheckFilled className="size-5 shrink-0 text-(--color-success-500)" />
                                 )}
                               </div>
                             );
@@ -1611,7 +1611,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       </div>
                     </section>
                   ) : (
-                    <section className="rounded-[var(--radius-lg)] border border-dashed border-border bg-muted/20 p-5 text-center">
+                    <section className="rounded-(--radius-lg) border border-dashed border-border bg-muted/20 p-5 text-center">
                       <p className="text-sm text-muted-foreground">No choices defined yet.</p>
                       {canEditDraft && (
                         <Button
@@ -1654,7 +1654,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                             : "Correct answer"
                           : "Answer"}
                       </p>
-                      <div className="rounded-[var(--radius-lg)] border border-l-4 border-[var(--color-success-500)] border-l-[var(--color-success-500)] bg-[var(--color-success-100)] px-4 py-3">
+                      <div className="rounded-(--radius-lg) border border-l-4 border-(--color-success-500) border-l-(--color-success-500) bg-(--color-success-100) px-4 py-3">
                         <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-line">
                           {viewEntry.questionType === "MCQ" &&
                           viewVariant.choices &&
@@ -1693,7 +1693,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                   )}
 
                 {/* Details — quiet definition grid, inline edit, replaces the boxy tile grid */}
-                <section className="rounded-[var(--radius-lg)] border border-border bg-card p-5">
+                <section className="rounded-(--radius-lg) border border-border bg-card p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Details
@@ -1964,7 +1964,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 {/* Extension sharing — reviewed variants only */}
                 {isApproved && (
                   <PermissionGate allow={canApproveVariant}>
-                    <section className="rounded-[var(--radius-lg)] border border-border bg-muted/40 p-5 space-y-3">
+                    <section className="rounded-(--radius-lg) border border-border bg-muted/40 p-5 space-y-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-foreground">
@@ -2174,7 +2174,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 ? "Create New Question"
                 : `Add Variant: ${presetVariant?.questionDescription ?? "Question"}`}
             </DialogTitle>
-            <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <Popover>
                 <Tooltip
                   content="AI assistant — generate or refine this question with a prompt"
@@ -2228,13 +2228,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         {modalTourOpen && (
           <>
             <div
-              className="fixed inset-0 z-[100] bg-black/50"
+              className="fixed inset-0 z-100 bg-black/50"
               onClick={() => setModalTourOpen(false)}
               aria-hidden="true"
             />
             {tourHighlightRect && (
               <div
-                className="fixed z-[101] rounded-lg border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none transition-all duration-200"
+                className="fixed z-101 rounded-lg border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none transition-all duration-200"
                 style={{
                   top: tourHighlightRect.top,
                   left: tourHighlightRect.left,
@@ -2244,7 +2244,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
               />
             )}
             <div
-              className="fixed z-[102] w-[320px] max-w-[calc(100vw-2rem)] pointer-events-auto"
+              className="fixed z-102 w-xs max-w-[calc(100vw-2rem)] pointer-events-auto"
               style={(() => {
                 const pad = 12;
                 const tw = 320;
@@ -2496,7 +2496,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           </DialogHeader>
           <div className="py-4">
             <div className="rounded-lg border bg-destructive/10 p-4">
-              <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+              <p className="text-sm text-foreground whitespace-pre-wrap wrap-break-word">
                 {errorModalMessage}
               </p>
             </div>

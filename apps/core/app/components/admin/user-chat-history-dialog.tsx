@@ -78,7 +78,7 @@ export function UserChatHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-[var(--radius-xl)]">
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-xl">
         <DialogHeader>
           <DialogTitle>Chat history — {userName}</DialogTitle>
           <DialogDescription>View all conversations for this user</DialogDescription>
@@ -126,7 +126,7 @@ export function UserChatHistoryDialog({
                     key={chat.id}
                     onClick={() => setSelectedChatId(chat.id)}
                     className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card hover:bg-muted/40 w-full text-left transition-colors",
+                      "flex items-center gap-3 px-4 py-3 rounded-lgorder bg-card hover:bg-muted/40 w-full text-left transition-colors",
                     )}
                   >
                     <div className="flex-1 min-w-0">
@@ -136,7 +136,7 @@ export function UserChatHistoryDialog({
                       <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                         {chat.courseCode && (
                           <div className="flex items-center gap-1">
-                            <IconBook size={11} className="text-primary-text flex-shrink-0" />
+                            <IconBook size={11} className="text-primary-text shrink-0" />
                             <span className="text-primary-text font-medium">{chat.courseCode}</span>
                           </div>
                         )}
@@ -144,7 +144,7 @@ export function UserChatHistoryDialog({
                         <span className="text-[12px]">· {chat.messageCount} msgs</span>
                       </div>
                     </div>
-                    <IconChevronRight size={16} className="text-muted-foreground flex-shrink-0" />
+                    <IconChevronRight size={16} className="text-muted-foreground shrink-0" />
                   </button>
                 ))}
               </div>

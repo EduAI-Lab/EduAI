@@ -125,7 +125,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
           control, and a button cannot legally nest inside another. */}
       <div
         style={courseHeroBackgroundStyle(accent)}
-        className="group relative w-full overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)]"
+        className="group relative w-full overflow-hidden rounded-xl p-5 text-left text-white shadow-sm"
       >
         <div className="relative flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -137,7 +137,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
                 {courseName(primary)}
               </h3>
             </div>
-            <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
               Draft
             </span>
@@ -154,7 +154,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
               onClick={() => setPending(primary)}
               disabled={publishingId === primary.id}
               style={{ color: ctaTextColor }}
-              className="mt-1 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-70"
+              className="mt-1 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-70"
             >
               {publishingId === primary.id ? "Publishing…" : `Publish ${courseCode(primary)}`}
               <IconArrowRight size={16} aria-hidden="true" />
@@ -164,7 +164,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
           <button
             type="button"
             onClick={() => openCourse(primary)}
-            className="inline-flex cursor-pointer items-center justify-center gap-1 self-start rounded-[var(--radius-lg)] px-1 py-0.5 text-sm font-medium text-white/85 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+            className="inline-flex cursor-pointer items-center justify-center gap-1 self-start rounded-lg px-1 py-0.5 text-sm font-medium text-white/85 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
           >
             Open {courseCode(primary)} first
           </button>
@@ -182,7 +182,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
                   className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-b-0"
                 >
                   <span
-                    className="h-9 w-1 flex-shrink-0 rounded-full"
+                    className="h-9 w-1 shrink-0 rounded-full"
                     style={{ background: otherAccent }}
                     aria-hidden="true"
                   />
@@ -201,7 +201,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
                       type="button"
                       onClick={() => setPending(course)}
                       disabled={publishingId === course.id}
-                      className="flex-shrink-0 cursor-pointer text-xs font-medium text-primary-text hover:underline disabled:cursor-not-allowed disabled:opacity-70"
+                      className="shrink-0 cursor-pointer text-xs font-medium text-primary-text hover:underline disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {publishingId === course.id ? "Publishing…" : `Publish ${courseCode(course)}`}
                     </button>
