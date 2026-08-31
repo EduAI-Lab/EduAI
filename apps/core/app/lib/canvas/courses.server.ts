@@ -202,7 +202,7 @@ export async function upsertCoreCourseFromCanvas(
     // also requires a topic. Provisioning runs later and asynchronously, so the
     // fallback is created here, up front, rather than leaving a window where a
     // freshly synced course is a hard authoring blocker. Also idempotent.
-    await ensureCourseHasTopic(course.id);
+    await ensureCourseHasTopic(course.id, db);
     return course;
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
