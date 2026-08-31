@@ -8,6 +8,11 @@
  * mocked throughout — no real network calls are made.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+vi.mock("../../src/services/systemSettings.js", () => ({
+  getEffectiveEduAiApiKey: vi.fn(),
+}));
+
 import {
   getEduAiBaseUrl,
   getEduAiCompletionUrl,
@@ -27,6 +32,7 @@ import {
   fetchCoreTopicSafe,
   createEduAiCourseTopic,
 } from "../../src/services/eduaiClient.js";
+import { getEffectiveEduAiApiKey } from "../../src/services/systemSettings.js";
 
 beforeEach(() => {
   process.env.EDUAI_BASE_URL = "http://eduai.test/api";
@@ -588,6 +594,7 @@ describe("fetchCoreTopicSafe", () => {
 describe("createEduAiCourseTopic", () => {
   it("POSTs with the service key and a timeout signal", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
+    vi.mocked(getEffectiveEduAiApiKey).mockResolvedValue("svc-key");
     const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "topic-1", name: "Graphs" }));
     vi.stubGlobal("fetch", mockFetch);
 
@@ -606,6 +613,7 @@ describe("createEduAiCourseTopic", () => {
 
   it("reuses the existing Core topic on a duplicate response", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
+    vi.mocked(getEffectiveEduAiApiKey).mockResolvedValue("svc-key");
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
