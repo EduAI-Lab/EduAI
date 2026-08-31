@@ -25,11 +25,11 @@ function renderHome() {
 describe("HomePage — single-scroll layout", () => {
   it("renders every section of the merged page", () => {
     renderHome();
-    expect(screen.getByRole("heading", { name: /What is EduAI Lab\?/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /What is EduAI\?/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What makes EduAI different" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What we build" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Research at the lab" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Meet our research team" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Meet our team" })).toBeInTheDocument();
   });
 
   it("renders the full team roster inline", () => {

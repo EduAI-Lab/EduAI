@@ -67,7 +67,8 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="mt-8 pt-8 border-t border-border">
-          <p className="text-center text-muted-foreground text-sm">
+          <p className="text-center text-muted-foreground text-sm">{projectInfo.attribution}</p>
+          <p className="text-center text-muted-foreground text-sm mt-2">
             © {new Date().getFullYear()} {projectInfo.title}. All rights reserved.
           </p>
         </div>

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { SiteFooter } from "~/components/site-footer";
+import { projectInfo } from "~/config/site";
 
 describe("SiteFooter — rendering", () => {
   it("renders the About section", () => {
@@ -42,6 +43,15 @@ describe("SiteFooter — rendering", () => {
       </MemoryRouter>
     );
     expect(screen.queryByRole("link", { name: /signup/i })).not.toBeInTheDocument();
+  });
+
+  it("credits the lab on its own line, above the copyright", () => {
+    render(
+      <MemoryRouter>
+        <SiteFooter />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(projectInfo.attribution)).toBeInTheDocument();
   });
 
   it("renders the current year in the copyright line", () => {

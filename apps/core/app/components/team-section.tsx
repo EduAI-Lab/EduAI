@@ -11,7 +11,7 @@ export function TeamSection() {
     <section id="team" className="scroll-mt-20 py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
-          heading="Meet our research team"
+          heading="Meet our team"
           className="mb-12 text-center [&>div]:mx-auto"
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={

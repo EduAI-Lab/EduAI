@@ -28,7 +28,7 @@ describe("SiteNavigation — rendering", () => {
         <SiteNavigation />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "EduAI Lab" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "EduAI" })).toHaveAttribute("href", "/");
   });
 
   it("renders Log in and Sign up as real links, not imperative buttons", () => {
