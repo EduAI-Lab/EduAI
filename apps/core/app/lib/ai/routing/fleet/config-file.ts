@@ -31,7 +31,8 @@
  * activate fleet routing (and its live health probes) in every checkout,
  * including CI, against servers that checkout usually can't reach.
  */
-import type { JsonValue } from "~/lib/json-value";
+import { asJsonObject, asPresentText, jsonValueSchema, type JsonValue } from "~/lib/json-value";
+import { z } from "zod";
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { FleetServer, JobType } from "./types";
