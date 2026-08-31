@@ -289,7 +289,9 @@ test.describe("Admin console: cross-course chat oversight (courseChatViewPolicyK
       const chat = chats.find((c: any) => c.id === chatId);
       expect(chat, "the just-created student chat must appear in the oversight list").toBeTruthy();
       expect(chat.ownerId).toBe(studentId);
-      expect(typeof chat.title === "string" || chat.title === null).toBe(true);
+      if (chat.title !== null) {
+        expect(chat.title).toEqual(expect.any(String));
+      }
       // Metadata only — never message bodies (route doc comment's contract).
       expect(chat.messages).toBeUndefined();
     } finally {
