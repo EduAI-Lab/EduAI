@@ -43,9 +43,10 @@ test.describe("Question Maker role access", () => {
 
     await expect(page.getByText("Access restricted", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Question Maker is available to instructors and administrators.", {
-        exact: false,
-      }),
+      page.getByText(
+        "Question Maker is available to instructors, administrators, and assigned teaching",
+        { exact: false },
+      ),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Question Library" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Back to EduAI" })).toBeVisible();
@@ -102,7 +103,8 @@ test.describe("Question Maker role access", () => {
       await expect(page.getByText("QM TA Assigned Course", { exact: true })).toBeVisible();
 
       await page.goto(`${QM_FRONTEND_URL}/courses/${otherQmCourseId}`);
-      await expect(page.getByRole("heading", { name: "Course not found" })).toBeVisible();
+      // CardTitle renders as a plain div (no heading role), so match on text.
+      await expect(page.getByText("Course not found")).toBeVisible();
     } finally {
       await adminContext.dispose();
       await instructorContext.dispose();

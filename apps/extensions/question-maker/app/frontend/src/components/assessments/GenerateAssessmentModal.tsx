@@ -163,7 +163,7 @@ export const GenerateAssessmentModal = ({
             </Tooltip>
           ) : (
             <Button onClick={handleGenerate} disabled={!canGenerate}>
-              {isEdit ? "Save changes" : "Create assessment"}
+              {isEdit ? "Save Changes" : "Create Blueprint"}
             </Button>
           )}
         </DialogFooter>
