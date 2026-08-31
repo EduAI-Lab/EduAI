@@ -321,4 +321,19 @@ export const teamMembers: TeamMember[] = [
     techStack: ["TypeScript", "React", "Node.js", "PostgreSQL", "Vitest"],
     codeSnippet: "if (stuck) { snack(); tryAgain(); }",
   },
+  {
+    id: 20,
+    role: "student",
+    name: "Ehsan Babar",
+    position: "Developer",
+    title: "Frontend, Accessibility & QA",
+    image: "",
+    biography:
+      "Ehsan is a 4th-year Computer Science student and volunteer on EduAI during summer 2026. Worked on the main EduAI app, the shared UI library, and Question Maker.",
+    contribution:
+      "Ehsan joined as a volunteer and shipped features focused on accessibility. He built Assistive Mode, a setting that make the app easier to read and focus on (clearer text, highlighting the latest reply, optional focus mode, and an Accessibility tab in Settings that saves per account).",
+    techStack: ["TypeScript", "React", "Node.js", "PostgreSQL", "Vitest"],
+    codeSnippet:
+      'if (scopeEvaluation.decision === "refuse") return buildScopeRefusalMessage(courseScopeContext);',
+  },
 ];
