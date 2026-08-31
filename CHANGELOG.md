@@ -4,6 +4,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.08.31
+
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1707
+- Refresh deployment documentation from the repository implementation and read-only audits of eduai-dev, my-eduai, cmps01, cmps02, and cmps03.
+- Organize s378, production, provisioning, sudoers, cron/backups, inference-fleet, and AWS Bedrock guardrails runbooks around current service boundaries and operational procedures.
+- Record observed inference roles and model state, including CMPS03's unresolved readiness boundary, while separating deployed capacity from potential upgrades.
+
 ## [Week 15 — August 10–16, 2026]
 
 ### Changed
