@@ -40,6 +40,49 @@ import { hasEduaiDiagramFence, resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-
  */
 export const ADHD_ASSIST_POLICY_VERSION = "2.3";
 
+/**
+ * Assist Auto uses the retained large local model so the model doing the
+ * tutoring and the oversight pass has enough context for diagrams and course
+ * material. Fleet resolution remains fail-closed when this model is absent.
+ * Deployments may override the id during a controlled migration.
+ *
+ * This intentionally stays on Qwen2.5 32B (RETAINED_ASSIST_MODEL_ID in
+ * campus-model-catalog.ts), NOT the Qwen3.5 2B/9B fleet this PR migrates
+ * cmps01 to. #1523 established that 32B is, as of this policy version, the
+ * only model that reliably preserves Assist's structural contract without
+ * constrained decoding; isVllmStructuredAdhdAssistModel deliberately excludes
+ * it from the JSON-schema structured-output path for the same reason. cmps02
+ * keeps serving this model for Assist Auto only, for as long as that
+ * dependency holds — see docs/research/MODEL_SPLIT_DOC.md and the
+ * VLLM_FLEET_DEFAULT_MODELS / ADHD_ASSIST_AUTO_MODEL notes in .env.example.
+ * Do not repoint this at a Qwen3.5 id without first re-validating structural
+ * compliance and updating fleet-smoke's assumed host mapping (fleet-smoke.mjs).
+ */
+export const ADHD_ASSIST_AUTO_MODEL_ID = "vllm:qwen2.5-32b-instruct";
+
+export function resolveAdhdAssistAutoModelId(): string {
+  return process.env.ADHD_ASSIST_AUTO_MODEL?.trim() || ADHD_ASSIST_AUTO_MODEL_ID;
+}
+
+/**
+ * Retain the large model only when the user chose Auto routing. An explicit
+ * model selection is a user choice, so Assist may shape that model's response
+ * but must not silently replace it.
+ */
+export function shouldUseRetainedAdhdAssistModel(options: {
+  adhdAssist: boolean;
+  imagesPresent: boolean;
+  chatMode: "admin" | "learning";
+  routeWithAuto: boolean;
+}): boolean {
+  return (
+    options.adhdAssist === true &&
+    options.imagesPresent !== true &&
+    options.chatMode !== "admin" &&
+    options.routeWithAuto === true
+  );
+}
+
 export const ADHD_ASSIST_POLICY_BLOCK = `=== ADHD ASSIST MODE ===
 You are responding to a learner who benefits from low cognitive load and
 clear structure. Follow these rules in every response.
