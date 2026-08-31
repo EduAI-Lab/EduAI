@@ -49,7 +49,7 @@ const SUBSTANTIVE_QUESTION_PATTERN =
 
 /** Learner asked for a visual / ASCII diagram — must not use brief policy (no DIAGRAMS rules). */
 export const ADHD_DIAGRAM_REQUEST_PATTERN =
-  /\b(diagram|draw|sketch|animat(?:e|ed|ion)|visuali[sz]e|ascii\s*art|show\s+(me\s+)?(a\s+)?(picture|figure|plot|graph)|make\s+(me\s+)?(a\s+)?diagram)\b/i;
+  /\b(diagram|draw|sketch|animat(?:e|ed|ion)|visual(?:ly|i[sz]e)?|ascii\s*art|flow\s*chart|process\s*flow|show\s+(me\s+)?(a\s+)?(picture|figure|plot|graph)|make\s+(me\s+)?(a\s+)?diagram)\b/i;
 
 export function userRequestedDiagram(userText?: string): boolean {
   return ADHD_DIAGRAM_REQUEST_PATTERN.test((userText ?? "").trim());

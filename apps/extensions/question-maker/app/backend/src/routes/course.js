@@ -61,6 +61,7 @@ function stableCoreFailure(error, fallbackMessage) {
   return {
     status,
     message: publicCode || stable.message || fallbackMessage,
+    publicCode,
     logFields: safeRequestLogFields(error),
   };
 }
@@ -450,33 +451,33 @@ router.post(
 
       const course = req.qmCourse;
 
+      let coreTopicId = null;
+      if (course.coreCourseId) {
+        try {
+          const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
+          coreTopicId = coreResult?.id ?? null;
+        } catch (coreErr) {
+          const failure = stableCoreFailure(coreErr, "Failed to synchronize topic with Core");
+          logger.warn(failure.logFields, "Core topic push failed; topic was not created locally");
+          return res.status(failure.status).json({
+            success: false,
+            error: failure.message,
+            code: failure.publicCode || undefined,
+          });
+        }
+      }
+
+      // Core is the source of truth for linked courses. Create the local mirror
+      // only after Core accepts the mutation, so a failed sync cannot be
+      // reported as a successful local-only topic.
       const topic = await prisma.topics.create({
         data: {
           id: createId(),
           courseId: course.id,
           name: name.trim(),
+          coreTopicId,
         },
       });
-
-      if (course.coreCourseId) {
-        try {
-          const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
-          if (coreResult?.id) {
-            await prisma.topics.update({
-              where: { id: topic.id },
-              data: { coreTopicId: coreResult.id },
-            });
-            // Prisma's update() doesn't mutate `topic` in place (unlike Sequelize's
-            // `.update()`) — patch it locally so the response below reflects the link.
-            topic.coreTopicId = coreResult.id;
-          }
-        } catch (coreErr) {
-          logger.warn(
-            { err: coreErr },
-            "Core topic push failed; local topic created without Core link",
-          );
-        }
-      }
 
       res.status(201).json({
         success: true,

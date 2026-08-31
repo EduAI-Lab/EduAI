@@ -652,6 +652,18 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   // Derive create/variant mode from presetVariant prop
   const createMode: "new" | "variant" = createProps?.presetVariant ? "variant" : "new";
 
+  const handleCreateTopic = async (name: string): Promise<Topic> => {
+    const courseId = createProps?.courseId;
+    if (!courseId) throw new Error("Select a course before creating a topic.");
+
+    const topic = await courseService.createTopic(courseId, name);
+    setTopics((current) => {
+      if (current.some((existing) => existing.id === topic.id)) return current;
+      return [...current, topic].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return topic;
+  };
+
   useEffect(() => {
     if (isViewMode) return;
     if (!open) {
@@ -2342,6 +2354,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                     : undefined
                 }
                 onToggleSecondaryTopic={toggleSecondaryTopic}
+                onCreateTopic={createProps?.courseId ? handleCreateTopic : undefined}
               />
             </div>
 

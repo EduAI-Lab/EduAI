@@ -7,8 +7,8 @@
  * Callers: Mounted under `/api`; consumed by the instructor topic UI and any
  *   activity-create flow that picks a `mainTopicId`/`secondaryTopicIds`.
  * Gotchas:
- *   - Topics for imported (EduAI) courses are managed exclusively by sync;
- *     manual creation is rejected (POST /courses/:id/topics).
+ *   - Core is the source of truth for current CourseOffering rows; topic
+ *     creation pushes to Core first, then updates AI Tutor's local mirror.
  *   - Sync is name-keyed and additive — it never deletes local topics that
  *     drift away upstream. Drift is surfaced via the `missingTopics` array on
  *     the deprecated POST .../sync response, but as of #1031 there is no UI
@@ -57,6 +57,7 @@ import {
   TopicMutationError,
 } from "../services/topicManagement.js";
 import { CreateTopicSchema, TopicRemapSchema } from "../../../shared/schemas/mutations.js";
+import { createEduAiCourseTopic } from "../services/eduaiClient.js";
 
 const router = express.Router();
 
@@ -144,13 +145,13 @@ router.get("/courses/:courseId/topics", async (req, res) => {
 });
 
 /**
- * POST /courses/:courseId/topics — create a topic on a native course.
+ * POST /courses/:courseId/topics — create a topic in Core and mirror it locally.
  *
  * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Side effects: inserts a Topic row; 409 on unique-name collision.
  *
- * Why: blocked for imported courses — those topics are owned by EduAI and a
- * manual addition would be wiped on next sync (or worse, drift silently).
+ * Core is written first so a topic created inside an AI Tutor authoring modal
+ * is immediately available to Question Maker and the Core course page too.
  */
 router.post(
   "/courses/:courseId/topics",
@@ -177,21 +178,34 @@ router.post(
         return res.status(403).json({ error: "Not authorized for this course" });
       }
 
-      // Block manual topic creation for imported (external) courses
+      let topic;
       if (course.coreOfferingId) {
-        return res.status(403).json({
-          error: "Topics for imported courses are managed by EduAI and cannot be added here",
+        let coreTopic;
+        try {
+          coreTopic = await createEduAiCourseTopic(course.coreOfferingId, name);
+        } catch (e) {
+          const status = Number.isInteger(e?.status) ? e.status : 502;
+          return res.status(status).json({ error: e?.message || "Failed to create topic in Core" });
+        }
+
+        topic = await prisma.topic.upsert({
+          where: {
+            courseOfferingId_name: { courseOfferingId: courseId, name },
+          },
+          update: { coreTopicId: coreTopic.id, name: coreTopic.name },
+          create: {
+            name: coreTopic.name,
+            courseOfferingId: courseId,
+            coreTopicId: coreTopic.id,
+          },
         });
+      } else {
+        // Compatibility for pre-anchor data; current production rows always
+        // have a Core id, so normal requests take the branch above.
+        topic = await prisma.topic.create({ data: { name, courseOfferingId: courseId } });
       }
 
-      const topic = await prisma.topic.create({
-        data: {
-          name,
-          courseOfferingId: courseId,
-        },
-      });
-
-      res.status(201).json(topic);
+      res.status(201).json(mapTopic(topic));
     } catch (e) {
       if (e?.code === "P2002") {
         return res.status(409).json({ error: "Topic name already exists for this course" });

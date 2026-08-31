@@ -377,7 +377,7 @@ describe("ApiTestPage (dev-only diagnostic bench)", () => {
         expect(eduaiServiceMock.chat).toHaveBeenCalledWith({
           messages: [{ role: "user", content: "Explain loops" }],
           courseCode: "COSC121",
-          model: "vllm:qwen2.5-32b-instruct",
+          model: "vllm:qwen3.5-9b-instruct",
           apiKeys: { google: { isEnabled: true } },
         }),
       );
@@ -432,7 +432,7 @@ describe("ApiTestPage (dev-only diagnostic bench)", () => {
         expect(eduaiServiceMock.generateQuestions).toHaveBeenCalledWith({
           prompt: "Recursion basics",
           courseCode: "COSC121",
-          model: "vllm:qwen2.5-32b-instruct",
+          model: "vllm:qwen3.5-9b-instruct",
           apiKeys: {},
           numQuestions: 5,
           difficultyDistribution: { easy: 1, medium: 2, hard: 2 },

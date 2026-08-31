@@ -4,7 +4,7 @@
  *
  * Reads apps/core/.env (same as prisma seed). Or pass inline:
  *   VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
- *   VLLM_MODEL=qwen2.5-32b-instruct npm run vllm:smoke
+ *   VLLM_MODEL=qwen3.5-2b-instruct npm run vllm:smoke
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -36,7 +36,7 @@ loadEnvFile();
 const port = process.env.VLLM_PORT || "8001";
 const base = (process.env.VLLM_BASE_URL || `http://127.0.0.1:${port}`).replace(/\/$/, "");
 const apiKey = resolveSmokeApiKey();
-const model = process.env.VLLM_MODEL || "qwen2.5-7b-instruct";
+const model = process.env.VLLM_MODEL || "qwen3.5-2b-instruct";
 
 async function main() {
   if (!process.env.VLLM_BASE_URL) {
