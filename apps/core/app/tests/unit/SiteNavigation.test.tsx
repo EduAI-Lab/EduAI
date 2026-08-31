@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { SiteNavigation } from "~/components/site-navigation";
 
@@ -17,6 +17,7 @@ describe("SiteNavigation — rendering", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "#about");
+    expect(screen.getByRole("link", { name: "Approach" })).toHaveAttribute("href", "#approach");
     expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("href", "#products");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "#research");
     expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("href", "#team");
@@ -39,6 +40,28 @@ describe("SiteNavigation — rendering", () => {
     );
     expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/auth/register");
+  });
+
+  it("hides the section anchors behind a toggle at mobile widths", () => {
+    render(
+      <MemoryRouter>
+        <SiteNavigation />
+      </MemoryRouter>,
+    );
+
+    // The desktop row is the only copy in the accessibility tree until the
+    // disclosure is opened, so the anchors are not announced twice.
+    const toggle = screen.getByRole("button", { name: "Open section menu" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByRole("link", { name: "Team" })).toHaveLength(1);
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Close section menu" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getAllByRole("link", { name: "Team" })).toHaveLength(2);
   });
 
   it("carries no Dashboard action — every reader of this header is signed out", () => {

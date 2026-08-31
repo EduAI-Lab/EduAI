@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import { Button, ThemeToggle } from "@eduai/ui";
+import { IconMenu2, IconX } from "@tabler/icons-react";
 import { siteConfig } from "~/config/site";
 import { scrollToSection } from "~/lib/scroll-to-section";
 
@@ -13,12 +15,19 @@ import { scrollToSection } from "~/lib/scroll-to-section";
  */
 const navigationItems = [
   { name: "About", href: "#about" },
+  { name: "Approach", href: "#approach" },
   { name: "Products", href: "#products" },
   { name: "Research", href: "#research" },
   { name: "Team", href: "#team" },
 ];
 
 export function SiteNavigation() {
+  // The links do not fit the bar under `md`, so below that they move into a
+  // disclosure panel rather than disappearing: the footer carries the same
+  // anchors, but a mobile reader should not have to scroll the whole page to
+  // reach the jump list at the top of it.
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <nav className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -58,7 +67,49 @@ export function SiteNavigation() {
             <Button asChild variant="secondary" className="hidden sm:inline-flex">
               <Link to={siteConfig.navigation.signUp}>Sign up</Link>
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-expanded={menuOpen}
+              aria-controls="site-nav-sections"
+              aria-label={menuOpen ? "Close section menu" : "Open section menu"}
+              onClick={() => setMenuOpen((open) => !open)}
+              className="md:hidden"
+            >
+              {menuOpen ? (
+                <IconX aria-hidden="true" className="h-5 w-5" />
+              ) : (
+                <IconMenu2 aria-hidden="true" className="h-5 w-5" />
+              )}
+            </Button>
           </div>
+        </div>
+
+        {/* Kept mounted but hidden so the anchors stay in the DOM order a
+            reader tabs through, and so the toggle's aria-controls always
+            resolves to a real element. */}
+        <div
+          id="site-nav-sections"
+          hidden={!menuOpen}
+          className="border-t border-border py-2 md:hidden"
+        >
+          <ul className="flex flex-col">
+            {navigationItems.map((item) => (
+              <li key={item.name}>
+                <a
+                  href={item.href}
+                  onClick={(event) => {
+                    scrollToSection(event, item.href);
+                    setMenuOpen(false);
+                  }}
+                  className="block rounded-[var(--radius-md)] px-2 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {item.name}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </nav>

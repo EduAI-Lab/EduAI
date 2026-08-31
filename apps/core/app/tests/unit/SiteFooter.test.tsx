@@ -22,6 +22,9 @@ describe("SiteFooter — rendering", () => {
     );
     expect(screen.getByRole("heading", { name: "On this page" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Our team" })).toHaveAttribute("href", "#team");
+    // Approach renders between About and Products on the page, so it belongs
+    // in the jump list too.
+    expect(screen.getByRole("link", { name: "Approach" })).toHaveAttribute("href", "#approach");
   });
 
   it("renders the platform links", () => {
