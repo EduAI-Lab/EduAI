@@ -55,7 +55,7 @@ export function resolveManagerViewClientGates(
   const showChatTab = chatGate !== "never";
   const canViewChats = gateAllows(chatGate, isEnabled);
   const canManageStudentEnrollments = canManageStudents(access) && gateAllows(staffGate, isEnabled);
-  const canManageRagSettings = access === "admin" || access === "instructor";
+  const canManageRagSettings = access === "admin" || access === "unit" || access === "instructor";
   // Mirrors the endpoint's rank >= 2, which includes unit admins.
   const canReviewTopicSuggestions =
     access === "admin" || access === "unit" || access === "instructor";

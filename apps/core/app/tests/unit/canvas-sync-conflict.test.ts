@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     getCanvasCourseWithTerm: vi.fn(),
     listTeacherCanvasCourses: vi.fn(),
     ensureDefaultBank: vi.fn(),
+    ensureCourseHasTopic: vi.fn(),
     syncCourseRoster: vi.fn(),
     linkEnrollments: vi.fn(),
     deactivateEnrollments: vi.fn(),
@@ -53,6 +54,10 @@ vi.mock("~/lib/canvas/integration.server", () => ({
 
 vi.mock("~/lib/question-banks/server", () => ({
   ensureDefaultBank: mocks.ensureDefaultBank,
+}));
+
+vi.mock("~/lib/topics/fallback.server", () => ({
+  ensureCourseHasTopic: mocks.ensureCourseHasTopic,
 }));
 
 vi.mock("~/lib/canvas/roster.server", () => ({
