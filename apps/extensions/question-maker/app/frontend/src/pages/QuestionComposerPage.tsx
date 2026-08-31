@@ -14,16 +14,8 @@
 import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Label,
-  Separator,
-  Skeleton,
-} from "@eduai/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Label, Separator } from "@eduai/ui";
+import { ComposerSkeleton } from "@/components/shared/Skeletons";
 import {
   IconArrowLeft,
   IconDeviceFloppy,
@@ -432,6 +424,8 @@ export function QuestionComposerPage() {
       setError("Select a course before generating a question.");
       return;
     }
+    // courseCode is optional — the backend prefers QM courseId (#1362) and
+    // falls back to code lookup only when no id is supplied.
     const code = resolveCourseCodeForEduAI();
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
@@ -1060,8 +1054,7 @@ export function QuestionComposerPage() {
                 await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState("saved");
                 toast("API key saved", {
-                  description:
-                    "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
+                  description: "Stored locally in your browser for this provider.",
                 });
               } catch {
                 setApiKeySaveState("error");
@@ -1237,22 +1230,6 @@ function ComposerShell({
           </Button>
         </div>
       )}
-    </div>
-  );
-}
-
-function ComposerSkeleton() {
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-28 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-64 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
-      </div>
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-80 w-full rounded-[var(--radius-xl)]" />
-      </div>
     </div>
   );
 }
