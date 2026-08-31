@@ -232,7 +232,7 @@ export const teamMembers: TeamMember[] = [
     name: "Ye Thway Aung",
     position: "Developer",
     title: "Frontend, Security & Testing",
-    image: "/ye.jpeg",
+    image: "",
     biography:
       "Ye is a fourth-year Computer Science Co-op student at UBC Okanagan. He worked as a software developer on the EduAI project, focusing on frontend, security, and testing.",
     contribution:

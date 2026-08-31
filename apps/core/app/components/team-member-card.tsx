@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Badge, Card, Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
+import { Badge, Card, Dialog, DialogContent, DialogTitle } from "@eduai/ui";
 import { IconArrowRight, IconBriefcase, IconSparkles, IconTools } from "@tabler/icons-react";
 import type { TeamMember } from "~/config/team";
 
@@ -7,14 +7,27 @@ export interface TeamMemberCardProps {
   member: TeamMember;
 }
 
-/** Initials for the portrait fallback, dropping an honorific like "Dr.". */
-function initialsFor(name: string) {
-  return name
-    .replace(/^Dr\.?\s+/i, "")
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("");
+/**
+ * Stand-in portrait for members who would rather not publish a photo. It lives
+ * in `public/`, which is served from the site root — the same `/public` prefix
+ * strip the roster entries get below.
+ */
+const ANONYMOUS_PORTRAIT = "/anonymous.jpg";
+
+/**
+ * The member's photo, or the shared stand-in when they have not set one. The
+ * card face and the dialog render the same image at different sizes, so the
+ * sizing classes come in from the caller.
+ */
+function MemberPortrait({ member, className }: { member: TeamMember; className: string }) {
+  return (
+    <img
+      src={member.image ? member.image.replace("/public", "") : ANONYMOUS_PORTRAIT}
+      alt={member.name}
+      loading="lazy"
+      className={`object-cover ${className} ${member.imagePosition ?? "object-top"}`}
+    />
+  );
 }
 
 /**
@@ -41,18 +54,7 @@ export function TeamMemberCard({ member }: TeamMemberCardProps) {
         className="group flex cursor-pointer flex-col overflow-hidden transition-colors hover:border-primary-text focus-within:ring-2 focus-within:ring-ring"
       >
         <div className="relative aspect-[4/5] w-full bg-muted">
-          {member.image ? (
-            <img
-              src={member.image.replace("/public", "")}
-              alt={member.name}
-              loading="lazy"
-              className={`h-full w-full object-cover ${member.imagePosition ?? "object-top"}`}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-primary/10 text-4xl font-bold text-primary-text">
-              {initialsFor(member.name)}
-            </div>
-          )}
+          <MemberPortrait member={member} className="h-full w-full" />
 
           {/* Scrim so the overlaid name stays legible over any portrait. */}
           <div
@@ -94,29 +96,17 @@ export function TeamMemberCard({ member }: TeamMemberCardProps) {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-4xl">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{member.name}</DialogTitle>
-          </DialogHeader>
-
           <div className="flex max-h-[85vh] flex-col sm:flex-row">
             {/* Portrait: full height down the left, content scrolls on the right. */}
             <div className="relative w-full shrink-0 bg-muted sm:w-2/5 sm:self-stretch">
-              {member.image ? (
-                <img
-                  src={member.image.replace("/public", "")}
-                  alt={member.name}
-                  className={`h-56 w-full object-cover sm:h-full ${member.imagePosition ?? "object-top"}`}
-                />
-              ) : (
-                <div className="flex h-56 w-full items-center justify-center bg-primary/10 text-5xl font-bold text-primary-text sm:h-full">
-                  {initialsFor(member.name)}
-                </div>
-              )}
+              <MemberPortrait member={member} className="h-56 w-full sm:h-full" />
             </div>
 
-            <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
+            <div className="scrollbar-hover flex flex-1 flex-col gap-5 overflow-y-auto p-6">
               <div>
-                <h2 className="text-xl font-bold tracking-tight text-foreground">{member.name}</h2>
+                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+                  {member.name}
+                </DialogTitle>
                 <p className="mt-0.5 text-sm font-medium text-primary-text">{member.title}</p>
                 <p className="mt-0.5 text-sm font-medium text-primary-text">{member.position}</p>
               </div>

@@ -40,10 +40,9 @@ describe("TeamMemberCard — grid face", () => {
     expect(screen.getByAltText("Ada Lovelace")).toHaveAttribute("src", "/images/ada.png");
   });
 
-  it("falls back to initials when no image is set", () => {
+  it("falls back to the shared anonymous portrait when no image is set", () => {
     render(<TeamMemberCard member={{ ...member, name: "Dr. Grace Hopper", image: "" }} />);
-    expect(screen.queryByAltText("Dr. Grace Hopper")).not.toBeInTheDocument();
-    expect(screen.getAllByText("GH").length).toBeGreaterThan(0);
+    expect(screen.getByAltText("Dr. Grace Hopper")).toHaveAttribute("src", "/anonymous.jpg");
   });
 });
 
