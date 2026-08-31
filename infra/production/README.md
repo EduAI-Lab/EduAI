@@ -124,6 +124,12 @@ sudo -n /usr/local/sbin/eduai-production-admin install-qm-unit
 sudo -n /usr/local/sbin/eduai-production-admin install-qm-apache
 ```
 
+The release pointer is intentionally atomic for all three applications: an
+activation is allowed only when Core, AI Tutor, and Question Maker artifacts
+are present in the same release. This prevents an app-only build from moving
+`current` to a tree that would make an untouched service or Apache document
+root incomplete.
+
 ## First release procedure
 
 From a clean checkout of the approved `main` commit:
@@ -160,6 +166,14 @@ sudo -n /usr/local/sbin/eduai-production-admin validate-release <commit>
 sudo -n /usr/local/sbin/eduai-production-admin activate-release <commit>
 ```
 
+For an urgent app-only change, keep the existing `current` release serving
+traffic while preparing a complete candidate. Build the changed app and copy
+the currently active artifacts for each unchanged app into that candidate,
+then run `validate-release` before activation. Do not bypass the helper's
+validation or switch `current` to a partial release. If the candidate cannot
+be made complete, leave `current` unchanged and use the rollback procedure
+below rather than taking an unrelated app offline.
+
 Restart only after the build and migration succeed:
 
 ```bash
@@ -172,6 +186,7 @@ sudo systemctl is-active eduai-aitutor-server
 sudo systemctl is-active eduai-qm-backend
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null
+curl -fsS http://127.0.0.1:8000/readyz >/dev/null
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
 curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
 curl -fsS https://questionmaker.eduai.ok.ubc.ca/ >/dev/null

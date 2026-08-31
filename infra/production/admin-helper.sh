@@ -33,16 +33,40 @@ readonly TARGET_ROOT="/srv/www/eduai-production"
 readonly WEB_USER="www-data"
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
+assert_no_symlink_components() {
+  local path="$1" current="$1"
+  while :; do
+    [ ! -L "$current" ] || die "refusing symlinked release path component: $current"
+    [ "$current" = "/" ] && break
+    current=$(dirname "$current")
+  done
+}
+assert_safe_release() {
+  local release="$1" resolved
+  case "$release" in
+    "$TARGET_ROOT/releases"/*) ;;
+    *) die "release path is outside the managed release tree: $release" ;;
+  esac
+  assert_no_symlink_components "$release"
+  resolved=$(readlink -f -- "$release") || die "cannot resolve release path: $release"
+  case "$resolved" in
+    "$TARGET_ROOT/releases"/*) ;;
+    *) die "resolved release path is outside the managed release tree: $resolved" ;;
+  esac
+  [ "$resolved" = "$release" ] || die "release path resolves unexpectedly: $release -> $resolved"
+}
 release_arg() {
   [ "$#" -eq 2 ] || die "$1 requires a release id"
   [[ "$2" =~ ^[0-9a-f]{8,64}$ ]] || die "invalid release id: $2"
   local release="$TARGET_ROOT/releases/$2"
   [ -d "$release" ] || die "release does not exist: $release"
+  assert_safe_release "$release"
   printf '%s' "$release"
 }
 validate_release() {
   local release="$1"
   local required relative
+  assert_safe_release "$release"
   required=(
     "apps/core/build/server/index.js"
     "apps/core/node_modules/@prisma/client/index.js"
@@ -52,6 +76,7 @@ validate_release() {
     "apps/extensions/question-maker/app/frontend/dist/index.html"
   )
   for relative in "${required[@]}"; do
+    assert_no_symlink_components "$release/$relative"
     [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
   done
 }
@@ -67,6 +92,10 @@ prepare_static_assets() {
     "$release/apps/extensions/ai-tutor/build/client" \
     "$release/apps/extensions/question-maker/app/frontend/dist"; do
     [ -d "$static_root" ] || die "static asset directory does not exist: $static_root"
+    assert_no_symlink_components "$static_root"
+    if find "$static_root" -type l -print -quit | grep -q .; then
+      die "refusing symlink inside public static tree: $static_root"
+    fi
     parent="$static_root"
     while [ "$parent" != "/" ]; do
       setfacl -m "u:$WEB_USER:x" "$parent"

@@ -106,6 +106,9 @@ check_port 127.0.0.1 6379 "Redis"
 check_port 127.0.0.1 3000 "Core API"
 check_port 127.0.0.1 4000 "AI Tutor API"
 check_port 127.0.0.1 8000 "Question Maker API"
+curl -fsS --max-time 10 http://127.0.0.1:8000/readyz >/dev/null 2>&1 \
+  && ok "Question Maker readiness: 127.0.0.1:8000/readyz" \
+  || warn "Question Maker readiness endpoint is unavailable"
 check_port cmps01.ok.ubc.ca 8001 "cmps01 inference"
 check_port cmps02.ok.ubc.ca 8001 "cmps02 inference"
 check_port cmps03.ok.ubc.ca 8001 "cmps03 inference"

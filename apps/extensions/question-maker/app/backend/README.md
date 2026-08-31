@@ -172,6 +172,7 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 | Variable | Description | Required |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `HOST` | HTTP bind address; production host units set `127.0.0.1` so Apache is the public entrypoint | No (`0.0.0.0`) |
 | `CORE_URL` | Base URL of EduAI Core (session validation, course/enrollment reads) | Yes |
 | `CORE_AUTH_TIMEOUT_MS` | Deadline in milliseconds for Core session-validation and logout calls (default `5000`) | No |
 | `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
