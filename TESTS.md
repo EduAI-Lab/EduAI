@@ -387,6 +387,7 @@ Assert-only: [`ext-ext-isolation.test.ts`](apps/core/app/tests/unit/ext-ext-isol
 | [`pr-patch-coverage.test.js`](eduai-summer-2026/tests/pr-patch-coverage.test.js) | Guards the per-PR patch-coverage reporter (#1192): `SF:` path resolution across vitest's workspace-root-relative, coverage-dir-relative, and absolute conventions; lcov parsing and hit counts; the total-mapping-failure guard; and range/percentage formatting. |
 | [`token-parity.test.js`](eduai-summer-2026/tests/token-parity.test.js) | Guards the design-token parity oracle that gates #1272: that `@source "...\*.js"` globs are not mistaken for comment openers (which silently emptied the token map), that numeric/quote formatting differences collapse while real value changes do not, top-level-only declaration parsing, and the added/removed/changed diff plus its allowlist. |
 | [`team-time-report.test.js`](eduai-summer-2026/tests/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
+| [`infra/s378/tests/go-live-build-seeding.test.sh`](infra/s378/tests/go-live-build-seeding.test.sh) | s378 deployment contract: rejects Core fixture seeding while requiring the allowed reference-only catalog seed. |
 
 ---
 
