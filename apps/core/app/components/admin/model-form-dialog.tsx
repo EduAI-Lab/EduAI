@@ -9,6 +9,7 @@ import { Switch } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { Loader } from "@eduai/ui";
 import type { AIProvider, AIModel } from "~/types/ai";
+import { vllmModelCapabilities } from "~/lib/ai/local-model-sync";
 
 export type OllamaModel = {
   name: string;
@@ -140,8 +141,7 @@ export function ModelFormDialog({
         description: "",
         type: "CHAT",
         maxTokens: "",
-        supportsImages: false,
-        supportsTools: false,
+        ...vllmModelCapabilities(selected.id),
         supportsStreaming: true,
         inputPricing: "",
         outputPricing: "",

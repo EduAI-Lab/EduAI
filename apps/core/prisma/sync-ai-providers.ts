@@ -236,6 +236,7 @@ async function main() {
       description: "House chat — tier 1, hybrid RAG",
       maxTokens: 8192,
       supportsTools: false,
+      supportsImages: false,
     },
     {
       modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
@@ -243,13 +244,15 @@ async function main() {
       description: "Standard chat — tier 2, hybrid RAG",
       maxTokens: 8192,
       supportsTools: true,
+      supportsImages: false,
     },
     {
       modelId: RETAINED_ASSIST_MODEL_ID,
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
+      name: "Qwen3.8 27B FP8 (vLLM)",
+      description: "Large tier — tools and vision via Qwen3 parser",
+      maxTokens: 65536,
       supportsTools: true,
+      supportsImages: true,
     },
   ];
 
@@ -261,12 +264,12 @@ async function main() {
       update: {
         isActive: true,
         supportsTools: m.supportsTools,
-        supportsImages: false,
+        supportsImages: m.supportsImages,
       },
       create: {
         ...m,
         type: "CHAT",
-        supportsImages: false,
+        supportsImages: m.supportsImages,
         supportsStreaming: true,
         providerId: vllm.id,
       },
