@@ -21,7 +21,7 @@ export const teamMembers: TeamMember[] = [
     name: "Dr. Abdallah Mohamed",
     position: "Professor",
     title: "AI Research Director",
-    image: "/AbdullahMoh.jpeg",
+    image: "/AA.jpg",
     biography:
       "Professor Abdallah Mohamed's expertise spans software engineering, decision support systems, and creative higher education. His research integrates optimization techniques, expert systems, and component-based software development to enhance decision-making in complex, uncertain, and dynamic environments. Beyond technical research, he is committed to advancing innovation in teaching and learning, developing new methodologies to foster creativity, engagement, and personalized learning experiences.",
     contribution:
@@ -204,7 +204,7 @@ export const teamMembers: TeamMember[] = [
     name: "Abdullah Mohsin Naqvi",
     position: "Developer",
     title: "Backend & Infra",
-    image: "/abdu.jpeg",
+    image: "/abdu.png",
     biography:
       "Abdullah is a third-year Computer Science Co-op student at UBC Okanagan focused on backend and infrastructure. He built a Redis-compatible key-value store from scratch in C11 hitting over 1.3M RPS on SET/GET, and a React-based therapy booking platform that's been live in production for over a year. He recently wrapped a backend internship at Systems Limited working on cache invalidation and rate limiting, and writes about his projects at naqvi.dev.",
     contribution:
@@ -232,7 +232,7 @@ export const teamMembers: TeamMember[] = [
     name: "Ye Thway Aung",
     position: "Developer",
     title: "Frontend, Security & Testing",
-    image: "",
+    image: "/ye.jpeg",
     biography:
       "Ye is a fourth-year Computer Science Co-op student at UBC Okanagan. He worked as a software developer on the EduAI project, focusing on frontend, security, and testing.",
     contribution:
