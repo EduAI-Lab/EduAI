@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { z } from "zod";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
@@ -38,6 +39,14 @@ const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
   "/api-key/update",
   "/api-key/get",
 ]);
+
+const returnedSessionSchema = z.object({
+  user: z.object({
+    isActive: z.boolean().optional(),
+    emailVerified: z.boolean().optional(),
+  }),
+  session: z.object({ token: z.string().min(1) }).nullish(),
+});
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -246,23 +255,13 @@ export const auth = betterAuth({
     // cookie can't be replayed later.
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/get-session") return;
-      const returned: unknown = ctx.context.returned;
-      if (!returned || typeof returned !== "object" || !("user" in returned)) return;
-      const user = returned.user;
-      if (!user || typeof user !== "object") return;
+      const returned = returnedSessionSchema.safeParse(ctx.context.returned);
+      if (!returned.success) return;
       const isBlocked =
-        ("isActive" in user && user.isActive === false) ||
-        ("emailVerified" in user && user.emailVerified === false);
+        returned.data.user.isActive === false || returned.data.user.emailVerified === false;
       if (!isBlocked) return;
 
-      const session = "session" in returned ? returned.session : null;
-      const token =
-        session &&
-        typeof session === "object" &&
-        "token" in session &&
-        typeof session.token === "string"
-          ? session.token
-          : null;
+      const token = returned.data.session?.token;
       if (token) {
         await prisma.session.deleteMany({ where: { token } }).catch(() => {});
       }

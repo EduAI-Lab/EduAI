@@ -1,4 +1,5 @@
 import type { Invitation } from "@prisma/client";
+import { z } from "zod";
 
 import prisma from "~/lib/prisma.server";
 import { auth, authBaseURL } from "~/lib/auth/server";
@@ -13,6 +14,7 @@ import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
 import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
+const signupResponseSchema = z.object({ user: z.object({ id: z.string().min(1) }) });
 
 /** Invitation shape safe to return over the API — never includes `tokenHash`. */
 export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
@@ -69,11 +71,8 @@ function toPublic(invitation: Invitation): PublicInvitation {
 
 async function readSignupUserId(response: Response): Promise<string | null> {
   const body: unknown = await response.json().catch(() => null);
-  if (typeof body !== "object" || body === null || !("user" in body)) return null;
-
-  const user = body.user;
-  if (typeof user !== "object" || user === null || !("id" in user)) return null;
-  return typeof user.id === "string" ? user.id : null;
+  const result = signupResponseSchema.safeParse(body);
+  return result.success ? result.data.user.id : null;
 }
 
 type AcceptInvitationFailure = Extract<AcceptInvitationResult, { ok: false }>;
