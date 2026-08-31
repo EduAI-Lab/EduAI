@@ -27,6 +27,7 @@ Environment=PORT=4000
 # (apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client),
 # so the on-disk client is already correct; regenerating every restart would only
 # add latency. Generation happens once, in go-live-build.sh.
+ExecStartPre=/usr/bin/test -f /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json
 ExecStart=/usr/local/bin/node src/index.js
 
 Restart=always

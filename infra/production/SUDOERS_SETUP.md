@@ -11,6 +11,7 @@ sudo install -o root -g root -m 0644 /path/to/eduai-core.service /etc/eduai/prod
 sudo install -o root -g root -m 0644 /path/to/my.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/my.eduai.ok.ubc.ca.conf
 sudo install -o root -g root -m 0644 /path/to/eduai-aitutor-server.service /etc/eduai/production-templates/eduai-aitutor-server.service
 sudo install -o root -g root -m 0644 /path/to/aitutor.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/aitutor.eduai.ok.ubc.ca.conf
+sudo install -o root -g root -m 0644 /path/to/eduai-qm-backend.service /etc/eduai/production-templates/eduai-qm-backend.service
 ```
 
 The deployment account must not be able to write this directory. After copying
@@ -36,5 +37,7 @@ sudo -n /usr/local/sbin/eduai-production-admin redis-install
 ```
 
 The helper has a fixed action allow-list, rejects all extra arguments, and reads
-only the three fixed root-owned templates under `/etc/eduai/production-templates`.
+only the fixed root-owned templates under `/etc/eduai/production-templates`.
+Release activation validates all generated clients and frontend entrypoints and
+grants Apache access through a user ACL limited to the two static build trees.
 Review and reinstall it whenever the repository version changes.

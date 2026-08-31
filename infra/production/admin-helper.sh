@@ -13,6 +13,7 @@ readonly AI_TUTOR_ENV="/etc/eduai/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV="/etc/eduai/aitutor-db.env"
 readonly AI_TUTOR_UNIT="/etc/systemd/system/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST="/etc/apache2/sites-available/aitutor.eduai.ok.ubc.ca.conf"
+readonly QM_UNIT="/etc/systemd/system/eduai-qm-backend.service"
 readonly AI_TUTOR_DB_NAME="eduai-aitutor-db"
 readonly AI_TUTOR_DB_VOLUME="eduai-aitutor-db-data"
 readonly TEMPLATE_DIR="/etc/eduai/production-templates"
@@ -23,14 +24,53 @@ readonly AI_TUTOR_ENV_SOURCE="$TEMPLATE_DIR/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV_SOURCE="$TEMPLATE_DIR/aitutor-db.env"
 readonly AI_TUTOR_UNIT_SOURCE="$TEMPLATE_DIR/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.eduai.ok.ubc.ca.conf"
+readonly QM_UNIT_SOURCE="$TEMPLATE_DIR/eduai-qm-backend.service"
+readonly TARGET_ROOT="/srv/www/eduai-production"
+readonly WEB_USER="www-data"
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 release_arg() {
   [ "$#" -eq 2 ] || die "$1 requires a release id"
   [[ "$2" =~ ^[0-9a-f]{8,64}$ ]] || die "invalid release id: $2"
-  local release="/srv/www/eduai-production/releases/$2"
+  local release="$TARGET_ROOT/releases/$2"
   [ -d "$release" ] || die "release does not exist: $release"
   printf '%s' "$release"
+}
+validate_release() {
+  local release="$1"
+  local required relative
+  required=(
+    "apps/core/build/server/index.js"
+    "apps/core/node_modules/@prisma/client/package.json"
+    "apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json"
+    "apps/extensions/ai-tutor/build/client/index.html"
+    "apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json"
+    "apps/extensions/question-maker/app/frontend/dist/index.html"
+  )
+  for relative in "${required[@]}"; do
+    [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
+  done
+}
+prepare_static_assets() {
+  local release="$1"
+  local static_root parent
+  command -v setfacl >/dev/null 2>&1 || die "setfacl is required to grant Apache access to release assets"
+  # Apache needs traversal on the path and read access under these two
+  # explicitly public build roots. Use a user ACL rather than world access:
+  # env files and backend source remain protected from unrelated users.
+  setfacl -m "u:$WEB_USER:x" "$TARGET_ROOT" "$TARGET_ROOT/releases"
+  for static_root in \
+    "$release/apps/extensions/ai-tutor/build/client" \
+    "$release/apps/extensions/question-maker/app/frontend/dist"; do
+    [ -d "$static_root" ] || die "static asset directory does not exist: $static_root"
+    parent="$static_root"
+    while [ "$parent" != "/" ]; do
+      setfacl -m "u:$WEB_USER:x" "$parent"
+      [ "$parent" = "$release" ] && break
+      parent=$(dirname "$parent")
+    done
+    setfacl -R -m "u:$WEB_USER:rX" "$static_root"
+  done
 }
 read_env_value() {
   local file="$1" key="$2" line value
@@ -125,6 +165,13 @@ case "${1:-}" in
     apache2ctl configtest
     echo "Installed and validated $AI_TUTOR_VHOST"
     ;;
+  install-qm-unit)
+    no_extra_args "$@"
+    [ -f "$QM_UNIT_SOURCE" ] || die "Question Maker unit source does not exist: $QM_UNIT_SOURCE"
+    install -o root -g root -m 0644 "$QM_UNIT_SOURCE" "$QM_UNIT"
+    systemctl daemon-reload
+    echo "Installed $QM_UNIT"
+    ;;
   aitutor-db-install)
     no_extra_args "$@"
     [ -r "$AI_TUTOR_DB_ENV" ] || die "missing $AI_TUTOR_DB_ENV"
@@ -206,13 +253,22 @@ case "${1:-}" in
     ;;
   activate-release)
     release=$(release_arg "$@")
-    ln -sfn "$release" /srv/www/eduai-production/current
+    validate_release "$release"
+    prepare_static_assets "$release"
+    ln -sfn "$release" "$TARGET_ROOT/current"
     echo "Activated $release"
+    ;;
+  validate-release)
+    release=$(release_arg "$@")
+    validate_release "$release"
+    echo "Release is complete: $release"
     ;;
   enable-aitutor) no_extra_args "$@"; systemctl enable eduai-aitutor-server ;;
   restart-aitutor) no_extra_args "$@"; systemctl restart eduai-aitutor-server; systemctl --no-pager --full status eduai-aitutor-server ;;
+  enable-qm) no_extra_args "$@"; systemctl enable eduai-qm-backend ;;
+  restart-qm) no_extra_args "$@"; systemctl restart eduai-qm-backend; systemctl --no-pager --full status eduai-qm-backend ;;
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, aitutor-db-install, provision-aitutor, activate-release, enable-aitutor, restart-aitutor, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-unit, aitutor-db-install, provision-aitutor, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-core, restart-core, reload-apache" ;;
 esac

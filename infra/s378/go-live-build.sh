@@ -211,6 +211,30 @@ if want qm; then
   fi
 fi
 
+step "verify deploy artifacts"
+# A successful bundler exit is not enough: a bad install can still leave one
+# app without its extension-local Prisma client, or a frontend without the
+# index Apache serves. Catch both before any unit is restarted.
+if want core; then
+  test -f apps/core/build/server/index.js \
+    || { echo "ERROR: Core build artifact missing" >&2; exit 1; }
+  test -f apps/core/node_modules/@prisma/client/package.json \
+    || { echo "ERROR: Core generated Prisma client missing" >&2; exit 1; }
+fi
+if want aitutor; then
+  test -f apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json \
+    || { echo "ERROR: AI Tutor generated Prisma client missing" >&2; exit 1; }
+  test -f apps/extensions/ai-tutor/build/client/index.html \
+    || { echo "ERROR: AI Tutor frontend artifact missing" >&2; exit 1; }
+fi
+if want qm; then
+  test -f apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json \
+    || { echo "ERROR: Question Maker generated Prisma client missing" >&2; exit 1; }
+  test -f apps/extensions/question-maker/app/frontend/dist/index.html \
+    || { echo "ERROR: Question Maker frontend artifact missing" >&2; exit 1; }
+fi
+echo "required generated clients and frontend entrypoints present"
+
 step "verify the builds carry development semantics"
 # If NODE_ENV failed to reach the bundler, the build still succeeds and still
 # serves fine — it just silently drops every import.meta.env.DEV branch. These
