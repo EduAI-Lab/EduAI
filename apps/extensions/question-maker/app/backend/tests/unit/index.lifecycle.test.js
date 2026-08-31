@@ -30,7 +30,7 @@ const runEntrypoint = (trigger) =>
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (output += chunk));
     child.once("error", reject);
-    child.once("exit", (code, signal) => resolveResult({ code, signal, output }));
+    child.once("close", (code, signal) => resolveResult({ code, signal, output }));
   });
 
 it.each([
