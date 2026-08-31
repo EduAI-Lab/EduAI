@@ -4,8 +4,9 @@
  * Derived from the spec for `POST /api/eduai/generate-questions`
  * (apps/extensions/question-maker/app/backend/src/routes/eduai.js), not
  * from the handler's branch order:
- *   - Only ADMIN/UNIT_ADMIN/INSTRUCTOR platform roles may reach this route
- *     at all (QM_AUTHORIZED, router-level flat gate) -> 403 otherwise.
+ *   - Any authenticated caller may reach this course-bearing route because
+ *     Core represents TAs as platform STUDENT; live course access is the
+ *     authorization boundary.
  *   - `prompt` is required; either `courseId` or `courseCode` is required
  *     (#1362) -> 400 if prompt missing or neither course identifier is
  *     present, checked before anything else request-shaped.
@@ -52,11 +53,19 @@ export const MCQ_INPUT = {
 } satisfies Record<Mcq, number | undefined>;
 export const DEFAULT_DIFFICULTY_DISTRIBUTION = { easy: 1, medium: 2, hard: 2 };
 export const PROVIDED_DIFFICULTY_DISTRIBUTION = { easy: 2, medium: 2, hard: 1 };
-export const DEFAULT_REASONING_DISTRIBUTION = { factual: 40, analytical: 30, application: 30 };
-export const PROVIDED_REASONING_DISTRIBUTION = { factual: 50, analytical: 25, application: 25 };
+export const DEFAULT_REASONING_DISTRIBUTION = {
+  factual: 40,
+  analytical: 30,
+  application: 30,
+};
+export const PROVIDED_REASONING_DISTRIBUTION = {
+  factual: 50,
+  analytical: 25,
+  application: 25,
+};
 
 export type Verdict =
-  | { status: 403; reason: "not-authorized" | "no-course-access" }
+  | { status: 403; reason: "no-course-access" }
   | { status: 400 }
   | {
       status: 200;
@@ -87,7 +96,6 @@ function hasCourseIdentifier(row: GenerateQuestionsRow): boolean {
 }
 
 export function generateQuestionsOracle(row: GenerateQuestionsRow): Verdict {
-  if (row.Authorized === "no") return { status: 403, reason: "not-authorized" };
   if (row.PromptPresent === "no" || !hasCourseIdentifier(row)) return { status: 400 };
   if (resolvedNumQuestions(row) > MAX_QUESTIONS) return { status: 400 };
   if (row.CourseAccess === "no") return { status: 403, reason: "no-course-access" };

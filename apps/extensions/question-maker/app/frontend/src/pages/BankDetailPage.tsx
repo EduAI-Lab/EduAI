@@ -4,9 +4,10 @@
  * lets instructors add existing course questions to it.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { isAxiosError } from "axios";
 import { useNavigate, useParams } from "react-router";
 import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
-import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
+import { IconArrowLeft, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { toast } from "sonner";
@@ -26,7 +27,8 @@ export function BankDetailPage() {
   const { bankId } = useParams<{ bankId: string }>();
   const navigate = useNavigate();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
-  const { hasCourseAccess, accessLoading, canCreateQuestion } = useQmPermissionsForCourse(courseId);
+  const { hasCourseAccess, accessLoading, canManageAssessment } =
+    useQmPermissionsForCourse(courseId);
 
   const [bank, setBank] = useState<QuestionBank | null>(null);
   const [banksError, setBanksError] = useState<string | null>(null);
@@ -45,8 +47,10 @@ export function BankDetailPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<QuestionVariantEntry | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const writesDisabled = accessLoading || !canCreateQuestion;
+  const writesDisabled = accessLoading || !canManageAssessment;
 
   const backToBanks = useCallback(() => {
     if (courseId) navigate(`/courses/${courseId}?tab=banks`);
@@ -220,6 +224,12 @@ export function BankDetailPage() {
             </p>
           )}
         </div>
+        {!bank.isDefault && !writesDisabled && (
+          <Button type="button" variant="destructive" onClick={() => setIsDeleteOpen(true)}>
+            <IconTrash className="size-4" />
+            Delete bank
+          </Button>
+        )}
       </div>
 
       {questionsError && (
@@ -262,6 +272,35 @@ export function BankDetailPage() {
           setQuestionsOffset(0);
           setRefreshKey((k) => k + 1);
         }}
+      />
+
+      <DeleteConfirmationModal
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        onConfirm={async () => {
+          if (!courseId || !bankId || isDeleting) return;
+          setIsDeleting(true);
+          try {
+            await questionBankService.deleteBank(courseId, bankId);
+            toast("Bank deleted", { description: `“${bank.name}” has been removed.` });
+            backToBanks();
+          } catch (error) {
+            toast.error("Could not delete bank", {
+              description: isAxiosError<{ error?: string }>(error)
+                ? error.response?.data.error || error.message
+                : error instanceof Error
+                  ? error.message
+                  : "Please try again.",
+            });
+            throw error;
+          } finally {
+            setIsDeleting(false);
+          }
+        }}
+        title={`Delete “${bank.name}”?`}
+        message="This permanently deletes the bank. Remove or move its questions first."
+        confirmLabel="Delete bank"
+        isLoading={isDeleting}
       />
 
       <DeleteConfirmationModal

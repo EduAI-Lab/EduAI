@@ -686,6 +686,47 @@ describe("Activities routes", () => {
       expect(res.body.isCorrect).toBe(false);
     });
 
+    it("rejects answers that do not match the activity", async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const responses = await Promise.all([
+        request(studentApp).post(`/api/questions/${activity.id}/answer`).send({ answerOption: 3 }),
+        request(studentApp).post(`/api/questions/${activity.id}/answer`).send({ answerText: "B" }),
+        request(studentApp).post(`/api/questions/${activity.id}/answer`).send({}),
+      ]);
+
+      expect(responses.map(({ status }) => status)).toEqual([400, 400, 400]);
+      await expect(
+        prisma.submission.count({ where: { userId: student.id, activityId: activity.id } }),
+      ).resolves.toBe(0);
+    });
+
+    it("rejects blank short-text answers", async () => {
+      const shortTextActivity = await createActivityInDb({
+        config: {
+          question: "Name a primary color",
+          questionType: "SHORT_TEXT",
+          options: [],
+          answer: "red",
+          hints: [],
+        },
+      });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const response = await request(studentApp)
+        .post(`/api/questions/${shortTextActivity.id}/answer`)
+        .send({ answerText: "   " });
+
+      expect(response.status).toBe(400);
+      await expect(
+        prisma.submission.count({
+          where: { userId: student.id, activityId: shortTextActivity.id },
+        }),
+      ).resolves.toBe(0);
+    });
+
     it("assigns unique attempt numbers to two concurrent submissions", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });

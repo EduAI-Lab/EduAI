@@ -1,4 +1,5 @@
 import { config } from "../config/settings.js";
+import { timingSafeEqual } from "node:crypto";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -25,31 +26,39 @@ export function trustedOrigins(settings = config) {
   );
 }
 
+function hasVerifiedServiceCredential(authorization) {
+  if (!config.eduaiApiKey || typeof authorization !== "string") return false;
+  const expected = Buffer.from(`Bearer ${config.eduaiApiKey}`);
+  const actual = Buffer.from(authorization);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 /**
- * Reject unsafe cookie-authenticated requests from an untrusted browser
- * origin. Missing Origin remains compatible with server/non-browser clients;
- * an explicit Fetch Metadata cross-site signal is still rejected.
+ * Reject unsafe cookie-authenticated requests without trusted browser
+ * provenance. Verified server-to-server requests may bypass this check.
  */
 export function csrfOriginGuard(req, res, next) {
   const method = typeof req.method === "string" ? req.method.toUpperCase() : "";
   if (!UNSAFE_METHODS.has(method) || !req.headers.cookie) return next();
+  if (hasVerifiedServiceCredential(req.headers.authorization)) return next();
 
   const origin = req.headers.origin;
+  const referer = req.headers.referer;
   const site = req.headers["sec-fetch-site"];
   const trusted = trustedOrigins();
-  const originDenied = origin !== undefined && !trusted.has(normalizeOrigin(origin));
-  const fetchMetadataDenied =
-    !origin && typeof site === "string" && site.toLowerCase() === "cross-site";
+  const accepted =
+    origin !== undefined
+      ? trusted.has(normalizeOrigin(origin))
+      : referer !== undefined
+        ? trusted.has(normalizeOrigin(referer))
+        : typeof site === "string" && site.toLowerCase() === "same-origin";
 
-  if (originDenied || fetchMetadataDenied) {
-    return res.status(403).json({
-      success: false,
-      error: "Cross-site request blocked",
-      code: "CSRF_ORIGIN_DENIED",
-    });
-  }
-
-  return next();
+  if (accepted) return next();
+  return res.status(403).json({
+    success: false,
+    error: "Cross-site request blocked",
+    code: "CSRF_ORIGIN_DENIED",
+  });
 }
 
 export default csrfOriginGuard;

@@ -6,12 +6,31 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import type { CommandPaletteGroup, CommandPaletteItem, CommandPaletteProps } from "@eduai/ui";
+
+type TestUser = { id: string; role: string };
+type DisplayCourse = { id: number; code: string | null; name: string };
+type SwitchAppOptions = { role?: string | null; currentAppId: string };
+type CapturedGroup = CommandPaletteGroup & { __opts?: SwitchAppOptions };
 
 const navigate = vi.fn();
 let pathnameValue = "/dashboard";
-let displayCoursesValue: any[] = [];
-let userValue: any = { id: "1", role: "instructor" };
-let capturedGroups: any[] = [];
+let displayCoursesValue: DisplayCourse[] = [];
+let userValue: TestUser | null = { id: "1", role: "instructor" };
+let capturedGroups: CapturedGroup[] = [];
+let canManageCanvasValue = true;
+
+function group(heading: string): CapturedGroup {
+  const found = capturedGroups.find((candidate) => candidate.heading === heading);
+  if (!found) throw new Error(`Missing command group: ${heading}`);
+  return found;
+}
+
+function item(commandGroup: CapturedGroup, label: string): CommandPaletteItem {
+  const found = commandGroup.items.find((candidate) => candidate.label === label);
+  if (!found) throw new Error(`Missing command item: ${label}`);
+  return found;
+}
 
 vi.mock("react-router", () => ({
   useNavigate: () => navigate,
@@ -19,11 +38,15 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@eduai/ui", () => ({
-  CommandPalette: (props: any) => {
+  CommandPalette: (props: CommandPaletteProps) => {
     capturedGroups = props.groups;
     return <div data-testid="shared-palette" data-open-event={props.openEventName} />;
   },
-  buildAppSwitcherGroup: (opts: any) => ({ heading: "Switch app", items: [], __opts: opts }),
+  buildAppSwitcherGroup: (opts: SwitchAppOptions) => ({
+    heading: "Switch app",
+    items: [],
+    __opts: opts,
+  }),
 }));
 
 vi.mock("@/hooks/useDisplayCourses", () => ({
@@ -34,15 +57,19 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: userValue }),
 }));
 
+vi.mock("@/hooks/useQmPermissions", () => ({
+  useQmPermissions: () => ({ canManageCanvas: canManageCanvasValue }),
+}));
+
 vi.mock("@/lib/apps", () => ({
   CURRENT_APP_ID: "question-maker",
   getLauncherApps: () => [{ id: "core" }],
 }));
 
 vi.mock("@/lib/rbac/nav", () => ({
-  getNavForUser: (user: any) =>
+  getNavForUser: (user: TestUser | null) =>
     user ? [{ key: "dashboard", title: "Dashboard", href: "/dashboard" }] : [],
-  getNavSecondaryForUser: (user: any) =>
+  getNavSecondaryForUser: (user: TestUser | null) =>
     user ? [{ key: "help", title: "Help", href: "/help" }] : [],
 }));
 
@@ -55,6 +82,7 @@ afterEach(() => {
   displayCoursesValue = [];
   userValue = { id: "1", role: "instructor" };
   capturedGroups = [];
+  canManageCanvasValue = true;
 });
 
 describe("CommandPalette", () => {
@@ -65,22 +93,20 @@ describe("CommandPalette", () => {
 
   it('includes nav items plus a Settings entry in "Go to"', () => {
     render(<CommandPalette />);
-    const goTo = capturedGroups.find((g) => g.heading === "Go to");
-    const labels = goTo.items.map((i: any) => i.label);
+    const labels = group("Go to").items.map((command) => command.label);
     expect(labels).toEqual(["Dashboard", "Help", "Settings"]);
   });
 
   it('navigates when a "Go to" item is selected', () => {
     render(<CommandPalette />);
-    const goTo = capturedGroups.find((g) => g.heading === "Go to");
-    goTo.items.find((i: any) => i.label === "Settings").onSelect();
+    item(group("Go to"), "Settings").onSelect();
     expect(navigate).toHaveBeenCalledWith("/settings");
   });
 
   it('shows "This course" heading with no items when not on a course route', () => {
     pathnameValue = "/dashboard";
     render(<CommandPalette />);
-    const courseGroup = capturedGroups.find((g) => g.heading === "This course");
+    const courseGroup = group("This course");
     expect(courseGroup.items).toEqual([]);
   });
 
@@ -88,18 +114,19 @@ describe("CommandPalette", () => {
     pathnameValue = "/courses/7";
     displayCoursesValue = [{ id: 7, code: "CPSC 101", name: "Intro to CS" }];
     render(<CommandPalette />);
-    const courseGroup = capturedGroups.find((g) => g.heading === "CPSC 101");
-    expect(courseGroup.items.map((i: any) => i.label)).toContain("New question");
+    const courseGroup = group("CPSC 101");
+    expect(courseGroup.items.map((command) => command.label)).toContain("New question");
 
-    courseGroup.items.find((i: any) => i.label === "New question").onSelect();
+    item(courseGroup, "New question").onSelect();
     expect(navigate).toHaveBeenCalledWith("/courses/7/questions/new");
   });
 
-  it('falls back to "This course" heading when the course is not in displayCourses', () => {
+  it("hides course actions when the course is not in displayCourses", () => {
     pathnameValue = "/courses/99";
     displayCoursesValue = [];
     render(<CommandPalette />);
-    expect(capturedGroups.some((g) => g.heading === "This course")).toBe(true);
+    const courseGroup = group("This course");
+    expect(courseGroup.items).toEqual([]);
   });
 
   it('lists up to 8 courses under "Switch course" and navigates on select', () => {
@@ -109,7 +136,7 @@ describe("CommandPalette", () => {
       name: `Course ${i}`,
     }));
     render(<CommandPalette />);
-    const switchGroup = capturedGroups.find((g) => g.heading === "Switch course");
+    const switchGroup = group("Switch course");
     expect(switchGroup.items).toHaveLength(8);
 
     switchGroup.items[0].onSelect();
@@ -124,8 +151,7 @@ describe("CommandPalette", () => {
   it('produces empty "Go to" items when there is no user', () => {
     userValue = null;
     render(<CommandPalette />);
-    const goTo = capturedGroups.find((g) => g.heading === "Go to");
-    expect(goTo.items.map((i: any) => i.label)).toEqual(["Settings"]);
+    expect(group("Go to").items.map((command) => command.label)).toEqual(["Settings"]);
   });
 });
 
@@ -134,7 +160,7 @@ describe("CommandPalette additional course-scoped actions", () => {
     pathnameValue = "/courses/7";
     displayCoursesValue = [{ id: 7, code: "CPSC 101", name: "Intro to CS" }];
     render(<CommandPalette />);
-    const courseGroup = capturedGroups.find((g) => g.heading === "CPSC 101");
+    const courseGroup = group("CPSC 101");
 
     const cases: Array<[string, string]> = [
       ["Questions", "/courses/7?tab=questions"],
@@ -144,15 +170,26 @@ describe("CommandPalette additional course-scoped actions", () => {
       ["Overview", "/courses/7?tab=overview"],
     ];
     for (const [label, href] of cases) {
-      courseGroup.items.find((i: any) => i.label === label).onSelect();
+      item(courseGroup, label).onSelect();
       expect(navigate).toHaveBeenCalledWith(href);
     }
+  });
+
+  it("hides Canvas when the user cannot manage the course integration", () => {
+    pathnameValue = "/courses/7";
+    displayCoursesValue = [{ id: 7, code: "CPSC 101", name: "Intro to CS" }];
+    canManageCanvasValue = false;
+
+    render(<CommandPalette />);
+
+    const courseGroup = group("CPSC 101");
+    expect(courseGroup.items.map((command) => command.label)).not.toContain("Canvas");
   });
 
   it("omits the sublabel when a switch-course entry has no code", () => {
     displayCoursesValue = [{ id: 1, code: null, name: "No Code Course" }];
     render(<CommandPalette />);
-    const switchGroup = capturedGroups.find((g) => g.heading === "Switch course");
+    const switchGroup = group("Switch course");
     expect(switchGroup.items[0].sublabel).toBeUndefined();
     expect(switchGroup.items[0].label).toBe("No Code Course");
   });
@@ -160,8 +197,8 @@ describe("CommandPalette additional course-scoped actions", () => {
   it("passes role through to buildAppSwitcherGroup", () => {
     userValue = { id: "1", role: "ADMIN" };
     render(<CommandPalette />);
-    const appGroup = capturedGroups.find((g) => g.heading === "Switch app");
-    expect(appGroup.__opts.role).toBe("ADMIN");
-    expect(appGroup.__opts.currentAppId).toBe("question-maker");
+    const appGroup = group("Switch app");
+    expect(appGroup.__opts?.role).toBe("ADMIN");
+    expect(appGroup.__opts?.currentAppId).toBe("question-maker");
   });
 });

@@ -11,6 +11,21 @@ const positiveInt = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+export const parseQmAiProviderBudgets = (env = process.env) => {
+  const qmMaxExtractProviderCalls = positiveInt(env.QM_MAX_EXTRACT_PROVIDER_CALLS, 36);
+  return {
+    qmMaxExtractProviderCalls,
+    // Every extraction call may make one JSON-repair call. A fresh caller must
+    // therefore be able to reserve the full worst case for one extraction.
+    qmAiProviderCallLimit: positiveInt(
+      env.QM_AI_PROVIDER_CALL_LIMIT,
+      qmMaxExtractProviderCalls * 2,
+    ),
+  };
+};
+
+const qmAiProviderBudgets = parseQmAiProviderBudgets();
+
 /**
  * Parse CORS_ORIGINS into an explicit allowlist, rejecting a wildcard ("*")
  * outside development/test (#1569 review). The cors() middleware (app.js) and
@@ -105,7 +120,7 @@ export const config = {
   // chunks/provider calls. Override per deployment with QM_* environment vars.
   qmMaxExtractTextChars: positiveInt(process.env.QM_MAX_EXTRACT_TEXT_CHARS, 120_000),
   qmMaxExtractChunks: positiveInt(process.env.QM_MAX_EXTRACT_CHUNKS, 24),
-  qmMaxExtractProviderCalls: positiveInt(process.env.QM_MAX_EXTRACT_PROVIDER_CALLS, 36),
+  qmMaxExtractProviderCalls: qmAiProviderBudgets.qmMaxExtractProviderCalls,
   qmExtractDeadlineMs: positiveInt(process.env.QM_EXTRACT_DEADLINE_MS, 120_000),
   qmAiProviderTimeoutMs: positiveInt(process.env.QM_AI_PROVIDER_TIMEOUT_MS, 30_000),
   qmGeneratePromptMaxChars: positiveInt(process.env.QM_GENERATE_PROMPT_MAX_CHARS, 12_000),
@@ -113,7 +128,7 @@ export const config = {
   // AI routes are caller-admitted as a group. Request-count limiting is only
   // a secondary guard; provider-call admission below accounts for fanout.
   qmAiRateLimitMax: positiveInt(process.env.QM_AI_RATE_LIMIT_MAX, 20),
-  qmAiProviderCallLimit: positiveInt(process.env.QM_AI_PROVIDER_CALL_LIMIT, 60),
+  qmAiProviderCallLimit: qmAiProviderBudgets.qmAiProviderCallLimit,
   qmAiOperationDeadlineMs: positiveInt(process.env.QM_AI_OPERATION_DEADLINE_MS, 90_000),
   qmBankMaxQuestionIds: positiveInt(process.env.QM_BANK_MAX_QUESTION_IDS, 10),
   qmBankMaxVariantsPerQuestion: positiveInt(process.env.QM_BANK_MAX_VARIANTS_PER_QUESTION, 2),

@@ -75,6 +75,21 @@ describe("AIModelsTable — rendering", () => {
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
   });
 
+  it("names the row actions for the model they affect", () => {
+    render(
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("switch", { name: "Disable GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete GPT-4o" })).toBeInTheDocument();
+  });
+
   it("renders one row per model", () => {
     const models = [
       baseModel,

@@ -1,5 +1,5 @@
 /** Platform roles that may enter Question Maker (app gate). */
-export type QmPlatformRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR";
+export type QmPlatformRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA";
 
 /** Course-scoped access level — mirrors backend courseAccess.js ranks. */
 export type QmCourseAccess = "admin" | "unit" | "instructor" | "ta" | null;

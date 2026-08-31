@@ -38,6 +38,9 @@ describe("buildAdminSystemPrompt", () => {
     expect(prompt).toContain("Write safety:");
     expect(prompt).toContain("confirmed: true");
     expect(prompt).toContain("CONFIRMATION_REQUIRED");
+    expect(prompt).toContain("confirmationCode");
+    expect(prompt).toContain("latest raw admin message exactly equals that code");
+    expect(prompt).toContain("confirmed field is protocol only");
   });
 
   it("uses the same write-safety text in both the default and custom-prompt prompts", () => {

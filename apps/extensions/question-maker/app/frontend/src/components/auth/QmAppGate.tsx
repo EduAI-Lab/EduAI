@@ -60,7 +60,7 @@ export function QmAppGate({ children }: QmAppGateProps) {
     return <PageLoader />;
   }
 
-  if (!canAccessQm(user.role)) {
+  if (!canAccessQm(user.questionMakerRole ?? user.role)) {
     return (
       <QmAccessShell>
         <AccessDeniedView />

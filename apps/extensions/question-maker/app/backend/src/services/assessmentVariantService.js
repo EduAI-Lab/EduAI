@@ -3,6 +3,7 @@
  */
 import { Prisma } from "@eduai/question-maker-prisma-client";
 import { prisma } from "../config/database.js";
+import { assertAssessmentType } from "../utils/assessmentType.js";
 import eduaiService from "./eduaiService.js";
 import { loadOrderedVariantsForAssessment, aggregateStructure } from "./assessmentVariantUtils.js";
 import { scoreMetadataMatch } from "./assessmentVariantMetadataScoring.js";
@@ -449,6 +450,9 @@ export async function assembleEquivalentExamVariants(userId, params) {
   if (!referenceAssessmentId || !courseId) {
     throw new Error("referenceAssessmentId and courseId are required");
   }
+  if (assessmentTypeOverride !== null && assessmentTypeOverride !== undefined) {
+    assertAssessmentType(assessmentTypeOverride);
+  }
 
   const ref = await prisma.assessments.findFirst({
     where: { id: referenceAssessmentId, courseId, course: { userId } },
@@ -654,6 +658,9 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
 
   if (!referenceAssessmentId || !courseId) {
     throw new Error("referenceAssessmentId and courseId are required");
+  }
+  if (assessmentTypeOverride !== null && assessmentTypeOverride !== undefined) {
+    assertAssessmentType(assessmentTypeOverride);
   }
 
   const ref = await prisma.assessments.findFirst({

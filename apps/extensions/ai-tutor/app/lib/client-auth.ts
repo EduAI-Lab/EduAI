@@ -18,7 +18,18 @@ import type { Role, User } from "~/lib/types";
  *     open it — the route's `ErrorBoundary` renders the generic not-found page.
  */
 export async function requireClientUser(role?: Role | Role[]): Promise<User> {
-  const { user } = await api.me();
+  let user: User | null;
+  try {
+    ({ user } = await api.me());
+  } catch (error) {
+    // The shared HTTP client starts the cross-app login redirect on a 401.
+    // Give React Router a matching redirect too so its route boundary never
+    // flashes a generic loader error while the browser navigation settles.
+    if (error instanceof Error && error.message === "Authentication required") {
+      throw redirect("/");
+    }
+    throw error;
+  }
   if (!user) throw redirect("/");
   if (role) {
     const allowed = Array.isArray(role) ? role : [role];

@@ -30,7 +30,10 @@ export type CanvasIntegrationPublic = {
 };
 
 export const SyncCanvasCoursesSchema = z.object({
-  canvasCourseIds: z.array(z.coerce.string().min(1)).min(0),
+  canvasCourseIds: z
+    .array(z.coerce.string().min(1))
+    .max(100, "You can sync at most 100 courses at a time")
+    .transform((ids) => [...new Set(ids)]),
 });
 
 export type SyncCanvasCoursesInput = z.infer<typeof SyncCanvasCoursesSchema>;
@@ -74,10 +77,18 @@ export type LinkRosterResponse = {
 };
 
 export const SyncCanvasMaterialsSchema = z.object({
-  canvasFileIds: z.array(z.coerce.string().min(1)).min(1, "Select at least one file"),
+  canvasFileIds: z
+    .array(z.coerce.string().min(1))
+    .min(1, "Select at least one file")
+    .max(100, "You can sync at most 100 files at a time")
+    .transform((ids) => [...new Set(ids)]),
 });
 
 export type SyncCanvasMaterialsInput = z.infer<typeof SyncCanvasMaterialsSchema>;
+
+export const DiscoverCanvasMaterialsSchema = z.object({
+  intent: z.literal("discover"),
+});
 
 export const ExcludeCanvasMaterialSchema = z.object({
   canvasFileId: z.coerce.string().min(1, "canvasFileId is required"),

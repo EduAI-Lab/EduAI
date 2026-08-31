@@ -289,10 +289,15 @@ describe("mapLesson", () => {
       contentMd: "md",
       position: 1,
       isPublished: true,
-      module: { id: 7, courseOfferingId: 99 },
+      module: {
+        id: 7,
+        courseOfferingId: 99,
+        courseOffering: { coreOfferingId: "core-99" },
+      },
     };
     const result = mapLesson(lesson);
     expect(result.courseOfferingId).toBe(99);
+    expect(result.coreOfferingId).toBe("core-99");
     expect(result.moduleId).toBe(7);
   });
 
@@ -304,10 +309,12 @@ describe("mapLesson", () => {
       position: 2,
       isPublished: false,
       courseOfferingId: 42,
+      coreOfferingId: "core-42",
       moduleId: 8,
     };
     const result = mapLesson(lesson);
     expect(result.courseOfferingId).toBe(42);
+    expect(result.coreOfferingId).toBe("core-42");
     expect(result.moduleId).toBe(8);
   });
 
@@ -324,10 +331,11 @@ describe("mapLesson", () => {
     expect(mapLesson(lesson).courseOfferingId).toBe(2);
   });
 
-  it("returns undefined for courseOfferingId and moduleId when neither source exists", () => {
+  it("returns undefined for offering ids and moduleId when neither source exists", () => {
     const lesson = { id: 4, title: "L4", contentMd: "", position: 0, isPublished: true };
     const result = mapLesson(lesson);
     expect(result.courseOfferingId).toBeUndefined();
+    expect(result.coreOfferingId).toBeUndefined();
     expect(result.moduleId).toBeUndefined();
   });
 

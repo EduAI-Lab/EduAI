@@ -213,6 +213,7 @@ export default function AdminSettingsPage() {
                           </div>
                           <Switch
                             id={def.key}
+                            aria-label={def.label}
                             checked={policies[def.key] ?? def.default}
                             onCheckedChange={(value) => setPolicy(def.key, value)}
                           />

@@ -57,7 +57,7 @@ describe("courses.canvas-materials loader", () => {
     );
   });
 
-  it("opts into the publish-state recheck when ?recheck=true", async () => {
+  it("keeps GET read-only even when a legacy recheck query is supplied", async () => {
     await loader({
       request: makeRequest(
         "http://localhost/api/courses/core-course-1/canvas-materials?recheck=true",
@@ -69,7 +69,7 @@ describe("courses.canvas-materials loader", () => {
       "user-1",
       "core-course-1",
       undefined,
-      { recheckPublishState: true },
+      { recheckPublishState: false },
     );
   });
 

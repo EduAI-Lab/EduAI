@@ -589,9 +589,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               <div className="space-y-1.5">
                 <Label htmlFor="import-lesson-course">Choose course</Label>
                 <Select
-                  value={
-                    selectedSourceCourseId != null ? String(selectedSourceCourseId) : undefined
-                  }
+                  value={selectedSourceCourseId != null ? String(selectedSourceCourseId) : ""}
                   onValueChange={(value) => {
                     const nextValue = value ? Number(value) : null;
                     void handleSourceCourseSelection(nextValue);
@@ -622,9 +620,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 <div className="space-y-1.5">
                   <Label htmlFor="import-lesson-module">Choose module</Label>
                   <Select
-                    value={
-                      selectedSourceModuleId != null ? String(selectedSourceModuleId) : undefined
-                    }
+                    value={selectedSourceModuleId != null ? String(selectedSourceModuleId) : ""}
                     onValueChange={(value) => {
                       const nextValue = value ? Number(value) : null;
                       void handleSourceModuleSelection(nextValue);

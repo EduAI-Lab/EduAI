@@ -57,7 +57,12 @@ beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
   api.courseById.mockResolvedValue({ id: 1, title: "Course" });
   api.moduleById.mockResolvedValue({ id: 2, title: "Module", courseOfferingId: 1 });
-  api.lessonById.mockResolvedValue({ id: 3, title: "Lesson", moduleId: 2 });
+  api.lessonById.mockResolvedValue({
+    id: 3,
+    title: "Lesson",
+    moduleId: 2,
+    coreOfferingId: "core-course-3",
+  });
   api.modulesForCourse.mockResolvedValue(page([{ id: 10 }]));
   api.lessonsForModule.mockResolvedValue(page([{ id: 20 }]));
   api.activitiesForLesson.mockResolvedValue(page([{ id: 30 }]));
@@ -154,6 +159,7 @@ describe("instructor.lesson clientLoader", () => {
     // Ancestry loads after paint via GET /lessons/:id/breadcrumb so the lesson
     // body is not blocked on Core course resolution or sibling ordinals.
     const result = await load("http://x/instructor/lesson/3");
+    expect(result.course).toEqual({ coreOfferingId: "core-course-3" });
     expect(result).not.toHaveProperty("orderText");
     expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.modulesForCourse).not.toHaveBeenCalled();
@@ -228,6 +234,7 @@ describe("student.lesson clientLoader", () => {
 
   it("leaves breadcrumb/order text off the loader (#1334)", async () => {
     const result = await load();
+    expect(result.course).toEqual({ coreOfferingId: "core-course-3" });
     expect(result).not.toHaveProperty("orderText");
     expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();

@@ -194,6 +194,21 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect((await res.json()).chatId).toBeNull();
   });
 
+  it("uses the selected course id when duplicate course codes exist", async () => {
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(
+      makeArgs({ messages: [], courseId: "course-2", courseCode: "COSC 101" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "course-2",
+    );
+  });
+
   it("admits a TA even when the course is unpublished", async () => {
     mockAccess({ level: "ta", rank: 1 }, { ...COURSE, isPublished: false });
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));

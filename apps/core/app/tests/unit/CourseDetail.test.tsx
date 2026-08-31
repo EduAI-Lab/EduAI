@@ -7,6 +7,7 @@ import { CourseDetailTaView } from "~/components/courses/course-detail-ta-view";
 import { CourseDetailStudentView } from "~/components/courses/course-detail-student-view";
 import type { CourseMaterial } from "~/hooks/api/use-course-materials";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
+import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 
 // TabsContent uses forceMount so all content is always in DOM.
 
@@ -75,6 +76,14 @@ const STAFF_PROPS = {
 
 function wrap(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
+function wrapWithPolicies(ui: React.ReactElement, policies: PolicyValues) {
+  return render(
+    <MemoryRouter>
+      <PolicyProvider policies={policies}>{ui}</PolicyProvider>
+    </MemoryRouter>,
+  );
 }
 
 // Manager view (admin / unit / instructor)
@@ -274,6 +283,24 @@ describe("CourseDetailTaView", () => {
       />,
     );
     expect(screen.getAllByRole("button", { name: /upload material/i }).length).toBeGreaterThan(0);
+  });
+
+  it("disables own-material actions and hides embedding settings when material management is off", () => {
+    wrapWithPolicies(
+      <CourseDetailTaView
+        course={COURSE}
+        topics={[]}
+        materials={[{ ...MATERIAL, uploadedBy: "user-ta" }]}
+        onFileSelect={onFileSelect}
+        courseId="c1"
+        currentUserId="user-ta"
+        {...TA_PROPS}
+      />,
+      { "tas.canManageMaterials": false },
+    );
+    expect(screen.getByRole("button", { name: /rename material/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /delete material/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /embedding settings/i })).not.toBeInTheDocument();
   });
 
   it("shows the topic add form greyed-out (disabled, not hidden) when canManageTopics is off (#807)", () => {

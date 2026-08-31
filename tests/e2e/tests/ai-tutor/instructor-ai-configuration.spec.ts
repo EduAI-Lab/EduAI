@@ -230,7 +230,7 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
     // Configuring modes is pointless if no provider is up, and this is the only
     // in-app signal of that. Both chips are present and named for their service.
     const ubc = page.getByRole("button", { name: /^UBC-hosted AI: / });
-    const cloud = page.getByRole("button", { name: /^Cloud AI: / });
+    const cloud = page.getByRole("button", { name: /^Managed cloud AI: / });
     await expect(ubc).toBeVisible();
     await expect(cloud).toBeVisible();
 
@@ -250,6 +250,6 @@ test.describe("INSTRUCTOR per-activity AI configuration", () => {
     // withdrawn with them.
     const STATE_WORD = "(?:Operational|Degraded|Outage|Checking…|Unknown)";
     await expect(ubc).toHaveAccessibleName(new RegExp(`^UBC-hosted AI: ${STATE_WORD}$`));
-    await expect(cloud).toHaveAccessibleName(new RegExp(`^Cloud AI: ${STATE_WORD}$`));
+    await expect(cloud).toHaveAccessibleName(new RegExp(`^Managed cloud AI: ${STATE_WORD}$`));
   });
 });

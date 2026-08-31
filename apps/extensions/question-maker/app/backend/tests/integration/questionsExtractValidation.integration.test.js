@@ -1,10 +1,9 @@
 /**
  * HTTP validation tests for POST /api/questions/extract and /extract/save.
  *
- * These routes are now course-access gated (§16), so authorization runs before
- * payload validation: an INSTRUCTOR with an accessible course still hits the
- * 400 payload guards, while an unresolvable course id 404s at the gate. The
- * schema + Core reads are mocked so the gate resolves without a DB.
+ * These routes are course-access gated (§16). Extraction validates its finite
+ * AI budget before the course read; extract/save keeps its course gate first.
+ * The schema + Core reads are mocked so the gate resolves without a DB.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
@@ -30,7 +29,8 @@ vi.mock("../../src/config/settings.js", () => {
   const cfg = {
     coreUrl: "http://core.test",
     eduaiApiKey: "k",
-    corsOrigins: ["*"],
+    corsOrigins: ["https://qm.example.test"],
+    extensionUrl: "https://qm.example.test",
     nodeEnv: "test",
     logLevel: "silent",
     qmMaxExtractTextChars: 100,
@@ -96,6 +96,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ courseId: 1, text: "" });
       expect(res.status).toBe(400);
       expect(String(res.body.error || "")).toMatch(/text/i);
@@ -105,6 +106,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ text: "Some question text for extraction" });
       expect(res.status).toBe(404);
     });
@@ -113,6 +115,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ text: "Q?", courseId: "nope" });
       expect(res.status).toBe(404);
     });
@@ -121,6 +124,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ courseId: 1, text: "x".repeat(101) });
       expect(res.status).toBe(413);
       expect(String(res.body.error || "")).toMatch(/text|characters|large/i);
@@ -133,6 +137,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract/save")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ questions: [{ description: "Q1" }] });
       expect(res.status).toBe(404);
     });
@@ -141,6 +146,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract/save")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ courseId: 1, questions: [] });
       expect(res.status).toBe(400);
       expect(String(res.body.error || "")).toMatch(/question/i);
@@ -150,6 +156,7 @@ describe("Questions extract HTTP validation (integration)", () => {
       const res = await request(app)
         .post("/api/questions/extract/save")
         .set("Cookie", "session=valid")
+        .set("Origin", "https://qm.example.test")
         .send({ courseId: 1, questions: "not-an-array" });
       expect(res.status).toBe(400);
     });

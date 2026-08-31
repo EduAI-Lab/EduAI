@@ -54,6 +54,7 @@ const mapVariant = (variant: any): QuestionVariant => ({
   // writes both — so list and detail rows, which carry only the local column,
   // still render the author's real current choice (#1652 review).
   testable: variant.testable ?? variant.shareWithExtensions ?? undefined,
+  createdBy: variant.createdBy ?? variant.created_by ?? null,
   createdAt: variant.createdAt ?? variant.created_at,
   updatedAt: variant.updatedAt ?? variant.updated_at,
   assessment: variant.assessment

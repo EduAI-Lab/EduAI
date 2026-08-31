@@ -338,19 +338,23 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toHaveLength(0);
     expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ fileSize: 5 }),
+        data: expect.objectContaining({ fileSize: 5, title: "Lecture 1" }),
       }),
     );
-    expect(processUploadedFile).toHaveBeenCalled();
+    expect(vi.mocked(processUploadedFile).mock.calls[0]?.[0].name).toBe("Lecture 1.txt");
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
   });
 
   it("marks PROCESSING before extraction and FAILED when extraction throws (#1018)", async () => {
+    const deletedAt = new Date("2025-01-12T00:00:00.000Z");
+    const unpublishedAt = new Date("2025-01-13T00:00:00.000Z");
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "mat-existing",
       status: "READY",
       canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
-      deletedAt: null,
+      deletedAt,
+      deletedBy: "instructor-1",
+      unpublishedAt,
     } as never);
     vi.mocked(processUploadedFile).mockRejectedValueOnce(
       new Error("PDF extraction worker was killed"),
@@ -359,36 +363,61 @@ describe("syncSelectedCanvasMaterials", () => {
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
     expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "mat-existing" },
-        data: expect.objectContaining({ status: "PROCESSING" }),
-      }),
-    );
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "mat-existing" },
-        data: { status: "FAILED" },
-      }),
-    );
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "mat-existing" },
+      data: {
+        status: "PROCESSING",
+        uploadedBy: "user-1",
+        canvasUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(2, {
+      where: { id: "mat-existing" },
+      data: { status: "FAILED" },
+    });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
-  it("skips a soft-deleted material instead of reviving it on re-sync", async () => {
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
-      id: "mat-deleted",
-      status: "READY",
-      canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
-      deletedAt: new Date("2025-01-12T00:00:00.000Z"),
-    } as never);
+  it("restores a soft-deleted material when the instructor re-syncs it", async () => {
+    const deletedAt = new Date("2025-01-12T00:00:00.000Z");
+    const unpublishedAt = new Date("2025-01-13T00:00:00.000Z");
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce({
+        id: "mat-deleted",
+        status: "READY",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        deletedAt,
+        deletedBy: "instructor-1",
+        unpublishedAt,
+      } as never)
+      .mockResolvedValueOnce(null);
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
-    expect(result.skipped).toBe(1);
+    expect(result.skipped).toBe(0);
     expect(result.imported).toBe(0);
-    expect(result.updated).toBe(0);
-    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
-    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    expect(result.updated).toBe(1);
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "mat-deleted" },
+      data: {
+        status: "PROCESSING",
+        uploadedBy: "user-1",
+        canvasUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenLastCalledWith({
+      where: { id: "mat-deleted" },
+      data: {
+        status: "READY",
+        processedAt: expect.any(Date),
+        deletedAt: null,
+        deletedBy: null,
+        unpublishedAt: null,
+      },
+    });
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-deleted", "hello", {
+      replace: true,
+    });
   });
 
   it("reports failure for unknown file ids", async () => {

@@ -47,7 +47,7 @@ describe("collectAssessmentExportBlocks section ordering", () => {
 
     const assessment: Assessment = {
       id: 1,
-      type: "midterm",
+      type: "Midterm",
       name: "Test",
       semester: "2026W1",
       createdAt: "",
@@ -71,7 +71,7 @@ describe("collectAssessmentExportBlocks section ordering", () => {
 
     const assessment: Assessment = {
       id: 1,
-      type: "midterm",
+      type: "Midterm",
       name: "Test",
       semester: "2026W1",
       createdAt: "",

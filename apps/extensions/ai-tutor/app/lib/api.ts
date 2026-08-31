@@ -260,6 +260,8 @@ export interface ModuleCreatePayload {
 export interface CourseListParams {
   page?: number;
   pageSize?: number;
+  /** Exact Core course identity used when another EduAI app opens this course. */
+  coreOfferingId?: string;
   /** Free text over title + code. */
   search?: string;
   /** Canonical `term::year` keys, e.g. `"W1::2026"`. */
@@ -295,6 +297,8 @@ function courseListQuery(params?: CourseListParams): string {
   qs.set("pageSize", String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
   const search = params?.search?.trim();
   if (search) qs.set("search", search);
+  const coreOfferingId = params?.coreOfferingId?.trim();
+  if (coreOfferingId) qs.set("coreOfferingId", coreOfferingId);
   for (const key of ["term", "status", "progress"] as const) {
     for (const value of params?.[key] ?? []) {
       if (value) qs.append(key, value);
@@ -550,6 +554,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
 /** A JSON request body: what `JSON.stringify` is handed on the way out. */
 type WireValue = string | number | boolean | null | undefined | WireValue[] | WireBody;
 type WireBody = { [key: string]: WireValue };
+type SubmitAnswerPayload = { answerOption: number } | { answerText: string };
 
 /**
  * The body of a `PATCH /api/activities/:id`. Named because the editor and the
@@ -834,7 +839,7 @@ export const api = {
       nextOffset: z.number().safeParse(data.nextOffset).data,
     }));
   },
-  submitAnswer: (activityId: number, payload: any) =>
+  submitAnswer: (activityId: number, payload: SubmitAnswerPayload) =>
     decode(
       http(`/api/questions/${activityId}/answer`, {
         method: "POST",

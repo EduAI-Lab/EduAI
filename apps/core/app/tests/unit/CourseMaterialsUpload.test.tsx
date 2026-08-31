@@ -10,6 +10,7 @@ describe("CourseMaterialsUpload — rendering", () => {
     // File input exists but is hidden (sr-only)
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Drag & drop or/i })).not.toContainElement(fileInput);
   });
 
   it("lists the supported formats", () => {

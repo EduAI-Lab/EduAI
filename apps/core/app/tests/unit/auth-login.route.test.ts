@@ -75,13 +75,24 @@ afterEach(() => {
 describe("auth/login loader", () => {
   it("redirects an already-signed-in user to the redirect target", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
+      user: { id: "u1", role: "STUDENT", emailVerified: true },
     } as never);
     const res = (await loader(
       makeLoaderArgs("http://localhost/auth/login?redirect=/dashboard"),
     )) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
+  });
+
+  it("redirects an already-signed-in unverified user to email verification", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT", emailVerified: false },
+    } as never);
+
+    const result = (await loader(makeLoaderArgs())) as Response;
+
+    expect(result.status).toBe(302);
+    expect(result.headers.get("Location")).toBe("/auth/verify-email");
   });
 
   it("does not auto-redirect when force=1, even if signed in", async () => {
@@ -191,11 +202,43 @@ describe("auth/login action", () => {
     );
   });
 
-  it("redirects with forwarded cookies and logs LOGIN_SUCCESS on success", async () => {
-    const authResponse = new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
-      status: 200,
-      headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+  it("redirects an unverified sign-in to the anonymous verification page", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ code: "EMAIL_NOT_VERIFIED", message: "Email not verified" }), {
+        status: 403,
+      }),
+    );
+
+    const result = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+
+    expect(result.status).toBe(302);
+    expect(result.headers.get("Location")).toBe("/auth/verify-email");
+    expect(result.headers.get("Set-Cookie")).toBeNull();
+    const signInRequest = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    expect(await signInRequest.json()).toEqual({
+      email: "a@ubc.ca",
+      password: "correct-password-123",
+      callbackURL: "/onboarding/student-id",
     });
+    expect(logSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "LOGIN_FAILED", outcome: "FAILURE" }),
+    );
+  });
+
+  it("redirects with forwarded cookies and logs LOGIN_SUCCESS on success", async () => {
+    const authResponse = new Response(
+      JSON.stringify({ user: { id: "u1", role: "STUDENT", emailVerified: true } }),
+      {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+      },
+    );
     vi.mocked(auth.handler).mockResolvedValue(authResponse);
 
     const res = (await action(
