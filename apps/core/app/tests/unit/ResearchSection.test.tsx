@@ -12,7 +12,7 @@ describe("ResearchSection — rendering", () => {
     render(<ResearchSection />);
     expect(screen.getByText("Grounded retrieval")).toBeInTheDocument();
     expect(screen.getByText("Model routing for less energy")).toBeInTheDocument();
-    expect(screen.getByText("Language models for code")).toBeInTheDocument();
+    expect(screen.getByText("Assistive Mode for ADHD")).toBeInTheDocument();
     expect(screen.getByText("Tutors that check their own work")).toBeInTheDocument();
   });
 
