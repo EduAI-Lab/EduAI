@@ -12,7 +12,7 @@ procedure is [`../cmps01/README.md`](../cmps01/README.md).
 | Component | Binding | Served model or role |
 | --- | --- | --- |
 | `eduai-vllm` | `127.0.0.1:18001` | `qwen3.5-2b-instruct` |
-| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen2.5-32b-instruct` for Assist Auto |
+| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen3.8-27b-instruct` for Assist Auto |
 | LiteLLM | `127.0.0.1:18091` | Routes configured vLLM model IDs |
 | nginx edge | host `:8001` | Authenticated public inference edge |
 | Ollama | no listener observed on `11434` | Not currently available on this host |
@@ -24,8 +24,8 @@ returned HTTP 200 during the 2026-08-31 audit. The edge advertised
 ## Role boundary
 
 - Use `qwen3.5-2b-instruct` as the small tier where the application selects it.
-- Treat `qwen2.5-32b-instruct` as the separate Assist Auto capability.
-- Do not label the 32B model as the standard large tier; that name is reserved
+- Treat `qwen3.8-27b-instruct` as the separate Assist Auto capability.
+- Do not label the 27B model as the standard large tier; that name is reserved
   for `qwen3.5-9b-instruct` where installed.
 - Do not assume CMPS02 has an embedding backend or Ollama service; none was
   observed during the audit.
