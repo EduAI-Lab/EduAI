@@ -1,97 +1,144 @@
-# AWS Bedrock overflow guardrails (#1619)
+# AWS Bedrock overflow guardrails
 
-Least-privilege IAM + a CloudWatch usage tripwire + an SNS mailbox.
-**No EduAI runtime change. No Lambda in this stack.** #1620 (auto-disable
-overflow) is post-MVP and is not required to close #1619.
+Last verified: 2026-08-31
 
-Follow-up to #1441 / #1527 / #1547. Spend/rate caps still live in app code
-(Redis + Postgres). This stack is the AWS-side statement of *what the bearer
-token may call* and a fast alarm when Bedrock usage spikes — AWS Budgets lag
-8–24h, so they are not the primary trigger (and are out of scope here).
+This CDK stack is an AWS-side safety boundary for the Bedrock bearer token used
+by EduAI. It is separate from the application runtime: it does not change
+`apps/core`, deploy a Lambda, or replace the application's Redis/PostgreSQL spend
+and rate controls.
 
-## What it creates
+## Resources created
 
-| Resource | Purpose |
+| Resource | Contract |
 | --- | --- |
-| IAM managed policy `EduaiBedrockLlama370bInvokeOnly` | Bearer-token invoke of **one** model ARN (`CallWithBearerToken` + `InvokeModel` / `InvokeModelWithResponseStream`); explicit deny on every other model |
-| SNS topic `eduai-bedrock-overflow-alarm` | Alarm mailbox. **Exported** as `EduaiBedrockGuardrailSnsTopicArn`. Empty until a later subscriber attaches. |
-| CloudWatch alarm on `AWS/Bedrock` `Invocations` | 5-minute Sum tripwire |
-| CloudWatch alarm on `AWS/Bedrock` `OutputTokenCount` | 5-minute Sum tripwire (spend proxy) |
+| `EduaiBedrockLlama370bInvokeOnly` | Allows bearer-token authentication and invocation of one configured foundation model ARN; explicitly denies Invoke* on every other model |
+| `eduai-bedrock-overflow-alarm` | Alarm destination, exported as `EduaiBedrockGuardrailSnsTopicArn`; no subscription is created by this stack |
+| `eduai-bedrock-llama370b-invocations` | `AWS/Bedrock` `Invocations` sum over five minutes |
+| `eduai-bedrock-llama370b-output-tokens` | `AWS/Bedrock` `OutputTokenCount` sum over five minutes |
 
-## Attach the policy (replace, do not stack)
+Both alarms evaluate one five-minute period, trigger when the metric is greater
+than its threshold, and treat missing data as not breaching. Both publish to the
+stack-owned SNS topic.
 
-Long-term Bedrock API keys created in the console get
-`AmazonBedrockLimitedAccess` by default. IAM **unions** identity-policy
-allows, so attaching `EduaiBedrockLlama370bInvokeOnly` *on top of* that
-does not lock the key to Llama 3 70B.
+## IAM policy contract
 
-1. Detach `AmazonBedrockLimitedAccess` (and any other broad Bedrock
-   policy) from the IAM user that owns `AWS_BEARER_TOKEN_BEDROCK`.
-2. Attach `EduaiBedrockLlama370bInvokeOnly` as the identity policy.
+The policy is intended to replace broad Bedrock permissions on the IAM user that
+owns `AWS_BEARER_TOKEN_BEDROCK`; IAM allow statements are unioned, so attaching
+this policy beside `AmazonBedrockLimitedAccess` does not constrain the user.
 
-The managed policy itself:
+The synthesized policy contains exactly:
 
-- Allows `bedrock:CallWithBearerToken` on `*` — required for
-  `Authorization: Bearer` / `AWS_BEARER_TOKEN_BEDROCK`
-  ([API-key permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-modify.html)).
-- Allows `InvokeModel` + `InvokeModelWithResponseStream` on the Llama 3
-  70B foundation-model ARN only.
-- **Denies** those Invoke* actions on every other resource, so a leftover
-  broad allow cannot invoke other models (explicit deny wins).
+1. `bedrock:CallWithBearerToken` allowed on `*`, required for the Bedrock bearer
+   token flow.
+2. `bedrock:InvokeModel` and
+   `bedrock:InvokeModelWithResponseStream` allowed on the configured model ARN.
+3. The same two Invoke* actions explicitly denied with `NotResource` set to every
+   resource except that model ARN.
 
-This stack does not mint or rotate that token.
+The stack does not mint, distribute, or rotate the bearer token. Keep credentials
+out of the repository, command history, logs, and client bundles.
 
-## Region (confirm before deploy)
+## Configuration
 
-Issue text locks **`us-east-1`** and model
-`meta.llama3-70b-instruct-v1:0`. Override only after you have confirmed
-Llama 3 70B on-demand access in that account/region (console, not code):
+The CDK context in `cdk.json` is the default source for:
 
-```bash
-npx cdk synth -c bedrockRegion=us-east-1
-```
+| Context key | Current default |
+| --- | --- |
+| `bedrockRegion` | `us-east-1` |
+| `modelId` | `meta.llama3-70b-instruct-v1:0` |
+| `invocationAlarmThreshold` | `100` |
+| `outputTokenAlarmThreshold` | `200000` |
 
-This checkout’s Core `.env` currently sets `BEDROCK_REGION=ca-central-1`.
-If that is the live invocation region, synth/deploy with
-`-c bedrockRegion=ca-central-1` so the IAM ARN and the metric dimensions
-match traffic. Do not deploy `us-east-1` against a `ca-central-1` key.
+The region must match the region used by Core's Bedrock client and the model ARN
+and CloudWatch metric dimensions. The repository's Core environment has used
+`ca-central-1`, so inspect the actual production environment before deploying
+rather than blindly accepting the CDK default.
 
-## Thresholds
-
-Defaults in `cdk.json` (tune to the admin caps from #1547):
-
-- `invocationAlarmThreshold` — Sum of Invocations in 5 minutes (default `100`)
-- `outputTokenAlarmThreshold` — Sum of OutputTokenCount in 5 minutes (default `200000`)
+Override context only after confirming model access in the target account/region:
 
 ```bash
-npx cdk synth \
-  -c invocationAlarmThreshold=40 \
+npx cdk synth -c bedrockRegion=ca-central-1
+npx cdk synth -c invocationAlarmThreshold=40 \
   -c outputTokenAlarmThreshold=80000
 ```
 
-## Commands
+Thresholds must be positive numbers. Choose them with the application's rate and
+spend controls; these alarms are fast tripwires, not AWS Budgets. AWS Budgets and
+Cost Explorer are not part of this stack's trigger path.
+
+## Development verification
 
 From this directory:
 
 ```bash
 npm install
-npm run verify    # cdk synth + template assertions (ARN from cdk.json) + threshold unit tests
+npm run verify
 ```
 
-Deploy is **not** required to close the code half of this issue. When the
-account/region is confirmed:
+`npm run verify` runs the synth assertions and the threshold unit tests. The synth
+assertions verify the model ARN, the exact IAM statement shape, both CloudWatch
+metrics, the alarm actions, the SNS topic, and the exported outputs.
+
+Useful separate commands:
+
+```bash
+npm run build
+npm run synth
+npm run test
+npm run diff
+```
+
+Do not run `cdk deploy` until the account, region, model access, thresholds,
+credentials, and IAM replacement plan have been reviewed.
+
+## Deployment
+
+With AWS credentials configured for the intended account:
 
 ```bash
 npx cdk bootstrap aws://ACCOUNT/REGION
-npx cdk deploy
+npm run deploy
 ```
 
-Live alarm check (after deploy): put a datapoint over the threshold and
-confirm SNS receives the notification. That step needs AWS credentials and
-is not run in CI.
+Supply the same region/model context used during verification if it differs from
+`cdk.json`:
 
-## Out of scope
+```bash
+npx cdk deploy \
+  -c bedrockRegion=REGION \
+  -c modelId=MODEL_ID \
+  -c invocationAlarmThreshold=INVOCATION_LIMIT \
+  -c outputTokenAlarmThreshold=TOKEN_LIMIT
+```
 
-- Lambda that disables overflow (#1620, post-MVP)
-- Any change under `apps/core`
-- AWS Budgets / Cost Explorer as the primary trigger
+After deployment, record the CloudFormation stack name, account, region, model
+ARN, threshold values, managed-policy ARN, and exported SNS topic ARN. Then attach
+the managed policy in place of broad Bedrock access on the bearer-token IAM user.
+
+## Post-deployment checks
+
+Verify in AWS that:
+
+- the managed policy has the three expected statements;
+- the `NotResource` deny covers all other model resources;
+- both alarms are in the intended region and use the configured `ModelId`;
+- both alarms publish to the exported SNS topic;
+- the intended mailbox/subscriber exists if notifications are required;
+- a controlled test datapoint or approved test procedure reaches the SNS mailbox.
+
+A synth pass proves the generated template, not AWS account permissions, model
+access, alarm delivery, or application behavior. Do not claim the stack is live
+until those account-level checks are recorded.
+
+## Potential upgrades
+
+These are future options, not current resources:
+
+- attach a reviewed SNS subscriber or incident integration to the exported topic;
+- add an automated circuit breaker that disables overflow after a confirmed alarm;
+- reconcile alarm thresholds with the application's rate/spend controls;
+- add deployment-time account/region/model-access checks;
+- add a restore/runbook exercise for the alarm mailbox and policy replacement.
+
+Any future circuit breaker must consume the existing SNS export rather than create a
+second topic, and must be reviewed for failure modes before it can disable traffic.

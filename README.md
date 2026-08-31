@@ -23,7 +23,12 @@ EduAI/
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # Design system bundle (typography, guidelines, Figma exports). Colour tokens here are superseded by packages/ui/src/styles/base.css
 ├── infra/
-│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
+│   ├── aws-bedrock-guardrails/      # CDK stack and verification guidance for the Bedrock guardrails boundary
+│   ├── cmps01/                      # CMPS01 inference host notes and implementation procedure
+│   ├── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
+│   ├── inference/                   # Shared inference-fleet contract and CMPS host runbooks
+│   ├── production/                  # Production provisioning, release, service, and rollback runbooks
+│   └── s378/                        # Shared development-server go-live and systemd runbook
 ├── tools/
 │   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
 ├── scripts/                         # Repo-level setup and dev utilities
@@ -90,7 +95,10 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
-| [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
+| [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deployment source-of-truth index for local development, s378, production, inference, backups, health checks, and rollback |
+| [`infra/production/README.md`](infra/production/README.md) | Production release, health, rollback, and service-boundary runbook |
+| [`infra/s378/GO-LIVE.md`](infra/s378/GO-LIVE.md) | Shared s378 go-live build, systemd, and health-check runbook |
+| [`infra/inference/README.md`](infra/inference/README.md) | Current inference-fleet contract and host-state snapshots |
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`rag-ai/MODEL_ROUTING.md`](docs/rag-ai/MODEL_ROUTING.md) | Current Auto model-selection and vLLM fleet-routing contract |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |

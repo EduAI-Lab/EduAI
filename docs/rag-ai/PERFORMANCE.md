@@ -114,6 +114,17 @@ host. Record both outcome and instrumentation.
 These gaps are recorded so a future developer can fix the harnesses without
 mistaking them for production behavior.
 
+## Historical Fleet Router reports
+
+Deployment PR [#1707](https://github.com/EduAI-Lab/EduAI/pull/1707) restores these
+dated reports because their measured concurrency, throughput, latency, fleet
+distribution, and RAG-correctness numbers remain useful historical evidence.
+They describe the August 18–19, 2026 test environment and are not a current
+capacity guarantee. Use the harness and conditions above for a new measurement.
+
+- [`FLEET_ROUTER_STRESS_2026-08-18.md`](./latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md)
+- [`FLEET_ROUTER_DATA_REPORT_2026-08-19.md`](./latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
+
 ## Code map
 
 | Tool | File |
