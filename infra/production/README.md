@@ -38,7 +38,7 @@ The application service runs from `current`. The old checkout remains available 
 - Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; this PR's validated application template uses cmps01 for the Qwen3.5 interactive fleet and cmps02 for the retained Qwen2.5 32B Assist Auto model; cmps03 remains outside this rollout pending firewall and inventory validation
 - AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
 - Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
-- Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000` — see the dedicated Question Maker provisioning PR/branch for its templates and `provision-qm` helper action; not covered by this file
+- Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000`
 
 ## One-time server preparation
 
@@ -85,6 +85,8 @@ Install the following reviewed templates as root-owned files:
 infra/production/ai-tutor.env.example                        -> /etc/eduai/eduai-aitutor.env
 infra/production/systemd/eduai-aitutor-server.service        -> /etc/systemd/system/
 infra/production/apache/aitutor.eduai.ok.ubc.ca.conf         -> /etc/apache2/sites-available/
+infra/production/systemd/eduai-qm-backend.service             -> /etc/systemd/system/
+infra/production/apache/questionmaker.eduai.ok.ubc.ca.conf    -> /etc/apache2/sites-available/
 ```
 
 The frontend uses the public-only values in
@@ -98,12 +100,12 @@ rather than assuming a per-hostname certificate file exists.
 
 ### Question Maker production prerequisites
 
-Question Maker's production templates and provisioning sequence are not in
-this revision of `README.md` — see the dedicated Question Maker
-provisioning branch/PR, which follows the same static-frontend-plus-API
-pattern as AI Tutor above (hostname `questionmaker.eduai.ok.ubc.ca`, API on
-`127.0.0.1:8000`) and a `provision-qm` `eduai-production-admin` action
-modeled on `provision-aitutor`.
+Install `question-maker.env.example` as the reviewed, secret-bearing
+`/etc/eduai/eduai-qm.env`, and install
+`systemd/eduai-qm-backend.service` and
+`apache/questionmaker.eduai.ok.ubc.ca.conf` as root-owned templates. The
+Question Maker generated client and frontend entrypoint are mandatory release
+artifacts, just like AI Tutor's.
 
 ## First release procedure
 
@@ -115,11 +117,20 @@ git worktree add --detach "/srv/www/eduai-production/releases/<commit>" "origin/
 cd "/srv/www/eduai-production/releases/<commit>"
 npm ci
 npm run db:generate -w edu-ai
+(cd apps/extensions/ai-tutor/server && npm run db:generate)
+(cd apps/extensions/question-maker/app/backend && npm run db:generate)
 cd apps/core
 npx prisma migrate deploy
 set -a; . /etc/eduai/eduai-core.env; set +a
 npm run build
 cd ../..
+set -a; . /etc/eduai/eduai-aitutor.env; set +a
+(cd apps/extensions/ai-tutor/server && npx prisma migrate deploy)
+set -a; . /etc/eduai/eduai-qm.env; set +a
+(cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy)
+cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
+npm run build -w ai-tutor
+npm run build -w question-maker-frontend
 ```
 
 `/srv/www/eduai-production` is root-owned; a direct `ln -sfn` as the
@@ -127,19 +138,8 @@ deployment account fails with `Permission denied`. Switch `current` through
 the helper instead:
 
 ```bash
+sudo -n /usr/local/sbin/eduai-production-admin validate-release <commit>
 sudo -n /usr/local/sbin/eduai-production-admin activate-release <commit>
-```
-
-For a release that includes AI Tutor, run its database migration and build
-before switching `current`:
-
-```bash
-cd "/srv/www/eduai-production/releases/<commit>"
-set -a; . /etc/eduai/eduai-aitutor.env; set +a
-(cd apps/extensions/ai-tutor/server && npx prisma generate)
-(cd apps/extensions/ai-tutor/server && npx prisma migrate deploy)
-cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
-npm run build -w ai-tutor
 ```
 
 Restart only after the build and migration succeed:
@@ -147,17 +147,17 @@ Restart only after the build and migration succeed:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now eduai-aitutor-server
+sudo systemctl enable --now eduai-qm-backend
 sudo systemctl restart eduai-core
 sudo systemctl is-active eduai-core
 sudo systemctl is-active eduai-aitutor-server
+sudo systemctl is-active eduai-qm-backend
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
 curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
+curl -fsS https://questionmaker.eduai.ok.ubc.ca/ >/dev/null
 ```
-
-Question Maker's health checks are covered by its own provisioning
-branch/PR (see above), not this file.
 
 Do not run `prisma db push` or automatic production seeding in this procedure.
 
@@ -180,11 +180,14 @@ The production server should pull approved `main` commits through a locked syste
 1. Refuse a dirty release checkout.
 2. Fetch `main` and record the target SHA.
 3. Back up the Core database.
-4. Build a new release directory with `npm ci`.
-5. Run `prisma migrate deploy`.
-6. Run the production build.
-7. Switch `current` atomically.
-8. Restart Core and verify local/public health endpoints.
+4. Build a new release directory with `npm ci`, generating each app's
+   extension-local Prisma client before migration.
+5. Run all three applications' migrations.
+6. Run all three production builds and verify their entrypoints.
+7. Validate the release, prepare only the two public static trees for Apache,
+   and switch `current` atomically.
+8. Restart Core, AI Tutor, and Question Maker and verify local/public health
+   endpoints.
 9. Repoint `current` to the previous release if health checks fail.
 
 The runner must never use `git reset --hard`, `git clean -fd`, `prisma db push`, or unconditional production seeding.

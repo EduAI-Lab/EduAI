@@ -1,0 +1,25 @@
+[Unit]
+Description=EduAI Question Maker production API
+After=network-online.target eduai-core.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ssaada08
+Group=eduai
+UMask=0007
+WorkingDirectory=/srv/www/eduai-production/current/apps/extensions/question-maker/app/backend
+EnvironmentFile=/etc/eduai/eduai-qm.env
+Environment=HOME=/home/ssaada08
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PORT=8000
+# Do not let an incomplete release become a runtime module-not-found loop.
+ExecStartPre=/usr/bin/test -f /srv/www/eduai-production/current/apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json
+ExecStart=/usr/local/bin/node src/index.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
