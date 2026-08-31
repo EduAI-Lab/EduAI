@@ -336,4 +336,18 @@ export const teamMembers: TeamMember[] = [
     codeSnippet:
       'if (scopeEvaluation.decision === "refuse") return buildScopeRefusalMessage(courseScopeContext);',
   },
+  {
+    id: 21,
+    role: "student",
+    name: "Kithe Kisia",
+    position: "Developer",
+    title: "UI/UX & Canvas Sync",
+    image: "",
+    biography:
+      "Fourth-year Computer Science student at UBC Okanagan. Interested in full-stack development, system design, developing applicable user-friendly AI tools, project management, and building scalable software.",
+    contribution:
+      "Architected and executed the UI/UX overhaul for the EduAI core platform, mapping out modular component libraries to elevate user experience and platform navigation. Designed and contributed to the key interactions individuals have with the AI system on the frontend. Engineered automated Canvas LMS synchronization pipelines using TypeScript, Python, and PostgreSQL to integrate question banks into the core backend. Scoped and developed full-stack workflow mapping, bridging UI components, database architecture, and AI-driven capabilities for reliable delivery.",
+    techStack: ["TypeScript", "React", "PostgreSQL", "Python", "Java", "Docker", "Canvas LMS API"],
+    codeSnippet: "if (design.ships) { users.notice(); }",
+  },
 ];
