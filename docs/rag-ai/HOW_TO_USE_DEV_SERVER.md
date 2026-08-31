@@ -1,201 +1,121 @@
-### How to use the shared s378 / `dev.eduai` server
+# Shared development deployment and RAG checks
 
-## Prerequisites
-- UBC VPN (or campus network)
-- SSH: `ssh YOUR_CWL@s378.ok.ubc.ca` (same host as `dev.eduai.ok.ubc.ca`)
-- RAG embeddings: set **`EMBEDDING_PROVIDER=local`**, **`OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`**, and **`OLLAMA_BASE_URL`** in `apps/core/.env` (Ollama runs on cmps01). Pull the model once: `ollama pull mxbai-embed-large`. For laptop dev without Ollama, use **`EMBEDDING_PROVIDER=cloud`** plus **`OPENROUTER_API_KEY`** or **`OPENAI_API_KEY`** (local mode does not silently fall back to cloud). Verify with `npm run test:embedding` from `apps/core`. After the LOCAL-EMBEDDINGS migration, re-embed courses with `npm run re-embed:course -- <courseId>`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md) and [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md).
+The shared UBCO development host is `s378`, served at
+`dev.eduai.ok.ubc.ca`. It is a deployment target, not a development workstation:
+Core runs as a Node service and the extension frontends are built static assets.
+The deployment source of truth is [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md)
+and the scripts under [`infra/s378/`](../../infra/s378/).
 
-## Public URLs
+## Services
 
-| App | URL | Served by |
-|-----|-----|-----------|
-| Core | https://dev.eduai.ok.ubc.ca | `:3000` (node, SSR) |
-| AI Tutor | https://dev.aitutor.eduai.ok.ubc.ca | Apache, **static build**; `/api/` → `:4000` |
-| Question Maker | https://dev.questionmaker.eduai.ok.ubc.ca | Apache, **static build**; `/api/` → `:8000` |
+| Public host | Runtime |
+| --- | --- |
+| `https://dev.eduai.ok.ubc.ca` | Core SSR on port 3000 |
+| `https://dev.aitutor.eduai.ok.ubc.ca` | Apache static client; `/api/` proxies to port 4000 |
+| `https://dev.questionmaker.eduai.ok.ubc.ca` | Apache static client; `/api/` proxies to port 8000 |
 
-> s378 serves **built** assets — it does not run `npm run dev`. A `git pull` or a
-> unit restart no longer changes what the sites serve; you must rebuild. See
-> [Switch the shared server to your feature branch](#switch-the-shared-server-to-your-feature-branch).
+The application services are managed as system units: `eduai-core.service`,
+`eduai-cron-worker.service`, `eduai-aitutor-server.service`, and
+`eduai-qm-backend.service`, grouped by `eduai-dev.target`. They are not
+`systemctl --user` units. A restart reloads server-side environment values; a
+`VITE_` value requires a rebuild because it is compiled into the frontend.
 
-Shared session cookies use **`COOKIE_DOMAIN=.eduai.ok.ubc.ca`** so login on Core works across extension hosts. After that env is enabled (or changed), **sign in again** (extensions send `?force=1` on login to avoid a redirect loop).
+## Rebuild and restart
 
-Ops details for extensions + env sync: [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md).
-
-## Process management (systemd)
-
-Three **system** units owned by the `eduai-dev` group. Units live in
-`infra/s378/systemd/`. Any group member can restart the stack — no `--user`, no
-`loginctl enable-linger`, no sudo.
-
-| Unit | Port |
-|------|------|
-| `eduai-core.service` | `:3000` |
-| `eduai-aitutor-server.service` | `:4000` |
-| `eduai-qm-backend.service` | `:8000` |
-| `eduai-dev.target` | all three |
-
-The two frontend units are gone. Both extension frontends are `ssr: false`, so
-their builds are static files that Apache serves directly.
-
-### One-time setup
+Use the repository deployment command on s378:
 
 ```bash
-bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
-bash infra/s378/go-live-build.sh             # build + start
-```
-
-### Day-to-day
-
-```bash
-systemctl status eduai-dev.target
-systemctl restart eduai-dev.target          # all three
-systemctl restart eduai-core                # Core only
-journalctl -u eduai-core -f                 # logs
-
-# After a server-side .env change (DATABASE_URL, API keys, …):
-bash infra/s378/go-live-env.sh
-systemctl restart eduai-dev.target
-```
-
-**A `VITE_`-prefixed value is different**: it is compiled into the bundle at build
-time, so changing one needs a full rebuild, not a restart:
-
-```bash
+git pull
 bash infra/s378/go-live-build.sh
 ```
 
-**503 Service Unavailable** from Apache means the node process behind `/api/` (or
-Core) is down or still starting:
+For a branch switch that needs dependency installation:
 
 ```bash
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/
-systemctl restart --no-block eduai-core
-```
-
-**403 or a blank page on an extension host** is a different failure — that side is
-static now, so it usually means the build output is missing or unreadable:
-
-```bash
-ls apps/extensions/ai-tutor/build/client/index.html
-ls apps/extensions/question-maker/app/frontend/dist/index.html
-bash infra/s378/go-live-build.sh    # rebuild if either is absent
-```
-
-## Switch the shared server to your feature branch
-
-```bash
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-git fetch origin
-git checkout [your-feature-branch]
-git pull origin [your-feature-branch]
 bash infra/s378/go-live-build.sh --install
 ```
 
-`--install` runs `npm install` first; drop it if dependencies did not change. The
-script handles migrations, `prisma generate`, the builds and the restart in the
-required order — you do not need to run those by hand.
+To build one application only, use `--only core`, `--only aitutor`, or
+`--only qm` (the extension names are also accepted as documented by the script).
+The full command handles environment generation, Prisma generation/migrations,
+extension setup, builds, and service restarts in the required order.
 
-**Changing embedding dimension on the shared server:** if your branch uses a different `vector(N)` than the DB currently has, follow [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) before re-embedding.
+Do not edit a legacy `~/dev-vhosts` copy. Apache vhosts, systemd units, and
+deployment behavior are tracked under `infra/s378/`.
 
-After the build finishes, hard-refresh the browser.
+## RAG environment on the dev host
 
-## Why there's no HMR
+Core's `.env` is host-local and must never be committed. Use
+[`apps/core/.env.example`](../../apps/core/.env.example) for variable names.
+For RAG, verify the deployment intentionally chooses one of:
 
-s378 serves compiled bundles, so nothing live-reloads and a restart alone will not
-show your changes — **you must rebuild.** This is deliberate. The old setup ran
-`npm run dev` for every app, which served unbundled ESM: roughly 12MB of JavaScript
-across ~250 requests per page, with the `@tabler/icons-react` barrel alone landing
-as a single 3.79MB module. Building serves the same routes in a fraction of that.
+- local embeddings through the configured CMPS/Ollama endpoint;
+- cloud 1024-dimensional embeddings through OpenRouter/OpenAI;
+- a deliberately isolated legacy 3072-dimensional setup.
 
-Nobody develops on this box — it is shared staging — so there was no HMR worth
-keeping. Develop locally with `npm run dev`, which is unchanged.
+The shared current schema is `vector(1024)`. Before changing provider/model or
+dimension, read [`EMBEDDINGS.md`](./EMBEDDINGS.md) and coordinate migration and
+re-embedding; do not experiment against the shared corpus.
 
-The build still runs with `NODE_ENV=development`, so s378 remains a development
-environment in every way the application code can observe: error boundaries still
-show stack traces, dev-only routes stay registered, and Core's HSTS and strict
-nonce CSP stay off.
+For local chat, `VLLM_BASE_URL` points Core at the protected vLLM edge. Fleet
+variables or a host-local `fleet.config.json` control multi-host routing. See
+[`VLLM.md`](./VLLM.md) and [`MODEL_ROUTING.md`](./MODEL_ROUTING.md).
 
-## cmps01 inference (Ollama + vLLM)
-
-Local **chat** models run on **cmps01**; the app calls them over **HTTP** (not SSH). See [ARCHITECTURE.md](../ARCHITECTURE.md#cmps01-gpu-inference-host).
-
-Add to `apps/core/.env` on **s378**:
-
-```env
-# Ollama — works today from dev
-OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
-
-# vLLM — LiteLLM proxy on cmps01 (TCP 8001 open dev → cmps01)
-VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
-```
-
-Restart after editing `.env`: `systemctl restart eduai-core`.
-
-| Check | Command (on s378) |
-| ----- | ----------------- |
-| Ollama reachable | `curl -s http://cmps01.ok.ubc.ca:11434/api/tags \| head` |
-| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" \| jq '.data[].id'` |
-| vLLM chat smoke | `cd apps/core && npm run vllm:smoke` |
-| SSH s378 → cmps01 | **Fails** (port 22 timeout) — **do not** use an SSH tunnel from s378 |
-
-**vLLM ops on cmps01:** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
-
-In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat. Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
-
-## Auth / login troubleshooting
-
-Required in `apps/core/.env` on the server:
-
-```env
-BETTER_AUTH_URL="https://dev.eduai.ok.ubc.ca"
-BETTER_AUTH_SECRET="<openssl rand -base64 32>"
-DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54320/eduai?schema=public"
-COOKIE_DOMAIN=".eduai.ok.ubc.ca"
-```
-
-`COOKIE_DOMAIN=.eduai.ok.ubc.ca` is **required** on this shared host so Core, AI Tutor, and Question Maker share the session. After enabling it, users must sign in again (see extension redirects with `?force=1`).
-
-After a DB reset, **register a new account** — old passwords are gone. Demo accounts (when seeded) appear on the login page.
-
-**Silent login (page reloads, no error):** usually session cookies not stored. Check:
-
-1. Restart Core after `.env` changes: `systemctl restart eduai-core`.
-2. Browser DevTools → Network → POST `/auth/login` → Response headers: expect **multiple** `Set-Cookie` with `Secure` and `Domain=.eduai.ok.ubc.ca`.
-3. From SSH, smoke-test the auth API:
+## Safe operational checks
 
 ```bash
-curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-in/email" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"yourpassword"}' | head -40
+systemctl status eduai-dev.target
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
+journalctl -u eduai-core -n 100 --no-pager
 ```
 
-`401` = wrong credentials. `200` with `Set-Cookie` but browser still fails → cookie `Secure` / `Domain` mismatch (ensure `BETTER_AUTH_URL` is `https://…`, not `localhost`).
-
-**Can’t log in again after logout:** use **Log out** in the UI (server `POST /auth/logout`), not only client-side sign-out. Clear site cookies for `*.eduai.ok.ubc.ca` once if a stale `__Secure-better-auth.session_token` remains. Verify sign-out clears cookies:
+Confirm that the public extension pages serve hashed assets, not Vite source or
+`@vite/client`:
 
 ```bash
-curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-out" \
-  -H "Cookie: __Secure-better-auth.session_token=YOUR_TOKEN" | head -20
+curl -sk https://dev.questionmaker.eduai.ok.ubc.ca/ | grep -o 'src="[^"]*"'
+curl -sk https://dev.aitutor.eduai.ok.ubc.ca/ | grep -c '@vite/client'
 ```
 
-**Extension infinite “Loading…”:** usually a host-only Core cookie (issued before `COOKIE_DOMAIN` was set). Open the extension → Core login with `force=1` → sign in again.
+The first should show `/assets/...` and the second should be `0`.
 
-**Shared `EDUAI_API_KEY`:** Core and extension backends must match (topic sync / reconcile). Sync with `bash infra/s378/go-live-env.sh`. Interactive QM AI chat prefers the session cookie; see [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md).
+## RAG smoke checks
 
-## When you're done
-
-Switch the shared tree back to `development` (or the agreed default) so others have a known state:
+Run provider checks from the Core checkout on the host or an approved machine:
 
 ```bash
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-git checkout development
-git pull origin development
-bash infra/s378/go-live-build.sh --install
+cd apps/core
+npm run test:embedding
+npm run vllm:smoke
+npm run fleet:smoke
 ```
 
-Leaving the tree on `development` without rebuilding would keep serving **your
-branch's** compiled assets, so the rebuild is not optional here.
+For a database-backed fixture run, use
+`npx tsx scripts/seed-rag-ingestion-fixtures.ts` only against an approved test
+course/database. For authenticated end-to-end RAG and fleet measurement, use
+[`PERFORMANCE.md`](./PERFORMANCE.md); it requires explicit fixture mutation
+guards and cleanup.
 
-If your branch changed embedding dimension, revert the shared DB and `.env` for the branch you return to — see [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) (section **Switching back**).
+## Shared service key
+
+Core, AI Tutor, and Question Maker use the same `EDUAI_API_KEY` for server-to-
+server operations. `infra/s378/go-live-env.sh` copies the Core value to the
+extension server environments. Generate and rotate it outside the repository;
+never print it in a support request or commit it.
+
+If extension APIs fail with service-key errors, check key presence and equality
+without printing values, then rebuild/restart as appropriate. Interactive chat
+normally uses the shared session cookie; the service key remains required for
+server-to-server sync and related operations.
+
+## Troubleshooting order
+
+1. Check the public host and service status.
+2. Check Core logs for sanitized provider, queue, or RAG errors.
+3. Check the effective model and course access in the request.
+4. Check `X-RAG-Latency-Ms`, `X-Admission-Wait-Ms`, and `X-Fleet-Server` to
+   distinguish retrieval, admission, and inference delay.
+5. Check embedding dimension/provider alignment before re-embedding anything.
+
+Do not infer a RAG failure from a slow response alone, and do not treat an empty
+retrieval result as proof that the embedding provider failed.
