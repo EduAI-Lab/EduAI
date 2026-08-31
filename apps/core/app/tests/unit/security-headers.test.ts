@@ -31,6 +31,20 @@ describe("applySecurityHeaders", () => {
     expect(headers.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
   });
 
+  it("tells crawlers not to index images on HTML documents", () => {
+    const headers = new Headers();
+    applySecurityHeaders(headers, { isProd: false, nonce: "abc" });
+
+    expect(headers.get("X-Robots-Tag")).toBe("noimageindex");
+  });
+
+  it("omits the image-index rule on resource responses", () => {
+    const headers = new Headers();
+    applySecurityHeaders(headers, { isProd: false });
+
+    expect(headers.get("X-Robots-Tag")).toBeNull();
+  });
+
   it("omits HSTS and CSP outside production", () => {
     const headers = new Headers();
     applySecurityHeaders(headers, { isProd: false, nonce: "abc" });
