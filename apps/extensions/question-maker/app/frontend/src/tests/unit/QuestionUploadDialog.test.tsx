@@ -478,7 +478,7 @@ describe("QuestionUploadDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
 
     expect(removeApiKey).toHaveBeenCalledWith("openai");
-    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
+    await waitFor(() => expect(screen.getByLabelText("OPENAI API Key")).toHaveValue(""));
   });
 
   it("edits a draft's summary, question text, difficulty, topic, and switches it to MCQ", async () => {
@@ -653,7 +653,7 @@ describe("QuestionUploadDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
 
     expect(removeApiKey).toHaveBeenCalledWith("openai");
-    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
+    await waitFor(() => expect(screen.getByLabelText("OPENAI API Key")).toHaveValue(""));
   });
 });
 
