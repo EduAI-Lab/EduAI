@@ -30,10 +30,12 @@ export type LocalModelSyncResult = {
 };
 
 /** Capabilities for campus vLLM models not described by `/v1/models`. */
-export function vllmModelCapabilities(modelId: string): {
+export type LocalModelCapabilities = {
   supportsImages: boolean;
   supportsTools: boolean;
-} {
+};
+
+export function vllmModelCapabilities(modelId: string): LocalModelCapabilities {
   const qwen38 = modelId.trim().toLowerCase() === "qwen3.8-27b-instruct";
   return { supportsImages: qwen38, supportsTools: qwen38 };
 }
