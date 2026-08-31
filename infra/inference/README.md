@@ -23,6 +23,10 @@ alternatives to port 8001. The bearer key belongs only in server-side environmen
 files. Never place it in documentation, browser URLs, client bundles, or command
 output.
 
+For server-related escalation, use the contacts in the canonical
+[`deployment guide`](../../docs/DEPLOYMENT.md#operational-contacts). Do not
+duplicate contact details in individual host runbooks.
+
 The implementation procedure for the nginx/LiteLLM/vLLM stack is currently
 [`../cmps01/README.md`](../cmps01/README.md). It is written for CMPS01's
 repository-managed deployment and should be reused for other hosts only after
@@ -81,4 +85,3 @@ A host is ready only when the authenticated edge returns the expected model IDs,
 the required application can reach it, and the owner has accepted its operational
 role. Re-run this validation after model replacement, proxy changes, firewall
 changes, or a server reboot.
-

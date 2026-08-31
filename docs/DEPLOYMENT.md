@@ -23,6 +23,14 @@ Application-specific deployment notes remain under `apps/`. Authentication and
 first-admin bootstrap are documented in
 [`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
 
+## Operational contacts
+
+- **IT — Ian Courtney** (`ian.courtney@ubc.ca`): contact for all server-related
+  matters involving CMPS01, CMPS02, CMPS03, s348 (production), and s378
+  (development).
+- **CTL — Michael Ogden** (`michael.ogden@ubc.ca`): coordinating additional
+  servers from CTL and UBCV and working with Rich Tape on a potential deal.
+
 ## Deployment contracts
 
 The supported runtime layout is:
