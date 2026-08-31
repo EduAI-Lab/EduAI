@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 
@@ -32,5 +32,25 @@ describe("Chat views — role layouts", () => {
     render(<ChatCourseScopedView {...baseProps} />);
     // Course-scoped view shows a course selector pill that says "Select course"
     expect(screen.getByText("Course")).toBeInTheDocument();
+  });
+
+  it("emits the selected course id to the chat handler", () => {
+    const setSelectedCourseId = vi.fn();
+
+    render(
+      <ChatCourseScopedView
+        {...baseProps}
+        setSelectedCourseId={setSelectedCourseId}
+        availableCourses={[{ id: "c1", code: "COSC 101", name: "Intro to CS" }]}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Course" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: /COSC 101/ }));
+
+    expect(setSelectedCourseId).toHaveBeenCalledWith("c1");
   });
 });

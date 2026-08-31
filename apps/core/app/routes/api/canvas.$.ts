@@ -46,6 +46,7 @@ import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.s
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { Session } from "~/lib/auth/server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
@@ -219,6 +220,129 @@ async function auditedCanvasRead<T>(
   }
 }
 
+type CanvasRequestContext = {
+  request: Request;
+  subpath: string;
+  userId: string;
+  user: Session["user"];
+  requestContext: ReturnType<typeof getRequestContext>;
+  actorContext: ReturnType<typeof getActorContext>;
+};
+
+async function handleCanvasSyncRequest(context: CanvasRequestContext): Promise<Response> {
+  const { request, userId, user, actorContext, requestContext } = context;
+  if (user.role !== "ADMIN" && user.role !== "INSTRUCTOR") {
+    return json({ success: false, error: "FORBIDDEN" }, 403);
+  }
+  if (isCanvasSyncRateLimited(userId)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...actorContext,
+        ...requestContext,
+        actionCode: "RATE_LIMIT_EXCEEDED",
+        outcome: "DENIED",
+        entityType: "Canvas",
+        entityId: userId,
+        entityLabel: user.email ?? null,
+        details: user.email ? { email: user.email } : undefined,
+      }),
+    );
+    return json(
+      {
+        success: false,
+        error: "Sync was requested too recently. Please wait and try again.",
+      },
+      429,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: "INVALID_JSON" }, 400);
+  }
+
+  const result = SyncCanvasCoursesSchema.safeParse(body);
+  if (!result.success) {
+    return json(
+      {
+        success: false,
+        error: "Invalid input",
+        details: result.error.flatten(),
+      },
+      400,
+    );
+  }
+
+  await validateInstructorCanvasCourseIds(userId, result.data.canvasCourseIds);
+
+  const syncResult = await syncCanvasCourses(userId, result.data.canvasCourseIds);
+  return json({ success: true, data: syncResult });
+}
+
+async function handleCanvasDeleteRequest(context: CanvasRequestContext): Promise<Response> {
+  const { request, subpath, userId, actorContext, requestContext } = context;
+  const quizRoute = parseCanvasQuizSubpath(subpath);
+  if (quizRoute?.kind === "quiz") {
+    const queryOrError = parseCanvasCourseIdQuery(request);
+    if (queryOrError instanceof Response) return queryOrError;
+
+    const credentialsOrError = await loadCanvasCredentialsOrError(userId);
+    if (credentialsOrError instanceof Response) return credentialsOrError;
+
+    await validateInstructorCanvasCourseIds(userId, [String(queryOrError.canvasCourseId)]);
+
+    const data = await deleteCanvasQuiz(
+      credentialsOrError,
+      queryOrError.canvasCourseId,
+      quizRoute.quizId,
+    );
+    fireAndForget(
+      logAuditAction({
+        ...actorContext,
+        ...requestContext,
+        actionCode: "CANVAS_QUIZ_WRITE",
+        category: "CANVAS",
+        entityType: "CanvasQuiz",
+        entityId: String(quizRoute.quizId),
+        entityLabel: data.title ?? null,
+        details: {
+          canvasCourseId: queryOrError.canvasCourseId,
+          quizId: quizRoute.quizId,
+          operation: "delete",
+        },
+      }),
+    );
+    return json({ success: true, data });
+  }
+
+  if (subpath !== "disconnect") return json({ success: false, error: "NOT_FOUND" }, 404);
+
+  const existingIntegration = await getCanvasIntegrationPublic(userId);
+  await deleteCanvasIntegration(userId);
+
+  fireAndForget(
+    logAuditAction({
+      ...actorContext,
+      ...requestContext,
+      actionCode: "CANVAS_INTEGRATION_DELETED",
+      category: "CANVAS",
+      entityType: "CanvasIntegration",
+      entityId: userId,
+      entityLabel: existingIntegration?.canvasUrl ?? null,
+      details: existingIntegration?.canvasUrl
+        ? { canvasUrl: existingIntegration.canvasUrl }
+        : undefined,
+    }),
+  );
+
+  return json({
+    success: true,
+    message: "Canvas integration disconnected",
+  });
+}
+
 async function handleCanvasRequest(request: Request): Promise<Response> {
   const session = await getRequestSession(request);
   if (!session?.user) {
@@ -265,6 +389,15 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
     });
     return json({ success: false, error: "FORBIDDEN" }, 403);
   }
+
+  const context: CanvasRequestContext = {
+    request,
+    subpath,
+    userId,
+    user: session.user,
+    requestContext,
+    actorContext,
+  };
 
   try {
     switch (request.method) {
@@ -500,54 +633,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         }
 
         if (subpath === "sync") {
-          if (session.user.role !== "ADMIN" && session.user.role !== "INSTRUCTOR") {
-            return json({ success: false, error: "FORBIDDEN" }, 403);
-          }
-          if (isCanvasSyncRateLimited(userId)) {
-            fireAndForget(
-              logSecurityEvent({
-                ...getActorContext(session?.user ?? null),
-                ...requestContext,
-                actionCode: "RATE_LIMIT_EXCEEDED",
-                outcome: "DENIED",
-                entityType: "Canvas",
-                entityId: userId,
-                entityLabel: session.user.email ?? null,
-                details: session.user.email ? { email: session.user.email } : undefined,
-              }),
-            );
-            return json(
-              {
-                success: false,
-                error: "Sync was requested too recently. Please wait and try again.",
-              },
-              429,
-            );
-          }
-
-          let body: unknown;
-          try {
-            body = await request.json();
-          } catch {
-            return json({ success: false, error: "INVALID_JSON" }, 400);
-          }
-
-          const result = SyncCanvasCoursesSchema.safeParse(body);
-          if (!result.success) {
-            return json(
-              {
-                success: false,
-                error: "Invalid input",
-                details: result.error.flatten(),
-              },
-              400,
-            );
-          }
-
-          await validateInstructorCanvasCourseIds(userId, result.data.canvasCourseIds);
-
-          const syncResult = await syncCanvasCourses(userId, result.data.canvasCourseIds);
-          return json({ success: true, data: syncResult });
+          return await handleCanvasSyncRequest(context);
         }
 
         {
@@ -660,66 +746,8 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         return json({ success: false, error: "NOT_FOUND" }, 404);
       }
 
-      case "DELETE": {
-        const quizRoute = parseCanvasQuizSubpath(subpath);
-        if (quizRoute?.kind === "quiz") {
-          const queryOrError = parseCanvasCourseIdQuery(request);
-          if (queryOrError instanceof Response) return queryOrError;
-
-          const credentialsOrError = await loadCanvasCredentialsOrError(userId);
-          if (credentialsOrError instanceof Response) return credentialsOrError;
-
-          await validateInstructorCanvasCourseIds(userId, [String(queryOrError.canvasCourseId)]);
-
-          const data = await deleteCanvasQuiz(
-            credentialsOrError,
-            queryOrError.canvasCourseId,
-            quizRoute.quizId,
-          );
-          fireAndForget(
-            logAuditAction({
-              ...getActorContext(session?.user ?? null),
-              ...requestContext,
-              actionCode: "CANVAS_QUIZ_WRITE",
-              category: "CANVAS",
-              entityType: "CanvasQuiz",
-              entityId: String(quizRoute.quizId),
-              entityLabel: data.title ?? null,
-              details: {
-                canvasCourseId: queryOrError.canvasCourseId,
-                quizId: quizRoute.quizId,
-                operation: "delete",
-              },
-            }),
-          );
-          return json({ success: true, data });
-        }
-
-        if (subpath !== "disconnect") return json({ success: false, error: "NOT_FOUND" }, 404);
-
-        const existingIntegration = await getCanvasIntegrationPublic(userId);
-        await deleteCanvasIntegration(userId);
-
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session?.user ?? null),
-            ...requestContext,
-            actionCode: "CANVAS_INTEGRATION_DELETED",
-            category: "CANVAS",
-            entityType: "CanvasIntegration",
-            entityId: userId,
-            entityLabel: existingIntegration?.canvasUrl ?? null,
-            details: existingIntegration?.canvasUrl
-              ? { canvasUrl: existingIntegration.canvasUrl }
-              : undefined,
-          }),
-        );
-
-        return json({
-          success: true,
-          message: "Canvas integration disconnected",
-        });
-      }
+      case "DELETE":
+        return await handleCanvasDeleteRequest(context);
 
       default:
         return json({ success: false, error: "METHOD_NOT_ALLOWED" }, 405);

@@ -1115,6 +1115,33 @@ router.get(
  * Why: `attemptNumber` is allocated transactionally and guarded by a database
  * uniqueness constraint rather than trusted from the client.
  */
+function validateSubmissionAnswer(activity, body) {
+  const parsed = SubmitAnswerSchema.safeParse(body);
+  if (!parsed.success) return "Provide exactly one valid answer";
+
+  const questionType = activity.config?.questionType ?? "MCQ";
+  if (questionType === "MCQ") {
+    const options = [activity.config?.options, activity.config?.options?.choices].find(
+      Array.isArray,
+    );
+    if (
+      !options ||
+      !("answerOption" in parsed.data) ||
+      parsed.data.answerOption >= options.length
+    ) {
+      return "answerOption is invalid for this question";
+    }
+  } else if (questionType === "SHORT_TEXT") {
+    if (!("answerText" in parsed.data)) {
+      return "answerText is required for this question";
+    }
+  } else {
+    return "Activity question type is invalid";
+  }
+
+  return parsed.data;
+}
+
 router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
   if (!Number.isFinite(activityId)) {
@@ -1170,34 +1197,12 @@ router.post("/questions/:id/answer", async (req, res) => {
       return res.status(403).json({ error: "Activity is not available" });
     }
 
-    const parsedAnswer = SubmitAnswerSchema.safeParse(req.body);
-    if (!parsedAnswer.success) {
-      return res.status(400).json({ error: "Provide exactly one valid answer" });
+    const parsedAnswer = validateSubmissionAnswer(activity, req.body);
+    if (typeof parsedAnswer === "string") {
+      return res.status(400).json({ error: parsedAnswer });
     }
 
-    const questionType = activity.config?.questionType ?? "MCQ";
-    if (questionType === "MCQ") {
-      const options = Array.isArray(activity.config?.options)
-        ? activity.config.options
-        : Array.isArray(activity.config?.options?.choices)
-          ? activity.config.options.choices
-          : null;
-      if (
-        !("answerOption" in parsedAnswer.data) ||
-        options === null ||
-        parsedAnswer.data.answerOption >= options.length
-      ) {
-        return res.status(400).json({ error: "answerOption is invalid for this question" });
-      }
-    } else if (questionType === "SHORT_TEXT") {
-      if (!("answerText" in parsedAnswer.data)) {
-        return res.status(400).json({ error: "answerText is required for this question" });
-      }
-    } else {
-      return res.status(400).json({ error: "Activity question type is invalid" });
-    }
-
-    const { answerText, answerOption } = parsedAnswer.data;
+    const { answerText, answerOption } = parsedAnswer;
 
     const { isCorrect } = evaluateQuestion(activity, {
       answerText,
@@ -1217,13 +1222,11 @@ router.post("/questions/:id/answer", async (req, res) => {
       isCorrect,
     });
 
-    if (authUser.role === "STUDENT") {
-      await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
-    }
-    const feedbackAlreadySubmitted =
-      authUser.role === "STUDENT"
-        ? await hasActivityFeedback({ userId: authUser.id, activityId })
-        : true;
+    await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
+    const feedbackAlreadySubmitted = await hasActivityFeedback({
+      userId: authUser.id,
+      activityId,
+    });
 
     res.json({
       ok: true,

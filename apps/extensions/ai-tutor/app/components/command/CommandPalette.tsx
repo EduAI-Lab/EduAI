@@ -34,6 +34,7 @@ import { getNavForUser } from "~/lib/rbac/nav";
 import type { AtNavItemKey } from "~/lib/rbac/types";
 import api from "~/lib/api";
 import type { Course } from "~/lib/types";
+import { getRouteCourseId } from "~/lib/route-course";
 
 export const AITUTOR_COMMAND_EVENT = "eduai:open-command";
 
@@ -62,18 +63,7 @@ export function CommandPalette() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query);
-  // Course, module and other detail loaders publish the exact active course in
-  // their route data. Keep launcher context separate from the palette's bounded
-  // search results: those are empty before the dialog opens and change on every
-  // query, neither of which means the user left the active course.
-  const routeCourseId = matches
-    .map((match) => {
-      if (!match.data || typeof match.data !== "object" || !("course" in match.data)) return null;
-      const course = match.data.course;
-      if (!course || typeof course !== "object" || !("coreOfferingId" in course)) return null;
-      return typeof course.coreOfferingId === "string" ? course.coreOfferingId : null;
-    })
-    .find((id): id is string => Boolean(id));
+  const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // Only the newest request may write state — debouncing narrows the

@@ -111,6 +111,32 @@ describe("POST /api/assessments", () => {
     expect(res.status).toBe(400);
     expect(svc.createAssessment).not.toHaveBeenCalled();
   });
+
+  it("rejects an assessment type outside the Prisma enum", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/assessments")
+      .set("Cookie", "session=v")
+      .send({ type: "Exam", name: "Midterm", courseId: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid assessment type/);
+    expect(svc.createAssessment).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT /api/assessments/:id", () => {
+  it("rejects an assessment type outside the Prisma enum", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .put("/api/assessments/5")
+      .set("Cookie", "session=v")
+      .send({ type: "Mid" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid assessment type/);
+    expect(svc.updateAssessment).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/assessments", () => {

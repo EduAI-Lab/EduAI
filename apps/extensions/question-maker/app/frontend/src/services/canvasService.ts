@@ -3,6 +3,7 @@
  * Mirrors backend routes and shapes data for frontend consumption.
  */
 import api from "./api";
+import type { AssessmentType } from "../types/question";
 import { getCanvasDefaultUrl } from "./canvasDefaults";
 
 export interface CanvasIntegration {
@@ -239,7 +240,7 @@ export const canvasService = {
     quizId: number,
     localCourseId: number,
     options: {
-      assessmentType?: string;
+      assessmentType?: AssessmentType;
       assessmentName?: string;
       /** Local topic CUID — never coerced to a number (#1652 review). */
       primaryTopicId: string;

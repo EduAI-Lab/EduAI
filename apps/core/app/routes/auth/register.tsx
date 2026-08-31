@@ -6,32 +6,10 @@ import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.s
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { auth } from "~/lib/auth/server";
+import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
-import {
-  MultipartBodyInvalidError,
-  MultipartBodyTooLargeError,
-  readBoundedFormData,
-} from "~/lib/multipart.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-
-export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
-
-function formBodyErrorResponse(cause: unknown): Response | null {
-  if (cause instanceof MultipartBodyTooLargeError) {
-    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (cause instanceof MultipartBodyInvalidError) {
-    return new Response(JSON.stringify({ error: cause.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return null;
-}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -66,7 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   let formData: FormData;
   try {
-    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+    formData = await readAuthFormData(request);
   } catch (error) {
     const response = formBodyErrorResponse(error);
     if (response) return response;

@@ -181,7 +181,7 @@ describe("INSTRUCTOR authoring path (§17)", () => {
     const res = await request(app)
       .post("/api/assessments")
       .set("Cookie", "session=v")
-      .send({ type: "EXAM", name: "Midterm", courseId: 1 });
+      .send({ type: "Quiz", name: "Midterm", courseId: 1 });
     expect(res.status).toBe(201);
     expect(svc.createAssessment).toHaveBeenCalledWith(
       "owner-1",

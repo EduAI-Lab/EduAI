@@ -7,9 +7,8 @@
  *
  *   1. Instructor exclusion list wins — excluded Canvas files are never imported.
  *   2. Unpublished upstream Canvas files are not imported (publish gate).
- *   3. A soft-deleted EduAI row is never revived by Canvas re-sync; import stops
- *      before any timestamp or checksum comparison (deletedAt short-circuits).
- *   4. When an existing row is READY and Canvas reports no newer timestamp,
+ *   3. Explicit re-sync restores a matching soft-deleted EduAI row.
+ *   4. When an active existing row is READY and Canvas reports no newer timestamp,
  *      re-import is unnecessary (fresh-ready skip).
  *   5. When another course material already owns the same content checksum,
  *      skip to avoid duplicate blobs (checksum-dup skip).
@@ -36,11 +35,10 @@ export type ImportReconcileRow = {
   ChecksumDup: "yes" | "no";
 };
 
-/** Five skip kinds — one per SUT skip cause (three share `skipped-not-modified`). */
+/** Four skip kinds — one per SUT skip cause (two share `skipped-not-modified`). */
 export type ImportReconcileSkipKind =
   | "excluded"
   | "unpublished"
-  | "deleted"
   | "not-modified-fresh-ready"
   | "checksum-dup";
 
@@ -66,11 +64,7 @@ export function importReconcileOracle(row: ImportReconcileRow): ImportReconcileV
     return { outcome: "skipped", kind: "unpublished" };
   }
 
-  if (row.ExistingPresent === "yes" && row.DeletedAt === "yes") {
-    return { outcome: "skipped", kind: "deleted" };
-  }
-
-  if (row.ExistingPresent === "yes" && row.StaleAndReady === "yes") {
+  if (row.ExistingPresent === "yes" && row.DeletedAt === "no" && row.StaleAndReady === "yes") {
     return { outcome: "skipped", kind: "not-modified-fresh-ready" };
   }
 
@@ -99,7 +93,6 @@ export function expectedSutOutcome(row: ImportReconcileRow): ImportReconcileSutO
           return "skipped-excluded";
         case "unpublished":
           return "skipped-unpublished";
-        case "deleted":
         case "not-modified-fresh-ready":
         case "checksum-dup":
           return "skipped-not-modified";

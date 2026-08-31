@@ -93,6 +93,49 @@ const DIFF_COLORS = {
   hard: "var(--diff-hard-solid)",
 };
 
+function useCanvasAccess(
+  courseId: number | null | undefined,
+  canManageCanvas: boolean,
+  hasCourseAccess: boolean,
+  onImportFromCanvas: () => void,
+) {
+  const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
+  const canUseCanvas = canManageCanvas && hasCourseAccess;
+
+  useEffect(() => {
+    if (!courseId || !canUseCanvas) {
+      setIsCanvasLinked(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCanvasLinked(null);
+    void (async () => {
+      const link = await canvasService.getCourseLink(courseId);
+      if (cancelled) return;
+      // `unknown` stays null — the same state the page holds while resolving,
+      // which every gate below reads permissively. A Core hiccup would
+      // otherwise read as "not linked" and silently strip the Canvas tab, both
+      // import actions and the bank-sync button from a linked course, with
+      // nothing on screen to explain it (#1652 review).
+      if (link.status === "unknown") return;
+      setIsCanvasLinked(link.status === "linked");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseCanvas, courseId]);
+
+  const canvasLinkStatus = canUseCanvas ? isCanvasLinked : false;
+  const canUseLinkedCanvas = canvasLinkStatus !== false;
+
+  return {
+    canUseCanvas,
+    canUseLinkedCanvas,
+    canvasLinkStatus,
+    handleImportFromCanvas: canUseLinkedCanvas ? onImportFromCanvas : undefined,
+  };
+}
+
 export const CourseDetailPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -113,13 +156,14 @@ export const CourseDetailPage = () => {
     activeTourId,
   } = useGuidedTour();
 
-  // Canvas actions are offered only for courses that were synced from Canvas;
-  // null until the course's Canvas link has been resolved.
-  const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
+  const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
+  const openCanvasImport = useCallback(() => setIsCanvasImportOpen(true), []);
+  const { canUseCanvas, canUseLinkedCanvas, canvasLinkStatus, handleImportFromCanvas } =
+    useCanvasAccess(courseId, canManageCanvas, hasCourseAccess, openCanvasImport);
 
   const tabParam = searchParams.get("tab");
-  const canUseCanvas = canManageCanvas && hasCourseAccess;
-  const activeTab: ActiveTab = resolveCourseTab(tabParam, canUseCanvas ? isCanvasLinked : false);
+  const canManageAssessmentForCourse = canManageAssessment && hasCourseAccess;
+  const activeTab: ActiveTab = resolveCourseTab(tabParam, canvasLinkStatus);
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
       setSearchParams(
@@ -179,7 +223,6 @@ export const CourseDetailPage = () => {
     id: number;
     name: string;
   } | null>(null);
-  const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
   const [deleteAssessmentModalOpen, setDeleteAssessmentModalOpen] = useState(false);
   const [assessmentToDelete, setAssessmentToDelete] = useState<{ id: number; name: string } | null>(
     null,
@@ -279,30 +322,6 @@ export const CourseDetailPage = () => {
       cancelled = true;
     };
   }, [courseId]);
-
-  // Canvas link for this course, resolved from its Canvas course mapping.
-  useEffect(() => {
-    if (!courseId || !canUseCanvas) {
-      setIsCanvasLinked(false);
-      return;
-    }
-    let cancelled = false;
-    setIsCanvasLinked(null);
-    void (async () => {
-      const link = await canvasService.getCourseLink(courseId);
-      if (cancelled) return;
-      // `unknown` stays null — the same state the page holds while resolving,
-      // which every gate below reads permissively. A Core hiccup would
-      // otherwise read as "not linked" and silently strip the Canvas tab, both
-      // import actions and the bank-sync button from a linked course, with
-      // nothing on screen to explain it (#1652 review).
-      if (link.status === "unknown") return;
-      setIsCanvasLinked(link.status === "linked");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [canUseCanvas, courseId]);
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
@@ -1032,9 +1051,7 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          {canUseCanvas && isCanvasLinked !== false && (
-            <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
-          )}
+          {canUseLinkedCanvas && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
         </PageTabsList>
 
         <PageTabsContent value="overview" className="space-y-6">
@@ -1045,18 +1062,14 @@ export const CourseDetailPage = () => {
             analytics={courseAnalytics}
             analyticsStatus={analyticsStatus}
             canWrite={!writesDisabled}
-            canManageAssessment={canManageAssessment && hasCourseAccess}
+            canManageAssessment={canManageAssessmentForCourse}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab("assessments")}
             // Canvas import is scoped to the linked Canvas course, so the action
             // is withheld — not just the tab — when there is no link (#1652
             // review). `null` means "not resolved yet", which keeps the action
             // in place rather than flickering it out on every load.
-            onImportFromCanvas={
-              canUseCanvas && isCanvasLinked !== false
-                ? () => setIsCanvasImportOpen(true)
-                : undefined
-            }
+            onImportFromCanvas={handleImportFromCanvas}
           />
         </PageTabsContent>
 
@@ -1091,10 +1104,10 @@ export const CourseDetailPage = () => {
         <PageTabsContent value="banks" className="space-y-6">
           <CourseBanksTab
             banks={banks}
-            canWrite={canManageAssessment && hasCourseAccess}
+            canWrite={canManageAssessmentForCourse}
             isLoading={isBanksLoading}
             loadError={banksError}
-            isCanvasLinked={canUseCanvas && isCanvasLinked !== false}
+            isCanvasLinked={canUseLinkedCanvas}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}
@@ -1118,11 +1131,7 @@ export const CourseDetailPage = () => {
             onExportToTxt={handleExportAssessmentToTxt}
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
-            onImportFromCanvas={
-              canUseCanvas && isCanvasLinked !== false
-                ? () => setIsCanvasImportOpen(true)
-                : undefined
-            }
+            onImportFromCanvas={handleImportFromCanvas}
           />
           <ListPaginationBar
             total={assessmentsTotal}
@@ -1134,10 +1143,10 @@ export const CourseDetailPage = () => {
         </PageTabsContent>
 
         <PageTabsContent value="canvas" className="space-y-6">
-          {courseId && canUseCanvas && isCanvasLinked !== false && (
+          {courseId && canUseLinkedCanvas && (
             <CourseCanvasTab
               courseId={courseId}
-              canWrite={canManageCanvas && hasCourseAccess}
+              canWrite={canUseCanvas}
               onImportFromCanvas={() => setIsCanvasImportOpen(true)}
             />
           )}

@@ -35,6 +35,7 @@ import {
   buildAppSwitcherGroup,
   type CommandPaletteGroup,
 } from "@eduai/ui";
+import type { loader as rootLoader } from "~/root";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import type { User } from "~/lib/auth/types";
 import type { NavItem, NavGroupItem, NavItemKey } from "~/lib/rbac/types";
@@ -155,9 +156,7 @@ export function CommandPalette({ user }: { user: User }) {
   // #1666 review (Stavan): Course Assistant must survive navigation beyond
   // /dashboard — sourced from the root loader (every route shares it) rather
   // than the raw session `user`, which has no notion of course enrollment.
-  const rootData = useRouteLoaderData("root") as
-    | { hasInstructorEnrollment?: boolean; hasTeachingAssistantEnrollment?: boolean }
-    | undefined;
+  const rootData = useRouteLoaderData<typeof rootLoader>("root");
   const navUser = { ...user, hasInstructorEnrollment: rootData?.hasInstructorEnrollment };
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const [query, setQuery] = React.useState("");

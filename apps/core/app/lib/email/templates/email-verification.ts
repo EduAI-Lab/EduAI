@@ -1,4 +1,5 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
+import { escapeHtml } from "~/lib/email/templates/escape-html";
 
 export type EmailVerificationEmailInput = {
   to: string;
@@ -29,12 +30,4 @@ export function buildEmailVerificationEmail(input: EmailVerificationEmailInput):
   `.trim();
 
   return { to: input.to, subject, text, html };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

@@ -10,45 +10,77 @@ import { initScheduler } from "./jobs/scheduler.js";
 const PORT = config.port;
 
 let server = null;
+let shutdownPromise = null;
+let shutdownExitCode = 0;
 
-/** Handles SIGTERM/SIGINT by closing the HTTP server and database before exiting. */
-const gracefulShutdown = async (signal) => {
-  logger.info({ signal }, "Starting graceful shutdown...");
+/** Closes the HTTP server and database before exiting, with one bounded attempt per process. */
+const shutdown = (exitCode, signal) => {
+  shutdownExitCode = Math.max(shutdownExitCode, exitCode);
 
-  if (server) {
-    server.close(async () => {
-      logger.info("HTTP server closed");
+  if (shutdownPromise) return shutdownPromise;
 
-      try {
-        await prisma.$disconnect();
-        logger.info("Database connections closed");
-      } catch (error) {
-        logger.error({ err: error }, "Error closing database");
-      }
+  if (signal) logger.info({ signal }, "Starting graceful shutdown...");
 
-      logger.info("Graceful shutdown complete");
-      process.exit(0);
-    });
+  shutdownPromise = (async () => {
+    let timedOut = false;
+    let timeout;
 
-    setTimeout(() => {
-      logger.error("Forced shutdown after timeout");
-      process.exit(1);
-    }, 10000);
-  } else {
-    process.exit(0);
-  }
+    try {
+      await Promise.race([
+        (async () => {
+          if (server) {
+            await new Promise((resolve) => {
+              try {
+                server.close((error) => {
+                  if (error) {
+                    logger.error({ err: error }, "Error closing HTTP server");
+                  } else {
+                    logger.info("HTTP server closed");
+                  }
+                  resolve();
+                });
+              } catch (error) {
+                logger.error({ err: error }, "Error closing HTTP server");
+                resolve();
+              }
+            });
+          }
+
+          await Promise.resolve()
+            .then(() => prisma.$disconnect())
+            .then(() => logger.info("Database connections closed"))
+            .catch((error) => logger.error({ err: error }, "Error closing database"));
+        })(),
+        new Promise((resolve) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, 10000);
+        }),
+      ]);
+      if (timedOut) logger.error("Forced shutdown after timeout");
+    } finally {
+      clearTimeout(timeout);
+      logger.info("Shutdown complete");
+      process.exit(timedOut ? 1 : shutdownExitCode);
+    }
+  })();
+
+  return shutdownPromise;
 };
 
 process.on("uncaughtException", (error) => {
   logger.error({ err: error }, "Uncaught Exception");
+  shutdown(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   logger.error({ err: reason, promise }, "Unhandled Rejection");
+  shutdown(1);
 });
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown(0, "SIGTERM"));
+process.on("SIGINT", () => shutdown(0, "SIGINT"));
 
 /** Boots the Express app, wires server error handlers, and kicks off DB connection attempts. */
 const startServer = async () => {

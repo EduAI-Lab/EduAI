@@ -33,6 +33,7 @@ import {
   useCourseListFilters,
 } from "~/lib/course-list-filters";
 import { loadCourseFacets } from "~/lib/course-facets";
+import { redirectToContextualCourse } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
@@ -47,20 +48,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // but a filtered result set would still have truncated silently at 200.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
-  const coreCourseId = url.searchParams.get("coreCourseId")?.trim();
-  if (coreCourseId) {
-    const contextualPage = await api.listCourses({
-      page: 1,
-      pageSize: 1,
-      coreOfferingId: coreCourseId,
-    });
-    const contextualCourse = contextualPage.data[0];
-    if (contextualCourse) {
-      throw redirect(
-        `/student/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
-      );
-    }
-  }
+  await redirectToContextualCourse(request, "student", api.listCourses);
 
   const [page, facets] = await Promise.all([
     api.listCourses({

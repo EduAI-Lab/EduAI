@@ -6,14 +6,9 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { auth } from "~/lib/auth/server";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
-import {
-  MultipartBodyInvalidError,
-  MultipartBodyTooLargeError,
-  readBoundedFormData,
-} from "~/lib/multipart.server";
+import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 
 const VERIFICATION_CALLBACK_URL = "/onboarding/student-id";
-const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
 const resendVerificationSchema = z.object({
   email: z
@@ -37,20 +32,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let formData: FormData;
   try {
-    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+    formData = await readAuthFormData(request);
   } catch (error) {
-    if (error instanceof MultipartBodyTooLargeError) {
-      return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
-        status: 413,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (error instanceof MultipartBodyInvalidError) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
     throw error;
   }
 

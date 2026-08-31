@@ -274,18 +274,21 @@ export async function importSingleCanvasFile(
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: canvasFileId,
     },
-    select: { id: true, status: true, canvasUpdatedAt: true, deletedAt: true },
+    select: {
+      id: true,
+      status: true,
+      canvasUpdatedAt: true,
+      deletedAt: true,
+      deletedBy: true,
+      unpublishedAt: true,
+    },
   });
-
-  // Soft-delete is a one-way EduAI-side removal; Canvas re-sync must not revive
-  // it. Leave the row deleted and report it as skipped.
-  if (existing?.deletedAt) {
-    return "skipped-not-modified";
-  }
 
   const canvasUpdatedAt = new Date(file.updated_at);
   if (
     existing &&
+    existing.deletedAt === null &&
+    existing.unpublishedAt === null &&
     existing.canvasUpdatedAt !== null &&
     canvasUpdatedAt <= existing.canvasUpdatedAt &&
     existing.status === "READY"
@@ -382,6 +385,9 @@ export async function importSingleCanvasFile(
         data: {
           status: existing.status,
           canvasUpdatedAt: existing.canvasUpdatedAt,
+          deletedAt: existing.deletedAt,
+          deletedBy: existing.deletedBy,
+          unpublishedAt: existing.unpublishedAt,
         },
       });
     }
@@ -455,7 +461,13 @@ export async function importSingleCanvasFile(
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: Boolean(existing) });
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: "READY", processedAt: new Date() },
+      data: {
+        status: "READY",
+        processedAt: new Date(),
+        deletedAt: null,
+        deletedBy: null,
+        unpublishedAt: null,
+      },
     });
   } catch (error) {
     await prisma.courseMaterial.update({

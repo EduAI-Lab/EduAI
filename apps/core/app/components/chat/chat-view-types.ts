@@ -50,8 +50,10 @@ export type ChatViewSharedProps = {
   setSelectedCourseId: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
   /**
-   * Which field of `ChatCourseOption` the selector keys/emits through
-   * `selectedCourseCode`/`setSelectedCourseCode` — "code" (default) or "id".
+   * Which field of `ChatCourseOption` the selector uses to match and emit
+   * through `selectedCourseId`/`setSelectedCourseId` — "code" (default) or
+   * "id". Course-scoped chat overrides this to "id" because its handler and
+   * request payload use course IDs; `selectedCourseCode` remains display-only.
    * See `ChatCourseOption.label` / chat-input.tsx's `courseSelectionKey`.
    */
   courseSelectionKey?: "code" | "id";

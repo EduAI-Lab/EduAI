@@ -16,13 +16,7 @@ import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safet
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import {
-  MultipartBodyInvalidError,
-  MultipartBodyTooLargeError,
-  readBoundedFormData,
-} from "~/lib/multipart.server";
-
-export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 
 const authErrorSchema = z.object({
   code: z.string().optional(),
@@ -38,22 +32,6 @@ const signInResponseSchema = z.object({
     })
     .optional(),
 });
-
-function formBodyErrorResponse(cause: unknown): Response | null {
-  if (cause instanceof MultipartBodyTooLargeError) {
-    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (cause instanceof MultipartBodyInvalidError) {
-    return new Response(JSON.stringify({ error: cause.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return null;
-}
 
 /** Cookie scopes used by the two deployed EduAI environments before this fix. */
 const LEGACY_SESSION_COOKIE_DOMAINS = [".eduai.ok.ubc.ca", ".ok.ubc.ca"] as const;
@@ -150,7 +128,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   let formData: FormData;
   try {
-    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+    formData = await readAuthFormData(request);
   } catch (error) {
     const response = formBodyErrorResponse(error);
     if (response) return response;

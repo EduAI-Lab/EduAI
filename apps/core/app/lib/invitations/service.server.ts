@@ -67,6 +67,37 @@ function toPublic(invitation: Invitation): PublicInvitation {
   return { ...rest, isExpired: rest.expiresAt.getTime() < Date.now() };
 }
 
+async function readSignupUserId(response: Response): Promise<string | null> {
+  const body: unknown = await response.json().catch(() => null);
+  if (typeof body !== "object" || body === null || !("user" in body)) return null;
+
+  const user = body.user;
+  if (typeof user !== "object" || user === null || !("id" in user)) return null;
+  return typeof user.id === "string" ? user.id : null;
+}
+
+type AcceptInvitationFailure = Extract<AcceptInvitationResult, { ok: false }>;
+
+async function classifyInvitationConsumeRace(
+  invitationId: string,
+  token: string,
+): Promise<AcceptInvitationFailure> {
+  const current = await prisma.invitation.findUnique({ where: { id: invitationId } });
+  if (!current || current.tokenHash !== hashToken(token)) {
+    return { ok: false, status: 409, error: "INVALID_TOKEN" };
+  }
+  if (current.status === "REVOKED") {
+    return { ok: false, status: 409, error: "INVITATION_REVOKED" };
+  }
+  if (current.status === "ACCEPTED") {
+    return { ok: false, status: 409, error: "INVITATION_USED" };
+  }
+  if (current.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
+  }
+  return { ok: false, status: 409, error: "INVALID_TOKEN" };
+}
+
 /** Send the invitation email; never throws (a delivery failure is logged). */
 async function emailInvite(
   invite: Invitation,
@@ -309,7 +340,7 @@ export async function acceptInvitation(
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
-  // Create the credential account + session through Better Auth. The marker
+  // Create the credential account through Better Auth. The marker
   // header exempts this from the public-registration gate (§6a): an invitee was
   // vetted by an admin/unit-admin, so account creation must work even when
   // `auth.allowPublicRegistration` is off.
@@ -335,17 +366,7 @@ export async function acceptInvitation(
     };
   }
 
-  const signupBody: unknown = await signupResponse.json().catch(() => null);
-  const signupUser =
-    typeof signupBody === "object" &&
-    signupBody !== null &&
-    "user" in signupBody &&
-    typeof signupBody.user === "object" &&
-    signupBody.user !== null
-      ? signupBody.user
-      : null;
-  const createdId =
-    signupUser && "id" in signupUser && typeof signupUser.id === "string" ? signupUser.id : null;
+  const createdId = await readSignupUserId(signupResponse);
   if (!createdId) {
     return { ok: false, status: 500, error: "ACCOUNT_NOT_CREATED" };
   }
@@ -362,7 +383,7 @@ export async function acceptInvitation(
   // on the exact invitation id + original token hash + PENDING status + expiry
   // snapshot. If revoke/resend/another accept wins first, no stale accept can
   // overwrite it. If this transaction loses, roll the newly-created account
-  // (and its Better Auth session/account rows) back before returning.
+  // (and its Better Auth account row) back before returning.
   let updatedUser: { id: string; email: string; role: string };
   try {
     updatedUser = await prisma.$transaction(async (tx) => {
@@ -403,20 +424,7 @@ export async function acceptInvitation(
         console.error("[invitations] rollback of invited account failed", cleanupError),
       );
     if (error instanceof InvitationConsumeLostRaceError) {
-      const current = await prisma.invitation.findUnique({ where: { id: invite.id } });
-      if (!current || current.tokenHash !== hashToken(input.token)) {
-        return { ok: false, status: 409, error: "INVALID_TOKEN" };
-      }
-      if (current.status === "REVOKED") {
-        return { ok: false, status: 409, error: "INVITATION_REVOKED" };
-      }
-      if (current.status === "ACCEPTED") {
-        return { ok: false, status: 409, error: "INVITATION_USED" };
-      }
-      if (current.expiresAt.getTime() <= Date.now()) {
-        return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
-      }
-      return { ok: false, status: 409, error: "INVALID_TOKEN" };
+      return classifyInvitationConsumeRace(invite.id, input.token);
     }
     return { ok: false, status: 500, error: "SIGNUP_FAILED" };
   }

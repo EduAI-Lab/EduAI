@@ -27,6 +27,7 @@ import {
   IconLayoutDashboard,
 } from "@tabler/icons-react";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
+import { useQmPermissions } from "@/hooks/useQmPermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
@@ -58,6 +59,7 @@ export function CommandPalette() {
   const { pathname, search } = useLocation();
   const { displayCourses } = useDisplayCourses();
   const { user } = useAuth();
+  const { canManageCanvas } = useQmPermissions();
   const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
   const coreCourseId =
     displayCourses.find((course) => course.id === localCourseId)?.coreCourseId ??
@@ -88,7 +90,7 @@ export function CommandPalette() {
     },
     {
       heading: currentCourse ? currentCourse.code || currentCourse.name : "This course",
-      items: courseId
+      items: currentCourse
         ? [
             {
               label: "New question",
@@ -111,11 +113,15 @@ export function CommandPalette() {
               icon: <IconFolderOpen className={iconClass} />,
               onSelect: () => navigate(`/courses/${courseId}?tab=topics`),
             },
-            {
-              label: "Canvas",
-              icon: <IconSchool className={iconClass} />,
-              onSelect: () => navigate(`/courses/${courseId}?tab=canvas`),
-            },
+            ...(canManageCanvas
+              ? [
+                  {
+                    label: "Canvas",
+                    icon: <IconSchool className={iconClass} />,
+                    onSelect: () => navigate(`/courses/${courseId}?tab=canvas`),
+                  },
+                ]
+              : []),
             {
               label: "Overview",
               icon: <IconLayoutDashboard className={iconClass} />,

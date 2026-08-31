@@ -28,6 +28,7 @@ import { getNavForUser } from "~/lib/rbac/nav";
 import type { AtNavItemKey } from "~/lib/rbac/types";
 import { routeForRole } from "~/lib/role-routing";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
+import { getRouteCourseId } from "~/lib/route-course";
 import { CommandPalette, AITUTOR_COMMAND_EVENT } from "~/components/command/CommandPalette";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { ShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbs";
@@ -81,14 +82,7 @@ function AppLayoutInner() {
   const { captureScreenshot, getCapturedData, context } = useBugReport();
   const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const routeCourseId = matches
-    .map((match) => {
-      if (!match.data || typeof match.data !== "object" || !("course" in match.data)) return null;
-      const course = match.data.course;
-      if (!course || typeof course !== "object" || !("coreOfferingId" in course)) return null;
-      return typeof course.coreOfferingId === "string" ? course.coreOfferingId : null;
-    })
-    .find(Boolean);
+  const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // All hooks above run unconditionally (rules of hooks) — everything below

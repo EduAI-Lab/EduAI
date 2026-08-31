@@ -142,25 +142,11 @@ export const exportAssessmentToCanvas = async (
       throw canvasError("Assessment not found", 404);
     }
 
-    // Get all questions from sections
-    const questions = [];
-    if (assessment.sections && assessment.sections.length > 0) {
-      for (const section of assessment.sections) {
-        if (section.sectionVariants && section.sectionVariants.length > 0) {
-          for (const sectionVariant of section.sectionVariants) {
-            const variant = sectionVariant.variant;
-            if (variant) {
-              questions.push({
-                variant,
-                sectionName: section.name,
-                displayOrder: sectionVariant.displayOrder,
-              });
-            }
-          }
-        }
-      }
-    }
-
+    const questions = (assessment.sections ?? []).flatMap((section) =>
+      (section.sectionVariants ?? []).flatMap(({ variant, displayOrder }) =>
+        variant ? [{ variant, sectionName: section.name, displayOrder }] : [],
+      ),
+    );
     if (questions.length === 0) {
       throw canvasError("Assessment has no questions to export", 400);
     }
@@ -470,25 +456,12 @@ export const getCanvasQuizzes = async (cookie, canvasCourseId) => {
   }
 };
 
-// Debug prefix for Canvas import troubleshooting (grep for this to see all import logs)
-const DEBUG_PREFIX = "[Canvas Import]";
-
 /** Fetches the question list for a Canvas quiz. Note: list endpoint often returns answers as null; use getCanvasQuizQuestionById for full details. */
 export const getCanvasQuizQuestions = async (cookie, canvasCourseId, quizId) => {
   try {
     await loadCoreCanvasIntegration(cookie);
     const result = await proxyCoreListQuizQuestions(cookie, canvasCourseId, quizId);
-    const list = Array.isArray(result?.data) ? result.data : [];
-    console.log(`${DEBUG_PREFIX} getCanvasQuizQuestions: got ${list.length} question(s).`);
-    if (list.length > 0) {
-      const first = list[0];
-      const firstKeys = first && typeof first === "object" ? Object.keys(first) : [];
-      const firstAnswers = first?.answers;
-      console.log(
-        `${DEBUG_PREFIX} list[0] keys: ${firstKeys.join(", ")}; answers type=${typeof firstAnswers}, isArray=${Array.isArray(firstAnswers)}, length=${firstAnswers?.length ?? "N/A"}`,
-      );
-    }
-    return list;
+    return Array.isArray(result?.data) ? result.data : [];
   } catch (error) {
     if (error?.message === NOT_CONNECTED_MESSAGE) throw error;
     rethrowCoreCanvasError(error, "get Canvas quiz questions");
@@ -501,20 +474,9 @@ export const getCanvasQuizQuestionById = async (cookie, canvasCourseId, quizId, 
     await loadCoreCanvasIntegration(cookie);
     const result = await proxyCoreGetQuizQuestion(cookie, canvasCourseId, quizId, questionId);
     const data = result?.data;
-    const topLevelKeys = data && typeof data === "object" ? Object.keys(data) : [];
-    console.log(
-      `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) response keys: ${topLevelKeys.join(", ")}; has data.question=${!!data?.question}`,
-    );
 
     // Some Canvas API responses wrap the question in a 'question' key
-    const question =
-      data && typeof data === "object" && data.question != null ? data.question : data;
-    const questionKeys = question && typeof question === "object" ? Object.keys(question) : [];
-    const answers = question?.answers;
-    console.log(
-      `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) question keys: ${questionKeys.join(", ")}; answers type=${typeof answers}, isArray=${Array.isArray(answers)}, length=${answers?.length ?? "N/A"}`,
-    );
-    return question;
+    return data && typeof data === "object" && data.question != null ? data.question : data;
   } catch (error) {
     if (error?.message === NOT_CONNECTED_MESSAGE) throw error;
     rethrowCoreCanvasError(error, "get Canvas quiz question");
@@ -753,6 +715,128 @@ async function cleanupImportedQuizRows({
   });
 }
 
+/** Converts and persists one Canvas question; returns only persistence failures. */
+async function importCanvasQuestion({
+  canvasQuestion,
+  index,
+  callerId,
+  localCourseId,
+  primaryTopicId,
+  assessmentId,
+  sectionId,
+  importedQuestions,
+  skippedQuestions,
+  questionMetadataIds,
+  variantIds,
+}) {
+  let converted;
+  try {
+    converted = convertCanvasQuestionToVariant(canvasQuestion);
+  } catch (error) {
+    skippedQuestions.push({
+      position: canvasQuestion.position || index + 1,
+      name: canvasQuestion.question_name || `Question ${index + 1}`,
+      type: canvasQuestion.question_type || "unknown",
+      reason: error.message || "Unknown error",
+    });
+    return null;
+  }
+
+  try {
+    const questionMetadata = await prisma.questionMetadata.create({
+      data: {
+        courseId: localCourseId,
+        primaryTopicId: primaryTopicId,
+        type: converted.type,
+        description: converted.description,
+        questionOrder: {},
+        createdBy: callerId,
+      },
+    });
+    questionMetadataIds.push(questionMetadata.id);
+
+    const variant = await prisma.variants.create({
+      data: {
+        questionMetadataId: questionMetadata.id,
+        questionText: converted.questionText,
+        difficulty: "medium",
+        answer: converted.answer,
+        choices: converted.choices || null,
+        assessmentId,
+        secondaryTopicsId: [],
+        isAiGenerated: false,
+        isDraft: true,
+        createdBy: callerId,
+      },
+    });
+    variantIds.push(variant.id);
+
+    await prisma.sectionVariants.create({
+      data: {
+        sectionId,
+        variantId: variant.id,
+        displayOrder: converted.position || index,
+      },
+    });
+
+    importedQuestions.push({
+      questionMetadataId: questionMetadata.id,
+      variantId: variant.id,
+    });
+  } catch (error) {
+    return error;
+  }
+
+  return null;
+}
+
+/** Fetches a full Canvas question, falling back only on an explicit denial. */
+async function getCanvasQuestionForImport({ cookie, canvasCourseId, quizId, listItem }) {
+  const questionId = listItem.id;
+  if (questionId == null) return listItem;
+
+  try {
+    let canvasQuestion = await getCanvasQuizQuestionById(
+      cookie,
+      canvasCourseId,
+      quizId,
+      questionId,
+    );
+    if (canvasQuestion.position == null && listItem.position != null) {
+      canvasQuestion = { ...canvasQuestion, position: listItem.position };
+    }
+    return canvasQuestion;
+  } catch (fetchErr) {
+    if (!isCanvasPermissionDenied(fetchErr)) throw fetchErr;
+    return listItem;
+  }
+}
+
+/** Verifies the local course is linked to the requested Canvas course. */
+async function assertCanvasImportCourse({ ownerId, localCourseId, canvasCourseId, cookie }) {
+  const course = await prisma.course.findFirst({
+    where: { id: localCourseId, userId: ownerId },
+    select: { id: true },
+  });
+  if (!course) {
+    throw canvasError("Local course not found", 404);
+  }
+
+  const courseCanvasMapping = await getCanvasCourseMapping(ownerId, localCourseId, cookie);
+  if (!courseCanvasMapping) {
+    throw canvasError(
+      "Course is not linked to Canvas. Sync the course from Canvas before importing a quiz.",
+      400,
+    );
+  }
+  if (Number(courseCanvasMapping.canvasCourseId) !== canvasCourseId) {
+    throw canvasError(
+      "canvasCourseId does not match the Canvas course linked to this local course",
+      400,
+    );
+  }
+}
+
 /**
  * Imports a Canvas quiz into a local assessment, creating sections/questions/variants.
  *
@@ -780,41 +864,18 @@ export const importQuizFromCanvas = async (
 
     const parsedCanvasCourseId = parseCanvasNumericId(canvasCourseId, "canvasCourseId");
 
-    // Verify local course exists and is accessible (owner-scoped). Existence
-    // check only — `Course` has no local name to select anymore (#1072 §4 step 10).
-    const course = await prisma.course.findFirst({
-      where: { id: localCourseId, userId: ownerId },
-      select: { id: true },
+    // Verify local course exists and is linked to the requested Canvas course.
+    await assertCanvasImportCourse({
+      ownerId,
+      localCourseId,
+      canvasCourseId: parsedCanvasCourseId,
+      cookie,
     });
-
-    if (!course) {
-      throw canvasError("Local course not found", 404);
-    }
-
-    // A quiz may only be imported from the Canvas course this local course is
-    // linked to. The dialog already restricts the picker, but that is a client
-    // choice — without this a direct request could import another Canvas
-    // course's quiz and mint the mapping row for it on the way in (#1652
-    // review). Mirrors the guard question-bank import already applies.
-    const courseCanvasMapping = await getCanvasCourseMapping(ownerId, localCourseId, cookie);
-    if (!courseCanvasMapping) {
-      throw canvasError(
-        "Course is not linked to Canvas. Sync the course from Canvas before importing a quiz.",
-        400,
-      );
-    }
-    if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
-      throw canvasError(
-        "canvasCourseId does not match the Canvas course linked to this local course",
-        400,
-      );
-    }
 
     const quizResponse = await proxyCoreGetQuiz(cookie, parsedCanvasCourseId, quizId);
     const quiz = quizResponse.data;
 
     const canvasQuestions = await getCanvasQuizQuestions(cookie, parsedCanvasCourseId, quizId);
-
     if (canvasQuestions.length === 0) {
       throw canvasError("Quiz has no questions to import", 400);
     }
@@ -854,126 +915,33 @@ export const importQuizFromCanvas = async (
 
     for (let i = 0; i < canvasQuestions.length; i++) {
       const listItem = canvasQuestions[i];
-      const questionId = listItem.id;
-
-      console.log(
-        `${DEBUG_PREFIX} importQuizFromCanvas: processing question ${i + 1}/${canvasQuestions.length} id=${questionId} type=${listItem.question_type} listItem.answers length=${listItem?.answers?.length ?? "N/A"}`,
-      );
-
-      // Declared outside the try so the catch can still describe the question it skipped.
-      let canvasQuestion = listItem;
 
       // Fetch full question by ID so we get the answers array (list endpoint
-      // often returns answers: null). Deliberately outside the conversion
-      // try/catch below: a question the caller may not read is recoverable and
-      // falls back to the list item, but a 401, a 502, or a transport failure
-      // means the import cannot be trusted and must abort with its Core
-      // metadata intact — not be filed away as one "skipped question".
-      if (questionId != null) {
-        try {
-          canvasQuestion = await getCanvasQuizQuestionById(
-            cookie,
-            parsedCanvasCourseId,
-            quizId,
-            questionId,
-          );
-          // Preserve position from list if full question doesn't have it
-          if (canvasQuestion.position == null && listItem.position != null) {
-            canvasQuestion = { ...canvasQuestion, position: listItem.position };
-          }
-          console.log(
-            `${DEBUG_PREFIX} importQuizFromCanvas: after getById question ${i + 1}: answers length=${canvasQuestion?.answers?.length ?? "N/A"}`,
-          );
-        } catch (fetchErr) {
-          if (!isCanvasPermissionDenied(fetchErr)) throw fetchErr;
-          console.log(
-            `${DEBUG_PREFIX} importQuizFromCanvas: getCanvasQuizQuestionById denied for id=${questionId}: ${fetchErr.message}; using list item`,
-          );
-          canvasQuestion = listItem;
-        }
-      }
+      // often returns answers: null). The helper falls back only on permission
+      // denial; other Core failures abort the import.
+      const canvasQuestion = await getCanvasQuestionForImport({
+        cookie,
+        canvasCourseId: parsedCanvasCourseId,
+        quizId,
+        listItem,
+      });
 
-      let converted;
-      try {
-        // Try to convert the question - this will throw if unsupported
-        converted = convertCanvasQuestionToVariant(canvasQuestion);
-        console.log(
-          `${DEBUG_PREFIX} importQuizFromCanvas: converted question ${i + 1} => type=${converted.type} choices count=${converted.choices?.length ?? 0} answer=${converted.answer ?? "null"}`,
-        );
-      } catch (error) {
-        const questionName = canvasQuestion.question_name || `Question ${i + 1}`;
-        const questionType = canvasQuestion.question_type || "unknown";
-        skippedQuestions.push({
-          position: canvasQuestion.position || i + 1,
-          name: questionName,
-          type: questionType,
-          reason: error.message || "Unknown error",
-        });
-        continue;
-      }
-
-      try {
-        // Create question metadata
-        const questionMetadata = await prisma.questionMetadata.create({
-          data: {
-            courseId: localCourseId,
-            primaryTopicId: primaryTopicId,
-            type: converted.type,
-            description: converted.description,
-            questionOrder: {},
-            createdBy: callerId,
-          },
-        });
-        questionMetadataIds.push(questionMetadata.id);
-
-        // Create variant
-        console.log(
-          `${DEBUG_PREFIX} importQuizFromCanvas: creating variant with answer=${converted.answer ?? "null"}, choices count=${converted.choices?.length ?? 0}`,
-        );
-        const variant = await prisma.variants.create({
-          data: {
-            questionMetadataId: questionMetadata.id,
-            questionText: converted.questionText,
-            difficulty: "medium", // Default difficulty
-            answer: converted.answer,
-            choices: converted.choices || null, // Include choices for MCQ
-            assessmentId: assessment.id,
-            secondaryTopicsId: [],
-            isAiGenerated: false,
-            isDraft: true, // Mark as draft for review
-            createdBy: callerId,
-          },
-        });
-        variantIds.push(variant.id);
-
-        // Link variant to section
-        await prisma.sectionVariants.create({
-          data: {
-            sectionId: section.id,
-            variantId: variant.id,
-            displayOrder: converted.position || i,
-          },
-        });
-
-        importedQuestions.push({
-          questionMetadataId: questionMetadata.id,
-          variantId: variant.id,
-        });
-      } catch (error) {
-        // A persistence failure invalidates the whole import. Keep the original
-        // error so the outer cleanup path can roll back every local row.
-        persistenceError ??= error;
-        const questionName = canvasQuestion.question_name || `Question ${i + 1}`;
-        const questionType = canvasQuestion.question_type || "unknown";
-        skippedQuestions.push({
-          position: canvasQuestion.position || i + 1,
-          name: questionName,
-          type: questionType,
-          reason: error.message || "Unknown error",
-        });
-        // Continue to next question
-        continue;
-      }
+      const questionError = await importCanvasQuestion({
+        canvasQuestion,
+        index: i,
+        callerId,
+        localCourseId,
+        primaryTopicId,
+        assessmentId: assessment.id,
+        sectionId: section.id,
+        importedQuestions,
+        skippedQuestions,
+        questionMetadataIds,
+        variantIds,
+      });
+      // Keep importing after a persistence failure so the first error and all
+      // created row IDs remain available to the outer compensation path.
+      persistenceError ??= questionError;
     }
 
     if (persistenceError) {
@@ -1015,7 +983,6 @@ export const importQuizFromCanvas = async (
       sectionId: section.id,
     };
   } catch (error) {
-    let cleanupFailed = false;
     try {
       await cleanupImportedQuizRows({
         assessmentId: assessment?.id,
@@ -1024,7 +991,6 @@ export const importQuizFromCanvas = async (
         variantIds,
       });
     } catch (cleanupError) {
-      cleanupFailed = true;
       logger.error(
         {
           err: cleanupError,
@@ -1035,8 +1001,6 @@ export const importQuizFromCanvas = async (
         },
         "Failed to clean up a partial Canvas quiz import",
       );
-    }
-    if (cleanupFailed) {
       const compensationError = canvasError(
         "Canvas quiz import failed and the partial assessment could not be removed. Delete the partial import before retrying.",
         502,

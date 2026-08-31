@@ -9,29 +9,7 @@ import { PasswordRequirements } from "~/components/password-requirements";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
-import {
-  MultipartBodyInvalidError,
-  MultipartBodyTooLargeError,
-  readBoundedFormData,
-} from "~/lib/multipart.server";
-
-export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
-
-function formBodyErrorResponse(cause: unknown): Response | null {
-  if (cause instanceof MultipartBodyTooLargeError) {
-    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (cause instanceof MultipartBodyInvalidError) {
-    return new Response(JSON.stringify({ error: cause.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return null;
-}
+import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 
 // A `Map` because the role arrives as a string on the invitation payload.
 const ROLE_LABELS = new Map<string, string>([
@@ -76,7 +54,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   let formData: FormData;
   try {
-    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+    formData = await readAuthFormData(request);
   } catch (error) {
     const response = formBodyErrorResponse(error);
     if (response) return response;
