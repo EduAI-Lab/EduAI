@@ -199,7 +199,23 @@ export async function requireInviter(request: Request, action: string): Promise<
   let inviter = resolved;
   let inviterRole = role;
 
-  if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+  const isPrivilegedRole = role === "ADMIN" || role === "UNIT_ADMIN";
+  // Re-check `isActive` against the DB, not just the session's cached role
+  // (#1571 pattern, same fix as `requireAdmin` below): a deactivated
+  // ADMIN/UNIT_ADMIN's still-live session must lose invitation authority
+  // (create/list/revoke/resend) on their very next request, not only once
+  // that session naturally expires.
+  const isActiveInviter =
+    isPrivilegedRole && resolved?.user
+      ? (
+          await prisma.user.findUnique({
+            where: { id: resolved.user.id },
+            select: { isActive: true },
+          })
+        )?.isActive === true
+      : false;
+
+  if (!resolved?.user || !isPrivilegedRole || !isActiveInviter) {
     let admittedViaServiceKey = false;
     if (!resolved?.user) {
       const serviceKeyError = await requireServiceKey(request);

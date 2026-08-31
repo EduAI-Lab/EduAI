@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent } from "@eduai/ui";
 import type { CourseTopicsState } from "~/hooks/useCourseTopics";
@@ -42,7 +42,7 @@ describe("AddActivityPanel empty-topics hint (#1021)", () => {
     renderPanel(emptyTopicsState());
 
     expect(
-      screen.getByText(/No topics on this course yet\. Add some on EduAI Core, then try again\./i),
+      screen.getByText(/No topics on this course yet\. Add one above to continue\./i),
     ).toBeTruthy();
   });
 
@@ -61,5 +61,20 @@ describe("AddActivityPanel empty-topics hint (#1021)", () => {
 
     expect(screen.queryByText(/No topics on this course yet/i)).toBeNull();
     expect(screen.getByText("Recursion")).toBeTruthy();
+  });
+
+  it("keeps topic creation collapsed until the instructor opens it", async () => {
+    const createTopic = vi.fn().mockResolvedValue({ id: 2, name: "Algebra" });
+    renderPanel(emptyTopicsState({ createTopic }));
+
+    expect(screen.queryByPlaceholderText("New topic name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add topic" }));
+    fireEvent.change(screen.getByPlaceholderText("New topic name"), {
+      target: { value: "Algebra" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(createTopic).toHaveBeenCalledWith("Algebra"));
+    await waitFor(() => expect(screen.queryByPlaceholderText("New topic name")).toBeNull());
   });
 });

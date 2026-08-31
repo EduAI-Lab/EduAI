@@ -93,9 +93,9 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
 import { invalidatePolicyCache } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
@@ -107,6 +107,17 @@ const OVERSEEN = `**Top summary**
 - Fixed point
 
 **Next?** Want to continue?`;
+const STRUCTURED_ASSIST = JSON.stringify({
+  title: "Gradient descent",
+  answer: "The optimizer lowers error by following the slope downhill.",
+  stages: [
+    { label: "Start point", detail: "Pick initial parameter values." },
+    { label: "Compute gradient", detail: "Measure the uphill direction." },
+    { label: "Step downhill", detail: "Move opposite the gradient." },
+  ],
+  tldr: "Follow the slope downhill, one measured step at a time.",
+  next: "try one update yourself",
+});
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
@@ -293,6 +304,100 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(await res.text()).toContain("Want to continue?");
   });
 
+  it("normalizes valid structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("**Top summary**"),
+      }),
+    );
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("normalizes valid structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("### Step ladder"),
+      }),
+    );
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("rejects malformed structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
+  it("rejects malformed structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
   it("preserves RAG latency telemetry on overseen streaming replies", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
@@ -336,6 +441,211 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const body = await res.json();
     expect(body.content).toBe(DRAFT);
     expect(body.content).not.toContain("**Top summary**");
+  });
+
+  it("renders structured Assist output when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.content).toContain("**Top summary**");
+    expect(body.content).toContain("### Step ladder");
+    expect(body.content).not.toBe(STRUCTURED_ASSIST);
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it("normalizes structured Assist output before a streaming response when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("**Top summary**");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true] as const)(
+    "preserves the required diagram after capping a long visual response (streaming=%s)",
+    async (streaming) => {
+      process.env.ADHD_ASSIST_OVERSIGHT = "false";
+      const longAnswer = `${"This explanation adds useful context. ".repeat(120)}Keep the stages visible.`;
+      mockStreamResult({
+        text: JSON.stringify({
+          ...JSON.parse(STRUCTURED_ASSIST),
+          answer: longAnswer,
+        }),
+      });
+
+      const res = await action(
+        makeArgs(
+          baseBody({
+            streaming,
+            model: "vllm:qwen3.5-2b-instruct",
+            messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("```eduai-diagram");
+      expect(body.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(300);
+    },
+  );
+
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "keeps valid structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: STRUCTURED_ASSIST });
+      mockAuditResult();
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("**Top summary**");
+      expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+        expect.objectContaining({ draft: expect.stringContaining("### Step ladder") }),
+      );
+    },
+  );
+
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "rejects malformed structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: "not valid Assist JSON" });
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(502);
+      const body = await res.json();
+      expect(body.error).toBe("Provider request failed");
+      expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+      expect(body).not.toHaveProperty("details");
+      expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not expose persistence errors from the no-oversight structured path", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    vi.mocked(prisma.chatMessage.createMany).mockRejectedValue(
+      new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+    );
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("INTERNAL_ERROR");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
+  });
+
+  it("adds a Sources footer before persisting no-oversight structured RAG output", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    vi.mocked(findRelevantContent).mockResolvedValue([
+      {
+        content: "Tax brackets group taxable income.",
+        similarity: 0.95,
+        materialTitle: "Lecture 1",
+      },
+    ]);
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("Sources: Retrieved materials used this turn.");
+    expect(JSON.stringify(lastPersistedRows())).toContain(
+      "Sources: Retrieved materials used this turn.",
+    );
+  });
+
+  it("rejects malformed or Markdown Assist output without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
+  });
+
+  it("rejects malformed or Markdown Assist output on the streaming path without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
   });
 });
 

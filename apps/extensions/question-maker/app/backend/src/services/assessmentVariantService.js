@@ -825,7 +825,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const {
     questionIds,
     courseId,
-    model = "vllm:qwen2.5-32b-instruct",
+    model = "vllm:qwen3.5-9b-instruct",
     apiKeys = {},
     variantsToAdd = 1,
     variantPromptInstructions = null,
@@ -1234,7 +1234,7 @@ export async function reviewVariantExamWithAi(userId, params) {
     baselineAssessmentId,
     variantAssessmentId,
     courseId,
-    model = "vllm:qwen2.5-32b-instruct",
+    model = "vllm:qwen3.5-9b-instruct",
     apiKeys = {},
     rubricText = "",
     // If true, penalize low-usability slots when computing the overall score.

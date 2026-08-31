@@ -1,13 +1,30 @@
 import { useState, useEffect, useCallback } from "react";
 
-export const STUB_ONLY = {
-  editTopic: true, // pending #299 — no PATCH endpoint
-} as const;
+/** Where a topic came from (#1624). Mirrors the `TopicOrigin` Prisma enum. */
+export type TopicOrigin = "HUMAN" | "SYSTEM" | "CANVAS_MODULE" | "MATERIAL_HEADING" | "AI";
+
+/** Mirrors the `TopicReviewStatus` Prisma enum. */
+export type TopicReviewStatus = "ACCEPTED" | "SUGGESTED";
+
+/** One material a generated topic was derived from (#1624). */
+export interface CourseTopicSource {
+  materialId: string;
+  /** Null when the material row no longer carries a readable title. */
+  title: string | null;
+}
 
 export interface CourseTopic {
   id: string;
   courseId: string;
   name: string;
+  /** #1624 provenance. Absent on responses from a pre-#1624 server. */
+  origin?: TopicOrigin;
+  reviewStatus?: TopicReviewStatus;
+  confidence?: number | null;
+  /** Bounded list of source materials; empty for human-created topics. */
+  sources?: CourseTopicSource[];
+  /** Total sources, which may exceed `sources.length` — the projection is capped. */
+  sourceCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,11 +82,27 @@ export function useCourseTopics(courseId: string) {
     [courseId],
   );
 
-  // STUB: PATCH /api/courses/:id/topics/:topicId not yet implemented (#299)
-  const editTopic = useCallback(async (_topicId: string, _name: string): Promise<void> => {
-    console.warn("editTopic is a stub — pending #299");
-    throw new Error("Topic editing not yet available");
-  }, []);
+  /**
+   * Rename a topic through `PATCH /api/courses/:courseId/topics/:topicId`.
+   *
+   * The row is replaced from the response rather than patched locally: the
+   * server trims the name and, for a renamed suggestion, may return other
+   * changed fields, so echoing the request would drift from what was stored.
+   */
+  const editTopic = useCallback(
+    async (topicId: string, name: string): Promise<CourseTopic> => {
+      const res = await fetch(`/api/courses/${courseId}/topics/${topicId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const topic = (await res.json()) as CourseTopic;
+      setTopics((prev) => prev.map((t) => (t.id === topicId ? topic : t)));
+      return topic;
+    },
+    [courseId],
+  );
 
   return { topics, loading, error, createTopic, deleteTopic, editTopic, refetch: fetchTopics };
 }

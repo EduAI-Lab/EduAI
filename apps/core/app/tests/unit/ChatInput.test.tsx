@@ -206,4 +206,25 @@ describe("ChatInput — assist toggle busy state", () => {
     fireEvent.click(assistChip);
     expect(onAdhdAssistChange).toHaveBeenCalledWith(true);
   });
+
+  // #1671 review: the toggle previously stayed enabled while a message was
+  // streaming, letting a mid-flight click race the in-flight request's
+  // recorded Assist mode.
+  it("disables the assist chip while a message is streaming (isLoading), even when not regenerate-busy (#1671 review)", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: false,
+          isLoading: true,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).toBeDisabled();
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).not.toHaveBeenCalled();
+  });
 });

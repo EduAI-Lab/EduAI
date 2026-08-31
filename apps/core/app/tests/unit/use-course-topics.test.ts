@@ -134,15 +134,45 @@ describe("useCourseTopics", () => {
     expect(result.current.topics).toEqual([topic]);
   });
 
-  it("editTopic is a stub that always rejects, pending #299", async () => {
-    mockFetch.mockResolvedValueOnce(topicsResponse([topic]));
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  /**
+   * `editTopic` was a stub that always threw, on a stale comment claiming #299
+   * had left no PATCH endpoint — it had in fact shipped one. These pin the real
+   * call (#1624 review).
+   */
+  it("editTopic PATCHes the topic and replaces the row from the response", async () => {
+    const renamed = { ...topic, name: "Recursion" };
+    mockFetch
+      .mockResolvedValueOnce(topicsResponse([topic]))
+      .mockResolvedValueOnce(new Response(JSON.stringify(renamed), { status: 200 }));
 
     const { result } = renderHook(() => useCourseTopics("course-1"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await expect(result.current.editTopic("topic-1", "New name")).rejects.toThrow(
-      "Topic editing not yet available",
+    await act(async () => {
+      await result.current.editTopic("topic-1", "Recursion");
+    });
+
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/courses/course-1/topics/topic-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Recursion" }),
+    });
+    // Replaced from the response, not patched locally — the server trims the
+    // name, so echoing the request would drift from what was stored.
+    expect(result.current.topics).toEqual([renamed]);
+  });
+
+  it("editTopic throws the server error message and leaves the list untouched", async () => {
+    mockFetch
+      .mockResolvedValueOnce(topicsResponse([topic]))
+      .mockResolvedValueOnce(new Response("TOPIC_ALREADY_EXISTS", { status: 409 }));
+
+    const { result } = renderHook(() => useCourseTopics("course-1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(result.current.editTopic("topic-1", "Week 2")).rejects.toThrow(
+      "TOPIC_ALREADY_EXISTS",
     );
+    expect(result.current.topics).toEqual([topic]);
   });
 });

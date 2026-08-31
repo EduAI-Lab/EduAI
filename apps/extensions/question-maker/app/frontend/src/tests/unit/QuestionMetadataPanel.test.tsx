@@ -4,7 +4,7 @@
  * description/assessment row. No service mocks needed; purely presentational.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { QuestionMetadataPanel } from "@/components/questions/QuestionMetadataPanel";
 import type { Topic } from "@/types/topic";
 import type { Assessment } from "@/types/question";
@@ -131,6 +131,21 @@ describe("QuestionMetadataPanel", () => {
     fireEvent.click(topicTrigger);
     fireEvent.click(screen.getByText("Graphs"));
     expect(onChange).toHaveBeenCalledWith("primaryTopicId", "2");
+  });
+
+  it("keeps topic creation collapsed until the instructor opens it", async () => {
+    const onCreateTopic = vi.fn().mockResolvedValue({ id: 3, name: "Trees" });
+    renderPanel({ onCreateTopic });
+
+    expect(screen.queryByPlaceholderText("New topic name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add topic" }));
+    fireEvent.change(screen.getByPlaceholderText("New topic name"), {
+      target: { value: "Trees" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onCreateTopic).toHaveBeenCalledWith("Trees"));
+    await waitFor(() => expect(screen.queryByPlaceholderText("New topic name")).toBeNull());
   });
 
   it("changes reasoning level via its select", () => {

@@ -58,9 +58,13 @@ Course enrollment pickers use the paginated `/api/users` contract with a managed
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
 
+Instructors can add a course topic directly from the Add Activity modal; the topic is created in the Core-synchronized course topic list.
+
 ### [Question Maker](apps/extensions/question-maker/)
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
+
+Question authoring surfaces let instructors expand an explicit “Add topic” control when they need to create a Core-synchronized course topic. Authoring toasts appear in the top-right and can be dismissed.
 
 Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
