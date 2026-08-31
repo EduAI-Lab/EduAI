@@ -86,7 +86,7 @@ describe("extractPdfTextIsolated", () => {
 
   it("extracts a well-formed PDF in the isolated worker without throwing", async () => {
     const result = await extractPdfTextIsolated(buildEmptyPdf());
-    expect(typeof result.content).toBe("string");
+    expect(result.content).toEqual(expect.any(String));
   });
 
   it("terminates the worker when a decompression-bomb PDF breaches the heap soft ceiling", async () => {
@@ -161,7 +161,7 @@ describe("extractPdfTextIsolated", () => {
 
     // Slot must have been released — a subsequent extraction should succeed.
     const result = await extractPdfTextIsolated(buildEmptyPdf());
-    expect(typeof result.content).toBe("string");
+    expect(result.content).toEqual(expect.any(String));
   });
 
   it("rejects when the worker output exceeds the distinct byte limit", async () => {
@@ -247,6 +247,6 @@ describe("extractPdfTextIsolated", () => {
     // Slot must be released only after exit — a follow-up extraction can proceed.
     vi.mocked(childProcess.spawn).mockImplementation(actualChildProcess.spawn);
     const result = await extractPdfTextIsolated(buildEmptyPdf());
-    expect(typeof result.content).toBe("string");
+    expect(result.content).toEqual(expect.any(String));
   });
 });

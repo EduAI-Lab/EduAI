@@ -63,7 +63,7 @@ export function resolveModelContextWindow(
   providerId?: SupportedProvider,
 ): number {
   if (providerId === "vllm") {
-    // Admin rows sometimes store 8192; cmps01 qwen2.5-32b advertises a 32K window.
+    // Admin rows sometimes store 8192; the retained Assist model advertises a 32K window.
     if (!dbMaxTokens || dbMaxTokens <= 8192) {
       return 32 * 1024;
     }

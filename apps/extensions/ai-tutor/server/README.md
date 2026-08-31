@@ -225,6 +225,28 @@ Submission attempt numbers are unique per `(userId, activityId)`. The answer-sub
 allocates the next number inside an interactive transaction, while the database constraint is the
 final concurrency guard and only collisions on that exact constraint are retried.
 
+### Indexes
+
+Every foreign key in the tree above can be seeked on by its leading column (#1374). Postgres
+does not auto-index FK child columns and Prisma only emits indexes for `@id` / `@unique` /
+`@@unique`, so **adding a relation means making sure its column leads some index** — otherwise
+the parent-to-children read and the `ON DELETE CASCADE` both fall back to a sequential scan.
+
+That does not always mean a new `@@index`. A column that appears only in the *trailing* half of
+a composite key is not covered — a btree on `(userId, activityId)` cannot serve
+`WHERE activityId = ?` — but a column that already *leads* a PK or unique is, and giving it a
+standalone index just duplicates that one on every write.
+
+The same rule applies to `userId`, which carries no FK at all (Core owns the User table) and is
+therefore invisible to that audit: it leads its own index on `CourseEnrollment` because the "my
+courses" read filters on it alone, and on `Submission` it needs no index of its own because
+`@@unique([userId, activityId, attemptNumber])` already leads with it.
+
+`tests/integration/foreignKeyIndexes.test.js` enforces this against the live test database, so a
+new unindexed relation fails CI rather than quietly regressing. The one intentional exception
+(`Activity.promptTemplateId`, never filtered on and never orphaned) is pinned there and
+explained in `docs/perf/backend/foreign-key-indexes-ai-tutor.md`.
+
 ### Migrations
 
 ```bash

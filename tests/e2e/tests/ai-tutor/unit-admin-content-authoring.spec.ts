@@ -530,24 +530,16 @@ test.describe("UNIT_ADMIN content authoring", () => {
     await expect(page.getByText(ua.seededTopic!).first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test("a unit admin cannot add topics to a Core-imported course", async ({ page }) => {
+  test("a unit admin can add topics to a Core-imported course", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
 
-    // Not a bug, and not the gap fixed above: reading a course's topics is one
-    // decision, creating one is another. Topics on an imported course are owned
-    // by EduAI Core and are added there — a local addition would be wiped by
-    // the next sync, so the write is refused by design for every role.
-    //
-    // The message matters as much as the status: a bare 403 would also be what
-    // a *course-access* denial looks like, and this must be the imported-course
-    // rule instead.
+    // Topic creation is now written to Core first and mirrored locally, so the
+    // unit-admin authoring path should be able to create it directly.
     const res = await page.request.post(
       `${AI_TUTOR_API_URL}/api/courses/${ua.course.atCourseId}/topics`,
       { data: { name: "E2E Unit Admin Topic" } },
     );
-    expect(res.status()).toBe(403);
-    const { error } = await res.json();
-    expect(error).toMatch(/managed by EduAI/i);
-    expect(error).not.toMatch(/Not authorized for this course/i);
+    expect(res.status()).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({ name: "E2E Unit Admin Topic" });
   });
 });

@@ -13,6 +13,8 @@
     "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
     "./tooltip": "./src/ui/tooltip.tsx",
     "./term": "./src/lib/term.ts",
+    "./runtime-env": "./src/lib/runtime-env.ts",
+    "./primitive-union": "./src/lib/primitive-union.ts",
     "./math-markdown": "./src/lib/math-markdown.ts"
   },
   "scripts": {

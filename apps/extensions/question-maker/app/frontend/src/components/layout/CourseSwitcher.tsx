@@ -4,7 +4,11 @@
  * share one switcher. Carries the active workspace tab across the switch.
  */
 import { useLocation, useNavigate, useSearchParams } from "react-router";
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
+import {
+  CourseSwitcher as SharedCourseSwitcher,
+  courseSwitcherSublabel,
+  type CourseSwitcherOption,
+} from "@eduai/ui";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 
 const TAB_SAFE = new Set(["overview", "questions", "banks", "assessments", "topics", "canvas"]);
@@ -38,10 +42,12 @@ export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
         ? inferred
         : "overview";
 
+  // The code alone repeats across terms, so the row's second line carries the
+  // term next to the name — two offerings of one course are otherwise identical.
   const options: CourseSwitcherOption[] = displayCourses.map((c) => ({
     id: c.id,
     label: c.code || c.name,
-    sublabel: c.code ? c.name : undefined,
+    sublabel: courseSwitcherSublabel(c),
   }));
 
   // Seed the current course when the loaded list doesn't contain it (still

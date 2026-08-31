@@ -22,8 +22,8 @@ vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
 }));
 
 vi.mock("~/lib/courses/server", () => ({
-  getCourseTopics: vi.fn(),
-  getCourseTopic: vi.fn(),
+  getCourseTopicsWithSources: vi.fn(),
+  getCourseTopicWithSources: vi.fn(),
   createCourseTopic: vi.fn(),
   updateCourseTopic: vi.fn(),
   deleteCourseTopic: vi.fn(),
@@ -46,8 +46,8 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
-  getCourseTopics,
-  getCourseTopic,
+  getCourseTopicsWithSources,
+  getCourseTopicWithSources,
   createCourseTopic,
   updateCourseTopic,
   deleteCourseTopic,
@@ -65,6 +65,17 @@ const TOPIC = {
   createdBy: null,
   deletedAt: null,
   deletedBy: null,
+  // #1624 provenance. A hand-authored topic reads back as HUMAN/ACCEPTED with
+  // no confidence and no generating job — the same defaults the migration gives
+  // every pre-existing row.
+  origin: "HUMAN" as const,
+  reviewStatus: "ACCEPTED" as const,
+  confidence: null,
+  generatedByJobId: null,
+  // #1624 provenance projection — empty for a hand-authored topic, which has no
+  // source materials to name.
+  sources: [],
+  sourceCount: 0,
   createdAt: TOPIC_AT,
   updatedAt: TOPIC_AT,
 };
@@ -135,8 +146,8 @@ beforeEach(() => {
   vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
   vi.mocked(auth.api.getSession).mockResolvedValue(null);
   vi.mocked(requireServiceKey).mockResolvedValue(null);
-  vi.mocked(getCourseTopics).mockResolvedValue([]);
-  vi.mocked(getCourseTopic).mockResolvedValue(TOPIC);
+  vi.mocked(getCourseTopicsWithSources).mockResolvedValue([]);
+  vi.mocked(getCourseTopicWithSources).mockResolvedValue(TOPIC);
   mockAccess({ level: "admin", rank: 4 });
   vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });
@@ -158,7 +169,7 @@ describe("courses.topics loader", () => {
     const res = await loader(makeLoaderArgs(COURSE_ID));
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
-    expect(getCourseTopics).not.toHaveBeenCalled();
+    expect(getCourseTopicsWithSources).not.toHaveBeenCalled();
   });
 
   it("returns 403 when Bearer token fails requireServiceKey", async () => {
@@ -167,11 +178,11 @@ describe("courses.topics loader", () => {
     );
     const res = await loader(makeLoaderArgs(COURSE_ID, undefined, "Bearer wrong"));
     expect(res.status).toBe(403);
-    expect(getCourseTopics).not.toHaveBeenCalled();
+    expect(getCourseTopicsWithSources).not.toHaveBeenCalled();
   });
 
   it("returns 200 topics list via service key (no RBAC resolution)", async () => {
-    vi.mocked(getCourseTopics).mockResolvedValue([TOPIC]);
+    vi.mocked(getCourseTopicsWithSources).mockResolvedValue([TOPIC]);
     const res = await loader(makeLoaderArgs(COURSE_ID, undefined, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -191,7 +202,7 @@ describe("courses.topics loader", () => {
     mockAccess(null);
     const res = await loader(makeLoaderArgs(COURSE_ID));
     expect(res.status).toBe(403);
-    expect(getCourseTopics).not.toHaveBeenCalled();
+    expect(getCourseTopicsWithSources).not.toHaveBeenCalled();
   });
 
   it("returns 403 for an enrolled student in an unpublished course (§19)", async () => {
@@ -204,7 +215,7 @@ describe("courses.topics loader", () => {
   it("returns 200 for an enrolled student in a published course", async () => {
     mockUser();
     mockAccess({ level: "student", rank: 0 });
-    vi.mocked(getCourseTopics).mockResolvedValue([TOPIC]);
+    vi.mocked(getCourseTopicsWithSources).mockResolvedValue([TOPIC]);
     const res = await loader(makeLoaderArgs(COURSE_ID));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -220,7 +231,7 @@ describe("courses.topics loader", () => {
 
   it("returns 404 TOPIC_NOT_FOUND for unknown topic id", async () => {
     mockUser("u1", "ADMIN");
-    vi.mocked(getCourseTopic).mockResolvedValue(null);
+    vi.mocked(getCourseTopicWithSources).mockResolvedValue(null);
     const res = await loader(makeLoaderArgs(COURSE_ID, "missing"));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "TOPIC_NOT_FOUND" });

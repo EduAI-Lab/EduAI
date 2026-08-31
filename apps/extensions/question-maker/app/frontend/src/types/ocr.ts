@@ -1,4 +1,5 @@
 // OCR Job status for tracking extraction progress
+import { isBrowser } from "@eduai/ui/runtime-env";
 export type OCRJobStatus = "pending" | "processing" | "success" | "error" | "discarded";
 
 // Minimal question data stored in history (to avoid localStorage bloat)
@@ -53,7 +54,7 @@ export function getOCRHistoryStorageKey(userId: string | null | undefined): stri
 }
 
 export function clearOCRHistoryForUser(userId: string | null | undefined): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   const storageKey = getOCRHistoryStorageKey(userId);
   try {
     if (storageKey) localStorage.removeItem(storageKey);

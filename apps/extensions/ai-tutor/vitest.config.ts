@@ -10,6 +10,14 @@ export default defineConfig({
       // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
       // would rewrite subpaths to `.../src/index.ts/<subpath>`. Insertion order
       // is what keeps that from happening.
+      "@eduai/ui/primitive-union": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/lib/primitive-union.ts",
+      ),
+      "@eduai/ui/runtime-env": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/lib/runtime-env.ts",
+      ),
       "@eduai/ui/math-markdown": path.resolve(
         __dirname,
         "../../../packages/ui/src/lib/math-markdown.ts",
@@ -22,6 +30,10 @@ export default defineConfig({
     environment: "jsdom",
     include: ["app/tests/**/*.test.{ts,tsx}"],
     setupFiles: ["./app/tests/setup.ts"],
+    // student-preview-loader-gate.test.ts dynamically imports three full route
+    // modules inside one test body; on a cold cache that transform cost alone
+    // can exceed the 5s default, especially under CI's shared-runner load.
+    testTimeout: 15000,
     coverage: {
       provider: "v8",
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.

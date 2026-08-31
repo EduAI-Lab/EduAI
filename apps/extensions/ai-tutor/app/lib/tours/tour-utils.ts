@@ -1,8 +1,10 @@
 import type { AppTourStep, TourContextState } from "./tour-types";
+import { hasDocument } from "@eduai/ui/runtime-env";
+import { z } from "zod";
 
 export function waitForElement(selector: string, timeoutMs = 4000) {
   return new Promise<Element>((resolve, reject) => {
-    if (typeof document === "undefined") {
+    if (!hasDocument()) {
       reject(new Error("document is unavailable"));
       return;
     }
@@ -48,7 +50,7 @@ export type EitherElementMatch = {
  */
 export function waitForEitherElement(selector: string, emptySelector: string, timeoutMs = 4000) {
   return new Promise<EitherElementMatch>((resolve, reject) => {
-    if (typeof document === "undefined") {
+    if (!hasDocument()) {
       reject(new Error("document is unavailable"));
       return;
     }
@@ -89,11 +91,11 @@ export function waitForEitherElement(selector: string, emptySelector: string, ti
 }
 
 export function resolveStepRoute(step: AppTourStep, context: TourContextState) {
-  return typeof step.route === "function" ? step.route(context) : step.route;
+  return step.route instanceof Function ? step.route(context) : step.route;
 }
 
 export function readRouteFromElement(element: Element | null) {
   if (!element || !("dataset" in element)) return null;
   const route = (element as HTMLElement).dataset?.tourRoute;
-  return typeof route === "string" ? route : null;
+  return z.string().safeParse(route).data ?? null;
 }

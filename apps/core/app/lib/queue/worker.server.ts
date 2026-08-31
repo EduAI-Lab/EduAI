@@ -12,10 +12,11 @@ import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
 import { workerConcurrency } from "./concurrency.server";
+import { z } from "zod";
 
 export { workerConcurrency } from "./concurrency.server";
 
-const DEFAULT_WORKER_MODEL = "vllm:qwen2.5-32b-instruct";
+const DEFAULT_WORKER_MODEL = "vllm:qwen3.5-9b-instruct";
 const DEFAULT_AI_JOB_TIMEOUT_MS = 120_000;
 
 export type AiJobResult = {
@@ -49,8 +50,9 @@ function formatError(cause: unknown): string {
   if (cause instanceof Error) {
     return cause.message || cause.name;
   }
-  if (typeof cause === "string") {
-    return cause;
+  const text = z.string().safeParse(cause);
+  if (text.success) {
+    return text.data;
   }
   try {
     return JSON.stringify(cause);
@@ -88,7 +90,7 @@ function serverApiKeys(model: string): ServerProviderKeys {
   return {};
 }
 
-async function resolveWorkerModel(payload: JobPayload): Promise<string> {
+async function resolveWorkerModel(payload: JobPayload, prompt: string): Promise<string> {
   const requested = payload.requestedModel?.trim();
   if (requested && !isAutoRoutingModelId(requested)) {
     return requested;
@@ -102,7 +104,7 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
   try {
     const { resolveRoutedModel } = await import("~/lib/ai/routing/router");
     const decision = await resolveRoutedModel(
-      payload.input.prompt,
+      prompt,
       {
         courseId: payload.courseId ?? null,
         imagesPresent: false,
@@ -123,11 +125,21 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
  * browser/localStorage secrets are serialized into the queue payload.
  */
 export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobResult> {
-  switch (payload.kind) {
+  switch (payload.input.kind) {
+    // Topic analysis (#1624) is never enqueued here. The BullMQ pool is closed
+    // pre-MVP (`assertAiJobQueueEnabled` always throws), so topic-analysis jobs
+    // are recorded as AiJob rows and run in-process by
+    // `~/lib/topics/job.server`. Reaching this branch means one was routed onto
+    // the pool by mistake; say so rather than silently succeeding.
+    case "topic-analysis":
+      throw new Error(
+        "topic-analysis jobs run in-process via lib/topics/job.server, not on the AI job queue",
+      );
+
     case "question-generation": {
       const requestStartMs = Date.now();
-      const model = await resolveWorkerModel(payload);
       const prompt = payload.input.prompt;
+      const model = await resolveWorkerModel(payload, prompt);
       const completion = await runCompletion({
         model,
         apiKeys: serverApiKeys(model),
@@ -197,10 +209,8 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
 }
 
 function maxAttempts(job: Job<JobPayload | QueuedJobPayload>): number {
-  const attempts = job.opts.attempts;
-  return typeof attempts === "number" && Number.isFinite(attempts)
-    ? Math.max(1, Math.floor(attempts))
-    : 1;
+  const attempts = z.number().finite().safeParse(job.opts.attempts);
+  return attempts.success ? Math.max(1, Math.floor(attempts.data)) : 1;
 }
 
 /**
@@ -219,7 +229,7 @@ export async function processAiJob(
   const bullJobId = String(job.id);
 
   const aiJobId =
-    "aiJobId" in job.data && typeof job.data.aiJobId === "string" ? job.data.aiJobId : null;
+    "aiJobId" in job.data ? (z.string().safeParse(job.data.aiJobId).data ?? null) : null;
   const select = {
     id: true,
     status: true,

@@ -1137,7 +1137,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     // Both writes ran against the transaction client, not the base one.
     const tx = vi.mocked(prisma.$transaction).mock.calls[0][0];
-    expect(typeof tx).toBe("function");
+    expect(tx).toEqual(expect.any(Function));
     expect(prisma.materialUploadBlob.upsert).toHaveBeenCalledTimes(1);
     await flushBackgroundWork();
   });

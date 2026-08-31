@@ -1,10 +1,21 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import { z } from "zod";
+import { hasFileReader } from "@eduai/ui/runtime-env";
 import { createHash } from "crypto";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/**
+ * Anything that can hand back its own bytes.
+ *
+ * A browser `File` and the file-like object `formData` yields on the server
+ * both satisfy this, and neither shares a common declared type here, so the
+ * capability is what gets decoded rather than the class.
+ */
+const byteSourceSchema = z.object({ arrayBuffer: z.function() });
 
 /** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
 export const SEMANTIC_CHUNK_SEPARATOR = "--- CHUNK SEPARATOR ---";
@@ -62,8 +73,10 @@ export function assertZipWithinLimits(zip: any, label: string): void {
     if (!entry || entry.dir) continue;
 
     // Declared uncompressed size from the central directory; no decompression.
-    const size: unknown = entry._data?.uncompressedSize;
-    if (typeof size !== "number" || size < 0) continue; // unknown → jszip enforces at inflate time
+    // Undeclared or negative → jszip enforces the real size at inflate time.
+    const declared = z.number().min(0).safeParse(entry._data?.uncompressedSize);
+    if (!declared.success) continue;
+    const size = declared.data;
 
     if (size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES) {
       throw new Error(
@@ -669,7 +682,7 @@ const PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentati
 export async function validateFileSignature(
   file: File | any,
 ): Promise<{ isValid: boolean; error?: string }> {
-  if (typeof file.arrayBuffer !== "function") {
+  if (!byteSourceSchema.safeParse(file).success) {
     return { isValid: true };
   }
 
@@ -716,20 +729,20 @@ export async function validateFileSignature(
  */
 export async function readFileAsText(file: File | any): Promise<string> {
   // Handle server-side file objects (from formData)
-  if (typeof file.arrayBuffer === "function") {
+  if (byteSourceSchema.safeParse(file).success) {
     const buffer = await file.arrayBuffer();
     return new TextDecoder().decode(buffer);
   }
 
   // Handle browser File objects
-  if (typeof FileReader !== "undefined") {
+  if (hasFileReader()) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
       reader.onload = (event) => {
-        const result = event.target?.result;
-        if (typeof result === "string") {
-          resolve(result);
+        const text = z.string().safeParse(event.target?.result);
+        if (text.success) {
+          resolve(text.data);
         } else {
           reject(new Error("Failed to read file as text"));
         }
@@ -1260,9 +1273,10 @@ export async function extractPdfTextIsolated<T = { content: string }>(
 
     const raw = await readFile(outputPath, "utf8");
     const parsed = JSON.parse(raw) as { content?: unknown };
-    if (typeof parsed.content === "string" && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+    const content = z.string().safeParse(parsed.content);
+    if (content.success && content.data.length > MAX_EXTRACTED_CONTENT_CHARS) {
       throw new Error(
-        `PDF extraction result of ${parsed.content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+        `PDF extraction result of ${content.data.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
       );
     }
     return parsed as T;

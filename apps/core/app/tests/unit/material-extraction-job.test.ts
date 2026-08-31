@@ -30,9 +30,15 @@ vi.mock("~/lib/logging.server", () => ({
   logSystemError: vi.fn(),
 }));
 
+// #1624: extraction now kicks off topic analysis once a material lands READY.
+vi.mock("~/lib/topics/job.server", () => ({
+  startTopicAnalysis: vi.fn(),
+}));
+
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
   EXTRACTION_LEASE_MS,
   MAX_EXTRACTION_ATTEMPTS,
@@ -253,6 +259,29 @@ describe("sweepStrandedMaterialExtractions", () => {
     expect(prisma.materialUploadBlob.deleteMany).toHaveBeenCalledWith({
       where: { materialId: "mat-1" },
     });
+  });
+
+  it("starts topic analysis for the material it just made READY (#1624)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    // Started only after READY, and scoped to the one material that reached it —
+    // topic analysis reads rawText, which a PROCESSING row does not reliably have.
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["mat-1"],
+    });
+  });
+
+  it("does not start topic analysis when embedding fails before READY (#1624)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
   });
 
   it("keeps going after one row fails so a single bad upload cannot stall the sweep", async () => {

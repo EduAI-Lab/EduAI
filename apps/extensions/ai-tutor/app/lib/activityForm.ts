@@ -15,6 +15,7 @@
  * Related: `app/lib/api.ts` (`updateActivity`), `app/lib/types.ts` (`Activity`).
  */
 
+import { readActivityAnswer } from "./api-schemas";
 import type { Activity } from "./types";
 
 /**
@@ -77,9 +78,12 @@ export function hintsToTextarea(hints: string[]) {
 export function activityToFormValues(activity: Activity): ActivityFormValues {
   const baseChoices = activity.options?.choices ?? [];
   const normalizedChoices = ensureChoiceSlots(baseChoices);
+  // `activity.answer` is the raw Prisma JSON column, so neither field is
+  // guaranteed to hold the type the form values declare.
+  const storedAnswer = readActivityAnswer(activity.answer);
   const existingCorrectIndex =
-    activity.type === "MCQ" && typeof activity.answer?.correctIndex === "number"
-      ? activity.answer.correctIndex
+    activity.type === "MCQ" && storedAnswer.correctIndex !== undefined
+      ? storedAnswer.correctIndex
       : 0;
 
   return {
@@ -93,9 +97,7 @@ export function activityToFormValues(activity: Activity): ActivityFormValues {
         ? existingCorrectIndex
         : 0,
     textAnswer:
-      activity.type === "SHORT_TEXT" && typeof activity.answer?.text === "string"
-        ? activity.answer.text
-        : "",
+      activity.type === "SHORT_TEXT" && storedAnswer.text !== undefined ? storedAnswer.text : "",
     hintsText: hintsToTextarea(activity.hints ?? []),
   };
 }

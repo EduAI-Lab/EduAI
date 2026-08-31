@@ -3,7 +3,8 @@
  * Handles course/topic selection, validation, assessment linkage, and optional AI generation hooks.
  *
  * Also handles view mode (mode="view") — displaying a question variant with its metadata,
- * choices, AI Tutor preview, and variant management actions. Folded in from QuestionDetailView.
+ * choices, extension sharing, and variant management actions. Folded in from
+ * QuestionDetailView.
  */
 import type { JsonValue } from "@eduai/types";
 
@@ -58,6 +59,7 @@ import eduaiService, {
 } from "../../services/eduaiService";
 import { Course } from "../../types/question";
 import { apiKeyStorage } from "../../services/apiKeyStorage";
+import { isString } from "@eduai/ui/primitive-union";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
 import {
   IconHelpCircle,
@@ -74,6 +76,7 @@ import {
 } from "@tabler/icons-react";
 import { normalizeCourseCode } from "../../utils/courseDisplay";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { describeVariantError } from "@/lib/variantErrors";
 import { markCorrectChoices } from "@/lib/mcq";
 import { getAiTutorInstructorUrl } from "@/lib/coreUrl";
 import { MCQChoicesField } from "./MCQChoicesField";
@@ -453,10 +456,11 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         description: `Variant is now ${newIsDraft ? "marked as draft" : "marked as reviewed"}.`,
       });
     } catch (error: any) {
-      // Server-side failures surface under response.data.error; fall back to the
-      // client-side message so neither shape renders "undefined".
-      toast.error("Failed to toggle draft status", {
-        description: error?.response?.data?.error || error?.message || "An error occurred",
+      // The server sends a sentence in `error` and its machine code in `code`;
+      // older builds sent the bare code, so a raw VARIANT_LOCKED still gets
+      // translated rather than shown to the instructor as-is.
+      toast.error("Could not change review status", {
+        description: describeVariantError(error),
       });
     } finally {
       setIsTogglingDraft(false);
@@ -466,9 +470,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   const handleToggleTestable = async (next: boolean) => {
     if (!viewEntry || !viewProps) return;
     if (!coreQuestionId) {
-      toast.error("Not synced to Core", {
-        description:
-          "Mark the variant as reviewed and ensure the course is linked to Core before enabling AI Tutor preview.",
+      toast.error("Not available yet", {
+        description: "Mark this question as reviewed before letting other extensions use it.",
       });
       return;
     }
@@ -482,14 +485,26 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       };
       viewProps.onSelectVariant(updatedEntry);
       viewProps.onUpdateVariant?.(viewEntry.variant.id, { testable: result.testable });
-      toast(result.testable ? "Available in AI Tutor" : "Removed from AI Tutor", {
-        description: result.testable
-          ? "Students may encounter this question in AI Tutor tutoring sessions for this course."
-          : "This question is no longer marked testable on Core.",
-      });
+      toast(
+        result.testable
+          ? "Usable by other EduAI extensions"
+          : "No longer usable by other EduAI extensions",
+        {
+          description: result.testable
+            ? "AI Tutor may now ask students this question during tutoring for this course."
+            : "Other EduAI extensions can no longer use this question.",
+        },
+      );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Could not update testable status.";
-      toast.error("Failed to update AI Tutor visibility", { description: message });
+      // The server explains a lost race (409 VARIANT_STATE_CHANGED) in its
+      // `error` field; axios's own message is only "Request failed with status
+      // code 409", which tells the author nothing about what to do next.
+      const serverMessage = (error as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error;
+      const message =
+        serverMessage ??
+        (error instanceof Error ? error.message : "Could not update the sharing choice.");
+      toast.error("Could not update sharing", { description: message });
     } finally {
       setIsTogglingTestable(false);
     }
@@ -524,6 +539,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   const [availableEduCourses, setAvailableEduCourses] = useState<EduAICourseOption[]>([]);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
   const [markAsReviewed, setMarkAsReviewed] = useState(false);
+  // #1555: sharing with other extensions is the author's call, and opt-in.
+  const [shareWithExtensions, setShareWithExtensions] = useState(false);
   const [errorModalOpen, setErrorModalOpen] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState<string>("");
   const [modalTourOpen, setModalTourOpen] = useState(false);
@@ -635,6 +652,18 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   // Derive create/variant mode from presetVariant prop
   const createMode: "new" | "variant" = createProps?.presetVariant ? "variant" : "new";
 
+  const handleCreateTopic = async (name: string): Promise<Topic> => {
+    const courseId = createProps?.courseId;
+    if (!courseId) throw new Error("Select a course before creating a topic.");
+
+    const topic = await courseService.createTopic(courseId, name);
+    setTopics((current) => {
+      if (current.some((existing) => existing.id === topic.id)) return current;
+      return [...current, topic].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return topic;
+  };
+
   useEffect(() => {
     if (isViewMode) return;
     if (!open) {
@@ -646,6 +675,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       setIsGenerating(false);
       setIsAiGenerated(false);
       setMarkAsReviewed(false);
+      // Sharing is a per-question opt-in. `AssessmentBuilderPage` keeps this
+      // dialog mounted and only toggles `open`, so leaving the box checked
+      // would carry one author's decision into the next question they write.
+      setShareWithExtensions(false);
       setModalTourOpen(false);
       setModalTourStepIndex(0);
       setQuestionGenerationPhase(null);
@@ -821,7 +854,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   );
 
   const handleFieldChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    if (field === "primaryTopicId" && typeof value === "string") {
+    if (field === "primaryTopicId" && isString(value)) {
       setForm((prev) => ({
         ...prev,
         primaryTopicId: value,
@@ -1121,7 +1154,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             )
           : [];
         const resolvedAnswer =
-          typeof generated.answer === "string" && generated.answer.trim().length > 0
+          isString(generated.answer) && generated.answer.trim().length > 0
             ? generated.answer.trim()
             : "";
         let resolvedChoices: MCQChoice[] = prev.variantChoices;
@@ -1132,8 +1165,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         ) {
           resolvedChoices = generated.choices
             .map((c: any) => ({
-              letter: typeof c.letter === "string" ? c.letter.toUpperCase() : c.letter,
-              text: typeof c.text === "string" ? c.text.trim() : String(c.text || ""),
+              letter: isString(c.letter) ? c.letter.toUpperCase() : c.letter,
+              text: isString(c.text) ? c.text.trim() : String(c.text || ""),
             }))
             .filter((c: MCQChoice) => c.text.length > 0);
           if (resolvedChoices.length < 2) resolvedChoices = prev.variantChoices;
@@ -1163,7 +1196,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         const resolvedPrimaryTopicId =
           primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
         const resolvedDescription =
-          typeof generated.description === "string" && generated.description.trim().length > 0
+          isString(generated.description) && generated.description.trim().length > 0
             ? generated.description.trim()
             : prev.questionDescription.trim() || createDescriptionFromText(generated.content ?? "");
         return {
@@ -1256,6 +1289,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           referenceId: parseNumber(form.variantReferenceId),
           isAiGenerated,
           isDraft: !markAsReviewed,
+          shareWithExtensions,
         });
         const updated = await questionService.getQuestion(questionId);
         createProps!.onQuestionCreated(updated);
@@ -1306,6 +1340,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         referenceId: parseNumber(form.variantReferenceId),
         isAiGenerated: shouldMarkAsAiGenerated,
         isDraft: !markAsReviewed,
+        shareWithExtensions,
       });
       const hydrated = await questionService.getQuestion(createdQuestion.id);
       createProps!.onQuestionCreated(hydrated);
@@ -1924,17 +1959,18 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                   )}
                 </section>
 
-                {/* AI Tutor preview — published variants only */}
+                {/* Extension sharing — reviewed variants only */}
                 {isApproved && (
                   <PermissionGate allow={canApproveVariant}>
                     <section className="rounded-[var(--radius-lg)] border border-border bg-muted/40 p-5 space-y-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold text-foreground">AI Tutor preview</p>
+                          <p className="text-sm font-semibold text-foreground">
+                            Use in other EduAI extensions
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            Testable questions are injected into AI Tutor teach/guide sessions for
-                            this course. Draft or unpublished variants are never exposed to
-                            students.
+                            When this is on, AI Tutor may ask students this question during tutoring
+                            for this course. Questions still in draft are never shown to students.
                           </p>
                         </div>
                         {isTestable && (
@@ -1952,8 +1988,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       </div>
                       {!coreQuestionId ? (
                         <p className="text-xs text-amber-700 dark:text-amber-400">
-                          This variant is not synced to Core yet. Link the course to Core and
-                          approve the variant first.
+                          Mark this question as reviewed to make it available. If it stays
+                          unavailable after review, this course is not connected to EduAI yet — ask
+                          an admin.
                         </p>
                       ) : (
                         <div className="flex items-center gap-3">
@@ -1967,7 +2004,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                             htmlFor={`testable-${viewEntry.variant.id}`}
                             className="text-sm font-normal"
                           >
-                            {isTestable ? "Testable in AI Tutor" : "Not testable in AI Tutor"}
+                            {isTestable
+                              ? "Usable by other EduAI extensions"
+                              : "Not usable by other EduAI extensions"}
                           </Label>
                         </div>
                       )}
@@ -2314,6 +2353,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                     : undefined
                 }
                 onToggleSecondaryTopic={toggleSecondaryTopic}
+                onCreateTopic={createProps?.courseId ? handleCreateTopic : undefined}
               />
             </div>
 
@@ -2354,18 +2394,46 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         </div>
 
         <DialogFooter className="pt-4 flex-col sm:flex-row gap-3" data-tour-id="aq-save-area">
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="mark-as-reviewed"
-              checked={markAsReviewed}
-              onChange={(e) => setMarkAsReviewed(e.target.checked)}
-              disabled={isSubmitting}
-              className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
-            />
-            <label htmlFor="mark-as-reviewed" className="text-sm text-foreground cursor-pointer">
-              Mark as reviewed
-            </label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="mark-as-reviewed"
+                checked={markAsReviewed}
+                onChange={(e) => {
+                  const reviewed = e.target.checked;
+                  setMarkAsReviewed(reviewed);
+                  // Sharing only takes effect on approval, so a question that
+                  // stops being reviewed stops being shared with it (#1555).
+                  if (!reviewed) setShareWithExtensions(false);
+                }}
+                disabled={isSubmitting}
+                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+              />
+              <label htmlFor="mark-as-reviewed" className="text-sm text-foreground cursor-pointer">
+                Mark as reviewed
+              </label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="share-with-extensions"
+                data-testid="share-with-extensions"
+                checked={shareWithExtensions}
+                onChange={(e) => setShareWithExtensions(e.target.checked)}
+                disabled={isSubmitting || !markAsReviewed}
+                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+              />
+              <label
+                htmlFor="share-with-extensions"
+                className={`text-sm cursor-pointer ${
+                  markAsReviewed ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                Usable by other EduAI extensions{" "}
+                {!markAsReviewed && <span className="text-muted-foreground">(review first)</span>}
+              </label>
+            </div>
           </div>
           <div className="flex gap-2 ml-auto">
             <Button type="button" variant="ghost" onClick={cp.onClose} disabled={isSubmitting}>

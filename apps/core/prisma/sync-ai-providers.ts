@@ -3,20 +3,32 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import {
+  CAMPUS_INTERACTIVE_MODEL_IDS,
+  LEGACY_CAMPUS_MODEL_IDS,
+  RETAINED_ASSIST_MODEL_ID,
+} from "../app/lib/ai/campus-model-catalog";
 
 const prisma = new PrismaClient();
 
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
     routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: 0.04,
+    averageCarbonGramsPerToken: 8.9e-7,
   },
   {
     providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
+    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
+    routerTier: "TIER_2" as const,
+    estEnergyJoulesPerToken: 0.2,
+    averageCarbonGramsPerToken: 4.45e-6,
+  },
+  {
+    providerName: "vllm",
+    modelId: RETAINED_ASSIST_MODEL_ID,
     routerTier: "TIER_3" as const,
     estEnergyJoulesPerToken: 0.5,
     averageCarbonGramsPerToken: 1.11e-5,
@@ -44,7 +56,9 @@ async function applyRoutingTierAssignments() {
     }
   }
 
-  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  const google = await prisma.aIProvider.findUnique({
+    where: { name: "google" },
+  });
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
@@ -164,7 +178,9 @@ async function main() {
 
   for (const m of openaiModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: openai.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: openai.id, modelId: m.modelId },
+      },
       update: { isActive: true },
       create: {
         ...m,
@@ -198,7 +214,9 @@ async function main() {
 
   for (const m of googleModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: google.id, modelId: m.modelId },
+      },
       update: { isActive: true },
       create: {
         ...m,
@@ -213,14 +231,21 @@ async function main() {
 
   const vllmModels = [
     {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
+      name: "Qwen3.5 2B Instruct (vLLM)",
       description: "House chat — tier 1, hybrid RAG",
       maxTokens: 8192,
       supportsTools: false,
     },
     {
-      modelId: "qwen2.5-32b-instruct",
+      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
+      name: "Qwen3.5 9B Instruct (vLLM)",
+      description: "Standard chat — tier 2, hybrid RAG",
+      maxTokens: 8192,
+      supportsTools: true,
+    },
+    {
+      modelId: RETAINED_ASSIST_MODEL_ID,
       name: "Qwen 2.5 32B AWQ (vLLM)",
       description: "Large tier — tools via Hermes parser",
       maxTokens: 8192,
@@ -230,8 +255,14 @@ async function main() {
 
   for (const m of vllmModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { isActive: true, supportsTools: m.supportsTools, supportsImages: false },
+      where: {
+        providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
+      },
+      update: {
+        isActive: true,
+        supportsTools: m.supportsTools,
+        supportsImages: false,
+      },
       create: {
         ...m,
         type: "CHAT",
@@ -241,6 +272,17 @@ async function main() {
       },
     });
   }
+
+  // Keep the retained 32B model active, but remove superseded small-model
+  // rows from Auto and the public picker. Qwen3.5 4B was present on the dev
+  // host but is not part of the approved 2B/9B fleet target.
+  await prisma.aIModel.updateMany({
+    where: {
+      providerId: vllm.id,
+      modelId: { in: [...LEGACY_CAMPUS_MODEL_IDS] },
+    },
+    data: { isActive: false, routerTier: null },
+  });
 
   await prisma.aIModel.upsert({
     where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },

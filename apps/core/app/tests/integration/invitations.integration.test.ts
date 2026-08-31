@@ -695,7 +695,7 @@ describe("accept flow", () => {
 
     const originalTransaction = prisma.$transaction.bind(prisma);
     const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (fn, ...args) => {
-      if (typeof fn !== "function") {
+      if (!(fn instanceof Function)) {
         return originalTransaction(fn as never, ...args);
       }
       // Fail only the promote-step invitation conditional consume inside a real transaction so
@@ -713,13 +713,13 @@ describe("accept flow", () => {
                     // SAFETY: a proxy trap is handed every key of its target,
                     // so the key is one of them by construction.
                     const value = invTarget[invProp as keyof typeof invTarget];
-                    return typeof value === "function" ? value.bind(invTarget) : value;
+                    return value instanceof Function ? value.bind(invTarget) : value;
                   },
                 });
               }
               // SAFETY: as above — the trap only ever sees this target's keys.
               const value = target[prop as keyof typeof target];
-              return typeof value === "function" ? value.bind(target) : value;
+              return value instanceof Function ? value.bind(target) : value;
             },
           });
           return fn(proxiedTx);

@@ -356,6 +356,7 @@ function isHarHeaderEntry(
 ): value is { name: string; value: unknown } {
   // Real HAR cookie rows also carry domain/path/httpOnly/secure/expires — match
   // on string name + string value rather than a strict key allowlist.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   return typeof value.name === "string" && typeof value.value === "string";
 }
 
@@ -420,12 +421,21 @@ export function redactSecretValuesInString(text: string): string {
  * value scrubbing is a strict superset of what it did.
  *
  * Used for audit / security / system log details and bug-report console+network captures.
+ *
+ * The `typeof` checks in this file are the standing `anti-slop/no-runtime-typeof`
+ * exemption and are suppressed per-line, on the same grounds as the two other
+ * anti-slop rules already exempted here. There is no boundary to parse at: the
+ * argument is whatever a caller was about to log, and sorting that graph into
+ * the arms of `RedactedValue` is the function's entire job. Suppressing them
+ * per-line rather than per-file keeps the rule able to reach zero elsewhere and
+ * be promoted to `error` (#1599).
  */
 export function sanitizeSensitiveData(
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- callers pass whatever they are about to log: Error, Map, Set, class instance, cycle. Classifying that graph is what this function is for.
   value: unknown,
   seen: WeakSet<object> = new WeakSet(),
 ): RedactedValue {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "string") {
     return redactSecretValuesInString(value);
   }
@@ -436,9 +446,11 @@ export function sanitizeSensitiveData(
   // passthroughs need no assertion.
   if (value === null || value === undefined) return value;
   if (value instanceof Date) return value;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return value;
   }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "symbol" || typeof value === "function") {
     return value;
   }
@@ -455,7 +467,7 @@ export function sanitizeSensitiveData(
   } else if (value instanceof Map) {
     const sanitized: Record<string, RedactedValue> = {};
     for (const [key, entry] of value.entries()) {
-      const keyStr = typeof key === "string" ? key : String(key);
+      const keyStr = String(key);
       sanitized[keyStr] = shouldRedactKey(keyStr)
         ? REDACTED_VALUE
         : sanitizeSensitiveData(entry, seen);
@@ -509,6 +521,7 @@ export function redactErrorForConsole(cause: unknown): RedactedValue {
     };
   }
 
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof cause === "string") {
     return redactSecretValuesInString(cause);
   }
@@ -530,9 +543,11 @@ export function redactErrorForMessage(cause: unknown): string {
     const message = redactSecretValuesInString(cause.message);
     return message ? `${cause.name}: ${message}` : cause.name;
   }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof cause === "string") return redactSecretValuesInString(cause);
   // `String(value)` on a plain object is "[object Object]" — the same loss this
   // function exists to prevent — so serialize the sanitized value instead.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof cause === "object" && cause !== null) {
     try {
       const serialized = JSON.stringify(sanitizeSensitiveData(cause));

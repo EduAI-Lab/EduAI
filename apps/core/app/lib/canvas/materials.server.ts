@@ -12,12 +12,14 @@ import {
   requireCanvasCredentials,
   validateInstructorCanvasCourseIds,
 } from "~/lib/canvas/courses.server";
+import { isChecksumConflict } from "~/lib/materials/extraction-job.server";
 import type {
   CanvasMaterialDiscoverItem,
   CanvasMaterialImportStatus,
   SyncCanvasMaterialsResult,
 } from "@eduai/types";
 import prisma from "~/lib/prisma.server";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 
 const ALLOWED_MIME_TYPES = new Set([
   "text/plain",
@@ -315,23 +317,49 @@ export async function importSingleCanvasFile(
     });
     materialId = existing.id;
   } else {
-    const created = await prisma.courseMaterial.create({
-      data: {
-        courseId,
-        title: provisionalTitle,
-        mimeType,
-        fileSize: bytes.length,
-        // Stable provisional checksum until extraction supplies the content hash.
-        checksum: `canvas-pending:${canvasFileId}`,
-        rawText: null,
-        status: "PROCESSING",
-        uploadedBy: userId,
-        externalSource: CANVAS_EXTERNAL_SOURCE,
-        externalId: canvasFileId,
-        canvasUpdatedAt,
-      },
-    });
-    materialId = created.id;
+    try {
+      const created = await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: provisionalTitle,
+          mimeType,
+          fileSize: bytes.length,
+          // Stable provisional checksum until extraction supplies the content hash.
+          checksum: `canvas-pending:${canvasFileId}`,
+          rawText: null,
+          status: "PROCESSING",
+          uploadedBy: userId,
+          externalSource: CANVAS_EXTERNAL_SOURCE,
+          externalId: canvasFileId,
+          canvasUpdatedAt,
+        },
+      });
+      materialId = created.id;
+    } catch (error) {
+      // A concurrent sync of the same Canvas file already claimed the
+      // provisional `canvas-pending:<id>` checksum. The pre-check saw no row
+      // because both raced past it — the unique constraint is the real guard.
+      // Defer to the winner (the concurrent import of this same `externalId`) and
+      // skip this loser rather than surface a raw P2002 — but only to a *healthy*
+      // winner, matching the finalize path's check. If the winner vanished (rolled
+      // back after the collision) or is itself `FAILED` (its importer died after
+      // claiming the provisional row), there is no usable import in flight to
+      // finish this file, so surface it as failed instead of reporting a skip that
+      // hides missing content. `#1495`
+      if (isChecksumConflict(error)) {
+        const winner = await prisma.courseMaterial.findFirst({
+          where: { courseId, externalSource: CANVAS_EXTERNAL_SOURCE, externalId: canvasFileId },
+          select: { id: true, status: true },
+        });
+        if (winner && winner.status !== "FAILED") {
+          return "skipped-not-modified";
+        }
+        throw new Error(
+          "Concurrent Canvas import collided but left no usable material; retry the sync",
+        );
+      }
+      throw error;
+    }
   }
 
   let fileInfo;
@@ -345,15 +373,12 @@ export async function importSingleCanvasFile(
     throw error;
   }
 
-  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
-    where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
-  });
-
-  if (duplicateByChecksum) {
+  // Drop the loser's provisional row (new import) or revert the pre-extraction
+  // PROCESSING flip (re-import), leaving the winning material's content untouched.
+  const revertLoser = async (): Promise<void> => {
     if (!existing) {
       await prisma.courseMaterial.delete({ where: { id: materialId } });
     } else {
-      // Revert the pre-extraction PROCESSING flip; leave prior content untouched.
       await prisma.courseMaterial.update({
         where: { id: materialId },
         data: {
@@ -362,22 +387,71 @@ export async function importSingleCanvasFile(
         },
       });
     }
+  };
+
+  const markFailed = async (): Promise<void> => {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: "FAILED" },
+    });
+  };
+
+  // Resolve a lost `(courseId, checksum)` race by deferring to the row that won
+  // the unique index — but only if there really is a healthy winner to defer to.
+  // The winner can be absent (deleted or rolled back between the collision and
+  // this lookup) or itself `FAILED`; in either case there is no good surviving
+  // copy of this content, so dropping our row would make the file vanish
+  // silently. Mark it `FAILED` and surface it as a failed item instead, rather
+  // than reporting a skip that hides missing content. `#1495`
+  const resolveChecksumConflict = async (checksum: string): Promise<"skipped-not-modified"> => {
+    const winner = await prisma.courseMaterial.findFirst({
+      where: { courseId, checksum, id: { not: materialId } },
+      select: { id: true, status: true },
+    });
+    if (!winner || winner.status === "FAILED") {
+      await markFailed();
+      throw new Error(
+        "Content duplicate collided with a missing or failed material; marked for re-sync",
+      );
+    }
+    await revertLoser();
     return "skipped-not-modified";
+  };
+
+  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+    select: { id: true, status: true },
+  });
+
+  if (duplicateByChecksum) {
+    return resolveChecksumConflict(fileInfo.checksum);
   }
 
-  await prisma.courseMaterial.update({
-    where: { id: materialId },
-    data: {
-      title: fileInfo.title,
-      mimeType: fileInfo.mimeType,
-      fileSize: fileInfo.fileSize,
-      checksum: fileInfo.checksum,
-      rawText: fileInfo.content,
-      status: "PROCESSING",
-      uploadedBy: userId,
-      canvasUpdatedAt,
-    },
-  });
+  try {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: {
+        title: fileInfo.title,
+        mimeType: fileInfo.mimeType,
+        fileSize: fileInfo.fileSize,
+        checksum: fileInfo.checksum,
+        rawText: fileInfo.content,
+        status: "PROCESSING",
+        uploadedBy: userId,
+        canvasUpdatedAt,
+      },
+    });
+  } catch (error) {
+    // The pre-check and this write are not atomic: a concurrent import of a
+    // file with identical extracted text can win the content hash between them.
+    // The unique constraint is the real guard — resolve against the winner
+    // instead of leaking a raw P2002 and stranding the row in PROCESSING.
+    if (isChecksumConflict(error)) {
+      return resolveChecksumConflict(fileInfo.checksum);
+    }
+    await markFailed();
+    throw error;
+  }
 
   try {
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: Boolean(existing) });
@@ -465,7 +539,48 @@ export async function syncSelectedCanvasMaterials(
     }
   }
 
+  // #1624: provision topics for the batch, but only once material actually
+  // landed — a sync that imported nothing has no new structure to read, and
+  // re-deriving from unchanged content is exactly what the checksum-keyed job
+  // record exists to avoid.
+  if (result.imported + result.updated > 0) {
+    await startTopicAnalysisForCanvasBatch(courseId, userId, canvasFileIds, course.externalId!);
+  }
+
   return result;
+}
+
+/**
+ * Kick off topic analysis for the materials a Canvas batch just produced.
+ *
+ * The importer reports outcomes, not row ids, so the batch is re-read here by
+ * Canvas file id. Only READY rows are passed on: topic analysis reads `rawText`,
+ * which a still-processing or failed material does not reliably have.
+ */
+async function startTopicAnalysisForCanvasBatch(
+  courseId: string,
+  userId: string,
+  canvasFileIds: string[],
+  canvasCourseId: string,
+): Promise<void> {
+  const materials = await prisma.courseMaterial.findMany({
+    where: {
+      courseId,
+      externalSource: CANVAS_EXTERNAL_SOURCE,
+      externalId: { in: canvasFileIds },
+      status: "READY",
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (materials.length === 0) return;
+
+  startTopicAnalysis({
+    courseId,
+    userId,
+    materialIds: materials.map((material) => material.id),
+    canvasCourseId,
+  });
 }
 
 /** Marks a Canvas file as permanently excluded from sync for this course. */

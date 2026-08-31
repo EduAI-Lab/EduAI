@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
+import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
+  adhdAssistFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 const baseProps = {
@@ -65,6 +67,143 @@ describe("ChatConversationLayout — empty state layout", () => {
     const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto");
     expect(pane).not.toBeNull();
     expect(pane?.className).toBe(CHAT_SCROLL_PANE_CLASS);
+  });
+
+  it("leaves smooth scrolling to the stick-to-bottom hook, not CSS (#1517)", () => {
+    // `scroll-behavior: smooth` in CSS overrides a programmatic
+    // `behavior: "auto"`, animating every streamed token.
+    expect(CHAT_SCROLL_PANE_CLASS).not.toMatch(/\bscroll-smooth\b/);
+  });
+});
+
+describe("ChatConversationLayout — stick to bottom (#1517)", () => {
+  it("scrolls the transcript to the bottom when a streamed token grows it", () => {
+    const { container, rerender } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Streaming" }]}
+        isLoading
+      />,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 600, writable: true, configurable: true });
+    const scrollTo = vi.fn();
+    pane.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    // A streamed token: same message id, longer text, new array identity.
+    rerender(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Streaming more" }]}
+        isLoading
+      />,
+    );
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "auto" });
+  });
+
+  it("hides the jump-to-latest button while pinned to the bottom", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a jump-to-latest button once the reader scrolls up", () => {
+    const { container } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+      />,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(screen.getByRole("button", { name: /jump to latest/i })).toBeInTheDocument();
+  });
+
+  it("scrolls smoothly back to the bottom when the jump button is clicked", () => {
+    const { container } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+      />,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+    const scrollTo = vi.fn();
+    pane.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    act(() => {
+      screen.getByRole("button", { name: /jump to latest/i }).click();
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
+  });
+
+  it("jumps without animating for a reader who has asked for reduced motion", () => {
+    const { container } = render(
+      <UiPreferencesProvider initialMotionReduced initialDensity="comfortable">
+        <ChatConversationLayout
+          {...baseProps}
+          messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+        />
+      </UiPreferencesProvider>,
+    );
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+    const scrollTo = vi.fn();
+    pane.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    act(() => {
+      screen.getByRole("button", { name: /jump to latest/i }).click();
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "auto" });
+  });
+
+  it("does not offer the jump button on an empty transcript", () => {
+    const { container } = render(<ChatConversationLayout {...baseProps} />);
+
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto") as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(pane, "scrollTop", { value: 0, writable: true, configurable: true });
+
+    act(() => {
+      pane.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
   });
 });
 
@@ -173,6 +312,84 @@ describe("ChatConversationLayout — routed model labels", () => {
     );
 
     expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatConversationLayout — Assist toggle doesn't reformat history (#1671)", () => {
+  it("does not apply the live Assist toggle's relabeling to an older message sent under the other mode", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist // live toggle is now ON
+        messages={[
+          { id: "assistant-old", role: "assistant", content: "**Top summary**\nOlder answer." },
+        ]}
+        adhdAssistByMessageId={{ "assistant-old": false }} // that turn was sent with Assist OFF
+      />,
+    );
+
+    // relabelAssistiveHeadings would turn this into "TLDR" if the live
+    // toggle were applied instead of the per-message value.
+    expect(screen.getByText(/Top summary/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TLDR/i)).not.toBeInTheDocument();
+  });
+
+  it("does apply relabeling to an older message that was itself sent with Assist on", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist={false} // live toggle is now OFF
+        messages={[
+          { id: "assistant-old", role: "assistant", content: "**Top summary**\nOlder answer." },
+        ]}
+        adhdAssistByMessageId={{ "assistant-old": true }} // that turn was sent with Assist ON
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+  });
+
+  it("falls back to the live toggle for a legacy message with no recorded Assist metadata", () => {
+    const storedTranscript: Array<{
+      id: string;
+      role: string;
+      content: string;
+      metadata?: unknown;
+    }> = [
+      { id: "assistant-legacy", role: "assistant", content: "**Top summary**\nLegacy answer." },
+    ];
+    const adhdAssistByMessageId: Record<string, boolean> = {};
+    for (const message of storedTranscript) {
+      const wasAssist = adhdAssistFromMessage(message);
+      if (wasAssist !== undefined) adhdAssistByMessageId[message.id] = wasAssist;
+    }
+
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist // live toggle is ON, and there's nothing recorded for this legacy message
+        messages={storedTranscript}
+        adhdAssistByMessageId={adhdAssistByMessageId}
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+  });
+
+  it("uses streamingAdhdAssist, not the live toggle, for the in-flight message", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        adhdAssist={false} // toggled off after the in-flight request was already sent
+        isLoading
+        messages={[
+          { id: "assistant-streaming", role: "assistant", content: "**Top summary**\nStreaming." },
+        ]}
+        streamingAdhdAssist // the in-flight request was sent with Assist on
+      />,
+    );
+
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
   });
 });
 

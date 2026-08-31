@@ -23,6 +23,10 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  cancelChatRequest,
+  fetchChatWithRequestId,
+} from "~/components/chat/chat-request-cancellation";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -129,6 +133,7 @@ export default function AdminChatPage() {
   // nothing at all. Surfaced as a banner instead of another silent log line.
   const [chatError, setChatError] = useState<string | null>(null);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
   const { assistive, setAssistive } = useAssistiveUi();
 
   useEffect(() => {
@@ -177,8 +182,14 @@ export default function AdminChatPage() {
     adhdAssist,
   };
 
+  const chatFetch = useCallback<typeof fetch>(
+    (input, init) => fetchChatWithRequestId(activeRequestIdRef, input, init),
+    [],
+  );
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
     api: "/api/chat",
+    fetch: chatFetch,
     sendExtraMessageFields: true,
     body: requestMetadata,
     experimental_prepareRequestBody: ({ messages: chatMessages, requestBody }) => ({
@@ -205,6 +216,7 @@ export default function AdminChatPage() {
       }
     },
     onFinish: (message) => {
+      activeRequestIdRef.current = null;
       const routed = pendingRoutedRegistryIdRef.current;
       if (message.role === "assistant" && routed) {
         setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
@@ -213,6 +225,7 @@ export default function AdminChatPage() {
       setStreamingRoutedRegistryId(null);
     },
     onError: (error) => {
+      activeRequestIdRef.current = null;
       logChatUseChatError(error, "admin-chat");
       setChatError(describeAdminChatError(error));
       // Clear routed-model latch on error so the next turn does not skip
@@ -226,6 +239,7 @@ export default function AdminChatPage() {
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
+    cancelChatRequest(activeRequestIdRef);
     pendingRoutedRegistryIdRef.current = null;
     setStreamingRoutedRegistryId(null);
     stop();

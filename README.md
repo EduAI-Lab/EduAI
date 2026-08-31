@@ -58,9 +58,13 @@ Course enrollment pickers use the paginated `/api/users` contract with a managed
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
 
+Instructors can add a course topic directly from the Add Activity modal; the topic is created in the Core-synchronized course topic list.
+
 ### [Question Maker](apps/extensions/question-maker/)
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
+
+Question authoring surfaces let instructors expand an explicit “Add topic” control when they need to create a Core-synchronized course topic. Authoring toasts appear in the top-right and can be dismissed.
 
 Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
@@ -107,7 +111,7 @@ node ./scripts/chat-latency-bench.mjs
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
-Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. Canceling a streaming HTTP response propagates to the provider and releases the admission slot; `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
+Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. The browser's Stop control sends a request-specific cancellation to Core, which aborts the matching provider stream and releases its admission slot; completed streams also release the slot they acquired. `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
 
 To capture the time-to-first-byte evidence for #942, set
 `CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline

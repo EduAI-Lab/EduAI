@@ -17,18 +17,18 @@ import {
   SelectValue,
   Button,
   Label,
-  Input,
 } from "@eduai/ui";
 import { toast } from "sonner";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
-import canvasService, {
-  CanvasCourse,
-  CanvasIntegration,
-  CanvasQuestionBank,
-} from "../../services/canvasService";
+import canvasService, { CanvasIntegration, CanvasQuestionBank } from "../../services/canvasService";
 import { courseService } from "../../services/courseService";
 import { questionBankService, QuestionBank } from "../../services/questionBankService";
 import { Topic } from "../../types/topic";
+
+interface CanvasCourseLink {
+  canvasCourseId: number;
+  canvasCourseName: string;
+}
 
 interface CanvasBankSyncDialogProps {
   open: boolean;
@@ -52,34 +52,25 @@ export const CanvasBankSyncDialog = ({
 }: CanvasBankSyncDialogProps) => {
   const { canManageCanvas } = useQmPermissionsForCourse(localCourseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
-  const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
+  // The Canvas course is never picked: banks sync from the Canvas course this
+  // local course was linked to, into this local course.
+  const [linkedCanvasCourse, setLinkedCanvasCourse] = useState<CanvasCourseLink | null>(null);
+  const [isLoadingMapping, setIsLoadingMapping] = useState(false);
   const [banks, setBanks] = useState<CanvasQuestionBank[]>([]);
   const [localBanks, setLocalBanks] = useState<QuestionBank[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
 
-  const [selectedCanvasCourseId, setSelectedCanvasCourseId] = useState("");
   const [selectedCanvasBankId, setSelectedCanvasBankId] = useState("");
   const [selectedTopicId, setSelectedTopicId] = useState("");
   const [targetBankId, setTargetBankId] = useState<string>("__new__");
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isLoadingBanks, setIsLoadingBanks] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [showConnectForm, setShowConnectForm] = useState(false);
-  const [canvasUrl, setCanvasUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     if (!open) return;
     void (async () => {
-      const status = await canvasService.getIntegration();
-      setIntegration(status);
-      if (status?.isConnected) {
-        await loadCanvasCourses();
-      } else {
-        setShowConnectForm(true);
-      }
+      setIntegration(await canvasService.getIntegration());
     })();
   }, [open]);
 
@@ -102,25 +93,34 @@ export const CanvasBankSyncDialog = ({
   }, [open, localCourseId, selectedLocalBankId]);
 
   useEffect(() => {
-    if (!selectedCanvasCourseId || !integration?.isConnected) {
+    if (!open || !localCourseId || !integration?.isConnected) {
+      setLinkedCanvasCourse(null);
       setBanks([]);
       setSelectedCanvasBankId("");
       return;
     }
-    void loadCanvasBanks(Number(selectedCanvasCourseId));
-  }, [selectedCanvasCourseId, integration]);
+    void loadLinkedCanvasCourse(localCourseId);
+  }, [open, localCourseId, integration]);
 
-  const loadCanvasCourses = async () => {
-    setIsLoadingCourses(true);
+  /** Resolves the Canvas course this local course was synced from; null when unlinked. */
+  const loadLinkedCanvasCourse = async (courseId: number) => {
+    setIsLoadingMapping(true);
     try {
-      const courses = await canvasService.getCourses();
-      setCanvasCourses(courses);
-    } catch (error: any) {
-      toast.error("Failed to load Canvas courses", {
-        description: error?.response?.data?.error || error.message,
+      const mapping = await canvasService.getCourseMapping(courseId);
+      const canvasCourseId = mapping?.canvasCourseId ? Number(mapping.canvasCourseId) : null;
+      if (!canvasCourseId) {
+        setLinkedCanvasCourse(null);
+        setBanks([]);
+        setSelectedCanvasBankId("");
+        return;
+      }
+      setLinkedCanvasCourse({
+        canvasCourseId,
+        canvasCourseName: mapping.canvasCourseName || `Canvas course ${canvasCourseId}`,
       });
+      await loadCanvasBanks(canvasCourseId);
     } finally {
-      setIsLoadingCourses(false);
+      setIsLoadingMapping(false);
     }
   };
 
@@ -139,55 +139,17 @@ export const CanvasBankSyncDialog = ({
     }
   };
 
-  const handleConnect = async () => {
-    if (!canvasUrl) {
-      toast.error("Canvas URL required", {
-        description: "Please enter your Canvas instance URL.",
-      });
-      return;
-    }
-
-    if (!apiKey) {
-      toast.error("API Key required", {
-        description: "Please enter your Canvas API key.",
-      });
-      return;
-    }
-
-    setIsConnecting(true);
-    try {
-      const { integration: result, usedTestMode } = await canvasService.connectCanvasWithFallback(
-        canvasUrl,
-        apiKey,
-      );
-      setIntegration(result);
-      setShowConnectForm(false);
-      if (usedTestMode) {
-        toast("Canvas test mode", {
-          description: "Using mock Canvas data because live credentials were unavailable.",
-        });
-      }
-      await loadCanvasCourses();
-    } catch (error: any) {
-      toast.error("Connection failed", {
-        description: error?.response?.data?.error || error.message,
-      });
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
   const handleSync = async () => {
-    if (!localCourseId || !selectedCanvasCourseId || !selectedCanvasBankId || !selectedTopicId) {
+    if (!localCourseId || !linkedCanvasCourse || !selectedCanvasBankId || !selectedTopicId) {
       toast.error("Missing fields", {
-        description: "Select Canvas course, bank, and a local topic.",
+        description: "Select a Canvas bank and a local topic.",
       });
       return;
     }
     setIsLoading(true);
     try {
       const result = await canvasService.importQuestionBank(
-        Number(selectedCanvasCourseId),
+        linkedCanvasCourse.canvasCourseId,
         Number(selectedCanvasBankId),
         localCourseId,
         {
@@ -211,8 +173,7 @@ export const CanvasBankSyncDialog = ({
 
   const canSync =
     integration?.isConnected &&
-    !showConnectForm &&
-    selectedCanvasCourseId &&
+    linkedCanvasCourse &&
     selectedCanvasBankId &&
     selectedTopicId &&
     !isLoading;
@@ -236,49 +197,28 @@ export const CanvasBankSyncDialog = ({
             <p className="text-sm text-muted-foreground">
               Canvas bank sync is available to instructors and administrators only.
             </p>
-          ) : showConnectForm ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="canvas-url">Canvas Instance URL</Label>
-                <Input
-                  id="canvas-url"
-                  value={canvasUrl}
-                  onChange={(e) => setCanvasUrl(e.target.value)}
-                  placeholder="https://canvas.ubc.ca"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="canvas-key">API Key</Label>
-                <Input
-                  id="canvas-key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your Canvas API key"
-                />
-              </div>
-            </div>
+          ) : !integration?.isConnected ? (
+            <p className="text-sm text-muted-foreground">
+              Canvas is not connected. Connect Canvas in your EduAI settings, then reopen this
+              dialog.
+            </p>
+          ) : isLoadingMapping ? (
+            <div className="text-sm text-muted-foreground">Loading Canvas course...</div>
+          ) : !linkedCanvasCourse ? (
+            <p className="text-sm text-muted-foreground">
+              This course is not linked to a Canvas course. Sync the course from Canvas before
+              importing question banks.
+            </p>
           ) : (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Canvas course</Label>
-                {isLoadingCourses ? (
-                  <div className="text-sm text-muted-foreground">Loading courses...</div>
-                ) : (
-                  <Select value={selectedCanvasCourseId} onValueChange={setSelectedCanvasCourseId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select course" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {canvasCourses.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.course_code ? `${c.course_code} - ` : ""}
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <p className="text-sm" data-testid="linked-canvas-course">
+                  {linkedCanvasCourse.canvasCourseName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Banks sync from the Canvas course this course is linked to, into this course.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -286,11 +226,7 @@ export const CanvasBankSyncDialog = ({
                 {isLoadingBanks ? (
                   <div className="text-sm text-muted-foreground">Loading banks...</div>
                 ) : (
-                  <Select
-                    value={selectedCanvasBankId}
-                    onValueChange={setSelectedCanvasBankId}
-                    disabled={!selectedCanvasCourseId}
-                  >
+                  <Select value={selectedCanvasBankId} onValueChange={setSelectedCanvasBankId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select bank" />
                     </SelectTrigger>
@@ -343,35 +279,13 @@ export const CanvasBankSyncDialog = ({
         </div>
 
         <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
-          {!canManageCanvas ? (
-            <Button variant="outline" onClick={onClose}>
-              Close
+          <Button variant="outline" onClick={onClose}>
+            {canManageCanvas ? "Cancel" : "Close"}
+          </Button>
+          {canManageCanvas && (
+            <Button onClick={handleSync} disabled={!canSync} data-testid="sync-bank-submit">
+              {isLoading ? "Syncing..." : "Sync bank"}
             </Button>
-          ) : showConnectForm ? (
-            <>
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button onClick={handleConnect} disabled={isConnecting || !canvasUrl || !apiKey}>
-                {isConnecting ? "Connecting..." : "Connect Canvas"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowConnectForm(true);
-                  setSelectedCanvasCourseId("");
-                  setSelectedCanvasBankId("");
-                }}
-              >
-                Change Connection
-              </Button>
-              <Button onClick={handleSync} disabled={!canSync} data-testid="sync-bank-submit">
-                {isLoading ? "Syncing..." : "Sync bank"}
-              </Button>
-            </>
           )}
         </DialogFooter>
       </DialogContent>

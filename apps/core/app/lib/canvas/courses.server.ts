@@ -11,6 +11,7 @@ import {
 } from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
+import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
 
 export class CanvasNotConnectedError extends Error {
   constructor() {
@@ -192,6 +193,11 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
     // idempotent and race-safe, so newly synced courses always converge on a
     // default question bank even when concurrent first syncs race here.
     await ensureDefaultBank(course.id);
+    // #1624: a default bank is not enough to author against — Question Maker
+    // also requires a topic. Provisioning runs later and asynchronously, so the
+    // fallback is created here, up front, rather than leaving a window where a
+    // freshly synced course is a hard authoring blocker. Also idempotent.
+    await ensureCourseHasTopic(course.id);
     return course;
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {

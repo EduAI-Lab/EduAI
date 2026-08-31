@@ -103,7 +103,7 @@ export function providerConfigurationHint(providerId: string): string {
 export function parseModelIdentifier(
   identifier: string,
 ): { providerId: SupportedProvider; modelId: string } | null {
-  if (!identifier || typeof identifier !== "string") return null;
+  if (!identifier) return null;
 
   const firstColonIndex = identifier.indexOf(":");
   if (firstColonIndex === -1) return null;

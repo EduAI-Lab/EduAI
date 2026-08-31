@@ -63,6 +63,14 @@ import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
+import { useTopicAnalysis } from "~/hooks/api/use-topic-analysis";
+import { TopicAnalysisBanner } from "~/components/courses/topic-analysis-banner";
+import {
+  isSuggestion,
+  TopicOriginBadge,
+  TopicSourceList,
+  TopicSuggestionControls,
+} from "~/components/courses/topic-suggestion-controls";
 import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
@@ -101,6 +109,14 @@ interface Props {
   onFileSelect: (file: File) => void;
   onCreateTopic: (name: string) => Promise<void>;
   onDeleteTopic: (id: string) => Promise<void>;
+  /**
+   * #1624: rename a topic in place — writes through the topics PATCH endpoint.
+   * Optional like `onRefreshTopics`: a caller that does not supply one simply
+   * gets no rename affordance, rather than a button that cannot work.
+   */
+  onRenameTopic?: (id: string, name: string) => Promise<void>;
+  /** Re-reads the topic list after a suggestion is approved, merged, or dismissed (#1624). */
+  onRefreshTopics?: () => Promise<void> | void;
   onAssignInstructor: (instructorId: string) => Promise<void>;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
@@ -198,6 +214,8 @@ export function CourseDetailManagerView({
   onFileSelect,
   onCreateTopic,
   onDeleteTopic,
+  onRenameTopic,
+  onRefreshTopics,
   onAssignInstructor,
   onAddTA,
   onRemoveTA,
@@ -212,6 +230,19 @@ export function CourseDetailManagerView({
 }: Props) {
   const [newTopic, setNewTopic] = useState("");
   const [canvasSyncOpen, setCanvasSyncOpen] = useState(false);
+  // #1624: automatic topic provisioning status and the review actions for the
+  // suggestions it produced. Staff-only surface, so it is fetched here rather
+  // than in the shared course loader.
+  const {
+    status: topicAnalysis,
+    approveTopic,
+    dismissTopic,
+    mergeTopic,
+    retryAnalysis,
+    // `courseId` is optional on this component; without one there is nothing to
+    // poll, so the hook stays idle rather than fetching `/api/courses//…`.
+  } = useTopicAnalysis(courseId ?? "", Boolean(courseId), () => onRefreshTopics?.());
+  const [retryingAnalysis, setRetryingAnalysis] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
@@ -265,6 +296,7 @@ export function CourseDetailManagerView({
     canViewChats,
     canManageStudentEnrollments,
     canManageRagSettings,
+    canReviewTopicSuggestions,
     canDeleteMaterial: canDeleteMaterialForUploader,
   } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
 
@@ -1025,6 +1057,24 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <div className="flex flex-col gap-4">
+            {/* #1624: persistent status for automatic topic provisioning. Reads
+                the durable job row, so it survives a reload. */}
+            <TopicAnalysisBanner
+              status={topicAnalysis}
+              retrying={retryingAnalysis}
+              onRetry={async () => {
+                setRetryingAnalysis(true);
+                try {
+                  await retryAnalysis();
+                  await onRefreshTopics?.();
+                } catch {
+                  // The banner keeps showing the failed job; a failed retry is
+                  // not a second, different error to put in front of the user.
+                } finally {
+                  setRetryingAnalysis(false);
+                }
+              }}
+            />
             {/* §807: keep the add-topic form visible, greyed when manage-topics
                 is policy-off (a TA without the grant). */}
             {canManage ? (
@@ -1056,9 +1106,46 @@ export function CourseDetailManagerView({
               <div className="grid gap-2">
                 {topics.map((t) => (
                   <Card key={t.id}>
-                    <CardContent className="flex items-center justify-between py-3">
-                      <span className="text-sm">{t.name}</span>
-                      {canManage ? (
+                    <CardContent className="flex items-center justify-between gap-3 py-3">
+                      <span className="flex min-w-0 flex-col gap-0.5 text-sm">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{t.name}</span>
+                          <TopicOriginBadge topic={t} />
+                        </span>
+                        {/* #1624: which material produced this suggestion. */}
+                        <TopicSourceList topic={t} />
+                      </span>
+                      {/* #1624: an unreviewed suggestion gets rename/approve/merge/
+                          dismiss instead of the plain delete — dismissing is a soft
+                          delete that also stops the name being re-proposed next sync.
+                          Gated on rank >= 2 to match the endpoint: a TA with
+                          `tas.canManageTopics` may manage topics but not review
+                          suggestions, and would only get a 403 from these. */}
+                      {canReviewTopicSuggestions && isSuggestion(t) ? (
+                        <TopicSuggestionControls
+                          topic={t}
+                          mergeTargets={topics.filter((candidate) => !isSuggestion(candidate))}
+                          onApprove={async (id) => {
+                            await approveTopic(id);
+                            await onRefreshTopics?.();
+                          }}
+                          onDismiss={async (id) => {
+                            await dismissTopic(id);
+                            await onRefreshTopics?.();
+                          }}
+                          onMerge={async (id, intoId) => {
+                            await mergeTopic(id, intoId);
+                            await onRefreshTopics?.();
+                          }}
+                          onRename={
+                            onRenameTopic &&
+                            (async (id, name) => {
+                              await onRenameTopic(id, name);
+                              await onRefreshTopics?.();
+                            })
+                          }
+                        />
+                      ) : canManage ? (
                         <Button
                           variant="ghost"
                           size="icon"

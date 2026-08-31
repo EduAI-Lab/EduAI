@@ -5,7 +5,7 @@
  * The hierarchy lives in packages/types, which has no test harness of its own;
  * it is exercised here because Core is its main TypeScript consumer.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AppError,
@@ -21,8 +21,13 @@ import {
 
 import type { ErrorEnvelope } from "@eduai/types";
 
-import { errorResponse } from "~/lib/errors.server";
+import { errorResponse, withErrorResponse } from "~/lib/errors.server";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
+
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: vi.fn(),
+  logSystemError: vi.fn(async () => undefined),
+}));
 
 async function bodyOf(response: Response): Promise<ErrorEnvelope> {
   return JSON.parse(await response.text());
@@ -257,5 +262,64 @@ describe("QueueUnavailableError", () => {
     // Routes must map this to 503, never 400.
     expect(errorResponse(error).status).toBe(503);
     expect(await bodyOf(errorResponse(error))).toEqual({ error: "QUEUE_UNAVAILABLE" });
+  });
+});
+
+describe("withErrorResponse extra headers", () => {
+  // #1560/#1621: /api/chat has to hand the client back the id of a chat it
+  // already persisted, even when the turn then blows up — the boundary owns the
+  // body, so the route contributes only the header.
+  it("attaches the route's headers to the mapped error response", async () => {
+    const response = (await withErrorResponse(
+      async () => {
+        throw new Error("boom");
+      },
+      { headers: () => ({ "X-Chat-Id": "chat-1" }) },
+    )) as Response;
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("X-Chat-Id")).toBe("chat-1");
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    expect(await bodyOf(response)).toEqual({ error: "INTERNAL_ERROR" });
+  });
+
+  it("omits a header whose value is undefined", async () => {
+    const response = (await withErrorResponse(
+      async () => {
+        throw new Error("boom");
+      },
+      { headers: () => ({ "X-Chat-Id": undefined }) },
+    )) as Response;
+
+    expect(response.headers.has("X-Chat-Id")).toBe(false);
+  });
+
+  it("does not let a throwing headers thunk mask the original error", async () => {
+    const response = (await withErrorResponse(
+      async () => {
+        throw new NotFoundError("Course not found");
+      },
+      {
+        headers: () => {
+          throw new Error("thunk exploded");
+        },
+      },
+    )) as Response;
+
+    expect(response.status).toBe(404);
+    expect(await bodyOf(response)).toEqual({ error: "NOT_FOUND" });
+  });
+
+  it("leaves a thrown Response untouched", async () => {
+    const redirect = new Response(null, { status: 302, headers: { Location: "/login" } });
+
+    await expect(
+      withErrorResponse(
+        async () => {
+          throw redirect;
+        },
+        { headers: () => ({ "X-Chat-Id": "chat-1" }) },
+      ),
+    ).rejects.toBe(redirect);
   });
 });

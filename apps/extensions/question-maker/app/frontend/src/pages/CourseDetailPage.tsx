@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router";
-import { IconLoader2 } from "@tabler/icons-react";
 import {
   PageTabs,
   PageTabsList,
@@ -29,6 +28,7 @@ import {
   AlertDescription,
   resolvePaletteAccent,
 } from "@eduai/ui";
+import { CourseDetailSkeleton } from "@/components/shared/Skeletons";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { useGuidedTour } from "../contexts/GuidedTourContext";
@@ -47,6 +47,7 @@ import { DEFAULT_LIST_PAGE_SIZE, ListPaginationBar } from "../components/shared/
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseOverviewTab } from "./course-detail/CourseOverviewTab";
 import { CourseBanksTab } from "./course-detail/CourseBanksTab";
+import { resolveCourseTab, type ActiveTab } from "./course-detail/courseTabs";
 import { CourseTopicsHeroAction } from "./course-detail/CourseTopicsHeroAction";
 import { CourseCanvasTab } from "./course-detail/CourseCanvasTab";
 import type { QuestionAnalyticsProps } from "@eduai/ui";
@@ -65,6 +66,7 @@ import {
   QuestionUploadDialog,
   mapExtractedToDraftQuestions,
 } from "../components/question-bank/QuestionUploadDialog";
+import canvasService from "../services/canvasService";
 import { CanvasExportDialog } from "../components/canvas/CanvasExportDialog";
 import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
 import { CanvasBankSyncDialog } from "../components/canvas/CanvasBankSyncDialog";
@@ -76,11 +78,8 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 
-type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
 type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
 type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
-
-const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
 const TYPE_COLORS = {
   MCQ: "var(--color-series-3)",
@@ -108,10 +107,12 @@ export const CourseDetailPage = () => {
     activeTourId,
   } = useGuidedTour();
 
+  // Canvas actions are offered only for courses that were synced from Canvas;
+  // null until the course's Canvas link has been resolved.
+  const [isCanvasLinked, setIsCanvasLinked] = useState<boolean | null>(null);
+
   const tabParam = searchParams.get("tab");
-  const activeTab: ActiveTab = VALID_TABS.includes(tabParam as ActiveTab)
-    ? (tabParam as ActiveTab)
-    : "overview";
+  const activeTab: ActiveTab = resolveCourseTab(tabParam, isCanvasLinked);
   const setActiveTab = useCallback(
     (tab: ActiveTab) => {
       setSearchParams(
@@ -267,6 +268,30 @@ export const CourseDetailPage = () => {
       }
     };
     void fetchBanks();
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
+  // Canvas link for this course, resolved from its Canvas course mapping.
+  useEffect(() => {
+    if (!courseId) {
+      setIsCanvasLinked(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCanvasLinked(null);
+    void (async () => {
+      const link = await canvasService.getCourseLink(courseId);
+      if (cancelled) return;
+      // `unknown` stays null — the same state the page holds while resolving,
+      // which every gate below reads permissively. A Core hiccup would
+      // otherwise read as "not linked" and silently strip the Canvas tab, both
+      // import actions and the bank-sync button from a linked course, with
+      // nothing on screen to explain it (#1652 review).
+      if (link.status === "unknown") return;
+      setIsCanvasLinked(link.status === "linked");
+    })();
     return () => {
       cancelled = true;
     };
@@ -757,7 +782,7 @@ export const CourseDetailPage = () => {
       setIsUploadOpen(false);
       const processingToast = toast("Extraction in progress", {
         description:
-          "Your upload is being processed. Keep this page open until the extraction is ready.",
+          "Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.",
         duration: Infinity,
       });
       const dismissProcessing = () => {
@@ -934,11 +959,7 @@ export const CourseDetailPage = () => {
 
   // ── Render: gate states (all hooks above this line) ─────────────────────────
   if (isCourseLoading || accessLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <IconLoader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <CourseDetailSkeleton />;
   }
 
   if (notFound || !course) {
@@ -1002,7 +1023,7 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
+          {isCanvasLinked !== false && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
         </PageTabsList>
 
         <PageTabsContent value="overview" className="space-y-6">
@@ -1015,7 +1036,13 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab("assessments")}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            // Canvas import is scoped to the linked Canvas course, so the action
+            // is withheld — not just the tab — when there is no link (#1652
+            // review). `null` means "not resolved yet", which keeps the action
+            // in place rather than flickering it out on every load.
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
         </PageTabsContent>
 
@@ -1053,6 +1080,7 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             isLoading={isBanksLoading}
             loadError={banksError}
+            isCanvasLinked={isCanvasLinked !== false}
             onCreateBank={handleCreateBank}
             onSyncFromCanvas={() => setIsBankSyncOpen(true)}
             onOpenBank={handleOpenBank}
@@ -1076,7 +1104,9 @@ export const CourseDetailPage = () => {
             onExportToTxt={handleExportAssessmentToTxt}
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
-            onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+            onImportFromCanvas={
+              isCanvasLinked === false ? undefined : () => setIsCanvasImportOpen(true)
+            }
           />
           <ListPaginationBar
             total={assessmentsTotal}
@@ -1088,7 +1118,7 @@ export const CourseDetailPage = () => {
         </PageTabsContent>
 
         <PageTabsContent value="canvas" className="space-y-6">
-          {courseId && (
+          {courseId && isCanvasLinked !== false && (
             <CourseCanvasTab
               courseId={courseId}
               canWrite={!writesDisabled}

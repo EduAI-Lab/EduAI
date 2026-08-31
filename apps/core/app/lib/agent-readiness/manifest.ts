@@ -161,6 +161,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/chat/cancel",
+    readiness: "excluded",
+    reason: "Browser-only request-specific streaming cancellation; not an agent operation",
+    routeFile: "routes/api/chat.cancel.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/ai-jobs/:jobId",
     readiness: "excluded",
@@ -378,6 +385,22 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     errorEnvelope: "standard",
     adminChatTool: "deleteCourseTopic",
     routeFile: "routes/api/courses.topics.$.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/topic-analysis",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.topic-analysis.$.ts",
+    note: "Status of automatic topic provisioning (#1624). Staff-only (rank >= 1).",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/topic-analysis",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.topic-analysis.$.ts",
+    note: "Approve / dismiss / merge a generated topic, or retry a failed analysis (#1624). INSTRUCTOR and above.",
   }),
 
   // ── Materials ───────────────────────────────────────────────────────────────
@@ -803,6 +826,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     errorEnvelope: "standard",
     routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
   }),
   entry({
     method: "GET",

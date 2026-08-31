@@ -21,6 +21,8 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
+import { isBrowser } from "@eduai/ui/runtime-env";
+import { z } from "zod";
 
 type ConsoleEntry = {
   level: "log" | "warn" | "error";
@@ -46,8 +48,9 @@ function stringifyArg(value: unknown) {
   if (value instanceof Error) {
     return value.message;
   }
-  if (typeof value === "string") {
-    return value;
+  const text = z.string().safeParse(value);
+  if (text.success) {
+    return text.data;
   }
   try {
     return JSON.stringify(value);
@@ -70,7 +73,7 @@ export function useBugReportCapture() {
   } | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || patchedRef.current) {
+    if (!isBrowser() || patchedRef.current) {
       return;
     }
     patchedRef.current = true;
@@ -121,7 +124,7 @@ export function useBugReportCapture() {
     ): Promise<Response> => {
       const startedAt = performance.now();
       const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
       let status: number | null = null;
 
       try {
@@ -155,7 +158,7 @@ export function useBugReportCapture() {
   }, []);
 
   const captureScreenshot = useCallback(async () => {
-    if (typeof window === "undefined") return null;
+    if (!isBrowser()) return null;
     const now = Date.now();
     // Reuse the most recent screenshot within the cache window to avoid the
     // visible flash and CPU cost of re-rendering the DOM via html2canvas

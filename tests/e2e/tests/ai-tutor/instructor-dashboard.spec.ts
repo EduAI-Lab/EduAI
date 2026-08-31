@@ -231,7 +231,7 @@ test.describe("INSTRUCTOR dashboard", () => {
     // For an instructor the platform-wide and personal counts are the same set:
     // scope *is* the enrollment list, so there is no wider total to compare to.
     expect(stats.yourCourses).toBe(stats.totalCourses);
-    expect(typeof stats.enrolledStudents).toBe("number");
+    expect(stats.enrolledStudents).toEqual(expect.any(Number));
 
     // A course taught by someone else exists but is not reachable at all, which
     // is what keeps it out of every count above (see

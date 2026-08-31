@@ -1,7 +1,7 @@
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import type { ToolInputValue } from "./tool-input";
 
-export type ChatMode = "learning" | "admin";
+export type ChatMode = "learning" | "admin" | "instructor";
 
 export type ChatToolContext = {
   user: RbacUser;
@@ -18,16 +18,35 @@ export type ChatToolContext = {
 
 /**
  * `chatMode` arrives on the request body, so the value is whatever JSON the
- * caller sent. Anything that is not the literal `"admin"` — a missing key, a
- * different casing, a non-string — is a learning chat; admin mode is never
- * reachable by accident.
+ * caller sent. Anything that is not the literal `"admin"` or `"instructor"` —
+ * a missing key, a different casing, a non-string — is a learning chat;
+ * neither elevated mode is reachable by accident.
  */
 export function parseChatMode(value: ToolInputValue | undefined): ChatMode {
-  return value === "admin" ? "admin" : "learning";
+  if (value === "admin" || value === "instructor") return value;
+  return "learning";
 }
 
-export function chatbotTypeFromMode(mode: ChatMode): "LEARNING" | "ADMIN" {
-  return mode === "admin" ? "ADMIN" : "LEARNING";
+export function chatbotTypeFromMode(mode: ChatMode): "LEARNING" | "ADMIN" | "INSTRUCTOR" {
+  if (mode === "admin") return "ADMIN";
+  if (mode === "instructor") return "INSTRUCTOR";
+  return "LEARNING";
+}
+
+/**
+ * Both elevated modes (platform-wide admin, course-scoped instructor) share
+ * most of the non-RBAC turn logic in chat.ts — tool-calling setup, budget
+ * caps, skipping the student-tutoring course-scope classifier/web-tools/ADHD
+ * oversight. Centralizing the check here (#1659 review) means a call site
+ * that needs the two modes to diverge — like the COURSE_REQUIRED gate, where
+ * instructor mode always needs a course but admin never does — has to name
+ * that divergence explicitly instead of silently inheriting a boolean that
+ * doesn't fit, rather than a handful of ad-hoc
+ * `chatMode === "admin" || chatMode === "instructor"` expressions each
+ * needing to be found and updated by hand if a third mode is added.
+ */
+export function isPrivilegedChatMode(mode: ChatMode): boolean {
+  return mode === "admin" || mode === "instructor";
 }
 
 type PromptOptions = {
@@ -148,4 +167,47 @@ When answering:
 2. Summarize tool JSON in markdown tables or lists.
 
 ${courseContext}`;
+}
+
+type InstructorPromptOptions = {
+  courseName: string;
+  courseCode: string;
+  customPrompt?: string | null;
+};
+
+/**
+ * #1659: a course-scoped counterpart to buildAdminSystemPrompt. The
+ * instructor's tool registry (createInstructorChatTools) is already hard-
+ * pinned to one courseId server-side — this prompt exists to keep the model
+ * from *claiming* broader reach than the tools actually grant, not to enforce
+ * the boundary itself.
+ */
+export function buildInstructorSystemPrompt({
+  courseName,
+  courseCode,
+  customPrompt,
+}: InstructorPromptOptions): string {
+  const scopeNote = `You can only see ${courseCode} — ${courseName}. You have no access to other courses, platform user management, or bug triage; do not claim otherwise if asked.`;
+
+  if (customPrompt) {
+    return `${customPrompt.trim()}\n\n${scopeNote}`;
+  }
+
+  return `You are EduAI Course Assistant for the instructor of ${courseCode} — ${courseName} at UBC Okanagan (UBCO).
+
+CRITICAL RULES:
+- You MUST call the appropriate course tool before answering any question about the roster or topics for this course.
+- NEVER guess or invent data. Only state facts returned by tool results.
+- Tool results include dataSource: "database". Quote exact fields from the tool JSON.
+- If truncated is true or count < total, tell the instructor how many rows were returned vs total.
+- You do NOT tutor students, search course materials, or manage other courses/users — this is read-only course-ops help for ${courseCode}.
+
+Read tools:
+- getCourse, listCourseEnrollments (your course's roster), listCourseTopics, getCourseTopic
+
+When answering:
+1. Call the relevant read tool(s) first when listing or verifying current state.
+2. Summarize tool JSON in markdown tables or lists.
+
+${scopeNote}`;
 }

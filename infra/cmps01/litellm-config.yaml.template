@@ -9,15 +9,15 @@
 # vLLM OpenAI servers (often unauthenticated) and are unrelated to the master key.
 
 model_list:
-  - model_name: qwen2.5-7b-instruct
+  - model_name: qwen3.5-2b-instruct
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3.5-2b-instruct
       api_base: http://127.0.0.1:18001/v1
       api_key: vllm-local
 
-  - model_name: qwen2.5-32b-instruct
+  - model_name: qwen3.5-9b-instruct
     litellm_params:
-      model: openai/qwen2.5-32b-instruct
+      model: openai/qwen3.5-9b-instruct
       api_base: http://127.0.0.1:18002/v1
       api_key: vllm-local
 

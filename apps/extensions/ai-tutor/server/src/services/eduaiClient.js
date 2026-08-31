@@ -4,7 +4,7 @@ import {
   EduAiEnrollmentListSchema,
   EduAiQuestionListSchema,
 } from "../schemas/eduai.js";
-import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+import { getEffectiveEduAiApiKey, serviceAuthHeader } from "./systemSettings.js";
 // TODO(#1647-followup): the inline `Bearer ${process.env.EDUAI_API_KEY}` reads
 // below predate `serviceAuthHeader()`/`getEffectiveEduAiApiKey` and still read
 // the env key directly (throwing on unset). Migrate them to the effective key
@@ -45,6 +45,9 @@ export const CORE_PAGE_SIZE = 200;
  * `all: true` read past this cap throws rather than returning a partial set.
  */
 const CORE_MAX_PAGES = 50;
+
+// Mutations should fail fast when Core is reachable but not responding.
+const CORE_TOPIC_CREATE_TIMEOUT_MS = 5_000;
 
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
@@ -510,6 +513,49 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   }
 }
 
+/** Create a topic in the Core course and return its Core identity. */
+export async function createEduAiCourseTopic(externalCourseId, name) {
+  if (!externalCourseId) {
+    throw Object.assign(new Error("Core course id is required"), { status: 400 });
+  }
+
+  const authHeaders = serviceAuthHeader();
+  if (!authHeaders.Authorization) {
+    throw Object.assign(new Error("EDUAI_API_KEY not configured"), { status: 503 });
+  }
+
+  const response = await fetch(`${getEduAiBaseUrl()}/courses/${externalCourseId}/topics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
+    body: JSON.stringify({ name }),
+    signal: AbortSignal.timeout(CORE_TOPIC_CREATE_TIMEOUT_MS),
+  });
+  const body = await response.json().catch(() => ({}));
+
+  // Core treats topic names as unique within a course. Reusing the existing
+  // id keeps the AI Tutor mirror linked when two authoring tabs race.
+  if (response.status === 409 && body?.existingId) {
+    return { id: body.existingId, name };
+  }
+
+  if (!response.ok) {
+    const error = new Error(
+      body?.error || `EduAI topic creation failed with status ${response.status}`,
+    );
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+
+  if (!body?.id) {
+    throw Object.assign(new Error("Core returned an invalid topic"), { status: 502, body });
+  }
+  return { id: body.id, name: body.name ?? name };
+}
+
 export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
@@ -711,7 +757,10 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = 
  * Returns the `questions` array from Core's paginated response.
  * Throws an Error with `status` set on HTTP failure.
  */
-export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
+export async function listCourseTestableQuestions(
+  coreOfferingId,
+  { limit = 20, offset = 0, topicId } = {},
+) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error("EDUAI_API_KEY not configured");
@@ -723,6 +772,7 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
     limit: String(limit),
     offset: String(offset),
   });
+  if (topicId) params.set("topicId", topicId);
 
   const data = await requestEduAi(`/questions?${params}`, {
     headers: { Authorization: `Bearer ${serviceKey}` },

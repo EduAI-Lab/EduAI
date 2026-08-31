@@ -462,6 +462,7 @@ model CourseMaterial {
   duplicates        CourseMaterial[] @relation("MaterialDuplicate")
   chunks            MaterialChunk[]
   uploadBlob        MaterialUploadBlob?
+  derivedTopics     CourseTopicSource[]
 
   @@unique([courseId, checksum])
   @@index([duplicateOfId])
@@ -517,6 +518,20 @@ model CourseTopic {
   courseId        String
   name            String
   createdBy       String?
+  /// Where this topic came from (#1624). Defaults to HUMAN so every pre-existing
+  /// row reads back as instructor-authored — topic provisioning never renames,
+  /// merges, or deletes a row it did not create, and this is how it tells.
+  origin          TopicOrigin              @default(HUMAN)
+  /// ACCEPTED for anything a human made or approved; SUGGESTED for a row the
+  /// topic-analysis job created and nobody has reviewed yet. Defaults to
+  /// ACCEPTED so the migration leaves existing rows unflagged.
+  reviewStatus    TopicReviewStatus        @default(ACCEPTED)
+  /// How much the generator trusts this name: 1 for a Canvas module title, less
+  /// for a heading match, least for an AI proposal. Null on human-created rows.
+  confidence      Float?
+  /// The AiJob that produced this topic. Not a relation — AiJob rows are prunable
+  /// telemetry and must be free to disappear without cascading into course data.
+  generatedByJobId String?
   /// Soft-delete marker — see CourseMaterial.deletedAt. One-way (EduAI only),
   /// never propagated to Canvas. Reads filter `deletedAt: null`.
   deletedAt       DateTime?
@@ -527,11 +542,29 @@ model CourseTopic {
   creator         User?                    @relation("TopicCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   questions       Question[]
   secondaryTopics QuestionSecondaryTopic[]
+  sources         CourseTopicSource[]
 
   @@unique([courseId, name])
   @@index([createdBy])
   @@index([courseId, deletedAt])
+  @@index([courseId, reviewStatus])
   @@map("course_topics")
+}
+
+/// Which materials a generated topic was derived from (#1624) — the provenance
+/// half of "generated topics identify their source materials". Empty for
+/// human-created topics and for the SYSTEM fallback topic.
+model CourseTopicSource {
+  id         String         @id @default(cuid())
+  topicId    String
+  materialId String
+  createdAt  DateTime       @default(now())
+  topic      CourseTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, materialId])
+  @@index([materialId])
+  @@map("course_topic_sources")
 }
 
 model Question {
@@ -703,6 +736,8 @@ model apikey {
 enum ChatbotType {
   LEARNING
   ADMIN
+  /// #1659: instructor's course-scoped ops assistant for their own published course.
+  INSTRUCTOR
 }
 
 model Chat {
@@ -936,6 +971,23 @@ enum MaterialStatus {
   PROCESSING
   READY
   FAILED
+}
+
+/// Provenance of a CourseTopic (#1624), ordered from most to least trusted.
+/// SYSTEM is the `Uncategorized` zero-topic fallback, which exists so authoring
+/// is never blocked while topic analysis is pending or after it fails.
+enum TopicOrigin {
+  HUMAN
+  SYSTEM
+  CANVAS_MODULE
+  MATERIAL_HEADING
+  AI
+}
+
+/// Whether a topic still needs instructor review (#1624).
+enum TopicReviewStatus {
+  ACCEPTED
+  SUGGESTED
 }
 
 enum ReEmbedJobStatus {

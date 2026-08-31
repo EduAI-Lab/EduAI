@@ -81,6 +81,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 The upload dialog mirrors the server's 120,000-character OCR cap and rejects
 PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
+| `USER_ROW_CACHE_TTL_MS`, `USER_ROW_CACHE_MAX` | No | How long (ms, default `900000`) `requireAuth` remembers that a user's local FK row exists for side-effect-free reads, and the max ids held per process (default `5000`). Mutating requests and course/question mirror reads always re-run the upsert before dependent writes; set either to `0` to disable read caching (#1388) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
 | `VITE_API_URL` | No | API origin; defaults to same-origin `/api` paths when unset |
@@ -95,8 +96,8 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 
 | Use case | Fallback model id | Notes |
 | -------- | ----------------- | ----- |
-| Generation / OCR / variants | `vllm:qwen2.5-32b-instruct` | Prefer the largest active campus model from Core’s `/api/ai-models` catalog when available |
-| Connectivity probes (status chips) | `vllm:qwen2.5-7b-instruct` | Prefer the smallest active campus model; 20s timeout |
+| Generation / OCR / variants | `vllm:qwen3.5-9b-instruct` | Prefer the largest active campus model from Core’s `/api/ai-models` catalog when available |
+| Connectivity probes (status chips) | `vllm:qwen3.5-2b-instruct` | Prefer the smallest active campus model; 20s timeout |
 | Provider | `vllm` | Server-managed — no client API key. Legacy `forceProvider=ollama` still pins the campus path |
 
 **Probe course context:** the `testApiKey` connectivity check uses Core's authenticated stateless `POST /api/completion` route and does not require a seeded or configured course. The probe never sends `courseId`/`courseCode`; a success/failure reflects only real auth/provider/connectivity state.

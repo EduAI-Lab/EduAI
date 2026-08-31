@@ -85,7 +85,8 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) and shared chat/completion sliding-window limits |
 | `QUEUE_ENQUEUE_ENABLED` | deprecated (ignored) | dev/prod | Pre-MVP fail-closed boundary: setting this to `true` does not enable queuing. `/api/chat` continues through direct chat. Re-enabling requires a reviewed code change after owner-scoped status/cancellation and server-side model authorization exist. |
 | `QUEUE_MAX_DEPTH` | dormant pre-MVP | dev/prod | Retained for the future queue contract; has no effect on `/api/chat` while the queue is hard-disabled. |
-| `AI_JOB_DEFAULT_MODEL` | dormant pre-MVP | dev/prod | Retained for future worker model authorization; no worker starts while the queue is hard-disabled. |
+| `AI_JOB_DEFAULT_MODEL` | dormant pre-MVP | dev/prod | Retained for future worker model authorization; no worker starts while the queue is hard-disabled. Since #1624 it is also the second step of `TOPIC_ANALYSIS_MODEL`'s fallback, so it does affect topic analysis even while the queue is off. |
+| `TOPIC_ANALYSIS_MODEL` | optional (default `vllm:qwen2.5-32b-instruct`) | dev/prod | Model used by automatic topic provisioning (#1624), which runs in-process rather than on the dormant queue. Resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default. Only reached when Canvas modules and material headings both yield nothing, so most syncs never call a model at all. An `openai:`/`google:` prefix draws its key from `OPENAI_API_KEY`/`GOOGLE_GENERATIVE_AI_API_KEY` — the job has no user, so browser-supplied keys never apply. |
 | `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | dormant pre-MVP | dev/prod | Retained for future BullMQ worker concurrency. |
 | `AI_JOB_EXECUTION_TIMEOUT_MS` | dormant pre-MVP | dev/prod | Retained for the future async-job execution deadline. |
 | `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | dormant pre-MVP | dev/prod | Retained for future BullMQ retry policy. |
@@ -103,6 +104,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_CONTEXT_FILL_RATIO`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments. `CHAT_CONTEXT_FILL_RATIO` (#1639) sets the token-budget trigger as a fraction of the model context window (per-model override: `AIModel.contextFillRatio`) |
 | `CHAT_MAX_BODY_BYTES`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_MESSAGE_CHARS`, `CHAT_MAX_TOTAL_MESSAGE_CHARS` | optional (defaults 2 MiB, 100, 32768, 131072) | dev/prod | Bounded `/api/chat` ingress; rejects oversized request bodies with 413 and message count/content overages with 422 before persistence or provider admission |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
+| `COMPLETION_FLEET_FALLBACK_MODELS` | optional (default `openai:gpt-4o-mini,google:gemini-2.5-flash`) | dev/prod | Ordered `provider:model` list `/api/completion` falls back to, in order, when the UBC vLLM fleet is unavailable (#1645). A candidate is used only if the caller supplied its BYOK key, its provider is enabled, **and** the `provider:model` exists as an **active `AIModel` catalog row** — the fallback picks the first candidate meeting all three and skips the rest; local providers (`vllm`/`ollama`) are ignored. With no qualifying candidate the outage stays `MODEL_UNAVAILABLE`. **Seeding required:** the fallback only functions if those provider models are seeded as active `AIModel` rows. A default deployment whose catalog lists only admin EduAI/vLLM models will silently no-op it — a keyed-but-uncatalogued candidate is logged as a `[completion] fleet fallback candidate unavailable in catalog` warn breadcrumb. |
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.1+: Teacher requires literal `**Top summary**` / `**Next?**`; UI TLDR/Continue remapping is client-only). |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |
 | `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Per-original-client pre-auth and per-user/anonymous post-auth limits for the service-authenticated `POST /api/sessions/validate` extension endpoint |
@@ -135,7 +137,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `DATABASE_URL` | Points at the `eduai_test` database instead of the dev DB |
 | `BETTER_AUTH_SECRET` | Fixed test value, not a real secret |
 | `BETTER_AUTH_URL` | Test server URL |
-| `COOKIE_DOMAIN` | `localhost` |
+| `COOKIE_DOMAIN` | `localhost` — Core treats loopback values as unset, so `crossSubDomainCookies` stays off locally (#1517) |
 | `PORT` | Test server port (4001) |
 | `EDUAI_API_KEY` | Fixed test value, not a real secret |
 

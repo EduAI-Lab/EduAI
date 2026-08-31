@@ -69,6 +69,7 @@ import { useAiReviewHistory, type AiReviewHistoryItem } from "../hooks/use-ai-re
 import { AI_REVIEW_HISTORY_MAX_ITEMS } from "../services/aiReviewHistoryStorage";
 import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
 import { toast } from "sonner";
+import { formatMetric, metricAsSeconds } from "../utils/aiReviewMetrics";
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -196,7 +197,7 @@ function collectQuestionMetadataIdsFromAssessment(assessment: Assessment): numbe
     const links = [...(s.sectionVariants ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
     for (const link of links) {
       const mid = link.variant?.questionMetadataId ?? link.variant?.questionMetadata?.id;
-      if (typeof mid === "number" && Number.isFinite(mid) && !seen.has(mid)) {
+      if (mid !== null && mid !== undefined && Number.isFinite(mid) && !seen.has(mid)) {
         seen.add(mid);
         out.push(mid);
       }
@@ -1431,45 +1432,26 @@ export function AssessmentVariantPage() {
 
                         <p className="text-xs text-muted-foreground">
                           Review time:{" "}
-                          {typeof aiReviewResult.reviewTimeMs === "number"
-                            ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1)
-                            : "n/a"}
-                          s
+                          {formatMetric(metricAsSeconds(aiReviewResult.reviewTimeMs), 1)}s
                         </p>
 
                         <div className="rounded border bg-muted p-3">
                           <p className="text-sm font-semibold text-foreground">
                             Overall variant score:{" "}
-                            {typeof aiReviewResult.examVariantScoreFinal0to100 === "number"
-                              ? aiReviewResult.examVariantScoreFinal0to100.toFixed(0)
-                              : "n/a"}{" "}
-                            / 100
+                            {formatMetric(aiReviewResult.examVariantScoreFinal0to100, 0)} / 100
                           </p>
                           <p className="text-xs text-muted-foreground">
                             Base (rubric-only):{" "}
-                            {typeof aiReviewResult.examVariantScoreBase0to100 === "number"
-                              ? aiReviewResult.examVariantScoreBase0to100.toFixed(0)
-                              : "n/a"}{" "}
-                            · Usable questions:{" "}
-                            {typeof aiReviewResult.usableQuestionPercentage === "number"
-                              ? aiReviewResult.usableQuestionPercentage.toFixed(0)
-                              : "n/a"}
+                            {formatMetric(aiReviewResult.examVariantScoreBase0to100, 0)} · Usable
+                            questions: {formatMetric(aiReviewResult.usableQuestionPercentage, 0)}
                             %
                             <br />· Distinctness:{" "}
-                            {typeof aiReviewResult.distinctnessAverage1to5 === "number"
-                              ? aiReviewResult.distinctnessAverage1to5.toFixed(2)
-                              : "n/a"}
-                            /5 (factor{" "}
-                            {typeof aiReviewResult.distinctnessFactorAvg === "number"
-                              ? aiReviewResult.distinctnessFactorAvg.toFixed(2)
-                              : "n/a"}
-                            )
+                            {formatMetric(aiReviewResult.distinctnessAverage1to5, 2)}
+                            /5 (factor {formatMetric(aiReviewResult.distinctnessFactorAvg, 2)})
                           </p>
                           <p className="text-xs text-muted-foreground">
                             Total score calculation:{" "}
-                            {typeof aiReviewResult.totalScoreCalculationSummary === "string"
-                              ? aiReviewResult.totalScoreCalculationSummary
-                              : "n/a"}
+                            {aiReviewResult.totalScoreCalculationSummary ?? "n/a"}
                           </p>
                         </div>
 
@@ -1477,45 +1459,35 @@ export function AssessmentVariantPage() {
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Concept</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.conceptual_equivalence === "number"
-                                ? aiReviewResult.averages.conceptual_equivalence.toFixed(2)
-                                : "n/a"}
+                              {formatMetric(aiReviewResult.averages.conceptual_equivalence, 2)}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Difficulty</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.difficulty_similarity === "number"
-                                ? aiReviewResult.averages.difficulty_similarity.toFixed(2)
-                                : "n/a"}
+                              {formatMetric(aiReviewResult.averages.difficulty_similarity, 2)}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Structure</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.structural_validity === "number"
-                                ? aiReviewResult.averages.structural_validity.toFixed(2)
-                                : "n/a"}
+                              {formatMetric(aiReviewResult.averages.structural_validity, 2)}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Answer</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.answer_correctness === "number"
-                                ? aiReviewResult.averages.answer_correctness.toFixed(2)
-                                : "n/a"}
+                              {formatMetric(aiReviewResult.averages.answer_correctness, 2)}
                               /5
                             </div>
                           </div>
                           <div className="rounded border bg-card p-2">
                             <span className="font-medium">Topic</span>
                             <div className="text-xs text-muted-foreground">
-                              {typeof aiReviewResult.averages.topic_alignment === "number"
-                                ? aiReviewResult.averages.topic_alignment.toFixed(2)
-                                : "n/a"}
+                              {formatMetric(aiReviewResult.averages.topic_alignment, 2)}
                               /5
                             </div>
                           </div>
