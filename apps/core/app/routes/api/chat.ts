@@ -1610,12 +1610,6 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         }
 
-        const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
-          hasField: hasAdhdAssistField,
-          bodyValue: adhdAssist,
-          chatValue: chat.adhdAssist,
-        });
-
         let wasAuto = false;
         let routingTier: 1 | 2 | 3 | null = null;
         let routerContext: ChatTrace | null = null;
