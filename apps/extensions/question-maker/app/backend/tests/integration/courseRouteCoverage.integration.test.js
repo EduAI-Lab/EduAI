@@ -13,13 +13,14 @@
  * since these routes make a variable number of Core calls depending on branch.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
@@ -100,7 +101,7 @@ describeDb("course.js route coverage (integration)", () => {
         }),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-student-must-not-create" });
@@ -122,7 +123,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-new" });
@@ -136,7 +137,7 @@ describeDb("course.js route coverage (integration)", () => {
 
     it("requires coreCourseId", async () => {
       vi.stubGlobal("fetch", routedFetch());
-      const res = await request(app).post("/api/course").set(cookie()).send({});
+      const res = await request().post("/api/course").set(cookie()).send({});
       expect(res.status).toBe(400);
     });
 
@@ -151,7 +152,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-outside" });
@@ -171,7 +172,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-x" });
@@ -193,7 +194,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-existing" });
@@ -240,7 +241,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookie())
         .send({ coreCourseId: "core-race" });
@@ -266,7 +267,7 @@ describeDb("course.js route coverage (integration)", () => {
       });
       vi.stubGlobal("fetch", routedFetch());
 
-      const res = await request(app)
+      const res = await request()
         .get("/api/course?page=1&pageSize=10&includeStats=true")
         .set(cookie());
 
@@ -287,7 +288,7 @@ describeDb("course.js route coverage (integration)", () => {
       const course = await prisma.course.create({ data: { userId: USER.id } });
       vi.stubGlobal("fetch", routedFetch([], { user: ADMIN }));
 
-      const res = await request(app).get(`/api/course/${course.id}/enrollments`).set(cookie());
+      const res = await request().get(`/api/course/${course.id}/enrollments`).set(cookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -337,7 +338,7 @@ describeDb("course.js route coverage (integration)", () => {
         ]),
       );
 
-      const res = await request(app).get(`/api/course/${course.id}/enrollments`).set(cookie());
+      const res = await request().get(`/api/course/${course.id}/enrollments`).set(cookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([
@@ -359,9 +360,7 @@ describeDb("course.js route coverage (integration)", () => {
       // Unlinked course: ADMIN is the only caller that can reach it (#1114).
       vi.stubGlobal("fetch", routedFetch([], { user: ADMIN }));
 
-      const res = await request(app)
-        .get(`/api/course/${course.id}?includeDetails=true`)
-        .set(cookie());
+      const res = await request().get(`/api/course/${course.id}?includeDetails=true`).set(cookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data.topics).toHaveLength(1);
@@ -375,7 +374,7 @@ describeDb("course.js route coverage (integration)", () => {
       const course = await prisma.course.create({ data: { userId: USER.id } });
       vi.stubGlobal("fetch", routedFetch([], { user: ADMIN }));
 
-      const res = await request(app).delete(`/api/course/${course.id}`).set(cookie());
+      const res = await request().delete(`/api/course/${course.id}`).set(cookie());
 
       expect(res.status).toBe(200);
       const reloaded = await prisma.course.findUnique({ where: { id: course.id } });
@@ -400,7 +399,7 @@ describeDb("course.js route coverage (integration)", () => {
         ),
       );
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/course/${course.id}/link-core`)
         .set(cookie())
         .send({ coreCourseId: "core-y" });
@@ -413,7 +412,7 @@ describeDb("course.js route coverage (integration)", () => {
       const course = await prisma.course.create({ data: { userId: USER.id } });
       vi.stubGlobal("fetch", routedFetch([], { user: ADMIN }));
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/course/${course.id}/link-core`)
         .set(cookie())
         .send({});

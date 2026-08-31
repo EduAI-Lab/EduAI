@@ -4,7 +4,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { coursePage } from "../helpers/teachingInstructorFetch.js";
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -12,6 +12,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -155,7 +156,7 @@ describeDb("course anchor ownership (#1114)", () => {
   describe("POST /api/course role gate", () => {
     it("rejects an ordinary platform STUDENT with 403", async () => {
       vi.stubGlobal("fetch", makeFetch({ scopedIds: ["core-a"] }));
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("stu"))
         .send({ coreCourseId: "core-a" });
@@ -172,7 +173,7 @@ describeDb("course anchor ownership (#1114)", () => {
           enrollmentRoleByUserId: { [TA_STUDENT.id]: "TA" },
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("ta"))
         .send({ coreCourseId: "core-ta" });
@@ -185,7 +186,7 @@ describeDb("course anchor ownership (#1114)", () => {
       ["UNIT_ADMIN", "ua"],
     ])("accepts %s without requiring a teaching enrollment", async (_role, label) => {
       vi.stubGlobal("fetch", makeFetch({ scopedIds: ["core-admin"] }));
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor(label))
         .send({ coreCourseId: "core-admin" });
@@ -201,7 +202,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: { [INSTRUCTOR.id]: ["core-taught"] },
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-taught" });
@@ -217,7 +218,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: {}, // no teaching enrollment
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-student-only" });
@@ -233,7 +234,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: { [INSTRUCTOR.id]: ["core-other"] },
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-missing" });
@@ -257,8 +258,8 @@ describeDb("course anchor ownership (#1114)", () => {
       );
 
       const [a, b] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
-        request(app).post("/api/course").set(cookieFor("inst-b")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst-b")).send({ coreCourseId }),
       ]);
 
       expect([a.status, b.status].sort()).toEqual([200, 201]);
@@ -285,7 +286,7 @@ describeDb("course anchor ownership (#1114)", () => {
         await import("../../src/services/importTaughtCoursesService.js");
 
       const [postRes, importResult] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
         importTaughtCoursesFromCore(INSTRUCTOR.id, "INSTRUCTOR", "session=inst"),
       ]);
 
@@ -315,7 +316,7 @@ describeDb("course anchor ownership (#1114)", () => {
       const { ensureCourseAnchor } = await import("../../src/services/ensureCourseAnchor.js");
 
       const [postRes] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
         ensureCourseAnchor(ADMIN.id, coreCourseId),
       ]);
 

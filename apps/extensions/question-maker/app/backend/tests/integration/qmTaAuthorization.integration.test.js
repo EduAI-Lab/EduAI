@@ -11,7 +11,7 @@
  * depending on a running Core instance.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -47,6 +47,7 @@ function coreResponse(body, status = 200) {
 
 describeDb("QM course TA authorization (real PostgreSQL)", () => {
   let app;
+  const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
   let prisma;
   let truncateTestDatabase;
   let courseId;
@@ -130,9 +131,7 @@ describeDb("QM course TA authorization (real PostgreSQL)", () => {
   });
 
   it("admits platform STUDENT with active TA enrollment to assessment view", async () => {
-    const res = await request(app)
-      .get(`/api/assessments/${assessmentId}`)
-      .set("Cookie", "session=ta");
+    const res = await request().get(`/api/assessments/${assessmentId}`).set("Cookie", "session=ta");
 
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(assessmentId);
@@ -142,7 +141,7 @@ describeDb("QM course TA authorization (real PostgreSQL)", () => {
     currentUser = STUDENT;
     currentEnrollmentRole = "STUDENT";
 
-    const res = await request(app)
+    const res = await request()
       .get(`/api/assessments/${assessmentId}`)
       .set("Cookie", "session=student");
 
@@ -151,7 +150,7 @@ describeDb("QM course TA authorization (real PostgreSQL)", () => {
   });
 
   it("does not let a TA perform instructor-only assessment creation", async () => {
-    const res = await request(app)
+    const res = await request()
       .post("/api/assessments")
       .set("Cookie", "session=ta")
       .send({ type: "Quiz", name: "forbidden", courseId });
@@ -161,13 +160,13 @@ describeDb("QM course TA authorization (real PostgreSQL)", () => {
   });
 
   it("allows a TA to update their own question but not another author's", async () => {
-    const own = await request(app)
+    const own = await request()
       .put(`/api/questions/${ownQuestionId}`)
       .set("Cookie", "session=ta")
       .send({ description: "TA updated question" });
     expect(own.status).toBe(200);
 
-    const other = await request(app)
+    const other = await request()
       .put(`/api/questions/${otherQuestionId}`)
       .set("Cookie", "session=ta")
       .send({ description: "attempted takeover" });
