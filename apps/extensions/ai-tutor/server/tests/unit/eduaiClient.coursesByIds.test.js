@@ -79,6 +79,16 @@ describe("findEduAiCourseById", () => {
     expect(options.headers.cookie).toBe("session=abc");
   });
 
+  it("does not add the service key to a cookie-scoped course lookup", async () => {
+    process.env.EDUAI_API_KEY = "service-key";
+    const mockFetch = mockCoursesByIds();
+    vi.stubGlobal("fetch", mockFetch);
+
+    await findEduAiCourseById("core-1", { cookie: "session=abc" });
+
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+
   it("returns null when Core answers with no matching row", async () => {
     vi.stubGlobal(
       "fetch",

@@ -300,15 +300,17 @@ describe("patchCoreAdminBugReportStatus", () => {
 
 describe("listEduAiCourses (success path via cookie)", () => {
   it("returns the parsed course page data on a valid response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const courses = [{ id: "c1", name: "Course One" }];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(okJson({ data: courses, total: 1, page: 1, pageSize: 200 })),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(okJson({ data: courses, total: 1, page: 1, pageSize: 200 }));
+    vi.stubGlobal("fetch", mockFetch);
 
     const result = await listEduAiCourses({ cookie: "session=abc" });
 
     expect(result).toEqual(courses);
+    expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
   });
 });
 

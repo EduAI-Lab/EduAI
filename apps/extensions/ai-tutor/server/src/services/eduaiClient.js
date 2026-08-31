@@ -98,16 +98,22 @@ export async function deleteUserProviderSetting(cookie, providerName) {
  */
 async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === "string" ? options.cookie : "";
+  const method = (options.method ?? "GET").toUpperCase();
 
   const url = `${getEduAiBaseUrl()}${path}`;
   // Caller-supplied headers still win over the forwarded session cookie, which
-  // is why they are applied last.
-  const headers = { "Content-Type": "application/json", ...serviceAuthHeader() };
+  // is why they are applied last. Cookie-scoped reads must not receive the
+  // service key: Core treats a Bearer request as an unscoped service request,
+  // which would discard the caller's course/enrollment context. Mutations do
+  // need the service key to pass Core's server-to-server CSRF guard.
+  const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method);
+  const headers = { "Content-Type": "application/json" };
+  if (isMutation) Object.assign(headers, serviceAuthHeader());
   if (cookie) headers.cookie = cookie;
   Object.assign(headers, options.headers);
 
   const response = await fetch(url, {
-    method: options.method ?? "GET",
+    method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,

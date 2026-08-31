@@ -50,6 +50,42 @@ describe("apiKeyStorage account isolation", () => {
     await expect(inFlightPayload).resolves.toEqual({});
   });
 
+  it("does not fall back to a stale key when the account changes during migration", async () => {
+    apiKeyStorage.setAuthenticatedUser("instructor-a");
+
+    // Seed a legacy-encrypted browser copy via a Core-unreachable save.
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockRejectedValueOnce(new Error("Core unavailable"));
+    expect(await apiKeyStorage.setApiKey("google", "instructor-a-secret")).toEqual({
+      storedRemotely: false,
+    });
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    } as Response);
+
+    let finishMigration!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishMigration = resolve;
+      }),
+    );
+
+    const inFlightPayload = apiKeyStorage.buildApiKeysForModel("google:gemini-2.5-flash");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    apiKeyStorage.setAuthenticatedUser("instructor-b");
+    finishMigration({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as Response);
+
+    await expect(inFlightPayload).resolves.toEqual({});
+  });
+
   it("stores and forwards the dedicated OpenCode key for its catalog model", async () => {
     apiKeyStorage.setAuthenticatedUser("instructor-opencode");
     await apiKeyStorage.setApiKey("opencode", "opencode-secret");

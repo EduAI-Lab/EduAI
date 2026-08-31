@@ -388,11 +388,18 @@ export const apiKeyStorage = {
       // explicit disabled/no-key row authoritative.
       if (remote) return {};
       if (!apiKey) return {};
-      if (await migrateLocalApiKeyToCore(provider, apiKey, scope)) {
+      const migrated = await migrateLocalApiKeyToCore(provider, apiKey, scope);
+      if (!isCurrentScope(scope)) {
+        return {};
+      }
+      if (migrated) {
         return { [provider]: { isEnabled: true } };
       }
     }
 
+    if (!isCurrentScope(scope)) {
+      return {};
+    }
     if (!apiKey) return {};
 
     return {
