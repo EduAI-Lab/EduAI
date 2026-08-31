@@ -34,7 +34,7 @@ vi.mock("@/services/eduaiService", () => ({
 const getProviderFromModel = vi.fn().mockReturnValue(null);
 const getApiKey = vi.fn().mockResolvedValue(null);
 const setApiKey = vi.fn().mockResolvedValue(undefined);
-const removeApiKey = vi.fn();
+const removeApiKey = vi.fn().mockResolvedValue(undefined);
 const requiresApiKey = vi.fn().mockReturnValue(false);
 vi.mock("@/services/apiKeyStorage", () => ({
   CORE_STORED_KEY: "__core_stored__",
@@ -124,7 +124,7 @@ describe("QuestionUploadDialog", () => {
     getProviderFromModel.mockReset().mockReturnValue(null);
     getApiKey.mockReset().mockResolvedValue(null);
     setApiKey.mockReset().mockResolvedValue(undefined);
-    removeApiKey.mockReset();
+    removeApiKey.mockReset().mockResolvedValue(undefined);
     requiresApiKey.mockReset().mockReturnValue(false);
   });
 
