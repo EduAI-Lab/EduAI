@@ -390,21 +390,25 @@ test.describe("AI Tutor ADMIN — activities", () => {
       const addTopic = dialog.getByRole("button", { name: /^add topic$/i });
       await expect(addTopic).toBeVisible({ timeout: 20_000 });
 
-      // Expanding the creator reveals the name field; adding a topic selects it
-      // as the activity's main topic, which is the whole point of authoring it
-      // here rather than bouncing the instructor out to Core.
+      // Expanding the creator reveals the name field; saving a topic there puts
+      // it straight into this course's topics, which is the whole point of
+      // authoring it here rather than bouncing the instructor out to Core.
       await addTopic.click();
       const nameField = dialog.getByLabel("New topic name");
       await expect(nameField).toBeVisible();
       await nameField.fill("Recursion");
       await dialog.getByRole("button", { name: /^add$/i }).click();
 
-      // The creator collapses back to "Add topic", and the new topic is now the
-      // selected main topic. Assert that on the trigger rather than by text:
-      // Radix also renders the option inside a hidden native select, so a bare
-      // getByText("Recursion") matches an element that is never visible.
+      // The creator collapses back to "Add topic" once the topic is saved.
       await expect(dialog.getByRole("button", { name: /^add topic$/i })).toBeVisible();
-      await expect(dialog.locator("#new-activity-main-topic")).toContainText("Recursion", {
+
+      // The new topic is now offered as a main topic. Read it the way the rest
+      // of this file does — open the picker and assert the option — because the
+      // Select portals its content: while it is closed the trigger cannot
+      // resolve a label for an item that has never mounted, so it still shows
+      // its placeholder, and the item text that is in the DOM is hidden.
+      await dialog.locator("#new-activity-main-topic").click();
+      await expect(page.getByRole("option", { name: "Recursion", exact: true })).toBeVisible({
         timeout: 20_000,
       });
 
