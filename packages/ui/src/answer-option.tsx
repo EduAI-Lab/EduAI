@@ -72,7 +72,7 @@ export function AnswerOption({
   disabled,
   className,
 }: AnswerOptionProps) {
-  const interactive = typeof onSelect === "function";
+  const interactive = onSelect !== undefined;
   const compact = size === "compact";
 
   const container = cn(

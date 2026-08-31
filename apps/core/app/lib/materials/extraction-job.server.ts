@@ -633,12 +633,28 @@ export function ensureMaterialSweeperRunning(
  * are not atomic, so two concurrent uploads of the same file can both pass the
  * check and race into the write — the DB constraint (not the check) is the real
  * guard (#225 RAG-04).
+ *
+ * `P2002` alone is not enough: every caller reacts to a true here by treating
+ * the write as a *duplicate* (drop the loser, revert a `PROCESSING` flip, write
+ * a receipt), so a violation of some other unique index would be silently
+ * mistaken for a content race instead of failing loudly. `CourseMaterial` has
+ * only the one `@@unique` today, but that is a property of the schema, not of
+ * this predicate. When Prisma reports which index was violated (`meta.target`,
+ * which Postgres always populates), require it to name `checksum`; the bare
+ * `P2002` remains the fallback for a driver that reports no target at all.
  */
 export function isChecksumConflict(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code?: unknown }).code === "P2002"
-  );
+  if (!(cause instanceof Object) || !("code" in cause)) return false;
+  if ((cause as { code?: unknown }).code !== "P2002") return false;
+
+  const target = (cause as { meta?: { target?: unknown } }).meta?.target;
+  if (Array.isArray(target)) return target.includes("checksum");
+  // The driver reports `meta.target` as a bare string on some connectors and
+  // omits it on others, and the two cases answer differently — a string is read
+  // for `checksum`, an absent target falls back to the bare `P2002`. Nothing but
+  // the primitive type separates them, so this is a scoped
+  // `anti-slop/no-runtime-typeof` exemption (#1599), same as `redact.server.ts`.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  if (typeof target === "string") return target.includes("checksum");
+  return true;
 }

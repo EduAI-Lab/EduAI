@@ -9,7 +9,11 @@
 
 import { prisma } from "../config/database.js";
 import { CourseContentImportSchema } from "../../../shared/schemas/mutations.js";
-import { cloneCourseContent, cloneLessonsFromOffering } from "./courseCloning.js";
+import {
+  CLONE_TRANSACTION_TIMEOUT_MS,
+  cloneCourseContent,
+  cloneLessonsFromOffering,
+} from "./courseCloning.js";
 import { resolveCoreCourseById } from "./courseResolver.js";
 import { setCoreCoursePublishState } from "./eduaiClient.js";
 import {
@@ -172,19 +176,24 @@ export async function importCourseContentForUser({ courseId, body, user }) {
     lessonImport = { lessonIds: normalizedLessonIds, targetModuleId: numericTargetModuleId };
   }
 
-  await prisma.$transaction(async (tx) => {
-    if (moduleImport) {
-      await cloneCourseContent(
-        moduleImport.sourceCourseId,
-        courseId,
-        { moduleIds: moduleImport.moduleIds },
-        tx,
-      );
-    }
-    if (lessonImport) {
-      await cloneLessonsFromOffering(lessonImport.lessonIds, lessonImport.targetModuleId, tx);
-    }
-  });
+  // The clones run inside this transaction, so the import as a whole needs the
+  // clone timeout; Prisma's 5s default can cut a deep tree off mid-write.
+  await prisma.$transaction(
+    async (tx) => {
+      if (moduleImport) {
+        await cloneCourseContent(
+          moduleImport.sourceCourseId,
+          courseId,
+          { moduleIds: moduleImport.moduleIds },
+          tx,
+        );
+      }
+      if (lessonImport) {
+        await cloneLessonsFromOffering(lessonImport.lessonIds, lessonImport.targetModuleId, tx);
+      }
+    },
+    { timeout: CLONE_TRANSACTION_TIMEOUT_MS },
+  );
 
   return prisma.courseOffering.findUnique({
     where: { id: courseId },

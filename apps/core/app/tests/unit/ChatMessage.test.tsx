@@ -317,7 +317,7 @@ describe("coerceMessageContent", () => {
   it("never returns a value that would render as [object Object]", () => {
     const result = coerceMessageContent({ role: "assistant" });
 
-    expect(typeof result).toBe("string");
+    expect(result).toEqual(expect.any(String));
     expect(result).not.toBe("[object Object]");
   });
 });

@@ -20,6 +20,7 @@ import {
 } from "./ui/command";
 import { visibleAppsForRole, type LauncherApp } from "./app-launcher";
 import { cn } from "./utils";
+import { hasNavigator, isBrowser } from "./lib/runtime-env";
 
 export interface CommandPaletteItem {
   icon?: React.ReactNode;
@@ -68,7 +69,7 @@ export function buildAppSwitcherGroup(opts: {
       value: `app ${app.name}`,
       icon: app.icon,
       onSelect: () => {
-        if (typeof window !== "undefined") window.location.href = app.url;
+        if (isBrowser()) window.location.href = app.url;
       },
     }));
   return { heading, items };
@@ -258,7 +259,7 @@ function useShortcutLabel(): string {
   const [isMac, setIsMac] = React.useState(true);
   React.useEffect(() => {
     const p =
-      (typeof navigator !== "undefined" &&
+      (hasNavigator() &&
         ((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
           navigator.platform ||
           navigator.userAgent)) ||

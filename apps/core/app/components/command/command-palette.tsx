@@ -10,7 +10,7 @@
  * trigger it.
  */
 import * as React from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useRouteLoaderData } from "react-router";
 import {
   IconDashboard,
   IconBooks,
@@ -59,6 +59,7 @@ const NAV_ICONS = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-chat": IconRobot,
+  "instructor-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
@@ -149,6 +150,11 @@ export function matchesQuery(value: string, query: string): boolean {
 
 export function CommandPalette({ user }: { user: User }) {
   const navigate = useNavigate();
+  // #1666 review (Stavan): Course Assistant must survive navigation beyond
+  // /dashboard — sourced from the root loader (every route shares it) rather
+  // than the raw session `user`, which has no notion of course enrollment.
+  const rootData = useRouteLoaderData("root") as { hasInstructorEnrollment?: boolean } | undefined;
+  const navUser = { ...user, hasInstructorEnrollment: rootData?.hasInstructorEnrollment };
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const [query, setQuery] = React.useState("");
   const coursesLoaded = React.useRef(false);
@@ -183,7 +189,7 @@ export function CommandPalette({ user }: { user: User }) {
     };
   }, [query]);
 
-  const navItems = paletteNavItems(user)
+  const navItems = paletteNavItems(navUser)
     .map((item) => {
       const ItemIcon = NAV_ICONS[item.key] ?? IconArrowRight;
       return {

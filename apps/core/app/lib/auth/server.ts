@@ -19,6 +19,7 @@ import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
+import { asText } from "~/lib/json-value";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -106,7 +107,7 @@ export const auth = betterAuth({
           const token = (ctx.body as JsonObject | undefined)?.token;
           const userId = await resolvePasswordReuseUserId({
             path: ctx.path,
-            token: typeof token === "string" ? token : undefined,
+            token: asText(token) ?? undefined,
             getSessionUserId: async () => (await getSessionFromCtx(ctx as any))?.user?.id ?? null,
           });
 
@@ -123,8 +124,8 @@ export const auth = betterAuth({
           // For change-password: verify the current password first so that an
           // incorrect current password takes precedence over the reuse error.
           if (ctx.path === "/change-password") {
-            const currentPassword = (ctx.body as JsonObject | undefined)?.currentPassword;
-            if (typeof currentPassword === "string") {
+            const currentPassword = asText((ctx.body as JsonObject | undefined)?.currentPassword);
+            if (currentPassword !== null) {
               const credAccount = await prisma.account.findFirst({
                 where: { userId, providerId: "credential" },
                 select: { password: true },
@@ -164,8 +165,8 @@ export const auth = betterAuth({
       // can't be used to distinguish "wrong password" from "deactivated" by
       // response latency.
       if (ctx.path === "/sign-in/email") {
-        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
-        const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
+        const email = asText(ctx.body?.email) ?? "";
+        const password = asText(ctx.body?.password) ?? "";
         const normalizedEmail = email.trim().toLowerCase();
         // Better Auth's email validator rejects surrounding whitespace. Do not
         // let the inactive-user guard change that validation outcome by
@@ -201,7 +202,7 @@ export const auth = betterAuth({
       // Invitation acceptance returned above (its email was UBC-validated at
       // invite creation), so this only guards public registration. Catches
       // direct POSTs to /sign-up/email that bypass register.tsx's zod check.
-      const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+      const email = asText(ctx.body?.email) ?? "";
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
@@ -299,8 +300,9 @@ export const auth = betterAuth({
   },
   advanced: {
     useSecureCookies,
-    // Only enable when COOKIE_DOMAIN is set (e.g. ".eduai.ok.ubc.ca" in prod).
-    // On dev without it, cross-subdomain derivation can break session cookies.
+    // Only enable for a real public suffix (e.g. ".eduai.ok.ubc.ca"). Loopback
+    // COOKIE_DOMAIN values are ignored — Domain=localhost plus the host-only
+    // expiry on login deletes the session that was just issued.
     crossSubDomainCookies: cookieDomain
       ? { enabled: true, domain: cookieDomain }
       : { enabled: false },

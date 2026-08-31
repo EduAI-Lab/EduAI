@@ -12,6 +12,13 @@ export type ChatCourseOption = {
   id: string;
   name: string;
   code: string;
+  /**
+   * Optional disambiguation label shown instead of the bare code when a
+   * caller's course list contains more than one offering sharing the same
+   * `code` (Course.code is not globally unique — only (code, startDate,
+   * section) is — #1659 review). Falls back to `code` when absent.
+   */
+  label?: string;
 };
 
 /** Minimal message shape for live chat + in-flight tool/progress detection. */
@@ -41,6 +48,12 @@ export type ChatViewSharedProps = {
   selectedCourseCode: string | null;
   setSelectedCourseCode: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
+  /**
+   * Which field of `ChatCourseOption` the selector keys/emits through
+   * `selectedCourseCode`/`setSelectedCourseCode` — "code" (default) or "id".
+   * See `ChatCourseOption.label` / chat-input.tsx's `courseSelectionKey`.
+   */
+  courseSelectionKey?: "code" | "id";
   messages: ChatViewMessage[];
   input: string;
   isLoading: boolean;
@@ -76,4 +89,13 @@ export type ChatViewSharedProps = {
   wasAutoRoutedByMessageId?: Record<string, boolean>;
   /** Whether the in-flight request was made with an auto mode selected. */
   streamingWasAutoRouted?: boolean;
+  /**
+   * Whether Assist was on for the request that produced each assistant
+   * message, keyed by message id (#1671). Read this instead of the live
+   * `adhdAssist` toggle when deciding how to render a message, so flipping
+   * Assist mid-conversation doesn't retroactively reformat older messages.
+   */
+  adhdAssistByMessageId?: Record<string, boolean>;
+  /** Whether the in-flight request was made with Assist on. */
+  streamingAdhdAssist?: boolean;
 };

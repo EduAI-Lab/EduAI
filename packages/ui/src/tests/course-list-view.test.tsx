@@ -53,7 +53,7 @@ describe("CourseListView", () => {
     renderList();
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     // Current term leads; the rest keep their normal most-recent-first order.
-    expect(headings).toEqual(["2026W1", "2026W2", "2025W1"]);
+    expect(headings).toEqual(["2026-27W1", "2026-27W2", "2025-26W1"]);
     expect(screen.getAllByTestId("card")).toHaveLength(3);
     // "Current term" reflects real calendar date, not just the newest group.
     expect(screen.getByText(/Current term · 1 course/)).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("course filter builders", () => {
   it("buildTermFilterGroup encodes term+year and labels it compactly", () => {
     const g = buildTermFilterGroup<C>((x) => ({ term: x.term, year: x.year }));
     expect(g.getValue(c({ term: "W2", year: 2026 }))).toBe("W2::2026");
-    expect(g.optionLabel?.("W2::2026")).toBe("2026W2");
+    expect(g.optionLabel?.("W2::2026")).toBe("2026-27W2");
     // More recent terms sort first (negated key).
     expect(g.optionSortKey?.("W2::2026")).toBeLessThan(g.optionSortKey?.("W1::2025") as number);
   });

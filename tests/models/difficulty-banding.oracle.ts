@@ -91,7 +91,8 @@ export function difficultyBandingOracle(row: DifficultyBandingRow): DifficultyVe
   const normalizedStudentCount = Math.max(studentCount || 0, 1);
   const helpPerStudent = helpRequestCount / normalizedStudentCount;
   const incorrectRate = submissionCount > 0 ? incorrectSubmissionCount / submissionCount : 0;
-  const ratingPenalty = typeof averageRating === "number" ? (5 - averageRating) / 4 : 0;
+  const ratingPenalty =
+    averageRating !== null && averageRating !== undefined ? (5 - averageRating) / 4 : 0;
 
   const difficultyScore = Math.max(
     0,

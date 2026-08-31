@@ -76,8 +76,8 @@ describe("AI admission", () => {
     let upstreamCancelled = false;
     const release = vi.fn();
     const body = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("chunk"));
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode("chunk"));
         // Keep the stream open until cancelled.
       },
       cancel() {
@@ -87,6 +87,28 @@ describe("AI admission", () => {
 
     const wrapped = withAdmissionRelease(new Response(body), release);
     await wrapped.body!.cancel();
+
+    await vi.waitFor(() => {
+      expect(upstreamCancelled).toBe(true);
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("releases the slot when the request aborts even if the response body is not cancelled", async () => {
+    let upstreamCancelled = false;
+    const release = vi.fn();
+    const controller = new AbortController();
+    const body = new ReadableStream({
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode("chunk"));
+      },
+      cancel() {
+        upstreamCancelled = true;
+      },
+    });
+
+    withAdmissionRelease(new Response(body), release, controller.signal);
+    controller.abort();
 
     await vi.waitFor(() => {
       expect(upstreamCancelled).toBe(true);

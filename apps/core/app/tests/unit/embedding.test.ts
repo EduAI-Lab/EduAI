@@ -318,7 +318,7 @@ describe("insertMaterialEmbeddingsBatched", () => {
     const rows = extractRowsFromCall(executeRaw.mock.calls[0]);
     expect(rows).toHaveLength(3);
     rows.forEach(([id, chunkId, vectorLiteral], i) => {
-      expect(typeof id).toBe("string");
+      expect(id).toEqual(expect.any(String));
       expect(id.length).toBeGreaterThan(0);
       expect(chunkId).toBe(`chunk-${i}`);
       expect(vectorLiteral).toBe(`[${i},${i + 0.5},${i + 0.25}]`);

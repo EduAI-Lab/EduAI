@@ -58,6 +58,7 @@ import {
 import type { Topic } from "@/types/topic";
 
 import { QuestionAIControls } from "@/components/questions/QuestionAIControls";
+import { isString } from "@eduai/ui/primitive-union";
 import { QuestionOutputPanel } from "@/components/questions/QuestionOutputPanel";
 import { QuestionTypeSelector } from "@/components/composer/QuestionTypeSelector";
 import {
@@ -182,6 +183,8 @@ export function QuestionComposerPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [markAsReviewed, setMarkAsReviewed] = useState(false);
+  // #1555: sharing with other extensions is the author's call, and opt-in.
+  const [shareWithExtensions, setShareWithExtensions] = useState(false);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
@@ -404,7 +407,7 @@ export function QuestionComposerPage() {
 
   // ── Field helpers ────────────────────────────────────────────────────────
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    if (field === "primaryTopicId" && typeof value === "string") {
+    if (field === "primaryTopicId" && isString(value)) {
       setForm((prev) => ({
         ...prev,
         primaryTopicId: value,
@@ -576,7 +579,7 @@ export function QuestionComposerPage() {
             )
           : [];
         const resolvedAnswer =
-          typeof generated.answer === "string" && generated.answer.trim().length > 0
+          isString(generated.answer) && generated.answer.trim().length > 0
             ? generated.answer.trim()
             : "";
 
@@ -588,9 +591,8 @@ export function QuestionComposerPage() {
         ) {
           resolvedChoices = generated.choices
             .map((c: { letter?: string; text?: string }) => ({
-              letter:
-                typeof c.letter === "string" ? c.letter.toUpperCase() : String(c.letter ?? ""),
-              text: typeof c.text === "string" ? c.text.trim() : String(c.text ?? ""),
+              letter: isString(c.letter) ? c.letter.toUpperCase() : String(c.letter ?? ""),
+              text: isString(c.text) ? c.text.trim() : String(c.text ?? ""),
             }))
             .filter((c: MCQChoice) => c.text.length > 0);
           if (resolvedChoices.length < 2) resolvedChoices = prev.choices;
@@ -613,7 +615,7 @@ export function QuestionComposerPage() {
 
         const resolvedPrimary = primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
         const resolvedDescription =
-          typeof generated.description === "string" && generated.description.trim().length > 0
+          isString(generated.description) && generated.description.trim().length > 0
             ? generated.description.trim()
             : prev.description.trim() || createDescriptionFromText(generated.content ?? "");
 
@@ -727,6 +729,12 @@ export function QuestionComposerPage() {
           correctAnswers,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           isDraft: nextIsDraft,
+          // The sharing choice only travels with a write that approves. On the
+          // `wasApproved` path this write reverts to draft, where sharing does
+          // not apply and the author re-decides when they mark it reviewed
+          // again; omitting it there keeps the edit branch from silently
+          // dropping a checked box on the approval path (#1652 review).
+          ...(nextIsDraft === false && { shareWithExtensions }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
         // Only send type/primaryTopicId when they actually changed: a question can have
@@ -769,6 +777,7 @@ export function QuestionComposerPage() {
           referenceId: referenceId != null ? Number(referenceId) : undefined,
           isAiGenerated,
           isDraft: !markAsReviewed,
+          shareWithExtensions,
         });
         toast("Variant added", { description: "The new variant has been saved." });
         navigateBackToQuestions();
@@ -795,6 +804,7 @@ export function QuestionComposerPage() {
         secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
         isAiGenerated,
         isDraft: !markAsReviewed,
+        shareWithExtensions,
       });
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
@@ -1100,19 +1110,52 @@ export function QuestionComposerPage() {
 
       {/* Mark-as-reviewed control lives near the save area for parity with the dialog. */}
       <Separator className="my-6" />
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="composer-mark-reviewed"
-          checked={markAsReviewed}
-          onChange={(e) => setMarkAsReviewed(e.target.checked)}
-          disabled={isSubmitting}
-          className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
-        />
-        <Label htmlFor="composer-mark-reviewed" className="cursor-pointer text-sm text-foreground">
-          Mark as reviewed{" "}
-          <span className="text-muted-foreground">(otherwise saved as a draft)</span>
-        </Label>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-mark-reviewed"
+            checked={markAsReviewed}
+            onChange={(e) => {
+              const reviewed = e.target.checked;
+              setMarkAsReviewed(reviewed);
+              // Sharing only takes effect on approval, so a question that stops
+              // being reviewed stops being shared with it (#1555).
+              if (!reviewed) setShareWithExtensions(false);
+            }}
+            disabled={isSubmitting}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-mark-reviewed"
+            className="cursor-pointer text-sm text-foreground"
+          >
+            Mark as reviewed{" "}
+            <span className="text-muted-foreground">(otherwise saved as a draft)</span>
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="composer-share-with-extensions"
+            data-testid="share-with-extensions"
+            checked={shareWithExtensions}
+            onChange={(e) => setShareWithExtensions(e.target.checked)}
+            disabled={isSubmitting || !markAsReviewed}
+            className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
+          />
+          <Label
+            htmlFor="composer-share-with-extensions"
+            className={`cursor-pointer text-sm ${
+              markAsReviewed ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            Usable by other EduAI extensions{" "}
+            <span className="text-muted-foreground">
+              {markAsReviewed ? "(available to AI Tutor once synced)" : "(mark as reviewed first)"}
+            </span>
+          </Label>
+        </div>
       </div>
 
       {/* AI error details */}

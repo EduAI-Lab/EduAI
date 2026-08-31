@@ -134,7 +134,7 @@ function keySourceFromRegistryCall(
     return "none";
   }
   const call = createOpenAIMock.mock.calls.find(
-    ([opts]) => typeof opts?.baseURL === "string" && String(opts.baseURL).includes("/v1"),
+    ([opts]) => opts?.baseURL !== undefined && String(opts.baseURL).includes("/v1"),
   );
   const key = call?.[0]?.apiKey;
   if (key === USER_API_KEY) return "user";

@@ -33,6 +33,9 @@ const mockQuizQuestion = {
 };
 
 const mockCoreCanvas = vi.hoisted(() => ({
+  // The import's linked-course guard resolves the Canvas link through this
+  // when QM holds no mapping row (#1652 review).
+  getCourseFromCore: vi.fn(),
   proxyCoreCanvasGetIntegration: vi.fn(),
   proxyCoreGetQuiz: vi.fn(),
   proxyCoreListQuizQuestions: vi.fn(),
@@ -97,6 +100,12 @@ describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
     mockCoreCanvas.proxyCoreGetQuizQuestion.mockResolvedValue({
       success: true,
       data: mockQuizQuestion,
+    });
+    // The seeded course is linked to Canvas course 101, the id this import uses.
+    mockCoreCanvas.getCourseFromCore.mockResolvedValue({
+      externalSource: "canvas",
+      externalId: "101",
+      name: "Canvas Course 101",
     });
   });
 

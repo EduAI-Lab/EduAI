@@ -2,6 +2,7 @@
 
 import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonValue } from "~/lib/json-value";
+import { asText } from "~/lib/json-value";
 
 export type EmbeddingProviderSetting = "local" | "ollama" | "cloud";
 
@@ -135,17 +136,18 @@ export function parseEmbeddingSettingsUpdate(
 
   if (hasProvider) {
     const raw = record.data.embeddingProvider;
+    const rawProvider = asText(raw);
     if (raw === null || raw === "") {
       value.embeddingProvider = null;
-    } else if (typeof raw === "string") {
-      if (normalizeEmbeddingProvider(raw) == null) {
+    } else if (rawProvider !== null) {
+      if (normalizeEmbeddingProvider(rawProvider) == null) {
         return {
           ok: false,
           error: "embeddingProvider must be local, ollama, cloud, or null",
         };
       }
-      value.embeddingProvider =
-        raw.trim().toLowerCase() === "ollama" ? "local" : raw.trim().toLowerCase();
+      const provider = rawProvider.trim().toLowerCase();
+      value.embeddingProvider = provider === "ollama" ? "local" : provider;
     } else {
       return { ok: false, error: "embeddingProvider must be a string or null" };
     }
@@ -153,10 +155,11 @@ export function parseEmbeddingSettingsUpdate(
 
   if (hasModel) {
     const raw = record.data.embeddingModel;
+    const rawModel = asText(raw);
     if (raw === null || raw === "") {
       value.embeddingModel = null;
-    } else if (typeof raw === "string") {
-      value.embeddingModel = raw.trim();
+    } else if (rawModel !== null) {
+      value.embeddingModel = rawModel.trim();
     } else {
       return { ok: false, error: "embeddingModel must be a string or null" };
     }

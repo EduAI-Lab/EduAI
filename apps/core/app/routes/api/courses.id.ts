@@ -12,6 +12,7 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 /** A course row as this endpoint answers with it: the query's shape, plus the
  * instructor the student payload attaches when the query did not include one. */
@@ -20,189 +21,200 @@ type CourseWithInstructor = Awaited<ReturnType<typeof getCourse>> & {
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.id;
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.id;
+      if (!courseId) {
+        return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  // Service-key path (extensions): unscoped, never goes through user RBAC.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    const serviceKeyGuard = await requireServiceKey(request);
-    if (serviceKeyGuard) return serviceKeyGuard;
+      // Service-key path (extensions): unscoped, never goes through user RBAC.
+      if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+        const serviceKeyGuard = await requireServiceKey(request);
+        if (serviceKeyGuard) return serviceKeyGuard;
 
-    const course = await getCourse(courseId);
-    if (!course) {
-      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(
-      JSON.stringify(serializeCourseForApi(course, { audience: "service", detail: true })),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
+        const course = await getCourse(courseId);
+        if (!course) {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify(serializeCourseForApi(course, { audience: "service", detail: true })),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
 
-  const session = await getRequestSession(request);
+      const session = await getRequestSession(request);
 
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      if (!session?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read a
-  // soft-deleted course. The access resolver below filters `deletedAt: null`
-  // (→ 404), so ADMIN reads bypass it here. No-op for every non-ADMIN caller.
-  if (wantsIncludeDeleted(request, session.user)) {
-    const course = await getCourse(courseId, true);
-    if (!course) {
-      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(
-      JSON.stringify(serializeCourseForApi(course, { audience: "staff", detail: true })),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
+      // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read a
+      // soft-deleted course. The access resolver below filters `deletedAt: null`
+      // (→ 404), so ADMIN reads bypass it here. No-op for every non-ADMIN caller.
+      if (wantsIncludeDeleted(request, session.user)) {
+        const course = await getCourse(courseId, true);
+        if (!course) {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify(serializeCourseForApi(course, { audience: "staff", detail: true })),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
 
-  // §5: viewing course details requires a course relationship; students
-  // additionally require the course to be published.
-  //
-  // Wide row on purpose: the success path serializes the whole course to the
-  // client, so a narrow projection would silently drop response fields.
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+      // §5: viewing course details requires a course relationship; students
+      // additionally require the course to be published.
+      //
+      // Wide row on purpose: the success path serializes the whole course to the
+      // client, so a narrow projection would silently drop response fields.
+      const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
 
-  if (!course) {
-    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  if (!access || (access.level === "student" && !course.isPublished)) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  const audience = access.level === "student" ? "student" : "staff";
-  // The student payload gains an `instructor` the staff query already includes.
-  let responseCourse: CourseWithInstructor = course;
-  if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
-    const instructor = await prisma.user.findUnique({
-      where: { id: course.instructorId },
-      select: { name: true, email: true },
-    });
-    responseCourse = { ...responseCourse, instructor };
-  }
-  return new Response(
-    JSON.stringify(
-      serializeCourseForApi(responseCourse, {
-        audience,
-        detail: true,
-      }),
-    ),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+      const audience = access.level === "student" ? "student" : "staff";
+      // The student payload gains an `instructor` the staff query already includes.
+      let responseCourse: CourseWithInstructor = course;
+      if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
+        const instructor = await prisma.user.findUnique({
+          where: { id: course.instructorId },
+          select: { name: true, email: true },
+        });
+        responseCourse = { ...responseCourse, instructor };
+      }
+      return new Response(
+        JSON.stringify(
+          serializeCourseForApi(responseCourse, {
+            audience,
+            detail: true,
+          }),
+        ),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     },
+    { request },
   );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.id;
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const requestContext = getRequestContext(request);
-
-  const session = await getRequestSession(request);
-
-  switch (request.method) {
-    case "PATCH": {
-      // Read the validated field names from a clone so the service still owns the body.
-      const validated = await request
-        .clone()
-        .json()
-        .then((body) => UpdateCourseSchema.safeParse(body))
-        .catch(() => null);
-      const requestedFields = validated && validated.success ? Object.keys(validated.data) : [];
-
-      const response = await updateCourse(request, courseId);
-
-      if (response.status === 200) {
-        const updated = await response
-          .clone()
-          .json()
-          .catch(() => null);
-        // updateCourse strips instructorId/department for callers below rank 3, so
-        // only report them as changed when the persisted course actually reflects
-        // the requested value — otherwise the audit trail overstates the change.
-        const changedFields =
-          updated && validated && validated.success
-            ? requestedFields.filter((field) => {
-                if (field === "instructorId")
-                  return updated.instructorId === validated.data.instructorId;
-                if (field === "department") return updated.department === validated.data.department;
-                return true;
-              })
-            : requestedFields;
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session?.user ?? null),
-            ...requestContext,
-            actionCode: "COURSE_UPDATED",
-            category: "COURSE",
-            entityType: "Course",
-            entityId: updated?.id ?? courseId,
-            entityLabel: updated?.code ?? updated?.name ?? null,
-            details: { changedFields },
-          }),
-        );
+  return withErrorResponse(
+    async () => {
+      const courseId = params.id;
+      if (!courseId) {
+        return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
-      return response;
-    }
-    case "DELETE": {
-      const response = await deleteCourse(request, courseId);
+      const requestContext = getRequestContext(request);
 
-      if (response.status === 204) {
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session?.user ?? null),
-            ...requestContext,
-            actionCode: "COURSE_DELETED",
-            category: "COURSE",
-            entityType: "Course",
-            entityId: courseId,
-          }),
-        );
+      const session = await getRequestSession(request);
+
+      switch (request.method) {
+        case "PATCH": {
+          // Read the validated field names from a clone so the service still owns the body.
+          const validated = await request
+            .clone()
+            .json()
+            .then((body) => UpdateCourseSchema.safeParse(body))
+            .catch(() => null);
+          const requestedFields = validated && validated.success ? Object.keys(validated.data) : [];
+
+          const response = await updateCourse(request, courseId);
+
+          if (response.status === 200) {
+            const updated = await response
+              .clone()
+              .json()
+              .catch(() => null);
+            // updateCourse strips instructorId/department for callers below rank 3, so
+            // only report them as changed when the persisted course actually reflects
+            // the requested value — otherwise the audit trail overstates the change.
+            const changedFields =
+              updated && validated && validated.success
+                ? requestedFields.filter((field) => {
+                    if (field === "instructorId")
+                      return updated.instructorId === validated.data.instructorId;
+                    if (field === "department")
+                      return updated.department === validated.data.department;
+                    return true;
+                  })
+                : requestedFields;
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "COURSE_UPDATED",
+                category: "COURSE",
+                entityType: "Course",
+                entityId: updated?.id ?? courseId,
+                entityLabel: updated?.code ?? updated?.name ?? null,
+                details: { changedFields },
+              }),
+            );
+          }
+
+          return response;
+        }
+        case "DELETE": {
+          const response = await deleteCourse(request, courseId);
+
+          if (response.status === 204) {
+            fireAndForget(
+              logAuditAction({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "COURSE_DELETED",
+                category: "COURSE",
+                entityType: "Course",
+                entityId: courseId,
+              }),
+            );
+          }
+
+          return response;
+        }
+        default:
+          return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json" },
+          });
       }
-
-      return response;
-    }
-    default:
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { "Content-Type": "application/json" },
-      });
-  }
+    },
+    { request },
+  );
 }

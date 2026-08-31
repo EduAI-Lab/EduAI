@@ -36,6 +36,7 @@ vi.mock("~/lib/ai/re-embed-job.server", () => ({
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logAuditAction: vi.fn().mockResolvedValue(undefined),
+  logSystemError: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { loader, action } from "~/routes/api/courses.embedding-settings.$";

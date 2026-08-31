@@ -159,7 +159,7 @@ function lastStreamConfig(): {
   return call ?? {};
 }
 
-function lastStreamMessages(): Array<{ id?: string }> {
+function lastStreamMessages(): Array<{ id?: string; content?: string }> {
   return lastStreamConfig().messages ?? [];
 }
 
@@ -469,10 +469,7 @@ describe("Smart course RAG gate (#484)", () => {
       expect(ids[0]).toBe("session-digest");
       expect(ids).not.toContain("stored-0");
       expect(ids[ids.length - 1]).toBe("incoming-20");
-      const marker = messages[0] as { content?: unknown };
-      expect(typeof marker.content === "string" ? marker.content : "").toMatch(
-        /1 earlier turn omitted/,
-      );
+      expect(messages[0]?.content ?? "").toMatch(/1 earlier turn omitted/);
     });
 
     it("does not persist incoming turns that were trimmed from the model context", async () => {
@@ -634,8 +631,7 @@ describe("Smart course RAG gate (#484)", () => {
 
 describe("token-budget context window — pre-digest omissions and fail-closed fit (#1643)", () => {
   function firstMessageContent(): string {
-    const first = lastStreamMessages()[0] as { id?: string; content?: unknown };
-    return typeof first?.content === "string" ? first.content : "";
+    return lastStreamMessages()[0]?.content ?? "";
   }
 
   it("summarizes older turns beyond the load window as content, not just a count (#1643)", async () => {

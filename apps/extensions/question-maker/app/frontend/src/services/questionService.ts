@@ -19,6 +19,7 @@ import {
   ExtractedQuestion,
   MCQChoice,
 } from "../types/question";
+import { isNumber } from "@eduai/ui/primitive-union";
 
 /** Normalizes backend variant payload into frontend QuestionVariant shape. */
 const mapVariant = (variant: any): QuestionVariant => ({
@@ -49,7 +50,10 @@ const mapVariant = (variant: any): QuestionVariant => ({
   isAiGenerated: variant.isAiGenerated ?? variant.is_ai_generated ?? false,
   isDraft: variant.isDraft ?? variant.is_draft ?? false,
   coreQuestionId: variant.coreQuestionId ?? variant.core_question_id ?? null,
-  testable: variant.testable ?? undefined,
+  // `shareWithExtensions` is QM's mirror of Core's `testable` — the toggle
+  // writes both — so list and detail rows, which carry only the local column,
+  // still render the author's real current choice (#1652 review).
+  testable: variant.testable ?? variant.shareWithExtensions ?? undefined,
   createdAt: variant.createdAt ?? variant.created_at,
   updatedAt: variant.updatedAt ?? variant.updated_at,
   assessment: variant.assessment
@@ -103,14 +107,14 @@ function unwrapPaginatedList<T>(data: JsonValue, mapItem: (row: any) => T): Pagi
     const items = data.map(mapItem);
     return { items, total: items.length, limit: items.length, offset: 0 };
   }
-  if (data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)) {
+  if (data instanceof Object && Array.isArray((data as { items?: unknown }).items)) {
     const page = data as { items: any[]; total?: number; limit?: number; offset?: number };
     const items = page.items.map(mapItem);
     return {
       items,
-      total: typeof page.total === "number" ? page.total : items.length,
-      limit: typeof page.limit === "number" ? page.limit : items.length,
-      offset: typeof page.offset === "number" ? page.offset : 0,
+      total: isNumber(page.total) ? page.total : items.length,
+      limit: isNumber(page.limit) ? page.limit : items.length,
+      offset: isNumber(page.offset) ? page.offset : 0,
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };
@@ -272,6 +276,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Author's choice to let other EduAI extensions use this question (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.post(`/api/questions/${questionId}/variants`, payload);
@@ -294,6 +300,8 @@ export const questionService = {
       referenceId?: number;
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      /** Approval-time opt-in; the server forces it false on a draft (#1555). */
+      shareWithExtensions?: boolean;
     },
   ): Promise<QuestionVariant> {
     const response = await api.put(`/api/questions/variants/${variantId}`, payload);

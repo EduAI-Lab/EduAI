@@ -27,12 +27,15 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { cancelChatRequest, fetchChatWithRequestId } from "./chat-request-cancellation";
 import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
+  adhdAssistFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 type LongOutputMessageMetadata = {
@@ -69,7 +72,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
@@ -80,7 +83,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
-  const hasNoCourses = availableCourses.length === 0;
+  // An empty list only means "not enrolled" once the fetch has actually
+  // resolved. Answering the first message on `/chat` replaces the route with
+  // `/chat/:id`, which remounts this screen — without the loading gate the
+  // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
+  // overlay over the reply that was still streaming (#1517).
+  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
@@ -123,8 +131,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     () => {
       const hydrated: Record<string, string> = {};
       for (const message of editableTranscript?.messages ?? []) {
-        const id =
-          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const id = asPresentText(message.id);
         const resolvedModelId = resolvedModelIdFromMessage(message);
         if (id && resolvedModelId) hydrated[id] = resolvedModelId;
       }
@@ -142,8 +149,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     () => {
       const hydrated: Record<string, boolean> = {};
       for (const message of editableTranscript?.messages ?? []) {
-        const id =
-          typeof message.id === "string" && message.id.trim().length > 0 ? message.id : null;
+        const id = asPresentText(message.id);
         if (id && resolvedModelIdFromMessage(message)) {
           hydrated[id] = wasAutoRoutedFromMessage(message);
         }
@@ -152,6 +158,25 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     },
   );
   const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
+  /**
+   * Whether Assist was on for each assistant message's request, keyed by
+   * message id — captured at send time so toggling Assist afterward doesn't
+   * retroactively reformat older messages (#1671). Legacy rows persisted
+   * before this metadata existed are simply absent from the map, and the
+   * consuming layout falls back to the live toggle for those.
+   */
+  const [adhdAssistByMessageId, setAdhdAssistByMessageId] = useState<Record<string, boolean>>(
+    () => {
+      const hydrated: Record<string, boolean> = {};
+      for (const message of editableTranscript?.messages ?? []) {
+        const id = asPresentText(message.id);
+        const wasAssist = adhdAssistFromMessage(message);
+        if (id && wasAssist !== undefined) hydrated[id] = wasAssist;
+      }
+      return hydrated;
+    },
+  );
+  const [streamingAdhdAssist, setStreamingAdhdAssist] = useState(false);
   /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   /**
@@ -171,6 +196,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const regeneratingRef = useRef(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
+  const pendingAdhdAssistRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const promptSubmitInFlightRef = useRef(false);
@@ -198,13 +224,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     for (const message of editableTranscript?.messages ?? []) {
       const metadata = message.metadata as LongOutputMessageMetadata | undefined;
 
-      if (
-        typeof message.id === "string" &&
-        message.id.trim().length > 0 &&
-        message.role === "assistant" &&
-        metadata?.hitLongOutputCap === true
-      ) {
-        cappedIds.add(message.id);
+      const messageId = asPresentText(message.id);
+      if (messageId && message.role === "assistant" && metadata?.hitLongOutputCap === true) {
+        cappedIds.add(messageId);
       }
     }
 
@@ -307,6 +329,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
   };
+  const activeRequestIdRef = useRef<string | null>(null);
+  const chatFetch = useCallback<typeof fetch>(
+    (input, init) => fetchChatWithRequestId(activeRequestIdRef, input, init),
+    [],
+  );
 
   const {
     messages,
@@ -320,6 +347,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     setInput,
   } = useChat({
     api: "/api/chat",
+    fetch: chatFetch,
     // Seed the composer from the route loader's transcript (DB is the source of
     // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
     initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
@@ -332,11 +360,27 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     // #487: send only the latest turn to the server, not the full history.
     // Spreads requestBody (carrying the stable message id from
     // sendExtraMessageFields) so dedup + latest-turn-only both hold.
-    experimental_prepareRequestBody: ({ messages, requestBody }) => ({
-      ...(requestBody ?? requestMetadata),
-      chatMode: "learning",
-      messages: messages.slice(-1),
-    }),
+    experimental_prepareRequestBody: ({ messages, requestBody }) => {
+      // Capture the Assist mode actually being sent right here, at dispatch
+      // time — not in onResponse, which only fires once response headers
+      // arrive (well after send, and for every dispatch path including
+      // handleContinue's direct `append()`, which never goes through
+      // onSubmit). Unlike the model selector, the Assist toggle is NOT
+      // disabled while a request is in flight (chat-input.tsx only disables
+      // it for assistBusy/disabledReason), so a user can flip it mid-flight;
+      // capturing later would attribute the in-flight message to whatever
+      // Assist was set to when headers arrived instead of when it was sent.
+      // requestBody (a per-call override) is not used at any call site in
+      // this file, so requestMetadata — this render's closure, i.e. the
+      // Assist value in effect right now — is what's actually sent (#1671 review).
+      pendingAdhdAssistRef.current = requestMetadata.adhdAssist;
+      setStreamingAdhdAssist(requestMetadata.adhdAssist);
+      return {
+        ...(requestBody ?? requestMetadata),
+        chatMode: "learning",
+        messages: messages.slice(-1),
+      };
+    },
     onResponse: async (response) => {
       const routedHeader = response.headers.get("X-Routed-Model")?.trim();
       const routed = routedHeader && routedHeader.length > 0 ? routedHeader : null;
@@ -361,15 +405,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onFinish: (message) => {
+      activeRequestIdRef.current = null;
       // Server-owned source of truth for the Continue button.
       const hitLongOutputCap =
         message.role === "assistant" &&
         message.annotations?.some(
-          (annotation) =>
-            annotation !== null &&
-            typeof annotation === "object" &&
-            !Array.isArray(annotation) &&
-            (annotation as JsonObject).hitLongOutputCap === true,
+          (annotation) => asJsonObject(annotation)?.hitLongOutputCap === true,
         );
 
       if (hitLongOutputCap) {
@@ -392,11 +433,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           [message.id]: pendingWasAutoRoutedRef.current,
         }));
       }
+      // Independent of routing: record what Assist was on for this turn so
+      // toggling it afterward doesn't reformat this message later (#1671).
+      if (message.role === "assistant") {
+        setAdhdAssistByMessageId((prev) => ({
+          ...prev,
+          [message.id]: pendingAdhdAssistRef.current,
+        }));
+      }
 
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
+      pendingAdhdAssistRef.current = false;
       setStreamingRoutedRegistryId(null);
       setStreamingWasAutoRouted(false);
+      setStreamingAdhdAssist(false);
 
       const id = pendingNavigateChatId.current;
 
@@ -409,11 +460,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       }
     },
     onError: (error) => {
+      activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
+      pendingAdhdAssistRef.current = false;
       setStreamingRoutedRegistryId(null);
       setStreamingWasAutoRouted(false);
+      setStreamingAdhdAssist(false);
     },
   });
 
@@ -477,7 +531,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               throw new Error(`Regenerate failed with ${response.status}`);
             }
             const data = await response.json();
-            const rawContent = typeof data.content === "string" ? data.content : undefined;
+            const rawContent = asText(data.content);
             content = rawContent?.trim() ? rawContent : undefined;
             if (!content) {
               throw new Error("Regenerate returned empty content");
@@ -510,6 +564,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             // matches it — a failed regenerate (below) leaves both unchanged.
             setAdhdAssist(checked);
             setAssistive(checked);
+            // The regenerated content now reflects `checked`, so this
+            // message's per-message Assist flag must move with it — otherwise
+            // the display-transform layer would keep formatting it for the
+            // mode it was regenerated *away* from (#1671).
+            setAdhdAssistByMessageId((prev) => ({
+              ...prev,
+              [lastMessage.id]: checked,
+            }));
           }
         } catch (error) {
           console.error("Failed to regenerate response for Assist toggle:", error);
@@ -521,6 +583,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     },
     [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
   );
+
+  // Shared with handleStop: a course change, New Chat, or history navigation
+  // away from an in-flight turn must cancel the server-side request the same
+  // way the Stop button does, not just abort the client fetch — otherwise a
+  // masked disconnect leaves generation and the admission slot running.
+  // cancelChatRequest/stop are both no-ops when nothing is in flight, so this
+  // is safe to call unconditionally from every exit path.
+  const stopActiveChatRequest = useCallback(() => {
+    cancelChatRequest(activeRequestIdRef);
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
 
   const handleCourseChange = useCallback(
     (code: string | null) => {
@@ -537,7 +612,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         // A chat id can arrive in onResponse while the URL is still /chat. A
         // same-route navigation does not remount this component, so clear all
         // persisted/in-flight state before handing off the selected course.
-        stop();
+        stopActiveChatRequest();
         pendingNavigateChatId.current = null;
         pendingRoutedRegistryIdRef.current = null;
         setChatId(null);
@@ -562,17 +637,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       selectedCourseCode,
       setInput,
       setMessages,
-      stop,
+      stopActiveChatRequest,
     ],
   );
 
   // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
   // Clear the latch here or the next turn keeps the aborted turn's model.
   const handleStop = useCallback(() => {
-    pendingRoutedRegistryIdRef.current = null;
-    setStreamingRoutedRegistryId(null);
-    stop();
-  }, [stop]);
+    stopActiveChatRequest();
+  }, [stopActiveChatRequest]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -646,17 +719,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   // Route is the source of truth: selecting history navigates to /chat/:chatId
   // (loader hydrates the transcript) instead of mutating composer state in place.
+  // Leaving a persisted chat mid-turn without cancelling would otherwise leak
+  // the server-side generation and its admission slot (same as course change).
   const handleSelectChat = useCallback(
     (id: string) => {
+      stopActiveChatRequest();
       navigate(`/chat/${id}`);
     },
-    [navigate],
+    [navigate, stopActiveChatRequest],
   );
 
   // New chat = a clean /chat route (no transcript, no restore).
   const handleNewChat = useCallback(() => {
+    stopActiveChatRequest();
     navigate("/chat");
-  }, [navigate]);
+  }, [navigate, stopActiveChatRequest]);
 
   const historyListProps = {
     chats,
@@ -787,6 +864,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onContinue: handleContinue,
     wasAutoRoutedByMessageId,
     streamingWasAutoRouted,
+    adhdAssistByMessageId,
+    streamingAdhdAssist,
   };
 
   return (

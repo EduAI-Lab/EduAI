@@ -84,14 +84,14 @@ function loadCoreManifest(): CoreManifestAnchors {
     );
   }
   const sharedCourseId = core.sharedCourseId;
-  if (typeof sharedCourseId !== "string" || sharedCourseId.length === 0) {
+  if (!sharedCourseId) {
     throw new Error(
       `Core perf manifest at ${file} has no valid sharedCourseId — run the Core perf seed first (npm run db:seed:perf).`,
     );
   }
   return {
     sharedCourseId,
-    readChatId: typeof core.readChatId === "string" ? core.readChatId : null,
+    readChatId: core.readChatId ?? null,
   };
 }
 

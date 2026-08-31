@@ -45,6 +45,7 @@ vi.mock("~/lib/ai/re-embed-job.server", () => ({
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
+  logSystemError: vi.fn(),
 }));
 
 vi.mock("~/lib/request-context.server", () => ({

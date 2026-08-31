@@ -64,7 +64,7 @@ describe("BYOK provider routing", () => {
     expect(result.message).toBe("Try isolating x.");
   });
 
-  it("uses distinct canary secrets for tutor and supervisor fallback iterations", async () => {
+  it("forwards the full held-key map on every call, each provider keyed to its own secret", async () => {
     const googleKey = "google-canary-secret";
     const openAiKey = "openai-canary-secret";
     vi.stubGlobal(
@@ -106,12 +106,16 @@ describe("BYOK provider routing", () => {
 
     const requests = global.fetch.mock.calls.map(([, init]) => JSON.parse(init.body));
     expect(requests).toHaveLength(4);
+    // #1645: every Core call now carries the FULL held-key map so a fleet-down
+    // fallback can switch providers. Core still keys by `model`, so the extra
+    // entry is only a fallback candidate — the security property that matters is
+    // that each provider entry maps to its OWN secret, never a swapped one.
     expect(requests[0].model).toBe("google:gemini-test");
     expect(requests[0].apiKeys.google.apiKey).toBe(googleKey);
-    expect(requests[0].apiKeys.openai).toBeUndefined();
+    expect(requests[0].apiKeys.openai.apiKey).toBe(openAiKey);
     expect(requests[1].model).toBe("openai:gpt-test");
     expect(requests[1].apiKeys.openai.apiKey).toBe(openAiKey);
-    expect(requests[1].apiKeys.google).toBeUndefined();
+    expect(requests[1].apiKeys.google.apiKey).toBe(googleKey);
     expect(requests[2].model).toBe("google:gemini-test");
     expect(requests[2].apiKeys.google.apiKey).toBe(googleKey);
     expect(requests[3].model).toBe("openai:gpt-test");
