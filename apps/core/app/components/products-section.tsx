@@ -102,8 +102,9 @@ function FeatureList({ features }: { features: string[] }) {
   );
 }
 
-function ProductCard({ product, featured = false }: { product: Product; featured?: boolean }) {
+function ProductCard({ product }: { product: Product }) {
   const [open, setOpen] = useState(false);
+  const isPlatform = product.kind === "platform";
 
   return (
     <Card className="border border-border bg-background transition-colors hover:border-primary-text">
@@ -125,8 +126,8 @@ function ProductCard({ product, featured = false }: { product: Product; featured
               ) : null}
             </div>
           </div>
-          <Badge variant={featured ? "secondary" : "outline"}>
-            {product.kind === "platform" ? "Platform" : "Extension"}
+          <Badge variant={isPlatform ? "secondary" : "outline"}>
+            {isPlatform ? "Platform" : "Extension"}
           </Badge>
         </div>
 
@@ -182,7 +183,7 @@ export function ProductsSection() {
         />
 
         <div className="space-y-8">
-          <ProductCard product={core} featured />
+          <ProductCard product={core} />
 
           <div className="flex items-center gap-3">
             <IconPlugConnected className="h-5 w-5 shrink-0 text-primary-text" />

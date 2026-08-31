@@ -2,6 +2,11 @@ import { PageHeading } from "@eduai/ui";
 import { teamMembers } from "~/config/team";
 import { TeamMemberCard } from "~/components/team-member-card";
 
+// The roster is a module constant, so the split is done once at import rather
+// than refiltered on every render.
+const faculty = teamMembers.filter((member) => member.role === "professor");
+const students = teamMembers.filter((member) => member.role === "student");
+
 /**
  * The research team roster, formerly the standalone /team page. Now a section
  * of the single-scroll landing page, anchored by the header's "Team" link.
@@ -27,22 +32,18 @@ export function TeamSection() {
           <div>
             <h3 className="mb-5 text-xl font-semibold text-foreground">Faculty</h3>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {teamMembers
-                .filter((member) => member.role === "professor")
-                .map((member) => (
-                  <TeamMemberCard key={member.id} member={member} />
-                ))}
+              {faculty.map((member) => (
+                <TeamMemberCard key={member.id} member={member} />
+              ))}
             </div>
           </div>
 
           <div>
             <h3 className="mb-5 text-xl font-semibold text-foreground">Students</h3>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {teamMembers
-                .filter((member) => member.role === "student")
-                .map((member) => (
-                  <TeamMemberCard key={member.id} member={member} />
-                ))}
+              {students.map((member) => (
+                <TeamMemberCard key={member.id} member={member} />
+              ))}
             </div>
           </div>
         </div>
