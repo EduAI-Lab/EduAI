@@ -106,7 +106,7 @@ function ProductCard({ product, featured = false }: { product: Product; featured
   const [open, setOpen] = useState(false);
 
   return (
-    <Card className="border border-border bg-background transition-colors hover:border-primary/30 dark:hover:border-primary/45">
+    <Card className="border border-border bg-background transition-colors hover:border-primary-text">
       <CardContent className="p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">

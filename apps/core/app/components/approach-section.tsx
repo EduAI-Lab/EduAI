@@ -62,11 +62,11 @@ export function ApproachSection() {
           {pillars.map((pillar) => (
             <Card
               key={pillar.title}
-              className="border border-border bg-card transition-colors hover:border-primary/30 dark:hover:border-primary/45"
+              className="border border-border bg-card transition-colors hover:border-primary-text"
             >
               <CardContent className="p-6">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                  <pillar.icon className="h-6 w-6 text-primary-text" />
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
+                  <pillar.icon className="h-6 w-6 text-primary-foreground" />
                 </div>
                 <h3 className="mb-2 text-lg font-semibold text-foreground">{pillar.title}</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">

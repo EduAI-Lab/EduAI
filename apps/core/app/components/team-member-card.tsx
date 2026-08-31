@@ -38,7 +38,7 @@ export function TeamMemberCard({ member }: TeamMemberCardProps) {
           the card only forwards a mouse click to it as a convenience. */}
       <Card
         onClick={() => setOpen(true)}
-        className="group flex cursor-pointer flex-col overflow-hidden transition-colors hover:border-primary/30 dark:hover:border-primary/45 focus-within:ring-2 focus-within:ring-ring"
+        className="group flex cursor-pointer flex-col overflow-hidden transition-colors hover:border-primary-text focus-within:ring-2 focus-within:ring-ring"
       >
         <div className="relative aspect-[4/5] w-full bg-muted">
           {member.image ? (

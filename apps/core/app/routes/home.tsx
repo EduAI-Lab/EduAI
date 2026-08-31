@@ -105,8 +105,8 @@ export default function HomePage() {
               <Card className="lg:self-stretch">
                 <CardContent className="flex flex-col justify-center px-6 py-8">
                   <div className="mb-4 flex flex-row items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
-                      <IconBulb className="h-6 w-6 text-primary-text" />
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary">
+                      <IconBulb className="h-6 w-6 text-primary-foreground" />
                     </div>
                     <h3 className="text-lg font-semibold text-card-foreground">Our vision</h3>
                   </div>
