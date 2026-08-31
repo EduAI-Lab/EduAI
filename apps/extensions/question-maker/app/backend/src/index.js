@@ -88,9 +88,10 @@ const startServer = async () => {
   try {
     assertCoreServiceKeyConfigured();
 
-    server = app.listen(PORT, "0.0.0.0", () => {
+    server = app.listen(PORT, config.host, () => {
       logger.info(
         {
+          host: config.host,
           port: PORT,
           logLevel: config.logLevel,
           nodeEnv: config.nodeEnv,

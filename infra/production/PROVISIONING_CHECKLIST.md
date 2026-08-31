@@ -106,7 +106,21 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - The AI Tutor vhost relies on the certificate already covering `*.eduai.ok.ubc.ca` on this host (no explicit `SSLCertificateFile` in the template); confirm that coverage, and that Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.
 
-Question Maker is provisioned separately — see its own provisioning
-branch/PR and `PROVISIONING_CHECKLIST.md` section 9 there for its
-database, secrets, and Apache checks (`provision-qm` handles most of it
-automatically; this checklist does not cover it).
+## 9. Provision Question Maker
+
+Create a dedicated Question Maker database and role on the host PostgreSQL
+instance, then install the reviewed API environment, systemd unit, and Apache
+vhost templates. The API must use `127.0.0.1:5432` (not the Docker-only
+`postgres` hostname), and the frontend must be built with the public-only
+values from `question-maker-frontend.env`.
+
+Verify before enabling traffic:
+
+- `DATABASE_URL` points to the dedicated Question Maker database.
+- `EDUAI_API_KEY` matches Core's service key.
+- `CORE_DATABASE_URL` and `CORE_ENCRYPTION_KEY` are present if the one-time
+  Canvas credential migration still has source rows.
+- `questionmaker.eduai.ok.ubc.ca` Apache configuration passes `apache2ctl
+  configtest` and its TLS certificate covers the hostname.
+- `curl -fsS http://127.0.0.1:8000/healthz` and
+  `curl -fsS http://127.0.0.1:8000/readyz` succeed after the unit starts.

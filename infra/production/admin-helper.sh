@@ -14,6 +14,8 @@ readonly AI_TUTOR_DB_ENV="/etc/eduai/aitutor-db.env"
 readonly AI_TUTOR_UNIT="/etc/systemd/system/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST="/etc/apache2/sites-available/aitutor.eduai.ok.ubc.ca.conf"
 readonly QM_UNIT="/etc/systemd/system/eduai-qm-backend.service"
+readonly QM_ENV="/etc/eduai/eduai-qm.env"
+readonly QM_VHOST="/etc/apache2/sites-available/questionmaker.eduai.ok.ubc.ca.conf"
 readonly AI_TUTOR_DB_NAME="eduai-aitutor-db"
 readonly AI_TUTOR_DB_VOLUME="eduai-aitutor-db-data"
 readonly TEMPLATE_DIR="/etc/eduai/production-templates"
@@ -25,6 +27,8 @@ readonly AI_TUTOR_DB_ENV_SOURCE="$TEMPLATE_DIR/aitutor-db.env"
 readonly AI_TUTOR_UNIT_SOURCE="$TEMPLATE_DIR/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.eduai.ok.ubc.ca.conf"
 readonly QM_UNIT_SOURCE="$TEMPLATE_DIR/eduai-qm-backend.service"
+readonly QM_ENV_SOURCE="$TEMPLATE_DIR/eduai-qm.env"
+readonly QM_VHOST_SOURCE="$TEMPLATE_DIR/questionmaker.eduai.ok.ubc.ca.conf"
 readonly TARGET_ROOT="/srv/www/eduai-production"
 readonly WEB_USER="www-data"
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -41,10 +45,10 @@ validate_release() {
   local required relative
   required=(
     "apps/core/build/server/index.js"
-    "apps/core/node_modules/@prisma/client/package.json"
-    "apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json"
+    "apps/core/node_modules/@prisma/client/index.js"
+    "apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/index.js"
     "apps/extensions/ai-tutor/build/client/index.html"
-    "apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json"
+    "apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js"
     "apps/extensions/question-maker/app/frontend/dist/index.html"
   )
   for relative in "${required[@]}"; do
@@ -172,6 +176,25 @@ case "${1:-}" in
     systemctl daemon-reload
     echo "Installed $QM_UNIT"
     ;;
+  install-qm-env)
+    no_extra_args "$@"
+    [ -f "$QM_ENV_SOURCE" ] || die "Question Maker environment source does not exist: $QM_ENV_SOURCE"
+    grep -q '^NODE_ENV=production$' "$QM_ENV_SOURCE" || die "Question Maker environment must set NODE_ENV=production"
+    grep -Eq '^DATABASE_URL=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing DATABASE_URL"
+    grep -Eq '^EDUAI_API_KEY=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing EDUAI_API_KEY"
+    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$QM_ENV_SOURCE" && die "Question Maker environment still contains placeholders"
+    install -o root -g eduai -m 0640 "$QM_ENV_SOURCE" "$QM_ENV"
+    echo "Installed $QM_ENV"
+    ;;
+  install-qm-apache)
+    no_extra_args "$@"
+    [ -f "$QM_VHOST_SOURCE" ] || die "Question Maker Apache source does not exist: $QM_VHOST_SOURCE"
+    install -o root -g root -m 0644 "$QM_VHOST_SOURCE" "$QM_VHOST"
+    a2enmod headers proxy proxy_http ssl >/dev/null
+    a2ensite questionmaker.eduai.ok.ubc.ca.conf >/dev/null
+    apache2ctl configtest
+    echo "Installed and validated $QM_VHOST"
+    ;;
   aitutor-db-install)
     no_extra_args "$@"
     [ -r "$AI_TUTOR_DB_ENV" ] || die "missing $AI_TUTOR_DB_ENV"
@@ -270,5 +293,5 @@ case "${1:-}" in
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-unit, aitutor-db-install, provision-aitutor, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-core, restart-core, reload-apache" ;;
 esac

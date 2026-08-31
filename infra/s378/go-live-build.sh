@@ -123,39 +123,55 @@ step "prisma generate"
 # Before #1243's pinning, ai-tutor and question-maker both resolved to the same
 # root client and whichever generated last silently won — the loser's models came
 # back `undefined` at runtime, which was live on s378.
-( cd apps/core                                  && npx prisma generate )
-( cd apps/extensions/ai-tutor/server            && npx prisma generate )
+if want core; then
+  ( cd apps/core                                  && npx prisma generate )
+fi
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npx prisma generate )
+fi
 # Question Maker keeps its .env at the EXTENSION root, not next to its schema, so
 # the Prisma CLI's own dotenv resolution (schema dir / cwd only) never finds
 # DATABASE_URL — a bare `npx prisma generate` here dies with P1012. Its
 # scripts/withPrismaEnv.js wrapper loads that file first.
-( cd apps/extensions/question-maker/app/backend && npm run db:generate )
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run db:generate )
+fi
 
 step "assert each app resolves its OWN prisma client"
 # Regression guard for the collision above. Ships with #1243; skipped with a
 # warning on branches that predate it rather than failing the deploy.
-if [ -f scripts/verify-prisma-client-isolation.mjs ]; then
+if [ -z "$ONLY" ] && [ -f scripts/verify-prisma-client-isolation.mjs ]; then
   npm run test:prisma-client-isolation
+elif [ -n "$ONLY" ] && [ -f scripts/verify-prisma-client-isolation.mjs ]; then
+  echo "  skipping client-isolation check for --only $ONLY"
 else
   echo "  WARNING: scripts/verify-prisma-client-isolation.mjs not on this branch —"
   echo "           skipping the client-isolation check (expected before #1243 merges)."
 fi
 
 step "migration preflight"
-( cd apps/core && npm run db:migrate:preflight )
+if want core; then
+  ( cd apps/core && npm run db:migrate:preflight )
+fi
 
 step "migrate"
 # These live here rather than in the systemd units on purpose: the units use
 # Restart=always, which would re-run a migration on every crash-loop iteration.
 # They are also NOT in the `start` scripts the units now exec, so without this
 # step a branch carrying a schema change deploys as a runtime crash.
-( cd apps/core                                  && npx prisma migrate deploy )
-( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
+if want core; then
+  ( cd apps/core                                  && npx prisma migrate deploy )
+fi
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
+fi
 # QM db:migrate:deploy runs migrate-canvas-integrations-to-core.mjs BEFORE prisma
 # migrate deploy. That copier decrypts with QM ENCRYPTION_KEY and re-encrypts with
 # Core ENCRYPTION_KEY; the following Prisma migration only renames QM's
 # canvas_integrations table to a backup (it does not DROP). See docs/DEPLOYMENT.md.
-( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
+fi
 
 step "seed reference and extension data"
 # Core fixture seeding is intentionally disabled on s378. Core's seed contains
@@ -164,12 +180,18 @@ step "seed reference and extension data"
 # administrator through the documented operator bootstrap flow instead.
 # Reference catalogs contain no identities and use idempotent upserts, so they
 # are safe and required on a freshly migrated shared database.
-( cd apps/core                                  && npm run db:seed:reference )
+if want core; then
+  ( cd apps/core                                  && npm run db:seed:reference )
+fi
 #
 # The extension seeds contain only local application/catalog data and remain
 # no-ops when their databases already have rows.
-( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
-( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
+fi
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
+fi
 
 step "build"
 # NEVER `turbo run build` here. turbo.json's build task declares no `inputs` and
@@ -180,6 +202,13 @@ CORE_RESTARTED=0
 if want core; then
   step "build: core (SSR)"
   npm run build -w edu-ai
+  # Gate Core's own restart before touching the running service. The final
+  # all-app verification below also checks this path, but it happens after the
+  # extension builds and would be too late for this early restart.
+  test -f apps/core/build/server/index.js \
+    || { echo "ERROR: Core build artifact missing" >&2; exit 1; }
+  test -f apps/core/node_modules/@prisma/client/index.js \
+    || { echo "ERROR: Core generated Prisma client missing" >&2; exit 1; }
   # Restart Core HERE, not with the rest of the stack at the end. `react-router
   # build` empties and repopulates build/client with fresh content hashes while
   # the running process still renders the OLD asset URLs off disk. Deferring the
@@ -213,22 +242,22 @@ fi
 
 step "verify deploy artifacts"
 # A successful bundler exit is not enough: a bad install can still leave one
-# app without its extension-local Prisma client, or a frontend without the
-# index Apache serves. Catch both before any unit is restarted.
+# extension without its local Prisma client, or a frontend without the index
+# Apache serves. Core's equivalent gate runs before its early restart above.
 if want core; then
   test -f apps/core/build/server/index.js \
     || { echo "ERROR: Core build artifact missing" >&2; exit 1; }
-  test -f apps/core/node_modules/@prisma/client/package.json \
+  test -f apps/core/node_modules/@prisma/client/index.js \
     || { echo "ERROR: Core generated Prisma client missing" >&2; exit 1; }
 fi
 if want aitutor; then
-  test -f apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json \
+  test -f apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/index.js \
     || { echo "ERROR: AI Tutor generated Prisma client missing" >&2; exit 1; }
   test -f apps/extensions/ai-tutor/build/client/index.html \
     || { echo "ERROR: AI Tutor frontend artifact missing" >&2; exit 1; }
 fi
 if want qm; then
-  test -f apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json \
+  test -f apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js \
     || { echo "ERROR: Question Maker generated Prisma client missing" >&2; exit 1; }
   test -f apps/extensions/question-maker/app/frontend/dist/index.html \
     || { echo "ERROR: Question Maker frontend artifact missing" >&2; exit 1; }

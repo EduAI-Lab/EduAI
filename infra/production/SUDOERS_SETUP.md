@@ -11,7 +11,9 @@ sudo install -o root -g root -m 0644 /path/to/eduai-core.service /etc/eduai/prod
 sudo install -o root -g root -m 0644 /path/to/my.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/my.eduai.ok.ubc.ca.conf
 sudo install -o root -g root -m 0644 /path/to/eduai-aitutor-server.service /etc/eduai/production-templates/eduai-aitutor-server.service
 sudo install -o root -g root -m 0644 /path/to/aitutor.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/aitutor.eduai.ok.ubc.ca.conf
+sudo install -o root -g root -m 0640 /path/to/eduai-qm.env /etc/eduai/production-templates/eduai-qm.env
 sudo install -o root -g root -m 0644 /path/to/eduai-qm-backend.service /etc/eduai/production-templates/eduai-qm-backend.service
+sudo install -o root -g root -m 0644 /path/to/questionmaker.eduai.ok.ubc.ca.conf /etc/eduai/production-templates/questionmaker.eduai.ok.ubc.ca.conf
 ```
 
 The deployment account must not be able to write this directory. After copying

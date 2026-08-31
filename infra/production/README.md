@@ -85,6 +85,7 @@ Install the following reviewed templates as root-owned files:
 infra/production/ai-tutor.env.example                        -> /etc/eduai/eduai-aitutor.env
 infra/production/systemd/eduai-aitutor-server.service        -> /etc/systemd/system/
 infra/production/apache/aitutor.eduai.ok.ubc.ca.conf         -> /etc/apache2/sites-available/
+infra/production/question-maker.env.example                   -> /etc/eduai/eduai-qm.env
 infra/production/systemd/eduai-qm-backend.service             -> /etc/systemd/system/
 infra/production/apache/questionmaker.eduai.ok.ubc.ca.conf    -> /etc/apache2/sites-available/
 ```
@@ -100,12 +101,28 @@ rather than assuming a per-hostname certificate file exists.
 
 ### Question Maker production prerequisites
 
+Provision a dedicated Question Maker database and role on the host PostgreSQL
+instance before installing `question-maker.env.example`; do not reuse Core's
+database:
+
+```sql
+CREATE ROLE qm_prod LOGIN PASSWORD '<generated-password>';
+CREATE DATABASE eduquery OWNER qm_prod;
+```
+
 Install `question-maker.env.example` as the reviewed, secret-bearing
 `/etc/eduai/eduai-qm.env`, and install
 `systemd/eduai-qm-backend.service` and
 `apache/questionmaker.eduai.ok.ubc.ca.conf` as root-owned templates. The
 Question Maker generated client and frontend entrypoint are mandatory release
-artifacts, just like AI Tutor's.
+artifacts, just like AI Tutor's. If those templates are installed under
+`/etc/eduai/production-templates`, the helper can install and validate them:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin install-qm-env
+sudo -n /usr/local/sbin/eduai-production-admin install-qm-unit
+sudo -n /usr/local/sbin/eduai-production-admin install-qm-apache
+```
 
 ## First release procedure
 
@@ -130,6 +147,7 @@ set -a; . /etc/eduai/eduai-qm.env; set +a
 (cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy)
 cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
 npm run build -w ai-tutor
+cp infra/production/question-maker-frontend.env apps/extensions/question-maker/.env
 npm run build -w question-maker-frontend
 ```
 

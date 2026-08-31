@@ -93,10 +93,10 @@ ss -ltn 2>/dev/null | grep -E ':(80|443|3000|4000|5432|6379|8000|8001)\b' || tru
 echo
 echo "== Active release artifacts =="
 check_required_path "$TARGET_ROOT/current/apps/core/build/server/index.js"
-check_required_path "$TARGET_ROOT/current/apps/core/node_modules/@prisma/client/package.json"
-check_required_path "$TARGET_ROOT/current/apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/package.json"
+check_required_path "$TARGET_ROOT/current/apps/core/node_modules/@prisma/client/index.js"
+check_required_path "$TARGET_ROOT/current/apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/index.js"
 check_required_path "$TARGET_ROOT/current/apps/extensions/ai-tutor/build/client/index.html"
-check_required_path "$TARGET_ROOT/current/apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/package.json"
+check_required_path "$TARGET_ROOT/current/apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js"
 check_required_path "$TARGET_ROOT/current/apps/extensions/question-maker/app/frontend/dist/index.html"
 
 echo
