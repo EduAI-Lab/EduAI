@@ -23,11 +23,13 @@ import {
   type LlmRouteClassification,
 } from "./llm-classifier";
 import { isLocalVllmRouting, normalizePickForLocalVllm } from "./local-vllm";
+import { resolveAdhdAssistAutoModelId } from "~/lib/ai/adhd-assist";
 
 export const ROUTER_VERSION_RULES = "v1-rules";
 export const ROUTER_VERSION_KNN = "v2-knn";
 export const ROUTER_VERSION_HYBRID = "v2-hybrid";
 export const ROUTER_VERSION_LLM = "v2-llm";
+export const ROUTER_VERSION_ASSIST = "v1-assist-pinned";
 
 /** @deprecated Use `ROUTER_VERSION_RULES` — kept for chat telemetry compatibility */
 export const ROUTER_VERSION = ROUTER_VERSION_RULES;
@@ -75,6 +77,7 @@ export type ResolveRouterOptions = {
  */
 export type RouterInputContext = {
   courseId: string | null;
+  adhdAssist?: boolean;
   /** Course code for carbon policy overrides (optional). */
   courseCode?: string | null;
   imagesPresent: boolean;
@@ -406,6 +409,24 @@ export async function resolveRoutedModel(
   context: RouterInputContext,
   options?: ResolveRouterOptions,
 ): Promise<RouterDecision> {
+  // Keep Assist Auto independent of the normal quality/energy tier rules. The
+  // retained model provides the context capacity required by the Assist
+  // diagram and oversight paths; direct model selections remain unchanged.
+  if (context.adhdAssist && !context.imagesPresent) {
+    const modelId = resolveAdhdAssistAutoModelId();
+    return {
+      modelId,
+      tier: 3,
+      features: {
+        routerVersion: ROUTER_VERSION_ASSIST,
+        rule: "assist_auto_retained_model",
+        mode: "assist-pinned",
+        assistAutoPinned: true,
+        assistAutoModel: modelId,
+      },
+    };
+  }
+
   const mode = resolveMode(options);
   if (mode === "llm") {
     return resolveRoutedModelLlm(prompt, context);

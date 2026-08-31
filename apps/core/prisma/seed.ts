@@ -1355,7 +1355,12 @@ async function seedAIProvidersAndModels() {
   for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools, supportsImages: false },
+      update: {
+        isActive: true,
+        maxTokens: m.maxTokens,
+        supportsTools: m.supportsTools,
+        supportsImages: false,
+      },
       create: {
         ...m,
         type: "CHAT",

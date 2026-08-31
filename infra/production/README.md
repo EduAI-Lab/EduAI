@@ -35,7 +35,7 @@ The application service runs from `current`. The old checkout remains available 
 - Internal Core port: `127.0.0.1:3000`
 - PostgreSQL: private production database, not the legacy checkout's database
 - Redis: private production Redis instance for the optional BullMQ worker
-- Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
+- Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; this PR's validated application template uses cmps01 for the Qwen3.5 interactive fleet and cmps02 for the retained Qwen2.5 32B Assist Auto model; cmps03 remains outside this rollout pending firewall and inventory validation
 - AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
 - Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
 - Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000` — see the dedicated Question Maker provisioning PR/branch for its templates and `provision-qm` helper action; not covered by this file

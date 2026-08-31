@@ -300,7 +300,7 @@ describeDb("Core wiring DB integration", () => {
       expect(stored.coreTopicId).toBe("cuid-new-topic");
     });
 
-    it("creates topic locally even when Core push fails", async () => {
+    it("surfaces Core push failures without creating a local-only topic", async () => {
       await prisma.course.update({
         where: { id: courseId },
         data: { coreCourseId: "cuid-core-course" },
@@ -316,12 +316,11 @@ describeDb("Core wiring DB integration", () => {
         .set(cookie())
         .send({ name: "Fallback Topic" });
 
-      expect(res.status).toBe(201);
-      expect(res.body.data.coreTopicId).toBeNull();
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ success: false, error: "Core API error (503)" });
 
       const stored = await prisma.topics.findFirst({ where: { courseId, name: "Fallback Topic" } });
-      expect(stored).not.toBeNull();
-      expect(stored.coreTopicId).toBeNull();
+      expect(stored).toBeNull();
     });
 
     it("uses existingId when Core returns 409", async () => {

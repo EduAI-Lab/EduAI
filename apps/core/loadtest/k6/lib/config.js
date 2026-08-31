@@ -32,7 +32,7 @@ export const COURSE_CODE = "DATA 310";
 // Model routed to the mock LLM server (loadtest/mock-llm/server.mjs) via
 // VLLM_BASE_URL — never a real provider. supportsTools:false so /api/chat
 // takes the simpler hybrid-RAG (non tool-calling) path.
-export const MODEL_ID = "vllm:qwen2.5-7b-instruct";
+export const MODEL_ID = "vllm:qwen3.5-2b-instruct";
 
 /**
  * Default: one distinct account per VU (`loadtest.vu-00N@eduai.local`), seeded

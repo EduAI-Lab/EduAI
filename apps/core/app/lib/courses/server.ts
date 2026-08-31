@@ -25,6 +25,7 @@ import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
+import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
 import {
   COURSE_PUBLIC_SELECT,
   COURSE_SERVICE_SELECT,
@@ -593,6 +594,12 @@ export async function createCourse(request: Request) {
     return created;
   });
 
+  // #1624: a course must never exist with zero topics — Question Maker requires
+  // one to author against. Canvas-imported courses get this from the import
+  // path; a hand-created course has no material and so no analysis job, which is
+  // exactly the case that was left with nothing.
+  await ensureCourseHasTopic(course.id);
+
   return jsonResponse(201, serializeCourseForApi(course, { audience: "staff", detail: true }));
 }
 
@@ -1020,11 +1027,77 @@ export async function getCourseRagSettings(courseId: string): Promise<{
   return value;
 }
 
+/**
+ * How many source materials a topic reports (#1624).
+ *
+ * Bounded because provenance is a review aid, not a manifest: a reviewer needs
+ * to see what a suggestion came from, and an AI-derived topic can cite its whole
+ * sampled set. The count below is returned unbounded so the UI can say "and 3
+ * more" rather than silently truncating.
+ */
+export const TOPIC_SOURCE_PROJECTION_LIMIT = 5;
+
+/**
+ * The materials a generated topic was derived from, shaped for the review UI.
+ *
+ * Empty for human-created topics and for the SYSTEM fallback, which have no
+ * sources — so this adds nothing to the shape of a pre-#1624 topic.
+ */
+const topicSourceInclude = {
+  sources: {
+    take: TOPIC_SOURCE_PROJECTION_LIMIT,
+    orderBy: { createdAt: "asc" },
+    select: {
+      materialId: true,
+      material: { select: { title: true } },
+    },
+  },
+  _count: { select: { sources: true } },
+} as const;
+
+type TopicWithSourceRows = {
+  sources: { materialId: string; material: { title: string } | null }[];
+  _count: { sources: number };
+};
+
+/** Flatten Prisma's nested source rows into the `{ materialId, title }` the client reads. */
+function withSourceProjection<T extends TopicWithSourceRows>(topic: T) {
+  const { sources, _count, ...rest } = topic;
+  return {
+    ...rest,
+    sources: sources.map((source) => ({
+      materialId: source.materialId,
+      title: source.material?.title ?? null,
+    })),
+    sourceCount: _count.sources,
+  };
+}
+
+/**
+ * Topics for a course, without provenance.
+ *
+ * Deliberately lean, and kept that way: the hot callers are the chat
+ * course-scope prompt (behind `getCourseTopicNamesCached`) and the agent tools,
+ * which want names and nothing else. Joining every topic's source materials
+ * onto those reads would buy them a per-topic join and a count they never look
+ * at — provenance is a review concern, so the review-facing reads opt into it
+ * through the `WithSources` variants below.
+ */
 export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
     where: { courseId, deletedAt: includeDeleted ? undefined : null },
     orderBy: { name: "asc" },
   });
+}
+
+/** Topics for a course, each carrying the bounded source projection (#1624). */
+export async function getCourseTopicsWithSources(courseId: string, includeDeleted = false) {
+  const topics = await prisma.courseTopic.findMany({
+    where: { courseId, deletedAt: includeDeleted ? undefined : null },
+    orderBy: { name: "asc" },
+    include: topicSourceInclude,
+  });
+  return topics.map(withSourceProjection);
 }
 
 export async function getCourseTopic(courseId: string, topicId: string, includeDeleted = false) {
@@ -1035,6 +1108,23 @@ export async function getCourseTopic(courseId: string, topicId: string, includeD
       deletedAt: includeDeleted ? undefined : null,
     },
   });
+}
+
+/** One topic, carrying the bounded source projection (#1624). */
+export async function getCourseTopicWithSources(
+  courseId: string,
+  topicId: string,
+  includeDeleted = false,
+) {
+  const topic = await prisma.courseTopic.findFirst({
+    where: {
+      id: topicId,
+      courseId,
+      deletedAt: includeDeleted ? undefined : null,
+    },
+    include: topicSourceInclude,
+  });
+  return topic ? withSourceProjection(topic) : null;
 }
 
 export async function createCourseTopic(
@@ -1166,10 +1256,35 @@ export async function deleteCourseTopic(
     return { status: "404" } as const;
   }
 
+  // #1624: a course must never reach zero live topics — Question Maker needs one
+  // to author against. Deleting a real topic is fine, because the fallback is
+  // recreated underneath (below). Deleting the fallback when it is all that is
+  // left is refused outright: a freshly created course holds exactly
+  // `Uncategorized` and nothing else, so this is reachable, and the alternative
+  // — soft-deleting it and letting `ensureCourseHasTopic` restore the very same
+  // row — would report 204 for a delete that achieved nothing.
+  if (target.name === FALLBACK_TOPIC_NAME) {
+    const otherLiveTopic = await prisma.courseTopic.findFirst({
+      where: { courseId, deletedAt: null, id: { not: target.id } },
+      select: { id: true },
+    });
+    if (!otherLiveTopic) {
+      return { status: "409", error: "LAST_TOPIC_PROTECTED" } as const;
+    }
+  }
+
   await prisma.courseTopic.update({
     where: { id: target.id },
     data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
+
+  // Deleting a real topic may have emptied the course; the fallback comes back
+  // underneath so authoring is never blocked. Not called for the fallback
+  // itself: it only gets here with another live topic present, and recreating
+  // it would undo the instructor's deliberate removal of an unused row.
+  if (target.name !== FALLBACK_TOPIC_NAME) {
+    await ensureCourseHasTopic(courseId);
+  }
 
   invalidateCourseTopicNamesCache(courseId);
   return { status: "204", topic: target } as const;

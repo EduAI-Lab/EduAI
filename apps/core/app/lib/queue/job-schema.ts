@@ -9,8 +9,8 @@ import { z } from "zod";
  * its own fields.
  */
 
-// Concrete async work kinds. Seeded with the only v1 producer; extend as producers land.
-export const JobKindSchema = z.enum(["question-generation"]);
+// Concrete async work kinds. Extend as producers land.
+export const JobKindSchema = z.enum(["question-generation", "topic-analysis"]);
 export type JobKind = z.infer<typeof JobKindSchema>;
 
 // Reused from the fleet (contract §2). Fleet does not export a runtime schema yet,
@@ -27,8 +27,30 @@ const QuestionGenerationInputSchema = z.object({
   count: z.number().int().min(1).max(100),
 });
 
+/**
+ * Course-scoped topic provisioning (#1624). One job per sync batch, never one
+ * per file: `materialIds` names the materials that just finished processing and
+ * are therefore safe to read `rawText` from.
+ */
+const TopicAnalysisInputSchema = z.object({
+  kind: z.literal("topic-analysis"),
+  courseId: z.string().min(1),
+  materialIds: z.array(z.string().min(1)).min(1).max(500),
+  /** Set when the batch came from a Canvas sync, so modules can be read for structure. */
+  canvasCourseId: z.string().min(1).nullish(),
+  /**
+   * Groups the chunks one oversized sync was split into (#1624). Derived from
+   * the whole batch's checksums, so it is stable across resyncs and identical
+   * for every chunk — the status read needs it to report a batch as failed when
+   * any one chunk failed, rather than reporting only the newest row. Optional:
+   * rows written before chunking existed have none, and are read alone.
+   */
+  batchKey: z.string().min(1).optional(),
+});
+
 export const JobInputSchema = z.discriminatedUnion("kind", [
   QuestionGenerationInputSchema,
+  TopicAnalysisInputSchema,
   // future kinds add their schema here
 ]);
 

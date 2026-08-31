@@ -37,7 +37,9 @@ async function applyRoutingTierAssignments() {
     }
   }
 
-  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  const google = await prisma.aIProvider.findUnique({
+    where: { name: "google" },
+  });
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
@@ -175,7 +177,9 @@ async function main() {
 
   for (const m of openaiModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: openai.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: openai.id, modelId: m.modelId },
+      },
       update: { isActive: true },
       create: {
         ...m,
@@ -209,7 +213,9 @@ async function main() {
 
   for (const m of googleModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: google.id, modelId: m.modelId },
+      },
       update: { isActive: true },
       create: {
         ...m,
@@ -224,8 +230,14 @@ async function main() {
 
   for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { isActive: true, supportsTools: m.supportsTools, supportsImages: false },
+      where: {
+        providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
+      },
+      update: {
+        isActive: true,
+        supportsTools: m.supportsTools,
+        supportsImages: false,
+      },
       create: {
         ...m,
         type: "CHAT",

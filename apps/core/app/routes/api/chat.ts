@@ -3,7 +3,14 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { z, ZodError } from "zod";
-import { createDataStreamResponse, formatDataStreamPart, StreamData, streamText } from "ai";
+import {
+  createDataStreamResponse,
+  formatDataStreamPart,
+  jsonSchema,
+  Output,
+  StreamData,
+  streamText,
+} from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -25,6 +32,7 @@ import {
   parseRouterMode,
   resolveRoutedModel,
   resolveRoutedModelRules,
+  ROUTER_VERSION_ASSIST,
   type RouterDecision,
   type RouterMode,
 } from "~/lib/ai/routing/router";
@@ -66,7 +74,12 @@ import {
   resolveSessionCharBudgetForModel,
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
-import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import {
+  composeSystemPrompt,
+  resolveAdhdAssistAutoModelId,
+  resolveEffectiveAdhdAssist,
+  shouldUseRetainedAdhdAssistModel,
+} from "~/lib/ai/adhd-assist";
 import {
   buildCourseResponseStylePrompt,
   appendCourseStyleToSystemPrompt,
@@ -93,16 +106,26 @@ import {
 import {
   getProfileRequirements,
   resolveAdhdTurnProfile,
+  userRequestedDiagram,
   type AdhdTurnProfile,
 } from "~/lib/ai/adhd-turn-profile";
+import {
+  buildAdhdAssistStructuredResponseSchema,
+  ensureAdhdAssistDiagram,
+  isStructuredAdhdAssistCandidate,
+  renderAdhdStructuredResponse,
+  resolveRequestedAssistStageCount,
+} from "~/lib/ai/adhd-structured-output";
 import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  forceDeterministicCompliance,
   isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
+import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 import {
   resolveAdhdResponseWordCap,
   isProfileStructuralPass,
@@ -1613,6 +1636,7 @@ export async function action({ request }: ActionFunctionArgs) {
             ragContextTokenEstimate,
             courseRagNeeded,
             toolsEffectivelyAvailable,
+            adhdAssist: chatMode !== "admin" && effectiveAdhdAssist,
           };
           let decision: RouterDecision;
           try {
@@ -1651,13 +1675,40 @@ export async function action({ request }: ActionFunctionArgs) {
           });
         }
 
+        const requestedModelId = model!;
+        const pinAssistModel = shouldUseRetainedAdhdAssistModel({
+          adhdAssist: effectiveAdhdAssist,
+          imagesPresent,
+          chatMode: chatMode === "admin" ? "admin" : "learning",
+          routeWithAuto,
+        });
+        const retainedAssistModelId = resolveAdhdAssistAutoModelId();
+        if (pinAssistModel && requestedModelId !== retainedAssistModelId) {
+          model = retainedAssistModelId;
+          wasAuto = true;
+          routingTier = 3;
+          routerContext = {
+            ...routerContext,
+            requestedModelId,
+            rule: "assist_explicit_retained_model",
+            mode: "assist-pinned",
+            assistAutoPinned: true,
+            assistAutoModel: model,
+          };
+          resolvedRouterVersion = ROUTER_VERSION_ASSIST;
+          chatApiDebug("Assist pinned explicit model to retained model", {
+            requestedModelId,
+            resolvedModelId: model,
+          });
+        }
+
         let resolvedModelId = model!;
         const initialParsedModel = parseModelIdentifier(resolvedModelId);
         if (!initialParsedModel) {
           return new Response(
             JSON.stringify({
               error:
-                "Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.",
+                "Invalid model id. Use provider:modelId (e.g. vllm:qwen3.5-2b-instruct). Check Admin → AI Models.",
             }),
             {
               status: 400,
@@ -2460,12 +2511,48 @@ export async function action({ request }: ActionFunctionArgs) {
           adhdProfileRequirements = getProfileRequirements(adhdProfile);
         }
 
+        // Mutable: a Bedrock overflow (see applyBedrockOverflow below) clears both
+        // flags once streamConfig.model switches away from the vLLM Qwen3.5 fleet.
+        // The custom Bedrock provider has no object-generation mode (see
+        // BedrockChatLanguageModel.defaultObjectGenerationMode), so keeping either
+        // flag set would send an unsupported experimental_output request and/or
+        // route a plain Bedrock text response through the structured-JSON
+        // render/reject path, which always fails and 500s the request.
+        let structuredAssistOutput = isStructuredAdhdAssistCandidate({
+          modelIdentifier: resolvedModelId,
+          adhdAssist: effectiveAdhdAssist,
+          imagesPresent,
+          chatMode: chatMode === "admin" ? "admin" : "learning",
+          profile: adhdProfile,
+          toolsEnabled: useToolCalling,
+        });
+        const requestedAssistStageCount = resolveRequestedAssistStageCount(lastUserText);
+        let structuredOutput = structuredAssistOutput
+          ? Output.object({
+              schema: jsonSchema(
+                buildAdhdAssistStructuredResponseSchema(
+                  requestedAssistStageCount,
+                  requestedAssistStageCount && requestedAssistStageCount > 2
+                    ? "process-flow"
+                    : resolveEduaiDiagramTypeId({ userText: lastUserText }),
+                ) as unknown as Parameters<typeof jsonSchema>[0],
+              ),
+            })
+          : undefined;
+
         streamConfig.system = composeSecurityPrompt(
           composeSystemPrompt(streamConfig.system ?? "", {
             adhdAssist: effectiveAdhdAssist,
             profile: adhdProfile,
           }),
         );
+
+        if (structuredAssistOutput) {
+          const stageInstruction = requestedAssistStageCount
+            ? `Supply exactly ${requestedAssistStageCount} ordered stages.`
+            : "Supply 3-5 ordered stages.";
+          streamConfig.system = `${streamConfig.system}\n\nSTRUCTURED ASSIST OUTPUT:\nReturn only the requested JSON object. Put the complete explanation in answer. ${stageInstruction} The application will render the Step ladder and diagram from those exact stages. Do not omit the final stage.`;
+        }
 
         // Token-based history budget (#1639): now that the final system prompt (RAG
         // + security + ADHD blocks) and tool schemas are known, digest older turns so
@@ -2728,6 +2815,17 @@ export async function action({ request }: ActionFunctionArgs) {
             ...routerContext,
             bedrockOverflow: true,
           };
+          // The custom Bedrock provider does not support constrained/object output
+          // (no object-generation mode). Fall back to plain text on Bedrock rather
+          // than sending an unsupported experimental_output request or routing a
+          // Bedrock text response through the structured-JSON render/reject path.
+          if (structuredAssistOutput) {
+            structuredAssistOutput = false;
+            structuredOutput = undefined;
+            chatApiTrace("bedrock overflow cleared structured Assist output", {
+              resolvedModelId,
+            });
+          }
         };
 
         const needsAdmission =
@@ -2864,6 +2962,7 @@ export async function action({ request }: ActionFunctionArgs) {
             // assertion only re-states that assembly, which the accumulating object
             // type cannot carry on its own.
             ...(streamConfig as Parameters<typeof streamText>[0]),
+            experimental_output: structuredOutput,
             providerOptions: usageProviderOptions(parsedModel.providerId),
             abortSignal: streamAbortController.signal,
             onChunk: probe
@@ -2877,52 +2976,53 @@ export async function action({ request }: ActionFunctionArgs) {
                 adhdToolsUsed = true;
               }
             },
-            onFinish: needsOversight
-              ? undefined
-              : async ({ text, usage, finishReason, response }) => {
-                  probe?.hooks.signalReady();
-                  if (!streaming) {
-                    return;
-                  }
-                  const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
-                  await persistTurnTelemetry({
-                    responseText: text ?? "",
-                    usage: {
-                      promptTokens: normalizedUsage.promptTokens ?? undefined,
-                      completionTokens: normalizedUsage.completionTokens ?? undefined,
-                      totalTokens: normalizedUsage.totalTokens ?? undefined,
-                    },
-                    finishReason: String(finishReason ?? "stop"),
-                  });
-                  logResponseCompliance(text, {
-                    finishReason,
-                    promptTokens: usage?.promptTokens,
-                    completionTokens: usage?.completionTokens,
-                  });
-                  streamData?.appendMessageAnnotation({
-                    hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
-                  });
-                  void streamData?.close();
-                  const assistantText = text || extractAssistantText(response?.messages);
-                  if (assistantText) {
-                    await appendMessages([
-                      {
-                        id: randomUUID(),
-                        role: "assistant",
-                        content: assistantText,
-                        metadata: {
-                          finishReason,
-                          hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
-                        },
+            onFinish:
+              needsOversight || structuredAssistOutput
+                ? undefined
+                : async ({ text, usage, finishReason, response }) => {
+                    probe?.hooks.signalReady();
+                    if (!streaming) {
+                      return;
+                    }
+                    const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
+                    await persistTurnTelemetry({
+                      responseText: text ?? "",
+                      usage: {
+                        promptTokens: normalizedUsage.promptTokens ?? undefined,
+                        completionTokens: normalizedUsage.completionTokens ?? undefined,
+                        totalTokens: normalizedUsage.totalTokens ?? undefined,
                       },
-                    ]).catch((err) => {
-                      console.error(
-                        "[chat-api] failed to persist streaming assistant message",
-                        err,
-                      );
+                      finishReason: String(finishReason ?? "stop"),
                     });
-                  }
-                },
+                    logResponseCompliance(text, {
+                      finishReason,
+                      promptTokens: usage?.promptTokens,
+                      completionTokens: usage?.completionTokens,
+                    });
+                    streamData?.appendMessageAnnotation({
+                      hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                    });
+                    void streamData?.close();
+                    const assistantText = text || extractAssistantText(response?.messages);
+                    if (assistantText) {
+                      await appendMessages([
+                        {
+                          id: randomUUID(),
+                          role: "assistant",
+                          content: assistantText,
+                          metadata: {
+                            finishReason,
+                            hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                          },
+                        },
+                      ]).catch((err) => {
+                        console.error(
+                          "[chat-api] failed to persist streaming assistant message",
+                          err,
+                        );
+                      });
+                    }
+                  },
             onError: ({ error }) => {
               logStreamError(error, streamTrace);
               probe?.hooks.signalError(error);
@@ -3103,7 +3203,27 @@ export async function action({ request }: ActionFunctionArgs) {
             reasoning = consumed[4];
             response = consumed[5];
 
-            draft = (text ?? "").trim();
+            const providerDraft = (text ?? "").trim();
+            const structuredDraft = structuredAssistOutput
+              ? renderAdhdStructuredResponse({
+                  text: providerDraft,
+                  userText: lastUserText,
+                })
+              : null;
+            // A structured Assist candidate must never fall back to raw JSON or
+            // provider Markdown before Dean sees the draft. If constrained
+            // decoding was ignored or malformed, fail closed rather than letting
+            // the oversight model audit a response outside the canonical shape.
+            if (structuredAssistOutput && !structuredDraft) {
+              throw new Error("Provider returned invalid structured Assist output");
+            }
+            draft = structuredDraft ?? providerDraft;
+            if (structuredDraft) {
+              chatApiDebug("Rendered constrained Assist response", {
+                model: resolvedModelId,
+                stageCount: (structuredDraft.match(/^\d+\./gm) ?? []).length,
+              });
+            }
             const audited = draft
               ? await auditAndMaybeRewrite({
                   draft,
@@ -3118,7 +3238,12 @@ export async function action({ request }: ActionFunctionArgs) {
               : emptyOversightAuditResult();
             oversightStage = "application";
 
-            finalText = audited.text || draft;
+            finalText = structuredAssistOutput
+              ? ensureAdhdAssistDiagram({
+                  text: audited.text || draft,
+                  userText: lastUserText,
+                })
+              : audited.text || draft;
             const normalizedOversightUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
             // Both helpers no-op internally for regenerateOnly (#1246) — a
             // read-only content preview shouldn't double-count a turn.
@@ -3253,6 +3378,159 @@ export async function action({ request }: ActionFunctionArgs) {
               JSON.stringify({
                 error: "Failed to generate overseen response",
                 code: "ADHD_OVERSIGHT_FAILED",
+              }),
+              {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+        }
+
+        // Structured Assist output must be normalized before either response mode
+        // is sent. When oversight is disabled there is no later application pass
+        // to turn the provider's JSON into the learner-facing Markdown contract.
+        if (structuredAssistOutput) {
+          let providerResultResolved = false;
+          try {
+            await result.consumeStream?.();
+            const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
+              result.text,
+              result.usage,
+              result.finishReason,
+              result.sources,
+              result.reasoning,
+              result.response,
+            ]);
+            providerResultResolved = true;
+
+            const renderedText = renderAdhdStructuredResponse({
+              text: text ?? "",
+              userText: lastUserText,
+            });
+            // A structured Assist candidate must never fall back to raw provider
+            // JSON/Markdown when constrained decoding is ignored or malformed.
+            // Without oversight there is no later application pass to restore the
+            // canonical ladder/diagram contract, so reject the result instead.
+            const normalizedText = renderedText
+              ? forceDeterministicCompliance(renderedText, {
+                  wordCap: adhdWordCap,
+                  profile: adhdProfile ?? "full_tutoring",
+                  requireDiagram: userRequestedDiagram(lastUserText),
+                  expectSources: adhdToolsUsed,
+                  userText: lastUserText,
+                })
+              : null;
+            if (!normalizedText) {
+              throw new Error("Provider returned invalid structured Assist output");
+            }
+
+            const messagesToPersist = buildOverseenAssistantMessagesToPersist(
+              response?.messages,
+              normalizedText,
+            ).map((message) => ({
+              ...chatMessageSchema.parse(message),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              },
+            }));
+            if (messagesToPersist.length > 0) {
+              await appendMessages(messagesToPersist);
+            }
+
+            const normalizedUsage = coalesceTokenUsage(tokenUsageSchema.parse(usage));
+            await persistTurnTelemetry({
+              responseText: normalizedText,
+              usage: {
+                promptTokens: normalizedUsage.promptTokens ?? undefined,
+                completionTokens: normalizedUsage.completionTokens ?? undefined,
+                totalTokens: normalizedUsage.totalTokens ?? undefined,
+              },
+              finishReason: String(finishReason ?? "stop"),
+            });
+            logResponseCompliance(normalizedText, {
+              finishReason,
+              promptTokens: usage?.promptTokens,
+              completionTokens: usage?.completionTokens,
+            });
+
+            if (streaming) {
+              const headers = {
+                "Content-Encoding": "none",
+                "Transfer-Encoding": "chunked",
+                Connection: "keep-alive",
+                "X-Web-Tools-Enabled": webToolsEnabled ? "1" : "0",
+                ...autoRoutingHeaders(
+                  resolvedModelId,
+                  routingTier,
+                  wasAuto,
+                  resolvedRouterVersion,
+                  fleetPick?.serverId ?? null,
+                ),
+              } satisfies Record<string, string>;
+              if (chat?.id) Object.assign(headers, { "X-Chat-Id": chat.id });
+              void liveStreamData?.close();
+              releaseAdmission();
+              return createDataStreamResponse({
+                headers: { ...headers, ...admissionHeaders() },
+                execute: (dataStream) => {
+                  dataStream.write(formatDataStreamPart("text", normalizedText));
+                  dataStream.writeMessageAnnotation({
+                    hitLongOutputCap: didHitLongOutputCap(usage),
+                  });
+                  dataStream.write(
+                    formatDataStreamPart("finish_message", {
+                      finishReason: finishReason ?? "stop",
+                    }),
+                  );
+                },
+              });
+            }
+
+            releaseAdmission();
+            const responseHeaders = jsonResponseHeaders();
+            return new Response(
+              JSON.stringify({
+                content: normalizedText,
+                model,
+                usage,
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+                sources: sources || [],
+                reasoning,
+                responseId: response?.id,
+                courseCode,
+                chatId: chat?.id,
+                ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+                ragChunkCount: courseRagHits.length,
+                ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+              }),
+              {
+                status: 200,
+                headers: responseHeaders,
+              },
+            );
+          } catch (error) {
+            releaseAdmission();
+            if (isClientAbort(error, request.signal)) {
+              return clientAbortResponse();
+            }
+            if (!providerResultResolved) {
+              logStreamError(error, streamTrace);
+              return rejectProviderFailure(
+                classifyProviderFailure(parsedModel.providerId, error),
+                streamTrace.chatId,
+                { ...streamTrace, stage: "structured-provider" },
+              );
+            }
+            console.error(
+              "Error rendering structured Assist response:",
+              providerErrorDiagnostic(error),
+            );
+            return new Response(
+              JSON.stringify({
+                error: "Failed to render structured Assist response",
               }),
               {
                 status: 500,
