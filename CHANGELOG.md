@@ -176,6 +176,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Cache `/api/disciplines` in the browser for 120s so navigations stop refetching the unchanged discipline registry, and mark every caller-varying reference GET (`/api/me`, `/api/preferences`, `/api/policies`, the AI provider/model catalogues) `no-store` since the browser cache key carries no session and would serve one account's body to the next. Closes #1453. (@abdullahmoh21, 2026-08-18) — [#1565](https://github.com/EduAI-Lab/EduAI/pull/1565)
+- [monorepo] perf: Batch the per-row enrollment upsert loops in Core's Canvas enrollment link and AI Tutor's enrollment sync so each writes a bounded number of `createMany`/`updateMany` calls instead of one round trip per roster row. Closes #1451. (@abdullahmoh21, 2026-08-18) — [#1566](https://github.com/EduAI-Lab/EduAI/pull/1566)
 - [ai-tutor] perf: Clone course content one `createManyAndReturn` per tree level instead of one `create` per node, cutting a 400-activity clone from 2529 statements / 1239ms to 14 statements / 63ms. Closes #1452. (@abdullahmoh21, 2026-08-18) — [#1564](https://github.com/EduAI-Lab/EduAI/pull/1564)
 - [core] perf: Move the AI-service status poller into a shared `useAiStatus` store that pauses while the tab is hidden and refreshes once on becoming visible, so a backgrounded tab stops issuing provider probes every 60s. Closes #1454. (@abdullahmoh21, 2026-08-18) — [#1562](https://github.com/EduAI-Lab/EduAI/pull/1562)
 - [ai-tutor] perf: gzip every AI-Tutor API response over 1kb, so large course-tree and lesson `contentMd` payloads stop going over the wire uncompressed. Closes #1450. (@abdullahmoh21, 2026-08-18) — [#1563](https://github.com/EduAI-Lab/EduAI/pull/1563)

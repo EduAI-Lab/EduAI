@@ -11,14 +11,22 @@ import { saveUserPreference } from "~/lib/user-preferences.server";
 import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
+/**
+ * #1453: preferences are read by `session.user.id`, so nothing here may be
+ * stored — the browser cache key carries no session, and the defaults path
+ * returns a 200 just like a real row does.
+ */
 function json(status: number, body: JsonResponseBody) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return withNoStore(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
 }
 
 function rowToResponse(row: {
