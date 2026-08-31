@@ -52,7 +52,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // No user session — this is a server-to-server extension call authenticated
       // with the shared service key.
       const guard = await requireServiceKey(request);
-      if (guard) return guard;
+      if (guard) return withNoStore(guard);
       return withNoStore(json({ policies: await getPolicies() }));
     },
     { request },
