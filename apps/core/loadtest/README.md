@@ -66,6 +66,11 @@ npm run loadtest:browser          # ~2min, real Chromium, ~20 VUs (see below)
 
 Stop the monitoring stack when done: `npm run loadtest:monitoring:down`.
 
+`npm run loadtest:stress` / `:browser` already write their k6 summary to
+`loadtest/results/*.summary.json` via `--summary-export` — you don't need to
+add that flag yourself. The mock LLM can also be started standalone with
+`npm run loadtest:mock-llm` if you're driving `loadtest:instance` manually.
+
 ## What "browser-level" means here
 
 k6's core engine is HTTP/protocol-level, not a real browser — it replays the
