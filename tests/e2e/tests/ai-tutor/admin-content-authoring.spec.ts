@@ -399,8 +399,14 @@ test.describe("AI Tutor ADMIN — activities", () => {
       await nameField.fill("Recursion");
       await dialog.getByRole("button", { name: /^add$/i }).click();
 
+      // The creator collapses back to "Add topic", and the new topic is now the
+      // selected main topic. Assert that on the trigger rather than by text:
+      // Radix also renders the option inside a hidden native select, so a bare
+      // getByText("Recursion") matches an element that is never visible.
       await expect(dialog.getByRole("button", { name: /^add topic$/i })).toBeVisible();
-      await expect(dialog.getByText("Recursion")).toBeVisible({ timeout: 20_000 });
+      await expect(dialog.locator("#new-activity-main-topic")).toContainText("Recursion", {
+        timeout: 20_000,
+      });
 
       // And it no longer names a control AI Tutor doesn't have.
       await expect(dialog.getByText(/sync topics from eduai/i)).toHaveCount(0);
