@@ -4,7 +4,7 @@ import {
   EduAiEnrollmentListSchema,
   EduAiQuestionListSchema,
 } from "../schemas/eduai.js";
-import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+import { getEffectiveEduAiApiKey, serviceAuthHeader } from "./systemSettings.js";
 // TODO(#1647-followup): the inline `Bearer ${process.env.EDUAI_API_KEY}` reads
 // below predate `serviceAuthHeader()`/`getEffectiveEduAiApiKey` and still read
 // the env key directly (throwing on unset). Migrate them to the effective key
@@ -519,8 +519,8 @@ export async function createEduAiCourseTopic(externalCourseId, name) {
     throw Object.assign(new Error("Core course id is required"), { status: 400 });
   }
 
-  const serviceKey = await getEffectiveEduAiApiKey();
-  if (!serviceKey) {
+  const authHeaders = serviceAuthHeader();
+  if (!authHeaders.Authorization) {
     throw Object.assign(new Error("EDUAI_API_KEY not configured"), { status: 503 });
   }
 
@@ -528,7 +528,7 @@ export async function createEduAiCourseTopic(externalCourseId, name) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
+      ...authHeaders,
     },
     body: JSON.stringify({ name }),
     signal: AbortSignal.timeout(CORE_TOPIC_CREATE_TIMEOUT_MS),

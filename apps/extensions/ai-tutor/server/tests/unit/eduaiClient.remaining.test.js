@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../../src/services/systemSettings.js", () => ({
   getEffectiveEduAiApiKey: vi.fn(),
+  serviceAuthHeader: vi.fn(),
 }));
 
 import {
@@ -32,9 +33,10 @@ import {
   fetchCoreTopicSafe,
   createEduAiCourseTopic,
 } from "../../src/services/eduaiClient.js";
-import { getEffectiveEduAiApiKey } from "../../src/services/systemSettings.js";
+import { getEffectiveEduAiApiKey, serviceAuthHeader } from "../../src/services/systemSettings.js";
 
 beforeEach(() => {
+  vi.clearAllMocks();
   process.env.EDUAI_BASE_URL = "http://eduai.test/api";
   process.env.CORE_URL = "http://core.test";
 });
@@ -594,7 +596,7 @@ describe("fetchCoreTopicSafe", () => {
 describe("createEduAiCourseTopic", () => {
   it("POSTs with the service key and a timeout signal", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
-    vi.mocked(getEffectiveEduAiApiKey).mockResolvedValue("svc-key");
+    vi.mocked(serviceAuthHeader).mockReturnValue({ Authorization: "Bearer svc-key" });
     const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "topic-1", name: "Graphs" }));
     vi.stubGlobal("fetch", mockFetch);
 
@@ -611,9 +613,23 @@ describe("createEduAiCourseTopic", () => {
     expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("uses the env-backed Core key when the admin override differs", async () => {
+    process.env.EDUAI_API_KEY = "core-env-key";
+    vi.mocked(getEffectiveEduAiApiKey).mockResolvedValue("admin-override-key");
+    vi.mocked(serviceAuthHeader).mockReturnValue({ Authorization: "Bearer core-env-key" });
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "topic-1", name: "Graphs" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await createEduAiCourseTopic("core-1", "Graphs");
+
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer core-env-key");
+    expect(serviceAuthHeader).toHaveBeenCalledOnce();
+    expect(getEffectiveEduAiApiKey).not.toHaveBeenCalled();
+  });
+
   it("reuses the existing Core topic on a duplicate response", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
-    vi.mocked(getEffectiveEduAiApiKey).mockResolvedValue("svc-key");
+    vi.mocked(serviceAuthHeader).mockReturnValue({ Authorization: "Bearer svc-key" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
