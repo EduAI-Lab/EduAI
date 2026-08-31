@@ -2,7 +2,6 @@ import { useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
-import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
 import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
@@ -12,7 +11,6 @@ import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
-import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -102,25 +100,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
-  let demoPassword: string | null = null;
-  if (isLocalDemoEnabled()) {
-    try {
-      demoPassword = getLocalSeedPassword();
-    } catch {
-      // Fail closed when local demo mode is enabled without a configured seed
-      // password. The normal login page remains available.
-    }
-  }
 
   return {
     redirectTo,
     allowRegistration,
     forceReauth,
-    // Demo credentials are available only for an explicitly configured local
-    // deployment with a caller-supplied seed password. This is evaluated on the
-    // server so production never renders the controls or receives the password.
-    showDemoLogin: demoPassword !== null,
-    demoPassword,
   };
 }
 
@@ -265,14 +249,11 @@ export default function LoginPage() {
         formError?: string;
       }
     | undefined;
-  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
-    useLoaderData() as {
-      redirectTo: string;
-      allowRegistration: boolean;
-      forceReauth: boolean;
-      showDemoLogin: boolean;
-      demoPassword: string | null;
-    };
+  const { redirectTo, allowRegistration, forceReauth } = useLoaderData() as {
+    redirectTo: string;
+    allowRegistration: boolean;
+    forceReauth: boolean;
+  };
 
   return (
     <div
@@ -336,10 +317,6 @@ export default function LoginPage() {
             allowRegistration={allowRegistration}
           />
         </form>
-
-        {showDemoLogin && demoPassword && (
-          <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />
-        )}
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">
