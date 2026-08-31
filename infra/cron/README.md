@@ -66,7 +66,14 @@ from an OS scheduler as long as `CRON_STANDALONE_LEASE_MS` is longer than the
 expected runtime. A second invocation for the same job fails closed if the
 database still has a live `RUNNING` lease.
 
-> **Note:** these scripts are scheduled by the Core in-process scheduler (`CRON_SCRIPT_DIR` env var must point to the directory containing them). Schedules are managed via the Admin → Cron Jobs panel and stored in the database — there is no system crontab entry for these jobs.
+> **Note:** these scripts are scheduled by the dedicated Core cron worker
+> (`CRON_SCRIPT_DIR=/opt/eduai/cron`). Schedules are managed via the Admin →
+> Cron Jobs panel and stored in the database — there is no system crontab entry
+> for these jobs. On s378/dev, install the worker with
+> `infra/s378/go-live-systemd-install.sh`. On production, install the
+> root-owned template from `infra/production/systemd/eduai-cron-worker.service`,
+> create `/etc/eduai/cron.env`, and run the production helper's
+> `install-cron-worker` action before enabling the unit.
 
 ## Off-site storage
 

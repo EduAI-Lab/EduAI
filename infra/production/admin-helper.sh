@@ -29,6 +29,10 @@ readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.eduai.ok.ubc.ca.conf"
 readonly QM_UNIT_SOURCE="$TEMPLATE_DIR/eduai-qm-backend.service"
 readonly QM_ENV_SOURCE="$TEMPLATE_DIR/eduai-qm.env"
 readonly QM_VHOST_SOURCE="$TEMPLATE_DIR/questionmaker.eduai.ok.ubc.ca.conf"
+readonly CRON_ENV="/etc/eduai/cron.env"
+readonly CRON_UNIT="/etc/systemd/system/eduai-cron-worker.service"
+readonly CRON_UNIT_SOURCE="$TEMPLATE_DIR/eduai-cron-worker.service"
+readonly CRON_SCRIPT_DIR="/opt/eduai/cron"
 readonly TARGET_ROOT="/srv/www/eduai-production"
 readonly WEB_USER="www-data"
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -81,8 +85,7 @@ validate_release() {
   done
 }
 prepare_static_assets() {
-  local release="$1"
-  local static_root parent
+  local release="$1" static_root parent
   command -v setfacl >/dev/null 2>&1 || die "setfacl is required to grant Apache access to release assets"
   # Apache needs traversal on the path and read access under these two
   # explicitly public build roots. Use a user ACL rather than world access:
@@ -103,6 +106,27 @@ prepare_static_assets() {
       parent=$(dirname "$parent")
     done
     setfacl -R -m "u:$WEB_USER:rX" "$static_root"
+  done
+}
+sync_cron_scripts() {
+  local release source script script_name
+  release=$(readlink -f -- "$TARGET_ROOT/current") || die "cannot resolve the active production release"
+  assert_safe_release "$release"
+  source="$release/infra/cron"
+  assert_no_symlink_components "$source"
+  [ -d "$source" ] || die "cron script directory does not exist in the active release: $source"
+  install -d -o eduai-cron -g eduai-cron -m 0750 "$CRON_SCRIPT_DIR"
+  for script_name in \
+    lib.sh \
+    backup-nightly.sh \
+    backup-offsite.sh \
+    backup-rotate.sh \
+    cleanup-invitations.sh \
+    notify-api-key-expiry.sh; do
+    script="$source/$script_name"
+    [ -f "$script" ] || die "required cron script is missing: $script"
+    [ ! -L "$script" ] || die "refusing symlinked cron script: $script"
+    install -o eduai-cron -g eduai-cron -m 0750 "$script" "$CRON_SCRIPT_DIR/$script_name"
   done
 }
 read_env_value() {
@@ -224,6 +248,18 @@ case "${1:-}" in
     apache2ctl configtest
     echo "Installed and validated $QM_VHOST"
     ;;
+  install-cron-worker)
+    no_extra_args "$@"
+    [ -f "$CRON_UNIT_SOURCE" ] || die "cron worker unit source does not exist: $CRON_UNIT_SOURCE"
+    getent passwd eduai-cron >/dev/null || die "user eduai-cron does not exist"
+    getent group eduai >/dev/null || die "group eduai does not exist"
+    [ -r "$CORE_ENV" ] || die "missing or unreadable $CORE_ENV"
+    [ -r "$CRON_ENV" ] || die "missing or unreadable $CRON_ENV"
+    sync_cron_scripts
+    install -o root -g root -m 0644 "$CRON_UNIT_SOURCE" "$CRON_UNIT"
+    systemctl daemon-reload
+    echo "Installed $CRON_UNIT and synchronized cron scripts"
+    ;;
   aitutor-db-install)
     no_extra_args "$@"
     [ -r "$AI_TUTOR_DB_ENV" ] || die "missing $AI_TUTOR_DB_ENV"
@@ -319,8 +355,10 @@ case "${1:-}" in
   restart-aitutor) no_extra_args "$@"; systemctl restart eduai-aitutor-server; systemctl --no-pager --full status eduai-aitutor-server ;;
   enable-qm) no_extra_args "$@"; systemctl enable eduai-qm-backend ;;
   restart-qm) no_extra_args "$@"; systemctl restart eduai-qm-backend; systemctl --no-pager --full status eduai-qm-backend ;;
+  enable-cron-worker) no_extra_args "$@"; systemctl enable eduai-cron-worker ;;
+  restart-cron-worker) no_extra_args "$@"; systemctl restart eduai-cron-worker; systemctl --no-pager --full status eduai-cron-worker ;;
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
 esac

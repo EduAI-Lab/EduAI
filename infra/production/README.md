@@ -14,7 +14,7 @@ Run [`preflight.sh`](./preflight.sh) on the production host before any privilege
 bash infra/production/preflight.sh
 ```
 
-The script checks installed tools, runtime versions, filesystem paths, the legacy checkout state, service/listener state, PostgreSQL/Redis, cmps01–03 reachability, and the public URL. It does not modify files, services, databases, or environment values.
+The script checks installed tools, runtime versions, filesystem paths, the legacy checkout state, service/listener state, release artifacts, PostgreSQL/Redis, local health endpoints, cmps01–03 reachability, and the public URLs. It does not modify files, services, databases, or environment values.
 
 ## Target layout
 
@@ -29,6 +29,30 @@ The replacement deployment uses a release layout:
 
 The application service runs from `current`. The old checkout remains available until the new deployment is accepted.
 
+## Application cron worker
+
+The Admin → Cron Jobs page is backed by the dedicated
+`eduai-cron-worker.service`; it is not driven by the web process and does not
+use a user crontab. The worker reads Core's database environment, dispatches
+the allow-listed jobs, and runs shell jobs as the unprivileged `eduai-cron`
+user. `Restart=always` keeps the worker itself running, while the application
+services retain their own systemd restart policies.
+
+Before enabling it on production, an administrator must create
+`/etc/eduai/cron.env` from [`infra/cron/cron.env.example`](../cron/cron.env.example)
+with real host-specific values (`root:eduai-cron`, mode `0640`), create the
+`eduai-cron` user and its backup/log directories, and install the root-owned
+worker template through [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md). Then run:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin install-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin enable-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin restart-cron-worker
+```
+
+Review any stale `RUNNING` records in Admin → Cron Jobs before restarting the
+worker; it dispatches pending admin-triggered runs when it starts.
+
 ## Production configuration
 
 - Public URL: `https://my.eduai.ok.ubc.ca`
@@ -39,6 +63,7 @@ The application service runs from `current`. The old checkout remains available 
 - AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
 - Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
 - Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000`
+- Application cron: `eduai-cron-worker.service`, with schedules managed by the Admin → Cron Jobs page
 
 ## One-time server preparation
 
@@ -128,7 +153,9 @@ The release pointer is intentionally atomic for all three applications: an
 activation is allowed only when Core, AI Tutor, and Question Maker artifacts
 are present in the same release. This prevents an app-only build from moving
 `current` to a tree that would make an untouched service or Apache document
-root incomplete.
+root incomplete. An app-only build may be used for preparation, but the
+unchanged applications' artifacts must be copied into the candidate before
+the complete-release validation and activation steps.
 
 ## First release procedure
 
@@ -180,6 +207,7 @@ Restart only after the build and migration succeed:
 sudo systemctl daemon-reload
 sudo systemctl enable --now eduai-aitutor-server
 sudo systemctl enable --now eduai-qm-backend
+sudo systemctl enable --now eduai-cron-worker
 sudo systemctl restart eduai-core
 sudo systemctl is-active eduai-core
 sudo systemctl is-active eduai-aitutor-server
@@ -187,6 +215,7 @@ sudo systemctl is-active eduai-qm-backend
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null
 curl -fsS http://127.0.0.1:8000/readyz >/dev/null
+sudo systemctl is-active eduai-cron-worker
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
 curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
 curl -fsS https://questionmaker.eduai.ok.ubc.ca/ >/dev/null
