@@ -36,16 +36,16 @@ Core has no single global auth gate: `apps/core/app/root.tsx`'s loader calls `au
 - **Category:** Typical Use
 - **Actor:** No session
 - **Preconditions:** None
-- **Entry point(s):** `apps/core/app/routes/home.tsx`, `apps/core/app/routes/team.tsx`
+- **Entry point(s):** `apps/core/app/routes/home.tsx`
 - **Flow:**
   1. Actor navigates to `/` (`apps/core/app/routes/home.tsx` loader calls `auth.api.getSession`; with no session it returns `{}` and renders the marketing page instead of redirecting)
   2. Root loader (`apps/core/app/root.tsx`) resolves guest UI defaults (`GUEST_ROOT_PREFERENCES`) and platform policies (`getPolicies`) in parallel so the page renders without a session
-  3. Actor clicks through to `/team` (`apps/core/app/routes/team.tsx`) to view the research team page — no session check gates this route
-- **Expected outcome:** `200` with the marketing/team page rendered; no cookies set, no DB writes.
+  3. Actor jumps to the About, Approach, Products, Research and Team sections from the header or footer anchors — the landing page is one scrolling document, so there is no second route to gate
+- **Expected outcome:** `200` with the marketing page rendered; no cookies set, no DB writes.
 - **Failure modes / what could go wrong:** None — this is intentionally public. If a session *does* exist, `home.tsx`'s loader redirects to `/dashboard` instead of showing the marketing page.
 - **Related code:**
   - `apps/core/app/routes/home.tsx`
-  - `apps/core/app/routes/team.tsx`
+  - `apps/core/app/components/team-section.tsx`
   - `apps/core/app/root.tsx`
 
 ---
