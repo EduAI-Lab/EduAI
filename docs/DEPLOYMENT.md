@@ -16,7 +16,7 @@ currently healthy.
 | Production / s348 | [`infra/production/README.md`](../infra/production/README.md) | Release-based production deployment and rollback |
 | Production preflight | [`infra/production/PROVISIONING_CHECKLIST.md`](../infra/production/PROVISIONING_CHECKLIST.md) | Host, database, environment, inference, and web-server checklist |
 | Production privilege boundary | [`infra/production/SUDOERS_SETUP.md`](../infra/production/SUDOERS_SETUP.md) | Restricted administrative helper and root-owned templates |
-| Inference host | [`infra/cmps01/README.md`](../infra/cmps01/README.md) | CMPS Docker, vLLM, LiteLLM, nginx, and embedding service |
+| Inference fleet | [`infra/inference/README.md`](../infra/inference/README.md) | Shared fleet contract and CMPS01/02/03 host state |
 | Backups and scheduled maintenance | [`infra/cron/README.md`](../infra/cron/README.md) | Backup scripts and the s378 cron-worker installation |
 
 Application-specific deployment notes remain under `apps/`. Authentication and
@@ -174,8 +174,9 @@ is a separate capability and must not be documented as the standard 9B large tie
 
 The port-8001 edge is authenticated. Never put the shared inference key in a
 document, command history, browser URL, or client-side bundle. See
-[`infra/cmps01/README.md`](../infra/cmps01/README.md) for the host-level proxy
-and model deployment contract.
+[`infra/inference/README.md`](../infra/inference/README.md) for the fleet contract
+and [`infra/cmps01/README.md`](../infra/cmps01/README.md) for the host-level proxy
+and model deployment procedure.
 
 ## Backups and scheduled work
 

@@ -2,6 +2,10 @@
 
 Last verified: 2026-08-31
 
+Fleet topology and the host-specific CMPS02/CMPS03 state are summarized in
+[`../inference/README.md`](../inference/README.md). This file remains the
+implementation runbook for the CMPS01 Docker/LiteLLM/nginx deployment.
+
 **Goal:** Run one vLLM container per assigned GPU while exposing one authenticated
 HTTP port (`8001`) to EduAI. Raw vLLM backends remain on localhost; nginx and
 LiteLLM provide the public edge.
