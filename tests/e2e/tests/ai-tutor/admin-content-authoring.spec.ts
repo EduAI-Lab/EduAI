@@ -356,12 +356,21 @@ test.describe("AI Tutor ADMIN — activities", () => {
     }
   });
 
-  test("a course with no Core topics offers inline topic creation", async ({
+  test("a course with no author-made topics offers inline topic creation", async ({
     page,
     playwright,
   }) => {
-    // Core-linked courses now expose an explicit, expandable creator in the
-    // Add Activity dialog, keeping topic creation inside the authoring flow.
+    // Core-linked courses expose an explicit, expandable creator in the Add
+    // Activity dialog, keeping topic creation inside the authoring flow.
+    //
+    // The dialog's "No topics on this course yet" hint is deliberately not
+    // asserted here: since #1624 Core guarantees every course at least one live
+    // topic — creation seeds `Uncategorized` and deleting the last topic is
+    // refused with LAST_TOPIC_PROTECTED — so a Core-linked course can no longer
+    // reach the zero-topic state through any API this fixture can drive. That
+    // branch is covered where it is still reachable, against the component's
+    // props, in `AddActivityPanel.empty-topics.test.tsx`. What is worth
+    // exercising in a browser is the creator itself.
     const seeded = await seedAtCourse(playwright, {
       name: "No Topics Authoring",
       codePrefix: "NOTP",
@@ -378,10 +387,30 @@ test.describe("AI Tutor ADMIN — activities", () => {
         .click();
 
       const dialog = page.locator('[role="dialog"]');
-      await expect(
-        dialog.getByText("No topics on this course yet. Add one above to continue."),
-      ).toBeVisible({ timeout: 20_000 });
-      await expect(dialog.getByRole("button", { name: /add topic/i })).toBeVisible();
+      const addTopic = dialog.getByRole("button", { name: /^add topic$/i });
+      await expect(addTopic).toBeVisible({ timeout: 20_000 });
+
+      // Expanding the creator reveals the name field; saving a topic there puts
+      // it straight into this course's topics, which is the whole point of
+      // authoring it here rather than bouncing the instructor out to Core.
+      await addTopic.click();
+      const nameField = dialog.getByLabel("New topic name");
+      await expect(nameField).toBeVisible();
+      await nameField.fill("Recursion");
+      await dialog.getByRole("button", { name: /^add$/i }).click();
+
+      // The creator collapses back to "Add topic" once the topic is saved.
+      await expect(dialog.getByRole("button", { name: /^add topic$/i })).toBeVisible();
+
+      // The new topic is now offered as a main topic. Read it the way the rest
+      // of this file does — open the picker and assert the option — because the
+      // Select portals its content: while it is closed the trigger cannot
+      // resolve a label for an item that has never mounted, so it still shows
+      // its placeholder, and the item text that is in the DOM is hidden.
+      await dialog.locator("#new-activity-main-topic").click();
+      await expect(page.getByRole("option", { name: "Recursion", exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
 
       // And it no longer names a control AI Tutor doesn't have.
       await expect(dialog.getByText(/sync topics from eduai/i)).toHaveCount(0);
