@@ -1,4 +1,4 @@
-import { IconDatabase, IconLeaf, IconCode, IconShieldCheck } from "@tabler/icons-react";
+import { IconDatabase, IconLeaf, IconBrain, IconShieldCheck } from "@tabler/icons-react";
 import { Card, CardContent, PageHeading } from "@eduai/ui";
 import type { Icon } from "@tabler/icons-react";
 
@@ -12,7 +12,8 @@ interface Thread {
  * "Research at the lab" — replaces the earlier aspirational Project goals grid,
  * which described a mission rather than the work. These four threads are real:
  * pgvector-backed retrieval, energy-aware model routing measured by the GPU
- * sidecar, the FARD Lab's code LLM work, and AI Tutor's two-agent supervisor.
+ * sidecar, the ADHD Assist study behind Assistive Mode, and AI Tutor's
+ * two-agent supervisor.
  * Anchored by the header/footer "Research" link (was "#goals").
  */
 const threads: Thread[] = [
@@ -29,10 +30,10 @@ const threads: Thread[] = [
       "Bigger models burn more power. We study how to route each question to the smallest model that can still answer it well, and measure what that saves with a GPU energy sidecar.",
   },
   {
-    icon: IconCode,
-    title: "Language models for code",
+    icon: IconBrain,
+    title: "Assistive Mode for ADHD",
     description:
-      "The FARD Lab works on large language models for programming languages, including low-resource ones. Better code understanding feeds back into how EduAI explains and debugs student code.",
+      "Assistive Mode reshapes every tutor reply into a short summary, a numbered step ladder, and one next step, so a student who looks away can pick the thread back up. We run the same tasks with the mode on and off and time how long students take to reorient.",
   },
   {
     icon: IconShieldCheck,
