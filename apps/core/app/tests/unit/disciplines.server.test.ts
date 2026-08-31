@@ -80,3 +80,30 @@ describe("listDisciplines", () => {
     expect(await res.json()).toEqual({ disciplines: ROWS });
   });
 });
+
+// #1453 — the list is reference data, so it carries a short private cache. Both
+// return paths matter: the in-process cache hit is a separate `return`, and it
+// used to be the only one a repeat caller ever saw.
+describe("listDisciplines Cache-Control (#1453)", () => {
+  const req = () => new Request("http://localhost/api/disciplines");
+
+  it("caches the DB-backed response", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1" } } as any);
+    const res = await listDisciplines(req());
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=120");
+  });
+
+  it("caches the in-process cache hit the same way", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1" } } as any);
+    await listDisciplines(req());
+    const res = await listDisciplines(req());
+    expect(prismaMock.discipline.findMany).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=120");
+  });
+
+  it("does not cache the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as any);
+    const res = await listDisciplines(req());
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+});

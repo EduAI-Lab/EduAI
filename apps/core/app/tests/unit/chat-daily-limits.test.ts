@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  dailyLimitForRole,
   defaultChatDailyLimitSettings,
   isLocalChatbotModel,
   parseChatDailyLimit,
 } from "~/lib/chat-daily-limits";
+import { dailyLimitForRole } from "~/lib/chat-daily-limits.server";
 
 describe("isLocalChatbotModel", () => {
   it("counts only concrete local providers, not Auto sentinels", () => {

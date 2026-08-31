@@ -189,6 +189,7 @@ import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
+  withAdhdAssistMetadata,
 } from "~/lib/chat/chat-message-metadata";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
@@ -1347,6 +1348,17 @@ export async function action({ request }: ActionFunctionArgs) {
           });
         }
 
+        // Computed here (before any assistant message can be persisted below) so
+        // every persisted assistant turn is tagged with the Assist mode that was
+        // actually in effect for it (#1671) — not recomputed further down, where
+        // an early-return path (e.g. the course-scope guardrail redirect) would
+        // read it before it existed.
+        const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
+          hasField: hasAdhdAssistField,
+          bodyValue: adhdAssist,
+          chatValue: chat.adhdAssist,
+        });
+
         // Fetch only the slice of history we plan to send back to the LLM. Stateless
         // callers have no persisted history (and a null chat id), so skip the query.
         const maxContextMessages = resolveMaxContextMessages();
@@ -1824,7 +1836,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
             const messageToPersist =
               message.role === "assistant"
-                ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
+                ? withAdhdAssistMetadata(
+                    withResolvedModelMetadata(message, resolvedModelId, wasAuto),
+                    effectiveAdhdAssist,
+                  )
                 : message;
 
             rows.push({

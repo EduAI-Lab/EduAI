@@ -84,7 +84,7 @@ function Chip({
           onClick={onClick}
           aria-label={`${label}: ${STATE_WORD[status.state]}`}
           className={cn(
-            "relative inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card align-middle shadow-sm transition-colors hover:bg-muted",
+            "relative inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card align-middle shadow-sm transition-colors cursor-pointer hover:bg-muted",
             active ? "text-foreground" : "text-muted-foreground",
           )}
         >
