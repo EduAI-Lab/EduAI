@@ -21,7 +21,7 @@
     "db:migrate": "node scripts/withPrismaEnv.js migrate dev",
     "db:baseline": "node scripts/baselineExistingDatabase.js",
     "db:migrate:canvas-to-core": "node scripts/migrate-canvas-integrations-to-core.mjs",
-    "db:migrate:deploy": "npm run db:baseline && npm run db:migrate:canvas-to-core && node scripts/withPrismaEnv.js migrate deploy",
+    "db:migrate:deploy": "node scripts/baselineExistingDatabase.js && node scripts/migrate-canvas-integrations-to-core.mjs && node scripts/withPrismaEnv.js migrate deploy",
     "seed": "node scripts/seedUnified.js",
     "seed:if-empty": "node scripts/seedIfEmpty.js",
     "seed:perf": "node scripts/seed-perf.js",

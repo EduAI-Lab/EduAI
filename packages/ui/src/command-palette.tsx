@@ -237,7 +237,7 @@ export function CommandSearchButton({
       onClick={handle}
       aria-label="Open command palette"
       className={cn(
-        "flex h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-muted",
+        "flex h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-sm text-muted-foreground shadow-sm transition-colors cursor-pointer hover:bg-muted",
         className,
       )}
     >
