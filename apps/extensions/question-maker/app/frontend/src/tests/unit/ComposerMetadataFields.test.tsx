@@ -4,7 +4,7 @@
  * no-topics/error states), and the description input.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   ComposerMetadataFields,
   type ComposerMetadataValue,
@@ -117,5 +117,29 @@ describe("ComposerMetadataFields", () => {
     );
     // The secondary MultiSelect should render without throwing for the filtered option list.
     expect(screen.getByText("Select secondary topics")).toBeInTheDocument();
+  });
+
+  it("keeps topic creation collapsed until the instructor opens it", async () => {
+    const onCreateTopic = vi.fn().mockResolvedValue({ id: 3, name: "Graphs" });
+    const handlers = noopHandlers();
+    render(
+      <ComposerMetadataFields
+        value={baseValue()}
+        topics={topics}
+        onCreateTopic={onCreateTopic}
+        {...handlers}
+      />,
+    );
+
+    expect(screen.queryByPlaceholderText("New topic name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add topic" }));
+    fireEvent.change(screen.getByPlaceholderText("New topic name"), {
+      target: { value: "Graphs" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onCreateTopic).toHaveBeenCalledWith("Graphs"));
+    expect(handlers.onPrimaryTopicChange).toHaveBeenCalledWith(3);
+    await waitFor(() => expect(screen.queryByPlaceholderText("New topic name")).toBeNull());
   });
 });

@@ -303,6 +303,51 @@ describe("deleteCourseTopic", () => {
     expect(result).toEqual({ status: "404" });
     expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
   });
+
+  /**
+   * #1624: a course must never reach zero live topics, or Question Maker has
+   * nothing to author against. A freshly created course holds exactly
+   * `Uncategorized`, so deleting it is reachable and must be refused.
+   */
+  it("refuses to delete the fallback when it is the course's only live topic", async () => {
+    prismaMock.courseTopic.findFirst
+      // The delete target...
+      .mockResolvedValueOnce({ id: "t1", name: "Uncategorized" })
+      // ...and the "is there any other live topic?" guard.
+      .mockResolvedValueOnce(null);
+
+    expect(await deleteCourseTopic("c1", { topicId: "t1" })).toEqual({
+      status: "409",
+      error: "LAST_TOPIC_PROTECTED",
+    });
+    expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
+  });
+
+  it("allows deleting the fallback once the course has real topics", async () => {
+    prismaMock.courseTopic.findFirst
+      .mockResolvedValueOnce({ id: "t1", name: "Uncategorized" })
+      .mockResolvedValueOnce({ id: "t2" });
+    prismaMock.courseTopic.update.mockResolvedValue({ id: "t1" });
+
+    expect(await deleteCourseTopic("c1", { topicId: "t1" })).toMatchObject({ status: "204" });
+    // Not recreated — removing an unused fallback is a deliberate action.
+    expect(prismaMock.courseTopic.create).not.toHaveBeenCalled();
+  });
+
+  it("restores the fallback when a real topic was the course's last", async () => {
+    prismaMock.courseTopic.findFirst
+      // The delete target, then ensureCourseHasTopic's "any live topic?" read.
+      .mockResolvedValueOnce({ id: "t1", name: "Graphs" })
+      .mockResolvedValueOnce(null);
+    prismaMock.courseTopic.update.mockResolvedValue({ id: "t1" });
+    prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
+
+    expect(await deleteCourseTopic("c1", { topicId: "t1" })).toMatchObject({ status: "204" });
+    expect(prismaMock.courseTopic.create.mock.calls[0][0].data).toMatchObject({
+      name: "Uncategorized",
+      origin: "SYSTEM",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

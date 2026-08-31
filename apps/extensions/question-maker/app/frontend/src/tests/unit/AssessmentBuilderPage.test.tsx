@@ -193,7 +193,7 @@ describe("AssessmentBuilderPage", () => {
   it("shows a loading state before the assessment loads", () => {
     assessmentService.getAssessment.mockReturnValue(new Promise(() => {}));
     renderPage();
-    expect(screen.getByText("Loading assessment builder…")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: /Loading assessment builder/i })).toBeInTheDocument();
   });
 
   it("shows an invalid-id error when the assessmentId param is not a number", async () => {

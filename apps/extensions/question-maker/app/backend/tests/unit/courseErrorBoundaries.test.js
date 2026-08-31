@@ -34,7 +34,9 @@ vi.mock("../../src/config/database.js", () => ({
       delete: vi.fn(),
     },
     questionMetadata: {},
-    topics: {},
+    topics: {
+      create: vi.fn(),
+    },
   },
 }));
 
@@ -93,6 +95,23 @@ beforeEach(() => {
 });
 
 describe("course route Core error boundaries", () => {
+  it("surfaces topic sync failures without creating a local-only topic", async () => {
+    const { pushTopicToCore } = await import("../../src/services/coreApiService.js");
+    const { prisma } = await import("../../src/config/database.js");
+    pushTopicToCore.mockRejectedValueOnce(
+      Object.assign(new Error("Core unavailable"), { status: 503 }),
+    );
+
+    const response = await request(appFor())
+      .post("/api/course/7/topics")
+      .set("Cookie", "session=valid")
+      .send({ name: "Fallback Topic" });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ success: false, error: "Core API error (503)" });
+    expect(prisma.topics.create).not.toHaveBeenCalled();
+  });
+
   it("returns a stable error for POST /api/course scoped-list failures", async () => {
     isCoreCourseInScopedList.mockRejectedValueOnce(upstreamCanaryError());
 

@@ -45,6 +45,7 @@ export default [
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
+  route("/api/courses/:courseId/topic-analysis", "routes/api/courses.topic-analysis.$.ts"),
   route("/api/courses/:courseId/banks", "routes/api/courses.banks.$.ts"),
   route("/api/courses/:courseId/banks/*", "routes/api/courses.banks.$.ts", {
     id: "routes/api/courses.banks.$:*",
