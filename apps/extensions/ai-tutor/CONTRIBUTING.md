@@ -22,7 +22,7 @@
 # Terminal 1: Backend (port 4000)
 cd server && npm run dev
 
-# Terminal 2: Frontend (port 5173)
+# Terminal 2: Frontend (port 3001)
 npm run dev
 ```
 
@@ -67,7 +67,7 @@ If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Route
 - Preserve cookie-session semantics (`credentials: "include"`) in all API calls.
 - Use `requireClientUser(role)` in `clientLoader` functions for route protection.
 - Prefer `useOptimistic` (React 19) for instant UI feedback on mutations.
-- Use shadcn/ui primitives from `app/components/ui/` for consistent UI.
+- Use shared primitives from `@eduai/ui` for consistent UI — this app keeps no local fork of them; see [`app/README.md`](app/README.md) and [`docs/ui-audit.md`](docs/ui-audit.md).
 
 ### Backend Patterns
 
@@ -125,7 +125,7 @@ npm run test:integration  # Integration tests only
 - **Runner**: Vitest with supertest for HTTP assertions
 - **Location**: `server/tests/unit/` and `server/tests/integration/`
 - **Test DB**: Uses `.env.test` (database `aitutor_test`, port 4001)
-- **Mock auth**: `createApp({ mockUser })` bypasses Better Auth
+- **Mock auth**: `createApp({ mockUser })` bypasses the Core session-validation call and injects `mockUser` as `req.user` directly — there is no local Better Auth instance to bypass
 
 ### What to Test
 
@@ -169,13 +169,13 @@ Run that once per checkout. Verify with `git config core.hooksPath` (should prin
 
 ### Hook inventory
 
-| Hook                 | Purpose                                                                                                                                                                  | External dependency                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ------- | ------------------------------ |
+| Hook                 | Purpose                                                                                                                                                                    | External dependency                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `pre-commit`         | Scoped lint / format / typecheck / tests on staged files (`oxfmt --check`, `oxlint --quiet`, `tsgo --noEmit`, `vitest --changed HEAD`). Skip with `--no-verify`.         | `npx`-resolvable tools from `devDependencies` only. |
 | `prepare-commit-msg` | Inserts/condenses an `Entire-Checkpoint` trailer if the current shell is inside an Entire CLI session.                                                                   | **`entire` binary in `$PATH`**                      |
 | `commit-msg`         | Validates the commit message and strips the auto-trailer when there is no real user content (allows aborting empty commits). Hard-fails the commit if the script errors. | **`entire` binary in `$PATH`**                      |
-| `post-commit`        | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`                                                                           |                                                     | true`). | **`entire` binary in `$PATH`** |
-| `pre-push`           | Pushes session logs alongside the user's `git push`. Soft-failing (`                                                                                                     |                                                     | true`). | **`entire` binary in `$PATH`** |
+| `post-commit`        | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`\|\| true`).                                                                | **`entire` binary in `$PATH`**                      |
+| `pre-push`           | Pushes session logs alongside the user's `git push`. Soft-failing (`\|\| true`).                                                                                          | **`entire` binary in `$PATH`**                      |
 
 ### What "requires `entire`" actually means
 
@@ -197,8 +197,8 @@ commit.
 
 The `.entire/` directory at the repo root is **session data for the Entire CLI**, not source
 code. It is created and managed by the `entire` binary and the hooks above. Do not hand-edit it.
-It is included in the repo's tracked tree intentionally so that session checkpoints survive
-across machines.
+It is listed in `.gitignore` and stays local to your machine — it is not committed, so session
+checkpoints do not travel with the repo.
 
 ## Commit Messages
 
@@ -277,7 +277,6 @@ Include:
 | `app/hooks/`             | React context providers and custom hooks      |
 | `app/lib/`               | API client, auth utilities, type definitions  |
 | `app/lib/tours/`         | Guided tour engine and definitions            |
-| `app/components/ui/`     | shadcn/ui primitives                          |
 | `app/tests/`             | Frontend test files                           |
 | `server/src/routes/`     | Express route handlers                        |
 | `server/src/services/`   | Business logic (AI, analytics, cloning, sync) |
