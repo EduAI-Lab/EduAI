@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { Message } from "ai";
 import {
+  adhdAssistFromMessage,
   courseScopeRedirectFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
@@ -14,6 +15,7 @@ export type StoredChatMessageMetadata = {
   wasAutoRouted?: boolean;
   hitLongOutputCap?: boolean;
   courseScopeRedirect?: boolean;
+  adhdAssist?: boolean;
 };
 
 /**
@@ -121,6 +123,11 @@ export function reviveStoredMessage(record: {
   const resolvedModelId = role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
   const wasAutoRouted = role === "assistant" && wasAutoRoutedFromMessage(parsed);
   const courseScopeRedirect = role === "assistant" ? courseScopeRedirectFromMessage(parsed) : false;
+  // Tri-state (true/false/undefined): undefined means this row predates the
+  // field, and the consuming layout falls back to the live toggle only for
+  // that case — a stored `false` must survive revive as `false`, not be
+  // dropped like the other flags below (#1671).
+  const adhdAssist = role === "assistant" ? adhdAssistFromMessage(parsed) : undefined;
   // `hitLongOutputCap` is owned by this module rather than chat-message-metadata:
   // it is only ever read back out of a stored row, never written to a live turn.
   const hitLongOutputCap =
@@ -134,6 +141,7 @@ export function reviveStoredMessage(record: {
   }
   if (hitLongOutputCap) metadata.hitLongOutputCap = true;
   if (courseScopeRedirect) metadata.courseScopeRedirect = true;
+  if (adhdAssist !== undefined) metadata.adhdAssist = adhdAssist;
 
   const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
