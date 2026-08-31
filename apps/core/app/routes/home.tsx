@@ -15,7 +15,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export function meta(_args: Route.MetaArgs) {
   return [
-    { title: `${projectInfo.title} — course-aware AI at UBC Okanagan` },
+    { title: `${projectInfo.title}: course-aware AI at UBC Okanagan` },
     {
       name: "description",
       content:
