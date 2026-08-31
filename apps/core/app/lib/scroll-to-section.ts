@@ -1,9 +1,9 @@
 /**
  * True when either the OS-level `prefers-reduced-motion` setting or the
  * account-level preference (mirrored onto <html> by UiPreferencesProvider) says
- * to stop animating. A smooth `scrollIntoView` overrides the CSS
- * `scroll-behavior` escape hatch in app.css, so the check has to be made here
- * too or that opt-out does nothing for exactly the links it was written for.
+ * to stop animating. There is no global CSS `scroll-behavior` to fall back on
+ * (app.css says why), so this is the only thing standing between a
+ * reduced-motion reader and an animated jump down the page.
  */
 function prefersReducedMotion() {
   if (document.documentElement.getAttribute("data-reduce-motion") === "true") return true;
