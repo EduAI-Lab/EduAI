@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconClipboardText,
   IconFileText,
@@ -49,41 +49,30 @@ const TYPE_SPEED_MS = 26;
 const EXIT_MS = 420;
 
 /**
- * Reduced motion for the reel = the account preference OR the OS setting.
+ * How the beat a `Typewriter` sits in wants its text revealed.
  *
- * The landing page is public, so almost every viewer is signed out and their
- * account preference is the `false` default; honouring only that would leave a
- * visitor who has asked their OS for reduced motion watching an indefinitely
- * looping animation (WCAG 2.2.2). The OS half is read in an effect rather than
- * during render so the server and the first client render still agree.
+ * `"instant"` (the default) is for beats that are only holding the frame open —
+ * the scenes that are laid out but not playing. A boolean is the playing
+ * scene's own beats: the reveal starts when the beat becomes visible, not when
+ * it mounts, so a beat scheduled several seconds out does not finish typing
+ * behind an opacity-0 wrapper and then pop in fully formed.
  */
-function useReelMotionReduced() {
-  const accountReduced = useMotionReducedPreference();
-  const [systemReduced, setSystemReduced] = useState(false);
-
-  useEffect(() => {
-    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!query) return;
-    setSystemReduced(query.matches);
-    const onChange = (event: MediaQueryListEvent) => setSystemReduced(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-
-  return accountReduced || systemReduced;
-}
+const BeatRevealContext = createContext<boolean | "instant">("instant");
 
 /** Reveals `text` one character at a time once the beat it lives in is visible. */
 function Typewriter({ text, className }: { text: string; className?: string }) {
-  const motionReduced = useReelMotionReduced();
-  const [count, setCount] = useState(motionReduced ? text.length : 0);
+  const motionReduced = useMotionReducedPreference();
+  const reveal = useContext(BeatRevealContext);
+  const instant = motionReduced || reveal === "instant";
+  const [count, setCount] = useState(instant ? text.length : 0);
 
   useEffect(() => {
-    if (motionReduced) {
+    if (instant) {
       setCount(text.length);
       return;
     }
     setCount(0);
+    if (!reveal) return;
     // The tick counter lives outside the updater: clearing the interval from
     // inside a setState callback makes the updater impure, and React may call
     // it more than once per commit.
@@ -94,14 +83,14 @@ function Typewriter({ text, className }: { text: string; className?: string }) {
       if (revealed >= text.length) window.clearInterval(timer);
     }, TYPE_SPEED_MS);
     return () => window.clearInterval(timer);
-  }, [text, motionReduced]);
+  }, [text, instant, reveal]);
 
   const done = count >= text.length;
 
   return (
     <span className={className}>
       {text.slice(0, count)}
-      {motionReduced || done ? null : (
+      {instant || done ? null : (
         <span
           aria-hidden="true"
           className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[0.15em] animate-pulse bg-current"
@@ -221,7 +210,7 @@ function Tag({ children }: { children: ReactNode }) {
  * clock the beat delays use.
  */
 function useDelayedFlag(afterMs: number) {
-  const motionReduced = useReelMotionReduced();
+  const motionReduced = useMotionReducedPreference();
   const [flipped, setFlipped] = useState(motionReduced);
 
   useEffect(() => {
@@ -581,13 +570,14 @@ function VariantRow({
  */
 function SceneBody({
   activeIndex,
-  playCount,
+  replayToken,
   renderScene,
 }: {
   activeIndex: number;
-  /** Bumped every time a scene starts, so the playing scene remounts and its
-   *  typewriters and in-place swaps run again on every loop. */
-  playCount: number;
+  /** Bumped every time the active scene should start over, so its typewriters
+   *  and in-place swaps run again. Scenes that are merely switching in or out
+   *  of `active` remount on the key change alone. */
+  replayToken: number;
   renderScene: (scene: Scene, active: boolean) => ReactNode;
 }) {
   return (
@@ -596,7 +586,7 @@ function SceneBody({
         const active = index === activeIndex;
         return (
           <div
-            key={active ? `${scene.id}-${playCount}` : scene.id}
+            key={active ? `${scene.id}-${replayToken}` : scene.id}
             className={cn(
               "col-start-1 row-start-1 space-y-2.5 self-start",
               active ? undefined : "invisible",
@@ -669,11 +659,10 @@ function DemoFrame({
 }
 
 export function HeroDemo({ className }: { className?: string }) {
-  const motionReduced = useReelMotionReduced();
+  const motionReduced = useMotionReducedPreference();
   const [sceneIndex, setSceneIndex] = useState(0);
   const [replayToken, setReplayToken] = useState(0);
   const [visibleBeats, setVisibleBeats] = useState(motionReduced ? Infinity : 0);
-  const [playCount, setPlayCount] = useState(0);
   const [exiting, setExiting] = useState(false);
   const timers = useRef<number[]>([]);
 
@@ -690,8 +679,6 @@ export function HeroDemo({ className }: { className?: string }) {
     clearTimers();
     setVisibleBeats(0);
     setExiting(false);
-    // Remounts the playing scene so its typed lines start from empty again.
-    setPlayCount((count) => count + 1);
 
     let elapsed = 0;
     scene.beats.forEach((beat, index) => {
@@ -726,58 +713,53 @@ export function HeroDemo({ className }: { className?: string }) {
     setReplayToken((token) => token + 1);
   };
 
-  if (motionReduced) {
-    return (
-      <div className={className}>
-        <DemoFrame scene={scene} activeIndex={sceneIndex} onSelect={setSceneIndex}>
-          <SceneBody
-            activeIndex={sceneIndex}
-            playCount={playCount}
-            renderScene={(item) =>
-              item.beats.map((beat, index) => <div key={`${item.id}-${index}`}>{beat.node}</div>)
-            }
-          />
-        </DemoFrame>
-      </div>
-    );
-  }
+  // Reduced motion keeps the frame, the tabs and every beat — it drops the
+  // timers, the reveal and the exit transition, so a tab press is a plain
+  // scene switch and each scene renders complete.
+  const renderScene: (item: Scene, active: boolean) => ReactNode = motionReduced
+    ? (item) => item.beats.map((beat, index) => <div key={`${item.id}-${index}`}>{beat.node}</div>)
+    : (item, active) => (
+        <div
+          className="space-y-2.5 will-change-transform"
+          style={{
+            opacity: active && exiting ? 0 : 1,
+            transform: active && exiting ? "translateY(-10px) scale(0.985)" : "none",
+            transition: `opacity ${EXIT_MS}ms ease-in, transform ${EXIT_MS}ms ease-in`,
+          }}
+        >
+          {item.beats.map((beat, index) => {
+            // Only the playing scene reveals beat by beat; the hidden ones
+            // stay laid out in full so they keep holding the frame open.
+            const shown = !active || index < visibleBeats;
+            return (
+              <div
+                key={`${item.id}-${index}`}
+                className="will-change-transform"
+                style={{
+                  opacity: shown ? 1 : 0,
+                  transform: shown ? "none" : "translateY(10px)",
+                  transition: "opacity 320ms ease-out, transform 320ms ease-out",
+                }}
+              >
+                {/* Only the playing scene's beats type on cue; the ones
+                        merely holding the frame open render in full. */}
+                <BeatRevealContext.Provider value={active ? shown : "instant"}>
+                  {beat.node}
+                </BeatRevealContext.Provider>
+              </div>
+            );
+          })}
+        </div>
+      );
 
   return (
     <div className={className}>
-      <DemoFrame scene={scene} activeIndex={sceneIndex} onSelect={handleSelect}>
-        <SceneBody
-          activeIndex={sceneIndex}
-          playCount={playCount}
-          renderScene={(item, active) => (
-            <div
-              className="space-y-2.5 will-change-transform"
-              style={{
-                opacity: active && exiting ? 0 : 1,
-                transform: active && exiting ? "translateY(-10px) scale(0.985)" : "none",
-                transition: `opacity ${EXIT_MS}ms ease-in, transform ${EXIT_MS}ms ease-in`,
-              }}
-            >
-              {item.beats.map((beat, index) => {
-                // Only the playing scene reveals beat by beat; the hidden ones
-                // stay laid out in full so they keep holding the frame open.
-                const shown = !active || index < visibleBeats;
-                return (
-                  <div
-                    key={`${item.id}-${index}`}
-                    className="will-change-transform"
-                    style={{
-                      opacity: shown ? 1 : 0,
-                      transform: shown ? "none" : "translateY(10px)",
-                      transition: "opacity 320ms ease-out, transform 320ms ease-out",
-                    }}
-                  >
-                    {beat.node}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        />
+      <DemoFrame
+        scene={scene}
+        activeIndex={sceneIndex}
+        onSelect={motionReduced ? setSceneIndex : handleSelect}
+      >
+        <SceneBody activeIndex={sceneIndex} replayToken={replayToken} renderScene={renderScene} />
       </DemoFrame>
     </div>
   );

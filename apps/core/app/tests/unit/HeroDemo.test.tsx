@@ -42,6 +42,30 @@ describe("HeroDemo", () => {
     expect(screen.getAllByText("Multiply by mass")).toHaveLength(1);
   });
 
+  it("holds a beat's typed line until that beat is revealed", () => {
+    vi.useFakeTimers();
+    render(<HeroDemo />);
+
+    // "Show me the rate expression." is the EduAI scene's last typed line,
+    // scheduled ~4.3s in. Its wrapper mounts with the scene, so a typewriter
+    // started on mount would have finished it (28 chars at 26ms) long before
+    // the beat is revealed, and it would appear fully formed instead of typing.
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(screen.queryByText("Show me the rate expression.")).not.toBeInTheDocument();
+
+    // Revealing the beat is what starts its reveal interval, so the typing
+    // ticks belong to a later flush than the timer that revealed it.
+    act(() => {
+      vi.advanceTimersByTime(2_500);
+    });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByText("Show me the rate expression.")).toBeInTheDocument();
+  });
+
   it("jumps to the picked tool and keeps the reel rotating from there", () => {
     vi.useFakeTimers();
     render(<HeroDemo />);
