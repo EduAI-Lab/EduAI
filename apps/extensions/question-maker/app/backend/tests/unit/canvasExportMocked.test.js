@@ -11,6 +11,7 @@ const courseFindOne = vi.fn();
 const proxyCoreCanvasGetIntegration = vi.fn();
 const proxyCoreCreateQuiz = vi.fn();
 const proxyCoreCreateQuizQuestion = vi.fn();
+const proxyCoreDeleteQuiz = vi.fn();
 
 vi.mock("../../src/services/assessmentService.js", () => ({
   getAssessmentById,
@@ -25,6 +26,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   proxyCoreCanvasGetIntegration,
   proxyCoreCreateQuiz,
   proxyCoreCreateQuizQuestion,
+  proxyCoreDeleteQuiz,
   proxyCoreGetQuiz: vi.fn(),
   proxyCoreListQuizQuestions: vi.fn(),
   proxyCoreGetQuizQuestion: vi.fn(),

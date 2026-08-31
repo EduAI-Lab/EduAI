@@ -279,7 +279,7 @@ export function ModelFormDialog({
                 onValueChange={(value) => setFormData({ ...formData, providerId: value })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger id="providerId">
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
@@ -301,7 +301,7 @@ export function ModelFormDialog({
                 onValueChange={(value: any) => setFormData({ ...formData, type: value })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger id="type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -359,7 +359,7 @@ export function ModelFormDialog({
                 <div className="space-y-2">
                   <Label htmlFor="ollamaModelSelect">Select Model</Label>
                   <Select value={selectedOllamaModel} onValueChange={handleOllamaModelSelect}>
-                    <SelectTrigger>
+                    <SelectTrigger id="ollamaModelSelect">
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
@@ -449,7 +449,7 @@ export function ModelFormDialog({
                   onValueChange={handleVllmModelSelect}
                   disabled={vllmModels.length === 0}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger id="vllmModelSelect" className="w-full">
                     <SelectValue
                       placeholder={
                         fetchingVllmModels

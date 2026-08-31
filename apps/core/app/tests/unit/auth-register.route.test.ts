@@ -54,7 +54,7 @@ beforeEach(() => {
 describe("auth/register loader", () => {
   it("redirects a signed-in user to /dashboard", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
+      user: { id: "u1", role: "STUDENT", emailVerified: true },
     } as never);
     const res = (await loader(makeLoaderArgs())) as Response;
     expect(res.status).toBe(302);
@@ -63,7 +63,7 @@ describe("auth/register loader", () => {
 
   it("passes through the onboarding redirect for a signed-in user who needs it", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
+      user: { id: "u1", role: "STUDENT", emailVerified: true },
     } as never);
     const onboardingRedirect = new Response(null, {
       status: 302,
@@ -73,6 +73,18 @@ describe("auth/register loader", () => {
 
     const result = await loader(makeLoaderArgs());
     expect(result).toBe(onboardingRedirect);
+  });
+
+  it("sends an unverified signed-in user to the verification page", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT", emailVerified: false },
+    } as never);
+
+    const result = (await loader(makeLoaderArgs())) as Response;
+
+    expect(result.status).toBe(302);
+    expect(result.headers.get("Location")).toBe("/auth/verify-email");
+    expect(redirectToStudentIdOnboardingIfNeeded).not.toHaveBeenCalled();
   });
 
   it("returns registrationDisabled:true when public registration is off (#807)", async () => {
@@ -154,12 +166,9 @@ describe("auth/register action", () => {
     expect(result.formError).toBe("USER_EXISTS");
   });
 
-  it("redirects to /onboarding/student-id with forwarded cookies on success", async () => {
+  it("requests verification and redirects without creating a signup session", async () => {
     vi.mocked(auth.handler).mockResolvedValue(
-      new Response(JSON.stringify({ user: { id: "u1" } }), {
-        status: 200,
-        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
-      }),
+      new Response(JSON.stringify({ token: null, user: { id: "u1" } }), { status: 200 }),
     );
     const res = (await action(
       makeActionArgs({
@@ -170,8 +179,16 @@ describe("auth/register action", () => {
       }),
     )) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/onboarding/student-id");
-    expect(res.headers.get("Set-Cookie")).toContain("better-auth.session=abc");
+    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+
+    const signupRequest = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    expect(await signupRequest.json()).toEqual({
+      name: "Ada Lovelace",
+      email: "ada@student.ubc.ca",
+      password: STRONG_PASSWORD,
+      callbackURL: "/onboarding/student-id",
+    });
   });
 
   it("catches a thrown error from the handler and returns a formError", async () => {

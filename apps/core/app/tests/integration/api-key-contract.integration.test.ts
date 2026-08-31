@@ -18,6 +18,16 @@ function cookieHeaderFrom(response: Response): string {
     .join("; ");
 }
 
+function signIn(email: string, password: string): Promise<Response> {
+  return auth.handler(
+    new Request("http://localhost/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  );
+}
+
 describe("Better Auth API-key Prisma contract", () => {
   afterAll(async () => {
     await prisma.$disconnect();
@@ -32,8 +42,11 @@ describe("Better Auth API-key Prisma contract", () => {
     expect(signUp.status).toBe(200);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
-    const cookie = cookieHeaderFrom(signUp);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { role: "ADMIN", emailVerified: true },
+    });
+    const cookie = cookieHeaderFrom(await signIn(email, "Str0ng!Contract-Password"));
 
     const create = await auth.handler(
       new Request("http://localhost/api/auth/api-key/create", {
@@ -92,8 +105,11 @@ describe("Better Auth API-key Prisma contract", () => {
     expect(signUp.status).toBe(200);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
-    const cookie = cookieHeaderFrom(signUp);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { role: "ADMIN", emailVerified: true },
+    });
+    const cookie = cookieHeaderFrom(await signIn(email, "Str0ng!Legacy-Password"));
 
     try {
       const create = await auth.handler(

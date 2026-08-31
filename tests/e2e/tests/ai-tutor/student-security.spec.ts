@@ -33,12 +33,11 @@ test.describe("AI Tutor STUDENT — answer-submission gate", () => {
   test("an enrolled student's answer lands on the caller, never a spoofed body.userId", async ({
     playwright,
   }) => {
-    // The route comment is "never trust body.userId" — the attempt is always
-    // recorded against the authenticated caller. A 200 alone does NOT prove
-    // this (a vulnerable route could persist the arbitrary string and still
-    // return 200, since `Submission.userId` has no user FK). So the spoof
-    // target is a *real second user*, and we read `/me/submissions` back for
-    // both: the attempt must appear for the caller and be absent for the victim.
+    // The route comment is "never trust body.userId". The submission contract
+    // is strict: a body carrying fields beyond the answer itself (such as a
+    // spoofed `userId`) is refused with 400, so nothing can be persisted
+    // against anyone. A clean answer must then land on the authenticated
+    // caller, and the victim must have no row for the activity.
     const studentCtx = await playwright.request.newContext();
     const victimCtx = await playwright.request.newContext();
     try {
@@ -65,18 +64,32 @@ test.describe("AI Tutor STUDENT — answer-submission gate", () => {
           data: { userId: studentId, role: "STUDENT" },
         });
 
-        const res = await studentCtx.post(`${AT}/api/questions/${seeded.activityId}/answer`, {
+        // The strict submission contract rejects any body carrying fields
+        // beyond the answer itself, so a spoofed `userId` is neither persisted
+        // nor silently ignored — the request is refused outright.
+        const spoofRes = await studentCtx.post(`${AT}/api/questions/${seeded.activityId}/answer`, {
           data: { answerOption: 0, userId: victimId },
         });
-        expect(res.status()).toBe(200);
+        expect(spoofRes.status()).toBe(400);
 
-        // The attempt was persisted against the authenticated caller...
+        // The rejected spoof attempt left no submission rows behind...
+        const rowsAfterSpoof = await ownSubmissions(studentCtx);
+        expect(
+          rowsAfterSpoof.some((r) => r.activityId === seeded.activityId),
+          "the rejected spoof attempt recorded nothing",
+        ).toBe(false);
+
+        // ...and a clean submission lands on the authenticated caller.
+        const res = await studentCtx.post(`${AT}/api/questions/${seeded.activityId}/answer`, {
+          data: { answerOption: 0 },
+        });
+        expect(res.status()).toBe(200);
         const callerRows = await ownSubmissions(studentCtx);
         const callerAttempt = callerRows.find((r) => r.activityId === seeded.activityId);
         expect(callerAttempt, "the caller's own attempt is recorded").toBeTruthy();
         expect(callerAttempt?.userId).toBe(studentId);
 
-        // ...and NOT against the spoofed victim id.
+        // The spoofed victim still has no attempt for this activity.
         const victimRows = await ownSubmissions(victimCtx);
         expect(
           victimRows.some((r) => r.activityId === seeded.activityId),

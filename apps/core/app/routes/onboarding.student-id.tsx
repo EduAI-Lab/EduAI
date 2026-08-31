@@ -2,7 +2,7 @@ import { redirect, useActionData, useLoaderData, useNavigation } from "react-rou
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { StudentIdOnboardingForm } from "~/components/onboarding/student-id-onboarding-form";
-import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
+import { LinkRosterError, linkCanvasRosterSelfService } from "~/lib/canvas/link-roster.server";
 import {
   studentIdOnboardingSkipCookieHeader,
   userNeedsStudentIdOnboarding,
@@ -55,7 +55,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    await linkCanvasRoster(session.user.id, result.data.studentNumber);
+    await linkCanvasRosterSelfService(
+      session.user.id,
+      session.user.role,
+      result.data.studentNumber,
+    );
     return redirect("/dashboard");
   } catch (error) {
     if (error instanceof LinkRosterError) {

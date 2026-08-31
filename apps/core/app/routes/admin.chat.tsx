@@ -331,8 +331,9 @@ export default function AdminChatPage() {
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         selectedModelInfo={selectedModelInfo}
+        selectedCourseId={null}
         selectedCourseCode={null}
-        setSelectedCourseCode={() => {}}
+        setSelectedCourseId={() => {}}
         availableCourses={[]}
         messages={messages}
         input={input}

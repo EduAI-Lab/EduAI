@@ -19,11 +19,20 @@ import { createQmCourseForInstructor, createQmCourseForStudent } from "../helper
 // Question routes — blocked for STUDENT (requires AUTHORS role)
 // ---------------------------------------------------------------------------
 
-test.describe("QM question route gates (STUDENT → 403)", () => {
-  test("GET /api/questions returns 403", async ({ request }) => {
+test.describe("QM question route gates", () => {
+  test("GET /api/questions returns an empty TA-scoped page for a platform STUDENT", async ({
+    request,
+  }) => {
     await signUp(request, { email: uniqueEmail("qm-rbac-q-list") });
+    // A fresh STUDENT holds no live TA grants, so the server-derived visibility
+    // predicate scopes the course-less aggregate to an empty set (no owner
+    // fallback) instead of a flat 403.
     const res = await request.get(`${QM_BACKEND_URL}/api/questions`);
-    expect(res.status()).toBe(403);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.items).toEqual([]);
+    expect(body.data.total).toBe(0);
   });
 
   test("POST /api/questions returns 403", async ({ request, playwright }) => {
@@ -115,7 +124,7 @@ test.describe("QM course routes accessible to all authenticated users", () => {
     expect(res.status()).toBe(403);
     const body = await res.json();
     expect(body.success).toBe(false);
-    expect(String(body.error)).toMatch(/ADMIN|UNIT_ADMIN|INSTRUCTOR/);
+    expect(String(body.error)).toBe("CORE_COURSE_NOT_AUTHORIZED");
   });
 
   test("POST /api/course with an unscoped coreCourseId still 403s for STUDENT", async ({
@@ -131,7 +140,7 @@ test.describe("QM course routes accessible to all authenticated users", () => {
     expect(res.status()).toBe(403);
     const body = await res.json();
     // Role gate fires before scoped-list / teaching checks (#1114).
-    expect(String(body.error)).toMatch(/ADMIN|UNIT_ADMIN|INSTRUCTOR/);
+    expect(String(body.error)).toBe("CORE_COURSE_NOT_AUTHORIZED");
   });
 
   test("GET /api/course/:id for own course returns 200 for INSTRUCTOR", async ({

@@ -138,6 +138,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   ]);
 
   return {
+    course: { coreOfferingId: lesson.coreOfferingId },
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
@@ -205,7 +206,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
    * the threshold before the first fetch resolves.
    */
   const loadingMoreRef = useRef(false);
-  const [activitiesLoadFailed, setActivitiesLoadFailed] = useState(false);
   /**
    * Which lesson the buffer above belongs to. The prev/next lesson links
    * navigate without unmounting this route, so a page fetch can still be in
@@ -228,7 +228,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     // prefetch immediately instead of waiting on a response it will discard.
     lessonIdRef.current = lesson.id;
     loadingMoreRef.current = false;
-    setActivitiesLoadFailed(false);
     // Reset the per-course capability gate: the new lesson may belong to a
     // different course, so withhold answer submission and the study buddy until
     // this lesson's breadcrumb re-resolves the caller's enrollment role. Done
@@ -260,14 +259,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         return [...prev, ...result.data.filter((a) => !seen.has(a.id))];
       });
       setLoadedPage(nextPage);
-      setActivitiesLoadFailed(false);
     } catch (error) {
       if (lessonIdRef.current !== lessonId) return;
       console.error("Failed to load more activities", error);
-      // Surface it: without this the student just hits an invisible wall at the
-      // page boundary. `canNext` stops at the loaded edge while this is set, and
-      // the next move (Prev, then Next) re-runs the effect and retries.
-      setActivitiesLoadFailed(true);
       toast.error("Couldn't load the rest of this lesson. Check your connection and try again.");
     } finally {
       // Only the fetch that still owns the latch may release it — an orphaned
@@ -283,12 +277,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   }, [idx, orderedActivities.length, activitiesTotal]);
 
   const activity = orderedActivities[idx];
-  // `total`, not the loaded length — otherwise "Next" would grey out at the
-  // page boundary as if the lesson had ended. But never step past what's loaded
-  // once an append has failed: `orderedActivities[idx]` would be undefined and
-  // the player would render a blank question card with no way out.
-  const canNext =
-    idx < activitiesTotal - 1 && (idx < orderedActivities.length - 1 || !activitiesLoadFailed);
+  // Never advance past the loaded slice. Prefetch normally keeps this enabled;
+  // on a slow request it briefly waits at the boundary instead of rendering an
+  // undefined activity and trapping the student on a blank card.
+  const canNext = idx < activitiesTotal - 1 && idx < orderedActivities.length - 1;
   const canPrev = idx > 0;
 
   const questionChunks = useMemo(
@@ -364,10 +356,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     if (!activity || !user || !canSubmitAnswers) return;
     setSubmitting(true);
     try {
-      const payload: any = { userId: user.id };
-      if (activity.type === "MCQ") payload.answerOption = mcq;
-      else payload.answerText = text;
-      const res = await api.submitAnswer(activity.id, payload);
+      let res;
+      if (activity.type === "MCQ") {
+        if (mcq === null) return;
+        res = await api.submitAnswer(activity.id, { answerOption: mcq });
+      } else {
+        if (!text.trim()) return;
+        res = await api.submitAnswer(activity.id, { answerText: text });
+      }
       setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
 
       setOrderedActivities((prev) =>

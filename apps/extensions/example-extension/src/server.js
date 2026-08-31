@@ -62,8 +62,8 @@ app.get("/", requireAuth, (req, res) => {
 <body>
   <h1>Example Extension ✓</h1>
   <h2>Logged in as <strong>${escapeHtml(req.user.name)}</strong> (${escapeHtml(req.user.email)})</h2>
-  <p>Role: <code>${req.user.role}</code></p>
-  <pre>${JSON.stringify(req.user, null, 2)}</pre>
+  <p>Role: <code>${escapeHtml(req.user.role)}</code></p>
+  <pre>${escapeHtml(JSON.stringify(req.user, null, 2))}</pre>
   <hr>
   <p>Try these endpoints:</p>
   <ul>

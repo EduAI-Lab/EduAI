@@ -536,6 +536,7 @@ export function AiModelsAdminView({
                       <div className="relative flex-1 max-w-sm">
                         <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
+                          aria-label="Search models"
                           placeholder="Search models..."
                           value={modelSearch}
                           onChange={(e) => onModelSearchChange(e.target.value)}
@@ -549,7 +550,7 @@ export function AiModelsAdminView({
                           onModelProviderIdChange(value === "all" ? null : value)
                         }
                       >
-                        <SelectTrigger className="w-48">
+                        <SelectTrigger className="w-48" aria-label="Filter models by provider">
                           <IconFilter className="h-4 w-4 mr-2" />
                           <SelectValue />
                         </SelectTrigger>

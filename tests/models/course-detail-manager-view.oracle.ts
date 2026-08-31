@@ -5,13 +5,9 @@
  * gates (issue #1189). One oracle; adapters run it against both the client
  * predicate and the backend gate — disagreement is the bug.
  *
- * Known drift (do not relax the oracle; use it.fails on the divergent side):
- *   - manage-rag: backend `PATCH /api/courses/:id/rag-settings` allows
- *     rank >= 2 (admin | unit | instructor); client only enables admin |
- *     instructor. Unit + manage-rag is the divergent cell (#1406).
- *
- * Resolved: delete-material TA + topics + other ownership (#1390) — client
- * now mirrors backend canDeleteMaterial (own-upload only for TA).
+ * Resolved: delete-material TA + topics + other ownership (#1390),
+ * manage-rag Unit Admin access (#1406), and instructor enrollment policy
+ * gating — client now mirrors the backend capabilities.
  */
 
 export type ManagerViewRow = {
@@ -59,7 +55,7 @@ export function courseDetailManagerViewOracle(row: ManagerViewRow): ManagerViewV
       return { allowed: ok, visible: ok };
     }
     case "manage-students": {
-      const ok = access === "admin" || access === "unit" || access === "instructor";
+      const ok = access === "admin" || access === "unit" || (access === "instructor" && policyOn);
       return { allowed: ok, visible: ok };
     }
     case "staff-tab": {
@@ -100,9 +96,10 @@ export function courseDetailManagerViewOracle(row: ManagerViewRow): ManagerViewV
 }
 
 /**
- * Client predicates that intentionally disagree with the oracle / backend:
- *   - manage-rag: client omits unit while backend rank >= 2 includes it (#1406)
+ * Kept as a hook for future census rows that intentionally document a
+ * client/backend divergence. The current manager-view predicates have none.
  */
 export function managerViewClientKnownDivergence(row: ManagerViewRow): boolean {
-  return row.Capability === "manage-rag" && row.Access === "unit";
+  void row;
+  return false;
 }

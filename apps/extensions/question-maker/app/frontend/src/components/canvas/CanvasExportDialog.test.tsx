@@ -19,7 +19,7 @@ vi.mock("@/hooks/useQmPermissions", () => ({
 vi.mock("../../services/canvasService", () => ({
   default: {
     getIntegration: vi.fn(),
-    getCourses: vi.fn(),
+    getCourseLink: vi.fn(),
     exportAssessment: vi.fn(),
     connectCanvasWithFallback: vi.fn(),
   },
@@ -39,9 +39,10 @@ describe("CanvasExportDialog", () => {
       isTestMode: true,
       isConnected: true,
     });
-    vi.mocked(canvasService.getCourses).mockResolvedValue([
-      { id: 1, name: "CS 101", course_code: "CS101" },
-    ]);
+    vi.mocked(canvasService.getCourseLink).mockResolvedValue({
+      status: "linked",
+      mapping: { localCourseId: 9, canvasCourseId: 1, canvasCourseName: "CS 101" },
+    });
     vi.mocked(canvasService.exportAssessment).mockResolvedValue({
       quizId: 7,
       canvasUrl: "https://canvas.test/courses/1/quizzes/7",
@@ -60,16 +61,16 @@ describe("CanvasExportDialog", () => {
       />,
     );
 
-  it("offers a publish choice that is on by default", async () => {
+  it("offers a publish choice that is off by default", async () => {
     renderDialog();
 
     const publish = await screen.findByTestId("export-publish-toggle");
-    expect(publish).toBeChecked();
+    expect(publish).not.toBeChecked();
   });
 
   // #1652 review: `AssessmentBuilderPage` keeps this dialog mounted between
   // exports, so a `useState(true)` initializer only ran on first mount — one
-  // opt-out silently governed every later export.
+  // opt-in silently governed every later export.
   it("re-defaults the publish choice on each open", async () => {
     const view = render(
       <CanvasExportDialog
@@ -83,7 +84,7 @@ describe("CanvasExportDialog", () => {
 
     const publish = await screen.findByTestId("export-publish-toggle");
     fireEvent.click(publish);
-    expect(publish).not.toBeChecked();
+    expect(publish).toBeChecked();
 
     const rerenderWith = (open: boolean) =>
       view.rerender(
@@ -98,15 +99,15 @@ describe("CanvasExportDialog", () => {
     rerenderWith(false);
     rerenderWith(true);
 
-    await waitFor(() => expect(screen.getByTestId("export-publish-toggle")).toBeChecked());
+    await waitFor(() => expect(screen.getByTestId("export-publish-toggle")).not.toBeChecked());
   });
 
-  it("turns the publish choice off when clicked", async () => {
+  it("turns the publish choice on when clicked", async () => {
     renderDialog();
 
     const publish = await screen.findByTestId("export-publish-toggle");
     fireEvent.click(publish);
 
-    expect(publish).not.toBeChecked();
+    expect(publish).toBeChecked();
   });
 });

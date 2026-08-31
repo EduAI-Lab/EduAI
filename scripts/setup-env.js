@@ -1,4 +1,12 @@
-const { existsSync, copyFileSync, readFileSync, appendFileSync } = require("fs");
+const { randomBytes } = require("crypto");
+const {
+  existsSync,
+  copyFileSync,
+  readFileSync,
+  appendFileSync,
+  writeFileSync,
+  chmodSync,
+} = require("fs");
 const { execSync } = require("child_process");
 const { resolve } = require("path");
 
@@ -57,6 +65,31 @@ for (const [src, dest] of envPairs) {
     }
   }
 }
+
+const serviceEnvPaths = envPairs.slice(0, 4).map(([, dest]) => resolve(root, dest));
+const keyPattern = /^EDUAI_API_KEY=(.*)$/m;
+const readServiceKey = (contents) =>
+  contents
+    .match(keyPattern)?.[1]
+    .trim()
+    .replace(/^(["'])(.*)\1$/, "$2") ?? "";
+const coreEnv = readFileSync(serviceEnvPaths[0], "utf8");
+const sharedKey = readServiceKey(coreEnv) || randomBytes(32).toString("hex");
+
+for (const envPath of serviceEnvPaths) {
+  const contents = readFileSync(envPath, "utf8");
+  if (readServiceKey(contents) !== sharedKey) {
+    const replacement = `EDUAI_API_KEY=${JSON.stringify(sharedKey)}`;
+    writeFileSync(
+      envPath,
+      keyPattern.test(contents)
+        ? contents.replace(keyPattern, replacement)
+        : `${contents}\n${replacement}\n`,
+    );
+  }
+}
+
+for (const [, dest] of envPairs) chmodSync(resolve(root, dest), 0o600);
 
 // CI generates each workspace client explicitly in the job that consumes it. Skipping
 // this implicit generation there avoids doing the same work during npm ci and again

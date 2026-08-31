@@ -170,6 +170,17 @@ describe("GET /api/courses — search and filters (#1208)", () => {
     expect(res.body.total).toBe(0);
   });
 
+  it("finds one accessible course by exact Core id regardless of page order", async () => {
+    const coreOfferingId = seeds.algebra.course.coreOfferingId;
+    const res = await request(profApp).get(
+      `/api/courses?${PAGE}&coreOfferingId=${encodeURIComponent(coreOfferingId)}`,
+    );
+
+    expect(res.status).toBe(200);
+    expectIds(res, [seeds.algebra.course.id]);
+    expect(res.body.total).toBe(1);
+  });
+
   it("treats a blank search as no search at all", async () => {
     const res = await request(profApp).get(`/api/courses?${PAGE}&search=%20%20`);
 

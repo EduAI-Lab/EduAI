@@ -15,13 +15,13 @@ vi.mock("~/lib/canvas/onboarding.server", () => ({
 
 vi.mock("~/lib/canvas/link-roster.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/canvas/link-roster.server")>();
-  return { ...actual, linkCanvasRoster: vi.fn() };
+  return { ...actual, linkCanvasRosterSelfService: vi.fn() };
 });
 
 import { loader, action } from "~/routes/onboarding.student-id";
 import { auth } from "~/lib/auth/server";
 import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
-import { linkCanvasRoster, LinkRosterError } from "~/lib/canvas/link-roster.server";
+import { linkCanvasRosterSelfService, LinkRosterError } from "~/lib/canvas/link-roster.server";
 
 function makeLoaderArgs() {
   return {
@@ -94,7 +94,7 @@ describe("onboarding.student-id action", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
     expect(res.headers.get("Set-Cookie")).toContain("eduai_student_id_onboarding_skipped");
-    expect(linkCanvasRoster).not.toHaveBeenCalled();
+    expect(linkCanvasRosterSelfService).not.toHaveBeenCalled();
   });
 
   it("returns a fieldError for an invalid student number", async () => {
@@ -105,25 +105,26 @@ describe("onboarding.student-id action", () => {
       fieldError?: string;
     };
     expect(result.fieldError).toBeTruthy();
-    expect(linkCanvasRoster).not.toHaveBeenCalled();
+    expect(linkCanvasRosterSelfService).not.toHaveBeenCalled();
   });
 
   it("redirects to /dashboard after a successful link", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(linkCanvasRoster).mockResolvedValue(undefined as never);
+    vi.mocked(linkCanvasRosterSelfService).mockResolvedValue(undefined as never);
 
     const res = (await action(makeActionArgs({ studentNumber: "12345678" }))) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
+    expect(linkCanvasRosterSelfService).toHaveBeenCalledWith("u1", "STUDENT", "12345678");
   });
 
   it("returns a formError when linkCanvasRoster throws LinkRosterError", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(linkCanvasRoster).mockRejectedValue(
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(
       new LinkRosterError("No matching roster entry", 404),
     );
 
@@ -137,7 +138,7 @@ describe("onboarding.student-id action", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(linkCanvasRoster).mockRejectedValue(new Error("db down"));
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(new Error("db down"));
 
     await expect(action(makeActionArgs({ studentNumber: "12345678" }))).rejects.toThrow("db down");
   });

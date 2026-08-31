@@ -2,8 +2,15 @@ import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFetcher, useLocation, useNavigate, useSearchParams } from "react-router";
+import {
+  useFetcher,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+  useSearchParams,
+} from "react-router";
 import { IconHistory } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
@@ -32,6 +39,7 @@ import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId, isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
+import type { OwnChatHistory } from "~/routes/chat-layout";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
@@ -58,6 +66,70 @@ type ChatNavigationState = {
   selectedModel?: string;
 };
 
+function useChatCourseSelection({
+  editableTranscript,
+  lastCourseCode,
+}: {
+  editableTranscript: ChatTranscript | null;
+  lastCourseCode: string | null;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Course picker, not a table — one bounded page instead of the whole list (#1041).
+  // Facets are only consumed by the course-list filter toolbar, so skip them.
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
+  // Every chat is course-scoped now (global/no-course chat was removed). The
+  // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
+  // sees courses in their authorized units, others see their enrollments.
+  const availableCourses: ChatCourseOption[] = courses.map((course) => ({
+    id: course.id,
+    name: course.name,
+    code: course.code,
+  }));
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(
+    editableTranscript?.chat.courseId ?? searchParams.get("courseId") ?? null,
+  );
+  const requestedCourseCodeRef = useRef(
+    editableTranscript?.chat.courseCode ?? searchParams.get("courseCode") ?? lastCourseCode,
+  );
+  const selectedCourse = availableCourses.find((course) => course.id === selectedCourseId);
+  const selectedCourseCode = selectedCourse?.code ?? editableTranscript?.chat.courseCode ?? null;
+  const courseParamApplied = useRef(false);
+
+  // The state initializer applies direct course params before the default-course
+  // effect can run. Strip the one-shot handoff parameters after mount.
+  useEffect(() => {
+    if (courseParamApplied.current) return;
+    if (!searchParams.has("courseId") && !searchParams.has("courseCode")) return;
+    courseParamApplied.current = true;
+    const next = new URLSearchParams(searchParams);
+    next.delete("courseId");
+    next.delete("courseCode");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Default to a course so chat always has context (no "no course" option). Picks
+  // the first available course unless a valid one is already selected.
+  useEffect(() => {
+    if (availableCourses.length === 0) return;
+    if (selectedCourseId && availableCourses.some((course) => course.id === selectedCourseId))
+      return;
+
+    const requestedCode = requestedCourseCodeRef.current;
+    const requestedCourse = requestedCode
+      ? availableCourses.find((course) => course.code === requestedCode)
+      : null;
+    setSelectedCourseId(requestedCourse?.id ?? availableCourses[0].id);
+  }, [selectedCourseId, availableCourses]);
+
+  return {
+    availableCourses,
+    disabledReason: !coursesLoading && availableCourses.length === 0 ? "no-courses" : undefined,
+    selectedCourseId,
+    setSelectedCourseId,
+    selectedCourseCode,
+  };
+}
+
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { chatModels, assistModelId, routerAutoEnabled, user, assistDefault, lastCourseCode } =
     data;
@@ -69,19 +141,17 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as ChatNavigationState | null;
-  const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
-  // Course picker, not a table — one bounded page instead of the whole list (#1041).
-  // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
-  // Every chat is course-scoped now (global/no-course chat was removed). The
-  // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
-  // sees courses in their authorized units, others see their enrollments.
-  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
-    id: c.id,
-    name: c.name,
-    code: c.code,
-  }));
+  const {
+    availableCourses,
+    disabledReason,
+    selectedCourseId,
+    setSelectedCourseId,
+    selectedCourseCode,
+  } = useChatCourseSelection({
+    editableTranscript,
+    lastCourseCode,
+  });
 
   const isStudentWithCourseChat = user.role === "STUDENT";
   // An empty list only means "not enrolled" once the fetch has actually
@@ -89,17 +159,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // `/chat/:id`, which remounts this screen — without the loading gate the
   // fresh `useCourses` call restarted at `[]` and flashed the not-enrolled
   // overlay over the reply that was still streaming (#1517).
-  const hasNoCourses = !coursesLoading && availableCourses.length === 0;
-  const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
     const navigatedModel = navigationState?.selectedModel;
     return navigatedModel && chatModels.some((model) => model.id === navigatedModel)
       ? navigatedModel
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ?? searchParams.get("courseCode") ?? lastCourseCode ?? null,
-  );
   const [chatId, setChatId] = useState<string | null>(editableTranscript?.chat.id ?? null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(
     editableTranscript?.chat.systemPrompt ?? null,
@@ -220,14 +285,20 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
+  const layoutHistory = useOutletContext<OwnChatHistory | undefined>();
+  // Component tests and other isolated renders do not have the route layout.
+  // Keep a disabled local hook for those renders so hook order stays stable.
+  const localHistory = useChatHistory({
+    scope: "own",
+    limit: 50,
+    enabled: layoutHistory === undefined,
+  });
   const {
     chats,
     isLoading: historyLoading,
     error: historyError,
     refresh: refreshHistory,
-  } = useChatHistory({ scope: "own", limit: 50 });
-  // One-shot flag so ?courseCode= param is only applied on mount.
-  const courseParamApplied = useRef(false);
+  } = layoutHistory ?? localHistory;
   const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(() => {
     const cappedIds = new Set<string>();
 
@@ -310,30 +381,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     epoch: reorientationEpoch,
   });
 
-  // The state initializer applies ?courseCode= before the default-course effect
-  // can run. Strip the one-shot handoff parameter after mount.
-  useEffect(() => {
-    if (courseParamApplied.current) return;
-    const code = searchParams.get("courseCode");
-    if (!code) return;
-    courseParamApplied.current = true;
-    const next = new URLSearchParams(searchParams);
-    next.delete("courseCode");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
-
-  // Default to a course so chat always has context (no "no course" option). Picks
-  // the first available course unless a valid one is already selected.
-  useEffect(() => {
-    if (availableCourses.length === 0) return;
-    const isValid =
-      selectedCourseCode !== null && availableCourses.some((c) => c.code === selectedCourseCode);
-    if (!isValid) setSelectedCourseCode(availableCourses[0].code);
-  }, [selectedCourseCode, availableCourses]);
-
   const requestMetadata = {
     chatMode: "learning" as const,
     model: modelForAssist(adhdAssist),
+    courseId: selectedCourseId || undefined,
     courseCode: selectedCourseCode || undefined,
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
@@ -472,6 +523,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onError: (error) => {
       activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
+      toast.error("Could not get a response", {
+        description: error.message || "Please try again.",
+      });
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
       pendingAdhdAssistRef.current = false;
@@ -592,7 +646,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         }
       })();
     },
-    [messages, isLoading, chatId, modelForAssist, selectedCourseCode, setMessages, setAssistive],
+    [
+      messages,
+      isLoading,
+      chatId,
+      modelForAssist,
+      selectedCourseId,
+      selectedCourseCode,
+      setMessages,
+      setAssistive,
+    ],
   );
 
   // Shared with handleStop: a course change, New Chat, or history navigation
@@ -609,15 +672,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }, [stop]);
 
   const handleCourseChange = useCallback(
-    (code: string | null) => {
+    (courseId: string | null) => {
+      const course = availableCourses.find((candidate) => candidate.id === courseId);
       const action = resolveCourseChangeAction({
-        currentCourseCode: selectedCourseCode,
-        nextCourseCode: code,
+        currentCourseId: selectedCourseId,
+        nextCourseId: courseId,
         chatId,
       });
       if (action.kind === "noop") return;
 
-      persistPreference({ lastCourseCode: code });
+      persistPreference({ lastCourseCode: course?.code ?? null });
 
       if (action.kind === "new-chat") {
         // A chat id can arrive in onResponse while the URL is still /chat. A
@@ -630,7 +694,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         setSystemPrompt(null);
         setMessages([]);
         setInput("");
-        setSelectedCourseCode(action.courseCode);
+        setSelectedCourseId(action.courseId);
         setRoutedModelByMessageId({});
         setStreamingRoutedRegistryId(null);
         setWebToolsEnabled(false);
@@ -638,14 +702,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         return;
       }
 
-      setSelectedCourseCode(action.courseCode);
+      setSelectedCourseId(action.courseId);
     },
     [
       chatId,
       focusMode,
       navigate,
       persistPreference,
-      selectedCourseCode,
+      selectedCourseId,
+      availableCourses,
       setInput,
       setMessages,
       stopActiveChatRequest,
@@ -769,6 +834,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: modelForAssist(adhdAssist),
+          courseId: selectedCourseId || undefined,
           courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
@@ -848,8 +914,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     selectedModel,
     setSelectedModel,
     selectedModelInfo,
+    selectedCourseId,
     selectedCourseCode,
-    setSelectedCourseCode: handleCourseChange,
+    setSelectedCourseId: handleCourseChange,
     availableCourses,
     messages,
     input,

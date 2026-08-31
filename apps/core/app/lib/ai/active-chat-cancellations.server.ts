@@ -13,44 +13,54 @@ const MAX_PENDING_CANCELLATIONS = 1_024;
 const ACTIVE_CHAT_REQUEST_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function cancellationKey(userId: string, requestId: string): string {
+  return `${userId}|${requestId}`;
+}
+
 function prunePendingCancellations(now = Date.now()): void {
-  for (const [requestId, expiresAt] of pendingChatCancellations) {
-    if (expiresAt <= now) pendingChatCancellations.delete(requestId);
+  for (const [key, expiresAt] of pendingChatCancellations) {
+    if (expiresAt <= now) pendingChatCancellations.delete(key);
   }
 }
 
-function rememberPendingCancellation(requestId: string): void {
+function rememberPendingCancellation(key: string): void {
   const now = Date.now();
   prunePendingCancellations(now);
   if (pendingChatCancellations.size >= MAX_PENDING_CANCELLATIONS) {
     const oldest = pendingChatCancellations.keys().next().value;
     if (oldest) pendingChatCancellations.delete(oldest);
   }
-  pendingChatCancellations.set(requestId, now + PENDING_CANCELLATION_TTL_MS);
+  pendingChatCancellations.set(key, now + PENDING_CANCELLATION_TTL_MS);
 }
 
-export function registerActiveChatCancellation(requestId: string, cancel: () => void): () => void {
+export function registerActiveChatCancellation(
+  userId: string,
+  requestId: string,
+  cancel: () => void,
+): () => void {
+  const key = cancellationKey(userId, requestId);
   prunePendingCancellations();
-  if (pendingChatCancellations.delete(requestId)) {
+  if (pendingChatCancellations.delete(key)) {
     cancel();
     return () => {};
   }
-  activeChatCancellations.set(requestId, cancel);
+  activeChatCancellations.set(key, cancel);
   return () => {
-    if (activeChatCancellations.get(requestId) === cancel) {
-      activeChatCancellations.delete(requestId);
+    if (activeChatCancellations.get(key) === cancel) {
+      activeChatCancellations.delete(key);
     }
   };
 }
 
-export function cancelActiveChat(requestId: string): boolean {
-  const cancel = activeChatCancellations.get(requestId);
+export function cancelActiveChat(userId: string, requestId: string): boolean {
+  const key = cancellationKey(userId, requestId);
+  const cancel = activeChatCancellations.get(key);
   if (cancel) {
-    activeChatCancellations.delete(requestId);
+    activeChatCancellations.delete(key);
     cancel();
     return true;
   }
-  if (isValidActiveChatRequestId(requestId)) rememberPendingCancellation(requestId);
+  if (isValidActiveChatRequestId(requestId)) rememberPendingCancellation(key);
   return false;
 }
 

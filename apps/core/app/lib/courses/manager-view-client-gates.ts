@@ -22,7 +22,7 @@ export type ManagerViewClientGates = {
   showChatTab: boolean;
   canViewChats: boolean;
   canManageStudentEnrollments: boolean;
-  /** Client intentionally omits unit — diverges from backend rank >= 2 (#1406). */
+  /** Mirrors the backend rank >= 2 gate: admin, unit admin, or instructor. */
   canManageRagSettings: boolean;
   /**
    * Approve / merge / dismiss on a generated topic (#1624). Rank >= 2 only,
@@ -54,8 +54,8 @@ export function resolveManagerViewClientGates(
   const chatGate = courseChatViewPolicyKey(access);
   const showChatTab = chatGate !== "never";
   const canViewChats = gateAllows(chatGate, isEnabled);
-  const canManageStudentEnrollments = canManageStudents(access);
-  const canManageRagSettings = access === "admin" || access === "instructor";
+  const canManageStudentEnrollments = canManageStudents(access) && gateAllows(staffGate, isEnabled);
+  const canManageRagSettings = access === "admin" || access === "unit" || access === "instructor";
   // Mirrors the endpoint's rank >= 2, which includes unit admins.
   const canReviewTopicSuggestions =
     access === "admin" || access === "unit" || access === "instructor";

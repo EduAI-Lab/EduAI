@@ -9,7 +9,7 @@
  * No DB / live Core: questionService, schema, and the Core reads are mocked.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockUpdateOrder,
@@ -75,6 +75,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const TA = { id: "ta-1", role: "TA", email: "t@t.co", name: "TA" };
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };

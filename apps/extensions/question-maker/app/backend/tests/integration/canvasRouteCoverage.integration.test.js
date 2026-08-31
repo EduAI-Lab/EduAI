@@ -8,7 +8,7 @@
  * Same mocked-DB pattern as canvasRbac.test.js — no live Core or test DB required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   canvas,
@@ -69,6 +69,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
@@ -181,6 +182,18 @@ describe("POST /api/canvas/export/:assessmentId", () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     const res = await request(app).post("/api/canvas/export/5").set("Cookie", "session=v").send({});
     expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-boolean published flag", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/canvas/export/5")
+      .set("Cookie", "session=v")
+      .send({ canvasCourseId: "c1", published: "false" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/published must be a boolean/i);
+    expect(canvas.exportAssessmentToCanvas).not.toHaveBeenCalled();
   });
 });
 

@@ -18,7 +18,8 @@ export const questionTypeLabels = {
   SA: "Short Answer",
   LA: "Long Answer",
 } satisfies Record<QuestionType, string>;
-export type AssessmentType = "Assignment" | "Lab" | "Quiz" | "Mid" | "Final";
+export const assessmentTypes = ["Assignment", "Lab", "Quiz", "Midterm", "Final"] as const;
+export type AssessmentType = (typeof assessmentTypes)[number];
 
 // MCQ Choice interface
 export interface MCQChoice {

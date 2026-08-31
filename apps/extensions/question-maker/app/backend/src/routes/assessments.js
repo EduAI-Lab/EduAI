@@ -47,9 +47,9 @@ import { requireAssessmentAccess, requireQuestionAccess } from "../middleware/re
 import { parseLimitOffset } from "../utils/listPagination.js";
 import { parsePaginationParams, pageOf } from "../utils/pagination.js";
 import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
+import { assertAssessmentType } from "../utils/assessmentType.js";
 
 const router = express.Router();
-
 // Convenience guards for the two access tiers used throughout this router.
 const viewAssessment = requireAssessmentAccess({ min: "ta" });
 const writeAssessment = requireAssessmentAccess({ min: "instructor" });
@@ -74,6 +74,8 @@ router.post(
           error: "Type, name, and courseId are required",
         });
       }
+
+      assertAssessmentType(type);
 
       const assessment = await createAssessment(
         req.qmCourse.userId,
@@ -175,6 +177,10 @@ router.put(
   async (req, res, next) => {
     try {
       const { type, name, description, courseId, blueprintConfig } = req.body;
+
+      if (type !== undefined) {
+        assertAssessmentType(type);
+      }
 
       const assessment = await updateAssessment(
         req.params.id,

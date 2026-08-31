@@ -12,7 +12,6 @@ import {
   ScrollArea,
   Separator,
   Badge,
-  Checkbox,
   Combobox,
   MultiSelect,
   cn,
@@ -385,12 +384,17 @@ export function AssessmentQuestionPicker({
                             : "border-border bg-card hover:border-accent/40 hover:bg-muted/40",
                         )}
                       >
-                        <Checkbox
-                          checked={checked}
-                          className="pointer-events-none mt-0.5"
-                          tabIndex={-1}
+                        <span
                           aria-hidden
-                        />
+                          className={cn(
+                            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-secondary bg-secondary text-secondary-foreground"
+                              : "border-input bg-background",
+                          )}
+                        >
+                          {checked && <IconCheck className="size-3" />}
+                        </span>
                         <div className="min-w-0 flex-1 space-y-1.5">
                           <p className="line-clamp-2 text-sm leading-relaxed text-foreground">
                             {entry.variant.questionText}
@@ -416,7 +420,6 @@ export function AssessmentQuestionPicker({
                             )}
                           </div>
                         </div>
-                        {checked && <IconCheck className="mt-0.5 size-4 shrink-0 text-accent" />}
                       </button>
                     );
                   })}

@@ -9,7 +9,7 @@
  * All DB (Prisma) and Core HTTP calls are mocked — no test DB required.
  */
 import { vi, describe, it, expect, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -65,6 +65,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { prisma } = await import("../../src/config/database.js");
 const { getCourseTopicsFromCore } = await import("../../src/services/coreApiService.js");
 

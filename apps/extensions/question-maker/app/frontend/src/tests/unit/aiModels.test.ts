@@ -4,9 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_GENERATION_MODEL_STORAGE_KEY,
   FALLBACK_GENERATION_MODEL,
   isCampusModel,
   pickCampusProbeModel,
+  pickConfiguredGenerationModel,
   pickPreferredGenerationModel,
 } from "@/utils/aiModels";
 import type { EduAIModelOption } from "@/services/eduaiService";
@@ -49,6 +51,20 @@ describe("pickPreferredGenerationModel", () => {
   it("falls back to the first catalog entry when no campus models are present", () => {
     const models = [model({ id: "openai:gpt-4", provider: "openai" })];
     expect(pickPreferredGenerationModel(models)).toBe("openai:gpt-4");
+  });
+});
+
+describe("pickConfiguredGenerationModel", () => {
+  it("uses the model selected in Settings when it remains in the catalog", () => {
+    const models = [
+      model({ id: "vllm:qwen2.5-32b-instruct", provider: "vllm" }),
+      model({ id: "openai:gpt-4", provider: "openai" }),
+    ];
+    localStorage.setItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY, "openai:gpt-4");
+
+    expect(pickConfiguredGenerationModel(models, FALLBACK_GENERATION_MODEL)).toBe("openai:gpt-4");
+
+    localStorage.removeItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY);
   });
 });
 

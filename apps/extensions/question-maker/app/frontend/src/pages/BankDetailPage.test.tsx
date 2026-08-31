@@ -26,10 +26,6 @@ vi.mock("react-router", async (importOriginal) => {
   };
 });
 
-vi.mock("sonner", () => ({
-  toast,
-}));
-
 vi.mock("../hooks/useCourseFromRoute", () => ({
   useCourseFromRoute: () => ({
     course: { id: 9, name: "CS 101", code: "CS101" },
@@ -44,12 +40,14 @@ vi.mock("../hooks/useQmPermissions", () => ({
     hasCourseAccess: true,
     accessLoading: false,
     canCreateQuestion: true,
+    canManageAssessment: true,
   }),
 }));
 
 vi.mock("../services/questionBankService", () => ({
   questionBankService: {
     listBanks: vi.fn(),
+    deleteBank: vi.fn(),
     removeQuestionFromBank: vi.fn(),
   },
 }));
@@ -175,5 +173,17 @@ describe("BankDetailPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Add question" }));
     expect(screen.getByTestId("add-dialog-open")).toBeInTheDocument();
+  });
+
+  it("confirms before deleting a non-default bank", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete bank" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete bank" }));
+    expect(questionBankService.deleteBank).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm remove" }));
+    await waitFor(() => expect(questionBankService.deleteBank).toHaveBeenCalledWith(9, "bank_1"));
+    expect(navigate).toHaveBeenCalledWith("/courses/9?tab=banks");
   });
 });

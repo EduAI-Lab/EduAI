@@ -6,6 +6,7 @@ export function ChatCourseScopedView(props: ChatViewSharedProps) {
     <ChatConversationLayout
       {...props}
       showCourseSelector
+      courseSelectionKey="id"
       bannerTitle="Course-scoped chat"
       bannerDescription="Select a course below so EduAI can use the right materials and context."
     />

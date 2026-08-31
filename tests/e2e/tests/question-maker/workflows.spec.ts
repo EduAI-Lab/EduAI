@@ -419,8 +419,13 @@ test.describe("Question Maker TA and Student role paths", () => {
 
       const course = await student.get(`${QM}/api/course/${instructor.qmCourseId}`);
       expect(course.status()).toBe(403);
+      // Course-less aggregate lists are TA-grant-scoped for platform STUDENTs
+      // (empty here), while authoring routes and assessments stay flat-403.
       const questions = await student.get(`${QM}/api/questions`);
-      expect(questions.status()).toBe(403);
+      expect(questions.status()).toBe(200);
+      const questionsBody = await questions.json();
+      expect(questionsBody.data.items).toEqual([]);
+      expect(questionsBody.data.total).toBe(0);
       const assessments = await student.get(`${QM}/api/assessments`);
       expect(assessments.status()).toBe(403);
     } finally {

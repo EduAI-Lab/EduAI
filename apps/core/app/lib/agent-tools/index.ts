@@ -35,7 +35,6 @@ export {
   isAdminWriteToolName,
   runConfirmedAdminWriteTool,
   runAdminWriteTool,
-  requireWriteConfirmation,
   userRefValidationError,
   updateAdminBugReportStatus,
   updateAdminCourseTopic,

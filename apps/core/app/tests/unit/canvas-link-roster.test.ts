@@ -14,7 +14,7 @@ vi.mock("~/lib/prisma.server", () => ({
       update: vi.fn(),
     },
     canvasRosterMember: {
-      count: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
     },
     enrollment: {
@@ -24,7 +24,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import { linkCanvasRoster } from "~/lib/canvas/link-roster.server";
+import { linkCanvasRoster, linkCanvasRosterSelfService } from "~/lib/canvas/link-roster.server";
 import { prepareStudentIdStorage } from "~/lib/canvas/student-id.server";
 
 describe("LinkRosterSchema", () => {
@@ -59,7 +59,7 @@ describe("isCanvasLinkRosterRateLimited", () => {
   });
 });
 
-describe("linkCanvasRoster without an existing roster sync", () => {
+describe("Canvas roster linking", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
@@ -97,8 +97,74 @@ describe("linkCanvasRoster without an existing roster sync", () => {
       }),
     );
     expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
-    // linkCanvasRoster no longer gates on a matching staging row, so it must
-    // not probe the staging table to decide whether to save the number.
-    expect(prisma.canvasRosterMember.count).not.toHaveBeenCalled();
+    // The administrative path does not gate on a matching staging row.
+    expect(prisma.canvasRosterMember.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("does not self-link an identifier without a matching active roster identity", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      studentId: null,
+      email: "student@example.com",
+      emailVerified: true,
+    } as never);
+    vi.mocked(prisma.canvasRosterMember.findFirst).mockResolvedValue(null as never);
+
+    await expect(
+      linkCanvasRosterSelfService("self-service-no-match", "STUDENT", "12345678"),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("does not self-link before the account email is verified", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      studentId: null,
+      email: "student@example.com",
+      emailVerified: false,
+    } as never);
+
+    await expect(
+      linkCanvasRosterSelfService("self-service-unverified", "STUDENT", "12345678"),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(prisma.canvasRosterMember.findFirst).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("does not expose self-service linking to privileged platform roles", async () => {
+    await expect(
+      linkCanvasRosterSelfService("self-service-instructor", "INSTRUCTOR", "12345678"),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("self-links when the verified email and student number match an active roster row", async () => {
+    const stored = prepareStudentIdStorage("12345678");
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce({
+        studentId: null,
+        email: " Student@Example.com ",
+        emailVerified: true,
+      } as never)
+      .mockResolvedValueOnce({
+        studentId: stored.studentId,
+        studentIdLookup: stored.studentIdLookup,
+      } as never);
+    vi.mocked(prisma.canvasRosterMember.findFirst).mockResolvedValue({ id: "roster-1" } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([] as never);
+
+    const result = await linkCanvasRosterSelfService("self-service-match", "STUDENT", "12345678");
+
+    expect(result).toEqual({ studentId: "12345678", enrollmentsLinked: 0 });
+    expect(prisma.canvasRosterMember.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        isActive: true,
+        email: { equals: "student@example.com", mode: "insensitive" },
+      }),
+      select: { id: true },
+    });
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "self-service-match" } }),
+    );
   });
 });

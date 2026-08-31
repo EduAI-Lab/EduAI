@@ -953,6 +953,7 @@ const AssessmentBuilderPage = () => {
           assessmentId={assessment.id}
           assessmentName={assessment.name ?? "Assessment"}
           courseId={assessment.courseId ?? null}
+          courseName={assessment.course?.name}
           onExportSuccess={() => {
             toast("Export successful", { description: "Assessment exported to Canvas." });
           }}

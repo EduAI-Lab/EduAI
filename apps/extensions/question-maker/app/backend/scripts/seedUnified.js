@@ -495,6 +495,13 @@ async function seed() {
         name: course.assessmentName,
       },
     });
+    const assessmentSection = await prisma.assessmentSections.create({
+      data: {
+        assessmentId: assessment.id,
+        name: "Questions",
+        position: 0,
+      },
+    });
 
     for (const [qIdx, question] of course.questions.entries()) {
       const primaryTopic = topicBySlug.get(question.primaryTopicSlug);
@@ -515,6 +522,7 @@ async function seed() {
       });
       metadataCount += 1;
 
+      let assessmentVariantId = null;
       for (const variant of question.variants) {
         const secondaryTopicIds = variant.secondaryTopicSlugs
           .map((slug) => topicBySlug.get(slug)?.id)
@@ -526,7 +534,7 @@ async function seed() {
             ? CORE.question(course.coreCourseSlug, question.coreQuestionN)
             : null;
 
-        await prisma.variants.create({
+        const createdVariant = await prisma.variants.create({
           data: {
             questionText: variant.text,
             difficulty: variant.difficulty,
@@ -543,6 +551,19 @@ async function seed() {
         });
         variantCount += 1;
         if (coreQuestionId) linkedVariantCount += 1;
+        if (!variant.isDraft && assessmentVariantId === null) {
+          assessmentVariantId = createdVariant.id;
+        }
+      }
+
+      if (assessmentVariantId !== null) {
+        await prisma.sectionVariants.create({
+          data: {
+            sectionId: assessmentSection.id,
+            variantId: assessmentVariantId,
+            displayOrder: qIdx,
+          },
+        });
       }
     }
   }

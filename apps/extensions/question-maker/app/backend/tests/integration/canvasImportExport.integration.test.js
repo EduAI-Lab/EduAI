@@ -37,6 +37,7 @@ const mockCoreCanvas = vi.hoisted(() => ({
   proxyCoreGetQuizQuestion: vi.fn(),
   proxyCoreCreateQuiz: vi.fn(),
   proxyCoreCreateQuizQuestion: vi.fn(),
+  proxyCoreDeleteQuiz: vi.fn(),
 }));
 
 vi.mock("../../src/services/coreApiService.js", () => mockCoreCanvas);

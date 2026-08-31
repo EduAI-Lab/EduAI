@@ -306,6 +306,7 @@ router.get("/courses", async (req, res) => {
     // #1208: parse before any I/O so a malformed filter 400s without hitting
     // Core or the database.
     const search = parseSearchParam(req);
+    const coreOfferingId = parseSearchParam(req, { param: "coreOfferingId", maxLength: 128 });
     const terms = parseFilterParam(req, "term");
     const statuses = parseFilterParam(req, "status", { allowed: COURSE_STATUS_VALUES });
     const progressBuckets = parseFilterParam(req, "progress", { allowed: COURSE_PROGRESS_VALUES });
@@ -406,7 +407,12 @@ router.get("/courses", async (req, res) => {
       };
     }
 
-    const listWhere = andWhere([access.where, facetWhere, progressWhere]);
+    const listWhere = andWhere([
+      access.where,
+      coreOfferingId ? { coreOfferingId } : null,
+      facetWhere,
+      progressWhere,
+    ]);
 
     const [total, courses] = await prisma.$transaction([
       prisma.courseOffering.count({ where: listWhere }),

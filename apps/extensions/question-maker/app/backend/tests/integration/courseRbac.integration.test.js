@@ -15,7 +15,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { teachingInstructorFetch } from "../helpers/teachingInstructorFetch.js";
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -23,6 +23,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -118,7 +119,7 @@ describeDb("course RBAC (integration)", () => {
           }),
         ),
       );
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+      const res = await request().get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
@@ -129,7 +130,7 @@ describeDb("course RBAC (integration)", () => {
         data: { coreCourseId: null },
       });
 
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+      const res = await request().get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
@@ -140,32 +141,32 @@ describeDb("course RBAC (integration)", () => {
         data: { coreCourseId: null },
       });
 
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStudentOwner());
+      const res = await request().get(`/api/course/${courseId}/access`).set(asStudentOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
 
     it("returns admin level for an ADMIN on a course they do not own", async () => {
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asAdmin());
+      const res = await request().get(`/api/course/${courseId}/access`).set(asAdmin());
       expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({ level: "admin", rank: 4 });
     });
 
     it("returns null data (not 403) when the caller has no access", async () => {
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStranger());
+      const res = await request().get(`/api/course/${courseId}/access`).set(asStranger());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
 
     it("returns 404 for a non-existent course", async () => {
-      const res = await request(app).get("/api/course/0/access").set(asOwner());
+      const res = await request().get("/api/course/0/access").set(asOwner());
       expect(res.status).toBe(404);
     });
   });
 
   describe("per-course gate on /api/course/:id", () => {
     it("lets an ADMIN view a course they do not own", async () => {
-      const res = await request(app).get(`/api/course/${courseId}`).set(asAdmin());
+      const res = await request().get(`/api/course/${courseId}`).set(asAdmin());
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(courseId);
     });
@@ -174,7 +175,7 @@ describeDb("course RBAC (integration)", () => {
       // `name`/`code` are Core-owned and no longer stored locally (#1072 §4
       // step 10) — PUT has nothing left to write, so this only asserts the
       // RBAC gate itself (an ADMIN reaches the route and gets the course back).
-      const res = await request(app)
+      const res = await request()
         .put(`/api/course/${courseId}`)
         .set(asAdmin())
         .send({ name: "Renamed by admin" });
@@ -183,12 +184,12 @@ describeDb("course RBAC (integration)", () => {
     });
 
     it("rejects a non-owner without access with 403", async () => {
-      const res = await request(app).get(`/api/course/${courseId}`).set(asStranger());
+      const res = await request().get(`/api/course/${courseId}`).set(asStranger());
       expect(res.status).toBe(403);
     });
 
     it("rejects a non-owner edit with 403", async () => {
-      const res = await request(app)
+      const res = await request()
         .put(`/api/course/${courseId}`)
         .set(asStranger())
         .send({ name: "Hijack" });
@@ -213,7 +214,7 @@ describeDb("course RBAC (integration)", () => {
           return Promise.resolve({ ok: true, json: async () => ({}) });
         }),
       );
-      const res = await request(app).get(`/api/course/${courseId}`).set(asOwner());
+      const res = await request().get(`/api/course/${courseId}`).set(asOwner());
       expect(res.status).toBe(403);
     });
   });

@@ -18,6 +18,7 @@ import {
   CourseDetailManagerView,
   type CourseDetailManagerCourse,
 } from "~/components/courses/course-detail-manager-view";
+import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
@@ -151,11 +152,16 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof CourseDetailMa
   };
 }
 
-function renderView(overrides: Partial<React.ComponentProps<typeof CourseDetailManagerView>> = {}) {
+function renderView(
+  overrides: Partial<React.ComponentProps<typeof CourseDetailManagerView>> = {},
+  policies: PolicyValues = {},
+) {
   const props = baseProps(overrides);
   render(
     <MemoryRouter>
-      <CourseDetailManagerView {...props} />
+      <PolicyProvider policies={policies}>
+        <CourseDetailManagerView {...props} />
+      </PolicyProvider>
     </MemoryRouter>,
   );
   return props;
@@ -477,6 +483,10 @@ describe("CourseDetailManagerView — enrollments tab", () => {
     const props = renderView();
     clickTab(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
+    expect(props.onRemoveEnrollment).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }),
+    );
     await waitFor(() => expect(props.onRemoveEnrollment).toHaveBeenCalledWith("enr-1"));
     await waitFor(() =>
       expect(screen.getByText("Student removed from course")).toBeInTheDocument(),
@@ -488,6 +498,9 @@ describe("CourseDetailManagerView — enrollments tab", () => {
     renderView({ onRemoveEnrollment });
     clickTab(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }),
+    );
     await waitFor(() =>
       expect(screen.getByText(/could not remove student from course/i)).toBeInTheDocument(),
     );
@@ -734,6 +747,18 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
 });
 
 describe("CourseDetailManagerView — access-gated visibility", () => {
+  it("shows the settings tab for unit-admin course access", () => {
+    renderView({ access: "unit" });
+    expect(screen.getByRole("tab", { name: /^settings$/i })).toBeInTheDocument();
+  });
+
+  it("hides instructor enrollment controls when the manage-enrollments grant is off", () => {
+    renderView({ access: "instructor" }, { "instructors.canManageEnrollments": false });
+    clickTab(/enrollments/i);
+    expect(screen.queryByRole("button", { name: /remove student/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Add students")).not.toBeInTheDocument();
+  });
+
   it("hides the staff and settings tabs for a plain TA access level", () => {
     renderView({ access: "ta" });
     expect(screen.queryByRole("tab", { name: /^settings$/i })).not.toBeInTheDocument();

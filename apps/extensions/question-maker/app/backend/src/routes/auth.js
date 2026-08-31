@@ -5,7 +5,7 @@ import {
   requireAuth,
 } from "../middleware/auth.js";
 import { config } from "../config/settings.js";
-import { getMyProfileFromCore } from "../services/coreApiService.js";
+import { getMyProfileFromCore, listCoursesFromCore } from "../services/coreApiService.js";
 
 const router = express.Router();
 
@@ -20,11 +20,25 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
       authorizedUnits = Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
     }
 
+    let questionMakerRole;
+    if (req.user.role === "STUDENT") {
+      let courses;
+      try {
+        courses = await listCoursesFromCore(req.headers.cookie ?? "", { all: true });
+      } catch {
+        return res.status(503).json({ error: "Question Maker authorization unavailable" });
+      }
+      if (courses.some((course) => course?.callerEnrollmentRole === "TA")) {
+        questionMakerRole = "TA";
+      }
+    }
+
     // Core's session payload already carries `authorizedUnits`, so the freshly
     // fetched list is layered on by statement, since an explicit `undefined` here
     // would erase the spread's value for every non-UNIT_ADMIN caller.
     const user = { ...req.user, isBugReportAdmin };
     if (authorizedUnits !== undefined) user.authorizedUnits = authorizedUnits;
+    if (questionMakerRole !== undefined) user.questionMakerRole = questionMakerRole;
 
     res.json({ user });
   } catch (error) {
