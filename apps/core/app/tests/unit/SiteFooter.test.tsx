@@ -31,7 +31,7 @@ describe("SiteFooter — rendering", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "Platform" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
@@ -43,7 +43,7 @@ describe("SiteFooter — rendering", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.queryByRole("link", { name: /signup/i })).not.toBeInTheDocument();
   });
