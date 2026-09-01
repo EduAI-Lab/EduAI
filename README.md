@@ -20,18 +20,32 @@ EduAI/
 │       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
 │   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
-│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
+│   └── types/                       # @eduai/types — shared UserRole/EnrollmentRole, typed-error hierarchy, Canvas material types, JSON value types
 ├── eduai-design-system/             # Design system bundle (typography, guidelines, Figma exports). Colour tokens here are superseded by packages/ui/src/styles/base.css
 ├── infra/
-│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
+│   ├── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
+│   ├── s378/                        # Shared dev-server go-live scripts, systemd units, Apache vhosts, Discord dev bot
+│   ├── production/                  # Production env templates, systemd units, Apache vhosts, preflight + provisioning checklist
+│   ├── cmps01/                      # GPU-host edge proxy (nginx + LiteLLM) compose and templates
+│   └── aws-bedrock-guardrails/      # CDK stack for the Bedrock overflow guardrails
 ├── tools/
 │   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
-├── scripts/                         # Repo-level setup and dev utilities
+├── tests/
+│   ├── e2e/                         # Full-platform Playwright suites (Core + both extensions)
+│   └── models/                      # PICT combinatorial models (.pict) + committed .cases.json
+├── docker/                          # Dockerfiles for the containerized test suites and the pinned PICT image
+├── scripts/                         # Repo-level setup, perf, PICT, and audit utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
-│   └── implementations/             # schema-design, planned-core-tests, …
+│   ├── implementations/             # schema-design, rbac-matrix, planned-core-tests, …
+│   ├── operations/                  # Dev-server Discord bot, production deployment plan
+│   ├── perf/                        # Pinned before/after API, page-vitals, and code-quality baselines
+│   └── use-cases/                   # Per-role actor scenarios for each app
 ├── turbo.json                       # Turborepo task pipeline configuration
-├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
+├── lefthook.yml                     # Git hooks (oxfmt + oxlint on staged files)
+├── docker-compose.dev.yml           # Dev-only Postgres + Redis containers (apps run on the host)
+├── docker-compose.test.yml          # Containerized unit/integration suites
+├── docker-compose.e2e.yml           # Containerized end-to-end stack
 ├── CHANGELOG.md                     # Unified changelog across all apps
 ├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
@@ -78,14 +92,18 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`USER_GUIDE.md`](docs/USER_GUIDE.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
 | [`DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
-| [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
-| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
+| [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
+| [`LOGGING.md`](docs/LOGGING.md) | Audit / security / system log streams — what is recorded, personal data, who can read it, retention |
 | [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
 | [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
-| [`AGENT_READINESS.md`](docs/AGENT_READINESS.md) | Agent-ready REST endpoints and admin/learning chat tool coverage snapshot ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
+| [`AGENT_READINESS.md`](docs/AGENT_READINESS.md) | Agent-ready REST endpoints and admin / instructor / learning chat tool coverage ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
+| [`PICT_CENSUS.md`](docs/PICT_CENSUS.md) | Which platform surfaces are worth PICT combinatorial coverage, and which are deliberately not |
+| [`perf/README.md`](docs/perf/README.md) | Pinned before/after baselines — endpoint response times, per-page browser vitals, code-quality reports |
+| [`operations/PRODUCTION_DEPLOYMENT_PLAN.md`](docs/operations/PRODUCTION_DEPLOYMENT_PLAN.md) | Production scope, host inventory, phased rollout, and the running deployment change log |
+| [`operations/DISCORD_DEV_BOT.md`](docs/operations/DISCORD_DEV_BOT.md) | `/dev-status` and `/dev-branch` bot for the shared dev server — setup, allowlisting, safety behaviour |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
@@ -113,36 +131,17 @@ Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_M
 
 Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. The browser's Stop control sends a request-specific cancellation to Core, which aborts the matching provider stream and releases its admission slot; completed streams also release the slot they acquired. `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
 
-To capture the time-to-first-byte evidence for #942, set
-`CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline
-deployment and once against the candidate deployment, changing only the URL
-and label. The benchmark prints per-request and aggregate TTFB plus paste-ready
-TSV, so the two runs can be compared directly:
+To capture the time-to-first-byte evidence for #942, set `CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline deployment and once against the candidate deployment, changing only the URL and label. The benchmark prints per-request and aggregate TTFB plus paste-ready TSV, so the two runs can be compared directly:
 
 ```bash
 CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
- CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
- ```
+CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
+```
 
-For authenticated RAG fleet testing, use
-[`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the
-fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
-Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved
-`FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test
-database; it refuses to overwrite an existing fixture. The setup command
-prints a `courseId`; remove the fixture and its stress chats afterward by
-rerunning the helper with that ID and `--cleanup`.
-The harness signs in, verifies a two-turn RAG conversation, records chat
-continuity/citations and `X-Fleet-Server`, then runs the controlled
-16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated
-session. First-run results and raw
-artifacts are recorded in
-[`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md);
-the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md)
-and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md)
-provide the per-server measurements and machine-readable artifact context.
-Those results are baseline evidence and do not replace a later load-aware
-rerun.
+For authenticated RAG fleet testing, use [`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts).
+Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved `FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test database; it refuses to overwrite an existing fixture. The setup command prints a `courseId`; remove the fixture and its stress chats afterward by rerunning the helper with that ID and `--cleanup`.
+The harness signs in, verifies a two-turn RAG conversation, records chat continuity/citations and `X-Fleet-Server`, then runs the controlled 16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated session. First-run results and raw artifacts are recorded in [`docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md`](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_STRESS_2026-08-18.md); the consolidated [executive report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_EXECUTIVE_REPORT_2026-08-19.md) and [data report](docs/rag-ai/latency/eduai-summer-2026/FLEET_ROUTER_DATA_REPORT_2026-08-19.md) provide the per-server measurements and machine-readable artifact context.
+Those results are baseline evidence and do not replace a later load-aware rerun.
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
@@ -209,13 +208,15 @@ Keep this value local and use the same shell/environment for local tools that si
 | INSTRUCTOR | `instructor.math@eduai.local` | Dr. Emmy Noether |
 | INSTRUCTOR | `instructor.sci@eduai.local` | Dr. Marie Curie |
 | INSTRUCTOR | `instructor.hum@eduai.local` | Dr. Hannah Arendt |
-| TA | `ta.cs@eduai.local` | Sam Carter |
-| TA | `ta.math@eduai.local` | Riley Chen |
+| STUDENT (+ course TA) | `ta.cs@eduai.local` | Sam Carter |
+| STUDENT (+ course TA) | `ta.math@eduai.local` | Riley Chen |
 | STUDENT | `student1@eduai.local` | Alex Patel |
 | STUDENT | `student2@eduai.local` | Brooke Kim |
 | STUDENT | `student3@eduai.local` | Cameron Lee |
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
+
+The two `ta.*` accounts are seeded with platform role **`STUDENT`** and an `Enrollment` row carrying `EnrollmentRole.TA` on their course. `TA` is not a platform `UserRole` — the enum is `ADMIN | UNIT_ADMIN | INSTRUCTOR | STUDENT` — so course-level TA powers come from the enrollment, not the account. See [`docs/ARCHITECTURE.md` §7.2](docs/ARCHITECTURE.md#72-rbac-role-model--permissions).
 
 **Account password policy** — sign-up and invitation-acceptance forms show the requirements live. Use either a passphrase of at least 16 characters, or at least 8 characters containing uppercase and lowercase letters, a number, and a symbol.
 
@@ -273,15 +274,22 @@ npm run test         # All tests across all apps (unit + integration), via Turbo
 npm run test:unit    # Unit suites only, via Turborepo
 npm run test:integration # Integration suites only, via Turborepo
 npm run test:docker  # The same suites inside Docker (see "Running Tests")
+npm run test:e2e     # Playwright end-to-end suites against the dockerized stack
 npm run test:coverage # Coverage for all six test suites (backends + frontends)
+npm run typecheck    # tsc across every workspace
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
+npm run db:seed:perf # dbseed + volume/mutation pools for the perf harness
+npm run test:pict:gen # Regenerate tests/models/*.cases.json inside the pinned PICT image
+npm run perf:quality # jscpd + ts-prune + madge code-quality reports
+npm run perf:endpoints # Endpoint response-time sweep (needs a running, seeded stack)
+npm run perf:pages   # Per-page browser vitals sweep (needs a running, seeded stack)
+npm run syncpack:check # Check dependency-version alignment across workspaces
+npm run kill:ports   # Free the dev ports before starting the stack
 ```
 
 ## Lint, format and typecheck (`#1275`, `#1276`)
 
-The same six commands work at the repo root and inside any workspace. At the
-root they fan out through Turborepo; inside a workspace they act on that
-workspace alone.
+The same six commands work at the repo root and inside any workspace. At the root they fan out through Turborepo; inside a workspace they act on that workspace alone.
 
 ```bash
 npm run lint          # oxlint — fails on errors, reports warnings
@@ -292,94 +300,35 @@ npm run typecheck     # tsc — every workspace carries a tsconfig
 npm run test          # vitest
 ```
 
-Configuration lives in exactly two files, both at the repo root:
-[`.oxlintrc.json`](.oxlintrc.json) and [`.oxfmtrc.json`](.oxfmtrc.json). oxlint
-and oxfmt resolve their config by walking up from the working directory, so
-workspaces do not carry their own copies and there is nothing to keep in sync.
+Configuration lives in exactly two files, both at the repo root: [`.oxlintrc.json`](.oxlintrc.json) and [`.oxfmtrc.json`](.oxfmtrc.json). oxlint and oxfmt resolve their config by walking up from the working directory, so workspaces do not carry their own copies and there is nothing to keep in sync.
 Change a rule in one place and every app follows.
 
 A few things worth knowing before you touch the setup:
 
-- **Errors gate, warnings do not.** oxlint exits non-zero only on errors, and
-  the `Lint & Typecheck` CI job inherits that. The repo still carries roughly
-  900 warnings; burning them down belongs to `#1277`, `#1278` and `#1279`.
-- **JavaScript-only workspaces typecheck with `checkJs` off.** The Question
-  Maker backend, the question-maker extension root and the example extension
-  contain no TypeScript at all, so their `tsconfig.json` runs `tsc` over the
-  `.js` sources with `allowJs` on and `checkJs` off: imports and syntax are
-  checked, JS types are not. Turning `checkJs` on reports 72 errors in the QM
-  backend alone (1103 with `strict`) — a code change, not a toolchain one, and
-  `#1278`'s to make. What matters here is that `turbo run typecheck` no longer
-  silently skips those three workspaces.
-- **`no-console` is off on purpose.** The server-path policy is `#1277`'s to
-  set, via `overrides` in the shared config.
-- **Formatting is enforced.** The repo was swept with `oxfmt --write` in one
-  isolated commit (1482 files), and `format:check` runs in the
-  `Lint & Typecheck` CI job. The sweep commit is listed in
-  [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it;
-  run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the
-  same behaviour locally. GitHub applies the file automatically. Every SHA in
-  that file is checked for resolvability by the `Validate blame-ignore revs` CI
-  step, so a rebase that mints a new SHA fails loudly instead of quietly leaving
-  `git blame` pointed at the sweep forever.
-- **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump
-  can change its output, and a floating range would let a fresh install reformat
-  files the swept tree considers clean — putting CI at odds with what you get
-  locally. Bumping it is a deliberate commit that re-runs the sweep.
-- **oxfmt is not idempotent in a single pass.** During the sweep, some files
-  under `question-maker-backend` still failed `--check` after the first
-  `--write`. If you re-run it wholesale, loop until `--check` is clean rather
-  than trusting one pass.
-- **Do not assert on source formatting in source-text tests.** A few tests read a
-  source file and assert on its literal text; three in
-  `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes
-  around import specifiers and went red in the sweep. Quotes are only the case
-  that bit us — spacing, line breaks and trailing commas are all the formatter's
-  to decide, and `printWidth` can move any of them. Assert on the thing you mean
-  (that the import exists) with a regex loose enough that reformatting the line
-  cannot change the answer.
-- **A pre-commit hook runs oxfmt and oxlint on staged files**, installed by
-  lefthook via the root `prepare` script. Use `git commit --no-verify` to bypass
-  it, or `npx lefthook run pre-commit` to run it by hand.
-- **The format scripts pass `.`, not a list of directories.** `ignorePatterns`
-  in `.oxfmtrc.json` already scopes oxfmt to JavaScript and TypeScript, so
-  checking the whole repo takes well under a second and cannot miss a new
-  top-level directory. A hand-maintained directory list would go stale the first
-  time someone adds one.
-- **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats
-  Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to
-  own. Without those entries in `ignorePatterns`, `oxfmt .` reflows all 151
-  tracked Markdown files (including
-  `CHANGELOG.md`, which merges under a union driver — reflowing it would break
-  that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such
-  as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a
-  `--font-sans` declaration in `packages/ui/src/styles/base.css` across lines,
-  which is valid CSS but fails `self-hosted-font.test.ts`. Those extensions are
-  therefore in `ignorePatterns`. Removing them from that list is a decision, not
-  a cleanup.
+- **Errors gate, warnings do not.** oxlint exits non-zero only on errors, and the `Lint & Typecheck` CI job inherits that. The repo still carries roughly 900 warnings; burning them down belongs to `#1277`, `#1278` and `#1279`.
+- **JavaScript-only workspaces typecheck with `checkJs` off.** The Question Maker backend, the question-maker extension root and the example extension contain no TypeScript at all, so their `tsconfig.json` runs `tsc` over the `.js` sources with `allowJs` on and `checkJs` off: imports and syntax are checked, JS types are not. Turning `checkJs` on reports 72 errors in the QM backend alone (1103 with `strict`) — a code change, not a toolchain one, and `#1278`'s to make. What matters here is that `turbo run typecheck` no longer silently skips those three workspaces.
+- **`no-console` is off on purpose.** The server-path policy is `#1277`'s to set, via `overrides` in the shared config.
+- **Formatting is enforced.** The repo was swept with `oxfmt --write` in one isolated commit (1482 files), and `format:check` runs in the `Lint & Typecheck` CI job. The sweep commit is listed in [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the same behaviour locally. GitHub applies the file automatically. Every SHA in that file is checked for resolvability by the `Validate blame-ignore revs` CI step, so a rebase that mints a new SHA fails loudly instead of quietly leaving `git blame` pointed at the sweep forever.
+- **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump can change its output, and a floating range would let a fresh install reformat files the swept tree considers clean — putting CI at odds with what you get locally. Bumping it is a deliberate commit that re-runs the sweep.
+- **oxfmt is not idempotent in a single pass.** During the sweep, some files under `question-maker-backend` still failed `--check` after the first `--write`. If you re-run it wholesale, loop until `--check` is clean rather than trusting one pass.
+- **Do not assert on source formatting in source-text tests.** A few tests read a source file and assert on its literal text; three in `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes around import specifiers and went red in the sweep. Quotes are only the case that bit us — spacing, line breaks and trailing commas are all the formatter's to decide, and `printWidth` can move any of them. Assert on the thing you mean (that the import exists) with a regex loose enough that reformatting the line cannot change the answer.
+- **A pre-commit hook runs oxfmt and oxlint on staged files**, installed by lefthook via the root `prepare` script. Use `git commit --no-verify` to bypass it, or `npx lefthook run pre-commit` to run it by hand.
+- **The format scripts pass `.`, not a list of directories.** `ignorePatterns` in `.oxfmtrc.json` already scopes oxfmt to JavaScript and TypeScript, so checking the whole repo takes well under a second and cannot miss a new top-level directory. A hand-maintained directory list would go stale the first time someone adds one.
+- **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to own. Without those entries in `ignorePatterns`, `oxfmt .` reflows all 151 tracked Markdown files (including `CHANGELOG.md`, which merges under a union driver — reflowing it would break that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a `--font-sans` declaration in `packages/ui/src/styles/base.css` across lines, which is valid CSS but fails `self-hosted-font.test.ts`. Those extensions are therefore in `ignorePatterns`. Removing them from that list is a decision, not a cleanup.
 - **The two tools exclude paths differently, and the mismatch is deliberate.**
-  Where a workspace contains a nested workspace — ai-tutor over `server/`,
-  question-maker over `app/` — the lint scripts use `oxlint . --ignore-pattern
-  server` while the format scripts use `oxfmt . '!server'`. oxfmt rejects
-  `--ignore-pattern` outright ("not expected in this context"), and oxlint
-  ignores a bare `'!server'` positional and walks the directory anyway. Keep
-  each tool on its own form; making them match breaks one of them.
+  Where a workspace contains a nested workspace — ai-tutor over `server/`, question-maker over `app/` — the lint scripts use `oxlint . --ignore-pattern server` while the format scripts use `oxfmt . '!server'`. oxfmt rejects `--ignore-pattern` outright ("not expected in this context"), and oxlint ignores a bare `'!server'` positional and walks the directory anyway. Keep each tool on its own form; making them match breaks one of them.
 
 **Fleet routing smoke tests (Core)**
 
-From `apps/core`, use the fleet smoke commands to verify the configured vLLM
-hosts and extension-style routing:
+From `apps/core`, use the fleet smoke commands to verify the configured vLLM hosts and extension-style routing:
 
 ```bash
 npm run fleet:smoke              # health-check interactive and heavy hosts
 npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
 ```
 
-These commands require `VLLM_FLEET_CHAT_URLS` and `EDUAI_API_KEY`.
-`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat
-pool when it is not configured. See
-[`docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md)
-for routing details.
+These commands require `EDUAI_API_KEY` plus a fleet registry. The preferred form is `apps/core/fleet.config.json` (copy [`fleet.config.example.json`](apps/core/fleet.config.example.json); the real file is gitignored because it is host-specific); `VLLM_FLEET_CHAT_URLS` / `VLLM_FLEET_HEAVY_URL` are the legacy fallback used only when no config file is found.
+`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat pool when it is not configured. Every host that may receive a request must also be listed in `VLLM_TRUSTED_BASE_URLS`, the SSRF allowlist. See [`docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) for routing details.
 
 To run tasks for a single app, use Turborepo's filter flag directly:
 
@@ -388,23 +337,26 @@ npx turbo run dev --filter=ai-tutor --filter=ai-tutor-server   # AI Tutor fronte
 npx turbo run dev --filter='question-maker-*'         # Question Maker frontend + backend
 ```
 
-## Databases (Docker)
+## Databases and Redis (Docker)
 
-PostgreSQL for local development is defined in [`docker-compose.dev.yml`](docker-compose.dev.yml) at the repo root. Apps still run on the host via Turborepo; Compose only starts the databases.
+The local data services are defined in [`docker-compose.dev.yml`](docker-compose.dev.yml) at the repo root. Apps still run on the host via Turborepo; Compose only starts the data services.
 
 Default host ports (override via root `.env` — copy from [`.env.example`](.env.example)):
 
-| Database | Container name | Default port | DB name | User / password |
+| Service | Container name | Default port | DB name / purpose | User / password |
 | --- | --- | --- | --- | --- |
 | EduAI (pgvector) | `eduai-db` | `54320` | `eduai` | `postgres` / `postgres` |
 | AI Tutor | `eduai-ai-tutor-db` | `54321` | `ai-tutor` | `postgres` / `postgres` |
 | Question Maker | `eduai-question-maker-db` | `55432` | `question-maker` | `postgres` / `password` |
+| Core Redis | `eduai-redis` | `63790` | Shared `/api/chat` + `/api/completion` rate limits (live); async AI-job queue (dormant) | none |
+
+Redis is **not** optional: it backs the sliding-window rate limits on `/api/chat` and `/api/completion`. The BullMQ AI-job queue that also uses it is hard-disabled pre-MVP — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#async-ai-job-worker--currently-disabled).
 
 Individual database commands:
 
 | Command | Services |
 | --- | --- |
-| `npm run docker:dev:db` | All three databases |
+| `npm run docker:dev:db` | All three databases **and** Redis (via `scripts/dev-db.js`, which also clears stale port bindings first) |
 | `npm run docker:dev:db:eduai` | EduAI DB only |
 | `npm run docker:dev:db:ai-tutor` | AI Tutor DB only |
 | `npm run docker:dev:db:question-maker` | Question Maker DB only |
@@ -480,33 +432,19 @@ npm run test:docker:integration  # all integration suites only, in Docker
 npm run test:e2e                 # all e2e suites (Playwright, full stack in Docker)
 ```
 
-`test:e2e` boots the whole stack, which is slow when you only care about one
-app. `E2E_SUITES` narrows both the containers it starts and the specs it runs —
-`all` (default), `core`, `ai-tutor`, `question-maker`, `cross-service`, or a
-comma-separated list:
+`test:e2e` boots the whole stack, which is slow when you only care about one app. `E2E_SUITES` narrows both the containers it starts and the specs it runs — `all` (default), `core`, `ai-tutor`, `question-maker`, `cross-service`, or a comma-separated list:
 
 ```bash
 E2E_SUITES=ai-tutor npm run test:e2e
 ```
 
-The e2e stack publishes ports 3000/3001/4000 (and 5173/8000 for Question
-Maker), so stop any local `npm run dev` servers first — Docker will otherwise
-start the containers with those ports unpublished and the run will silently hit
-your dev servers instead.
+The e2e stack publishes ports 3000/3001/4000 (and 5173/8000 for Question Maker), so stop any local `npm run dev` servers first — Docker will otherwise start the containers with those ports unpublished and the run will silently hit your dev servers instead.
 
 #### Two runners, one naming scheme
 
-`test`, `test:unit` and `test:integration` are the same three commands
-everywhere: at the root they fan out through Turborepo, inside a workspace they
-run that workspace's vitest directly, and CI
-(`.github/workflows/pr-tests.yml`) invokes the same Turborepo tasks. The
-Docker path keeps the identical suite split under a `test:docker*` prefix, so
-picking a runner is a prefix choice rather than a difference in what the bare
-names mean.
+`test`, `test:unit` and `test:integration` are the same three commands everywhere: at the root they fan out through Turborepo, inside a workspace they run that workspace's vitest directly, and CI (`.github/workflows/pr-tests.yml`) invokes the same Turborepo tasks. The Docker path keeps the identical suite split under a `test:docker*` prefix, so picking a runner is a prefix choice rather than a difference in what the bare names mean.
 
-Before `#1276` the root `test:unit` / `test:integration` scripts ran the Docker
-path while root `test` ran Turborepo, so the same name meant a different runner
-depending on which of the three you typed.
+Before `#1276` the root `test:unit` / `test:integration` scripts ran the Docker path while root `test` ran Turborepo, so the same name meant a different runner depending on which of the three you typed.
 
 ### Coverage
 
@@ -572,4 +510,18 @@ The full-suite commands (`test:docker`, `test:docker:unit`, `test:docker:integra
 
 ## Git hooks
 
-> **WIP:** Git hooks (currently in `apps/extensions/ai-tutor/.githooks/`) are being migrated to the monorepo root. Hook strategy is not yet finalized.
+Hooks are managed by [**lefthook**](https://github.com/evilmartians/lefthook) from [`lefthook.yml`](lefthook.yml) at the repo root, installed automatically by the root `prepare` script on `npm install`.
+
+One `pre-commit` hook runs two jobs in parallel over **staged** `.js/.jsx/.mjs/.cjs/.ts/.tsx` files only, so hook time scales with the change rather than the repo:
+
+| Job | Command |
+| --- | --- |
+| `oxfmt` | `npx oxfmt --check {staged_files}` |
+| `oxlint` | `npx oxlint --quiet {staged_files}` — errors only; the repo still carries ~900 warnings that would otherwise bury them |
+
+```bash
+npx lefthook run pre-commit   # run the hook by hand
+git commit --no-verify        # bypass it for one commit
+```
+
+> The legacy per-app hooks in `apps/extensions/ai-tutor/.githooks/` are superseded by the root lefthook config and are not installed by anything.
