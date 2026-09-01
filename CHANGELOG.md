@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [all] style: Replace non-canonical Tailwind utility classes (`flex-shrink-0`, `rounded-[var(--radius-xl)]`, `shadow-[var(--shadow-2xs)]`, etc.) with their canonical shorthand equivalents (`shrink-0`, `rounded-xl`, `shadow-2xs`) across apps/core, ai-tutor, question-maker, and packages/ui. Purely cosmetic, no visual or behavioral change. Closes #1713. (@evanbones, 2026-08-31) — #PR
+- [all] style: Replace non-canonical Tailwind utility classes (`flex-shrink-0`, `rounded-[var(--radius-xl)]`, `shadow-[var(--shadow-2xs)]`, etc.) with their canonical shorthand equivalents (`shrink-0`, `rounded-xl`, `shadow-2xs`) across apps/core, ai-tutor, question-maker, and packages/ui. Purely cosmetic, no visual or behavioral change. Closes #1713. (@evanbones, 2026-08-31) — [#1715](https://github.com/EduAI-Lab/EduAI/pull/1715)
 
 ### Added
 

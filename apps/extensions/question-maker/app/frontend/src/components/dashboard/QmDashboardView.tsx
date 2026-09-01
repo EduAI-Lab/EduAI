@@ -109,7 +109,7 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
       <div className="flex flex-col gap-3 border-b border-border bg-linear-to-br from-secondary/10 via-accent/5 to-transparent p-6 md:p-8">
-        <div className="flex size-11 items-center justify-center rounded-(--radius-lg) bg-linear-to-br from-secondary to-accent text-white shadow-sm">
+        <div className="flex size-11 items-center justify-center rounded-lg bg-linear-to-br from-secondary to-accent text-white shadow-sm">
           <IconSparkles className="size-6" />
         </div>
         <h2 className="text-lg font-semibold text-foreground">Welcome to Question Maker</h2>

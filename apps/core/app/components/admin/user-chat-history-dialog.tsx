@@ -126,7 +126,7 @@ export function UserChatHistoryDialog({
                     key={chat.id}
                     onClick={() => setSelectedChatId(chat.id)}
                     className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-lgorder bg-card hover:bg-muted/40 w-full text-left transition-colors",
+                      "flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card hover:bg-muted/40 w-full text-left transition-colors",
                     )}
                   >
                     <div className="flex-1 min-w-0">

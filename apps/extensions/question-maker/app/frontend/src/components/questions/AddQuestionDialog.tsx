@@ -1420,7 +1420,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                         onClick={() => handleSelectVariant(item)}
                         aria-current={isActive}
                         className={cn(
-                          "min-w-[200px] shrink-0 rounded-(--radius-lg) border p-3 text-left transition-colors md:min-w-0",
+                          "min-w-[200px] shrink-0 rounded-lg border p-3 text-left transition-colors md:min-w-0",
                           isActive
                             ? "border-accent bg-accent/10 ring-1 ring-accent"
                             : "border-border bg-card hover:border-accent hover:bg-muted/50",
@@ -1582,7 +1582,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                               <div
                                 key={index}
                                 className={cn(
-                                  "flex items-center gap-3 rounded-(--radius-lg) border px-4 py-3.5 transition-colors",
+                                  "flex items-center gap-3 rounded-lg border px-4 py-3.5 transition-colors",
                                   isCorrect
                                     ? "border-(--color-success-500) bg-(--color-success-100)"
                                     : "border-border bg-muted/40",
@@ -1611,7 +1611,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       </div>
                     </section>
                   ) : (
-                    <section className="rounded-(--radius-lg) border border-dashed border-border bg-muted/20 p-5 text-center">
+                    <section className="rounded-lg border border-dashed border-border bg-muted/20 p-5 text-center">
                       <p className="text-sm text-muted-foreground">No choices defined yet.</p>
                       {canEditDraft && (
                         <Button
@@ -1654,7 +1654,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                             : "Correct answer"
                           : "Answer"}
                       </p>
-                      <div className="rounded-(--radius-lg) border border-l-4 border-(--color-success-500) border-l-(--color-success-500) bg-(--color-success-100) px-4 py-3">
+                      <div className="rounded-lg border border-l-4 border-(--color-success-500) border-l-(--color-success-500) bg-(--color-success-100) px-4 py-3">
                         <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-line">
                           {viewEntry.questionType === "MCQ" &&
                           viewVariant.choices &&
@@ -1693,7 +1693,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                   )}
 
                 {/* Details — quiet definition grid, inline edit, replaces the boxy tile grid */}
-                <section className="rounded-(--radius-lg) border border-border bg-card p-5">
+                <section className="rounded-lg border border-border bg-card p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Details
@@ -1964,7 +1964,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 {/* Extension sharing — reviewed variants only */}
                 {isApproved && (
                   <PermissionGate allow={canApproveVariant}>
-                    <section className="rounded-(--radius-lg) border border-border bg-muted/40 p-5 space-y-3">
+                    <section className="rounded-lg border border-border bg-muted/40 p-5 space-y-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-foreground">
