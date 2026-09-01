@@ -42,17 +42,29 @@ src/
 │   ├── auth.js               # Core session validation (requireAuth/authenticateToken), role gates
 │   ├── courseAccess.js        # Per-course access from Core enrollment/unit-admin (fail closed; #1114)
 │   ├── resourceAccess.js       # Ownership guards for variant/question/assessment routes
+│   ├── aiAdmission.js          # Caller-keyed AI rate limit + provider-call/deadline budgets for every AI route
+│   ├── csrfOrigin.js            # Origin/Referer/Sec-Fetch-Site guard for cookie-authenticated unsafe methods
+│   ├── canvasRequestContext.js  # AsyncLocalStorage: cancels in-flight Canvas→Core calls on client disconnect
 │   ├── errorHandler.js        # Maps Prisma error codes + generic errors to HTTP responses
 │   ├── roles.js                # Role/level rank helpers
 │   └── serviceAuth.js           # Service-key auth for Core → QM internal routes
 ├── routes/                  # course, questions, variants, assessments, assessmentVariant,
 │                             # eduai, canvas, topics, auth, bug-reports, internal
-├── services/                 # Business logic — one service per domain (questionService,
-│                              # assessmentService, canvasService, coreWiringService,
-│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list), etc.)
+├── services/                 # Business logic — one service per domain: questionService/questionMutationFence
+│                              # (advisory-lock fence around every question mutation), assessmentService,
+│                              # assessmentSectionService, assessmentVariantService (variant workflow assembly),
+│                              # canvasService (proxies Canvas LMS via Core), coreApiService (thin Core HTTP client),
+│                              # coreWiringService (pushes an approved variant to Core as a Question),
+│                              # variant-publish.js / variant-push-gate.js (publish-to-Core orchestration),
+│                              # courseListService (RBAC-scoped course listing + Core read-through),
+│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list),
+│                              # questionBankService (Core-backed question banks), modelCatalog, eduaiService, etc.
 ├── jobs/
 │   └── reconcile.js          # Daily cron: cleans up stale Core references (course/topic/question)
-└── utils/                    # encryption, Canvas URL SSRF guard, logger, model-size ranks
+└── utils/                    # encryption, logger (Pino), safeLogging (allowlisted upstream-error fields),
+                               # pagination.js / listPagination.js (the two list-response contracts),
+                               # questionApproval, questionListQuery, questionOrder, assessmentType,
+                               # modelSizeRanks, truncateAllTables (test/seed reset)
 
 prisma/
 ├── schema.prisma            # Source of truth for the data model

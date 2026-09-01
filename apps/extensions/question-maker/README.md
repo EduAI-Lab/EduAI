@@ -34,7 +34,7 @@ Nested: [Backend README](app/backend/README.md).
 | Frontend | React, Vite, React Router, Tailwind, Radix/shadcn-style UI |
 | Backend | Express (ESM), Prisma, PostgreSQL |
 | Auth | Core session cookie validation |
-| Integrations | Core API (service key + cookie), Canvas (per-user encrypted keys) |
+| Integrations | Core API (service key + cookie), Canvas LMS via Core's proxy routes (per-user credentials, stored in Core since #1084) |
 | Testing | Vitest (unit + integration) |
 
 ## Project structure
@@ -52,9 +52,9 @@ question-maker/
 
 Question bank + variants; assessments; Core course/topic sync; Canvas import/export; OCR; AI generation via Core; bug reports.
 
-High-level API prefixes: `/api/auth`, `/api/course`, `/api/questions`, `/api/assessments`, `/api/eduai`, `/api/canvas`, `/api/assessment-variant`, `/api/bug-reports`, `/api/internal`.
+High-level API prefixes: `/api/auth`, `/api/course`, `/api/topics`, `/api/questions`, `/api/assessments`, `/api/eduai`, `/api/canvas`, `/api/assessment-variant`, `/api/bug-reports`, `/api/internal`.
 
-**UI routes** include `/login`, `/courses`, `/home`, `/assessments/:id/builder`, `/assessment-variant`, `/help`, `/admin/bug-reports` (admins).
+**UI routes** are course-centric: `/dashboard` (default landing), `/courses` (course picker, role-scoped), `/courses/:courseId` (tabbed workspace — Overview / Questions / Banks / Assessments / Canvas), `/courses/:courseId/questions/new`, `/courses/:courseId/questions/:questionId/edit`, `/courses/:courseId/banks/:bankId`, `/courses/:courseId/assessments/:assessmentId`, `/courses/:courseId/assessments/:assessmentId/variants`, `/library` (cross-course question search), `/settings`, `/help`, `/admin/bug-reports` (ADMIN only). There is no `/login` route — sign-in is handled entirely by Core; `QmAppGate` (`src/components/auth/QmAppGate.tsx`) redirects unauthenticated visitors to Core. Older paths (`/home`, `/question-bank`, `/assessments`, `/assessments/:id/builder`, `/assessment-variant`, `/study`) still resolve but only as redirects into the routes above (`src/App.tsx`).
 
 ## Environment variables
 
@@ -66,7 +66,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `CORE_URL` | Yes | Core base URL for session validation |
 | `EDUAI_API_KEY` | For Core S2S / AI | Must match Core |
 | `EDUAI_API_URL` | For AI proxy | Core API base |
-| `ENCRYPTION_KEY` | Prod / Canvas | Encrypts stored Canvas credentials |
+| `ENCRYPTION_KEY` | Yes in production | AES-256-GCM key (`utils/encryption.js`). Canvas credentials are stored in Core now, not here (#1084) — this key only remains required for the one-time `migrate-canvas-integrations-to-core.mjs` copier and any legacy encrypted values still on disk |
 | `CORS_ORIGINS` | Yes | Allowed browser origins |
 | `EDUAI_IGNORED_COURSE_CODES` | No | Comma-separated codes hidden in the course list |
 | `GROQ_API_KEY` | No | Direct LLM provider for question generation |

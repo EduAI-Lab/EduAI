@@ -1,11 +1,20 @@
 # Future work
 
-Ideas and improvements we may tackle over time. Nothing here is promised on a fixed schedule—this list helps us remember what matters next.
+Ideas and improvements we may tackle over time. Nothing here is promised on a fixed schedule—this
+list helps us remember what matters next. (Password reset, the monthly-EduAI-key-rotation pain, and
+the "Core doesn't have a topics API yet" item that used to live here are resolved: auth is entirely
+Core's session cookie now, and course topics read through Core live via `services/courseListService.js`
+and `services/topicSyncService.js`.)
 
-- **Password help for users** — Let people reset a forgotten password instead of only signing in.
-- **Uploads from tricky files** — Handle scanned PDFs and long assignment instructions more reliably when pulling questions from documents.
-- **Reliable automatic updates** — Keep the scheduled “pull latest code” process on the server working so new fixes actually reach production without extra manual steps.
-- **Broader walkthrough testing** — Eventually try key flows in a real browser against test systems, not only quick automated checks.
-- **Topic lists from EduAI** — Topics are still loaded using a stand-in for now. The plan is to fetch them from EduAI so they stay in sync and update as things change. EduAI does not have the right API working yet; expect to hook this up when that is ready.
-- **EduAI sign-in that lasts** — The EduAI API key expires about once a month. Until there is a more permanent link between this app and EduAI, update the EduAI key in your local and production environment files every month, or EduAI features will stop working. A long-term, stable connection between the two services would be much better than monthly key changes.
-
+- **Scanned-PDF OCR fallback** — The upload dialog extracts a PDF's text layer with `pdfjs-dist` and
+  falls back to `tesseract.js` for image uploads, but not yet for a scanned/image-only PDF (no text
+  layer). See §3.6 of [features/ocr/OCR_IMPROVEMENT_PLAN.md](features/ocr/OCR_IMPROVEMENT_PLAN.md).
+- **Assignment-preamble handling** — Assignment-wide instructions that precede the first numbered
+  question aren't consistently attached anywhere during extraction. See §3.7 of the same plan.
+- **Assessment section reorder test coverage** — Section CRUD is covered, but there's no dedicated
+  integration test for the reorder endpoint (`PUT .../sections/reorder`); add one alongside any future
+  change there.
+- **Broader walkthrough testing** — Try key flows in a real browser against test systems (Playwright/
+  Cypress), not only Vitest unit/integration checks.
+- **Reliable automatic updates** — Keep the scheduled "pull latest `development`" server job
+  (`docs/deployment/cron.md`) healthy so reviewed fixes reach production without a manual deploy.
