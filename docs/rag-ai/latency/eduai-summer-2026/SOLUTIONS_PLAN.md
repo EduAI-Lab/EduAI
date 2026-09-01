@@ -55,7 +55,7 @@ flowchart LR
 | Token count / reasoning models | Linear decode time        | Product + Engineering | **Yes** — caps, house model choice                                  |
 | EduAI pipeline overhead        | ~60–70 ms                 | —                     | No rewrite needed                                                   |
 | Ollama vs vLLM                 | Unknown                   | Infra (later)         | Phase D — benchmark before prod commit                              |
-| Tool-path multi-step loops     | Extra seconds (Session 8) | Separate track        | See [tools doc](./eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) |
+| Tool-path multi-step loops     | Extra seconds (Session 8) | Separate track        | See [tools doc](./TEAM_CHAT_LATENCY_AND_TOOLS.md) |
 
 
 **Target (product):** ~**3–4 s** perceived for typical warm tutoring turns. Cold starts should be **expected and visible**, not mistaken for a broken app.
@@ -102,7 +102,7 @@ Ollama exposes `GET /api/ps` — which models are in VRAM, `expires_at`, and VRA
 
 ### Layer 2 — Residency-aware model routing
 
-Extends [model routing plan](../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md). Sustainability/tier logic stays; add **latency/residency** as a tie-breaker.
+Extends [model routing plan](../../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md). Sustainability/tier logic stays; add **latency/residency** as a tie-breaker.
 
 **Revised rule order** (capability gates unchanged; residency inserted after them):
 
@@ -185,7 +185,7 @@ Align with routing Phase 0/1 ([#197](https://github.com/EduAI-Lab/EduAI/issues/1
 | --- | ---------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------- |
 | C1  | **GPU inference queue** (semaphore before Ollama call)           | Backend        | Critical for 20–30 concurrent users                                       |
 | C2  | **Cloud overflow** policy for Auto when queue deep or local cold | Backend + Lead | Privacy review for course RAG text                                        |
-| C3  | Load test: ~30 synthetic concurrent users                        | QA             | Record P50/P95 TTFT + queue wait in [tracker](./MODEL_LATENCY_TRACKER.md) |
+| C3  | Load test: ~30 synthetic concurrent users                        | QA             | Record P50/P95 TTFT + queue wait in [tracker](../MODEL_LATENCY_TRACKER.md) |
 | C4  | Optional: extend TTL during burst (e.g. >5 req/min → 60m)        | Backend        | Only if C1–C3 show idle gaps mid-class                                    |
 
 
@@ -382,7 +382,7 @@ Benchmarks support **queue now, vLLM later** for 20–30 simultaneous users:
 1. **Course-aware RAG signals in the router** — most routers use prompt length/complexity, not chunk similarity + course context (our Phase 1 rules 5–7).
 2. **Sustainability / carbon per tier** — RouteLLM optimizes cost; we add estimated carbon ([#197](https://github.com/EduAI-Lab/EduAI/issues/197)).
 3. **Single shared dev GPU** — most writeups assume K8s or multi-GPU; KatherLab is the closest “one lab server, many users” model.
-4. **Tool-path latency (Session 8)** — agent schedulers (e.g. SAGA) target multi-step graphs, not EduAI’s Ollama tool-reliability issue; see [tools track](./eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md).
+4. **Tool-path latency (Session 8)** — agent schedulers (e.g. SAGA) target multi-step graphs, not EduAI’s Ollama tool-reliability issue; see [tools track](./TEAM_CHAT_LATENCY_AND_TOOLS.md).
 
 ---
 
@@ -405,10 +405,10 @@ Benchmarks support **queue now, vLLM later** for 20–30 simultaneous users:
 | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | `[FINDINGS.md](./FINDINGS.md)`                                                                                         | Measured root causes — investigation closed  |
 | `[FINDINGS_APPENDIX.md](./FINDINGS_APPENDIX.md)`                                                                       | Session tables, methodology, re-run commands |
-| `[MODEL_LATENCY_TRACKER.md](./MODEL_LATENCY_TRACKER.md)`                                                               | Log TTFT/Total after each change             |
-| `[eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md](./eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md)`         | Delegatable L00–L09 tasks                    |
-| `[../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md](../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md)` | Router implementation steps                  |
-| `[../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md](../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md)`   | Routing phases 0–4 overview                  |
+| `[MODEL_LATENCY_TRACKER.md](../MODEL_LATENCY_TRACKER.md)`                                                               | Log TTFT/Total after each change             |
+| `[eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md](./TEAM_CHAT_LATENCY_SPRINT_GUIDE.md)`         | Delegatable L00–L09 tasks                    |
+| `[../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md](../../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md)` | Router implementation steps                  |
+| `[../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md](../../routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md)`   | Routing phases 0–4 overview                  |
 
 
 ---

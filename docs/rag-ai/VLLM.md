@@ -4,6 +4,8 @@ Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat infer
 
 **Not Ollama:** vLLM loads **Hugging Face** weights (e.g. `Qwen/Qwen2.5-7B-Instruct`), not Ollama GGUF blobs.
 
+> **This guide describes one host.** Core now round-robins chat across a **fleet** of GPU hosts (cmps01/02/03) — see `apps/core/app/lib/ai/routing/fleet/` and register them in `fleet.config.json` (copy `apps/core/fleet.config.example.json`; the real file is gitignored because it is host-specific). `VLLM_FLEET_CHAT_URLS` / `VLLM_FLEET_HEAVY_URL` are the legacy fallback used only when no config file is found. Every host that may receive a request must also appear in `VLLM_TRUSTED_BASE_URLS`, which is the SSRF allowlist for both chat and embedding base URLs. The single-host setup below is still the right starting point.
+
 | | |
 | --- | --- |
 | **Host port (public)** | **8001** — LiteLLM proxy (`network_mode: host`) → backends `127.0.0.1:18001` / `:18002` |
@@ -33,10 +35,13 @@ Session **vLLM-S1** (Jun 2026, dev → cmps01): warm direct **~57 ms**; EduAI fu
 
 ```env
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<same value as cmps01's CMPS01_INTERNAL_KEY>"
 ```
 
-Restart the dev server (tmux). Then:
+> **Do not use the `vllm-local` placeholder here (#1115).** `resolveVllmApiKey()` (`app/lib/ai/vllm-api-key.server.ts`) only falls back to `vllm-local` when `VLLM_API_KEY` is
+> **unset** *and* `VLLM_BASE_URL` is loopback — which is the laptop case, not s378. Pointing `VLLM_BASE_URL` at a non-loopback host makes the fallback return `undefined` rather than the placeholder, and the nginx/LiteLLM edge on `:8001` authenticates against a `master_key` rendered from `CMPS01_INTERNAL_KEY` (`infra/cmps01/deploy-edge-proxy.sh`), so the placeholder would be rejected anyway. This guard fires on s378 even though it runs `NODE_ENV=development`.
+
+Restart the service (`systemctl restart eduai-core`, or the dev process if you are running one). Then:
 
 ```bash
 cd apps/core
@@ -81,7 +86,9 @@ LiteLLM uses **`network_mode: host`** so it can reach backends on host loopback.
 | [`infra/cmps01/README.md`](../../infra/cmps01/README.md) | Migration checklist, container names, troubleshooting |
 | [`infra/cmps01/migrate.sh`](../../infra/cmps01/migrate.sh) | One-shot recreate backends + start proxy |
 | [`infra/cmps01/docker-compose.yml`](../../infra/cmps01/docker-compose.yml) | LiteLLM proxy (`network_mode: host`, port **8001**) |
-| [`infra/cmps01/litellm-config.yaml`](../../infra/cmps01/litellm-config.yaml) | Routes model ids → `:18001` / `:18002` |
+| [`infra/cmps01/litellm-config.yaml.template`](../../infra/cmps01/litellm-config.yaml.template) | Routes model ids → `:18001` / `:18002`; rendered to `litellm-config.yaml` by `deploy-edge-proxy.sh` |
+| [`infra/cmps01/deploy-edge-proxy.sh`](../../infra/cmps01/deploy-edge-proxy.sh) | Renders the nginx + LiteLLM config from `CMPS01_INTERNAL_KEY` and restarts the edge |
+| [`infra/cmps01/verify-edge-security.sh`](../../infra/cmps01/verify-edge-security.sh) | Asserts the edge rejects unauthenticated requests |
 
 **Deployed containers (Jun 2026):**
 
@@ -333,7 +340,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 | SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
 | `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 | 404 model | `curl /v1/models` — use exact `id` in chat (`qwen3.5-2b-instruct`) |
-| EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart dev (tmux); pick a `vllm:` model |
+| EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart the service (`systemctl restart eduai-core` on s378 — it no longer runs `npm run dev` under tmux); pick a `vllm:` model |
 | Admin **409** adding model | Model already registered — use existing row, don’t duplicate |
 | Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |
 | RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |
@@ -347,7 +354,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 
 | Doc | Purpose |
 | --- | --- |
-| [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | SSH, tmux, branch switching on s378 |
+| [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | SSH, branch switching, and the build/restart flow on s378 |
 | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) § cmps01 | Quick `.env` for Ollama + vLLM |
 | [`EMBEDDINGS.md`](./EMBEDDINGS.md) | pgvector / embed provider (separate from vLLM chat) |
 | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | Formal latency ledger |

@@ -1,5 +1,7 @@
 # EduAI chat latency — findings
 
+> **Dated record (checked 2026-08-31).** Kept as written. Its link to `../RAG_PIPELINE_LATENCY_LOGGING.md` is dangling — no such file exists in the repo.
+
 **Last updated:** 2026-05-29 · **Scope:** `deepseek-r1:8b` + `qwen2.5:7b` (tool path), dev → Ollama on `cmps01`  
 **Status:** Core latency investigation complete (Sessions 1–7). Session 8 documents **tool-enabled model** behaviour — EduAI slower vs bare Ollama is **expected** on that path.
 

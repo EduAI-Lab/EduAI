@@ -1,5 +1,7 @@
 # EduAI routing — Phase 0 & Phase 1 (team implementation guide)
 
+> **Planning record (checked 2026-08-31). Phases 0–1 shipped, and later phases (kNN, LLM classifier, multi-host fleet, Bedrock overflow) shipped too.** Current implementation: `apps/core/app/lib/ai/routing/`. Two links below are dangling — `TEAM_ROUTING_PHASES_SUMMARY.md` and `IMPLEMENTATION_PLAN_MVP.md` were never committed here.
+
 **Audience:** Developers implementing routing on EduAI core  
 **Parent tracking issue:** [#197 — Phase 0 routing MVP](https://github.com/EduAI-Lab/EduAICore/issues/197)  
 **Sub-issues:** [#182](https://github.com/EduAI-Lab/EduAICore/issues/182)–[#189](https://github.com/EduAI-Lab/EduAICore/issues/189), [#191](https://github.com/EduAI-Lab/EduAICore/issues/191)–[#192](https://github.com/EduAI-Lab/EduAICore/issues/192)   

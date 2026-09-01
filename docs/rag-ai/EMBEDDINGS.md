@@ -86,14 +86,18 @@ flowchart LR
 
 | Chat path | When `findRelevantContent` runs |
 | --------- | -------------------------------- |
-| **Hybrid RAG** | `supportsTools: false`, course selected, keyword heuristics match — **once before** `streamText` |
-| **Tool RAG** | `supportsTools: true` — only if the model calls `getInformation` |
+| **Hybrid RAG** (`supportsTools: false`) | **Prefetched once before** `streamText` on every course-scoped turn. Whether the excerpts are *injected* into the system prompt is a separate decision (`shouldInjectCourseRag`: intent heuristics **or** a similarity floor **or** `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`). |
+| **Tool RAG** (`supportsTools: true`) | Same prefetch + inject gate, **plus** `getInformation` stays registered as a supplemental tool the model may call when the preloaded excerpts are insufficient. |
+| **Admin chat** | On demand, via `searchCourseMaterials` with an explicit `courseId`/`courseCode`. |
+| **Instructor chat** | Never — that mode has no material-search tool. |
 
 **Steps:**
 
-1. `generateEmbedding(userQuery)` — one embed API call for the question.
-2. pgvector similarity over that course’s chunks (default threshold **0.5**), top **N** by score.
+1. `generateEmbedding(userQuery)` — one embed API call for the question (in-memory cached by normalized query text).
+2. pgvector similarity over that course’s chunks (default threshold **0.5**), top **N** by score, with `ivfflat.probes` (and, on pgvector ≥ 0.8.0, iterative scanning) applied inside the same transaction.
 3. Chunk **text** goes to the chat model (system prompt or tool result).
+
+**Student visibility.** When the caller's resolved course access is `student`, two extra filters are injected into the retrieval SQL: hidden/scheduled materials (`visibleToStudents`, `availableAt`) and unpublished-or-excluded Canvas files are removed. Staff callers get the unfiltered set.
 
 ```mermaid
 flowchart LR
@@ -158,10 +162,13 @@ OPENROUTER_API_KEY=sk-or-...
 
 `getCloudEmbeddingModel()` / `getLocalEmbeddingModel()` resolution in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) (logged as `[embedding]`):
 
-**When `EMBEDDING_PROVIDER=local` or `ollama`:**
+**The effective provider and model are resolved per course first.** `resolveEffectiveEmbeddingSettings()` in [`embedding-config.ts`](../../apps/core/app/lib/ai/embedding-config.ts) reads `Course.embeddingProvider` / `Course.embeddingModel` and falls back to the env vars only when those columns are null. Instructors change them through `PATCH /api/courses/:courseId/embedding-settings`, which validates the model against `ALLOWED_LOCAL_EMBEDDING_MODELS` / `ALLOWED_CLOUD_EMBEDDING_MODELS`. `isEmbeddingIndexStale()` compares the effective settings with the `embeddedWithProvider` / `embeddedWithModel` columns so the UI can warn that a course needs re-embedding.
 
-1. OpenAI-compatible local endpoint (`VLLM_EMBEDDING_BASE_URL` + `VLLM_EMBEDDING_MODEL`)
-2. If no local endpoint is configured, the legacy Ollama client is used
+**When the effective provider is `local` (or `ollama`, an accepted alias):**
+
+1. OpenAI-compatible local endpoint (`VLLM_EMBEDDING_BASE_URL` + `VLLM_EMBEDDING_MODEL`; requires `VLLM_API_KEY` and must pass the SSRF allowlist)
+2. If no local endpoint is configured, the Ollama client is used (`OLLAMA_BASE_URL`, `mxbai-embed-large`)
+3. **On failure it throws** — there is no cloud fallback, because index and query must stay in one model space. The error tells the operator to fix the local service or switch the course to `cloud`.
 
 **When `EMBEDDING_PROVIDER=cloud` or unset:**
 

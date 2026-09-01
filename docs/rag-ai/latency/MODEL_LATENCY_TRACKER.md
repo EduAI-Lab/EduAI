@@ -1,5 +1,8 @@
 # Model Latency Tracker — Global (Cloud) Models
 
+> **Dangling links (checked 2026-08-31).** Every `../../literature/*.md` link below points at `docs/literature/`, which was intentionally deleted in commit `4a37ead5` ("chore: remove research and pilot docs from Phase 3 PR") — recover them from that commit's parent if needed.
+> Three code links are also stale: `app/lib/ai/tool-result.ts`, `app/components/ui/tool.tsx`, and `app/lib/ai/warmup.server.ts` no longer exist. The nearest current equivalents are `app/lib/ai/tool-output-limits.ts`, `app/lib/ai/web-tool-ui.ts`, and `app/lib/ai/tools-help.ts`; there is no warm-up module today. The measurements themselves are unchanged.
+
 A running log of TTFT (time-to-first-token), total response time, and tool-call behaviour for global frontier models hosted by external providers (OpenAI, Google, Anthropic, etc.). Local Ollama runs live in a separate column when needed.
 
 > **Why this exists.** ADHD-relevant latency (Form A §3b efficiency) is the single biggest UX defect we are optimising for. This file is the operational ledger: every time we tweak the prompt, `maxSteps`, the tool surface, or the system prompt, we log the impact here before and after.

@@ -244,7 +244,7 @@ Document rules in PR; add unit tests for 10 example strings.
 
 ### Task
 
-1. Document in [`README.md`](../../../README.md) (or a new `docs/team/` runbook when added): `ollama run <model>` keep-alive, GPU memory, first-token expectations.
+1. Document in [`README.md`](../../../../README.md) (or a new `docs/team/` runbook when added): `ollama run <model>` keep-alive, GPU memory, first-token expectations.
 2. Propose seed/admin default for **local dev**: e.g. `deepseek-r1:8b` for speed tests, `gemma` 31B for quality tests — separate profiles.
 3. Optional: env `OLLAMA_KEEP_ALIVE` / compose note if team uses Docker.
 4. Re-run **S1-local** after warm model; log row.

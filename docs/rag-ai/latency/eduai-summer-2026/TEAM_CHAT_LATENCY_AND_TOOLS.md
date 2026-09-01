@@ -1,5 +1,7 @@
 # EduAI chat — latency & tool-use (team discussion doc)
 
+> **Dated record (checked 2026-08-31).** Kept as written. Its link to `../../literature/adhd-assist-architecture-phases.md` is dangling — `docs/literature/` was intentionally deleted in commit `4a37ead5`. For how the chat path works today, read [`../../CHAT_RAG_PIPELINE.md`](../../CHAT_RAG_PIPELINE.md).
+
 **Audience:** Full EduAI dev team + research lead  
 **Status:** Open problems — **not** solved; needs design before shipping toggles that disable course/web grounding  
 **Teammates — start here for tasks:** [`TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) (this week’s delegatable steps)  
@@ -9,7 +11,7 @@
 
 ## The problem in one paragraph
 
-EduAI must stay **course-aware** (RAG / `getInformation`) and able to use the **web** when appropriate — that is the product promise. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` or no-tool path in [`apps/core/app/routes/api/chat.ts`](../../../apps/core/app/routes/api/chat.ts) on `feat/local-models-and-ai-enhancement`), replies are **fast** but students must phrase requests like *“search the web for…”* or *“check the course materials for…”* or the model answers from weights only. A **“web search always on”** UI toggle was considered but rejected as a bad default (users leave it on). **Disabling tools globally is not an acceptable product fix.**
+EduAI must stay **course-aware** (RAG / `getInformation`) and able to use the **web** when appropriate — that is the product promise. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` or no-tool path in [`apps/core/app/routes/api/chat.ts`](../../../../apps/core/app/routes/api/chat.ts) on `feat/local-models-and-ai-enhancement`), replies are **fast** but students must phrase requests like *“search the web for…”* or *“check the course materials for…”* or the model answers from weights only. A **“web search always on”** UI toggle was considered but rejected as a bad default (users leave it on). **Disabling tools globally is not an acceptable product fix.**
 
 **Target (product):** ~**3–4 s** perceived for typical tutoring turns where possible; streaming should show the **first token early**, not after the full server pipeline finishes.
 

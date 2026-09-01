@@ -1,5 +1,7 @@
 # EduAI — Sustainability-aware model routing (team guide)
 
+> **Planning record (checked 2026-08-31). Auto routing has since shipped.** Read this for the *why*; for the *what*, read `apps/core/app/lib/ai/routing/` — `router.ts` (mode dispatch: `rules` | `knn` | `hybrid` | `llm`), `rules.ts`, `knn.ts`, `llm-classifier.ts`, `tiers.ts`, `carbon-policy.ts`, `telemetry.server.ts`, plus `fleet/` (multi-host round-robin) and `bedrock/` (overflow). Which Auto modes users can pick is admin-managed via `routing-model-settings`. Four links below are dangling — `TEAM_ROUTING_PHASES_SUMMARY.md`, `IMPLEMENTATION_PLAN_MVP.md`, `ROUTING_LAYER_PLAN.md`, and `../memory.md` were never committed to this repo.
+
 **Audience:** EduAI development team  
 **Repository:** [EduAI-Lab/EduAICore](https://github.com/EduAI-Lab/EduAICore) (monorepo: `apps/core` for EduAI)  
 **Tracking:** [GitHub Project — Edu AI Summer 2026](https://github.com/orgs/EduAI-Lab/projects/8)  
