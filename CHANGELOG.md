@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.08.31
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/#PR
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1718
 - Refresh the root `README.md` against the current monorepo — corrected the `infra/` and `docs/` tree listings, the documentation index, and the fleet-testing and fleet-registry sections, using the code as the source of truth.
 - Refresh the platform guides in `docs/`: architecture, deployment, environment, logging, Canvas, cron jobs, developer guide, user guide, extension onboarding, agent readiness, and the PICT census.
 - Align `TESTS.md` with the tests that actually exist — remove 11 rows for deleted test files and document 10 suites that had no row in either this branch or `development`.
