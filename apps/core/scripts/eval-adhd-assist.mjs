@@ -45,7 +45,7 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 // Source of truth: docs/literature/form-a-scenario-test-sheet.md (S1, S2, S3, S5).
-// S4: tool-heavy probes aligned with MODEL_LATENCY_TRACKER.md until form-a-eval-scenarios.md lands.
+// S4: tool-heavy probes; see docs/rag-ai/PERFORMANCE.md for current measurement guidance.
 const SCENARIOS = {
   S1: [
     `Explain what "gradient descent" means for someone new to machine learning, in one short paragraph of plain language (no math notation).`,

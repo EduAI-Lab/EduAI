@@ -7,7 +7,7 @@
  * Test data is seeded directly through Prisma — no register/login endpoint.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { createId } from "@paralleldrive/cuid2";
 
 // findOrCreateUser is called by requireAuth after session validate succeeds.
@@ -17,6 +17,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
@@ -175,7 +176,7 @@ describeDb("Core wiring DB integration", () => {
         makeAdminFetch(coreOk(coursePage([{ id: "cuid-core-course", code: "COSC 111" }]))),
       );
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/course/${courseId}/link-core`)
         .set(adminCookie())
         .send({ coreCourseId: "cuid-core-course" });
@@ -194,7 +195,7 @@ describeDb("Core wiring DB integration", () => {
         makeAdminFetch(coreOk(coursePage([{ id: "cuid-other", code: "MATH 101" }]))),
       );
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/course/${courseId}/link-core`)
         .set(adminCookie())
         .send({ coreCourseId: "cuid-core-course" });
@@ -213,7 +214,7 @@ describeDb("Core wiring DB integration", () => {
         makeAdminFetch(coreOk(coursePage([{ id: "cuid-core-course", code: "COSC 111" }]))),
       );
 
-      const res = await request(app)
+      const res = await request()
         .patch("/api/course/99999/link-core")
         .set(adminCookie())
         .send({ coreCourseId: "cuid-core-course" });
@@ -230,7 +231,7 @@ describeDb("Core wiring DB integration", () => {
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
       vi.stubGlobal("fetch", makeFetch());
 
-      const res = await request(app).post(`/api/course/${courseId}/sync-topics`).set(cookie());
+      const res = await request().post(`/api/course/${courseId}/sync-topics`).set(cookie());
 
       // Unlinked anchors no longer grant owner instructor access, so the
       // per-course gate rejects before the handler's "not linked" 400.
@@ -249,7 +250,7 @@ describeDb("Core wiring DB integration", () => {
       ];
       vi.stubGlobal("fetch", makeFetch(coreOk({ topics: coreTopics })));
 
-      const res = await request(app).post(`/api/course/${courseId}/sync-topics`).set(cookie());
+      const res = await request().post(`/api/course/${courseId}/sync-topics`).set(cookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data.synced).toBe(2);
@@ -269,7 +270,7 @@ describeDb("Core wiring DB integration", () => {
 
       vi.stubGlobal("fetch", makeFetch(coreErr({ error: "Service Unavailable" }, 503)));
 
-      const res = await request(app).post(`/api/course/${courseId}/sync-topics`).set(cookie());
+      const res = await request().post(`/api/course/${courseId}/sync-topics`).set(cookie());
 
       expect(res.status).toBe(503);
     });
@@ -288,7 +289,7 @@ describeDb("Core wiring DB integration", () => {
       // fetch: session validate, enrollment access check, then Core POST /topics
       vi.stubGlobal("fetch", makeFetch(coreOk({ id: "cuid-new-topic", name: "Sorting" }, 201)));
 
-      const res = await request(app)
+      const res = await request()
         .post(`/api/course/${courseId}/topics`)
         .set(cookie())
         .send({ name: "Sorting" });
@@ -311,7 +312,7 @@ describeDb("Core wiring DB integration", () => {
         makeFetch({ ok: false, status: 503, json: () => Promise.resolve({}) }),
       );
 
-      const res = await request(app)
+      const res = await request()
         .post(`/api/course/${courseId}/topics`)
         .set(cookie())
         .send({ name: "Fallback Topic" });
@@ -340,7 +341,7 @@ describeDb("Core wiring DB integration", () => {
       );
 
       // Use a name that doesn't already exist locally so Topics.create succeeds
-      const res = await request(app)
+      const res = await request()
         .post(`/api/course/${courseId}/topics`)
         .set(cookie())
         .send({ name: "Sorting Algorithms" });
@@ -357,7 +358,7 @@ describeDb("Core wiring DB integration", () => {
     it("returns 404 for a non-existent variant (access check precedes payload validation)", async () => {
       vi.stubGlobal("fetch", makeFetch());
 
-      const res = await request(app)
+      const res = await request()
         .patch("/api/questions/variants/999999/testable")
         .set(cookie())
         .send({ testable: "yes" });
@@ -368,7 +369,7 @@ describeDb("Core wiring DB integration", () => {
     it("returns 400 when variant has no coreQuestionId", async () => {
       vi.stubGlobal("fetch", makeFetch());
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/questions/variants/${variantId}/testable`)
         .set(cookie())
         .send({ testable: true });
@@ -385,7 +386,7 @@ describeDb("Core wiring DB integration", () => {
 
       vi.stubGlobal("fetch", makeFetch(coreErr({ error: "QUESTION_NOT_FOUND" }, 404)));
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/questions/variants/${variantId}/testable`)
         .set(cookie())
         .send({ testable: true });
@@ -409,7 +410,7 @@ describeDb("Core wiring DB integration", () => {
 
       vi.stubGlobal("fetch", makeFetch(coreOk({ id: "cuid-core-q", testable: true })));
 
-      const res = await request(app)
+      const res = await request()
         .patch(`/api/questions/variants/${variantId}/testable`)
         .set(cookie())
         .send({ testable: true });
@@ -473,7 +474,7 @@ describeDb("Core wiring DB integration", () => {
         data: { coreCourseId: "cuid-core-course" },
       });
 
-      const res = await request(app).get("/api/course?page=1&pageSize=100").set(adminCookie());
+      const res = await request().get("/api/course?page=1&pageSize=100").set(adminCookie());
 
       expect(res.status).toBe(200);
       const names = res.body.data.map((c) => c.name).sort();
@@ -497,7 +498,7 @@ describeDb("Core wiring DB integration", () => {
         makeAdminFetch(coreOk(coursePage([{ id: "cuid-core-only", name: "Core Only Course" }]))),
       );
 
-      const first = await request(app).get("/api/course?page=1&pageSize=100").set(adminCookie());
+      const first = await request().get("/api/course?page=1&pageSize=100").set(adminCookie());
       expect(first.status).toBe(200);
       const firstRow = first.body.data.find((c) => c.coreCourseId === "cuid-core-only");
       expect(firstRow).toBeTruthy();
@@ -507,7 +508,7 @@ describeDb("Core wiring DB integration", () => {
         makeAdminFetch(coreOk(coursePage([{ id: "cuid-core-only", name: "Core Only Course" }]))),
       );
 
-      const second = await request(app).get("/api/course?page=1&pageSize=100").set(adminCookie());
+      const second = await request().get("/api/course?page=1&pageSize=100").set(adminCookie());
       expect(second.status).toBe(200);
       const secondRow = second.body.data.find((c) => c.coreCourseId === "cuid-core-only");
       expect(secondRow.id).toBe(firstRow.id);
@@ -523,7 +524,7 @@ describeDb("Core wiring DB integration", () => {
       });
       vi.stubGlobal("fetch", makeAdminFetch(coreErr({ error: "Service Unavailable" }, 503)));
 
-      const res = await request(app).get("/api/course?page=1&pageSize=100").set(adminCookie());
+      const res = await request().get("/api/course?page=1&pageSize=100").set(adminCookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);

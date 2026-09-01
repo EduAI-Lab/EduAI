@@ -25,6 +25,7 @@ import canvasService, {
 } from "../../services/canvasService";
 import { courseService } from "../../services/courseService";
 import { Topic } from "../../types/topic";
+import { assessmentTypes, AssessmentType } from "../../types/question";
 import { toast } from "sonner";
 
 interface CanvasCourseLink {
@@ -57,7 +58,7 @@ export const CanvasImportDialog = ({
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [selectedTopicId, setSelectedTopicId] = useState<string>("");
   const [assessmentName, setAssessmentName] = useState<string>("");
-  const [assessmentType, setAssessmentType] = useState<string>("Quiz");
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>("Quiz");
 
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
@@ -364,16 +365,22 @@ export const CanvasImportDialog = ({
 
               <div className="space-y-2">
                 <Label htmlFor="assessmentType">Assessment Type</Label>
-                <Select value={assessmentType} onValueChange={setAssessmentType}>
+                <Select
+                  value={assessmentType}
+                  onValueChange={(value) => {
+                    const nextType = assessmentTypes.find((type) => type === value);
+                    if (nextType) setAssessmentType(nextType);
+                  }}
+                >
                   <SelectTrigger id="assessmentType">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Quiz">Quiz</SelectItem>
-                    <SelectItem value="Assignment">Assignment</SelectItem>
-                    <SelectItem value="Exam">Exam</SelectItem>
-                    <SelectItem value="Midterm">Midterm</SelectItem>
-                    <SelectItem value="Final">Final</SelectItem>
+                    {assessmentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

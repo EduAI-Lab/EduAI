@@ -8,12 +8,14 @@
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
  *    This is the source of truth for course-level TA access: Core sessions carry
  *    a platform STUDENT role for TAs, while the active enrollment resolves to
- *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes retain the
- *    platform authoring-role gate so this does not become blanket STUDENT access.
+ *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes derive a
+ *    server-side visibility predicate; platform STUDENT callers use live TA
+ *    grants only, without the owner fallback used by authoring-role callers.
  *  - #312: TA may edit/delete only question_metadata they created.
- *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
- *    remain caller-scoped; AI generation additionally requires a course context
- *    and uses a caller-keyed resource limiter.
+ *  - List/aggregate routes (list, stats, generate) remain caller-scoped; platform
+ *    STUDENT aggregate reads are limited to live TA grants. AI generation
+ *    additionally requires a course context and uses a caller-keyed resource
+ *    limiter.
  *  - POST /approve is the exception: no flat role gate — a course TA (platform
  *    STUDENT + TA enrollment) may create question_metadata shells, so the
  *    per-course gate alone authorizes that route (see its inline comment).
@@ -53,7 +55,12 @@ import { parseQuestionListFilters } from "../utils/questionListQuery.js";
 import { parseApprovalTarget, prepareApprovalQuestions } from "../utils/questionApproval.js";
 import { resolveVisibleCourseWhereForUser } from "../services/courseListService.js";
 import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
-import { qmAiUserRateLimit, validateGenerationBudget } from "../middleware/aiAdmission.js";
+import {
+  qmAiProviderCallAdmission,
+  qmAiUserRateLimit,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
+import { chunkByQuestionBlocks, normalizeExtractText } from "../services/extractionUtils.js";
 
 const router = express.Router();
 
@@ -61,6 +68,50 @@ const qmMaxExtractTextChars = () =>
   Number.isInteger(config.qmMaxExtractTextChars) && config.qmMaxExtractTextChars > 0
     ? config.qmMaxExtractTextChars
     : 120_000;
+
+const positiveConfigInt = (value, fallback) =>
+  Number.isInteger(value) && value > 0 ? value : fallback;
+
+const extractAdmission = qmAiProviderCallAdmission({
+  validate: (body = {}) => {
+    const text = body?.text;
+    if (typeof text !== "string" || !text.trim()) {
+      return {
+        status: 400,
+        code: "QM_EXTRACT_TEXT_REQUIRED",
+        message: "Text content is required for extraction",
+      };
+    }
+
+    const maxTextChars = qmMaxExtractTextChars();
+    if (text.length > maxTextChars) {
+      return {
+        status: 413,
+        code: "QM_EXTRACT_TEXT_TOO_LARGE",
+        message: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      };
+    }
+
+    const { chunks } = chunkByQuestionBlocks(normalizeExtractText(text), 5000);
+    const maxChunks = positiveConfigInt(config.qmMaxExtractChunks, 24);
+    if (chunks.length > maxChunks) {
+      return {
+        status: 413,
+        code: "QM_EXTRACT_CHUNK_LIMIT",
+        message: `OCR text produces ${chunks.length} chunks; the maximum is ${maxChunks}`,
+      };
+    }
+
+    // Each chunk gets one extraction attempt and one retry. Each attempt may
+    // make one JSON-repair call, so reserve the complete upstream fanout.
+    const logicalCalls = Math.min(
+      chunks.length * 2,
+      positiveConfigInt(config.qmMaxExtractProviderCalls, 36),
+    );
+    return { providerCalls: logicalCalls * 2 };
+  },
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -169,8 +220,8 @@ router.post(
  * view access to that course — including an enrolled TA who doesn't own it —
  * sees the whole bank: we verify course access (§16 view, min 'ta') and scope
  * by the course owner. Without a courseId the shared course-list visibility
- * predicate includes every course the caller can author in (ADMIN catalog,
- * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
+ * predicate includes every course visible to the caller; platform STUDENT users
+ * are limited to live TA grants and do not receive the owner fallback.
  */
 router.get("/", authenticateToken, async (req, res, next) => {
   try {
@@ -197,17 +248,12 @@ router.get("/", authenticateToken, async (req, res, next) => {
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
-      // The course-bank view is TA-capable only when a concrete course is
-      // supplied and resolved above. Keep the legacy caller-scoped aggregate
-      // path restricted to platform authoring roles; otherwise a STUDENT
-      // session would gain an unscoped list merely by clearing `courseId`.
-      if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Question bank courseId is required" });
-      }
+      // Platform STUDENT users can still be course TAs. The server-derived
+      // visibility predicate keeps this aggregate view limited to live TA
+      // grants; STUDENTs do not get the course-list owner fallback.
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
+        includeOwnerFallback: req.user.role !== "STUDENT",
       });
     }
 
@@ -253,13 +299,12 @@ router.get("/stats", authenticateToken, async (req, res, next) => {
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
-      if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Question bank courseId is required" });
-      }
+      // Platform STUDENT users can still be course TAs. The server-derived
+      // visibility predicate keeps these stats limited to live TA grants;
+      // STUDENTs do not get the course-list owner fallback.
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
+        includeOwnerFallback: req.user.role !== "STUDENT",
       });
     }
 
@@ -602,29 +647,17 @@ router.post(
 router.post(
   "/extract",
   authenticateToken,
-  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   qmAiUserRateLimit,
+  extractAdmission,
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
       const { text, model, apiKeys } = req.body;
 
-      if (!text || typeof text !== "string" || !text.trim()) {
-        return res.status(400).json({
-          success: false,
-          error: "Text content is required for extraction",
-        });
-      }
-
-      const maxTextChars = qmMaxExtractTextChars();
-      if (text.length > maxTextChars) {
-        return res.status(413).json({
-          success: false,
-          error: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
-        });
-      }
-
       const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys, {
         cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation.signal,
+        deadlineAt: req.aiOperation.deadlineAt,
       });
 
       res.json({

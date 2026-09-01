@@ -5,7 +5,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { teachingInstructorFetch, coursePage } from "../helpers/teachingInstructorFetch.js";
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -13,6 +13,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
@@ -71,7 +72,7 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("creates a question and lists it in GET /api/questions", async () => {
-    const create = await request(app).post("/api/questions").set(cookie()).send({
+    const create = await request().post("/api/questions").set(cookie()).send({
       description: "Integration test question",
       courseId,
       primaryTopicId: topicId,
@@ -80,7 +81,7 @@ describeDb("Questions & assessments (integration)", () => {
     expect(create.status).toBe(201);
     expect(create.body.data.id).toBeTruthy();
 
-    const list = await request(app).get("/api/questions").set(cookie());
+    const list = await request().get("/api/questions").set(cookie());
     expect(list.status).toBe(200);
     expect(list.body.data.items.some((q) => q.id === create.body.data.id)).toBe(true);
     expect(list.body.data.total).toBeGreaterThanOrEqual(1);
@@ -89,7 +90,7 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("creates an assessment and fetches it by id", async () => {
-    const createA = await request(app).post("/api/assessments").set(cookie()).send({
+    const createA = await request().post("/api/assessments").set(cookie()).send({
       type: "Quiz",
       name: "Integration Exam",
       semester: "Fall 2026",
@@ -98,14 +99,14 @@ describeDb("Questions & assessments (integration)", () => {
     expect(createA.status).toBe(201);
     const id = createA.body.data.id;
 
-    const getOne = await request(app).get(`/api/assessments/${id}`).set(cookie());
+    const getOne = await request().get(`/api/assessments/${id}`).set(cookie());
     expect(getOne.status).toBe(200);
     expect(getOne.body.data.name).toBe("Integration Exam");
     expect(getOne.body.data.courseId).toBe(courseId);
   });
 
   it("rejects a question with invalid type", async () => {
-    const res = await request(app).post("/api/questions").set(cookie()).send({
+    const res = await request().post("/api/questions").set(cookie()).send({
       description: "X",
       courseId,
       primaryTopicId: topicId,
@@ -115,7 +116,7 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("rejects a question when primaryTopicId is missing", async () => {
-    const res = await request(app)
+    const res = await request()
       .post("/api/questions")
       .set(cookie())
       .send({ description: "X", courseId, primaryTopicId: "", type: "MCQ" });
@@ -186,7 +187,7 @@ describeDb("Questions & assessments (integration)", () => {
       }),
     );
 
-    const created = await request(app)
+    const created = await request()
       .post("/api/course")
       .set(cookie())
       .send({ name, courseCode: "INT-999", coreCourseId });
@@ -194,27 +195,27 @@ describeDb("Questions & assessments (integration)", () => {
     expect(created.body.data.name).toBe(name);
     expect(created.body.data.coreCourseId).toBe(coreCourseId);
 
-    const list = await request(app).get("/api/course?page=1&pageSize=100").set(cookie());
+    const list = await request().get("/api/course?page=1&pageSize=100").set(cookie());
     expect(list.body.data.some((c) => c.id === created.body.data.id && c.name === name)).toBe(true);
     // Pagination envelope (#1044): data stays a bare array, with metadata siblings.
     expect(list.body).toMatchObject({ page: 1, pageSize: 100 });
     expect(typeof list.body.total).toBe("number");
 
     // The list endpoint requires page/pageSize (#1044) — missing params 400 with a code.
-    const missingParams = await request(app).get("/api/course").set(cookie());
+    const missingParams = await request().get("/api/course").set(cookie());
     expect(missingParams.status).toBe(400);
     expect(missingParams.body.code).toBe("PAGINATION_REQUIRED");
 
     // Idempotent ensure (unified contract): re-POSTing the same coreCourseId
     // (racing the background mirror, or a plain retry) succeeds with the
     // existing anchor rather than a unique-constraint error.
-    const again = await request(app).post("/api/course").set(cookie()).send({ coreCourseId });
+    const again = await request().post("/api/course").set(cookie()).send({ coreCourseId });
     expect(again.status).toBe(200);
     expect(again.body.data.id).toBe(created.body.data.id);
   });
 
   it("rejects course creation without a coreCourseId", async () => {
-    const res = await request(app)
+    const res = await request()
       .post("/api/course")
       .set(cookie())
       .send({ name: "No Core Link", courseCode: "NL-1" });
@@ -246,7 +247,7 @@ describeDb("Questions & assessments (integration)", () => {
       }),
     );
 
-    const res = await request(app).post("/api/course").set(cookie()).send({
+    const res = await request().post("/api/course").set(cookie()).send({
       name: "Unauthorized Link",
       courseCode: "UL-1",
       coreCourseId: "core-cuid-not-scoped",
@@ -256,7 +257,7 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("creates a question, adds a variant, and lists variants", async () => {
-    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+    const createQ = await request().post("/api/questions").set(cookie()).send({
       description: "Variant parent",
       courseId,
       primaryTopicId: topicId,
@@ -265,11 +266,11 @@ describeDb("Questions & assessments (integration)", () => {
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
-    const alist = await request(app).get("/api/assessments").set(cookie()).query({ courseId });
+    const alist = await request().get("/api/assessments").set(cookie()).query({ courseId });
     const practice = alist.body.data.items.find((a) => a.name === "Practice Exam");
     expect(practice).toBeTruthy();
 
-    const v = await request(app)
+    const v = await request()
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({
@@ -287,14 +288,14 @@ describeDb("Questions & assessments (integration)", () => {
     expect(v.status).toBe(201);
     expect(v.body.data.id).toBeTruthy();
 
-    const listV = await request(app).get(`/api/questions/${qid}/variants`).set(cookie());
+    const listV = await request().get(`/api/questions/${qid}/variants`).set(cookie());
     expect(listV.status).toBe(200);
     expect(Array.isArray(listV.body.data)).toBe(true);
     expect(listV.body.data.length).toBeGreaterThan(0);
   });
 
   it("returns 400 when variant has empty questionText", async () => {
-    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+    const createQ = await request().post("/api/questions").set(cookie()).send({
       description: "No variant text test",
       courseId,
       primaryTopicId: topicId,
@@ -302,7 +303,7 @@ describeDb("Questions & assessments (integration)", () => {
     });
     const qid = createQ.body.data.id;
 
-    const res = await request(app)
+    const res = await request()
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({ questionText: "   " });
@@ -311,7 +312,7 @@ describeDb("Questions & assessments (integration)", () => {
 
   it("paginates questions and assessments with total/limit/offset metadata (#1040)", async () => {
     for (let i = 0; i < 55; i += 1) {
-      const create = await request(app)
+      const create = await request()
         .post("/api/questions")
         .set(cookie())
         .send({
@@ -323,7 +324,7 @@ describeDb("Questions & assessments (integration)", () => {
       expect(create.status).toBe(201);
     }
 
-    const page1 = await request(app)
+    const page1 = await request()
       .get("/api/questions")
       .set(cookie())
       .query({ courseId, limit: 50, offset: 0 });
@@ -333,7 +334,7 @@ describeDb("Questions & assessments (integration)", () => {
     expect(page1.body.data.limit).toBe(50);
     expect(page1.body.data.offset).toBe(0);
 
-    const page2 = await request(app)
+    const page2 = await request()
       .get("/api/questions")
       .set(cookie())
       .query({ courseId, limit: 50, offset: 50 });
@@ -348,7 +349,7 @@ describeDb("Questions & assessments (integration)", () => {
     ]);
     expect(ids.size).toBe(page1.body.data.items.length + page2.body.data.items.length);
 
-    const assessments = await request(app)
+    const assessments = await request()
       .get("/api/assessments")
       .set(cookie())
       .query({ courseId, limit: 10, offset: 0 });

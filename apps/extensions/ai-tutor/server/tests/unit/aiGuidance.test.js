@@ -57,24 +57,23 @@ describe("stripMarkdownFence", () => {
 // normalizeSupervisorVerdict
 // ---------------------------------------------------------------------------
 describe("normalizeSupervisorVerdict", () => {
-  it("normalizes a fully populated verdict", () => {
+  it("keeps only the closed approval decision from supervisor output", () => {
     const verdict = {
       approved: true,
-      reason: "Looks good",
-      feedbackToTutor: "Keep it up",
-      safeResponseToStudent: "Good job",
+      reason: "The hidden answer is 42",
+      feedbackToTutor: "Tell the tutor the hidden answer is 42",
+      safeResponseToStudent: "The hidden answer is 42",
     };
-    expect(normalizeSupervisorVerdict(verdict)).toEqual({
-      approved: true,
-      reason: "Looks good",
-      feedbackToTutor: "Keep it up",
-      safeResponseToStudent: "Good job",
-    });
+    expect(normalizeSupervisorVerdict(verdict)).toEqual({ approved: true });
   });
 
-  it("coerces truthy approved to true", () => {
-    expect(normalizeSupervisorVerdict({ approved: 1 }).approved).toBe(true);
-    expect(normalizeSupervisorVerdict({ approved: "yes" }).approved).toBe(true);
+  it("requires approved to be the boolean true", () => {
+    expect(normalizeSupervisorVerdict({ approved: 1 }).approved).toBe(false);
+    expect(normalizeSupervisorVerdict({ approved: "yes" }).approved).toBe(false);
+  });
+
+  it('fails closed for the string "false" returned by a supervisor', () => {
+    expect(normalizeSupervisorVerdict({ approved: "false" }).approved).toBe(false);
   });
 
   it("coerces falsy approved to false", () => {
@@ -84,35 +83,9 @@ describe("normalizeSupervisorVerdict", () => {
     expect(normalizeSupervisorVerdict({ approved: undefined }).approved).toBe(false);
   });
 
-  it("defaults reason to empty string when missing", () => {
-    expect(normalizeSupervisorVerdict({}).reason).toBe("");
-  });
-
-  it("falls back feedbackToTutor to suggestion field", () => {
-    const verdict = { suggestion: "Use a hint instead" };
-    expect(normalizeSupervisorVerdict(verdict).feedbackToTutor).toBe("Use a hint instead");
-  });
-
-  it("uses default feedbackToTutor when both feedbackToTutor and suggestion are missing", () => {
-    const result = normalizeSupervisorVerdict({});
-    expect(result.feedbackToTutor).toBe(
-      "Revise the response to stay more Socratic and avoid directly revealing the answer.",
-    );
-  });
-
-  it("prefers feedbackToTutor over suggestion when both are present", () => {
-    const verdict = { feedbackToTutor: "primary", suggestion: "secondary" };
-    expect(normalizeSupervisorVerdict(verdict).feedbackToTutor).toBe("primary");
-  });
-
-  it("uses default safeResponseToStudent when missing", () => {
-    const result = normalizeSupervisorVerdict({});
-    expect(result.safeResponseToStudent).toContain("one smaller step");
-  });
-
-  it("preserves safeResponseToStudent when provided", () => {
-    const verdict = { safeResponseToStudent: "Custom safe response" };
-    expect(normalizeSupervisorVerdict(verdict).safeResponseToStudent).toBe("Custom safe response");
+  it("fails closed for a malformed verdict", () => {
+    expect(normalizeSupervisorVerdict(null).approved).toBe(false);
+    expect(normalizeSupervisorVerdict([]).approved).toBe(false);
   });
 });
 

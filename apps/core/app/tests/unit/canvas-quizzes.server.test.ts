@@ -12,6 +12,7 @@ vi.mock("~/lib/net/ssrf-guard.server", async (importOriginal) => ({
 import {
   createCanvasQuiz,
   createCanvasQuizQuestion,
+  deleteCanvasQuiz,
   getCanvasQuiz,
   getCanvasQuizQuestion,
   listCanvasQuizQuestions,
@@ -110,6 +111,10 @@ describe("canvas quiz helpers (test mode)", () => {
     const created = await createCanvasQuizQuestion(TEST_CREDENTIALS, 1, 42, questionPayload);
 
     expect(created.id).toEqual(expect.any(Number));
+  });
+
+  it("deleteCanvasQuiz removes the partial quiz", async () => {
+    await expect(deleteCanvasQuiz(TEST_CREDENTIALS, 1, 42)).resolves.toMatchObject({ id: 42 });
   });
 });
 

@@ -1,4 +1,5 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
+import { escapeHtml } from "~/lib/email/templates/escape-html";
 
 // A `Map` because the key is a caller-supplied string, not a union this
 // file owns: an unrecognised one has to be able to miss.
@@ -52,12 +53,4 @@ export function buildInvitationEmail(input: InvitationEmailInput): EmailMessage 
   `.trim();
 
   return { to: input.to, subject, text, html };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

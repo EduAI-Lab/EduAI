@@ -1,5 +1,6 @@
 import {
   normalizeStudentId,
+  normalizeRosterEmail,
   resolveCanvasEnrollmentsForUser,
 } from "~/lib/canvas/enrollment-link.server";
 import { isValidUbcStudentNumber, UBC_STUDENT_NUMBER_MESSAGE } from "~/lib/canvas/student-number";
@@ -7,8 +8,10 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
+  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
+import { canLinkCanvasRoster, isCanvasLinkRosterRateLimited } from "~/lib/canvas/guards.server";
 import prisma from "~/lib/prisma.server";
 
 export class LinkRosterError extends Error {
@@ -26,6 +29,10 @@ export type LinkRosterResult = {
   enrollmentsLinked: number;
 };
 
+type LinkRosterOptions = {
+  requireVerifiedRoster?: boolean;
+};
+
 function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail?: string) {
   console.info(
     JSON.stringify({
@@ -39,14 +46,13 @@ function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail
 }
 
 /**
- * Saves the user's studentId unconditionally (staging rows are optional — a
- * student may link before any instructor has synced Canvas) and then resolves
- * whatever staging rows happen to exist at that moment into enrollments. Rows
- * synced later are linked by the sync's own staging→enrollment matching.
+ * Administrative linking path. Self-service callers must use
+ * `linkCanvasRosterSelfService`, which requires a verified roster identity.
  */
 export async function linkCanvasRoster(
   userId: string,
   studentNumber: string,
+  options: LinkRosterOptions = {},
 ): Promise<LinkRosterResult> {
   const normalized = normalizeStudentId(studentNumber);
   if (!normalized) {
@@ -61,11 +67,34 @@ export async function linkCanvasRoster(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { studentId: true },
+    select: { studentId: true, email: true, emailVerified: true },
   });
 
   if (!user) {
     throw new LinkRosterError("User not found", 404);
+  }
+
+  if (options.requireVerifiedRoster) {
+    const email = normalizeRosterEmail(user.email);
+    if (!user.emailVerified || !email) {
+      auditLinkAttempt(userId, "failure", "verified_email_missing");
+      throw new LinkRosterError("Verify your account email before linking Canvas", 403);
+    }
+    const verifiedMatch = await prisma.canvasRosterMember.findFirst({
+      where: {
+        isActive: true,
+        ...rosterSisUserIdMatchFilter(normalized),
+        email: { equals: email, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (!verifiedMatch) {
+      auditLinkAttempt(userId, "failure", "verified_roster_match_missing");
+      throw new LinkRosterError(
+        "Student number and verified email do not match an active Canvas roster. Contact your instructor or an administrator.",
+        403,
+      );
+    }
   }
 
   const currentStudentId = readStoredStudentId(user.studentId);
@@ -85,11 +114,6 @@ export async function linkCanvasRoster(
       409,
     );
   }
-
-  // We intentionally do NOT require a matching staging row here. A student may
-  // link their number before any instructor has synced Canvas; the number is
-  // saved now and the later sync's linkEnrollmentsFromStagingForCourse matches
-  // them by studentId and enrolls them. See issue #725.
 
   if (
     currentStudentId &&
@@ -118,6 +142,20 @@ export async function linkCanvasRoster(
     studentId: normalized,
     enrollmentsLinked,
   };
+}
+
+export async function linkCanvasRosterSelfService(
+  userId: string,
+  role: string | null | undefined,
+  studentNumber: string,
+): Promise<LinkRosterResult> {
+  if (!canLinkCanvasRoster(role)) {
+    throw new LinkRosterError("Forbidden: students and TAs only", 403);
+  }
+  if (isCanvasLinkRosterRateLimited(userId)) {
+    throw new LinkRosterError("Too many link attempts. Please try again later.", 429);
+  }
+  return linkCanvasRoster(userId, studentNumber, { requireVerifiedRoster: true });
 }
 
 /** Admin or profile flows that set studentId directly should call this after update. */

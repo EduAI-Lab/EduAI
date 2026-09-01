@@ -68,7 +68,7 @@ export function parseExtraExtensions(): LauncherApp[] {
  * where the extension isn't deployed and it won't show in the sidebar.
  * Additional extensions can also be injected via VITE_EXTRA_EXTENSIONS.
  */
-export function getLauncherApps(): LauncherApp[] {
+export function getLauncherApps(coreCourseId?: string | null): LauncherApp[] {
   const aiTutorUrl = getAiTutorAppUrl();
   const questionMakerUrl = getQuestionMakerUrl();
 
@@ -79,6 +79,7 @@ export function getLauncherApps(): LauncherApp[] {
       aiTutor: aiTutorUrl ?? "",
       questionMaker: questionMakerUrl ?? "",
     },
+    coreCourseId,
   });
 
   return [...apps.filter((app) => app.id === CURRENT_APP_ID || app.url), ...parseExtraExtensions()];

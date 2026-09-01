@@ -44,6 +44,7 @@ describe("Better Auth inactive-user sign-in contract", () => {
     expect(signUp.status).toBe(200);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
     const signIn = await auth.handler(
       new Request("http://localhost/api/auth/sign-in/email", {
         method: "POST",

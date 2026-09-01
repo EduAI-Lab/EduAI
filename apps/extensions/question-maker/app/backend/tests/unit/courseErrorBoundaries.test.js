@@ -6,10 +6,14 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { isCoreCourseInScopedList, syncTopicsFromCoreForCourse } = vi.hoisted(() => ({
-  isCoreCourseInScopedList: vi.fn(),
-  syncTopicsFromCoreForCourse: vi.fn(),
-}));
+const { isCoreCourseInScopedList, getCourseEnrollmentsFromCore, ensureCourseAnchor } = vi.hoisted(
+  () => ({
+    isCoreCourseInScopedList: vi.fn(),
+    getCourseEnrollmentsFromCore: vi.fn(),
+    ensureCourseAnchor: vi.fn(),
+  }),
+);
+const syncTopicsFromCoreForCourse = vi.hoisted(() => vi.fn());
 
 vi.mock("../../src/middleware/auth.js", () => ({
   authenticateToken: (req, _res, next) => next(),
@@ -43,12 +47,16 @@ vi.mock("../../src/config/database.js", () => ({
 vi.mock("../../src/services/coreApiService.js", () => ({
   pushTopicToCore: vi.fn(),
   isCoreCourseInScopedList,
-  getCourseEnrollmentsFromCore: vi.fn(),
+  getCourseEnrollmentsFromCore,
 }));
 
 vi.mock("../../src/services/courseListService.js", () => ({
   listCoursesPageForUser: vi.fn().mockResolvedValue({ courses: [], total: 0 }),
-  enrichCourseDetail: vi.fn(),
+  enrichCourseDetail: (course) => course,
+}));
+
+vi.mock("../../src/services/ensureCourseAnchor.js", () => ({
+  ensureCourseAnchor,
 }));
 
 vi.mock("../../src/services/topicSyncService.js", () => ({
@@ -91,6 +99,11 @@ function upstreamCanaryError() {
 beforeEach(() => {
   vi.clearAllMocks();
   isCoreCourseInScopedList.mockResolvedValue(true);
+  getCourseEnrollmentsFromCore.mockResolvedValue({ enrollments: [] });
+  ensureCourseAnchor.mockResolvedValue({
+    course: { id: 7, userId: "u-1", coreCourseId: "core-course" },
+    created: true,
+  });
   syncTopicsFromCoreForCourse.mockResolvedValue(1);
 });
 
@@ -110,6 +123,34 @@ describe("course route Core error boundaries", () => {
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({ success: false, error: "Core API error (503)" });
     expect(prisma.topics.create).not.toHaveBeenCalled();
+  });
+
+  it("lets a platform student materialize only a course where they are a live TA", async () => {
+    getCourseEnrollmentsFromCore.mockResolvedValue({
+      enrollments: [{ studentId: "ta-1", role: "TA", isActive: true }],
+    });
+
+    const response = await request(appFor({ id: "ta-1", role: "STUDENT" }))
+      .post("/api/course")
+      .set("Cookie", "session=ta")
+      .send({ coreCourseId: "core-course" });
+
+    expect(response.status).toBe(201);
+    expect(ensureCourseAnchor).toHaveBeenCalledWith("ta-1", "core-course");
+  });
+
+  it("denies an ordinary platform student from materializing a course", async () => {
+    getCourseEnrollmentsFromCore.mockResolvedValue({
+      enrollments: [{ studentId: "student-1", role: "STUDENT", isActive: true }],
+    });
+
+    const response = await request(appFor({ id: "student-1", role: "STUDENT" }))
+      .post("/api/course")
+      .set("Cookie", "session=student")
+      .send({ coreCourseId: "core-course" });
+
+    expect(response.status).toBe(403);
+    expect(ensureCourseAnchor).not.toHaveBeenCalled();
   });
 
   it("returns a stable error for POST /api/course scoped-list failures", async () => {

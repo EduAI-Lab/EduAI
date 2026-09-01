@@ -4,7 +4,7 @@
  * ownership must not survive a revoked Core enrollment.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -18,6 +18,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   let truncateTestDatabase;
   let prisma;
   let app;
+  const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
   let owner;
   let courseA;
   let courseB;
@@ -103,7 +104,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   it("denies a linked-course owner after their Core instructor enrollment is revoked", async () => {
     stubCore();
 
-    const response = await request(app)
+    const response = await request()
       .post("/api/questions/approve")
       .set("Cookie", "session=approve")
       .send({
@@ -118,7 +119,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   it("fails closed for a linked-course owner when Core enrollment lookup is unavailable", async () => {
     stubCore({ failEnrollmentLookup: true });
 
-    const response = await request(app)
+    const response = await request()
       .post("/api/questions/approve")
       .set("Cookie", "session=approve")
       .send({
@@ -133,7 +134,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   it("rejects a mixed-course batch before any write", async () => {
     stubCore({ enrolledCoreCourseIds: [courseA.coreCourseId] });
 
-    const response = await request(app)
+    const response = await request()
       .post("/api/questions/approve")
       .set("Cookie", "session=approve")
       .send({
@@ -152,7 +153,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   it("rejects malformed course ids before the Core access check", async () => {
     stubCore({ enrolledCoreCourseIds: [courseA.coreCourseId] });
 
-    const response = await request(app)
+    const response = await request()
       .post("/api/questions/approve")
       .set("Cookie", "session=approve")
       .send({
@@ -167,7 +168,7 @@ describeDb("POST /api/questions/approve course access (real DB)", () => {
   it("persists a batch only for the one authorized course", async () => {
     stubCore({ enrolledCoreCourseIds: [courseA.coreCourseId] });
 
-    const response = await request(app)
+    const response = await request()
       .post("/api/questions/approve")
       .set("Cookie", "session=approve")
       .send({

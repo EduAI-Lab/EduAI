@@ -21,7 +21,7 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 - Better Auth sessions and OAuth/OIDC for the platform
 - Course / enrollment / materials APIs, gated by the RBAC permission layer (`app/lib/rbac/`)
 - Canvas LMS integration (`app/lib/canvas/`, 18 modules): roster sync, module/quiz/material sync, instructor token storage (AES-256-GCM), term normalization, student-number linking
-- Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md#ann-index-940)), AI provider catalog
+- Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search)), AI provider catalog
 - Agentic chat tools (`app/lib/agent-tools/`): distinct tool sets for learning, instructor, and admin chat modes (Canvas reads/writes, invitations, platform mutations, write-confirmation flow)
 - Background job queue (`app/lib/queue/`, BullMQ-based): chat-turn processing, concurrency/availability/ETA tracking, worker stats
 - Question banks (`app/lib/question-banks/`) and topic data model backing Question Maker
@@ -49,7 +49,7 @@ Copy from `.env.example` (root `npm install` also auto-copies if missing). Criti
 | `REDIS_URL` | Shared queue transport and cross-instance `/api/chat` + `/api/completion` rate-limit state |
 | `CHAT_RATE_LIMIT` / `CHAT_RATE_LIMIT_WINDOW_MS` | Completion sliding-window limit (defaults `100` requests / `60000` ms); full semantics in [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) |
 | `EMBEDDING_PROVIDER` / `VLLM_EMBEDDING_BASE_URL` / `VLLM_EMBEDDING_MODEL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
-| `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`docs/rag-ai/EMBEDDINGS.md#ann-index-940`](../../docs/rag-ai/EMBEDDINGS.md#ann-index-940) |
+| `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search) |
 
 Full inventory: [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) and `apps/core/.env.example`.
 

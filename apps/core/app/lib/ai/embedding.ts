@@ -45,7 +45,7 @@ function resolveMaterialEmbeddingInsertBatchSize(): number {
   return Math.min(configured, MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
 }
 
-/** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
+/** pgvector column dimension — must match docs/rag-ai/EMBEDDINGS.md and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
 /** Cloud Gemini default (legacy 3072 path — only if EMBEDDING_DIMENSION=3072). */

@@ -27,6 +27,7 @@ describe("CourseOverviewTab", () => {
         topicsCount={1}
         analytics={baseAnalytics}
         canWrite
+        canManageAssessment
         onAddQuestion={vi.fn()}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}
@@ -45,6 +46,7 @@ describe("CourseOverviewTab", () => {
         topicsCount={1}
         analytics={baseAnalytics}
         canWrite={false}
+        canManageAssessment={false}
         onAddQuestion={vi.fn()}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}
@@ -64,6 +66,7 @@ describe("CourseOverviewTab", () => {
         topicsCount={1}
         analytics={baseAnalytics}
         canWrite
+        canManageAssessment
         onAddQuestion={onAddQuestion}
         onNewAssessment={onNewAssessment}
         onImportFromCanvas={onImportFromCanvas}
@@ -86,6 +89,7 @@ describe("CourseOverviewTab", () => {
         topicsCount={0}
         analytics={baseAnalytics}
         canWrite
+        canManageAssessment
         onAddQuestion={onAddQuestion}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}
@@ -104,6 +108,7 @@ describe("CourseOverviewTab", () => {
         topicsCount={0}
         analytics={baseAnalytics}
         canWrite={false}
+        canManageAssessment={false}
         onAddQuestion={vi.fn()}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}
@@ -121,6 +126,7 @@ describe("CourseOverviewTab", () => {
         analytics={baseAnalytics}
         analyticsStatus="unavailable"
         canWrite
+        canManageAssessment
         onAddQuestion={vi.fn()}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}
@@ -138,6 +144,7 @@ describe("CourseOverviewTab", () => {
         analytics={baseAnalytics}
         analyticsStatus="loading"
         canWrite
+        canManageAssessment
         onAddQuestion={vi.fn()}
         onNewAssessment={vi.fn()}
         onImportFromCanvas={vi.fn()}

@@ -77,7 +77,7 @@ Before any test session:
 | Dev server | `npm run dev` from `apps/core` (default `http://localhost:3000`) |
 | Model + keys | Participant-facing model configured (e.g. `google:gemini-2.5-flash`) |
 | Git SHA logged | `git rev-parse --short HEAD` — note in session notes |
-| Baseline latency | Optional: log TTFT/Total for S1 probe in [`MODEL_LATENCY_TRACKER.md`](../docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md) |
+| Baseline latency | Optional: record TTFT/total and conditions using [`PERFORMANCE.md`](../docs/rag-ai/PERFORMANCE.md) |
 
 **Study build vs dev defaults:** If you use demo session caps (`CHAT_SESSION_MAX_CHARS=2000`, etc.), record that in your Form A notes — it affects long-thread behavior.
 
@@ -140,7 +140,7 @@ Counterbalance order (half A→B, half B→A) to control learning effects.
 
 ADHD-relevant latency matters. Before/after Phase 3 PRs, log warm **TTFT** and **Total** for the S1 probe. Regression rule from the latency sprint doc: do not worsen warm Total by more than **15%** vs `main` at the same model unless explicitly accepted.
 
-See: [`docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md`](../docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md)
+See: [`docs/rag-ai/PERFORMANCE.md`](../docs/rag-ai/PERFORMANCE.md)
 
 ---
 
@@ -435,7 +435,7 @@ git rev-parse --short HEAD
 | `apps/core/app/routes/api/assistive-events.ts` | Client event POST endpoint |
 | `apps/core/scripts/eval-adhd-assist.mjs` | Form A synthetic runner |
 | `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` | OFF vs ON aggregation |
-| `docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md` | TTFT / Total ledger |
+| `docs/rag-ai/PERFORMANCE.md` | Current performance measurement guidance |
 
 ---
 

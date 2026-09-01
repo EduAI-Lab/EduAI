@@ -83,8 +83,8 @@ only inference is sent to the picked GPU host (see fleet doc, *Request path*).
 
 `JobType` is **not** a new enum. It is the *same* type the fleet router already consumes to pick
 a server pool, defined in `apps/core/app/lib/ai/routing/fleet/types.ts` and documented as the
-authority in [`docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md`](../rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md)
-(§ *Job types — how we pick a server pool*).
+authority in [`docs/rag-ai/MODEL_ROUTING.md`](../rag-ai/MODEL_ROUTING.md)
+(§ *Fleet pools*).
 
 ```typescript
 type JobType = "interactive" | "background";

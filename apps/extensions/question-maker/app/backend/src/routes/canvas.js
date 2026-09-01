@@ -169,6 +169,13 @@ router.post(
         });
       }
 
+      if (published !== undefined && typeof published !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          error: "published must be a boolean",
+        });
+      }
+
       const result = await exportAssessmentToCanvas(
         assessmentId,
         canvasCourseId,
@@ -337,15 +344,17 @@ router.get(
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
+      let canvasCourseId;
       let canvasBankId;
       try {
-        parseCanvasNumericId(req.params.canvasCourseId, "canvasCourseId");
+        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, "canvasCourseId");
         canvasBankId = parseCanvasNumericId(req.params.canvasBankId, "canvasBankId");
       } catch (error) {
         return res.status(400).json({ success: false, error: error.message });
       }
       const { questions, truncated } = await getCanvasQuestionBankQuestions(
         req.headers.cookie,
+        canvasCourseId,
         canvasBankId,
       );
       res.json({ success: true, data: questions, truncated });

@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { z } from "zod";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
@@ -20,6 +21,8 @@ import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { asText } from "~/lib/json-value";
+import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
+import { buildEmailVerificationEmail } from "../email/templates/email-verification";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -37,6 +40,21 @@ const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
   "/api-key/get",
 ]);
 
+const returnedSessionSchema = z.object({
+  user: z.object({
+    isActive: z.boolean().optional(),
+    emailVerified: z.boolean().optional(),
+  }),
+  session: z.object({ token: z.string().min(1) }).nullish(),
+});
+
+// SMTP-less environments (E2E stack, local dev without SMTP) cannot complete
+// email verification: fresh sign-ups would stay unverified and be signed out
+// by the /get-session guard below. Set BETTER_AUTH_DISABLE_EMAIL_VERIFICATION=1
+// to skip the verification requirement and mint new users pre-verified.
+// Production must never set this.
+const EMAIL_VERIFICATION_DISABLED = process.env.BETTER_AUTH_DISABLE_EMAIL_VERIFICATION === "1";
+
 export const auth = betterAuth({
   baseURL: authBaseURL,
   secret: process.env.BETTER_AUTH_SECRET,
@@ -47,6 +65,29 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    requireEmailVerification: !EMAIL_VERIFICATION_DISABLED,
+  },
+  emailVerification: {
+    // All three flags only matter when verification is enforceable; in
+    // SMTP-less environments they stay off so better-auth never queues a
+    // verification email it cannot deliver.
+    sendOnSignUp: !EMAIL_VERIFICATION_DISABLED,
+    sendOnSignIn: !EMAIL_VERIFICATION_DISABLED,
+    autoSignInAfterVerification: !EMAIL_VERIFICATION_DISABLED,
+    sendVerificationEmail: async ({ user, url }, request) => {
+      // Invitation acceptance already proves mailbox control and promotes the
+      // account to emailVerified in the same flow. The marker is stripped at
+      // the public auth boundary, so only the trusted server sub-request can
+      // skip this otherwise automatic self-signup email.
+      if (request?.headers.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
+
+      await sendEmail(
+        buildEmailVerificationEmail({
+          to: user.email,
+          verificationUrl: url,
+        }),
+      );
+    },
   },
   plugins: [
     apiKey({
@@ -206,23 +247,31 @@ export const auth = betterAuth({
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
+      if (process.env.NODE_ENV === "production" && !isSmtpConfigured()) {
+        throw new APIError("SERVICE_UNAVAILABLE", {
+          message: "Registration is temporarily unavailable. Please try again later.",
+          code: "EMAIL_DELIVERY_UNAVAILABLE",
+        });
+      }
     }),
     // #971: shared session-resolution guard. `/get-session` is the endpoint
     // every `auth.api.getSession()` call in the app resolves to (they all run
     // through this same hook pipeline, not just HTTP requests), so gating
     // here closes the guard for every caller at once instead of patching
     // each route individually. Handles the case where a user is deactivated
-    // *after* already holding a valid session: the next request treats them
-    // as signed out and the now-orphaned session row is deleted so a leaked
-    // or cached cookie can't be replayed later.
+    // or an unverified user already holds a session minted before email
+    // verification became mandatory: the next request treats them as signed
+    // out and deletes the now-orphaned session row so a leaked or cached
+    // cookie can't be replayed later.
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/get-session") return;
-      const returned = ctx.context.returned as
-        | { session?: { token?: string }; user?: { isActive?: boolean } }
-        | null
-        | undefined;
-      if (!returned?.user || returned.user.isActive !== false) return;
-      const token = returned.session?.token;
+      const returned = returnedSessionSchema.safeParse(ctx.context.returned);
+      if (!returned.success) return;
+      const isBlocked =
+        returned.data.user.isActive === false || returned.data.user.emailVerified === false;
+      if (!isBlocked) return;
+
+      const token = returned.data.session?.token;
       if (token) {
         await prisma.session.deleteMany({ where: { token } }).catch(() => {});
       }
@@ -264,6 +313,17 @@ export const auth = betterAuth({
               passwordHash: account.password,
             });
           }
+        },
+      },
+    },
+    user: {
+      create: {
+        // SMTP-less environments (E2E stack, local dev without SMTP) cannot
+        // receive verification links; mint those accounts pre-verified so
+        // their sessions are not reaped by the /get-session guard above.
+        before: async (user) => {
+          if (!EMAIL_VERIFICATION_DISABLED) return;
+          return { data: { ...user, emailVerified: true } };
         },
       },
     },

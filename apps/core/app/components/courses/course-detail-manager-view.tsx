@@ -275,6 +275,7 @@ export function CourseDetailManagerView({
   const [enrollingStudent, setEnrollingStudent] = useState(false);
   const [enrollmentActionError, setEnrollmentActionError] = useState<string | null>(null);
   const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
+  const [enrollmentToRemove, setEnrollmentToRemove] = useState<CourseEnrollment | null>(null);
   const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
@@ -396,7 +397,9 @@ export function CourseDetailManagerView({
     }
   };
 
-  const handleRemoveEnrollment = async (enrollmentId: string) => {
+  const handleRemoveEnrollment = async () => {
+    if (!enrollmentToRemove) return;
+    const enrollmentId = enrollmentToRemove.id;
     setEnrollmentActionError(null);
     setEnrollmentActionSuccess(null);
     setRemovingEnrollmentId(enrollmentId);
@@ -407,6 +410,7 @@ export function CourseDetailManagerView({
       setEnrollmentActionError("Could not remove student from course. Please try again.");
     } finally {
       setRemovingEnrollmentId(null);
+      setEnrollmentToRemove(null);
     }
   };
 
@@ -620,6 +624,32 @@ export function CourseDetailManagerView({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deletingMaterial ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!enrollmentToRemove}
+        onOpenChange={(open) => {
+          if (!open) setEnrollmentToRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove student from course?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {enrollmentToRemove?.userName} will lose access to this course and its chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removingEnrollmentId === enrollmentToRemove?.id}
+              onClick={() => void handleRemoveEnrollment()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {removingEnrollmentId === enrollmentToRemove?.id ? "Removing…" : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1246,7 +1276,7 @@ export function CourseDetailManagerView({
                                   aria-label="Remove student"
                                   className="text-destructive hover:text-destructive"
                                   disabled={removingEnrollmentId === e.id}
-                                  onClick={() => void handleRemoveEnrollment(e.id)}
+                                  onClick={() => setEnrollmentToRemove(e)}
                                 >
                                   <IconTrash className="w-4 h-4" />
                                 </Button>

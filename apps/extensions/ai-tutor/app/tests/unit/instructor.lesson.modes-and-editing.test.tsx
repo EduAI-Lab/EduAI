@@ -12,6 +12,7 @@ import type { Route } from "../../routes/+types/instructor.lesson";
 import type { Activity } from "~/lib/types";
 
 const mockUpdateActivity = vi.fn();
+let mockTopics: { id: string; name: string }[] = [];
 
 vi.mock("~/lib/api", () => ({
   default: {
@@ -50,7 +51,7 @@ vi.mock("react-router", async (importActual) => {
 
 vi.mock("~/hooks/useCourseTopics", () => ({
   CourseTopicsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useCourseTopics: () => ({ topics: [], loading: false }),
+  useCourseTopics: () => ({ topics: mockTopics, loading: false }),
 }));
 
 vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
@@ -61,6 +62,22 @@ vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
 vi.mock("@eduai/ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@eduai/ui")>()),
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  MultiSelect: ({
+    disabled,
+    onValueChange,
+  }: {
+    disabled?: boolean;
+    onValueChange: (values: string[]) => void;
+  }) => (
+    <button
+      type="button"
+      aria-label="Secondary topics"
+      disabled={disabled}
+      onClick={() => onValueChange(["secondary-topic"])}
+    >
+      Secondary topics
+    </button>
+  ),
 }));
 
 vi.mock("~/components/AddActivityPanel", () => ({
@@ -134,6 +151,10 @@ function wrap(activities = [makeActivity()]) {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  mockTopics = [];
+});
 
 describe("instructor.lesson — add-activity panel toggle", () => {
   it("opens the add-activity dialog and flips the button label", async () => {
@@ -272,6 +293,48 @@ describe("instructor.lesson — AI mode toggles", () => {
         expect.objectContaining({ enableCustomMode: false, customPrompt: null }),
       ),
     );
+  });
+});
+
+describe("instructor.lesson — topic updates", () => {
+  beforeEach(() => {
+    mockUpdateActivity.mockReset();
+    mockTopics = [
+      { id: "main-topic", name: "Main topic" },
+      { id: "secondary-topic", name: "Secondary topic" },
+    ];
+  });
+
+  it("disables secondary-topic changes until the replacement save completes", async () => {
+    let resolveUpdate: ((activity: Activity) => void) | undefined;
+    mockUpdateActivity.mockReturnValue(
+      new Promise<Activity>((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    wrap([
+      makeActivity({
+        mainTopic: { id: "main-topic", name: "Main topic" },
+      }),
+    ]);
+
+    const secondaryTopics = screen.getByRole("button", { name: "Secondary topics" });
+    fireEvent.click(secondaryTopics);
+
+    await waitFor(() => expect(secondaryTopics).toBeDisabled());
+    expect(mockUpdateActivity).toHaveBeenCalledWith(99, {
+      secondaryTopicIds: ["secondary-topic"],
+    });
+
+    await act(async () => {
+      resolveUpdate?.(
+        makeActivity({
+          mainTopic: { id: "main-topic", name: "Main topic" },
+          secondaryTopics: [{ id: "secondary-topic", name: "Secondary topic" }],
+        }),
+      );
+    });
+    await waitFor(() => expect(secondaryTopics).toBeEnabled());
   });
 });
 

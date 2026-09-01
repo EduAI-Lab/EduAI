@@ -157,9 +157,9 @@ export function mapModule(module) {
  * Map a Lesson row to its public DTO.
  *
  * Why: `courseOfferingId` is not stored on Lesson directly — it comes via
- * the parent Module. The fallback chain accepts either a row that includes
- * `module: { courseOfferingId }` (the common eager-load shape) or a
- * pre-flattened row, so callers don't have to standardize their queries.
+ * the parent Module. `coreOfferingId` comes from that module's CourseOffering
+ * when the caller loads it. The fallback chains also accept pre-flattened rows,
+ * so callers don't have to standardize their queries.
  */
 export function mapLesson(lesson) {
   return {
@@ -169,6 +169,8 @@ export function mapLesson(lesson) {
     position: lesson.position,
     isPublished: lesson.isPublished,
     courseOfferingId: lesson.module?.courseOfferingId ?? lesson.courseOfferingId ?? undefined,
+    coreOfferingId:
+      lesson.module?.courseOffering?.coreOfferingId ?? lesson.coreOfferingId ?? undefined,
     moduleId: lesson.moduleId ?? lesson.module?.id ?? undefined,
   };
 }

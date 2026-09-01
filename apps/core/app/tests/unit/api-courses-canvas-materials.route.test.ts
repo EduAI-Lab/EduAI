@@ -116,14 +116,14 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
     expect(body.data.files).toEqual([{ id: "f1" }]);
   });
 
-  it("passes recheck=true through to discoverCanvasMaterialsForCourse", async () => {
+  it("does not permit publish-state writes through a GET query", async () => {
     vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([]);
     await loader(makeLoaderArgs(undefined, "?recheck=true"));
     expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith(
       "instructor-1",
       "course-1",
       undefined,
-      { recheckPublishState: true },
+      { recheckPublishState: false },
     );
   });
 
@@ -135,6 +135,20 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
 });
 
 describe("POST /api/courses/:courseId/canvas-materials", () => {
+  it("rechecks publish state through the CSRF-protected action", async () => {
+    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([{ id: "f1" }] as never);
+
+    const res = await action(makeActionArgs({ intent: "discover" }));
+
+    expect(res.status).toBe(200);
+    expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith(
+      "instructor-1",
+      "course-1",
+      undefined,
+      { recheckPublishState: true },
+    );
+  });
+
   it("returns 400 when courseId is missing", async () => {
     const res = await action(makeActionArgs({}, "POST", ""));
     expect(res.status).toBe(400);

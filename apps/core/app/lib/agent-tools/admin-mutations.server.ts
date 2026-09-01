@@ -50,6 +50,7 @@ import {
   updateAdminCronSchedule,
   updateAdminPolicy,
 } from "./admin-platform.server";
+import type { AdminWriteConfirmation } from "./chat-mode";
 import type { ToolInput } from "./tool-input";
 import { asText } from "~/lib/json-value";
 
@@ -149,14 +150,18 @@ export function userRefValidationError(opts: {
 }
 
 /** When the model calls a write tool before a matching preview was registered. */
-export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
-  if (confirmed === true) {
-    return null;
+function confirmationRequired(
+  message: string,
+  preview?: { confirmationCode: string; expiresAt: number },
+): MutationResult {
+  if (!preview) {
+    return mutationFailure({ error: "CONFIRMATION_REQUIRED", message });
   }
   return mutationFailure({
     error: "CONFIRMATION_REQUIRED",
-    message:
-      "Write not applied — call once with confirmed: false (same arguments) to register a preview, wait for the admin to explicitly confirm in chat, then call again with confirmed: true.",
+    message,
+    confirmationCode: preview.confirmationCode,
+    confirmationExpiresAt: new Date(preview.expiresAt).toISOString(),
   });
 }
 
@@ -189,18 +194,24 @@ export async function runAdminWriteTool(
 }
 
 /**
- * Gate admin write tools: confirmed=false registers a payload-bound preview;
- * confirmed=true only proceeds if that preview was registered on an earlier
- * chat turn (not LLM-only attestation within the same generation).
+ * Gate admin writes with authenticated request data and a one-time code.
+ * `confirmed` preserves the tool protocol but is never sufficient authorization.
  */
-export async function runConfirmedAdminWriteTool(
-  toolName: string,
-  actor: RbacUser,
-  confirmed: boolean,
-  run: () => Promise<MutationResult>,
-  payload: ToolInput = {},
-  turnId: string | null = null,
-): Promise<MutationResult> {
+export async function runConfirmedAdminWriteTool({
+  toolName,
+  actor,
+  confirmed,
+  run,
+  payload = {},
+  confirmation,
+}: {
+  toolName: string;
+  actor: RbacUser;
+  confirmed: boolean;
+  run: () => Promise<MutationResult>;
+  payload?: ToolInput;
+  confirmation?: AdminWriteConfirmation;
+}): Promise<MutationResult> {
   const { registerWritePreview, consumeWritePreview } =
     await import("./admin-write-confirmation.server");
 
@@ -208,33 +219,59 @@ export async function runConfirmedAdminWriteTool(
   // or reuse a preview from a different write tool.
   const boundPayload = { __tool: toolName, ...payload };
 
-  if (confirmed !== true) {
-    registerWritePreview(actor.id, toolName, boundPayload, undefined, turnId);
-    console.info("[admin-chat:write]", {
-      tool: toolName,
-      actorId: actor.id,
-      writeSucceeded: false,
-      error: "CONFIRMATION_REQUIRED",
-    });
-    return requireWriteConfirmation(false)!;
+  if (!confirmation) {
+    return confirmationRequired(
+      "Write not applied. Authenticated chat confirmation context is unavailable.",
+    );
   }
 
-  const consumed = consumeWritePreview(actor.id, toolName, boundPayload, turnId);
-  if (consumed !== "ok") {
+  if (confirmed !== true) {
+    const preview = registerWritePreview({
+      actorId: actor.id,
+      chatId: confirmation.chatId,
+      toolName,
+      payload: boundPayload,
+      turnId: confirmation.turnId,
+    });
     console.info("[admin-chat:write]", {
       tool: toolName,
       actorId: actor.id,
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
-      reason: consumed,
     });
-    return mutationFailure({
+    return confirmationRequired(
+      `Write not applied. Ask the admin to send a new message containing only this code: ${preview.confirmationCode}`,
+      preview,
+    );
+  }
+
+  const consumed = consumeWritePreview({
+    actorId: actor.id,
+    chatId: confirmation.chatId,
+    toolName,
+    payload: boundPayload,
+    turnId: confirmation.turnId,
+    latestUserMessage: confirmation.latestUserMessage,
+  });
+  if (consumed.kind !== "ok") {
+    console.info("[admin-chat:write]", {
+      tool: toolName,
+      actorId: actor.id,
+      writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
-      message:
-        consumed === "same_turn"
-          ? "Write not applied — confirmation must come after a new admin message in chat (same-generation confirmed:true is rejected)."
-          : "No matching preview for these arguments. Call with confirmed: false first (same args), wait for admin confirmation in a later message, then confirmed: true.",
+      reason: consumed.kind,
     });
+    if (consumed.kind === "missing") {
+      return confirmationRequired(
+        "Write not applied. No matching preview exists for this admin, chat, tool, and payload. Call with confirmed: false first.",
+      );
+    }
+    return confirmationRequired(
+      consumed.kind === "same_turn"
+        ? "Write not applied. Confirmation must be an exact code sent by the admin in a later chat turn."
+        : `Write not applied. The latest raw admin message must contain only this code: ${consumed.preview.confirmationCode}`,
+      consumed.preview,
+    );
   }
 
   return runAdminWriteTool(toolName, actor, run);

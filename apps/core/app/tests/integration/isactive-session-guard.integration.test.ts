@@ -21,14 +21,20 @@ function uniqueEmail(): string {
   return email;
 }
 
-function signUp(email: string): Promise<Response> {
+async function signUp(email: string): Promise<Response> {
   const base = new Request("http://localhost/auth/register");
   const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: "IsActive Test", email, password: PASSWORD }),
   });
-  return auth.handler(req);
+  const response = await auth.handler(req);
+  if (response.ok) {
+    // This suite exercises isActive, not mailbox verification. Promote its
+    // fixture explicitly, then obtain sessions through normal sign-in.
+    await prisma.user.update({ where: { email }, data: { emailVerified: true } });
+  }
+  return response;
 }
 
 function signIn(email: string, password = PASSWORD): Promise<Response> {
@@ -82,8 +88,8 @@ describe("#971 — isActive enforcement at sign-in and session guard", () => {
 
   it("invalidates an existing session the moment the user is deactivated", async () => {
     const email = uniqueEmail();
-    const signUpRes = await signUp(email);
-    const cookie = cookieHeaderFrom(signUpRes);
+    await signUp(email);
+    const cookie = cookieHeaderFrom(await signIn(email));
     expect(cookie).toBeTruthy();
 
     const sessionBefore = await auth.api.getSession({ headers: new Headers({ cookie }) });
@@ -105,8 +111,8 @@ describe("#971 — isActive enforcement at sign-in and session guard", () => {
   // still a live DB read and the after-hook still fires.
   it("still invalidates on the next request when sessions are resolved through the request memo", async () => {
     const email = uniqueEmail();
-    const signUpRes = await signUp(email);
-    const cookie = cookieHeaderFrom(signUpRes);
+    await signUp(email);
+    const cookie = cookieHeaderFrom(await signIn(email));
     expect(cookie).toBeTruthy();
 
     const requestOne = new Request("http://localhost/dashboard", { headers: { cookie } });

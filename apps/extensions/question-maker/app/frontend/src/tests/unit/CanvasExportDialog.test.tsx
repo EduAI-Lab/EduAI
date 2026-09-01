@@ -1,5 +1,5 @@
 /**
- * Coverage for CanvasExportDialog (#1545) — connect flow, course selection,
+ * Coverage for CanvasExportDialog (#1545) — connect flow, linked-course export,
  * export success/failure, and the permission-gated read-only view.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 vi.setConfig({ testTimeout: 20000 });
 
 const getIntegration = vi.fn();
-const getCourses = vi.fn();
+const getCourseLink = vi.fn();
 const connectCanvasWithFallback = vi.fn();
 const exportAssessment = vi.fn();
 const toastError = vi.fn();
@@ -24,7 +24,7 @@ vi.mock("sonner", () => ({
 vi.mock("@/services/canvasService", () => ({
   default: {
     getIntegration: (...args: unknown[]) => getIntegration(...args),
-    getCourses: (...args: unknown[]) => getCourses(...args),
+    getCourseLink: (...args: unknown[]) => getCourseLink(...args),
     connectCanvasWithFallback: (...args: unknown[]) => connectCanvasWithFallback(...args),
     exportAssessment: (...args: unknown[]) => exportAssessment(...args),
   },
@@ -62,7 +62,7 @@ describe("CanvasExportDialog", () => {
     cleanup();
     canManageCanvas = true;
     getIntegration.mockReset();
-    getCourses.mockReset();
+    getCourseLink.mockReset();
     connectCanvasWithFallback.mockReset();
     exportAssessment.mockReset();
     toastError.mockReset();
@@ -103,13 +103,16 @@ describe("CanvasExportDialog", () => {
     expect(screen.getByRole("button", { name: "Connect Canvas" })).toBeEnabled();
   });
 
-  it("connects successfully and then loads courses", async () => {
+  it("connects successfully and then loads the course link", async () => {
     getIntegration.mockResolvedValue({ isConnected: false });
     connectCanvasWithFallback.mockResolvedValue({
       integration: { isConnected: true },
       usedTestMode: false,
     });
-    getCourses.mockResolvedValue([{ id: 1, name: "Intro to Biology", course_code: "BIO101" }]);
+    getCourseLink.mockResolvedValue({
+      status: "linked",
+      mapping: { localCourseId: 7, canvasCourseId: 1, canvasCourseName: "Intro to Biology" },
+    });
     renderDialog();
 
     await screen.findByLabelText("Canvas Instance URL");
@@ -125,8 +128,8 @@ describe("CanvasExportDialog", () => {
         "secret-key",
       ),
     );
-    await waitFor(() => expect(getCourses).toHaveBeenCalled());
-    expect(await screen.findByText("Select Canvas Course")).toBeInTheDocument();
+    await waitFor(() => expect(getCourseLink).toHaveBeenCalledWith(7));
+    expect(await screen.findByText("Intro to Biology")).toBeInTheDocument();
   });
 
   it("shows a test-mode toast when the fallback kicks in", async () => {
@@ -135,7 +138,7 @@ describe("CanvasExportDialog", () => {
       integration: { isConnected: true },
       usedTestMode: true,
     });
-    getCourses.mockResolvedValue([]);
+    getCourseLink.mockResolvedValue({ status: "unlinked" });
     renderDialog();
 
     await screen.findByLabelText("Canvas Instance URL");
@@ -175,9 +178,12 @@ describe("CanvasExportDialog", () => {
     );
   });
 
-  it("lists courses when already connected and exports on selection", async () => {
+  it("exports to the current course's linked Canvas course", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 42, name: "Organic Chemistry", course_code: "CHEM201" }]);
+    getCourseLink.mockResolvedValue({
+      status: "linked",
+      mapping: { localCourseId: 7, canvasCourseId: 42, canvasCourseName: "Organic Chemistry" },
+    });
     exportAssessment.mockResolvedValue({
       quizId: 99,
       canvasUrl: "https://canvas.instructure.com/quizzes/99",
@@ -185,18 +191,11 @@ describe("CanvasExportDialog", () => {
     });
     const { onExportSuccess, onClose } = renderDialog();
 
-    expect(await screen.findByText("Select Canvas Course")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /export to canvas/i })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("combobox"));
-    const option = await screen.findByText("CHEM201 - Organic Chemistry");
-    fireEvent.click(option);
-
-    const exportButton = screen.getByRole("button", { name: /export to canvas/i });
-    await waitFor(() => expect(exportButton).toBeEnabled());
+    expect(await screen.findByText("Organic Chemistry")).toBeInTheDocument();
+    const exportButton = await screen.findByRole("button", { name: /export to canvas/i });
     fireEvent.click(exportButton);
 
-    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42, { published: true }));
+    await waitFor(() => expect(exportAssessment).toHaveBeenCalledWith(1, 42, { published: false }));
     await waitFor(() =>
       expect(onExportSuccess).toHaveBeenCalledWith({
         quizId: 99,
@@ -206,26 +205,25 @@ describe("CanvasExportDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("shows an empty state when there are no Canvas courses", async () => {
+  it("blocks export when the local course is not linked to Canvas", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([]);
+    getCourseLink.mockResolvedValue({ status: "unlinked" });
     renderDialog();
 
-    expect(await screen.findByText(/no courses found/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /export to canvas/i })).toBeDisabled();
+    expect(await screen.findByText(/not linked to canvas/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /export to canvas/i })).not.toBeInTheDocument();
   });
 
   it("surfaces a toast when export fails", async () => {
     getIntegration.mockResolvedValue({ isConnected: true });
-    getCourses.mockResolvedValue([{ id: 42, name: "Chem", course_code: "CHEM201" }]);
+    getCourseLink.mockResolvedValue({
+      status: "linked",
+      mapping: { localCourseId: 7, canvasCourseId: 42, canvasCourseName: "Chem" },
+    });
     exportAssessment.mockRejectedValue({ response: { data: { error: "Quiz limit reached" } } });
     renderDialog();
 
-    fireEvent.click(await screen.findByRole("combobox"));
-    fireEvent.click(await screen.findByText("CHEM201 - Chem"));
-
-    const exportButton = screen.getByRole("button", { name: /export to canvas/i });
-    await waitFor(() => expect(exportButton).toBeEnabled());
+    const exportButton = await screen.findByRole("button", { name: /export to canvas/i });
     fireEvent.click(exportButton);
 
     await waitFor(() =>

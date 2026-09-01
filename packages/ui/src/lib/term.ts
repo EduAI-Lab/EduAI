@@ -96,6 +96,15 @@ function monthInUbcTimeZone(date: Date): number {
   );
 }
 
+function yearInUbcTimeZone(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: UBC_TIME_ZONE,
+      year: "numeric",
+    }).format(date),
+  );
+}
+
 /**
  * Map a calendar date to its UBC term code using the America/Vancouver
  * timezone boundary. This is the authoritative date→term derivation —
@@ -117,8 +126,9 @@ export function termFromDate(date: Date): TermCode {
  * and current-term detection in course lists — see `groupCoursesByTerm`.
  */
 export function termInfoFromDate(date: Date): AcademicTerm {
-  const term = termFromMonth(date.getMonth());
-  const year = term === "W2" ? date.getFullYear() - 1 : date.getFullYear();
+  const term = termFromDate(date);
+  const calendarYear = yearInUbcTimeZone(date);
+  const year = term === "W2" ? calendarYear - 1 : calendarYear;
   return { term, year };
 }
 
@@ -131,8 +141,10 @@ export function termInfoFromDate(date: Date): AcademicTerm {
  * in Vancouver, so it would derive S2 instead of W1.
  */
 export function termInfoFromDateInput(value: string | null | undefined): AcademicTerm | null {
-  const date = parseDateInputValue(value);
-  return date ? termInfoFromDate(date) : null;
+  if (!value || !parseDateInputValue(value)) return null;
+  const calendarYear = Number(value.slice(0, 4));
+  const term = termFromMonth(Number(value.slice(5, 7)) - 1);
+  return { term, year: term === "W2" ? calendarYear - 1 : calendarYear };
 }
 
 /**

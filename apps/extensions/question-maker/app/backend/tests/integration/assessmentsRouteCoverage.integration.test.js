@@ -9,7 +9,7 @@
  * Same mocked-DB pattern as assessmentRbac.test.js — no live Core or test DB required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   svc,
@@ -79,6 +79,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
@@ -109,6 +110,32 @@ describe("POST /api/assessments", () => {
       .send({ courseId: 1 });
     expect(res.status).toBe(400);
     expect(svc.createAssessment).not.toHaveBeenCalled();
+  });
+
+  it("rejects an assessment type outside the Prisma enum", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/assessments")
+      .set("Cookie", "session=v")
+      .send({ type: "Exam", name: "Midterm", courseId: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid assessment type/);
+    expect(svc.createAssessment).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT /api/assessments/:id", () => {
+  it("rejects an assessment type outside the Prisma enum", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .put("/api/assessments/5")
+      .set("Cookie", "session=v")
+      .send({ type: "Mid" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid assessment type/);
+    expect(svc.updateAssessment).not.toHaveBeenCalled();
   });
 });
 

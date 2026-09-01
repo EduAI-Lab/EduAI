@@ -7,11 +7,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const proxyCoreCanvasGetIntegration = vi.fn();
 const proxyCoreCreateQuiz = vi.fn();
 const proxyCoreCreateQuizQuestion = vi.fn();
+const proxyCoreDeleteQuiz = vi.fn();
 
 vi.mock("../../src/services/coreApiService.js", () => ({
   proxyCoreCanvasGetIntegration: (...args) => proxyCoreCanvasGetIntegration(...args),
   proxyCoreCreateQuiz: (...args) => proxyCoreCreateQuiz(...args),
   proxyCoreCreateQuizQuestion: (...args) => proxyCoreCreateQuizQuestion(...args),
+  proxyCoreDeleteQuiz: (...args) => proxyCoreDeleteQuiz(...args),
   proxyCoreGetQuestionBank: vi.fn(),
   proxyCoreListQuestionBankQuestions: vi.fn(),
   proxyCoreListQuestionBanks: vi.fn(),
@@ -94,8 +96,18 @@ beforeEach(() => {
   });
   proxyCoreCreateQuiz.mockResolvedValue({ data: { id: 77, title: "Midterm 1" } });
   proxyCoreCreateQuizQuestion.mockResolvedValue({ data: { id: 101 } });
+  proxyCoreDeleteQuiz.mockResolvedValue({ data: { id: 77 } });
   getAssessmentById.mockResolvedValue(assessmentWithOneQuestion());
   prisma.canvasCourseMapping.findUnique.mockResolvedValue({ localCourseId: 9, canvasCourseId: 1 });
+});
+
+it("removes the partial quiz when question creation fails", async () => {
+  proxyCoreCreateQuizQuestion.mockRejectedValue(new Error("question failed"));
+
+  await expect(exportAssessmentToCanvas(5, 1, "owner", COOKIE)).rejects.toThrow(/question failed/);
+
+  expect(proxyCoreDeleteQuiz).toHaveBeenCalledWith(COOKIE, 1, 77);
+  expect(prisma.canvasCourseMapping.create).not.toHaveBeenCalled();
 });
 
 describe("exportAssessmentToCanvas", () => {

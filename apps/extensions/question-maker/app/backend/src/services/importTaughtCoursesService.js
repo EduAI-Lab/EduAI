@@ -12,7 +12,9 @@ import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
 import { logger } from "../utils/logger.js";
 import { safeRequestLogFields, toStableUpstreamError } from "../utils/safeLogging.js";
 
-const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
+// Core represents a course TA as a platform STUDENT. The teaching-role filter
+// below still excludes ordinary student enrollments.
+const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR", "STUDENT"]);
 const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
 
 // Advisory-lock namespace for per-course Practice Exam provisioning (pairs
