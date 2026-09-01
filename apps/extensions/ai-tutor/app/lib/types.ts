@@ -193,6 +193,13 @@ export type EduAiApiKeyStatus = {
   updatedAt: string | null;
 };
 
+export type UserProviderSettingStatus = {
+  providerName: string;
+  isEnabled: boolean;
+  hasKey: boolean;
+  baseUrl: string | null;
+};
+
 export type CostTier = "LOW" | "MEDIUM" | "HIGH";
 
 export type AdminAiModelPolicy = {
@@ -264,6 +271,7 @@ export type Lesson = {
   position: number;
   isPublished: boolean;
   courseOfferingId?: number;
+  coreOfferingId?: string;
   moduleId?: number;
   progress?: Progress;
 };

@@ -5,7 +5,7 @@
  * the same owner to prove that owner scoping cannot stand in for caller access.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -16,6 +16,7 @@ const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb("QM cross-course authorization (real DB)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma, app;
+  const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
   const OWNER = { id: "qm-xc-owner", email: "qm-xc-owner@test.com", name: "QM owner" };
   const CALLER = {
@@ -128,7 +129,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
 
   it("returns stable relocation conflict before question service mutation", async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId] });
-    const response = await request(app)
+    const response = await request()
       .put(`/api/questions/${questionA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ description: "attempted move", courseId: courseB.id });
@@ -141,7 +142,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
 
   it("returns 403 before assessment service mutation when target B is inaccessible", async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId] });
-    const response = await request(app)
+    const response = await request()
       .put(`/api/assessments/${assessmentA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ name: "attempted move", courseId: courseB.id });
@@ -153,7 +154,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
 
   it("rejects a cross-course question move even when the caller is authorized on both courses", async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId, courseB.coreCourseId] });
-    const response = await request(app)
+    const response = await request()
       .put(`/api/questions/${questionA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ description: "authorized target but unsupported move", courseId: courseB.id });
@@ -166,7 +167,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
 
   it("rejects a cross-course assessment move even when the caller is authorized on both courses", async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId, courseB.coreCourseId] });
-    const response = await request(app)
+    const response = await request()
       .put(`/api/assessments/${assessmentA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ name: "authorized target but unsupported move", courseId: courseB.id });
@@ -180,7 +181,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
   it("keeps a linked anchor and all content on A when a caller can see target B", async () => {
     const fetchMock = stubCore({ enrolledCourses: [courseA.coreCourseId, courseB.coreCourseId] });
 
-    const response = await request(app)
+    const response = await request()
       .patch(`/api/course/${courseA.id}/link-core`)
       .set("Cookie", "session=qm-xc")
       .send({ coreCourseId: courseB.coreCourseId });
@@ -209,7 +210,7 @@ describeDb("QM cross-course authorization (real DB)", () => {
   it("returns the same conflict for an unauthorized target without probing it", async () => {
     const fetchMock = stubCore({ enrolledCourses: [courseA.coreCourseId] });
 
-    const response = await request(app)
+    const response = await request()
       .patch(`/api/course/${courseA.id}/link-core`)
       .set("Cookie", "session=qm-xc")
       .send({ coreCourseId: courseB.coreCourseId });
@@ -228,13 +229,13 @@ describeDb("QM cross-course authorization (real DB)", () => {
 
   it("allows legitimate same-course question and assessment updates", async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId] });
-    const questionResponse = await request(app)
+    const questionResponse = await request()
       .put(`/api/questions/${questionA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ description: "same course", primaryTopicId: topicA.id });
     expect(questionResponse.status).toBe(200);
 
-    const assessmentResponse = await request(app)
+    const assessmentResponse = await request()
       .put(`/api/assessments/${assessmentA.id}`)
       .set("Cookie", "session=qm-xc")
       .send({ name: "same course" });

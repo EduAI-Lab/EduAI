@@ -9,6 +9,7 @@ import {
 } from "~/hooks/api/pagination";
 
 const SEARCH_DEBOUNCE_MS = 300;
+const LOAD_ALL_CONCURRENCY = 4;
 
 /** Filter-group ids the Core course list exposes (matches `build*FilterGroup` in @eduai/ui). */
 export const COURSE_FILTER_KEYS = ["status", "term", "department"] as const;
@@ -88,6 +89,8 @@ export interface UseCoursesOptions {
    * pass `false` to skip the extra unpaginated scalar scan (default `true`).
    */
   includeFacets?: boolean;
+  /** Fetch every matching page for unpaged consumers such as the chat picker. */
+  loadAll?: boolean;
 }
 
 /**
@@ -102,7 +105,7 @@ export interface UseCoursesOptions {
  * current filtered page and must not be re-filtered client-side.
  */
 export function useCourses(options: UseCoursesOptions = {}) {
-  const { pageSize = DEFAULT_PAGE_SIZE, isActive, includeFacets = true } = options;
+  const { pageSize = DEFAULT_PAGE_SIZE, isActive, includeFacets = true, loadAll = false } = options;
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [total, setTotal] = useState(0);
@@ -146,18 +149,60 @@ export function useCourses(options: UseCoursesOptions = {}) {
     const seq = ++requestSeq.current;
     setError(null);
     try {
-      const params = new URLSearchParams(
-        paginationQuery(pagination, {
-          search: debouncedSearch,
-          isActive: isActive === undefined ? undefined : String(isActive),
-        }),
-      );
-      for (const key of COURSE_FILTER_KEYS) {
-        for (const value of selectedFilters[key]) params.append(key, value);
+      const readPage = async (pageIndex: number): Promise<PaginatedResponse<Course>> => {
+        const params = new URLSearchParams(
+          paginationQuery(
+            { ...pagination, pageIndex },
+            {
+              search: debouncedSearch,
+              isActive: isActive === undefined ? undefined : String(isActive),
+            },
+          ),
+        );
+        for (const key of COURSE_FILTER_KEYS) {
+          for (const value of selectedFilters[key]) params.append(key, value);
+        }
+        const res = await fetch(`/api/courses?${params.toString()}`);
+        if (!res.ok) throw new Error(await res.text());
+        return res.json() as Promise<PaginatedResponse<Course>>;
+      };
+
+      const first = await readPage(loadAll ? 0 : pagination.pageIndex);
+      let body = first;
+      if (loadAll) {
+        const pageCount = Math.ceil(first.total / first.pageSize) || 1;
+        // Indexed by pageIndex - 1 (page 0 is `first`); every slot from 1 to
+        // pageCount - 1 is claimed and filled exactly once by the worker pool
+        // below, so by the time `Promise.all` resolves the array holds no
+        // holes — but its declared element type stays possibly-`undefined`
+        // until narrowed, hence the explicit check in the reduce below.
+        const remaining: Array<PaginatedResponse<Course> | undefined> = Array.from({
+          length: Math.max(0, pageCount - 1),
+        });
+        let nextPageIndex = 1;
+        const readNextPage = async () => {
+          while (nextPageIndex < pageCount) {
+            const pageIndex = nextPageIndex++;
+            remaining[pageIndex - 1] = await readPage(pageIndex);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(LOAD_ALL_CONCURRENCY, Math.max(0, pageCount - 1)) }, () =>
+            readNextPage(),
+          ),
+        );
+        const remainingData = remaining.reduce<Course[]>((acc, page) => {
+          if (page) acc.push(...page.data);
+          return acc;
+        }, []);
+        const data = [...first.data, ...remainingData];
+        body = {
+          ...first,
+          data,
+          page: 1,
+          pageSize: data.length,
+        };
       }
-      const res = await fetch(`/api/courses?${params.toString()}`);
-      if (!res.ok) throw new Error(await res.text());
-      const body: PaginatedResponse<Course> = await res.json();
       if (seq !== requestSeq.current) return;
       setCourses(body.data);
       setTotal(body.total);
@@ -174,7 +219,7 @@ export function useCourses(options: UseCoursesOptions = {}) {
     } finally {
       if (seq === requestSeq.current) setLoading(false);
     }
-  }, [pagination, debouncedSearch, isActive, selectedFilters]);
+  }, [pagination, debouncedSearch, isActive, selectedFilters, loadAll]);
 
   // Facets are best-effort metadata for the dropdowns: a failure must never
   // block the list, so errors are swallowed and the toolbar falls back to the

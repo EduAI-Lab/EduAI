@@ -1,8 +1,6 @@
-/** Platform hooks that have no Core API yet — use fixtures until backend lands. */
+/** Kill-switches for falling back to fixtures; every Core API these gate is live, so both are `false`. */
 export const STUB_ONLY = {
   bugReports: false,
-  // DELETE /api/chats/:chatId is implemented (owner / admin). Chat-history UI
-  // wires it live.
   deleteChat: false,
 } as const;
 

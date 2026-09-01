@@ -84,11 +84,24 @@ describe("importTaughtCoursesFromCore (QM)", () => {
     getCourseEnrollmentsFromCore.mockResolvedValue({ enrollments: [] });
   });
 
-  it("skips auto-import for non-instructor roles", async () => {
-    const result = await importTaughtCoursesFromCore("u1", "STUDENT", "session=abc");
+  it("skips the instructor/TA mirror for unrelated platform roles", async () => {
+    const result = await importTaughtCoursesFromCore("u1", "ADMIN", "session=abc");
 
     expect(result).toEqual({ imported: 0, skipped: 0 });
     expect(listCoursesFromCore).not.toHaveBeenCalled();
+  });
+
+  it("materializes only live TA enrollments for a platform student", async () => {
+    listCoursesFromCore.mockResolvedValue([
+      { id: "core-ta", callerEnrollmentRole: "TA" },
+      { id: "core-student", callerEnrollmentRole: "STUDENT" },
+    ]);
+
+    const result = await importTaughtCoursesFromCore("u1", "STUDENT", "session=abc");
+
+    expect(result).toMatchObject({ imported: 1, skipped: 1 });
+    expect(ensureCourseAnchorMock).toHaveBeenCalledTimes(1);
+    expect(ensureCourseAnchorMock).toHaveBeenCalledWith("u1", "core-ta");
   });
 
   it("returns a stable Core error and allowlisted log metadata when catalog loading fails", async () => {

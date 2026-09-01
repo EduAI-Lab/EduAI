@@ -6,7 +6,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { teachingInstructorFetch } from "../helpers/teachingInstructorFetch.js";
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -14,6 +14,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
@@ -133,7 +134,7 @@ describeDb("Plan coverage (integration)", () => {
 
     vi.stubGlobal("fetch", twoUserFetch());
 
-    const res = await request(app).get(`/api/course/${courseIdA}`).set(cookieB());
+    const res = await request().get(`/api/course/${courseIdA}`).set(cookieB());
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
   });
@@ -142,7 +143,7 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const res = await request(app)
+    const res = await request()
       .post("/api/questions/extract/save")
       .set(cookieA())
       .send({
@@ -168,7 +169,7 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+    const createQ = await request().post("/api/questions").set(cookieA()).send({
       description: "Assembly baseline metadata",
       courseId,
       primaryTopicId: topicId,
@@ -177,19 +178,19 @@ describeDb("Plan coverage (integration)", () => {
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
-    const alist = await request(app).get("/api/assessments").set(cookieA()).query({ courseId });
+    const alist = await request().get("/api/assessments").set(cookieA()).query({ courseId });
     const practice = alist.body.data.items.find((a) => a.name === "Practice Exam");
     expect(practice).toBeTruthy();
 
     // The assemble flow reads questions from the reference assessment's sections,
     // so add a section to the Practice Exam and place a variant in it.
-    const section = await request(app)
+    const section = await request()
       .post(`/api/assessments/${practice.id}/sections`)
       .set(cookieA())
       .send({ name: "Exam", position: 0 });
     expect(section.status).toBe(201);
 
-    const v = await request(app)
+    const v = await request()
       .post(`/api/questions/${qid}/variants`)
       .set(cookieA())
       .send({
@@ -208,13 +209,13 @@ describeDb("Plan coverage (integration)", () => {
       });
     expect(v.status).toBe(201);
 
-    const addToSection = await request(app)
+    const addToSection = await request()
       .post(`/api/assessments/${practice.id}/sections/${section.body.data.id}/variants`)
       .set(cookieA())
       .send({ variantId: v.body.data.id, displayOrder: 0 });
     expect(addToSection.status).toBe(201);
 
-    const asm = await request(app)
+    const asm = await request()
       .post("/api/assessment-variant/assemble-variants")
       .set(cookieA())
       .send({
@@ -233,7 +234,7 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+    const createQ = await request().post("/api/questions").set(cookieA()).send({
       description: "Round-robin assembly metadata",
       courseId,
       primaryTopicId: topicId,
@@ -242,14 +243,14 @@ describeDb("Plan coverage (integration)", () => {
     expect(createQ.status).toBe(201);
     const questionId = createQ.body.data.id;
 
-    const createBaseline = await request(app)
+    const createBaseline = await request()
       .post("/api/assessments")
       .set(cookieA())
       .send({ type: "Quiz", name: "RR Baseline", semester: "2026W", courseId });
     expect(createBaseline.status).toBe(201);
     const baselineId = createBaseline.body.data.id;
 
-    const createSection = await request(app)
+    const createSection = await request()
       .post(`/api/assessments/${baselineId}/sections`)
       .set(cookieA())
       .send({ name: "Exam", position: 0 });
@@ -257,7 +258,7 @@ describeDb("Plan coverage (integration)", () => {
     const sectionId = createSection.body.data.id;
 
     const createVariant = (text) =>
-      request(app)
+      request()
         .post(`/api/questions/${questionId}/variants`)
         .set(cookieA())
         .send({
@@ -284,14 +285,14 @@ describeDb("Plan coverage (integration)", () => {
     expect(altTwoRes.status).toBe(201);
     const baselineVariantId = baselineVariantRes.body.data.id;
 
-    const addToSection = await request(app)
+    const addToSection = await request()
       .post(`/api/assessments/${baselineId}/sections/${sectionId}/variants`)
       .set(cookieA())
       .send({ variantId: baselineVariantId, displayOrder: 0 });
     expect(addToSection.status).toBe(201);
 
     const assembleOnce = (label) =>
-      request(app)
+      request()
         .post("/api/assessment-variant/assemble-variants")
         .set(cookieA())
         .send({
@@ -311,15 +312,9 @@ describeDb("Plan coverage (integration)", () => {
     expect(asm3.status).toBe(201);
 
     const [detail1, detail2, detail3] = await Promise.all([
-      request(app)
-        .get(`/api/assessments/${asm1.body.data.createdAssessments[0].id}`)
-        .set(cookieA()),
-      request(app)
-        .get(`/api/assessments/${asm2.body.data.createdAssessments[0].id}`)
-        .set(cookieA()),
-      request(app)
-        .get(`/api/assessments/${asm3.body.data.createdAssessments[0].id}`)
-        .set(cookieA()),
+      request().get(`/api/assessments/${asm1.body.data.createdAssessments[0].id}`).set(cookieA()),
+      request().get(`/api/assessments/${asm2.body.data.createdAssessments[0].id}`).set(cookieA()),
+      request().get(`/api/assessments/${asm3.body.data.createdAssessments[0].id}`).set(cookieA()),
     ]);
     expect(detail1.status).toBe(200);
     expect(detail2.status).toBe(200);
@@ -342,7 +337,7 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+    const createQ = await request().post("/api/questions").set(cookieA()).send({
       description: "Concurrent assembly metadata",
       courseId,
       primaryTopicId: topicId,
@@ -351,7 +346,7 @@ describeDb("Plan coverage (integration)", () => {
     expect(createQ.status).toBe(201);
     const questionId = createQ.body.data.id;
 
-    const baseline = await request(app).post("/api/assessments").set(cookieA()).send({
+    const baseline = await request().post("/api/assessments").set(cookieA()).send({
       type: "Quiz",
       name: "Concurrent Baseline",
       semester: "2026W",
@@ -360,7 +355,7 @@ describeDb("Plan coverage (integration)", () => {
     expect(baseline.status).toBe(201);
     const baselineId = baseline.body.data.id;
 
-    const section = await request(app)
+    const section = await request()
       .post(`/api/assessments/${baselineId}/sections`)
       .set(cookieA())
       .send({ name: "Exam", position: 0 });
@@ -368,7 +363,7 @@ describeDb("Plan coverage (integration)", () => {
     const sectionId = section.body.data.id;
 
     const makeVariant = (text) =>
-      request(app)
+      request()
         .post(`/api/questions/${questionId}/variants`)
         .set(cookieA())
         .send({
@@ -394,7 +389,7 @@ describeDb("Plan coverage (integration)", () => {
     expect(altOneRes.status).toBe(201);
     expect(altTwoRes.status).toBe(201);
 
-    const addRef = await request(app)
+    const addRef = await request()
       .post(`/api/assessments/${baselineId}/sections/${sectionId}/variants`)
       .set(cookieA())
       .send({ variantId: refRes.body.data.id, displayOrder: 0 });
@@ -406,11 +401,11 @@ describeDb("Plan coverage (integration)", () => {
       includeDrafts: false,
     };
     const [asmA, asmB] = await Promise.all([
-      request(app)
+      request()
         .post("/api/assessment-variant/assemble-variants")
         .set(cookieA())
         .send({ ...payload, examLabels: ["Concurrent-A"] }),
-      request(app)
+      request()
         .post("/api/assessment-variant/assemble-variants")
         .set(cookieA())
         .send({ ...payload, examLabels: ["Concurrent-B"] }),
@@ -419,12 +414,8 @@ describeDb("Plan coverage (integration)", () => {
     expect(asmB.status).toBe(201);
 
     const [aDetail, bDetail] = await Promise.all([
-      request(app)
-        .get(`/api/assessments/${asmA.body.data.createdAssessments[0].id}`)
-        .set(cookieA()),
-      request(app)
-        .get(`/api/assessments/${asmB.body.data.createdAssessments[0].id}`)
-        .set(cookieA()),
+      request().get(`/api/assessments/${asmA.body.data.createdAssessments[0].id}`).set(cookieA()),
+      request().get(`/api/assessments/${asmB.body.data.createdAssessments[0].id}`).set(cookieA()),
     ]);
     expect(aDetail.status).toBe(200);
     expect(bDetail.status).toBe(200);

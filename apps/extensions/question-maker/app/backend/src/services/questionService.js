@@ -453,6 +453,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
             // the toggle was unreachable (#1652 review).
             coreQuestionId: true,
             shareWithExtensions: true,
+            createdBy: true,
             createdAt: true,
             updatedAt: true,
             assessment: { select: { id: true, name: true, type: true } },
@@ -502,6 +503,7 @@ export const getQuestionById = async (questionId, userId) => {
           // Same projection as the list path — see the note there.
           coreQuestionId: true,
           shareWithExtensions: true,
+          createdBy: true,
           createdAt: true,
           updatedAt: true,
           assessment: { select: { id: true, name: true, type: true } },

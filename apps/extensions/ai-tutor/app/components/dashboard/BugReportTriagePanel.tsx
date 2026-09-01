@@ -53,7 +53,7 @@ export function BugReportTriagePanel({ bugReports }: { bugReports: AdminBugRepor
         type="button"
         onClick={() => navigate("/admin")}
         style={courseHeroBackgroundStyle(TRIAGE_ACCENT)}
-        className="group relative w-full cursor-pointer overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group relative w-full cursor-pointer overflow-hidden rounded-xl p-5 text-left text-white shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <div className="relative flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -61,7 +61,7 @@ export function BugReportTriagePanel({ bugReports }: { bugReports: AdminBugRepor
               <IconBug size={13} aria-hidden="true" />
               <span className="truncate">{bugTypeLabel(primary)}</span>
             </span>
-            <span className="flex-shrink-0 text-xs text-white/70">
+            <span className="shrink-0 text-xs text-white/70">
               {relativeTime(primary.createdAt)}
             </span>
           </div>
@@ -70,7 +70,7 @@ export function BugReportTriagePanel({ bugReports }: { bugReports: AdminBugRepor
 
           <span
             style={{ color: CTA_TEXT_COLOR }}
-            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
+            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
           >
             Triage report
             <IconArrowRight
@@ -93,7 +93,7 @@ export function BugReportTriagePanel({ bugReports }: { bugReports: AdminBugRepor
                 className="flex w-full cursor-pointer items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
               >
                 <span
-                  className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-700"
+                  className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-700"
                   aria-hidden="true"
                 >
                   <IconBug size={15} />
@@ -103,7 +103,7 @@ export function BugReportTriagePanel({ bugReports }: { bugReports: AdminBugRepor
                     <span className="truncate text-xs font-medium capitalize text-muted-foreground">
                       {bugTypeLabel(report)}
                     </span>
-                    <span className="flex-shrink-0 text-[11px] text-muted-foreground">
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
                       {relativeTime(report.createdAt)}
                     </span>
                   </div>

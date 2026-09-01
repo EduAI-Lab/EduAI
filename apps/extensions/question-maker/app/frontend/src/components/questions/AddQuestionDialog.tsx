@@ -82,7 +82,7 @@ import { getAiTutorInstructorUrl } from "@/lib/coreUrl";
 import { MCQChoicesField } from "./MCQChoicesField";
 import { buildVariantMetadataUpdates } from "../../utils/questionMetadataEdit";
 import { reviewStatusConfirm } from "../../lib/review-status";
-import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from "../../utils/aiModels";
+import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../../utils/aiModels";
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -119,7 +119,7 @@ const Fact = ({
     <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
       {label}
     </dt>
-    <dd className="mt-1 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line break-words">
+    <dd className="mt-1 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line wrap-break-word">
       {value}
     </dd>
   </div>
@@ -262,6 +262,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   const isViewMode = props.mode === "view";
   const viewProps = isViewMode ? (props as AddQuestionViewProps) : null;
   const viewEntry = viewProps?.entry ?? null;
+  const createProps = !isViewMode ? (props as AddQuestionCreateProps) : null;
 
   const [isToggling, setIsToggling] = useState(false);
   const [isTogglingDraft, setIsTogglingDraft] = useState(false);
@@ -287,7 +288,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
 
   // View-mode permissions
   const { canApproveVariant, canCreateQuestion, canEditResource, canDeleteResource } =
-    useQmPermissionsForCourse(viewEntry?.courseId ?? null);
+    useQmPermissionsForCourse(viewEntry?.courseId ?? createProps?.courseId ?? null);
 
   // View-mode derived values (only valid when viewEntry is non-null)
   const viewVariant = viewEntry?.variant ?? null;
@@ -519,7 +520,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   };
 
   // ── CREATE/VARIANT MODE state ────────────────────────────────────────────
-  const createProps = !isViewMode ? (props as AddQuestionCreateProps) : null;
   const open = isViewMode ? (viewProps!.open ?? Boolean(viewProps!.entry)) : createProps!.open;
 
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -773,8 +773,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         setAvailableEduCourses(eduCourses);
         if (models.length > 0) {
           setForm((prev) => {
-            if (models.some((model) => model.id === prev.generationModel)) return prev;
-            return { ...prev, generationModel: pickPreferredGenerationModel(models) };
+            return {
+              ...prev,
+              generationModel: pickConfiguredGenerationModel(models, prev.generationModel),
+            };
           });
         }
       } catch (optionsError) {
@@ -1418,7 +1420,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                         onClick={() => handleSelectVariant(item)}
                         aria-current={isActive}
                         className={cn(
-                          "min-w-[200px] shrink-0 rounded-[var(--radius-lg)] border p-3 text-left transition-colors md:min-w-0",
+                          "min-w-[200px] shrink-0 rounded-lg border p-3 text-left transition-colors md:min-w-0",
                           isActive
                             ? "border-accent bg-accent/10 ring-1 ring-accent"
                             : "border-border bg-card hover:border-accent hover:bg-muted/50",
@@ -1580,9 +1582,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                               <div
                                 key={index}
                                 className={cn(
-                                  "flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors",
+                                  "flex items-center gap-3 rounded-lg border px-4 py-3.5 transition-colors",
                                   isCorrect
-                                    ? "border-[var(--color-success-500)] bg-[var(--color-success-100)]"
+                                    ? "border-(--color-success-500) bg-(--color-success-100)"
                                     : "border-border bg-muted/40",
                                 )}
                               >
@@ -1590,7 +1592,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                   className={cn(
                                     "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                                     isCorrect
-                                      ? "bg-[var(--color-success-500)] text-white"
+                                      ? "bg-(--color-success-500) text-white"
                                       : "bg-muted text-muted-foreground",
                                   )}
                                 >
@@ -1600,7 +1602,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                   {choice.text}
                                 </span>
                                 {isCorrect && (
-                                  <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />
+                                  <IconCircleCheckFilled className="size-5 shrink-0 text-(--color-success-500)" />
                                 )}
                               </div>
                             );
@@ -1609,7 +1611,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       </div>
                     </section>
                   ) : (
-                    <section className="rounded-[var(--radius-lg)] border border-dashed border-border bg-muted/20 p-5 text-center">
+                    <section className="rounded-lg border border-dashed border-border bg-muted/20 p-5 text-center">
                       <p className="text-sm text-muted-foreground">No choices defined yet.</p>
                       {canEditDraft && (
                         <Button
@@ -1652,7 +1654,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                             : "Correct answer"
                           : "Answer"}
                       </p>
-                      <div className="rounded-[var(--radius-lg)] border border-l-4 border-[var(--color-success-500)] border-l-[var(--color-success-500)] bg-[var(--color-success-100)] px-4 py-3">
+                      <div className="rounded-lg border border-l-4 border-(--color-success-500) border-l-(--color-success-500) bg-(--color-success-100) px-4 py-3">
                         <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-line">
                           {viewEntry.questionType === "MCQ" &&
                           viewVariant.choices &&
@@ -1691,7 +1693,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                   )}
 
                 {/* Details — quiet definition grid, inline edit, replaces the boxy tile grid */}
-                <section className="rounded-[var(--radius-lg)] border border-border bg-card p-5">
+                <section className="rounded-lg border border-border bg-card p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Details
@@ -1736,7 +1738,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       <div className="space-y-2">
                         <Label>Primary topic</Label>
                         <Select
-                          value={editPrimaryTopicId || undefined}
+                          value={editPrimaryTopicId}
                           onValueChange={setEditPrimaryTopicId}
                           disabled={isApproved || viewTopicsLoading || viewTopics.length === 0}
                         >
@@ -1962,7 +1964,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 {/* Extension sharing — reviewed variants only */}
                 {isApproved && (
                   <PermissionGate allow={canApproveVariant}>
-                    <section className="rounded-[var(--radius-lg)] border border-border bg-muted/40 p-5 space-y-3">
+                    <section className="rounded-lg border border-border bg-muted/40 p-5 space-y-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-foreground">
@@ -2112,7 +2114,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       keySaved={providerKeySaved}
       onClearSavedKey={() => {
         const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-        if (provider) apiKeyStorage.removeApiKey(provider);
+        if (provider) void apiKeyStorage.removeApiKey(provider);
         setProviderKeySaved(false);
         setProviderApiKey("");
         setApiKeySaveState("idle");
@@ -2123,13 +2125,14 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         if (!provider || !providerApiKey.trim()) return;
         setApiKeySaveState("saving");
         try {
-          await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+          const result = await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
           setProviderKeySaved(true);
           setProviderApiKey("");
           setApiKeySaveState("saved");
           toast("API key saved", {
-            description:
-              "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
+            description: result.storedRemotely
+              ? "Stored securely in Core for your account."
+              : "Core is unavailable; using an encrypted browser fallback until it reconnects.",
           });
           // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
           void eduaiStatus.refresh();
@@ -2172,7 +2175,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 ? "Create New Question"
                 : `Add Variant: ${presetVariant?.questionDescription ?? "Question"}`}
             </DialogTitle>
-            <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <Popover>
                 <Tooltip
                   content="AI assistant — generate or refine this question with a prompt"
@@ -2226,13 +2229,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         {modalTourOpen && (
           <>
             <div
-              className="fixed inset-0 z-[100] bg-black/50"
+              className="fixed inset-0 z-100 bg-black/50"
               onClick={() => setModalTourOpen(false)}
               aria-hidden="true"
             />
             {tourHighlightRect && (
               <div
-                className="fixed z-[101] rounded-lg border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none transition-all duration-200"
+                className="fixed z-101 rounded-lg border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none transition-all duration-200"
                 style={{
                   top: tourHighlightRect.top,
                   left: tourHighlightRect.left,
@@ -2242,7 +2245,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
               />
             )}
             <div
-              className="fixed z-[102] w-[320px] max-w-[calc(100vw-2rem)] pointer-events-auto"
+              className="fixed z-102 w-xs max-w-[calc(100vw-2rem)] pointer-events-auto"
               style={(() => {
                 const pad = 12;
                 const tw = 320;
@@ -2394,47 +2397,52 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         </div>
 
         <DialogFooter className="pt-4 flex-col sm:flex-row gap-3" data-tour-id="aq-save-area">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="mark-as-reviewed"
-                checked={markAsReviewed}
-                onChange={(e) => {
-                  const reviewed = e.target.checked;
-                  setMarkAsReviewed(reviewed);
-                  // Sharing only takes effect on approval, so a question that
-                  // stops being reviewed stops being shared with it (#1555).
-                  if (!reviewed) setShareWithExtensions(false);
-                }}
-                disabled={isSubmitting}
-                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
-              />
-              <label htmlFor="mark-as-reviewed" className="text-sm text-foreground cursor-pointer">
-                Mark as reviewed
-              </label>
+          <PermissionGate allow={canApproveVariant}>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="mark-as-reviewed"
+                  checked={markAsReviewed}
+                  onChange={(e) => {
+                    const reviewed = e.target.checked;
+                    setMarkAsReviewed(reviewed);
+                    // Sharing only takes effect on approval, so a question that
+                    // stops being reviewed stops being shared with it (#1555).
+                    if (!reviewed) setShareWithExtensions(false);
+                  }}
+                  disabled={isSubmitting}
+                  className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+                />
+                <label
+                  htmlFor="mark-as-reviewed"
+                  className="text-sm text-foreground cursor-pointer"
+                >
+                  Mark as reviewed
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="share-with-extensions"
+                  data-testid="share-with-extensions"
+                  checked={shareWithExtensions}
+                  onChange={(e) => setShareWithExtensions(e.target.checked)}
+                  disabled={isSubmitting || !markAsReviewed}
+                  className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
+                />
+                <label
+                  htmlFor="share-with-extensions"
+                  className={`text-sm cursor-pointer ${
+                    markAsReviewed ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  Usable by other EduAI extensions{" "}
+                  {!markAsReviewed && <span className="text-muted-foreground">(review first)</span>}
+                </label>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="share-with-extensions"
-                data-testid="share-with-extensions"
-                checked={shareWithExtensions}
-                onChange={(e) => setShareWithExtensions(e.target.checked)}
-                disabled={isSubmitting || !markAsReviewed}
-                className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
-              />
-              <label
-                htmlFor="share-with-extensions"
-                className={`text-sm cursor-pointer ${
-                  markAsReviewed ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Usable by other EduAI extensions{" "}
-                {!markAsReviewed && <span className="text-muted-foreground">(review first)</span>}
-              </label>
-            </div>
-          </div>
+          </PermissionGate>
           <div className="flex gap-2 ml-auto">
             <Button type="button" variant="ghost" onClick={cp.onClose} disabled={isSubmitting}>
               Cancel
@@ -2489,7 +2497,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           </DialogHeader>
           <div className="py-4">
             <div className="rounded-lg border bg-destructive/10 p-4">
-              <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+              <p className="text-sm text-foreground whitespace-pre-wrap wrap-break-word">
                 {errorModalMessage}
               </p>
             </div>

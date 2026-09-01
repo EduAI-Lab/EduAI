@@ -15,6 +15,7 @@ import {
   AdmissionTimeoutError,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { isClientRequestedBedrockModel } from "~/lib/ai/routing/bedrock/overflow.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -65,9 +66,10 @@ export async function action({ request }: ActionFunctionArgs) {
       // Completion is stateless, but retain a stable principal for admission and
       // billing-abuse controls. Service-key traffic is intentionally one shared
       // bucket until extension callers carry a signed end-user identity.
-      let rateLimitIdentity = apiKeySession?.user?.id ?? null;
-      if (!apiKeySession?.user) {
-        const session = await getRequestSession(request);
+      let session = apiKeySession;
+      let rateLimitIdentity = session?.user?.id ?? null;
+      if (!session?.user) {
+        session = await getRequestSession(request);
         if (session?.user) {
           rateLimitIdentity = session.user.id;
         } else {
@@ -114,6 +116,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const payload = validation.request;
+      if (isClientRequestedBedrockModel(payload.model.trim())) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+            code: "BEDROCK_NOT_SELECTABLE",
+          }),
+          { status: 400, headers: JSON_HEADERS },
+        );
+      }
+
       const model = payload.model;
       const modelPolicy = await resolveCompletionModelPolicy(model);
       if (!modelPolicy.ok) {
@@ -155,9 +168,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
       let outcome;
       try {
+        // Bedrock is activated only by the capped server-side overflow path. Never
+        // let client provider settings make the shared AWS credential reachable.
+        const apiKeys = { ...payload.apiKeys };
+        delete apiKeys.bedrock;
         outcome = await runCompletion({
           model,
-          apiKeys: payload.apiKeys,
+          apiKeys,
+          userId: session?.user?.id,
           systemPrompt: payload.systemPrompt,
           messages: payload.messages,
           streaming: payload.streaming,

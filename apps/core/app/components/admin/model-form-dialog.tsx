@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { Loader } from "@eduai/ui";
-import type { AIProvider, AIModel } from "~/types/ai";
+import type { AIProvider, AIModel, RouterTier } from "~/types/ai";
 
 export type OllamaModel = {
   name: string;
@@ -43,8 +43,15 @@ export type ModelFormData = {
   outputPricing?: number;
   contextFillRatio?: number | null;
   isActive: boolean;
+  // `null` (not just omitted) removes the model from Auto routing's pool —
+  // the update API applies this field, so it must be sent explicitly rather
+  // than left out when an admin clears a previously-set tier.
+  routerTier: RouterTier | null;
   providerId: string;
 };
+
+/** Sentinel for the "not in Auto's routing pool" option in the tier <Select>. */
+const NO_TIER = "__none__";
 
 export interface ModelFormDialogProps {
   open: boolean;
@@ -96,6 +103,7 @@ export function ModelFormDialog({
     outputPricing: string;
     contextFillRatio: string;
     isActive: boolean;
+    routerTier: RouterTier | null;
     providerId: string;
   }>({
     modelId: "",
@@ -110,6 +118,7 @@ export function ModelFormDialog({
     outputPricing: "",
     contextFillRatio: "",
     isActive: true,
+    routerTier: null,
     providerId: "",
   });
 
@@ -131,6 +140,7 @@ export function ModelFormDialog({
         outputPricing: model.outputPricing?.toString() || "",
         contextFillRatio: model.contextFillRatio?.toString() || "",
         isActive: model.isActive,
+        routerTier: model.routerTier,
         providerId: model.providerId,
       });
     } else {
@@ -147,6 +157,7 @@ export function ModelFormDialog({
         outputPricing: "",
         contextFillRatio: "",
         isActive: true,
+        routerTier: null,
         providerId: "",
       });
     }
@@ -268,7 +279,7 @@ export function ModelFormDialog({
                 onValueChange={(value) => setFormData({ ...formData, providerId: value })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger id="providerId">
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
@@ -290,7 +301,7 @@ export function ModelFormDialog({
                 onValueChange={(value: any) => setFormData({ ...formData, type: value })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger id="type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -348,7 +359,7 @@ export function ModelFormDialog({
                 <div className="space-y-2">
                   <Label htmlFor="ollamaModelSelect">Select Model</Label>
                   <Select value={selectedOllamaModel} onValueChange={handleOllamaModelSelect}>
-                    <SelectTrigger>
+                    <SelectTrigger id="ollamaModelSelect">
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
@@ -438,7 +449,7 @@ export function ModelFormDialog({
                   onValueChange={handleVllmModelSelect}
                   disabled={vllmModels.length === 0}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger id="vllmModelSelect" className="w-full">
                     <SelectValue
                       placeholder={
                         fetchingVllmModels
@@ -554,6 +565,37 @@ export function ModelFormDialog({
                 uses the platform default (0.5–0.98).
               </p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="routerTier">Auto Routing Tier</Label>
+            <Select
+              value={formData.routerTier ?? NO_TIER}
+              onValueChange={(value) =>
+                setFormData({
+                  ...formData,
+                  // SAFETY: the SelectItems below are hardcoded to exactly
+                  // NO_TIER | "TIER_1" | "TIER_2" | "TIER_3" — once NO_TIER is
+                  // ruled out, `value` can only be a valid RouterTier.
+                  routerTier: value === NO_TIER ? null : (value as RouterTier),
+                })
+              }
+            >
+              <SelectTrigger id="routerTier">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TIER}>Not in Auto pool</SelectItem>
+                <SelectItem value="TIER_1">Tier 1 (fast/cheap)</SelectItem>
+                <SelectItem value="TIER_2">Tier 2 (cloud overflow — unused here)</SelectItem>
+                <SelectItem value="TIER_3">Tier 3 (escalation/capable)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              A model must have a tier AND be Active to be eligible for Auto routing. Tier 2 is not
+              selected by any routing rule and is remapped to Tier 3 when a local vLLM host is
+              configured — it has no effect in that setup. Only CHAT models can have a tier.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-6">

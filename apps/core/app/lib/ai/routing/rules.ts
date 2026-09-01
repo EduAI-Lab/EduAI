@@ -6,6 +6,13 @@
  *
  * Rule order: escalation (debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
  *
+ * Every `PickSpec` below names tier 1 or tier 3 — none names tier 2. That is
+ * intentional, not an omission: this file is frozen for the held-out paper
+ * evaluation below, and tier 2 was the cloud-overflow tier for the
+ * multi-provider design this pool has never used in practice (see
+ * `../local-vllm.ts`, which also remaps any tier-2 pick reaching it from
+ * elsewhere to tier 3). Do not read "no tier-2 rule" as a gap to fill.
+ *
  * **Frozen 2026-06-27** for Paper 1 held-out evaluation — no further dev-suite rule tuning.
  *
  * There is no image-escalation rule: the model family handles images

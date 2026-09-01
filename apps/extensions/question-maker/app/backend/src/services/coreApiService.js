@@ -174,7 +174,7 @@ async function fetchFromCore(
       throw error;
     }
     assertQmAiDeadline({ signal });
-    if (res.ok) return res.json();
+    if (res.ok) return res.status === 204 ? null : res.json();
 
     const errBody = await res.json().catch(() => ({}));
     const err = coreError(errBody.error || "Core request failed", res.status, errBody);
@@ -186,6 +186,34 @@ async function fetchFromCore(
   }
 
   throw lastError;
+}
+
+/** Core-owned provider settings. Raw keys are accepted only on this
+ * authenticated session-scoped write; Core encrypts them before storage. */
+export async function getUserProviderSettingsFromCore(cookie) {
+  const data = await fetchFromCore("/api/user-provider-settings", {
+    cookie,
+    cookieOnly: true,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function upsertUserProviderSettingOnCore(cookie, payload) {
+  return fetchFromCore("/api/user-provider-settings", {
+    method: "POST",
+    cookie,
+    cookieOnly: true,
+    body: payload,
+  });
+}
+
+export async function deleteUserProviderSettingOnCore(cookie, providerName) {
+  return fetchFromCore("/api/user-provider-settings", {
+    method: "DELETE",
+    cookie,
+    cookieOnly: true,
+    body: { providerName },
+  });
 }
 
 function coreError(message, status, body) {
@@ -574,6 +602,15 @@ export async function proxyCoreCreateQuizQuestion(cookie, canvasCourseId, quizId
   });
 }
 
+/** DELETE /api/canvas/quizzes/:quizId — compensate a failed multi-step export. */
+export async function proxyCoreDeleteQuiz(cookie, canvasCourseId, quizId) {
+  return canvasCookieFetch(
+    `/api/canvas/quizzes/${encodeURIComponent(quizId)}?${canvasCourseQuery(canvasCourseId)}`,
+    cookie,
+    { method: "DELETE" },
+  );
+}
+
 /** GET /api/canvas/question-banks?canvasCourseId= — list Classic Canvas question banks. */
 export async function proxyCoreListQuestionBanks(cookie, canvasCourseId) {
   return canvasCookieFetch(
@@ -583,9 +620,9 @@ export async function proxyCoreListQuestionBanks(cookie, canvasCourseId) {
 }
 
 /** GET /api/canvas/question-banks/:bankId — fetch one Canvas question bank. */
-export async function proxyCoreGetQuestionBank(cookie, canvasBankId) {
+export async function proxyCoreGetQuestionBank(cookie, canvasCourseId, canvasBankId) {
   return canvasCookieFetch(
-    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}`,
+    `/api/canvas/question-banks/${encodeURIComponent(canvasBankId)}?${canvasCourseQuery(canvasCourseId)}`,
     cookie,
   );
 }
@@ -596,10 +633,12 @@ export async function proxyCoreGetQuestionBank(cookie, canvasBankId) {
  */
 export async function proxyCoreListQuestionBankQuestions(
   cookie,
+  canvasCourseId,
   canvasBankId,
   { page = 1, perPage = 100 } = {},
 ) {
   const qs = new URLSearchParams({
+    canvasCourseId: String(canvasCourseId),
     page: String(page),
     perPage: String(perPage),
   });

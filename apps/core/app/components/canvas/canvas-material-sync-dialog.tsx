@@ -199,10 +199,22 @@ export function CanvasMaterialSyncDialog({
 
   const resultSummary = result ? formatSyncResultSummary(result) : null;
   const resultTone = result ? syncResultTone(result) : null;
+  const preventWhileSyncing = (event: Event) => {
+    if (syncing) event.preventDefault();
+  };
+  const handleOpenChange = (next: boolean) => {
+    if (syncing && !next) return;
+    onOpenChange(next);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg"
+        showCloseButton={!syncing}
+        onEscapeKeyDown={preventWhileSyncing}
+        onPointerDownOutside={preventWhileSyncing}
+      >
         <DialogHeader>
           <DialogTitle>Sync materials from Canvas</DialogTitle>
           <DialogDescription>

@@ -169,7 +169,7 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     // that the model backends are reachable, so a unit admin diagnosing "the
     // tutor is broken" starts here.
     await expect(page.getByRole("button", { name: /^UBC-hosted AI: / })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Cloud AI: / })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Managed cloud AI: / })).toBeVisible();
   });
 
   test("the root path routes a unit admin to their dashboard", async ({ page }) => {

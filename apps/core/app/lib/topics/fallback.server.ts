@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 
 import prisma from "~/lib/prisma.server";
 
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
 /**
  * The reserved name of the zero-topic fallback (#1624). Question Maker requires
  * a topic to author against, so a course must never be left with none —
@@ -21,15 +23,18 @@ export const FALLBACK_TOPIC_NAME = "Uncategorized";
  * once real topics exist the fallback has no reason to be created, and once an
  * instructor deletes an unused fallback it should not silently come back.
  */
-export async function ensureCourseHasTopic(courseId: string): Promise<boolean> {
-  const existing = await prisma.courseTopic.findFirst({
+export async function ensureCourseHasTopic(
+  courseId: string,
+  db: DbClient = prisma,
+): Promise<boolean> {
+  const existing = await db.courseTopic.findFirst({
     where: { courseId, deletedAt: null },
     select: { id: true },
   });
   if (existing) return false;
 
   try {
-    await prisma.courseTopic.create({
+    await db.courseTopic.create({
       data: {
         courseId,
         name: FALLBACK_TOPIC_NAME,
@@ -49,12 +54,15 @@ export async function ensureCourseHasTopic(courseId: string): Promise<boolean> {
     // break this function's whole contract. Restore it in that case: unlike a
     // generated suggestion, whose dismissal must stick, the fallback exists
     // precisely so authoring is never blocked, and we only reach here when it is.
-    return restoreSoftDeletedFallback(courseId);
+    return restoreSoftDeletedFallback(courseId, db);
   }
 }
 
-async function restoreSoftDeletedFallback(courseId: string): Promise<boolean> {
-  const { count } = await prisma.courseTopic.updateMany({
+async function restoreSoftDeletedFallback(
+  courseId: string,
+  db: DbClient = prisma,
+): Promise<boolean> {
+  const { count } = await db.courseTopic.updateMany({
     where: { courseId, name: FALLBACK_TOPIC_NAME, deletedAt: { not: null } },
     data: { deletedAt: null, deletedBy: null },
   });

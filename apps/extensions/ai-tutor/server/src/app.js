@@ -16,6 +16,7 @@ import adminRoutes from "./routes/admin.js";
 import suggestedPromptRoutes from "./routes/suggested-prompts.js";
 import bugReportRoutes from "./routes/bug-reports.js";
 import aiStatusRoutes from "./routes/ai-status.js";
+import providerSettingsRoutes from "./routes/provider-settings.js";
 import internalRoutes from "./routes/internal.js";
 import { corsOptions } from "./config/cors.js";
 import { prisma } from "./config/database.js";
@@ -43,7 +44,8 @@ function isAllowedAdminPath(path) {
     path.startsWith("/modules/") ||
     path.startsWith("/lessons/") ||
     path.startsWith("/courses/") ||
-    path.startsWith("/activities/")
+    path.startsWith("/activities/") ||
+    path === "/provider-settings"
   );
 }
 
@@ -141,6 +143,7 @@ export async function createApp(options = {}) {
   app.use("/api", suggestedPromptRoutes);
   app.use("/api", bugReportRoutes);
   app.use("/api", aiStatusRoutes);
+  app.use("/api", providerSettingsRoutes);
   app.use("/api", internalRoutes);
 
   return app;

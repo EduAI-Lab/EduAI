@@ -25,6 +25,7 @@ import canvasService, {
 } from "../../services/canvasService";
 import { courseService } from "../../services/courseService";
 import { Topic } from "../../types/topic";
+import { assessmentTypes, AssessmentType } from "../../types/question";
 import { toast } from "sonner";
 
 interface CanvasCourseLink {
@@ -57,7 +58,7 @@ export const CanvasImportDialog = ({
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [selectedTopicId, setSelectedTopicId] = useState<string>("");
   const [assessmentName, setAssessmentName] = useState<string>("");
-  const [assessmentType, setAssessmentType] = useState<string>("Quiz");
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>("Quiz");
 
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
@@ -257,7 +258,7 @@ export const CanvasImportDialog = ({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0">
-        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle>Import from Canvas LMS</DialogTitle>
           <DialogDescription>
             Import a quiz from Canvas as a new assessment in Question Maker.
@@ -364,16 +365,22 @@ export const CanvasImportDialog = ({
 
               <div className="space-y-2">
                 <Label htmlFor="assessmentType">Assessment Type</Label>
-                <Select value={assessmentType} onValueChange={setAssessmentType}>
+                <Select
+                  value={assessmentType}
+                  onValueChange={(value) => {
+                    const nextType = assessmentTypes.find((type) => type === value);
+                    if (nextType) setAssessmentType(nextType);
+                  }}
+                >
                   <SelectTrigger id="assessmentType">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Quiz">Quiz</SelectItem>
-                    <SelectItem value="Assignment">Assignment</SelectItem>
-                    <SelectItem value="Exam">Exam</SelectItem>
-                    <SelectItem value="Midterm">Midterm</SelectItem>
-                    <SelectItem value="Final">Final</SelectItem>
+                    {assessmentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -381,7 +388,7 @@ export const CanvasImportDialog = ({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
           <Button variant="outline" onClick={onClose}>
             {canManageCanvas ? "Cancel" : "Close"}
           </Button>

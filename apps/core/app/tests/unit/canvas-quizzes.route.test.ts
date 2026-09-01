@@ -39,7 +39,7 @@ vi.mock("~/lib/canvas/client.server", () => ({
 
 vi.mock("~/lib/canvas/link-roster.server", () => ({
   LinkRosterError: class extends Error {},
-  linkCanvasRoster: vi.fn(),
+  linkCanvasRosterSelfService: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/sync.server", () => ({ syncCanvasCourses: vi.fn() }));
@@ -51,6 +51,7 @@ vi.mock("~/lib/canvas/quizzes.server", () => ({
   getCanvasQuizQuestion: vi.fn(),
   createCanvasQuiz: vi.fn(),
   createCanvasQuizQuestion: vi.fn(),
+  deleteCanvasQuiz: vi.fn(),
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -64,7 +65,7 @@ import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { canManageCanvasIntegration } from "~/lib/canvas/guards.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
-import { listCanvasQuizzes, createCanvasQuiz } from "~/lib/canvas/quizzes.server";
+import { listCanvasQuizzes, createCanvasQuiz, deleteCanvasQuiz } from "~/lib/canvas/quizzes.server";
 import type { JsonValue } from "~/lib/json-value";
 
 const credentials = {
@@ -106,6 +107,15 @@ beforeEach(() => {
     ...credentials,
     isConnected: true,
   } as never);
+});
+
+it("deletes a quiz through the caller's Canvas integration", async () => {
+  vi.mocked(deleteCanvasQuiz).mockResolvedValue({ id: 77, title: "Partial quiz" });
+
+  const response = await call("/quizzes/77?canvasCourseId=9", "DELETE");
+
+  expect(response.status).toBe(200);
+  expect(deleteCanvasQuiz).toHaveBeenCalledWith(expect.objectContaining(credentials), 9, 77);
 });
 
 describe("GET /api/canvas/quizzes", () => {

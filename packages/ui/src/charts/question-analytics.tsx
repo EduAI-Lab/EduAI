@@ -50,11 +50,11 @@ export function QuestionAnalytics({
         <DonutChart data={typeComposition} centerValue={totalQuestions} centerLabel="Questions" />
       </PanelCard>
 
-      <PanelCard title="Difficulty mix">
+      <PanelCard title="Variant difficulty">
         <StackedBar data={difficulty} />
       </PanelCard>
 
-      <PanelCard title="Authoring & review">
+      <PanelCard title="Variant authoring & review">
         <DonutChart
           size={108}
           thickness={16}
@@ -65,7 +65,7 @@ export function QuestionAnalytics({
         />
         <div className="mt-4">
           <MeterBar
-            label="Reviewed"
+            label="Reviewed variants"
             value={reviewedCount}
             total={totalVariants}
             color={REVIEWED_COLOR}

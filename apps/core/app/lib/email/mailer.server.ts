@@ -5,9 +5,9 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 /**
  * Minimal email sender. The transport is built from SMTP_* env vars
  * (Mailtrap in dev, an institutional relay in prod — no code change, just
- * env). When SMTP is not configured the sender falls back to logging the
- * message (and any invite link) to the console and reports `delivered: false`,
- * so unconfigured environments degrade gracefully instead of throwing.
+ * env). When SMTP is not configured, non-production environments log the
+ * message for local testing. Production fails closed without logging the
+ * message because email bodies can contain invitation or verification tokens.
  */
 
 export type EmailMessage = {
@@ -24,6 +24,10 @@ const DEFAULT_FROM = "EduAI <no-reply@eduai.local>";
 function readEnv(name: string): string | undefined {
   const value = process.env[name];
   return value && value.trim() ? value.trim() : undefined;
+}
+
+export function isSmtpConfigured(): boolean {
+  return readEnv("SMTP_HOST") !== undefined;
 }
 
 let cachedTransport: Transporter | null | undefined;
@@ -61,6 +65,9 @@ export async function sendEmail(message: EmailMessage): Promise<SendEmailResult>
   const transport = getTransport();
 
   if (!transport) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SMTP must be configured before sending email in production");
+    }
     console.info(
       `[email] SMTP not configured — skipping send to ${message.to}: "${message.subject}"\n${message.text}`,
     );

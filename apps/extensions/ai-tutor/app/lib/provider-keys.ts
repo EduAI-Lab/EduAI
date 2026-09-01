@@ -9,6 +9,9 @@ import { isBrowser } from "@eduai/ui/runtime-env";
 import { z } from "zod";
 export type ProviderId = "google" | "openai" | "opencode";
 
+/** Sentinel used in UI state when the encrypted key is owned by Core. */
+export const CORE_STORED_KEY = "__core_stored__";
+
 /** Providers a student can configure a key for, in display order. */
 export const PROVIDERS: ReadonlyArray<{
   id: ProviderId;
@@ -71,6 +74,7 @@ export function getProviderFromModelId(modelId: string): string {
 }
 
 export function maskApiKey(key: string): string {
+  if (key === CORE_STORED_KEY) return "••••••••";
   if (key.length <= 8) return "••••••••";
   return `••••••${key.slice(-4)}`;
 }
@@ -127,6 +131,24 @@ export function saveApiKeysToStorage(
     }
   } catch {
     // Ignore storage errors.
+  }
+}
+
+/** Removes one account-scoped legacy key after its Core replacement succeeds. */
+export function removeApiKeyFromStorage(userId: string | null | undefined, provider: string): void {
+  if (!isBrowser() || !userId) return;
+  try {
+    const storageKey = getApiKeysStorageKey(userId);
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    const parsed = z.record(z.string().min(1)).safeParse(JSON.parse(stored));
+    if (!parsed.success) return;
+    const keys = { ...parsed.data };
+    delete keys[provider];
+    saveApiKeysToStorage(userId, keys);
+  } catch {
+    // Keep the legacy value if storage cannot be updated; the next migration
+    // can retry without losing the only copy.
   }
 }
 

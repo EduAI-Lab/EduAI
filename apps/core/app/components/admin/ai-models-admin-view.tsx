@@ -2,12 +2,18 @@ import { useCallback, useMemo, useState } from "react";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
+import {
+  AutoRoutingConfigDialog,
+  type AutoRoutingSelection,
+} from "~/components/admin/auto-routing-config-dialog";
+import { AssistModelConfigDialog } from "~/components/admin/assist-model-config-dialog";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { RoutingModelsTable } from "~/components/admin/routing-models-table";
+import { FleetConfigPanel } from "~/components/admin/fleet-config-panel";
 import { TablePagination } from "~/components/ui/table-pagination";
-import { fetchModelsByProvider } from "~/hooks/api/use-ai-models";
+import { fetchAllModels, fetchModelsByProvider } from "~/hooks/api/use-ai-models";
 import type { PaginationState } from "~/hooks/api/pagination";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -20,6 +26,7 @@ import type { ModelFormData, OllamaModel, VllmModel } from "~/components/admin/m
 import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
 import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
+import type { FleetConnectionTest, FleetServerConfig } from "~/hooks/api/use-fleet-config";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -68,6 +75,17 @@ export type AiModelsAdminViewProps = {
   routingModelSettings: RoutingModelSettings;
   routingModelDefinitions: RoutingModelSettingDefinition[];
   onToggleRoutingModel: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
+  assistModelId: string | null;
+  onSetAssistModel: (modelId: string | null) => Promise<string | null>;
+  assistModelSettingError: string | null;
+  fleetServers: FleetServerConfig[];
+  fleetConnectionTest: FleetConnectionTest | null;
+  fleetConfigured: boolean;
+  fleetSource: "file" | "environment";
+  fleetConfigLoading: boolean;
+  fleetConfigSaving: boolean;
+  fleetConfigError: string | null;
+  onSaveFleetConfig: (servers: FleetServerConfig[]) => Promise<FleetServerConfig[]>;
 };
 
 export function AiModelsAdminView({
@@ -96,6 +114,17 @@ export function AiModelsAdminView({
   routingModelSettings,
   routingModelDefinitions,
   onToggleRoutingModel,
+  assistModelId,
+  onSetAssistModel,
+  assistModelSettingError,
+  fleetServers,
+  fleetConnectionTest,
+  fleetConfigured,
+  fleetSource,
+  fleetConfigLoading,
+  fleetConfigSaving,
+  fleetConfigError,
+  onSaveFleetConfig,
 }: AiModelsAdminViewProps) {
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
@@ -111,6 +140,14 @@ export function AiModelsAdminView({
   const [ollamaFetched, setOllamaFetched] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncingProvider, setSyncingProvider] = useState<"ollama" | "vllm" | null>(null);
+  const [autoRoutingDialogOpen, setAutoRoutingDialogOpen] = useState(false);
+  const [autoRoutingModels, setAutoRoutingModels] = useState<AIModel[]>([]);
+  const [fetchingAutoRoutingModels, setFetchingAutoRoutingModels] = useState(false);
+  const [autoRoutingError, setAutoRoutingError] = useState<string | null>(null);
+  const [assistModelDialogOpen, setAssistModelDialogOpen] = useState(false);
+  const [assistModels, setAssistModels] = useState<AIModel[]>([]);
+  const [fetchingAssistModels, setFetchingAssistModels] = useState(false);
+  const [assistModelsError, setAssistModelsError] = useState<string | null>(null);
 
   const ollamaProvider = useMemo(
     () => providers.find((provider) => provider.name === "ollama" && provider.isActive),
@@ -315,6 +352,84 @@ export function AiModelsAdminView({
     }
   };
 
+  const handleEditAutoRouting = async () => {
+    setAutoRoutingDialogOpen(true);
+    setFetchingAutoRoutingModels(true);
+    setAutoRoutingError(null);
+    try {
+      setAutoRoutingModels(await fetchAllModels());
+    } catch (err) {
+      setAutoRoutingError(
+        err instanceof Error ? err.message : "Failed to load models for Auto routing",
+      );
+    } finally {
+      setFetchingAutoRoutingModels(false);
+    }
+  };
+
+  const handleEditAssistModel = async () => {
+    setAssistModelDialogOpen(true);
+    setFetchingAssistModels(true);
+    setAssistModelsError(null);
+    try {
+      setAssistModels(await fetchAllModels());
+    } catch (err) {
+      setAssistModelsError(
+        err instanceof Error ? err.message : "Failed to load models for AI Assist",
+      );
+    } finally {
+      setFetchingAssistModels(false);
+    }
+  };
+
+  const assistModel = assistModels.find(
+    (model) => `${model.provider.name}:${model.modelId}` === assistModelId,
+  );
+  const assistModelName = assistModel?.name ?? null;
+  const fleetModelLocations = useMemo(() => {
+    const locations = new Map<string, Set<string>>();
+    const addLocation = (serverId: string, modelId: string) => {
+      const key = `vllm:${modelId.toLowerCase()}`;
+      const serverIds = locations.get(key) ?? new Set<string>();
+      serverIds.add(serverId);
+      locations.set(key, serverIds);
+    };
+
+    for (const server of fleetServers) {
+      for (const modelId of server.models) addLocation(server.id, modelId);
+    }
+    for (const server of fleetConnectionTest?.servers ?? []) {
+      for (const modelId of server.models) addLocation(server.serverId, modelId);
+    }
+
+    return Object.fromEntries(
+      [...locations.entries()].map(([modelId, serverIds]) => [modelId, [...serverIds]]),
+    );
+  }, [fleetConnectionTest, fleetServers]);
+
+  const handleSaveAutoRouting = async ({ smallModelIds, largeModelIds }: AutoRoutingSelection) => {
+    const small = new Set(smallModelIds);
+    const large = new Set(largeModelIds);
+
+    for (const model of autoRoutingModels) {
+      if (model.type !== "CHAT") continue;
+      const routerTier = small.has(model.id) ? "TIER_1" : large.has(model.id) ? "TIER_3" : null;
+      if (model.routerTier !== routerTier) {
+        await onUpdateModel(model.id, { routerTier });
+      }
+    }
+
+    setAutoRoutingModels((current) =>
+      current.map((model) => {
+        if (model.type !== "CHAT") return model;
+        return {
+          ...model,
+          routerTier: small.has(model.id) ? "TIER_1" : large.has(model.id) ? "TIER_3" : null,
+        };
+      }),
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
@@ -346,6 +461,7 @@ export function AiModelsAdminView({
               <PageTabsList>
                 <PageTabsTrigger value="models">Models</PageTabsTrigger>
                 <PageTabsTrigger value="providers">Providers</PageTabsTrigger>
+                <PageTabsTrigger value="servers">Servers</PageTabsTrigger>
               </PageTabsList>
 
               <PageTabsContent value="models" className="space-y-4">
@@ -393,7 +509,11 @@ export function AiModelsAdminView({
                     <RoutingModelsTable
                       definitions={routingModelDefinitions}
                       settings={routingModelSettings}
+                      assistModelId={assistModelId}
+                      assistModelName={assistModelName}
                       onToggle={handleToggleRoutingModel}
+                      onEdit={() => void handleEditAutoRouting()}
+                      onEditAssist={() => void handleEditAssistModel()}
                     />
 
                     {(syncMessage || ollamaError || vllmError) && (
@@ -416,6 +536,7 @@ export function AiModelsAdminView({
                       <div className="relative flex-1 max-w-sm">
                         <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
+                          aria-label="Search models"
                           placeholder="Search models..."
                           value={modelSearch}
                           onChange={(e) => onModelSearchChange(e.target.value)}
@@ -429,7 +550,7 @@ export function AiModelsAdminView({
                           onModelProviderIdChange(value === "all" ? null : value)
                         }
                       >
-                        <SelectTrigger className="w-48">
+                        <SelectTrigger className="w-48" aria-label="Filter models by provider">
                           <IconFilter className="h-4 w-4 mr-2" />
                           <SelectValue />
                         </SelectTrigger>
@@ -446,6 +567,7 @@ export function AiModelsAdminView({
 
                     <AIModelsTable
                       models={models}
+                      fleetModelLocations={fleetModelLocations}
                       onEdit={(model) => {
                         setEditingModel(model);
                         handleModelDialogChange(true);
@@ -501,6 +623,19 @@ export function AiModelsAdminView({
                   </CardContent>
                 </Card>
               </PageTabsContent>
+
+              <PageTabsContent value="servers" className="space-y-4">
+                <FleetConfigPanel
+                  servers={fleetServers}
+                  configured={fleetConfigured}
+                  source={fleetSource}
+                  loading={fleetConfigLoading}
+                  saving={fleetConfigSaving}
+                  error={fleetConfigError}
+                  connectionTest={fleetConnectionTest}
+                  onSave={onSaveFleetConfig}
+                />
+              </PageTabsContent>
             </PageTabs>
           </div>
         </div>
@@ -523,6 +658,27 @@ export function AiModelsAdminView({
         vllmFetched={vllmFetched}
         onFetchVllmModels={() => void handleFetchVllmModels()}
         syncMessage={syncMessage}
+      />
+
+      <AutoRoutingConfigDialog
+        open={autoRoutingDialogOpen}
+        onOpenChange={setAutoRoutingDialogOpen}
+        models={autoRoutingModels}
+        loading={fetchingAutoRoutingModels}
+        error={autoRoutingError}
+        onSave={handleSaveAutoRouting}
+      />
+
+      <AssistModelConfigDialog
+        open={assistModelDialogOpen}
+        onOpenChange={setAssistModelDialogOpen}
+        models={assistModels}
+        selectedModelId={assistModelId}
+        loading={fetchingAssistModels}
+        error={assistModelSettingError ?? assistModelsError}
+        onSave={async (modelId) => {
+          await onSetAssistModel(modelId);
+        }}
       />
 
       <ProviderFormDialog

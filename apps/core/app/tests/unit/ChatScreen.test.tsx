@@ -142,6 +142,7 @@ const baseData: ChatBaseData = {
       provider: "openai",
     },
   ],
+  assistModelId: null,
   routerAutoEnabled: false,
   showRoutingModels: false,
   user: {
@@ -330,6 +331,45 @@ describe("ChatScreen — header", () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
+  it("uses the configured Assist model only when Auto is selected", () => {
+    const assistAutoData: ChatBaseData = {
+      ...autoRoutingData,
+      assistModelId: "openai:gpt-4",
+      assistDefault: true,
+    };
+
+    renderChatScreen(null, assistAutoData);
+
+    expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+      expect.objectContaining({ model: "openai:gpt-4", adhdAssist: true }),
+    );
+  });
+
+  it("keeps an explicitly selected model when Assist is enabled", () => {
+    const assistAutoData: ChatBaseData = {
+      ...autoRoutingData,
+      assistModelId: "openai:gpt-4",
+      assistDefault: true,
+      chatModels: [
+        ...autoRoutingData.chatModels,
+        {
+          id: "anthropic:claude-sonnet",
+          name: "Claude Sonnet",
+          description: "Explicit test model",
+          provider: "anthropic",
+        },
+      ],
+    };
+
+    renderChatScreen(null, assistAutoData, {
+      pathname: "/chat",
+      state: { selectedModel: "anthropic:claude-sonnet" },
+    });
+
+    expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+      expect.objectContaining({ model: "anthropic:claude-sonnet", adhdAssist: true }),
+    );
+  });
   it("sends a request-specific Stop beacon before stopping the chat", async () => {
     const originalSendBeacon = navigator.sendBeacon;
     const sendBeacon = vi.fn().mockReturnValue(true);
@@ -471,7 +511,7 @@ describe("ChatScreen — header", () => {
       chatState.isLoading = true;
       const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
       await act(async () => {
-        persistedViewProps.setSelectedCourseCode("PHYS 121");
+        persistedViewProps.setSelectedCourseId("c2");
       });
 
       expect(sendBeacon).toHaveBeenCalledTimes(1);
@@ -840,7 +880,7 @@ describe("ChatScreen — header", () => {
     const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
 
     await act(async () => {
-      persistedViewProps.setSelectedCourseCode("PHYS 121");
+      persistedViewProps.setSelectedCourseId("c2");
     });
 
     await waitFor(() => {
@@ -848,11 +888,12 @@ describe("ChatScreen — header", () => {
       expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
         expect.objectContaining({
           selectedCourseCode: "PHYS 121",
+          selectedCourseId: "c2",
           messages: [],
         }),
       );
     });
-    expect(visited).toContain("/chat?courseCode=PHYS%20121");
+    expect(visited).toContain("/chat?courseId=c2");
   });
 
   it("keeps the requested course when the loader has no last course", async () => {
@@ -860,7 +901,21 @@ describe("ChatScreen — header", () => {
 
     await waitFor(() => {
       expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
-        expect.objectContaining({ selectedCourseCode: "PHYS 121" }),
+        expect.objectContaining({ selectedCourseId: "c2", selectedCourseCode: "PHYS 121" }),
+      );
+    });
+  });
+
+  it("keeps duplicate course codes distinct by id", async () => {
+    coursesState.courses = [
+      { id: "c1", code: "COSC 101", name: "Fall section" },
+      { id: "c2", code: "COSC 101", name: "Spring section" },
+    ];
+    renderBlankChat("/chat?courseId=c2");
+
+    await waitFor(() => {
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseId: "c2", selectedCourseCode: "COSC 101" }),
       );
     });
   });
@@ -883,12 +938,13 @@ describe("ChatScreen — header", () => {
 
     const inFlightViewProps = captureCourseViewProps.mock.lastCall?.[0];
     await act(async () => {
-      inFlightViewProps.setSelectedCourseCode("PHYS 121");
+      inFlightViewProps.setSelectedCourseId("c2");
     });
 
     await waitFor(() => {
       expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
         expect.objectContaining({
+          courseId: "c2",
           courseCode: "PHYS 121",
           chatId: undefined,
         }),

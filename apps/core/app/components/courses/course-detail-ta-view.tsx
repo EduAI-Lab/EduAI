@@ -1,12 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  IconUpload,
-  IconSettings,
-  IconBook,
-  IconTrash,
-  IconPencil,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconUpload, IconBook, IconTrash, IconPencil, IconPlus } from "@tabler/icons-react";
 import { Card, CardContent } from "@eduai/ui";
 import { Button } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
@@ -39,7 +32,6 @@ import { resolvePaletteAccent } from "@eduai/ui";
 import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
-import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 import {
   CourseResponseStyleSettings,
@@ -108,7 +100,9 @@ export function CourseDetailTaView({
   const { isEnabled } = usePolicyGate();
   // §2 / issue #807: controls an admin turned off stay visible but greyed-out
   // with a tooltip rather than vanishing.
-  // tas.canManageMaterials (default true): upload/embedding controls.
+  // tas.canManageMaterials (default true): upload and own-material controls.
+  // Embedding settings are not available to TAs because the backend only
+  // grants that capability to admin/unit/instructor access levels.
   const canManageMaterials = isEnabled("tas.canManageMaterials");
   // tas.canSetAiInstructions (default off): edit the AI instructions field only.
   const canSetAiInstructions = isEnabled("tas.canSetAiInstructions");
@@ -116,7 +110,6 @@ export function CourseDetailTaView({
   const canManageTopics = isEnabled("tas.canManageTopics");
 
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [embeddingOpen, setEmbeddingOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
@@ -314,24 +307,6 @@ export function CourseDetailTaView({
         </Dialog>
       )}
 
-      {/* A2: Embedding settings modal */}
-      {canManageMaterials && courseId && (
-        <Dialog open={embeddingOpen} onOpenChange={setEmbeddingOpen}>
-          <DialogContent className="sm:max-w-lg rounded-[var(--radius-xl)]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <IconSettings className="h-4 w-4" />
-                Course search settings
-              </DialogTitle>
-              <DialogDescription>
-                Choose the AI model used to search this course's materials.
-              </DialogDescription>
-            </DialogHeader>
-            <CourseEmbeddingSettings courseId={courseId} />
-          </DialogContent>
-        </Dialog>
-      )}
-
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -499,17 +474,9 @@ export function CourseDetailTaView({
             }))}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
             headerActions={
-              // §807: keep upload/embedding controls visible, greyed when the
-              // TA's manage-materials policy is off.
+              // §807: keep the upload control visible, greyed when the TA's
+              // manage-materials policy is off.
               <>
-                {courseId && (
-                  <PolicyTooltip flag="tas.canManageMaterials">
-                    <Button variant="outline" size="sm" onClick={() => setEmbeddingOpen(true)}>
-                      <IconSettings className="h-4 w-4 mr-1.5" />
-                      Embedding settings
-                    </Button>
-                  </PolicyTooltip>
-                )}
                 <PolicyTooltip flag="tas.canManageMaterials">
                   <Button size="sm" onClick={() => setUploadOpen(true)}>
                     <IconUpload className="h-4 w-4 mr-1.5" />
@@ -544,27 +511,31 @@ export function CourseDetailTaView({
               if (!currentUserId || m.uploadedBy !== currentUserId) return null;
               return (
                 <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Rename material"
-                    onClick={() => {
-                      setRenameMaterialId(m.id);
-                      setRenameTitle(m.title);
-                      setRenameError(null);
-                    }}
-                  >
-                    <IconPencil className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete material"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDeleteMaterialId(m.id)}
-                  >
-                    <IconTrash className="w-4 h-4" />
-                  </Button>
+                  <PolicyTooltip flag="tas.canManageMaterials">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Rename material"
+                      onClick={() => {
+                        setRenameMaterialId(m.id);
+                        setRenameTitle(m.title);
+                        setRenameError(null);
+                      }}
+                    >
+                      <IconPencil className="w-4 h-4" />
+                    </Button>
+                  </PolicyTooltip>
+                  <PolicyTooltip flag="tas.canManageMaterials">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Delete material"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteMaterialId(m.id)}
+                    >
+                      <IconTrash className="w-4 h-4" />
+                    </Button>
+                  </PolicyTooltip>
                 </>
               );
             }}

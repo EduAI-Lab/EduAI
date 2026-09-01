@@ -85,9 +85,13 @@ async function skipDashboardTour(page: Page): Promise<void> {
 // is a deliberate, documented design choice (not a bug), with a 30-day skip
 // cookie already built in — set it directly rather than clicking through.
 async function skipStudentIdOnboarding(page: Page): Promise<void> {
-  await page
-    .context()
-    .addCookies([{ name: "eduai_student_id_onboarding_skipped", value: "1", url: CORE_URL }]);
+  await page.context().addCookies([
+    {
+      name: "eduai_student_id_onboarding_skipped",
+      value: "1",
+      url: CORE_URL,
+    },
+  ]);
 }
 
 async function setPolicy(adminCtx: APIRequestContext, value: boolean): Promise<void> {
@@ -121,7 +125,9 @@ test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
   try {
     const secret = process.env.E2E_SEED_SECRET ?? "e2e-seed-secret";
-    const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, { data: { secret } });
+    const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, {
+      data: { secret },
+    });
     expect(res.ok(), `demo-data seed failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   } finally {
     await ctx.dispose();
@@ -363,7 +369,7 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       const chatId = await createFastChat(ctx, "Round2 delete-test chat", COURSES.cosc101);
 
       await injectSession(page, ctx);
-      await page.goto(`${CORE_URL}/chat`);
+      await page.goto(`${CORE_URL}/chat/${chatId}`);
       await page.waitForLoadState("networkidle");
       await dismissChatPrivacyNoticeIfPresent(page);
 
@@ -373,38 +379,76 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
 
       const deleteBtn = page
         .locator('aside[aria-label="Chat history"]')
-        // exact: true matters — the outer row <button>'s computed accessible
-        // name is "New conversation COSC 101 ... Delete conversation" (the
-        // nested delete span's label gets folded into it), so a substring
-        // match here would grab the row (navigates) instead of the icon
-        // (deletes).
+        .locator('button[aria-current="true"]')
+        .locator("..")
         .getByRole("button", { name: "Delete conversation", exact: true })
         .first();
       await deleteBtn.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {
         // Delete affordance is hover-revealed (opacity-0 -> group-hover) — force
         // click if Playwright doesn't consider it independently visible.
       });
+      await deleteBtn.click({ force: true });
+      await expect(page.getByRole("alertdialog")).toBeVisible();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+      const afterCancelRes = await ctx.get(`${CORE_URL}/api/chats?scope=own`);
+      const afterCancelIds = ((await afterCancelRes.json()).chats ?? []).map(
+        (chat: { id: string }) => chat.id,
+      );
+      expect(afterCancelIds).toContain(chatId);
+
+      await deleteBtn.click({ force: true });
       const deleteResponsePromise = page.waitForResponse(
         (res) =>
           res.url() === `${CORE_URL}/api/chats/${chatId}` && res.request().method() === "DELETE",
       );
-      await deleteBtn.click({ force: true });
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
       const deleteResponse = await deleteResponsePromise;
       expect(deleteResponse.status()).toBe(204);
 
       const afterRes = await ctx.get(`${CORE_URL}/api/chats?scope=own`);
       const afterIds = ((await afterRes.json()).chats ?? []).map((c: any) => c.id);
       expect(afterIds).not.toContain(chatId);
-
-      test.info().annotations.push({
-        type: "finding",
-        description:
-          "Delete has no confirmation step (apps/core/app/components/chat/chat-history-list.tsx " +
-          'handleDelete fires immediately on click, no "are you sure?"). Not filed as a bug — a ' +
-          "product/UX call, consistent with how this doc treats other design-tradeoff rows — but " +
-          "worth a second look since it is a destructive, irreversible, one-click action.",
-      });
     } finally {
+      await ctx.dispose();
+    }
+  });
+
+  test("delete failure keeps the conversation and surfaces an error", async ({
+    page,
+    playwright,
+  }) => {
+    const ctx = await newAuthedContext(playwright, USERS.student1);
+    const chatId = await createFastChat(ctx, "Round2 failed-delete chat", COURSES.cosc101);
+
+    try {
+      await injectSession(page, ctx);
+      await page.route(`${CORE_URL}/api/chats/${chatId}`, (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: '{"error":"failed"}',
+        }),
+      );
+      await page.goto(`${CORE_URL}/chat/${chatId}`);
+      await page.waitForLoadState("networkidle");
+      await dismissChatPrivacyNoticeIfPresent(page);
+
+      await page
+        .locator('aside[aria-label="Chat history"]')
+        .locator('button[aria-current="true"]')
+        .locator("..")
+        .getByRole("button", { name: "Delete conversation", exact: true })
+        .first()
+        .click({ force: true });
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+      await expect(page.getByText("Could not delete conversation", { exact: true })).toBeVisible();
+      const listRes = await ctx.get(`${CORE_URL}/api/chats?scope=own`);
+      const chatIds = ((await listRes.json()).chats ?? []).map((chat: { id: string }) => chat.id);
+      expect(chatIds).toContain(chatId);
+    } finally {
+      await ctx.delete(`${CORE_URL}/api/chats/${chatId}`);
       await ctx.dispose();
     }
   });
@@ -692,7 +736,11 @@ test.describe("/settings — account actions", () => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       const upsertRes = await ctx.post(`${CORE_URL}/api/user-provider-settings`, {
-        data: { providerName: "openai", isEnabled: true, apiKey: "sk-round2-e2e-probe-key" },
+        data: {
+          providerName: "openai",
+          isEnabled: true,
+          apiKey: "sk-round2-e2e-probe-key",
+        },
       });
       expect(upsertRes.status()).toBe(204);
 

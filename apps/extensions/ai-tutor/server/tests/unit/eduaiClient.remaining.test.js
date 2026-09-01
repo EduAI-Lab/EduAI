@@ -11,13 +11,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../../src/services/systemSettings.js", () => ({
   getEffectiveEduAiApiKey: vi.fn(),
-  serviceAuthHeader: vi.fn(),
+  serviceAuthHeader: vi.fn(() => {
+    const key = process.env.EDUAI_API_KEY;
+    return key ? { Authorization: `Bearer ${key}` } : {};
+  }),
 }));
 
 import {
   getEduAiBaseUrl,
   getEduAiCompletionUrl,
   getEduAiChatUrl,
+  upsertUserProviderSetting,
+  deleteUserProviderSetting,
   postCoreBugReport,
   listCoreAdminBugReports,
   getCoreAdminBugReport,
@@ -76,6 +81,44 @@ describe("base URL helpers", () => {
   it("getEduAiCompletionUrl / getEduAiChatUrl are derived from the base URL", () => {
     expect(getEduAiCompletionUrl()).toBe("http://eduai.test/api/completion");
     expect(getEduAiChatUrl()).toBe("http://eduai.test/api/chat");
+  });
+});
+
+describe("Core provider-setting mutations", () => {
+  it("forwards both the session cookie and service key for POST and DELETE", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({}));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await upsertUserProviderSetting("session=abc", {
+      providerName: "google",
+      isEnabled: true,
+      apiKey: "secret",
+    });
+    await deleteUserProviderSetting("session=abc", "google");
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "http://eduai.test/api/user-provider-settings",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer svc-key",
+          cookie: "session=abc",
+        }),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "http://eduai.test/api/user-provider-settings",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          Authorization: "Bearer svc-key",
+          cookie: "session=abc",
+        }),
+      }),
+    );
   });
 });
 
@@ -269,15 +312,17 @@ describe("patchCoreAdminBugReportStatus", () => {
 
 describe("listEduAiCourses (success path via cookie)", () => {
   it("returns the parsed course page data on a valid response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const courses = [{ id: "c1", name: "Course One" }];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(okJson({ data: courses, total: 1, page: 1, pageSize: 200 })),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(okJson({ data: courses, total: 1, page: 1, pageSize: 200 }));
+    vi.stubGlobal("fetch", mockFetch);
 
     const result = await listEduAiCourses({ cookie: "session=abc" });
 
     expect(result).toEqual(courses);
+    expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
   });
 });
 
@@ -558,6 +603,28 @@ describe("fetchCoreCourseSafe", () => {
     await fetchCoreCourseSafe("core-1", { signal });
 
     expect(mockFetch.mock.calls[0][1].signal).toBe(signal);
+  });
+
+  it("bounds a Core call when no caller signal is supplied", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+
+    const result = expect(fetchCoreCourseSafe("core-1")).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    controller.abort(new DOMException("EduAI request timed out", "TimeoutError"));
+    await result;
+    expect(timeout).toHaveBeenCalledWith(15_000);
   });
 });
 

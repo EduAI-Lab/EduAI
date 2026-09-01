@@ -60,6 +60,21 @@ describe("sendEmail — SMTP not configured", () => {
 
     expect(result).toEqual({ delivered: false });
   });
+
+  it("fails closed in production without logging a token-bearing body", async () => {
+    process.env.NODE_ENV = "production";
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const tokenMessage = {
+      ...MESSAGE,
+      text: "Verify at https://eduai.example/verify-email?token=fake-sensitive-token",
+    };
+
+    await expect(sendEmail(tokenMessage)).rejects.toThrow(
+      "SMTP must be configured before sending email in production",
+    );
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(createTransport).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendEmail — SMTP configured", () => {

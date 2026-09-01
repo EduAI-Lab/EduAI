@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { IconEdit, IconTrash, IconPlus, IconCloud, IconServer } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconCloud, IconServer } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
@@ -46,6 +45,7 @@ type AIModel = {
   inputPricing?: number;
   outputPricing?: number;
   isActive: boolean;
+  routerTier: "TIER_1" | "TIER_2" | "TIER_3" | null;
   createdAt: string;
   updatedAt: string;
   providerId: string;
@@ -54,6 +54,7 @@ type AIModel = {
 
 export interface AIModelsTableProps {
   models: AIModel[];
+  fleetModelLocations?: Record<string, string[]>;
   onEdit: (model: AIModel) => void;
   onDelete: (id: string) => void;
   onToggleActive: (model: AIModel) => void;
@@ -91,10 +92,21 @@ const getTypeColor = (type: string) => {
 };
 
 const isLocalProvider = (provider: AIProvider) => {
-  return provider.name === "ollama";
+  return provider.name === "ollama" || provider.name === "vllm";
 };
 
-export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIModelsTableProps) {
+const formatRouterTier = (tier: AIModel["routerTier"]) => {
+  if (!tier) return null;
+  return tier.replace("TIER_", "Tier ");
+};
+
+export function AIModelsTable({
+  models,
+  fleetModelLocations = {},
+  onEdit,
+  onDelete,
+  onToggleActive,
+}: AIModelsTableProps) {
   return (
     <div className="rounded-md border">
       <Table>
@@ -103,6 +115,7 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
             <TableHead>Model</TableHead>
             <TableHead>Provider</TableHead>
             <TableHead>Type</TableHead>
+            <TableHead>Auto Tier</TableHead>
             <TableHead>Context</TableHead>
             <TableHead>Pricing</TableHead>
             <TableHead>Features</TableHead>
@@ -113,7 +126,7 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
         <TableBody>
           {models.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                 No models found.
               </TableCell>
             </TableRow>
@@ -128,7 +141,15 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <span>{model.provider.displayName}</span>
+                  <div>
+                    <div>{model.provider.displayName}</div>
+                    {fleetModelLocations[`vllm:${model.modelId.toLowerCase()}`]?.length ? (
+                      <div className="text-xs text-muted-foreground">
+                        Server:{" "}
+                        {fleetModelLocations[`vllm:${model.modelId.toLowerCase()}`].join(", ")}
+                      </div>
+                    ) : null}
+                  </div>
                   <Badge variant="outline" className="text-xs">
                     {isLocalProvider(model.provider) ? (
                       <>
@@ -148,6 +169,15 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                 <Badge variant="outline" className={getTypeColor(model.type)}>
                   {model.type}
                 </Badge>
+              </TableCell>
+              <TableCell>
+                {formatRouterTier(model.routerTier) ? (
+                  <Badge variant="outline" className="text-xs">
+                    {formatRouterTier(model.routerTier)}
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not in pool</span>
+                )}
               </TableCell>
               <TableCell className="text-sm">{formatTokens(model.maxTokens)}</TableCell>
               <TableCell>
@@ -179,18 +209,27 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
               </TableCell>
               <TableCell>
                 <div className="flex items-center space-x-2">
-                  <Switch checked={model.isActive} onCheckedChange={() => onToggleActive(model)} />
+                  <Switch
+                    aria-label={`${model.isActive ? "Disable" : "Enable"} ${model.name}`}
+                    checked={model.isActive}
+                    onCheckedChange={() => onToggleActive(model)}
+                  />
                   <span className="text-sm">{model.isActive ? "Active" : "Inactive"}</span>
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => onEdit(model)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Edit ${model.name}`}
+                    onClick={() => onEdit(model)}
+                  >
                     <IconEdit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label={`Delete ${model.name}`}>
                         <IconTrash className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>

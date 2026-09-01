@@ -1,4 +1,4 @@
 import type { CourseEnrollment } from "../../use-course-enrollments";
 
-// Stub fixture — used until #305 lands
+// Enrollment CRUD is fully live (#305); nothing currently imports this fixture.
 export const FIXTURE_ENROLLMENTS: CourseEnrollment[] = [];

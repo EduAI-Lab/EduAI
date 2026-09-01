@@ -38,8 +38,9 @@ export function ChatConversationLayout({
   selectedModel,
   setSelectedModel,
   selectedModelInfo,
+  selectedCourseId,
   selectedCourseCode,
-  setSelectedCourseCode,
+  setSelectedCourseId,
   availableCourses,
   courseSelectionKey = "code",
   messages,
@@ -65,8 +66,6 @@ export function ChatConversationLayout({
   streamingRoutedRegistryId = null,
   cappedMessageIds,
   onContinue,
-  wasAutoRoutedByMessageId = {},
-  streamingWasAutoRouted = false,
   adhdAssistByMessageId = {},
   streamingAdhdAssist = false,
 }: ChatConversationLayoutProps) {
@@ -173,18 +172,10 @@ export function ChatConversationLayout({
                         ? (routedModelByMessageId[message.id] ??
                           (isStreamingMessage ? streamingRoutedRegistryId : null))
                         : null;
-                    // Whether *that turn* was requested with an auto mode — not
-                    // the live selector, which may have changed since (#829).
-                    const wasAutoRouted =
-                      message.id in wasAutoRoutedByMessageId
-                        ? wasAutoRoutedByMessageId[message.id]
-                        : isStreamingMessage
-                          ? streamingWasAutoRouted
-                          : false;
-                    const answeredByLabel =
-                      !wasAutoRouted && routedRegistryId
-                        ? displayNameForRegistryId(routedRegistryId, chatModels)
-                        : undefined;
+                    const answeredByModel = routedRegistryId
+                      ? displayNameForRegistryId(routedRegistryId, chatModels)
+                      : undefined;
+                    const answeredByLabel = answeredByModel;
 
                     // What Assist mode *that turn* was generated under — not
                     // the live toggle, which may have changed since (#1671).
@@ -253,8 +244,8 @@ export function ChatConversationLayout({
         onInputChange={onInputChange}
         onSubmit={onSubmit}
         onStop={onStop}
-        selectedCourseId={selectedCourseCode}
-        setSelectedCourseId={setSelectedCourseCode}
+        selectedCourseId={selectedCourseId}
+        setSelectedCourseId={setSelectedCourseId}
         availableCourses={availableCourses}
         courseSelectionKey={courseSelectionKey}
         selectedModel={selectedModel}

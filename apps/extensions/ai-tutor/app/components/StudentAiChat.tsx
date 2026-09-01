@@ -704,16 +704,25 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     setApiKeyValidating(true);
     setApiKeyError(null);
     try {
-      const result = await validateKey(currentProvider, tempApiKey.trim());
+      let result: { valid: boolean; error?: string };
+      try {
+        result = await validateKey(currentProvider, tempApiKey.trim());
+      } catch {
+        setApiKeyError("Could not validate API key");
+        return;
+      }
       if (!result.valid) {
         setApiKeyError(result.error || "Invalid API key");
         return;
       }
-      setKey(currentProvider, tempApiKey.trim());
+      try {
+        await setKey(currentProvider, tempApiKey.trim());
+      } catch {
+        setApiKeyError("Could not save API key");
+        return;
+      }
       setShowApiKeyDialog(false);
       setTempApiKey("");
-    } catch {
-      setApiKeyError("Could not validate API key");
     } finally {
       setApiKeyValidating(false);
     }

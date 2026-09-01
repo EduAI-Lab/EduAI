@@ -155,7 +155,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     // signal that the model backends are reachable. Assert the shape of the
     // name, not a particular state: which backend is up varies by environment.
     await expect(page.getByRole("button", { name: /^UBC-hosted AI: / })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Cloud AI: / })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Managed cloud AI: / })).toBeVisible();
   });
 
   test("the header toggles light and dark theme", async ({ page }) => {

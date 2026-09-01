@@ -492,9 +492,6 @@ export function sanitizeTextContent(content: string): string {
 }
 
 /**
- * Simple HTML to Markdown converter for better RAG performance
- */
-/**
  * Exported for tests (#1494 review): mammoth now runs in an isolated worker, so
  * the HTML→markdown step is no longer reachable by mocking mammoth in-process —
  * it is unit-tested directly, and the real end-to-end DOCX path is covered by
@@ -1432,7 +1429,6 @@ export async function extractPptxText(
  * Enhanced for markdown content with header-aware chunking
  */
 export function applySemanticChunking(content: string, maxChunkSize: number = 1500): string[] {
-  // Check if content appears to be markdown
   const isMarkdown = content.includes("# ") || content.includes("## ") || content.includes("### ");
 
   if (isMarkdown) {
@@ -1456,7 +1452,6 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
   for (const line of lines) {
     const trimmedLine = line.trim();
 
-    // Check if this is a header
     const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       const headerLevel = headerMatch[1].length;

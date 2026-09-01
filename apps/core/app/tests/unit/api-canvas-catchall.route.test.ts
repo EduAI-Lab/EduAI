@@ -1,6 +1,6 @@
 // @vitest-environment node
 // #1213 — /api/canvas/$ catch-all: auth gate, the link-roster sub-route
-// (own guard, rate limit, validation), the manage-integration gate (role +
+// (service guard, rate limit, validation), the manage-integration gate (role +
 // INSTRUCTOR policy), each GET/POST/DELETE branch, and the error-mapping
 // switch at the bottom of handleCanvasRequest.
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -42,7 +42,7 @@ vi.mock("~/lib/canvas/integration.server", async (importOriginal) => {
 
 vi.mock("~/lib/canvas/link-roster.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/canvas/link-roster.server")>();
-  return { ...actual, linkCanvasRoster: vi.fn() };
+  return { ...actual, linkCanvasRosterSelfService: vi.fn() };
 });
 
 vi.mock("~/lib/canvas/sync.server", () => ({
@@ -69,19 +69,14 @@ import {
   CanvasNotConnectedError,
   InvalidCanvasCourseAccessError,
 } from "~/lib/canvas/courses.server";
-import {
-  canLinkCanvasRoster,
-  canManageCanvasIntegration,
-  isCanvasLinkRosterRateLimited,
-  isCanvasSyncRateLimited,
-} from "~/lib/canvas/guards.server";
+import { canManageCanvasIntegration, isCanvasSyncRateLimited } from "~/lib/canvas/guards.server";
 import {
   deleteCanvasIntegration,
   getCanvasIntegrationPublic,
   saveCanvasIntegration,
   CanvasStoredCredentialsError,
 } from "~/lib/canvas/integration.server";
-import { linkCanvasRoster, LinkRosterError } from "~/lib/canvas/link-roster.server";
+import { linkCanvasRosterSelfService, LinkRosterError } from "~/lib/canvas/link-roster.server";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import { getPolicy } from "~/lib/policy.server";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
@@ -113,9 +108,11 @@ beforeEach(() => {
   } as never);
   vi.mocked(canManageCanvasIntegration).mockReturnValue(true);
   vi.mocked(getPolicy).mockResolvedValue(true);
-  vi.mocked(canLinkCanvasRoster).mockReturnValue(true);
-  vi.mocked(isCanvasLinkRosterRateLimited).mockReturnValue(false);
   vi.mocked(isCanvasSyncRateLimited).mockReturnValue(false);
+  vi.mocked(linkCanvasRosterSelfService).mockResolvedValue({
+    studentId: "s1",
+    enrollmentsLinked: 2,
+  });
 });
 
 describe("/api/canvas/$ auth + access gates", () => {
@@ -145,13 +142,17 @@ describe("/api/canvas/link-roster", () => {
   });
 
   it("returns 403 for a role that cannot link a roster (e.g. INSTRUCTOR)", async () => {
-    vi.mocked(canLinkCanvasRoster).mockReturnValue(false);
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(
+      new LinkRosterError("Forbidden: students and TAs only", 403),
+    );
     const res = await call("/link-roster", "POST", { studentNumber: "12345678" });
     expect(res.status).toBe(403);
   });
 
   it("returns 429 when rate-limited", async () => {
-    vi.mocked(isCanvasLinkRosterRateLimited).mockReturnValue(true);
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(
+      new LinkRosterError("Too many link attempts", 429),
+    );
     const res = await call("/link-roster", "POST", { studentNumber: "12345678" });
     expect(res.status).toBe(429);
   });
@@ -162,7 +163,7 @@ describe("/api/canvas/link-roster", () => {
   });
 
   it("links the roster and returns 200 on success", async () => {
-    vi.mocked(linkCanvasRoster).mockResolvedValue({
+    vi.mocked(linkCanvasRosterSelfService).mockResolvedValue({
       studentId: "s1",
       enrollmentsLinked: 2,
     } as never);
@@ -171,13 +172,15 @@ describe("/api/canvas/link-roster", () => {
   });
 
   it("maps a LinkRosterError to its statusCode", async () => {
-    vi.mocked(linkCanvasRoster).mockRejectedValue(new LinkRosterError("no roster match", 404));
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(
+      new LinkRosterError("no roster match", 404),
+    );
     const res = await call("/link-roster", "POST", { studentNumber: "12345678" });
     expect(res.status).toBe(404);
   });
 
   it("maps an unexpected error to 500", async () => {
-    vi.mocked(linkCanvasRoster).mockRejectedValue(new Error("db down"));
+    vi.mocked(linkCanvasRosterSelfService).mockRejectedValue(new Error("db down"));
     const res = await call("/link-roster", "POST", { studentNumber: "12345678" });
     expect(res.status).toBe(500);
   });
@@ -252,6 +255,17 @@ describe("POST /api/canvas/connect", () => {
 });
 
 describe("POST /api/canvas/sync", () => {
+  it("rejects direct UNIT_ADMIN sync outside the unit-scoped course workflow", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN", email: "u1@ubc.ca" },
+    } as never);
+
+    const res = await call("/sync", "POST", { canvasCourseIds: ["1"] });
+
+    expect(res.status).toBe(403);
+    expect(syncCanvasCourses).not.toHaveBeenCalled();
+  });
+
   it("returns 429 when sync is rate-limited", async () => {
     vi.mocked(isCanvasSyncRateLimited).mockReturnValue(true);
     const res = await call("/sync", "POST", { canvasCourseIds: ["1"] });

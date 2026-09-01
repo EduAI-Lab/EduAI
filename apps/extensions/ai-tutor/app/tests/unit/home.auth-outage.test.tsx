@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigate = vi.fn();
@@ -26,7 +27,11 @@ describe("AI Tutor home authentication outage", () => {
   });
 
   it("shows a recoverable outage instead of redirecting or spinning forever", () => {
-    render(<Home />);
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>,
+    );
 
     expect(
       screen.getByRole("heading", { name: "Authentication service unavailable" }),

@@ -1,112 +1,173 @@
-# Production Core provisioning checklist
+# Production provisioning checklist
 
-Use this checklist on `s348.ok.ubc.ca` before the first production release. The legacy checkout at `/srv/www/my.eduai.ok.ubc.ca` is not modified by these steps.
+Last verified: 2026-08-31
 
-## 1. Confirm the host account and groups
+Use this checklist for a new production host, a rebuild, or a material change to
+the production deployment. It is a prerequisite checklist, not a record that every
+item is currently complete. Check each item against the live host and record the
+evidence in the deployment handoff.
+
+## 1. Host and release layout
+
+- [ ] Confirm the production host is `s348.ok.ubc.ca` and the approved deployment
+      account is available.
+- [ ] Confirm the release root exists:
+      `/srv/www/eduai-production/releases`.
+- [ ] Confirm `/srv/www/eduai-production/current` is a symlink to a reviewed
+      release directory.
+- [ ] Confirm release and service ownership/permissions before installing units.
+- [ ] Confirm the release checkout is clean and its branch/commit is recorded.
+- [ ] Confirm no `.env.production` files or other forbidden environment files are
+      present in the release.
+- [ ] Confirm the host has the Node.js/npm version expected by the repository.
+- [ ] Confirm systemd, Apache2, Docker, and the required PostgreSQL client tools
+      are installed.
+
+## 2. Database, Redis, and backups
+
+- [ ] Confirm production PostgreSQL is reachable at the configured host/port,
+      normally `127.0.0.1:5432`.
+- [ ] Confirm the Core database exists and the configured database user has only
+      the required privileges.
+- [ ] Confirm AI Tutor and Question Maker database ownership/connection details
+      match their application environment.
+- [ ] Confirm migrations are run with `prisma migrate deploy` or the repository
+      package script; never use `prisma db push` for production.
+- [ ] Confirm Redis is intentionally enabled or disabled. The current production
+      host has host-managed Redis at `127.0.0.1:6379`, but queue enqueueing is
+      currently disabled.
+- [ ] Confirm the backup scripts and destination are configured.
+- [ ] Confirm a recent backup exists before migration.
+- [ ] Confirm restore ownership and the last restore test date; a successful
+      backup is not a restore test.
+
+## 3. Root-owned configuration
+
+- [ ] Install `/etc/eduai/eduai-core.env` from
+      [`core.env.example`](./core.env.example), replacing every placeholder.
+- [ ] Install the AI Tutor environment and database environment from the matching
+      templates when AI Tutor is enabled.
+- [ ] Keep environment files root-owned with the group/read permissions expected
+      by the systemd units; do not place secrets in the release checkout.
+- [ ] Confirm production URLs, cookie domain, CORS origins, ports, database URLs,
+      and API-key relationships.
+- [ ] Confirm session/authentication secrets are stable for the release and are
+      not regenerated during a routine deploy.
+- [ ] Confirm `NODE_ENV=production` and production logging/telemetry settings.
+- [ ] Confirm queue settings explicitly. The current safe baseline is
+      `QUEUE_ENQUEUE_ENABLED=false` and `QUEUE_MAX_DEPTH=0`.
+- [ ] If an API key is deliberately rotated, follow the migration preflight and
+      set `EDUAI_ACK_API_KEY_ROTATION=1` only for that approved rotation.
+
+## 4. Inference fleet
+
+The application model catalog and the physical host inventory are different
+things. A model name in an environment template is not evidence that every
+endpoint serves it.
+
+- [ ] Test each candidate port-8001 endpoint with its bearer key without printing
+      the key or response headers.
+- [ ] Confirm the returned model IDs exactly match the application configuration.
+- [ ] Confirm the standard small tier is `qwen3.5-2b-instruct`.
+- [ ] Confirm the standard large tier is `qwen3.5-9b-instruct` only on hosts that
+      actually advertise it.
+- [ ] Treat `qwen2.5-32b-instruct` on CMPS02 as the separate Assist Auto model,
+      not as the standard large tier.
+- [ ] Keep the planned `qwen3.8-27b` capability disabled until it is deployed,
+      advertised, load-tested, and assigned an owner.
+- [ ] Do not enable CMPS03 in an approved production fleet while its authenticated
+      edge returns `no_db_connection`; direct backend responses do not clear the
+      edge failure.
+- [ ] Record the host, edge status, model IDs, timestamp, and owner in the release
+      handoff.
+
+The repository's current production Core template targets CMPS01/CMPS02 for the
+fleet and retains the Assist Auto model ID separately. Reconcile that template
+with the actual endpoint model lists before changing the fleet; do not silently
+add CMPS03 or assume CMPS02 has the standard 9B model.
+
+## 5. Core application
+
+- [ ] Run dependency installation from the repository root with `npm ci`.
+- [ ] Generate the Core Prisma client using the release's package script.
+- [ ] Run the Core migration preflight.
+- [ ] Apply Core migrations.
+- [ ] Run only the approved reference seed, if required by the release. Do not run
+      fixture/performance seeds as a normal production step.
+- [ ] Build Core and confirm the output is inside the reviewed release directory.
+- [ ] Install/update `eduai-core.service` from the repository template.
+- [ ] Confirm the Core unit uses the active release symlink and the root
+      `node_modules` path expected by its `ExecStart`.
+- [ ] Confirm Core health returns HTTP 200 at
+      `http://127.0.0.1:3000/api/health`.
+
+## 6. AI Tutor
+
+- [ ] Generate the AI Tutor Prisma client before enabling the service.
+- [ ] Apply AI Tutor migrations using the release's package script.
+- [ ] Build the AI Tutor frontend and confirm its static output.
+- [ ] Install/update the AI Tutor environment and systemd unit.
+- [ ] Install/update the AI Tutor Apache vhost and certificate configuration.
+- [ ] Confirm the unit uses the active release and has access to the generated
+      `@eduai/ai-tutor-prisma-client` package.
+- [ ] Confirm `http://127.0.0.1:4000/api/health` and its public HTTPS vhost.
+- [ ] Confirm the Core public URL and CORS settings match the deployed hostname.
+
+## 7. Question Maker
+
+Question Maker is a separate extension with its own application deployment
+documentation and Compose file. The production admin helper in
+`infra/production/admin-helper.sh` currently has no Question Maker provisioning or
+restart action.
+
+- [ ] Follow [`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
+- [ ] Confirm the backend database migration is complete.
+- [ ] Confirm the backend process and its database configuration.
+- [ ] Confirm the frontend build and Apache/static asset configuration.
+- [ ] Confirm the backend health route is
+      `http://127.0.0.1:8000/healthz`; `/api/health` is not its health route.
+- [ ] Do not claim Question Maker is managed by `eduai-production-admin` until a
+      corresponding repository action and template are implemented.
+
+## 8. Web server and systemd
+
+- [ ] Confirm required Apache modules, certificates, proxy rules, and vhosts.
+- [ ] Run `apache2ctl configtest` before reloading Apache.
+- [ ] Confirm public HTTPS for Core, AI Tutor, and Question Maker.
+- [ ] Install systemd units from the repository templates or the approved helper.
+- [ ] Run `systemctl daemon-reload` after unit changes.
+- [ ] Enable only the services included in the approved release.
+- [ ] Confirm the active release, unit status, recent journal output, and listeners.
+- [ ] Confirm no unsupported PM2/user-level process is serving the production apps.
+
+## 9. Release verification
+
+Run and record:
 
 ```bash
-hostname
-id ssaada08
-getent group eduai
+readlink -f /srv/www/eduai-production/current
+git -C /srv/www/eduai-production/current log -1 --oneline
+systemctl --no-pager --full status eduai-core eduai-aitutor-server eduai-qm-backend
+curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:4000/api/health
+curl -fsS http://127.0.0.1:8000/healthz
+curl -fsSI https://my.eduai.ok.ubc.ca/
+curl -fsSI https://aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://questionmaker.eduai.ok.ubc.ca/
 ```
 
-The service account must be able to read the release tree and the environment file through group permissions. Do not add the application account to the Docker group unless Docker is part of the approved production architecture.
+- [ ] Database migrations are recorded.
+- [ ] Model IDs and authenticated inference-edge results are recorded.
+- [ ] Queue state is recorded.
+- [ ] No secrets appear in output, logs, the release, or the handoff.
+- [ ] Rollback release ID and database rollback owner are recorded.
+- [ ] The release is not called ready until failed checks have an owner and a
+      documented disposition.
 
-## 2. Create the release and configuration paths
+## Current server facts
 
-```bash
-sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/releases
-sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/shared
-sudo install -d -o ssaada08 -g eduai -m 0750 /var/log/eduai
-sudo install -d -o root -g eduai -m 0750 /etc/eduai
-sudo install -d -o root -g root -m 0750 /etc/eduai/production-templates
-```
-
-Install the reviewed environment, systemd unit, and Apache vhost templates in
-that directory as `root:root` (0640 for the environment file, 0644 for the
-unit and vhost). It must not be writable by `ssaada08` or the `eduai` group.
-
-## 3. Provision PostgreSQL
-
-PostgreSQL is already listening on `127.0.0.1:5432`, but its ownership, database name, role, extensions, and backup policy must be confirmed before using it.
-
-As a database administrator, create a dedicated production role and database. Do not reuse credentials from the legacy `.env`:
-
-```sql
-CREATE ROLE eduai_prod LOGIN PASSWORD '<generated-password>';
-CREATE DATABASE eduai_prod OWNER eduai_prod;
-```
-
-Then verify `pgvector` is available in the new database and confirm the backup destination. The application account should not receive unrestricted PostgreSQL superuser access.
-
-## 4. Provision Redis
-
-Redis is not currently listening. Choose one approved option:
-
-- IT-managed Redis, referenced by a private `REDIS_URL`; or
-- A locally managed Redis service bound to `127.0.0.1:6379`.
-
-Do not enable `QUEUE_ENQUEUE_ENABLED=true` until Redis and the Core worker are both deployed and tested. The initial Core release can run with queue enqueue disabled.
-
-## 5. Install the production environment
-
-Copy `infra/production/core.env.example` to `/etc/eduai/eduai-core.env`, replace placeholders, and validate that no placeholder remains:
-
-```bash
-sudo install -o root -g eduai -m 0640 /path/to/eduai-core.env /etc/eduai/eduai-core.env
-sudo grep -nE '<[^>]+>|CHANGE_ME|REPLACE_ME' /etc/eduai/eduai-core.env
-```
-
-Required secrets must be generated outside Git. This release requires the
-interactive cmps01 fleet and the retained Assist Auto model on cmps02:
-
-```env
-VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001
-VLLM_FLEET_DEFAULT_MODELS=qwen3.5-2b-instruct,qwen3.5-9b-instruct
-ADHD_ASSIST_AUTO_MODEL=vllm:qwen2.5-32b-instruct
-```
-
-Run `cd apps/core && npm run fleet:smoke` from a host with campus access and
-do not enable the service until both hosts are healthy and cmps02 advertises
-`qwen2.5-32b-instruct`.
-
-## 6. Install and enable Core
-
-Copy `infra/production/systemd/eduai-core.service` to `/etc/systemd/system/`, review the Node executable path, then:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable eduai-core
-```
-
-Do not start it until a release is present at `/srv/www/eduai-production/current` and the environment/database checks pass.
-
-## 7. Configure Apache
-
-Install `infra/production/apache/my.eduai.ok.ubc.ca.conf` only after confirming the institutionally managed TLS certificate paths and required proxy modules:
-
-```bash
-sudo a2enmod proxy proxy_http headers ssl
-sudo apache2ctl configtest
-sudo systemctl reload apache2
-```
-
-Keep Node bound to `127.0.0.1:3000`; Apache is the only public application listener.
-
-## 8. Final pre-release checks
-
-- Database backup and restore test completed.
-- `pgvector` is available.
-- `DATABASE_URL` connects as the dedicated application role.
-- Redis decision is documented; queue remains disabled if no worker exists.
-- cmps01 inference endpoint is reachable from production.
-- cmps02 inference endpoint is reachable and advertises `qwen2.5-32b-instruct` for Assist Auto; cmps03 remains outside this rollout until firewall access and its model inventory are confirmed.
-- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` and `VITE_QUESTION_MAKER_URL=https://questionmaker.eduai.ok.ubc.ca` are configured before browser builds.
-- `COOKIE_DOMAIN=.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services; confirm no unrelated `*.ok.ubc.ca` service should receive the shared cookie.
-- The AI Tutor vhost relies on the certificate already covering `*.eduai.ok.ubc.ca` on this host (no explicit `SSLCertificateFile` in the template); confirm that coverage, and that Apache config validates.
-- The legacy checkout and its data remain available for rollback/reference.
-
-Question Maker is provisioned separately — see its own provisioning
-branch/PR and `PROVISIONING_CHECKLIST.md` section 9 there for its
-database, secrets, and Apache checks (`provision-qm` handles most of it
-automatically; this checklist does not cover it).
+The 2026-08-31 host audit found PostgreSQL on 5432, Redis on 6379, Apache2 and
+Docker active, and `current` resolving to release `ec9036dda` (short commit
+`ec9036d` on `main`) under `/srv/www/eduai-production/current`. These facts
+should be rechecked at provisioning time; they are not substitutes for the
+checklist.

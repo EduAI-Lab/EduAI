@@ -60,6 +60,7 @@ async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<Tier
     where: {
       isActive: true,
       routerTier: { not: null },
+      type: "CHAT",
       provider: { isActive: true },
     },
     include: { provider: { select: { name: true } } },
@@ -68,6 +69,7 @@ async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<Tier
   const localVllmOnly = options?.localVllmOnly ?? isLocalVllmRouting();
 
   return rows
+    .filter((r) => r.type === "CHAT")
     .map((r) => ({
       registryId: `${r.provider.name}:${r.modelId}`,
       tier: routerTierToNum(r.routerTier!),

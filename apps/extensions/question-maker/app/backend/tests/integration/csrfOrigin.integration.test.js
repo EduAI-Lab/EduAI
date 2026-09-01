@@ -11,6 +11,7 @@ vi.mock("../../src/config/settings.js", () => {
     corePublicOrigin: "https://core.example.test",
     extensionUrl: "https://qm.example.test",
     corsOrigins: ["https://qm.example.test"],
+    eduaiApiKey: "verified-service-key",
     nodeEnv: "test",
     logLevel: "silent",
   };
@@ -55,14 +56,27 @@ describe("cookie-authenticated CSRF origin guard", () => {
     expect(fetch).toHaveBeenCalled();
   });
 
-  it("allows missing Origin for non-browser/server compatibility", async () => {
+  it("rejects cookie mutations with no browser provenance", async () => {
     const res = await request(app)
       .post("/api/eduai/chat")
       .set("Cookie", "session=valid")
       .send({ courseCode: "COSC 101" });
 
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CSRF_ORIGIN_DENIED");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts a trusted Referer when Origin is unavailable", async () => {
+    const res = await request(app)
+      .post("/api/eduai/chat")
+      .set("Cookie", "session=valid")
+      .set("Referer", "https://qm.example.test/questions")
+      .send({ courseCode: "COSC 101" });
+
     expect(res.status).toBe(400);
     expect(String(res.body.error)).toMatch(/messages/i);
+    expect(fetch).toHaveBeenCalled();
   });
 
   it("rejects Fetch Metadata cross-site requests even when Origin is omitted", async () => {
@@ -92,6 +106,18 @@ describe("cookie-authenticated CSRF origin guard", () => {
       .send({ messages: [{ role: "user", content: "probe" }], courseCode: "COSC 101" });
 
     expect(res.status).toBe(401);
+    expect(fetch).toHaveBeenCalled();
+  });
+
+  it("allows an origin-less cookie request with the verified service credential", async () => {
+    const res = await request(app)
+      .post("/api/eduai/chat")
+      .set("Cookie", "session=valid")
+      .set("Authorization", "Bearer verified-service-key")
+      .send({ courseCode: "COSC 101" });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/messages/i);
     expect(fetch).toHaveBeenCalled();
   });
 });

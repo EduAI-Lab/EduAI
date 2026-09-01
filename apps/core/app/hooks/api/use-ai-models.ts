@@ -128,3 +128,21 @@ export async function fetchModelsByProvider(providerId: string): Promise<AIModel
   const response = await apiFetch<PaginatedResponse<AIModel>>(`/api/ai-models?${params}`);
   return response.data;
 }
+
+/** Fetch the complete model list for the Auto configuration dialog. */
+export async function fetchAllModels(): Promise<AIModel[]> {
+  const models: AIModel[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const params = new URLSearchParams({ page: String(page), pageSize: "200" });
+    const response = await apiFetch<PaginatedResponse<AIModel>>(`/api/ai-models?${params}`);
+    models.push(...response.data);
+    total = response.total;
+    page++;
+    if (response.data.length === 0) break;
+  } while (models.length < total);
+
+  return models;
+}

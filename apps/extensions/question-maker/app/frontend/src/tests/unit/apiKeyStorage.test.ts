@@ -3,7 +3,7 @@
  * for AI provider keys, plus the provider-classification helpers used by the
  * AI-services status hooks.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   apiKeyStorage,
   isCloudProvider,
@@ -17,6 +17,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   apiKeyStorage.setAuthenticatedUser(null);
   localStorage.clear();
 });
@@ -61,7 +62,8 @@ describe("apiKeyStorage encrypt/decrypt round-trip", () => {
 
   it("removeApiKey deletes the stored entry", async () => {
     await apiKeyStorage.setApiKey("google", "g-key");
-    apiKeyStorage.removeApiKey("google");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 204 } as Response);
+    await apiKeyStorage.removeApiKey("google");
     expect(await apiKeyStorage.getApiKey("google")).toBeNull();
   });
 

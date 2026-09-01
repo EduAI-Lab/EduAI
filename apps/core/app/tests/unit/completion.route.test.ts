@@ -58,6 +58,10 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
@@ -66,6 +70,7 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { acquireAiAdmission } from "~/lib/ai/admission.server";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<typeof action>[0] {
@@ -105,6 +110,7 @@ function mockStream() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getUserProviderSettings).mockResolvedValue({});
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
   vi.mocked(resolveActiveChatModel).mockResolvedValue({
@@ -196,6 +202,106 @@ describe("POST /api/completion review regressions", () => {
       provider: "openai",
     });
     expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("preserves stored secrets and base URLs while honoring explicit request enablement", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: false,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              baseUrl: "https://request.example.test/v1",
+              isEnabled: true,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: {
+          apiKey: "stored-openai-secret",
+          baseUrl: "https://stored.example.test/v1",
+          isEnabled: true,
+        },
+      }),
+    );
+  });
+
+  it("honors an explicit request isEnabled:false over a stored enabled row", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              isEnabled: false,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the stored isEnabled when the request omits it", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: { apiKey: "__core_stored__" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: expect.objectContaining({ isEnabled: true }),
+      }),
+    );
   });
 
   it("maps fleet model unavailability to the stable 503 contract", async () => {

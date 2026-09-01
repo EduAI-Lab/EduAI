@@ -55,7 +55,7 @@ vi.mock("~/lib/ai/admission.server", () => ({
 }));
 
 import { action } from "~/routes/api/completion";
-import { runCompletion } from "~/lib/ai/completion.server";
+import { resolveCompletionModelPolicy, runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
@@ -206,6 +206,55 @@ describe("POST /api/completion", () => {
     expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 11 });
     expect(res.headers.get("Retry-After")).toBe("11");
     expect(runCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct Bedrock selection before model or provider work", async () => {
+    const res = await action(
+      makeArgs({
+        model: "Bedrock:meta.llama3-70b-instruct-v1:0",
+        apiKeys: { bedrock: { isEnabled: true } },
+        messages: [],
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error:
+        'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+      code: "BEDROCK_NOT_SELECTABLE",
+    });
+    expect(resolveCompletionModelPolicy).not.toHaveBeenCalled();
+    expect(runCompletion).not.toHaveBeenCalled();
+  });
+
+  it("strips Bedrock settings while preserving ordinary completion settings", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(
+      makeArgs({
+        model: "openai:gpt-4o",
+        apiKeys: {
+          openai: { isEnabled: true, apiKey: "client-openai-key" },
+          bedrock: { isEnabled: true },
+        },
+        messages: [],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(runCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "openai:gpt-4o",
+        apiKeys: {
+          openai: { isEnabled: true, apiKey: "client-openai-key" },
+        },
+      }),
+    );
   });
 
   it("preserves ordinary validation failures as their existing error shape", async () => {

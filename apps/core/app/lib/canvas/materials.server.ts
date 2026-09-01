@@ -53,7 +53,7 @@ function normalizeMimeType(file: CanvasFileApi): string | null {
   // The filename selects the parser, while the bounded download path verifies
   // that the response MIME and file signature agree with this choice. Canvas
   // and CDN metadata commonly fall back to application/octet-stream.
-  const lowerName = (file.filename || file.display_name || "").toLowerCase();
+  const lowerName = (file.display_name || file.filename || "").toLowerCase();
   for (const [ext, mime] of EXTENSION_MIME) {
     if (lowerName.endsWith(ext)) {
       return mime;
@@ -157,10 +157,8 @@ export async function discoverCanvasMaterialsForCourse(
   );
   const excludedIds = new Set(exclusions.map((row) => row.canvasFileId));
 
-  // Discovery is fetched via GET and must stay safe/idempotent by default —
-  // the re-check writes `unpublishedAt` on already-imported materials, so it
-  // only runs when the caller explicitly opts in (the sync dialog's Discover
-  // action does; see `?recheck=true` in the loader).
+  // The GET loader stays read-only. The sync dialog explicitly opts into this
+  // reconciliation through its CSRF-protected POST action.
   if (options.recheckPublishState) {
     await syncUnpublishedState(canvasFiles, importedByExternalId);
   }
@@ -276,18 +274,21 @@ export async function importSingleCanvasFile(
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: canvasFileId,
     },
-    select: { id: true, status: true, canvasUpdatedAt: true, deletedAt: true },
+    select: {
+      id: true,
+      status: true,
+      canvasUpdatedAt: true,
+      deletedAt: true,
+      deletedBy: true,
+      unpublishedAt: true,
+    },
   });
-
-  // Soft-delete is a one-way EduAI-side removal; Canvas re-sync must not revive
-  // it. Leave the row deleted and report it as skipped.
-  if (existing?.deletedAt) {
-    return "skipped-not-modified";
-  }
 
   const canvasUpdatedAt = new Date(file.updated_at);
   if (
     existing &&
+    existing.deletedAt === null &&
+    existing.unpublishedAt === null &&
     existing.canvasUpdatedAt !== null &&
     canvasUpdatedAt <= existing.canvasUpdatedAt &&
     existing.status === "READY"
@@ -296,14 +297,14 @@ export async function importSingleCanvasFile(
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
-  const uploadFile = new File([new Uint8Array(bytes)], file.filename || file.display_name, {
+  const displayName = file.display_name || file.filename || "canvas-file";
+  const uploadFile = new File([new Uint8Array(bytes)], displayName, {
     type: mimeType,
   });
 
   // Persist PROCESSING *before* extraction so a killed PDF worker cannot leave an
   // existing Canvas material stuck at READY, and new imports still get a FAILED row (#1018).
   let materialId: string;
-  const displayName = file.filename || file.display_name || "canvas-file";
   const provisionalTitle = displayName.replace(/\.[^/.]+$/, "") || displayName;
 
   if (existing) {
@@ -384,6 +385,9 @@ export async function importSingleCanvasFile(
         data: {
           status: existing.status,
           canvasUpdatedAt: existing.canvasUpdatedAt,
+          deletedAt: existing.deletedAt,
+          deletedBy: existing.deletedBy,
+          unpublishedAt: existing.unpublishedAt,
         },
       });
     }
@@ -457,7 +461,13 @@ export async function importSingleCanvasFile(
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: Boolean(existing) });
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: "READY", processedAt: new Date() },
+      data: {
+        status: "READY",
+        processedAt: new Date(),
+        deletedAt: null,
+        deletedBy: null,
+        unpublishedAt: null,
+      },
     });
   } catch (error) {
     await prisma.courseMaterial.update({

@@ -20,11 +20,10 @@
  *   - Supervisor returns JSON; we strip ```json fences then parse, with one
  *     retry on parse failure. After two parse failures we synthesize a
  *     conservative deny-verdict instead of crashing.
- *   - When the supervisor rejects, the next iteration's user message is
- *     prefixed with `[SUPERVISOR FEEDBACK: ...]` so the tutor can self-correct.
- *   - On exhaustion (max iterations w/o approval) we return the supervisor's
- *     last `safeResponseToStudent` rather than the latest unapproved tutor
- *     draft — i.e. we'd rather be vague than leak the answer.
+ *   - When the supervisor rejects, the next iteration receives server-authored
+ *     generic feedback. Free-form supervisor text never reaches the tutor.
+ *   - On exhaustion (max iterations w/o approval) we return a server-authored
+ *     fallback rather than the latest unapproved tutor draft.
  *   - Iteration cap is configurable per AI model policy (1–5, see
  *     aiModelPolicy.js); supervisor loop is short-circuited when
  *     dualLoopEnabled is false.
@@ -45,7 +44,10 @@ const SUPERVISOR_ERROR_MESSAGE =
   "AI study buddy encountered an issue reviewing the response. Please try again.";
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
+const SUPERVISOR_REVISION_FEEDBACK =
+  "Revise the response to stay more Socratic and avoid directly revealing the answer.";
 const GENERATION_ERROR_MESSAGE = "AI study buddy not available right now. Please try again later.";
+const CORE_STORED_KEY = "__core_stored__";
 
 function getModelProvider(modelId) {
   if (typeof modelId !== "string") return null;
@@ -385,17 +387,36 @@ async function callEduAI({
   // map. For UBC-hosted providers with no keys held at all this stays empty, so
   // Core falls through to its own deployment settings.
   const heldKeys = {};
+  const storedProviders = new Set();
   if (providerApiKeys && typeof providerApiKeys === "object" && !Array.isArray(providerApiKeys)) {
     for (const [providerId, secret] of Object.entries(providerApiKeys)) {
-      if (typeof secret === "string" && secret.trim()) heldKeys[providerId] = secret;
+      const value =
+        typeof secret === "string"
+          ? secret
+          : secret && typeof secret === "object" && typeof secret.apiKey === "string"
+            ? secret.apiKey
+            : null;
+      if (!value || !value.trim()) continue;
+      if (value === CORE_STORED_KEY) storedProviders.add(providerId);
+      else heldKeys[providerId] = value;
     }
   }
-  if (typeof userApiKey === "string" && userApiKey.trim() && !heldKeys[provider]) {
+  if (
+    typeof userApiKey === "string" &&
+    userApiKey.trim() &&
+    userApiKey !== CORE_STORED_KEY &&
+    !heldKeys[provider]
+  ) {
     heldKeys[provider] = userApiKey;
+  } else if (userApiKey === CORE_STORED_KEY) {
+    storedProviders.add(provider);
   }
   const apiKeys = {};
   for (const [providerId, secret] of Object.entries(heldKeys)) {
     apiKeys[providerId] = { apiKey: secret, isEnabled: true };
+  }
+  for (const storedProvider of storedProviders) {
+    if (!apiKeys[storedProvider]) apiKeys[storedProvider] = { isEnabled: true };
   }
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
@@ -570,22 +591,13 @@ function stripMarkdownFence(rawText) {
 }
 
 /**
- * Coerce supervisor JSON into a guaranteed-shape object with safe defaults.
- * Even a partially-valid verdict yields usable feedback + a benign
- * student-facing fallback so callers never need to null-check.
+ * Reduce the supervisor response to the only decision the server trusts.
+ * The supervisor sees hidden answer context, so none of its free-form output
+ * may flow into tutor prompts, student responses, or persisted traces.
  */
 function normalizeSupervisorVerdict(verdict) {
-  return {
-    approved: Boolean(verdict.approved),
-    reason: verdict.reason || "",
-    feedbackToTutor:
-      verdict.feedbackToTutor ||
-      verdict.suggestion ||
-      "Revise the response to stay more Socratic and avoid directly revealing the answer.",
-    safeResponseToStudent:
-      verdict.safeResponseToStudent ||
-      "Let’s take one smaller step. Focus on the key concept behind the question and explain which part feels most uncertain.",
-  };
+  const value = verdict && typeof verdict === "object" && !Array.isArray(verdict) ? verdict : {};
+  return { approved: value.approved === true };
 }
 
 /**
@@ -651,20 +663,20 @@ RESPOND WITH ONLY VALID JSON.`;
 
     try {
       const verdict = JSON.parse(stripMarkdownFence(result.message));
-      return { ok: true, verdict: normalizeSupervisorVerdict(verdict), raw: result.message };
+      return { ok: true, verdict: normalizeSupervisorVerdict(verdict) };
     } catch (parseError) {
-      return { ok: false, parseError, raw: result.message };
+      return { ok: false, parseError };
     }
   };
 
   const first = await attemptParse();
   if (first.ok) {
-    return { ...first.verdict, parseFailed: false, raw: first.raw };
+    return { ...first.verdict, parseFailed: false };
   }
 
   const second = await attemptParse(first.parseError?.message || "Invalid JSON");
   if (second.ok) {
-    return { ...second.verdict, parseFailed: false, raw: second.raw };
+    return { ...second.verdict, parseFailed: false };
   }
 
   logAiGuidanceEvent("error", "supervisor_verdict_parse_failed", {
@@ -674,13 +686,7 @@ RESPOND WITH ONLY VALID JSON.`;
   });
   return {
     approved: false,
-    reason: "Supervisor response invalid after retry",
-    feedbackToTutor:
-      "Revise the reply to avoid revealing the answer and stay focused on a single helpful hint.",
-    safeResponseToStudent:
-      "Let’s slow down and focus on one clue at a time. Think about which concept the question is really testing before choosing your next step.",
     parseFailed: true,
-    raw: second.raw,
   };
 }
 
@@ -884,10 +890,6 @@ async function supervisedGenerate(generateFn, context) {
     };
   }
 
-  // Track the last safe response across iterations so we can return it on
-  // exhaustion even if the final supervisor verdict is malformed.
-  let lastSafeResponse = FALLBACK_MESSAGE;
-
   for (let iteration = 0; iteration < context.maxSupervisorIterations; iteration += 1) {
     const isRevision = iteration > 0;
     const tutorResult = await generateFn(currentChatId, isRevision, context.lastFeedback);
@@ -916,7 +918,6 @@ async function supervisedGenerate(generateFn, context) {
 
       traceIteration.supervisorVerdict = verdict;
       trace.iterations.push(traceIteration);
-      lastSafeResponse = verdict.safeResponseToStudent || lastSafeResponse;
 
       if (verdict.approved) {
         return {
@@ -933,7 +934,7 @@ async function supervisedGenerate(generateFn, context) {
 
       // Carry feedback into next iteration; generateFn prepends it as
       // `[SUPERVISOR FEEDBACK: ...]` to the user message.
-      context.lastFeedback = verdict.feedbackToTutor;
+      context.lastFeedback = SUPERVISOR_REVISION_FEEDBACK;
     } catch (supervisorError) {
       logAiGuidanceEvent(
         "error",
@@ -945,12 +946,12 @@ async function supervisedGenerate(generateFn, context) {
   }
 
   return {
-    message: lastSafeResponse,
+    message: FALLBACK_MESSAGE,
     chatId: currentChatId,
     trace: {
       ...trace,
       finalOutcome: "safe_fallback",
-      finalResponse: lastSafeResponse,
+      finalResponse: FALLBACK_MESSAGE,
       iterationCount: trace.iterations.length,
     },
   };

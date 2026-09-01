@@ -4,7 +4,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 import { coursePage } from "../helpers/teachingInstructorFetch.js";
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -12,6 +12,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -30,7 +31,12 @@ const INSTRUCTOR = {
   name: "Instructor",
 };
 const STUDENT = { id: "cuid-anchor-stu", email: "stu@test.com", role: "STUDENT", name: "Student" };
-const TA = { id: "cuid-anchor-ta", email: "ta@test.com", role: "TA", name: "TA" };
+const TA_STUDENT = {
+  id: "cuid-anchor-ta",
+  email: "ta@test.com",
+  role: "STUDENT",
+  name: "TA",
+};
 const INSTRUCTOR_B = {
   id: "cuid-anchor-inst-b",
   email: "instb@test.com",
@@ -48,7 +54,7 @@ function userFromCookie(cookie = "") {
   if (cookie.includes("inst-b")) return INSTRUCTOR_B;
   if (cookie.includes("inst")) return INSTRUCTOR;
   if (cookie.includes("stu")) return STUDENT;
-  if (cookie.includes("ta")) return TA;
+  if (cookie.includes("ta")) return TA_STUDENT;
   return STUDENT;
 }
 
@@ -56,10 +62,16 @@ function userFromCookie(cookie = "") {
  * @param {{
  *   scopedIds?: string[],
  *   teachingByUserId?: Record<string, string[]>,
+ *   enrollmentRoleByUserId?: Record<string, "INSTRUCTOR" | "TA">,
  *   enrollmentsFail?: boolean,
  * }} [opts]
  */
-function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = false } = {}) {
+function makeFetch({
+  scopedIds = [],
+  teachingByUserId = {},
+  enrollmentRoleByUserId = {},
+  enrollmentsFail = false,
+} = {}) {
   return vi.fn().mockImplementation((url, opts) => {
     const target = String(url);
     const path = target.split("?")[0];
@@ -78,7 +90,15 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
       // for this Core course (not the caller's cookie identity).
       const coreId = path.match(/\/api\/courses\/([^/]+)\/enrollments$/)?.[1];
       const enrollments = Object.entries(teachingByUserId).flatMap(([userId, taught]) =>
-        taught.includes(coreId) ? [{ studentId: userId, role: "INSTRUCTOR", isActive: true }] : [],
+        taught.includes(coreId)
+          ? [
+              {
+                studentId: userId,
+                role: enrollmentRoleByUserId[userId] ?? "INSTRUCTOR",
+                isActive: true,
+              },
+            ]
+          : [],
       );
       return Promise.resolve({ ok: true, json: async () => ({ enrollments }) });
     }
@@ -93,7 +113,7 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
           name: `Course ${id}`,
           code: "C",
           callerEnrollmentRole: (teachingByUserId[user.id] ?? []).includes(id)
-            ? "INSTRUCTOR"
+            ? (enrollmentRoleByUserId[user.id] ?? "INSTRUCTOR")
             : "STUDENT",
         }));
       return Promise.resolve({ ok: true, json: async () => coursePage(rows) });
@@ -122,7 +142,7 @@ describeDb("course anchor ownership (#1114)", () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    for (const u of [ADMIN, UNIT_ADMIN, INSTRUCTOR, STUDENT, TA, INSTRUCTOR_B]) {
+    for (const u of [ADMIN, UNIT_ADMIN, INSTRUCTOR, STUDENT, TA_STUDENT, INSTRUCTOR_B]) {
       await prisma.user.create({ data: { id: u.id, email: u.email, name: u.name } });
     }
   });
@@ -134,23 +154,31 @@ describeDb("course anchor ownership (#1114)", () => {
   });
 
   describe("POST /api/course role gate", () => {
-    it.each([
-      ["STUDENT", "stu"],
-      ["TA", "ta"],
-    ])("rejects %s with 403", async (_role, label) => {
-      vi.stubGlobal(
-        "fetch",
-        makeFetch({
-          scopedIds: ["core-a"],
-          teachingByUserId: { [STUDENT.id]: ["core-a"], [TA.id]: ["core-a"] },
-        }),
-      );
-      const res = await request(app)
+    it("rejects an ordinary platform STUDENT with 403", async () => {
+      vi.stubGlobal("fetch", makeFetch({ scopedIds: ["core-a"] }));
+      const res = await request()
         .post("/api/course")
-        .set(cookieFor(label))
+        .set(cookieFor("stu"))
         .send({ coreCourseId: "core-a" });
       expect(res.status).toBe(403);
       expect(res.body.success).toBe(false);
+    });
+
+    it("accepts a platform STUDENT with an active TA enrollment", async () => {
+      vi.stubGlobal(
+        "fetch",
+        makeFetch({
+          scopedIds: ["core-ta"],
+          teachingByUserId: { [TA_STUDENT.id]: ["core-ta"] },
+          enrollmentRoleByUserId: { [TA_STUDENT.id]: "TA" },
+        }),
+      );
+      const res = await request()
+        .post("/api/course")
+        .set(cookieFor("ta"))
+        .send({ coreCourseId: "core-ta" });
+      expect(res.status).toBe(201);
+      expect(res.body.data.userId).toBe(TA_STUDENT.id);
     });
 
     it.each([
@@ -158,7 +186,7 @@ describeDb("course anchor ownership (#1114)", () => {
       ["UNIT_ADMIN", "ua"],
     ])("accepts %s without requiring a teaching enrollment", async (_role, label) => {
       vi.stubGlobal("fetch", makeFetch({ scopedIds: ["core-admin"] }));
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor(label))
         .send({ coreCourseId: "core-admin" });
@@ -174,7 +202,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: { [INSTRUCTOR.id]: ["core-taught"] },
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-taught" });
@@ -190,7 +218,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: {}, // no teaching enrollment
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-student-only" });
@@ -206,7 +234,7 @@ describeDb("course anchor ownership (#1114)", () => {
           teachingByUserId: { [INSTRUCTOR.id]: ["core-other"] },
         }),
       );
-      const res = await request(app)
+      const res = await request()
         .post("/api/course")
         .set(cookieFor("inst"))
         .send({ coreCourseId: "core-missing" });
@@ -230,8 +258,8 @@ describeDb("course anchor ownership (#1114)", () => {
       );
 
       const [a, b] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
-        request(app).post("/api/course").set(cookieFor("inst-b")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst-b")).send({ coreCourseId }),
       ]);
 
       expect([a.status, b.status].sort()).toEqual([200, 201]);
@@ -258,7 +286,7 @@ describeDb("course anchor ownership (#1114)", () => {
         await import("../../src/services/importTaughtCoursesService.js");
 
       const [postRes, importResult] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
         importTaughtCoursesFromCore(INSTRUCTOR.id, "INSTRUCTOR", "session=inst"),
       ]);
 
@@ -288,7 +316,7 @@ describeDb("course anchor ownership (#1114)", () => {
       const { ensureCourseAnchor } = await import("../../src/services/ensureCourseAnchor.js");
 
       const [postRes] = await Promise.all([
-        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request().post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
         ensureCourseAnchor(ADMIN.id, coreCourseId),
       ]);
 

@@ -8,13 +8,19 @@
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 
 const listCourses = vi.fn();
+const getLauncherApps = vi.fn((_coreCourseId?: string | null) => []);
 
 vi.mock("~/lib/api", () => ({
   default: { listCourses: (...a: unknown[]) => listCourses(...a) },
   api: { listCourses: (...a: unknown[]) => listCourses(...a) },
+}));
+
+vi.mock("~/lib/apps", () => ({
+  CURRENT_APP_ID: "ai-tutor",
+  getLauncherApps: (coreCourseId?: string | null) => getLauncherApps(coreCourseId),
 }));
 
 vi.mock("~/hooks/useLocalUser", () => ({
@@ -30,12 +36,17 @@ const page = (courses: { id: number; title: string }[], total = courses.length) 
   pageSize: 200,
 });
 
-function renderPalette() {
-  return render(
-    <MemoryRouter initialEntries={["/instructor"]}>
-      <CommandPalette />
-    </MemoryRouter>,
-  );
+function renderPalette({
+  initialEntry = "/instructor",
+  loaderData,
+}: {
+  initialEntry?: string;
+  loaderData?: unknown;
+} = {}) {
+  const route: RouteObject = { path: "*", element: <CommandPalette /> };
+  if (loaderData !== undefined) route.loader = () => loaderData;
+  const router = createMemoryRouter([route], { initialEntries: [initialEntry] });
+  return render(<RouterProvider router={router} />);
 }
 
 /** Open via the window event the header search button dispatches. */
@@ -57,6 +68,8 @@ describe("CommandPalette — server course search (#1208)", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     listCourses.mockReset();
     listCourses.mockResolvedValue(page([{ id: 1, title: "Linear Algebra" }]));
+    getLauncherApps.mockClear();
+    getLauncherApps.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -86,6 +99,26 @@ describe("CommandPalette — server course search (#1208)", () => {
 
     await waitFor(() => expect(listCourses).toHaveBeenLastCalledWith({ search: "organic" }));
     expect(await screen.findByText("Organic Chemistry")).toBeInTheDocument();
+  });
+
+  it("keeps lesson launcher context when palette search returns another course", async () => {
+    renderPalette({
+      initialEntry: "/instructor/lesson/3",
+      loaderData: {
+        course: { coreOfferingId: "core-course-937" },
+        lesson: { id: 3, title: "Active lesson" },
+      },
+    });
+
+    await waitFor(() => expect(getLauncherApps).toHaveBeenCalledWith("core-course-937"));
+    await openPalette();
+    await waitFor(() => expect(listCourses).toHaveBeenCalled());
+
+    listCourses.mockResolvedValue(page([{ id: 7, title: "Organic Chemistry" }]));
+    await type("organic");
+
+    await waitFor(() => expect(listCourses).toHaveBeenLastCalledWith({ search: "organic" }));
+    expect(getLauncherApps).toHaveBeenLastCalledWith("core-course-937");
   });
 
   it("still matches static nav rows locally, since cmdk filtering is off", async () => {

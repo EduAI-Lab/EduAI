@@ -4,7 +4,7 @@ Date: 2026-08-18/19 UTC
 Environment: `https://dev.eduai.ok.ubc.ca` via s378
 Fixture: temporary course `FLEET-ROUTER-STRESS-20260818` (removed after testing)
 Models: `qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`, alternating evenly
-Artifacts: [`artifacts/`](./artifacts/)
+Artifacts: Temporary host-side outputs were removed after testing; the measured results are retained in this report.
 
 ## Summary
 

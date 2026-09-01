@@ -19,6 +19,14 @@
 /* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
  * Only Core-specific rules belong below. */
 
+/* No global `scroll-behavior: smooth` here on purpose. This sheet is imported
+ * once in root.tsx, so a rule on <html> applies to every route: it changes how
+ * React Router's <ScrollRestoration> and every `scrollIntoView` in the app
+ * behave, and #1686 had to strip exactly that from the chat pane because CSS
+ * smooth scroll fought the JS auto-scroll. The landing page's anchors get their
+ * smooth jump from `scrollToSection` (app/lib/scroll-to-section.ts) instead,
+ * which reads both reduced-motion signals itself. */
+
 /* Accessibility tab hooks — attributes/classes only when non-default (see root Layout). */
 [data-reduce-motion="true"] *,
 [data-reduce-motion="true"] *::before,

@@ -38,6 +38,10 @@ export async function ensureDefaultBank(courseId: string, db: DbClient = prisma)
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
+      // PostgreSQL aborts an interactive transaction after P2002. Let the
+      // Canvas sync boundary retry with a fresh transaction instead of querying
+      // through the dead one.
+      if (db !== prisma) throw error;
       const raced = await db.questionBank.findFirst({
         where: { courseId, isDefault: true },
       });

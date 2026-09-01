@@ -86,6 +86,8 @@ export function getRoleViewLabel(role: string | undefined): string {
       return "Unit administrator";
     case "INSTRUCTOR":
       return "Instructor";
+    case "TA":
+      return "Teaching assistant";
     default:
       return "User";
   }

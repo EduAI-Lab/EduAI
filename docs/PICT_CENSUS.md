@@ -1,25 +1,26 @@
 # PICT Combinatorial-Testing Census
 
-Single source of truth for which platform surfaces are worth covering with PICT-generated
-combinatorial tests, and which are not. Referenced by the PICT parent issue and every model
-sub-issue.
+Single source of truth for which platform surfaces are worth covering with PICT-generated combinatorial tests, and which are not. Referenced by the PICT parent issue and every model sub-issue.
 
-**Status:** census complete (3 sweep passes, all application logic swept). Models are being built
-incrementally against this inventory; see each region's tier table for what's landed. S8 (ai-tutor
-services) and S9 (QM assessments + QM/ai-tutor leftover routes) are fully built as of #1187/#1188.
+**Status:** census complete (3 sweep passes, all application logic swept). Models are being built incrementally against this inventory; see each region's tier table for what's landed. S8 (ai-tutor services) and S9 (QM assessments + QM/ai-tutor leftover routes) are fully built as of #1187/#1188.
 **Origin:** issue #1127.
+
+**Built as of 2026-08-31: 31 models** in `tests/models/`. Re-derive rather than trusting this count — `ls tests/models/*.pict | wc -l` — and list the names with `ls tests/models/*.pict`. Currently:
+
+`admin-write-confirmation`, `ai-chat-gate`, `ai-judge-scoring`, `auth-precedence`, `auto-router-model-selection`, `byok-vs-platform-key-resolution`, `canvas-file-download`, `chat-entry-admission`, `chat-rag-inject-oracle`, `course-access-across-apps`, `course-detail-manager-view`, `create-question`, `cross-ext-push`, `cross-ext-read`, `difficulty-banding`, `extract-questions-with-eduai`, `generate-questions`, `import-reconcile`, `lesson-modules-view`, `material-visibility`, `metadata-similarity-assembly`, `parse-validate-canvas-url`, `password-set-reuse-gate`, `progress-denominators`, `rbac-permissions-capabilities`, `resolve-chat-read-access`, `role-forked-listing`, `ssrf-ipv6-classify`, `trace-oversight-gate`, `validate-context-and-access`, `variant-lifecycle-put`.
+
+Regenerate the committed `.cases.json` files with `npm run test:pict:gen` (root). Generation always runs inside the pinned `docker/pict` image — PICT's greedy solver breaks ties via hash-container iteration order, which differs between C++ standard libraries and changes the generated **row count**, not just the ordering, so a host-installed `pict` would produce a different committed artifact.
+
+> The `file:line` references in the tables below were accurate when each region was swept.
+> Line numbers drift with every refactor; treat them as "look in this file" pointers and confirm against the current source before relying on one.
 
 ---
 
 ## 1. What PICT is
 
-PICT (Microsoft Pairwise Independent Combinatorial Testing) is a **table generator** —
-`brew install pict`, currently 3.7.4. It reads a text model (parameters, values, constraints) and
-prints a minimal set of rows covering every pair of values. It touches no database, makes no network
-calls, and has no knowledge of this codebase.
+PICT (Microsoft Pairwise Independent Combinatorial Testing) is a **table generator** — `brew install pict`, currently 3.7.4. It reads a text model (parameters, values, constraints) and prints a minimal set of rows covering every pair of values. It touches no database, makes no network calls, and has no knowledge of this codebase.
 
-The consequence that shapes everything below: **PICT emits inputs only.** No assertions, no setup. A
-model is four files, and only the first is PICT's:
+The consequence that shapes everything below: **PICT emits inputs only.** No assertions, no setup. A model is four files, and only the first is PICT's:
 
 | File | What it is | Share of cost |
 |---|---|---|
@@ -28,21 +29,15 @@ model is four files, and only the first is PICT's:
 | `<name>.oracle.ts` | pure fn `(row) => expected outcome` | ~60% |
 | `<name>.test.ts` | world-builder `(row) => seeded state` + `describe.each` | ~25% |
 
-**The oracle must be derived from the spec, never read off the handler.** Copying the handler's
-branch logic makes the test tautological — it asserts the code does what the code does, and passes by
-construction. This is an explicit review criterion on every model.
+**The oracle must be derived from the spec, never read off the handler.** Copying the handler's branch logic makes the test tautological — it asserts the code does what the code does, and passes by construction. This is an explicit review criterion on every model.
 
-World-builders **amortize within a region**: the first model in a region pays for the fixture
-factories, later ones pay oracle cost only. That is why this census is partitioned by region rather
-than by tier.
+World-builders **amortize within a region**: the first model in a region pays for the fixture factories, later ones pay oracle cost only. That is why this census is partitioned by region rather than by tier.
 
 ---
 
 ## 2. Why a dimension floor exists
 
-A surface "qualifies" as combinatorial when 3+ independent inputs decide a forked outcome. But
-qualifying is not the same as being worth a PICT model, because **oracle cost is roughly constant
-regardless of dim count** while PICT's benefit is entirely the table reduction:
+A surface "qualifies" as combinatorial when 3+ independent inputs decide a forked outcome. But qualifying is not the same as being worth a PICT model, because **oracle cost is roughly constant regardless of dim count** while PICT's benefit is entirely the table reduction:
 
 | Dims | Cartesian | Pairwise | Saving | Verdict |
 |---|---|---|---|---|
@@ -51,29 +46,23 @@ regardless of dim count** while PICT's benefit is entirely the table reduction:
 | 4 | 16–80 | ~12–16 | ~2–4× | marginal |
 | 3 | 8–27 | ~9 | **~1×** | PICT adds nothing (`/o:max` gives the same table) |
 
-At 3 dimensions pairwise is effectively exhaustive, so a 3-dim "PICT model" is a normal test with
-extra build steps.
+At 3 dimensions pairwise is effectively exhaustive, so a 3-dim "PICT model" is a normal test with extra build steps.
 
 ### Tiering rule
 
-> **BUILD** if the surface has **≥5 dimensions**, **OR** if the rule has **2+ independent
-> implementations** (any dim count).
+> **BUILD** if the surface has **≥5 dimensions**, **OR** if the rule has **2+ independent implementations** (any dim count).
 >
 > **DEFER** — 4 dimensions, single implementation.
 >
 > **DROP** — 3 dimensions, single implementation. Route to an ordinary test; do not model.
 
-The second BUILD clause is the **drift override**. Dim count measures table savings; implementation
-count measures drift exposure, and only the first collapses at 3 dims. Applying the dim floor alone
-would have dropped Canvas base-URL validation — a 3-dim surface where the same rule is implemented
-twice, in Core and in QM, with materially different defenses on each side (see § S5).
+The second BUILD clause is the **drift override**. Dim count measures table savings; implementation count measures drift exposure, and only the first collapses at 3 dims. Applying the dim floor alone would have dropped Canvas base-URL validation — a 3-dim surface where the same rule is implemented twice, in Core and in QM, with materially different defenses on each side (see § S5).
 
 ---
 
 ## 3. Why drift is the organizing idea
 
-The census's most useful result is not any single surface. It is that **the same logical rule is
-implemented independently in 2–3 places, and the implementations have diverged:**
+The census's most useful result is not any single surface. It is that **the same logical rule is implemented independently in 2–3 places, and the implementations have diverged:**
 
 | Rule | Independent implementations |
 |---|---|
@@ -85,13 +74,9 @@ implemented independently in 2–3 places, and the implementations have diverged
 | Role-forked course listing | Core · ai-tutor |
 | API-key/cookie auth precedence | `guards.server.ts` · `routes/api/me.ts` |
 
-A PICT model whose single oracle runs against **all** implementations of a rule catches divergence
-that no single-target test can see. That is the highest-value thing PICT does here, and it is why
-several low-dim surfaces are promoted to BUILD.
+A PICT model whose single oracle runs against **all** implementations of a rule catches divergence that no single-target test can see. That is the highest-value thing PICT does here, and it is why several low-dim surfaces are promoted to BUILD.
 
-A recurring instance worth naming: **TA-parity widening.** TA is not a platform role — it is STUDENT
-plus an `Enrollment` with `role=TA`. That widens into elevated branches across listing, submissions,
-analytics, and grade-override, and each app widens slightly differently.
+A recurring instance worth naming: **TA-parity widening.** TA is not a platform role — it is STUDENT plus an `Enrollment` with `role=TA`. That widens into elevated branches across listing, submissions, analytics, and grade-override, and each app widens slightly differently.
 
 ---
 
@@ -112,39 +97,23 @@ analytics, and grade-override, and each app widens slightly differently.
 | Queue / cron / eval / email | 3 | 0 | 2 | 1 | — (census only) |
 | **Total** | **~96** | **32** | **32** | **32** | |
 
-Estimated BUILD effort ≈ 4 weeks for one person (10 world-builders + 32 oracles + infra), assuming
-in-region fixture reuse.
+Estimated BUILD effort ≈ 4 weeks for one person (10 world-builders + 32 oracles + infra), assuming in-region fixture reuse.
 
-**Scope discipline:** ~96 qualifying surfaces is a menu, not a backlog. One third are DROP by
-construction — pairwise buys nothing at 3 dims. Another third are DEFER pending evidence that the
-≥5-dim tier finds real defects (tracked as S11).
+**Scope discipline:** ~96 qualifying surfaces is a menu, not a backlog. One third are DROP by construction — pairwise buys nothing at 3 dims. Another third are DEFER pending evidence that the ≥5-dim tier finds real defects (tracked as S11).
 
 ---
 
 ## 5. Coverage and honesty
 
-**Swept:** all Core `lib/**` (auth, ai/**, canvas/** both halves, courses, invitations, rbac,
-chat-history, questions, agent-tools, agent-readiness, disciplines, email, queue, eval, bug-reports,
-api-keys) + all `routes/api` + auth routes; all QM routes/services/middleware/frontend rbac; all
-ai-tutor routes/services/frontend rbac; `packages/ui`.
+**Swept:** all Core `lib/**` (auth, ai/**, canvas/** both halves, courses, invitations, rbac, chat-history, questions, agent-tools, agent-readiness, disciplines, email, queue, eval, bug-reports, api-keys) + all `routes/api` + auth routes; all QM routes/services/middleware/frontend rbac; all ai-tutor routes/services/frontend rbac; `packages/ui`.
 
-**Deliberately not swept** (not oracle-bearing): DB migrations and seed logic, docker/infra configs,
-`packages/types`, example-extension stub, `scripts/perf-*`, `tools/energy-meter`.
+**Deliberately not swept** (not oracle-bearing): DB migrations and seed logic, docker/infra configs, `packages/types`, example-extension stub, `scripts/perf-*`, `tools/energy-meter`.
 
 **Limits:**
-- "Swept" means agent-read excerpts, **not** line-by-line exhaustive. A buried branchy helper could
-  still be missing.
-- ~96 is a **confident floor, not a proven ceiling.** Returns diminished sharply across the three
-  passes; further sweeping is low-yield.
-- Dim counts are estimates from static reading. Some will move by ±1 once the oracle is actually
-  written, which can shift a candidate's tier. Re-tier when that happens rather than forcing the
-  original verdict.
-- **Every `file:line` and every "no guard here" claim below is a hypothesis to confirm against
-  `development`, not a finding.** The sweep ran against a feature branch, and at least one entry
-  described a guard as absent that had already landed on `development`. Two habits close the gap:
-  sweep from `development`, and grep the modules a file *imports*, not only the file itself — a guard
-  is often defined one module away from the code that calls it. A candidate whose guard already exists
-  gets re-tiered here, never modelled around.
+- "Swept" means agent-read excerpts, **not** line-by-line exhaustive. A buried branchy helper could still be missing.
+- ~96 is a **confident floor, not a proven ceiling.** Returns diminished sharply across the three passes; further sweeping is low-yield.
+- Dim counts are estimates from static reading. Some will move by ±1 once the oracle is actually written, which can shift a candidate's tier. Re-tier when that happens rather than forcing the original verdict.
+- **Every `file:line` and every "no guard here" claim below is a hypothesis to confirm against `development`, not a finding.** The sweep ran against a feature branch, and at least one entry described a guard as absent that had already landed on `development`. Two habits close the gap: sweep from `development`, and grep the modules a file *imports*, not only the file itself — a guard is often defined one module away from the code that calls it. A candidate whose guard already exists gets re-tiered here, never modelled around.
 
 ### Density note
 
@@ -156,13 +125,7 @@ Core carries disproportionately more candidates than the extensions, and it is n
 | question-maker | 197 | 38.9k | ~18 | 4.6 |
 | ai-tutor | 154 | 28.8k | ~13 | 4.5 |
 
-Core is 1.6× QM's size but holds 3× the candidates — roughly 2× the density. Structural reasons:
-Core owns the authoritative decisions (RBAC, auth, enrollment, invitation, publish state, material
-visibility) while extensions consume them over the Core API and apply a single local floor; Core owns
-the external integrations (Canvas, AI providers/BYOK/fleet/RAG) which inject dimensions that internal
-CRUD does not have; and extensions store only their own content, so they carry fewer cross-cutting
-invariants. Corroborating: the ai-tutor frontend yielded **zero** candidates (uniformly single-role),
-the QM frontend one, and several QM/ai-tutor services were confirmed thin at ≤2 dims.
+Core is 1.6× QM's size but holds 3× the candidates — roughly 2× the density. Structural reasons: Core owns the authoritative decisions (RBAC, auth, enrollment, invitation, publish state, material visibility) while extensions consume them over the Core API and apply a single local floor; Core owns the external integrations (Canvas, AI providers/BYOK/fleet/RAG) which inject dimensions that internal CRUD does not have; and extensions store only their own content, so they carry fewer cross-cutting invariants. Corroborating: the ai-tutor frontend yielded **zero** candidates (uniformly single-role), the QM frontend one, and several QM/ai-tutor services were confirmed thin at ≤2 dims.
 
 Caveat: sweep depth was not perfectly equal across the three apps, so treat 2× as approximate.
 
@@ -170,8 +133,7 @@ Caveat: sweep depth was not perfectly equal across the three apps, so treat 2× 
 
 ## 6. Candidate inventory
 
-Dims are static-read estimates. `⭐` marks a drift-override BUILD (promoted for multiple
-implementations rather than dim count).
+Dims are static-read estimates. `⭐` marks a drift-override BUILD (promoted for multiple implementations rather than dim count).
 
 ### S1 — Pilot: material visibility
 
@@ -193,9 +155,7 @@ IF [Role] in {"ADMIN", "UNIT_ADMIN", "ANON"} THEN [Enrolled] = "no";
 IF [Role] = "ANON" THEN [Path] = "rest";
 ```
 
-Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200, gates bypassed · `ANON`
-→ 403 · STUDENT and (not enrolled OR `VisibleToStudents=false` OR `AvailableAt=future`) → 403 · else
-200 · Core unavailable with publish state unresolvable → **fail closed**.
+Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200, gates bypassed · `ANON` → 403 · STUDENT and (not enrolled OR `VisibleToStudents=false` OR `AvailableAt=future`) → 403 · else 200 · Core unavailable with publish state unresolvable → **fail closed**.
 
 `Path` is the load-bearing dimension: three independent enforcement sites for one rule.
 
@@ -211,14 +171,9 @@ effective_access(user, app, course) =
   ∩ app_role_floor(app)                                                  ← legitimately differs
 ```
 
-Separating the two layers is the design. The shared layer must compute identically in all three
-apps. The floor is allowed to differ: QM excludes STUDENT (`QUESTION_MAKER_ROLES`), ai-tutor treats
-STUDENT as first-class, Core is full. Without the split, an intentional floor difference is
-indistinguishable from an accidental RBAC divergence.
+Separating the two layers is the design. The shared layer must compute identically in all three apps. The floor is allowed to differ: QM excludes STUDENT (`QUESTION_MAKER_ROLES`), ai-tutor treats STUDENT as first-class, Core is full. Without the split, an intentional floor difference is indistinguishable from an accidental RBAC divergence.
 
-`App` is **not** a model dimension — it is an adapter parameter. Every generated row is replayed
-through all three adapters (`×3`) so Core, QM, and AI Tutor receive identical shared inputs. The
-QM role floor is applied only when the adapter passes `app === "question-maker"` to the oracle.
+`App` is **not** a model dimension — it is an adapter parameter. Every generated row is replayed through all three adapters (`×3`) so Core, QM, and AI Tutor receive identical shared inputs. The QM role floor is applied only when the adapter passes `app === "question-maker"` to the oracle.
 
 ```
 Role:        ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT
@@ -230,9 +185,7 @@ TaWidening:  plain-STUDENT, STUDENT-with-TA-enrollment
 # UnitMatch is only meaningful for UNIT_ADMIN — constrain, or the table wastes rows
 ```
 
-Cost: three per-app adapters (separate codebases, different ORMs, different harnesses). Model and
-oracle are single-sourced; only the world-builders differ. Each adapter replays the full case
-table.
+Cost: three per-app adapters (separate codebases, different ORMs, different harnesses). Model and oracle are single-sourced; only the world-builders differ. Each adapter replays the full case table.
 
 ### S3 — Core AI / RAG / chat
 
@@ -250,18 +203,9 @@ table.
 | `policies-auth-precedence` | 3 | `routes/api/policies.ts:25-49` | DROP |
 | `ai-providers-api-method-matrix` | 3 | `lib/api/ai-providers-api.server.ts:27` | DROP |
 
-Notes for the BUILD set: router mode is `rules / knn / hybrid / llm` with a mode override, and a
-classifier throw downgrades silently to `rules` — the oracle must pin that downgrade. Chat admission
-forks on service-key vs cookie auth, `proxyUser`, `chatMode=admin`, publish/enrollment state,
-course-id source (`body` / `body-missing` → 404 / `persisted`), `chatbotType` mismatch or
-missing chat (410) and course-pin conflict (409) — dimension count moved 6→7 when course-id
-source was split from enrollment. RAG injection is an information-exposure oracle (which course
-material enters the prompt), with similarity thresholds 0.8 / 0.55 plus AlwaysSource (env vs
-explicit arg) for the always-with-course flag. BYOK resolution precedence is fleet > user > env
-for `baseUrl`; apiKey source tags add a sixth dimension (user / platform / default).
+Notes for the BUILD set: router mode is `rules / knn / hybrid / llm` with a mode override, and a classifier throw downgrades silently to `rules` — the oracle must pin that downgrade. Chat admission forks on service-key vs cookie auth, `proxyUser`, `chatMode=admin`, publish/enrollment state, course-id source (`body` / `body-missing` → 404 / `persisted`), `chatbotType` mismatch or missing chat (410) and course-pin conflict (409) — dimension count moved 6→7 when course-id source was split from enrollment. RAG injection is an information-exposure oracle (which course material enters the prompt), with similarity thresholds 0.8 / 0.55 plus AlwaysSource (env vs explicit arg) for the always-with-course flag. BYOK resolution precedence is fleet > user > env for `baseUrl`; apiKey source tags add a sixth dimension (user / platform / default).
 
-`rag-retrieval-path-fork` is DEFER only because the pilot (S1) already covers its two SQL branches
-through the `Path` dimension.
+`rag-retrieval-path-fork` is DEFER only because the pilot (S1) already covers its two SQL branches through the `Path` dimension.
 
 ### S4 — Core Canvas: material lifecycle
 
@@ -277,14 +221,9 @@ through the `Path` dimension.
 | `unpublish-recheck` | 3 | `lib/canvas/materials.server.ts:192` | DROP |
 | `discover-status` | 3 | `lib/canvas/materials.server.ts:81` | DROP |
 
-`import-reconcile` is the densest non-RBAC function on the platform: `excluded × canvas-publish ×
-existing-present × deletedAt × (stale-timestamp AND READY) × checksum-dup` → skip (six distinct
-kinds) / update / import. Two invariants the oracle must encode: `deletedAt` short-circuits **before**
-the timestamp compare (a deleted row is never revived by import), and import is **additive only** —
-upstream Canvas deletion is not propagated, so there is no delete outcome.
+`import-reconcile` is the densest non-RBAC function on the platform: `excluded × canvas-publish × existing-present × deletedAt × (stale-timestamp AND READY) × checksum-dup` → skip (six distinct kinds) / update / import. Two invariants the oracle must encode: `deletedAt` short-circuits **before** the timestamp compare (a deleted row is never revived by import), and import is **additive only** — upstream Canvas deletion is not propagated, so there is no delete outcome.
 
-Confirmed during the census, and load-bearing for this oracle: `deletedAt` (manual — DELETE handler
-and restore only) and `unpublishedAt` (automatic — `syncUnpublishedState` only) are written by
+Confirmed during the census, and load-bearing for this oracle: `deletedAt` (manual — DELETE handler and restore only) and `unpublishedAt` (automatic — `syncUnpublishedState` only) are written by
 **disjoint** paths. Re-confirm before relying on it.
 
 ### S5 — Core Canvas: OAuth / token / client
@@ -301,16 +240,11 @@ and restore only) and `unpublishedAt` (automatic — `syncUnpublishedState` only
 | `verify-canvas-credentials` | 3 | `client.server.ts:197` | DROP |
 | Canvas frontend | — | pure rendering, server-enforced | DROP |
 
-`parse-validate-canvas-url` is 3-dim and would fail the dim floor. It is BUILD purely on the drift
-override: one rule, two independent implementations (Core and QM), maintained separately.
+`parse-validate-canvas-url` is 3-dim and would fail the dim floor. It is BUILD purely on the drift override: one rule, two independent implementations (Core and QM), maintained separately.
 
-Both sides also apply request-time host checks beyond the URL parse — Core's live in a module that
-`client.server.ts` imports rather than defines. **Establish what each implementation currently does
-before writing the oracle**, and write it against the union of both, not against one side's parse
-function. Behavioral differences between the two are a separate concern, tracked outside this census.
+Both sides also apply request-time host checks beyond the URL parse — Core's live in a module that `client.server.ts` imports rather than defines. **Establish what each implementation currently does before writing the oracle**, and write it against the union of both, not against one side's parse function. Behavioral differences between the two are a separate concern, tracked outside this census.
 
-The model's job is the drift itself: one rule in two places. A single shared guard, tested once, removes
-the surface entirely — the better outcome, if it lands first.
+The model's job is the drift itself: one rule in two places. A single shared guard, tested once, removes the surface entirely — the better outcome, if it lands first.
 
 ### S6 — Core auth/identity + access/invite/enroll
 
@@ -328,30 +262,15 @@ the surface entirely — the better outcome, if it lands first.
 | `register-loader` | 3 | auth route | DROP |
 | `login-loader` | 3 | auth route | DROP |
 
-`password-set-reuse-gate`: `path × strength × reset-token × session × current-password × reuse`, with
-a documented precedence (a wrong current password beats the reuse check) that the oracle must encode
-rather than discover.
+`password-set-reuse-gate`: `path × strength × reset-token × session × current-password × reuse`, with a documented precedence (a wrong current password beats the reuse check) that the oracle must encode rather than discover.
 
-`auth-precedence` (built as one model, per the drift-override rationale below): `enforce-admin-if-apikey`
-and the `/api/me` composition are **two implementations of one precedence rule** — invalid key **plus**
-cookie defers to the cookie, invalid key **without** cookie is 401. `KeyState × CookieState × Site` (3
-dims, down from the 4–5 estimated per standalone endpoint — merging into one model collapses the
-overlap). The precedence cases at `guards.server.test.ts:154-465` became PICT rows.
+`auth-precedence` (built as one model, per the drift-override rationale below): `enforce-admin-if-apikey` and the `/api/me` composition are **two implementations of one precedence rule** — invalid key **plus** cookie defers to the cookie, invalid key **without** cookie is 401. `KeyState × CookieState × Site` (3 dims, down from the 4–5 estimated per standalone endpoint — merging into one model collapses the overlap). The precedence cases at `guards.server.test.ts:154-465` became PICT rows.
 
-`guards.server.test.ts` itself is **kept, not converted away** — it covers robustness edges the 3-dim
-precedence model has no axis for: x-api-key whitespace trimming, malformed/userless session shapes,
-missing/orphan user records, and the exact `logSecurityEvent` fields per denial path. Those are
-implementation invariants, not additional points in `KeyState × CookieState × Site`; folding them into
-the generated adapter would duplicate the same assertions on every row rather than add coverage.
+`guards.server.test.ts` itself is **kept, not converted away** — it covers robustness edges the 3-dim precedence model has no axis for: x-api-key whitespace trimming, malformed/userless session shapes, missing/orphan user records, and the exact `logSecurityEvent` fields per denial path. Those are implementation invariants, not additional points in `KeyState × CookieState × Site`; folding them into the generated adapter would duplicate the same assertions on every row rather than add coverage.
 
-`role-forked-listing`: the publish gate keys on **enrollment** role, not platform role — a frequent
-source of TA-parity divergence between Core and ai-tutor. Building it surfaced a real cross-app
-inconsistency for a platform-STUDENT holding instructor-of-record status (visible in Core, not in
-ai-tutor) — filed as #1386, not a bug in either oracle since each side's actual behavior is
-internally correct.
+`role-forked-listing`: the publish gate keys on **enrollment** role, not platform role — a frequent source of TA-parity divergence between Core and ai-tutor. Building it surfaced a real cross-app inconsistency for a platform-STUDENT holding instructor-of-record status (visible in Core, not in ai-tutor) — filed as #1386, not a bug in either oracle since each side's actual behavior is internally correct.
 
-`enrollment-floor`: the last-active-INSTRUCTOR floor applies on demote and deactivate but **not** on
-add, and it binds ADMIN too (no override).
+`enrollment-floor`: the last-active-INSTRUCTOR floor applies on demote and deactivate but **not** on add, and it binds ADMIN too (no override).
 
 ### S7 — Core misc lib
 
@@ -366,17 +285,9 @@ add, and it binds ADMIN too (no override).
 | `requireCourseAccess` | 3 | `lib/agent-tools/course-context.server.ts:45` | DROP |
 | `bug-reports-auth-select` | 3 | bug-reports action | DROP |
 
-`resolveChatReadAccess` dims: `owner × admin × courseId × access-level × policy-flag ×
-owner-active-student`. `createQuestion` has a 6-way error oracle (5 errors + success) plus
-deleted/missing topic-set folding. `admin-write-confirmation` models the real caller-facing entry
-point `runConfirmedAdminWriteTool` (not just the underlying preview map) — `confirmed ×
-preview-state × identity × confirm-turn × run-outcome` — covering both preview consumption and the
-same-turn anti-replay guard; found that `/set-password` never actually reaches the strength/reuse
-gate in `password-set-reuse-gate` (a `better-auth` SERVER_ONLY endpoint has no `ctx.path`), filed as
-#1385.
+`resolveChatReadAccess` dims: `owner × admin × courseId × access-level × policy-flag × owner-active-student`. `createQuestion` has a 6-way error oracle (5 errors + success) plus deleted/missing topic-set folding. `admin-write-confirmation` models the real caller-facing entry point `runConfirmedAdminWriteTool` (not just the underlying preview map) — `confirmed × preview-state × identity × confirm-turn × run-outcome` — covering both preview consumption and the same-turn anti-replay guard; found that `/set-password` never actually reaches the strength/reuse gate in `password-set-reuse-gate` (a `better-auth` SERVER_ONLY endpoint has no `ctx.path`), filed as #1385.
 
-Confirmed thin, not modelled: agent-readiness (static data table), disciplines (cache + validate),
-`dashboard.stats` (role-only switch), agent-tools wiring/delegation.
+Confirmed thin, not modelled: agent-readiness (static data table), disciplines (cache + validate), `dashboard.stats` (role-only switch), agent-tools wiring/delegation.
 
 ### S8 — ai-tutor services
 
@@ -401,50 +312,22 @@ Confirmed thin, not modelled: agent-readiness (static data table), disciplines (
 | `topic-remap-txn` | 3 | `routes/topics.js:265` — API-reachable but no UI since #1031 | DROP (dead) |
 | `grade-override` | 3 | `routes/activities.js:1563` | DROP |
 
-`ai-chat-gate`: `role × three-way publish AND × mode(teach/guide/custom) × dualLoop ×
-session-ownership`, analytics STUDENT-only. The three-way AND is exactly the shape hand-written tests
-under-cover — people test the happy path plus one negative, not the combinations.
+`ai-chat-gate`: `role × three-way publish AND × mode(teach/guide/custom) × dualLoop × session-ownership`, analytics STUDENT-only. The three-way AND is exactly the shape hand-written tests under-cover — people test the happy path plus one negative, not the combinations.
 
-`progress-denominators` is a drift override and the most useful model in this region: three functions
-compute progress at course, module, and lesson scope using **three different publish filters**, so the
-same activity yields different percentages. The model would fail today. Two findings differ in kind
-and must be handled differently — the filter divergence is a defect to fix in code, whereas non-sticky
-completion (latest-attempt-only, so a later wrong attempt makes progress **decrease**) is a design
-choice: decide the intended behavior first, then encode the decision, not the current code.
+`progress-denominators` is a drift override and the most useful model in this region: three functions compute progress at course, module, and lesson scope using **three different publish filters**, so the same activity yields different percentages. The model would fail today. Two findings differ in kind and must be handled differently — the filter divergence is a defect to fix in code, whereas non-sticky completion (latest-attempt-only, so a later wrong attempt makes progress **decrease**) is a design choice: decide the intended behavior first, then encode the decision, not the current code.
 
-`lesson-modules-view`: five role booleans OR-collapsed into `hasElevatedAccess`, duplicated across two
-files — 3-dim, promoted on the drift override.
+`lesson-modules-view`: five role booleans OR-collapsed into `hasElevatedAccess`, duplicated across two files — 3-dim, promoted on the drift override.
 
-`trace-oversight-gate`: on a Core outage a UNIT_ADMIN sees nothing — a silent blackout the oracle
-should assert deliberately rather than leave undefined.
+`trace-oversight-gate`: on a Core outage a UNIT_ADMIN sees nothing — a silent blackout the oracle should assert deliberately rather than leave undefined.
 
-**Built (#1187).** All five models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a
-world-builder in `apps/extensions/ai-tutor/server/tests/{integration,unit}/<name>.pict.test.js`.
+**Built (#1187).** All five models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a world-builder in `apps/extensions/ai-tutor/server/tests/{integration,unit}/<name>.pict.test.js`.
 Notes for implementers reading this later:
 
-- `progress-denominators` re-tiers from 4 dims to 3 (`LessonPublished`, `ModulePublished`,
-  `AttemptPattern`): `Scope` (course/module/lesson) turned out to belong in the world-builder's
-  cross-product, not as a PICT factor, for the same reason `Path` isn't one in `material-visibility`
-  — as a factor it would route each row to exactly one implementation, never comparing two scopes
-  against the same seeded activity. The model *did* fail before the fix, confirming the census's
-  "one of these would fail today": `calculateLessonProgress` had no publish filter at all, and
-  `calculateModuleProgress` never checked its own module's `isPublished`, so the same activity could
-  count at one scope and not another. Both were fixed to share one predicate (`lesson.isPublished AND
-  lesson.module.isPublished`). The completion-stickiness question was decided (not inherited):
-  completion is now sticky — any submission ever correct counts, permanently, matching a typical LMS
-  progress model, rather than latest-attempt-only (which could make progress decrease).
-- `lesson-modules-view`: confirmed the `hasElevatedAccess` formula is currently identical in both
-  files; the model is a regression lock against future drift, not evidence of a present bug.
-- `trace-oversight-gate`: the asymmetric fail-soft is exactly as documented in the handler's own doc
-  comment — asserted, not discovered.
-- `ai-chat-gate`: reading the handler surfaced that `POST /teach` and `/guide` never check
-  `enableTeachMode`/`enableGuideMode` (only `/custom` checks its own enable flag) — a student can
-  invoke a mode an instructor disabled for that activity. Not modelled or fixed here; filed as its own
-  bug (see § below). The chatId "session-ownership" lookup is similarly non-enforcing (the DB query
-  scopes by `userId` but the result is discarded — the caller-supplied `chatId` is reused regardless);
-  also filed separately, also not modelled here (see § below).
-- `difficulty-banding`: the null-rating/perfect-rating equivalence is asserted as a deliberate
-  simplification of a documented, coarse heuristic — not a defect.
+- `progress-denominators` re-tiers from 4 dims to 3 (`LessonPublished`, `ModulePublished`, `AttemptPattern`): `Scope` (course/module/lesson) turned out to belong in the world-builder's cross-product, not as a PICT factor, for the same reason `Path` isn't one in `material-visibility` — as a factor it would route each row to exactly one implementation, never comparing two scopes against the same seeded activity. The model *did* fail before the fix, confirming the census's "one of these would fail today": `calculateLessonProgress` had no publish filter at all, and `calculateModuleProgress` never checked its own module's `isPublished`, so the same activity could count at one scope and not another. Both were fixed to share one predicate (`lesson.isPublished AND lesson.module.isPublished`). The completion-stickiness question was decided (not inherited): completion is now sticky — any submission ever correct counts, permanently, matching a typical LMS progress model, rather than latest-attempt-only (which could make progress decrease).
+- `lesson-modules-view`: confirmed the `hasElevatedAccess` formula is currently identical in both files; the model is a regression lock against future drift, not evidence of a present bug.
+- `trace-oversight-gate`: the asymmetric fail-soft is exactly as documented in the handler's own doc comment — asserted, not discovered.
+- `ai-chat-gate`: reading the handler surfaced that `POST /teach` and `/guide` never check `enableTeachMode`/`enableGuideMode` (only `/custom` checks its own enable flag) — a student can invoke a mode an instructor disabled for that activity. Not modelled or fixed here; filed as its own bug (see § below). The chatId "session-ownership" lookup is similarly non-enforcing (the DB query scopes by `userId` but the result is discarded — the caller-supplied `chatId` is reused regardless); also filed separately, also not modelled here (see § below).
+- `difficulty-banding`: the null-rating/perfect-rating equivalence is asserted as a deliberate simplification of a documented, coarse heuristic — not a defect.
 
 ### S9 — QM assessments + QM/ai-tutor leftover routes
 
@@ -466,59 +349,25 @@ Notes for implementers reading this later:
 | `generateQuestions-provider-dispatch` | 3 | QM | DROP |
 | `sync-status` / `validate-key` | 3 | QM routes | DROP |
 
-`ai-judge-scoring` is the widest surface in the census: five rubric dimensions × distinctness ×
-usability enum × two toggles. `normalizeUsability` maps unknown → unusable (the harshest arm), which
-the oracle must state explicitly.
+`ai-judge-scoring` is the widest surface in the census: five rubric dimensions × distinctness × usability enum × two toggles. `normalizeUsability` maps unknown → unusable (the harshest arm), which the oracle must state explicitly.
 
-`variant-lifecycle-put`: approve/lock/TA-own, a nine-field `aiTagOnly` allowlist (`:156-166`), and
-un-review must clear `coreQuestionId` (#312 / #1080).
+`variant-lifecycle-put`: approve/lock/TA-own, a nine-field `aiTagOnly` allowlist (`:156-166`), and un-review must clear `coreQuestionId` (#312 / #1080).
 
-**Built (#1188).** All six models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a
-world-builder under `apps/extensions/question-maker/app/backend/tests/{integration,unit}/`. The
-"Cost note" from the parent issue ("these are Sequelize-backed with a separate test harness") is
-stale — QM completed its Sequelize→Prisma migration in #1122, so QM's harness is Prisma-backed same as
-Core and ai-tutor now, though still a fully separate schema/DB per app. Notes for implementers reading
-this later:
+**Built (#1188).** All six models landed as `tests/models/<name>.{pict,cases.json,oracle.ts}` plus a world-builder under `apps/extensions/question-maker/app/backend/tests/{integration,unit}/`. The "Cost note" from the parent issue ("these are Sequelize-backed with a separate test harness") is stale — QM completed its Sequelize→Prisma migration in #1122, so QM's harness is Prisma-backed same as Core and ai-tutor now, though still a fully separate schema/DB per app. Notes for implementers reading this later:
 
-- `ai-judge-scoring`: each of the five rubric dimensions got its own Low/High PICT value specifically
-  so pairwise coverage would catch a swapped composite weight (0.24 vs 0.19) between any two
-  dimensions. `normalizeUsability`'s unknown → unusable mapping is asserted explicitly. The usability
-  multiplier turned out to have two different gates on the same value — unconditional on the
-  per-question adjusted score, toggle-gated (`applyUsabilityPenalty`) on the exam-level final score —
-  both asserted as distinct outcomes.
-- `variant-lifecycle-put`: confirmed by reading `updateVariant` that un-reviewing (isDraft
-  false→true) already clears `coreQuestionId` correctly (the `unreviewing` flag) — not re-modelled,
-  since it's a service-layer concern below this route's own gate. Building the model surfaced that the
-  TA-own-only check only runs in the DRAFT branch: a TA who does not own an APPROVED variant can still
-  retag its `isAiGenerated` field via the aiTagOnly path, since that path has no ownership check at
-  all. Filed as its own bug, not fixed here (see § below).
-- `metadata-similarity-assembly`: the 100/50/25/10-vs-75 asymmetry (topic alone qualifies; type +
-  difficulty + reasoning without topic also qualifies) is asserted directly; the "already-used, rescued
-  by a fallback candidate" path is the real assembly-level behavior beyond pure scoring.
-- `extractQuestionsWithEduAI`: confirmed a chunk whose retry also comes up empty aborts the *entire*
-  extraction, discarding any already-extracted questions from earlier chunks rather than returning a
-  partial result — asserted as current behavior, not filed as a bug (arguably correct: a partial,
-  silently-incomplete extraction could be worse than a clear failure).
+- `ai-judge-scoring`: each of the five rubric dimensions got its own Low/High PICT value specifically so pairwise coverage would catch a swapped composite weight (0.24 vs 0.19) between any two dimensions. `normalizeUsability`'s unknown → unusable mapping is asserted explicitly. The usability multiplier turned out to have two different gates on the same value — unconditional on the per-question adjusted score, toggle-gated (`applyUsabilityPenalty`) on the exam-level final score — both asserted as distinct outcomes.
+- `variant-lifecycle-put`: confirmed by reading `updateVariant` that un-reviewing (isDraft false→true) already clears `coreQuestionId` correctly (the `unreviewing` flag) — not re-modelled, since it's a service-layer concern below this route's own gate. Building the model surfaced that the TA-own-only check only runs in the DRAFT branch: a TA who does not own an APPROVED variant can still retag its `isAiGenerated` field via the aiTagOnly path, since that path has no ownership check at all. Filed as its own bug, not fixed here (see § below).
+- `metadata-similarity-assembly`: the 100/50/25/10-vs-75 asymmetry (topic alone qualifies; type + difficulty + reasoning without topic also qualifies) is asserted directly; the "already-used, rescued by a fallback candidate" path is the real assembly-level behavior beyond pure scoring.
+- `extractQuestionsWithEduAI`: confirmed a chunk whose retry also comes up empty aborts the *entire* extraction, discarding any already-extracted questions from earlier chunks rather than returning a partial result — asserted as current behavior, not filed as a bug (arguably correct: a partial, silently-incomplete extraction could be worse than a clear failure).
 
 **Findings from #1187/#1188 filed as their own bugs, not fixed in either PR:**
 
-- ai-tutor: `POST /activities/:id/teach` and `/guide` never check `enableTeachMode`/`enableGuideMode`
-  (only `/custom` checks its own flag) — issue #1411.
-- ai-tutor: the AI chat session "ownership" check (`existingSession`, scoped by `userId`) is computed
-  but never acted on — the caller-supplied `chatId` is reused regardless of whether it resolved to the
-  caller's own session — issue #1412.
-- QM: a TA who does not own an approved variant can still toggle its `isAiGenerated` tag via the
-  aiTagOnly allowlist, since that path has no ownership check (unlike the draft-edit path) — issue
-  #1413.
-- Infra: `scripts/pict-gen.mjs` regenerates non-deterministic row tables for at least
-  `import-reconcile` and `material-visibility` — re-running it against the pinned Docker image produces
-  a different (still pairwise-valid) row set each time, contradicting the documented byte-for-byte
-  pinning guarantee. Likely caused by their `.seed.tsv` sidecars referencing parameter names no longer
-  in the current `.pict` models (`pict-gen` prints "Seeding Warning: Parameter X not found in the
-  model. Skipping..." for both) — issue #1414.
+- ai-tutor: `POST /activities/:id/teach` and `/guide` never check `enableTeachMode`/`enableGuideMode` (only `/custom` checks its own flag) — issue #1411.
+- ai-tutor: the AI chat session "ownership" check (`existingSession`, scoped by `userId`) is computed but never acted on — the caller-supplied `chatId` is reused regardless of whether it resolved to the caller's own session — issue #1412.
+- QM: a TA who does not own an approved variant can still toggle its `isAiGenerated` tag via the aiTagOnly allowlist, since that path has no ownership check (unlike the draft-edit path) — issue #1413.
+- Infra: `scripts/pict-gen.mjs` regenerates non-deterministic row tables for at least `import-reconcile` and `material-visibility` — re-running it against the pinned Docker image produces a different (still pairwise-valid) row set each time, contradicting the documented byte-for-byte pinning guarantee. Likely caused by their `.seed.tsv` sidecars referencing parameter names no longer in the current `.pict` models (`pict-gen` prints "Seeding Warning: Parameter X not found in the model. Skipping..." for both) — issue #1414.
 
-Confirmed thin, not modelled: ai-tutor systemSettings / policyService / eduaiAuth; QM modelCatalog /
-authService / extractionUtils / courseCodeUtils — all ≤2 dims.
+Confirmed thin, not modelled: ai-tutor systemSettings / policyService / eduaiAuth; QM modelCatalog / authService / extractionUtils / courseCodeUtils — all ≤2 dims.
 
 ### S10 — Cross-ext + shared + client/server drift
 
@@ -551,29 +400,19 @@ IF [DataKind] = "enrollment-role" THEN [Auth] = "session-cookie";
 IF [CoreState] = "soft-deleted" THEN [DataKind] in {"material", "topic"};
 ```
 
-Oracle: `core-down-5xx` → null + `X-Core-Status: unavailable` (publish-state → false, **fail
-closed**) · `absent-404` → null with coreStatus ok · `soft-deleted` → null, filtered at source (this
-is the leak class) · course-field over cookie while not enrolled → null (the **silent-omission
-trap**) · `enrollment-role` → role if enrolled else null · else resolved.
+Oracle: `core-down-5xx` → null + `X-Core-Status: unavailable` (publish-state → false, **fail closed**) · `absent-404` → null with coreStatus ok · `soft-deleted` → null, filtered at source (this is the leak class) · course-field over cookie while not enrolled → null (the **silent-omission trap**) · `enrollment-role` → role if enrolled else null · else resolved.
 
-`cross-ext-push`: accept / 401 / 403 / 409-adopt (`P2002`) / 503; a draft must **not** sync; POST is
-cookie-only and never service-key. Seed rows pin valid `201` fresh and `adopt-p2002` success paths.
+`cross-ext-push`: accept / 401 / 403 / 409-adopt (`P2002`) / 503; a draft must **not** sync; POST is cookie-only and never service-key. Seed rows pin valid `201` fresh and `adopt-p2002` success paths.
 QM adapter covers the client push path; Core adapter runs the real `POST /api/questions` action.
 
-The client-gate models are a distinct pattern: the client predicates are authored as literal "UI
-mirror of the backend 403 gate," and **TA is the consistently divergent cell** (delete-material).
-`manage-rag` also diverges for **unit** (backend `rank >= 2` includes unit; client is admin|instructor
-only). The model runs one oracle against both the client predicate and the backend gate — any
-disagreement is the bug (`it.fails` on the divergent side).
+The client-gate models are a distinct pattern: the client predicates are authored as literal "UI mirror of the backend 403 gate," and **TA is the consistently divergent cell** (delete-material).
+`manage-rag` also diverges for **unit** (backend `rank >= 2` includes unit; client is admin|instructor only). The model runs one oracle against both the client predicate and the backend gate — any disagreement is the bug (`it.fails` on the divergent side).
 
-`ext↔ext` needs no model. Extensions hold zero references to each other; they link only through Core
-(`coreOfferingId` / `coreCourseId`) and nav URLs (`extension-urls.ts`). Write a static test that greps
-for cross-extension imports and expects zero.
+`ext↔ext` needs no model. Extensions hold zero references to each other; they link only through Core (`coreOfferingId` / `coreCourseId`) and nav URLs (`extension-urls.ts`). Write a static test that greps for cross-extension imports and expects zero.
 
 ### Queue / cron / eval / email — census only, no issue
 
-These subsystems barely exist yet (queue is a Redis singleton per #914; eval is one file), and none
-reach BUILD.
+These subsystems barely exist yet (queue is a Redis singleton per #914; eval is one file), and none reach BUILD.
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
@@ -588,14 +427,9 @@ reach BUILD.
 Recorded so the question is not reopened:
 
 - **`ext↔ext` integration** — zero cross-references; assert-only grep test.
-- **User-settings storage** — plain CRUD. The interesting fork is key resolution, covered by
-  `byok-vs-platform-key-resolution` in S3.
-- **`routes/api/sessions.validate.ts`** — forks only on `role=UNIT_ADMIN` (hydrate
-  `authorizedUnits`) plus a rate limit. The `authorizedUnits × role × app` cross-check one might
-  expect **does not exist in the code**. That is a latent gap worth flagging, not an oracle.
+- **User-settings storage** — plain CRUD. The interesting fork is key resolution, covered by `byok-vs-platform-key-resolution` in S3.
+- **`routes/api/sessions.validate.ts`** — forks only on `role=UNIT_ADMIN` (hydrate `authorizedUnits`) plus a rate limit. The `authorizedUnits × role × app` cross-check one might expect **does not exist in the code**. That is a latent gap worth flagging, not an oracle.
 - **Most frontend** — rendering. The exceptions are the client-gate mirrors in S10.
 - **ai-tutor frontend** — uniformly single-role; `useAtPermissions` passes only `{id, role}`.
-- **Dead code** — `topic-remap-txn` (no UI since #1031), `canEditQuestionMetadata` (no `.tsx`
-  consumer).
-- **All 32 DROP entries above** — 3-dim, single implementation. Pairwise equals exhaustive, so these
-  belong in ordinary tests.
+- **Dead code** — `topic-remap-txn` (no UI since #1031), `canEditQuestionMetadata` (no `.tsx` consumer).
+- **All 32 DROP entries above** — 3-dim, single implementation. Pairwise equals exhaustive, so these belong in ordinary tests.

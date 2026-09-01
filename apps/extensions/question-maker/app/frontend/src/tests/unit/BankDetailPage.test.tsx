@@ -107,6 +107,7 @@ beforeEach(() => {
     hasCourseAccess: true,
     accessLoading: false,
     canCreateQuestion: true,
+    canManageAssessment: true,
   });
   courseService.getCourseTopics.mockResolvedValue([]);
   questionService.getQuestionsPage.mockResolvedValue({ items: [], total: 0 });
@@ -225,11 +226,12 @@ describe("BankDetailPage", () => {
     expect(questionService.getQuestionsPage).toHaveBeenCalled();
   });
 
-  it("disables add/remove when writes are disabled", async () => {
+  it("disables bank membership controls for a TA who can create questions", async () => {
     useQmPermissionsForCourseMock.mockReturnValue({
       hasCourseAccess: true,
       accessLoading: false,
-      canCreateQuestion: false,
+      canCreateQuestion: true,
+      canManageAssessment: false,
     });
     renderPage();
     await waitFor(() => expect(lastGridProps).toBeTruthy());

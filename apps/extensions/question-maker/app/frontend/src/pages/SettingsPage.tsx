@@ -32,12 +32,18 @@ import {
   SelectValue,
   useTheme,
 } from "@eduai/ui";
-import apiKeyStorage, { type AIProvider } from "../services/apiKeyStorage";
+import apiKeyStorage, {
+  CORE_STORED_KEY,
+  type AIProvider,
+  type ProviderSettingStatus,
+} from "../services/apiKeyStorage";
 import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
 import { canvasService, type CanvasIntegration } from "../services/canvasService";
 import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
+import { useQmPermissions } from "../hooks/useQmPermissions";
 import { toast } from "sonner";
+import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -59,7 +65,6 @@ const PROVIDER_PLACEHOLDERS = {
   opencode: "OpenCode Go API key",
 } satisfies Record<AIProvider, string>;
 
-const DEFAULT_MODEL_KEY = "qm:default-model";
 const EXPORT_PREFS_KEY = "qm:export-prefs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -78,6 +83,7 @@ const DEFAULT_EXPORT_PREFS: ExportPrefs = {
 
 /** Masks a stored key the way QuestionAIControls does: first 8 chars + bullets. */
 function maskKey(value: string): string {
+  if (value === CORE_STORED_KEY) return "••••••••";
   return `${value.substring(0, 8)}${"•".repeat(Math.max(0, value.length - 8))}`;
 }
 
@@ -101,6 +107,7 @@ const CANVAS_DEFAULT_URL = getCanvasDefaultUrl(import.meta.env.DEV);
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
+  const { canManageCanvas } = useQmPermissions();
 
   // ── Theme (from @eduai/ui ThemeProvider, shared `theme` localStorage key) ──
   const { theme: nextTheme, setTheme: setNextTheme } = useTheme();
@@ -143,14 +150,24 @@ export default function SettingsPage() {
 
   const [models, setModels] = useState<EduAIModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>(
-    () => localStorage.getItem(DEFAULT_MODEL_KEY) ?? "",
+    () => localStorage.getItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY) ?? "",
   );
 
   const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(() => readExportPrefs());
 
   const refreshKeys = async (): Promise<void> => {
-    const keys = await apiKeyStorage.getAllApiKeys();
-    setStoredKeys(keys);
+    try {
+      const statuses: ProviderSettingStatus[] = await apiKeyStorage.getProviderSettings();
+      setStoredKeys(
+        Object.fromEntries(
+          statuses
+            .filter((status) => status.isEnabled && status.hasKey)
+            .map((status) => [status.providerName, CORE_STORED_KEY]),
+        ),
+      );
+    } catch {
+      setStoredKeys(await apiKeyStorage.getAllApiKeys());
+    }
   };
 
   useEffect(() => {
@@ -171,22 +188,31 @@ export default function SettingsPage() {
     const draft = (drafts[provider] ?? "").trim();
     if (!draft) return;
     setSavingProvider(provider);
-    await apiKeyStorage.setApiKey(provider, draft);
-    await refreshKeys();
-    setDrafts((prev) => ({ ...prev, [provider]: "" }));
-    setSavingProvider(null);
-    toast(`${PROVIDER_LABELS[provider]} API key saved`);
+    try {
+      const result = await apiKeyStorage.setApiKey(provider, draft);
+      await refreshKeys();
+      setDrafts((prev) => ({ ...prev, [provider]: "" }));
+      toast(
+        result.storedRemotely
+          ? `${PROVIDER_LABELS[provider]} API key saved`
+          : `${PROVIDER_LABELS[provider]} API key saved locally (Core unavailable)`,
+      );
+    } catch {
+      toast.error(`Could not save ${PROVIDER_LABELS[provider]} API key`);
+    } finally {
+      setSavingProvider(null);
+    }
   };
 
   const handleRemoveKey = async (provider: AIProvider): Promise<void> => {
-    apiKeyStorage.removeApiKey(provider);
+    await apiKeyStorage.removeProviderSetting(provider);
     await refreshKeys();
     toast(`${PROVIDER_LABELS[provider]} API key removed`);
   };
 
   const handleDefaultModelChange = (value: string): void => {
     setDefaultModel(value);
-    localStorage.setItem(DEFAULT_MODEL_KEY, value);
+    localStorage.setItem(DEFAULT_GENERATION_MODEL_STORAGE_KEY, value);
     toast("Default model updated");
   };
 
@@ -217,8 +243,12 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (!canManageCanvas) {
+      setCanvasLoading(false);
+      return;
+    }
     void loadCanvasIntegration();
-  }, [loadCanvasIntegration]);
+  }, [canManageCanvas, loadCanvasIntegration]);
 
   const handleCanvasConnect = async (): Promise<void> => {
     setCanvasConnecting(true);
@@ -268,7 +298,11 @@ export default function SettingsPage() {
   return (
     <SettingsPageScaffold
       padding="qm"
-      subheading="Manage your AI provider keys, Canvas connection, and accessibility preferences."
+      subheading={
+        canManageCanvas
+          ? "Manage your AI provider keys, Canvas connection, and accessibility preferences."
+          : "Manage your AI provider keys and accessibility preferences."
+      }
       defaultTab="providers"
       footer={
         <SignOutCard
@@ -302,9 +336,9 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle>Model Providers</CardTitle>
                   <CardDescription>
-                    Keys are stored for this account in this browser and sent through EduAI services
-                    to the selected provider when you use AI. Signing out removes them from this
-                    browser.
+                    Keys are stored securely in EduAI Core for this account and sent through EduAI
+                    services to the selected provider when you use AI. An encrypted browser fallback
+                    is used only while Core is unavailable.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -329,7 +363,10 @@ export default function SettingsPage() {
                         )}
                         {existing ? (
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Configured ({maskKey(existing)})</Badge>
+                            <Badge variant="secondary">
+                              Configured
+                              {existing === CORE_STORED_KEY ? "" : ` (${maskKey(existing)})`}
+                            </Badge>
                             <Button
                               type="button"
                               size="sm"
@@ -437,110 +474,127 @@ export default function SettingsPage() {
             </>
           ),
         },
-        {
-          value: "canvas",
-          label: "Canvas",
-          icon: <IconLink className="h-4 w-4" />,
-          content: (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <IconLink className="size-5" />
-                  Canvas Integration
-                </CardTitle>
-                <CardDescription>
-                  Connect your Canvas personal access token so Question Maker can export assessments
-                  and import quizzes. The token is encrypted on the server and never returned to the
-                  browser after saving.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {canvasLoading ? (
-                  <div className="flex items-center justify-center py-6">
-                    <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <>
-                    {canvasIntegration?.isConnected && (
-                      <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary">Connected</Badge>
-                            {canvasIntegration.isTestMode && (
-                              <Badge variant="outline">Test mode</Badge>
-                            )}
-                          </div>
-                          <p className="break-all font-mono text-sm">
-                            {canvasIntegration.canvasUrl}
-                          </p>
+        ...(canManageCanvas
+          ? [
+              {
+                value: "canvas",
+                label: "Canvas",
+                icon: <IconLink className="h-4 w-4" />,
+                content: (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <IconLink className="size-5" />
+                        Canvas Integration
+                      </CardTitle>
+                      <CardDescription>
+                        Connect your Canvas personal access token so Question Maker can export
+                        assessments and import quizzes. The token is encrypted on the server and
+                        never returned to the browser after saving.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      {canvasLoading ? (
+                        <div className="flex items-center justify-center py-6">
+                          <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void handleCanvasDisconnect()}
-                          disabled={canvasDisconnecting}
-                          aria-label="Disconnect Canvas"
-                          className="shrink-0 text-destructive hover:text-destructive/80"
-                        >
-                          {canvasDisconnecting ? <Spinner /> : <IconTrash className="size-4" />}
-                        </Button>
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label htmlFor="canvas-url">Canvas URL</Label>
-                      <Input
-                        id="canvas-url"
-                        value={canvasUrl}
-                        onChange={(e) => setCanvasUrl(e.target.value)}
-                        placeholder="https://canvas.ubc.ca"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="canvas-token">Canvas API token</Label>
-                      <Input
-                        id="canvas-token"
-                        type="password"
-                        value={canvasApiKey}
-                        onChange={(e) => setCanvasApiKey(e.target.value)}
-                        placeholder={canvasTestMode ? "Not required in test mode" : "••••••••"}
-                        disabled={canvasTestMode}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Create under Canvas → Settings → Approved Integrations → New Access Token.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="canvas-test-mode"
-                        checked={canvasTestMode}
-                        onCheckedChange={(checked) => setCanvasTestMode(checked === true)}
-                      />
-                      <Label htmlFor="canvas-test-mode" className="cursor-pointer font-normal">
-                        Test mode (no real Canvas token required)
-                      </Label>
-                    </div>
-
-                    <Button onClick={() => void handleCanvasConnect()} disabled={!canConnectCanvas}>
-                      {canvasConnecting ? (
-                        <>
-                          <Spinner />
-                          Connecting…
-                        </>
-                      ) : canvasIntegration?.isConnected ? (
-                        "Update connection"
                       ) : (
-                        "Connect Canvas"
+                        <>
+                          {canvasIntegration?.isConnected && (
+                            <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="secondary">Connected</Badge>
+                                  {canvasIntegration.isTestMode && (
+                                    <Badge variant="outline">Test mode</Badge>
+                                  )}
+                                </div>
+                                <p className="break-all font-mono text-sm">
+                                  {canvasIntegration.canvasUrl}
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleCanvasDisconnect()}
+                                disabled={canvasDisconnecting}
+                                aria-label="Disconnect Canvas"
+                                className="shrink-0 text-destructive hover:text-destructive/80"
+                              >
+                                {canvasDisconnecting ? (
+                                  <Spinner />
+                                ) : (
+                                  <IconTrash className="size-4" />
+                                )}
+                              </Button>
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            <Label htmlFor="canvas-url">Canvas URL</Label>
+                            <Input
+                              id="canvas-url"
+                              value={canvasUrl}
+                              onChange={(e) => setCanvasUrl(e.target.value)}
+                              placeholder="https://canvas.ubc.ca"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="canvas-token">Canvas API token</Label>
+                            <Input
+                              id="canvas-token"
+                              type="password"
+                              value={canvasApiKey}
+                              onChange={(e) => setCanvasApiKey(e.target.value)}
+                              placeholder={
+                                canvasTestMode ? "Not required in test mode" : "••••••••"
+                              }
+                              disabled={canvasTestMode}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Create under Canvas → Settings → Approved Integrations → New Access
+                              Token.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="canvas-test-mode"
+                              checked={canvasTestMode}
+                              onCheckedChange={(checked) => setCanvasTestMode(checked === true)}
+                            />
+                            <Label
+                              htmlFor="canvas-test-mode"
+                              className="cursor-pointer font-normal"
+                            >
+                              Test mode (no real Canvas token required)
+                            </Label>
+                          </div>
+
+                          <Button
+                            onClick={() => void handleCanvasConnect()}
+                            disabled={!canConnectCanvas}
+                          >
+                            {canvasConnecting ? (
+                              <>
+                                <Spinner />
+                                Connecting…
+                              </>
+                            ) : canvasIntegration?.isConnected ? (
+                              "Update connection"
+                            ) : (
+                              "Connect Canvas"
+                            )}
+                          </Button>
+                        </>
                       )}
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ),
-        },
+                    </CardContent>
+                  </Card>
+                ),
+              },
+            ]
+          : []),
         {
           value: "accessibility",
           label: "Accessibility",
