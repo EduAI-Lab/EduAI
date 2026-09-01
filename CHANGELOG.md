@@ -31,6 +31,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] perf: Batch the three per-row query loops in the assessment services (variant readiness, section delete, and bank-variant generation) into `in`/`groupBy` reads so each runs a fixed number of queries instead of scaling with the number of questions or variants, with the `courseId` authorization scoping preserved in every batched query, and the section-delete and variant-unlink paths made transactional. Closes #1371. (@abdullahmoh21, 2026-08-10) — [#1469](https://github.com/EduAI-Lab/EduAI/pull/1469)
 ## [Week 18 — August 24–30, 2026]
 
+### Changed
+
+- [all] style: Replace non-canonical Tailwind utility classes (`flex-shrink-0`, `rounded-[var(--radius-xl)]`, `shadow-[var(--shadow-2xs)]`, etc.) with their canonical shorthand equivalents (`shrink-0`, `rounded-xl`, `shadow-2xs`) across apps/core, ai-tutor, question-maker, and packages/ui. Purely cosmetic, no visual or behavioral change. Closes #1713. (@evanbones, 2026-08-31) — [#1715](https://github.com/EduAI-Lab/EduAI/pull/1715)
+
 ### Added
 
 - [ai-tutor, question-maker] feat: Instructors can create a course topic from the Add Activity modal or either Question Maker authoring surface through the Core-synchronized topic API; the new topic is selected in the active form and the control stays collapsed until explicitly opened. Closes #1702. (@superbolt08, 2026-08-30) — [#1704](https://github.com/EduAI-Lab/EduAI/pull/1704)

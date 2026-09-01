@@ -991,7 +991,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         }}
       >
         <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
-          <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-border shrink-0">
             <SheetTitle className="text-[15px]">
               {readOnlyTranscript?.chat.title ?? "Conversation"}
             </SheetTitle>

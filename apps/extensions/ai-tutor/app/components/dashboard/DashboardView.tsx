@@ -63,13 +63,13 @@ export type DashboardViewProps = {
 
 function CourseListSkeleton() {
   return (
-    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           className="flex animate-pulse items-center gap-4 border-b border-border px-5 py-4 last:border-b-0"
         >
-          <div className="h-11 w-1 flex-shrink-0 rounded-sm bg-muted" />
+          <div className="h-11 w-1 shrink-0 rounded-sm bg-muted" />
           <div className="flex-1 space-y-2">
             <div className="h-3.5 w-24 rounded bg-muted" />
             <div className="h-3 w-48 rounded bg-muted" />
@@ -93,7 +93,7 @@ function CourseListPanel({
 
   if (courses.length === 0) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border bg-card px-5 py-8 text-center shadow-[var(--shadow-2xs)]">
+      <div className="rounded-xl border border-border bg-card px-5 py-8 text-center shadow-2xs">
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to={coursesHref}
@@ -106,7 +106,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
       {courses.slice(0, COURSE_PREVIEW_ROWS).map((course) => (
         <Link
           key={course.id}
@@ -114,7 +114,7 @@ function CourseListPanel({
           className="flex items-center gap-4 border-b border-border px-5 py-[14px] transition-all duration-200 last:border-b-0 hover:-translate-y-px hover:bg-muted/40"
         >
           <div
-            className="h-11 w-1 flex-shrink-0 rounded-sm"
+            className="h-11 w-1 shrink-0 rounded-sm"
             style={{ background: course.accentColor }}
             aria-hidden="true"
           />
@@ -130,7 +130,7 @@ function CourseListPanel({
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{course.name}</div>
           </div>
           {course.progressLabel && (
-            <span className="flex-shrink-0 text-xs font-medium text-muted-foreground">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
               {course.progressLabel}
             </span>
           )}

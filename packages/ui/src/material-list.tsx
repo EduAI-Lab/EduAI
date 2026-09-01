@@ -99,10 +99,10 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
             return (
               <div
                 key={item.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
+                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card"
               >
                 <div
-                  className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                  className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0"
                   style={{ background: fileTypeColor?.(item) ?? DEFAULT_FILE_COLOR }}
                 >
                   <IconFileText size={14} color="white" stroke={2} />
@@ -131,7 +131,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
                     )
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {showChip && <MaterialStatusChip status={item.status} />}
                   <MaterialStatusIcon status={item.status} />
                   {renderItemActions?.(item)}

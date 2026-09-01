@@ -258,7 +258,7 @@ export const CanvasImportDialog = ({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0">
-        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle>Import from Canvas LMS</DialogTitle>
           <DialogDescription>
             Import a quiz from Canvas as a new assessment in Question Maker.
@@ -388,7 +388,7 @@ export const CanvasImportDialog = ({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
           <Button variant="outline" onClick={onClose}>
             {canManageCanvas ? "Cancel" : "Close"}
           </Button>
