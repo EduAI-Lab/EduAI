@@ -89,6 +89,7 @@ import type {
   SuggestedPrompt,
   Topic,
   User,
+  UserProviderSettingStatus,
 } from "./types";
 import { getCoreLoginUrl } from "./coreUrl";
 import type { BankQuestion } from "./bankQuestionToActivityDraft";
@@ -935,6 +936,22 @@ export const api = {
       }),
       apiKeyValidationSchema,
     ),
+  getUserProviderSettings: () =>
+    http("/api/provider-settings") as Promise<UserProviderSettingStatus[]>,
+  saveUserProviderSetting: (payload: {
+    providerName: string;
+    isEnabled: boolean;
+    apiKey?: string;
+    baseUrl?: string;
+  }) =>
+    http("/api/provider-settings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }) as Promise<void>,
+  deleteUserProviderSetting: (providerName: string) =>
+    http(`/api/provider-settings?providerName=${encodeURIComponent(providerName)}`, {
+      method: "DELETE",
+    }) as Promise<void>,
   getEduAiApiKeyStatus: () =>
     decode(http("/api/admin/settings/eduai-api-key"), eduAiApiKeyStatusSchema),
   getAdminAiModelPolicy: () =>

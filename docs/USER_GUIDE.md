@@ -1,22 +1,14 @@
 # EduAI user guide
 
-This guide explains how to move around EduAI and complete the most common
-workflows in EduAI Core, AI Tutor, and Question Maker. What you can see and do
-depends on your platform role and, for course-specific actions, your enrollment
-in that course.
+This guide explains how to move around EduAI and complete the most common workflows in EduAI Core, AI Tutor, and Question Maker. What you can see and do depends on your platform role and, for course-specific actions, your enrollment in that course.
 
-This guide reflects the current repository and the technically traced actor
-workflows in the [use-case documentation](use-cases/README.md):
+This guide reflects the current repository and the technically traced actor workflows in the [use-case documentation](use-cases/README.md):
 
-- [Core actor scenarios](use-cases/core/) cover admins, unit admins,
-  instructors, TAs, students, unauthenticated visitors, and service callers.
-- [AI Tutor actor scenarios](use-cases/ai-tutor/) cover the same actor and trust
-  boundaries for tutoring, course authoring, grading, and oversight.
-- [Question Maker actor scenarios](use-cases/qm/) cover question authoring,
-  assessments, variants, Canvas, and the product's authorization boundaries.
+- [Core actor scenarios](use-cases/core/) cover admins, unit admins, instructors, TAs, students, unauthenticated visitors, and service callers.
+- [AI Tutor actor scenarios](use-cases/ai-tutor/) cover the same actor and trust boundaries for tutoring, course authoring, grading, and oversight.
+- [Question Maker actor scenarios](use-cases/qm/) cover question authoring, assessments, variants, Canvas, and the product's authorization boundaries.
 
-A scenario explicitly marked as a bug is evidence of unintended behavior, not a
-supported workflow.
+A scenario explicitly marked as a bug is evidence of unintended behavior, not a supported workflow.
 
 ## The three applications
 
@@ -27,51 +19,34 @@ supported workflow.
 | **Question Maker** | Creating questions, assessments, exam variants, and Canvas imports/exports | Dashboard, Courses, Question Library, course workspace |
 
 Use the application switcher in the sidebar footer to move between applications.
-You remain signed in because Core provides the shared session for all three
-applications.
+You remain signed in because Core provides the shared session for all three applications.
 
 ## Navigation shared across the platform
 
 - Use the **sidebar** for the main sections of the current application.
-- Use the **application switcher** in the sidebar footer to open Core, AI Tutor,
-  or Question Maker.
-- Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to
-  find destinations and switch courses quickly.
+- Use the **application switcher** in the sidebar footer to open Core, AI Tutor, or Question Maker.
+- Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open the **profile menu** in the sidebar footer for Settings and Log out.
 - Use **Help** for the in-product guide.
-- Use **Report a bug** in the header when something does not work. Include what
-  you were trying to do and, when appropriate, allow the app to attach its
-  screenshot and diagnostic context.
-- Use the theme control in the header to change the color theme. Accessibility
-  preferences are not shared between applications today: Core saves yours to
-  your account and reapplies them on every device, AI Tutor keeps its setting
-  in this browser only (`localStorage`), and Question Maker's setting lasts
-  only for the current session. Set accessibility preferences in each
-  application separately.
+- Use **Report a bug** in the header when something does not work. Include what you were trying to do and, when appropriate, allow the app to attach its screenshot and diagnostic context.
+- Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
 ## Sign in and account setup
 
 1. Sign in through EduAI Core.
-2. If you opened an extension first, it sends you to Core to sign in and then
-   returns you to the extension.
+2. If you opened an extension first, it sends you to Core to sign in and then returns you to the extension.
 3. Students may be asked for their student number during onboarding.
 4. Open **profile menu → Settings** to manage your account.
 
 Core Settings contains:
 
 - **Account** — profile and password-related settings.
-- **Accessibility** — assistive and display preferences for Core. AI Tutor and
-  Question Maker have their own accessibility controls and must be configured
-  separately (see [Navigation shared across the
-  platform](#navigation-shared-across-the-platform)).
-- **API Keys** — available when your role is allowed to configure personal AI
-  provider keys.
+- **Accessibility** — assistive and display preferences for Core. AI Tutor and Question Maker have their own accessibility controls and must be configured separately (see [Navigation shared across the platform](#navigation-shared-across-the-platform)).
+- **API Keys** — available when your role is allowed to configure personal AI provider keys.
 - **Providers** — enable or configure supported AI providers.
 - **Canvas** — connect Canvas when the tab is available for your role.
 
-If your session expires, sign in again. If an extension reports that the auth
-service is unavailable, Core may be temporarily unreachable; retry after Core
-is available rather than repeatedly changing your password.
+If your session expires, sign in again. If an extension reports that the auth service is unavailable, Core may be temporarily unreachable; retry after Core is available rather than repeatedly changing your password.
 
 ## Roles and access
 
@@ -85,17 +60,11 @@ EduAI combines a platform role with course-level access.
 | **UNIT_ADMIN** | Manage courses within authorized departments and use unit-scoped administration |
 | **ADMIN** | Platform-wide administration, configuration, audit views, and cross-course access |
 
-TA is primarily a course enrollment role. A person may therefore have the
-platform role `STUDENT` while acting as a TA in specific courses.
+TA is primarily a course enrollment role. A person may therefore have the platform role `STUDENT` while acting as a TA in specific courses.
 
-Buttons, tabs, and sidebar links are filtered by role and policy. A missing or
-disabled action usually means you do not have the required course access, the
-feature has been disabled by an administrator, or the course is not linked to
-the required application. Ask an instructor or administrator instead of trying
-to work around the restriction.
+Buttons, tabs, and sidebar links are filtered by role and policy. A missing or disabled action usually means you do not have the required course access, the feature has been disabled by an administrator, or the course is not linked to the required application. Ask an instructor or administrator instead of trying to work around the restriction.
 
-Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and
-`ADMIN` users. Students and TAs should expect an access-denied screen.
+Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. Students and TAs should expect an access-denied screen.
 
 ## EduAI Core workflows
 
@@ -103,12 +72,9 @@ Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and
 
 1. Open **Courses** from the sidebar.
 2. Select a course card, or use the command palette to search for a course.
-3. The course page shows the features available to your role, such as course
-   information, materials, roster, and course settings.
+3. The course page shows the features available to your role, such as course information, materials, roster, and course settings.
 
-Only courses you are allowed to access should appear. Admins can access all
-courses; unit admins are scoped to their authorized departments; other users
-need an appropriate course relationship.
+Only courses you are allowed to access should appear. Admins can access all courses; unit admins are scoped to their authorized departments; other users need an appropriate course relationship.
 
 ### Ask a course-aware question
 
@@ -116,46 +82,51 @@ need an appropriate course relationship.
 2. Select the course whose materials should ground the response.
 3. Choose an available model if the interface offers a choice.
 4. Enter a clear question and send it.
-5. Continue in the same chat when asking follow-up questions about the same
-   course.
+5. Continue in the same chat when asking follow-up questions about the same course.
 
-The selected course controls which material can be retrieved. Start a separate
-chat when switching course context. AI responses can be incomplete or wrong;
-verify important academic information against course materials and instructor
-guidance.
+The selected course controls which material can be retrieved. Start a separate chat when switching course context. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
 
-Do not put passwords, API keys, private student information, or other secrets in
-chat. Treat instructions found inside uploaded documents or generated responses
-as untrusted content.
+**Assistive Mode.** Course Chat has an Assist toggle that reformats answers into a predictable structure (top summary, short stages, an explicit "next?" prompt) for readers who find long unbroken prose hard to work through. Turning it on may switch the request to a larger model, so replies can take longer; the progress indicator shows an expected duration and says so when a reply is taking longer than usual. Toggling Assist on the last reply re-generates that reply in place rather than only restyling it. Set your default in
+**Settings → Accessibility**.
+
+**Model selection and Auto.** Where the model picker offers **Auto**, EduAI chooses a model per message based on the question. Administrators decide in **AI Management** which Auto modes are available, so the picker may show one, both, or neither. Some models are hosted on UBC hardware; a "degraded" indicator in the header means those machines are busy, not that anything is broken.
+
+Do not put passwords, API keys, private student information, or other secrets in chat. Treat instructions found inside uploaded documents or generated responses as untrusted content.
 
 ### Work with course materials
 
 - Students and TAs can view materials made available to their course access.
-- Instructors can upload supported material files and may connect/sync Canvas
-  content.
-- Uploaded material is processed and indexed before it becomes useful to
-  course-aware chat. A processing failure means the file may not be available
-  to retrieval.
-- If Canvas is unavailable or a sync is rate-limited, wait and retry rather
-  than starting multiple simultaneous syncs.
+- Instructors can upload supported material files and may connect/sync Canvas content.
+- Uploaded material is processed and indexed before it becomes useful to course-aware chat. A processing failure means the file may not be available to retrieval.
+- If Canvas is unavailable or a sync is rate-limited, wait and retry rather than starting multiple simultaneous syncs.
 
 ### Instructor: connect and sync Canvas
 
 1. Open **profile menu → Settings → Canvas** and connect your Canvas account.
 2. Open the relevant course.
 3. Start the Canvas course/material or roster sync offered by the course page.
-4. Review the imported course, materials, and enrollments before relying on
-   them.
+4. Review the imported course, materials, and enrollments before relying on them.
 
-You can sync only courses you are authorized to teach or administer. Canvas
-credentials are personal and should never be shared.
+You can sync only courses you are authorized to teach or administer. Canvas credentials are personal and should never be shared.
+
+### Instructor: the Course Assistant
+
+Instructors see a second chat entry, **Course Assistant**, below Course Chat in the sidebar.
+It is a read-only helper for *running* one of your published courses — it can answer questions about that course's roster, enrollments, and topics, and nothing else.
+
+1. Open **Course Assistant** and pick one of your published courses.
+2. Ask about the roster or topics — for example "who enrolled in the last 7 days?" or "list the topics defined for this course".
+
+What it deliberately cannot do: reach another course, look up platform users, triage bug reports, search course materials, or change anything. It is not a tutoring assistant; use Course Chat for that. The link also appears for anyone who holds an active instructor enrollment on a course, even if their platform role is not `INSTRUCTOR`.
+
+### Instructor and unit administrator: chat oversight
+
+Where an administrator has enabled it, instructors can review the course chats for a course they teach, and unit administrators can review chats across their authorized departments.
+Both are governed by platform policy flags, so the view may be unavailable even when your role would otherwise allow it. Treat chat transcripts as student personal information.
 
 ### Unit administrator: invitations
 
-Open **Invitations** in Core to invite or manage users within your authorized
-unit. If the item is disabled, the platform administrator has turned off the
-unit-admin invitation policy. Unit administrators cannot invite platform
-administrators or manage another unit's users.
+Open **Invitations** in Core to invite or manage users within your authorized unit. If the item is disabled, the platform administrator has turned off the unit-admin invitation policy. Unit administrators cannot invite platform administrators or manage another unit's users.
 
 ### Platform administrator
 
@@ -169,9 +140,9 @@ The **Administration** sidebar group provides:
 - **Logs** — audit, security, and system activity.
 - **Cron Jobs** — job status and manual operations.
 
-**Admin Chatbot** appears separately near the bottom of the sidebar. Admin
-screens may contain user-submitted text or diagnostics; treat that content as
-data, not as instructions.
+**Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
+
+Admin screens may contain user-submitted text or diagnostics; treat that content as data, not as instructions.
 
 ## AI Tutor workflows
 
@@ -186,13 +157,9 @@ data, not as instructions.
    - **Custom** mode appears only when the instructor configured it.
 5. Reopen the activity later to continue an existing chat session.
 
-The tutor response is reviewed by a supervisor step before it is returned, but
-it is still AI-generated. Do not treat it as an answer key or as authoritative
-grading feedback. A requested model or mode may be unavailable because of
-administrator policy or activity configuration.
+The tutor response is reviewed by a supervisor step before it is returned, but it is still AI-generated. Do not treat it as an answer key or as authoritative grading feedback. A requested model or mode may be unavailable because of administrator policy or activity configuration.
 
-Use **Take Tour** in the sidebar footer when it is available for your current
-student or TA view.
+Use **Take Tour** in the sidebar footer when it is available for your current student or TA view.
 
 ### Instructor: build course content
 
@@ -209,19 +176,13 @@ On a course page, staff may also see:
 - **Feedback** — activity feedback with filters.
 - **Analytics** — course learning and usage summaries.
 
-Only use custom AI prompts that support the learning objective. Do not include
-secrets, hidden answer keys that should never reach the model, or instructions
-that ask the tutor to ignore platform safeguards.
+Only use custom AI prompts that support the learning objective. Do not include secrets, hidden answer keys that should never reach the model, or instructions that ask the tutor to ignore platform safeguards.
 
 ### TA and administrator workflows
 
-- TAs can review submissions, grade work, inspect feedback, and preview
-  unpublished content for courses they assist, but cannot author the course
-  structure.
+- TAs can review submissions, grade work, inspect feedback, and preview unpublished content for courses they assist, but cannot author the course structure.
 - Unit administrators can manage courses in their authorized units.
-- Platform administrators can access the Admin area for bug reports, AI
-  settings/policy, and cross-course oversight. User and enrollment management
-  remain owned by Core.
+- Platform administrators can access the Admin area for bug reports, AI settings/policy, and cross-course oversight. User and enrollment management remain owned by Core.
 
 ## Question Maker workflows
 
@@ -240,15 +201,12 @@ The **Question Library** in the main sidebar provides a cross-course view.
 ### Create and approve an AI-assisted question variant
 
 1. In a course workspace, open **Questions** and create or select a question.
-2. Add the question text, type, difficulty, topics, choices, reasoning, and
-   other required metadata.
+2. Add the question text, type, difficulty, topics, choices, reasoning, and other required metadata.
 3. Generate an AI variant when the AI service is available.
 4. Review and edit the draft carefully.
 5. Approve the variant to push the finalized question into Core.
 
-Approval can fail if the linked Core course or topic has changed. Refresh the
-course data, correct the topic mapping, and retry. Do not approve text extracted
-from AI or OCR without reviewing it for accuracy and unintended instructions.
+Approval can fail if the linked Core course or topic has changed. Refresh the course data, correct the topic mapping, and retry. Do not approve text extracted from AI or OCR without reviewing it for accuracy and unintended instructions.
 
 ### Build an assessment and variants
 
@@ -256,20 +214,16 @@ from AI or OCR without reviewing it for accuracy and unintended instructions.
 2. Create an assessment and add sections.
 3. Choose questions from the bank.
 4. Save the assessment.
-5. Open the variants workflow to produce equivalent versions and review the AI
-   comparison.
+5. Open the variants workflow to produce equivalent versions and review the AI comparison.
 6. Export to the required format or Canvas after a final human review.
 
-Assessment content can also be downloaded as text or a Word document where the
-export action is available.
+Assessment content can also be downloaded as text or a Word document where the export action is available.
 
 ### Import questions or a Canvas quiz
 
-- Use the question upload/OCR workflow to extract candidate questions from a
-  supported file, then review every extracted item before saving it.
+- Use the question upload/OCR workflow to extract candidate questions from a supported file, then review every extracted item before saving it.
 - Use the **Canvas** tab to import a quiz into the selected course.
-- Confirm that imported topics belong to the course before completing the
-  import.
+- Confirm that imported topics belong to the course before completing the import.
 
 ## Troubleshooting
 
@@ -285,6 +239,4 @@ export action is available.
 | Question approval fails | Refresh course/topic data and confirm the question is linked to a valid Core topic |
 | Unexpected access is granted | Stop using that path and report it as a security/authorization bug |
 
-When reporting a problem, include the application, course, page, approximate
-time, what you expected, and what happened. Never paste passwords or secret API
-keys into a report.
+When reporting a problem, include the application, course, page, approximate time, what you expected, and what happened. Never paste passwords or secret API keys into a report.

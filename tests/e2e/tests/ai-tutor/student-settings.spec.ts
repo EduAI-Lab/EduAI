@@ -36,16 +36,13 @@ test.describe("AI Tutor STUDENT — Settings", () => {
     await expect(page.getByText("Density")).toBeVisible();
   });
 
-  test("the Providers tab offers browser-local BYOK keys for Gemini and OpenAI", async ({
-    page,
-  }) => {
+  test("the Providers tab offers Core-backed BYOK keys for Gemini and OpenAI", async ({ page }) => {
     await loginAsStudent(page, "at-student-settings-providers");
     await gotoAiTutor(page, "/settings");
     await openTab(page, "Providers");
 
     await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Keys are stored for this account in this browser/)).toBeVisible();
-    await expect(page.getByText(/Signing out removes them from this browser/)).toBeVisible();
+    await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
     await expect(page.getByText("Gemini")).toBeVisible();
     await expect(page.getByText("OpenAI")).toBeVisible();
   });

@@ -33,15 +33,23 @@ export function ProvidersSettings() {
     setValidating(provider);
     setErrors((e) => ({ ...e, [provider]: null }));
     try {
-      const result = await validateKey(provider, draft);
+      let result;
+      try {
+        result = await validateKey(provider, draft);
+      } catch {
+        setErrors((e) => ({ ...e, [provider]: "Could not validate API key" }));
+        return;
+      }
       if (!result.valid) {
         setErrors((e) => ({ ...e, [provider]: result.error || "Invalid API key" }));
         return;
       }
-      setKey(provider, draft);
-      setDrafts((d) => ({ ...d, [provider]: "" }));
-    } catch {
-      setErrors((e) => ({ ...e, [provider]: "Could not validate API key" }));
+      try {
+        await setKey(provider, draft);
+        setDrafts((d) => ({ ...d, [provider]: "" }));
+      } catch {
+        setErrors((e) => ({ ...e, [provider]: "Could not save API key" }));
+      }
     } finally {
       setValidating(null);
     }
@@ -52,9 +60,9 @@ export function ProvidersSettings() {
       <CardHeader>
         <CardTitle>Model providers</CardTitle>
         <CardDescription>
-          Add your own AI provider key to power the AI Study Buddy. Keys are stored for this account
-          in this browser and sent through EduAI services to the selected provider when you validate
-          a key or use AI. Signing out removes them from this browser.
+          Add your own AI provider key to power the AI Study Buddy. Keys are stored securely in Core
+          for this account and sent through EduAI services to the selected provider when you
+          validate a key or use AI.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -90,7 +98,12 @@ export function ProvidersSettings() {
                   <div className="flex-1 rounded-[var(--radius-md)] border border-border bg-muted/40 px-3 py-2 font-mono text-sm text-muted-foreground">
                     {maskApiKey(getKey(p.id))}
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeKey(p.id)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void removeKey(p.id)}
+                  >
                     <IconTrash className="h-4 w-4" /> Remove
                   </Button>
                 </div>

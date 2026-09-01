@@ -142,6 +142,7 @@ const baseData: ChatBaseData = {
       provider: "openai",
     },
   ],
+  assistModelId: null,
   routerAutoEnabled: false,
   showRoutingModels: false,
   user: {
@@ -329,6 +330,45 @@ describe("ChatScreen — header", () => {
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
+  });
+  it("uses the configured Assist model only when Auto is selected", () => {
+    const assistAutoData: ChatBaseData = {
+      ...autoRoutingData,
+      assistModelId: "openai:gpt-4",
+      assistDefault: true,
+    };
+
+    renderChatScreen(null, assistAutoData);
+
+    expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+      expect.objectContaining({ model: "openai:gpt-4", adhdAssist: true }),
+    );
+  });
+
+  it("keeps an explicitly selected model when Assist is enabled", () => {
+    const assistAutoData: ChatBaseData = {
+      ...autoRoutingData,
+      assistModelId: "openai:gpt-4",
+      assistDefault: true,
+      chatModels: [
+        ...autoRoutingData.chatModels,
+        {
+          id: "anthropic:claude-sonnet",
+          name: "Claude Sonnet",
+          description: "Explicit test model",
+          provider: "anthropic",
+        },
+      ],
+    };
+
+    renderChatScreen(null, assistAutoData, {
+      pathname: "/chat",
+      state: { selectedModel: "anthropic:claude-sonnet" },
+    });
+
+    expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+      expect.objectContaining({ model: "anthropic:claude-sonnet", adhdAssist: true }),
+    );
   });
   it("sends a request-specific Stop beacon before stopping the chat", async () => {
     const originalSendBeacon = navigator.sendBeacon;

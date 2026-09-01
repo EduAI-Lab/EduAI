@@ -66,7 +66,7 @@ test.describe("AI Tutor TA — Settings", () => {
     }
   });
 
-  test("the Providers tab offers browser-local BYOK keys for Gemini and OpenAI", async ({
+  test("the Providers tab offers Core-backed BYOK keys for Gemini and OpenAI", async ({
     page,
     playwright,
   }) => {
@@ -77,9 +77,7 @@ test.describe("AI Tutor TA — Settings", () => {
       await expect(page.getByText("Model providers", { exact: true })).toBeVisible({
         timeout: 20_000,
       });
-      await expect(
-        page.getByText(/Keys are stored for this account in this browser/),
-      ).toBeVisible();
+      await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
       await expect(page.getByText("Gemini")).toBeVisible();
       await expect(page.getByText("OpenAI")).toBeVisible();
     } finally {

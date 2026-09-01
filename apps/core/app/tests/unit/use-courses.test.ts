@@ -61,6 +61,37 @@ describe("useCourses", () => {
     expect(listUrls(mockFetch)[0]).toContain("pageSize=25");
   });
 
+  it("bounds concurrent page reads for loadAll consumers", async () => {
+    let active = 0;
+    let maxActive = 0;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/courses/facets")) return Promise.resolve(okJson({}));
+      const pageNumber = Number(new URLSearchParams(url.split("?")[1]).get("page"));
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => {
+          active -= 1;
+          resolve(
+            okJson({
+              data: [{ ...course, id: `course-${pageNumber}` }],
+              total: 126,
+              page: pageNumber,
+              pageSize: 25,
+            }),
+          );
+        }, 0);
+      });
+    });
+
+    const { result } = renderHook(() => useCourses({ loadAll: true, includeFacets: false }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(listUrls(mockFetch)).toHaveLength(6);
+    expect(result.current.courses).toHaveLength(6);
+  });
+
   it("passes isActive through as a query param when supplied", async () => {
     const { result } = renderHook(() => useCourses({ isActive: false }));
 

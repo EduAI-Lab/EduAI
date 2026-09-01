@@ -20,19 +20,19 @@ export function StudentIdOnboardingForm({
 }: StudentIdOnboardingFormProps) {
   return (
     <div
-      className={cn("bg-card border rounded-[var(--radius-xl)] p-10 shadow-lg", className)}
+      className={cn("bg-card border rounded-xl p-10 shadow-lg", className)}
       style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.08)" }}
     >
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-7">
         <div
-          className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
           style={{ background: "var(--primary)" }}
         >
           1
         </div>
         <div className="flex-1 h-0.5 bg-border" />
-        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-muted-foreground flex-shrink-0 bg-muted">
+        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-muted-foreground shrink-0 bg-muted">
           2
         </div>
       </div>
@@ -91,7 +91,7 @@ export function StudentIdOnboardingForm({
             fill="none"
             strokeWidth="2"
             strokeLinecap="round"
-            className="flex-shrink-0 mt-0.5"
+            className="shrink-0 mt-0.5"
             style={{ stroke: "var(--secondary)" }}
           >
             <circle cx="12" cy="12" r="10" />

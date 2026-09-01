@@ -562,6 +562,21 @@ describe("StudentAiChat — API key validation dialog (#1003)", () => {
     await waitFor(() => expect(mockSetKey).toHaveBeenCalledWith("google", "valid-key-12345"));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
+
+  it("reports a persistence error separately after validation succeeds", async () => {
+    mockGetKey.mockReturnValue("");
+    mockSetKey.mockRejectedValueOnce(new Error("Core unavailable"));
+    renderChat();
+
+    fireEvent.click(await screen.findByRole("button", { name: /add api key/i }));
+    fireEvent.change(await screen.findByPlaceholderText(/enter your.*api key/i), {
+      target: { value: "valid-key-12345" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.getByText("Could not save API key")).toBeInTheDocument());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
 });
 
 // ── #1003: send/receive round trip ────────────────────────────────────────

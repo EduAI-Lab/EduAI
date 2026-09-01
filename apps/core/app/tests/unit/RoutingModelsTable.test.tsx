@@ -10,7 +10,11 @@ describe("RoutingModelsTable", () => {
       <RoutingModelsTable
         definitions={routingModelSettingDefinitions()}
         settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
         onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onEditAssist={vi.fn()}
       />,
     );
 
@@ -18,7 +22,7 @@ describe("RoutingModelsTable", () => {
     expect(screen.getByText("Auto (rules)")).toBeInTheDocument();
 
     expect(screen.getByRole("button", { name: "About Auto" })).toHaveAccessibleDescription(
-      /lightweight LLM classifier/i,
+      /lightweight classifier/i,
     );
     expect(screen.getByRole("button", { name: "About Auto (rules)" })).toHaveAccessibleDescription(
       /fixed prompt, image, tool/i,
@@ -31,11 +35,33 @@ describe("RoutingModelsTable", () => {
       <RoutingModelsTable
         definitions={routingModelSettingDefinitions()}
         settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
         onToggle={onToggle}
+        onEdit={vi.fn()}
+        onEditAssist={vi.fn()}
       />,
     );
 
     fireEvent.click(screen.getByRole("switch", { name: "Enable Auto (rules)" }));
     expect(onToggle).toHaveBeenCalledWith("autoRulesEnabled", true);
+  });
+
+  it("opens Auto model configuration from the Auto row", () => {
+    const onEdit = vi.fn();
+    render(
+      <RoutingModelsTable
+        definitions={routingModelSettingDefinitions()}
+        settings={{ autoLlmEnabled: true, autoRulesEnabled: false }}
+        assistModelId={null}
+        assistModelName={null}
+        onToggle={vi.fn()}
+        onEdit={onEdit}
+        onEditAssist={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Auto models" }));
+    expect(onEdit).toHaveBeenCalledOnce();
   });
 });

@@ -195,6 +195,16 @@ fleet until its edge readiness is confirmed. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
 
+**Auto routing tier assignment is a manual step on production.** Unlike
+`eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs
+`npm run db:seed:reference`, which includes `applyRoutingTierAssignments` in
+`apps/core/prisma/seed.ts`), production intentionally does not auto-seed. A
+newly created or newly active `AIModel` row therefore starts with
+`routerTier: null` and is invisible to Auto routing until an admin sets a
+tier via Admin → AI Models → edit the model → Auto Routing Tier. There is no
+implicit default — verify this after every fleet change (new model version,
+provider swap) that should participate in Auto.
+
 ## Rollback
 
 The release symlink is the rollback boundary:

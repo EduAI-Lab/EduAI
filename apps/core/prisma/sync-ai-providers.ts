@@ -4,42 +4,23 @@
  */
 import { PrismaClient } from "@prisma/client";
 import {
-  CAMPUS_INTERACTIVE_MODEL_IDS,
-  LEGACY_CAMPUS_MODEL_IDS,
-  RETAINED_ASSIST_MODEL_ID,
-} from "../app/lib/ai/campus-model-catalog";
+  VLLM_MODELS,
+  VLLM_RETIRED_MODEL_IDS,
+  VLLM_ROUTING_TIER_ASSIGNMENTS,
+} from "./ai-model-catalog";
 
 const prisma = new PrismaClient();
 
-const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: "vllm",
-    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
-    routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.04,
-    averageCarbonGramsPerToken: 8.9e-7,
-  },
-  {
-    providerName: "vllm",
-    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
-    routerTier: "TIER_2" as const,
-    estEnergyJoulesPerToken: 0.2,
-    averageCarbonGramsPerToken: 4.45e-6,
-  },
-  {
-    providerName: "vllm",
-    modelId: RETAINED_ASSIST_MODEL_ID,
-    routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
-
 async function applyRoutingTierAssignments() {
-  for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
+  const providerByName = new Map<string, { id: string }>();
+
+  for (const row of VLLM_ROUTING_TIER_ASSIGNMENTS) {
+    let provider = providerByName.get(row.providerName);
+    if (!provider) {
+      provider =
+        (await prisma.aIProvider.findUnique({ where: { name: row.providerName } })) ?? undefined;
+      if (provider) providerByName.set(row.providerName, provider);
+    }
     if (!provider) continue;
 
     const result = await prisma.aIModel.updateMany({
@@ -62,6 +43,24 @@ async function applyRoutingTierAssignments() {
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+
+  // Clear stale tiers on retired vLLM rows (e.g. after a fleet generation
+  // change) so loadTierRows() cannot keep selecting them — mirrors seed.ts.
+  const vllm =
+    providerByName.get("vllm") ??
+    (await prisma.aIProvider.findUnique({
+      where: { name: "vllm" },
+    }));
+  if (vllm) {
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+      },
       data: { routerTier: null },
     });
   }
@@ -229,34 +228,7 @@ async function main() {
     });
   }
 
-  const vllmModels = [
-    {
-      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
-      name: "Qwen3.5 2B Instruct (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: false,
-      supportsImages: false,
-    },
-    {
-      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
-      name: "Qwen3.5 9B Instruct (vLLM)",
-      description: "Standard chat — tier 2, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: true,
-      supportsImages: false,
-    },
-    {
-      modelId: RETAINED_ASSIST_MODEL_ID,
-      name: "Qwen3.8 27B FP8 (vLLM)",
-      description: "Large tier — tools and vision via Qwen3 parser",
-      maxTokens: 65536,
-      supportsTools: true,
-      supportsImages: true,
-    },
-  ];
-
-  for (const m of vllmModels) {
+  for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
       where: {
         providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
@@ -269,23 +241,12 @@ async function main() {
       create: {
         ...m,
         type: "CHAT",
-        supportsImages: m.supportsImages,
+        supportsImages: false,
         supportsStreaming: true,
         providerId: vllm.id,
       },
     });
   }
-
-  // Keep the retained 32B model active, but remove superseded small-model
-  // rows from Auto and the public picker. Qwen3.5 4B was present on the dev
-  // host but is not part of the approved 2B/9B fleet target.
-  await prisma.aIModel.updateMany({
-    where: {
-      providerId: vllm.id,
-      modelId: { in: [...LEGACY_CAMPUS_MODEL_IDS] },
-    },
-    data: { isActive: false, routerTier: null },
-  });
 
   await prisma.aIModel.upsert({
     where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },

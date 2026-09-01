@@ -54,6 +54,41 @@ export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
 }
 
+/** Read Core-owned provider status for the authenticated caller. */
+export async function getUserProviderSettings(cookie) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to read provider settings");
+    error.status = 401;
+    throw error;
+  }
+  const data = await requestEduAi("/user-provider-settings", { cookie });
+  return Array.isArray(data) ? data : [];
+}
+
+/** Persist one provider setting in Core; Core encrypts any supplied secret. */
+export async function upsertUserProviderSetting(cookie, payload) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to save provider settings");
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi("/user-provider-settings", { method: "POST", cookie, body: payload });
+}
+
+/** Remove one Core-owned provider setting. */
+export async function deleteUserProviderSetting(cookie, providerName) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to delete provider settings");
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi("/user-provider-settings", {
+    method: "DELETE",
+    cookie,
+    body: { providerName },
+  });
+}
+
 /**
  * Shared fetch helper. Surfaces upstream HTTP failures as Errors with
  * `status` set so route handlers can pass them through unchanged. Returns
@@ -66,17 +101,23 @@ export function getEduAiChatUrl() {
  */
 async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === "string" ? options.cookie : "";
+  const method = (options.method ?? "GET").toUpperCase();
   const signal = options.signal ?? AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
 
   const url = `${getEduAiBaseUrl()}${path}`;
   // Caller-supplied headers still win over the forwarded session cookie, which
-  // is why they are applied last.
+  // is why they are applied last. Cookie-scoped reads must not receive the
+  // service key: Core treats a Bearer request as an unscoped service request,
+  // which would discard the caller's course/enrollment context. Mutations do
+  // need the service key to pass Core's server-to-server CSRF guard.
+  const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method);
   const headers = { "Content-Type": "application/json" };
+  if (isMutation) Object.assign(headers, serviceAuthHeader());
   if (cookie) headers.cookie = cookie;
   Object.assign(headers, options.headers);
 
   const response = await fetch(url, {
-    method: options.method ?? "GET",
+    method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal,

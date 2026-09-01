@@ -151,11 +151,11 @@ export function ChatInput({
 
   return (
     <>
-      <div className="flex-shrink-0 border-t border-border/40 bg-background/95 backdrop-blur-sm">
+      <div className="shrink-0 border-t border-border/40 bg-background/95 backdrop-blur-sm">
         <div className="mx-auto max-w-3xl px-4 pb-4 pt-3 md:px-6">
           {disabledReason === "no-courses" && (
             <div className="mb-2.5 flex items-start gap-2 rounded-xl bg-muted/60 p-3">
-              <IconBooksOff size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+              <IconBooksOff size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">
                 Chat is disabled — you are not enrolled in any courses. Once you're enrolled in a
                 course, you can start chatting.
@@ -248,9 +248,6 @@ export function ChatInput({
                         className={selectedModel === model.id ? "bg-primary/5" : ""}
                       >
                         <span className="font-semibold">{model.name}</span>
-                        <span className="ml-1.5 text-[11px] text-muted-foreground">
-                          {model.provider}
-                        </span>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
