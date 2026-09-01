@@ -6,6 +6,7 @@ export const VLLM_MODELS = [
     description: "House chat — tier 1, hybrid RAG",
     maxTokens: 8192,
     supportsTools: false,
+    supportsImages: false,
   },
   {
     modelId: "qwen2.5-32b-instruct",
@@ -13,6 +14,7 @@ export const VLLM_MODELS = [
     description: "Large tier — tools via Hermes parser",
     maxTokens: 8192,
     supportsTools: true,
+    supportsImages: false,
   },
 ] as const;
 
