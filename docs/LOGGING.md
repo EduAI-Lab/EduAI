@@ -1,6 +1,6 @@
 # EduAI Core — Activity Logging
 
-**Last updated:** 2026-06-17
+**Last updated:** 2026-08-31 (verified against `app/lib/logging.server.ts`, `db.auditlog.server.ts`, `db.systemlog.server.ts`, and `prisma/schema.prisma`)
 
 This document describes the in-product logging subsystem in **apps/core**: what is recorded, what personal data it touches, who can see it, and how long it is kept. It is written to support a **Privacy Impact Assessment (PIA)**.
 
@@ -18,13 +18,20 @@ There are three streams, all stored in Postgres:
 | **Security** | `audit_logs` (`category = SECURITY`) | Authentication, access-denials, rate-limiting | **365 days** |
 | **System** | `system_logs` | Server-side errors (e.g. mail/embedding failures) | **90 days** |
 
-Writes are **fire-and-forget**: a failed log write never blocks or fails the user request it describes.
+Writes are **fire-and-forget** (`fireAndForget()` in `logging.server.ts`): a failed log write never blocks or fails the user request it describes, and the facade swallows its own errors before the extra `.catch` safety net.
+
+Every audit/security row carries a **category** and an **outcome**:
+
+- `AuditLogCategory` — `USER`, `INVITATION`, `COURSE`, `ENROLLMENT`, `MATERIAL`, `TOPIC`, `AI_CONFIG`, `CANVAS`, `BUG_REPORT`, `SECURITY`.
+- `AuditLogOutcome` — `SUCCESS` (default), `FAILURE`, `DENIED`. Security denials are written as `DENIED`, so the audit stream is **not** success-only.
+
+System rows carry `SystemLogLevel` (`ERROR`, `WARN`, `INFO`) and `SystemLogSource` (`ROUTE`, `AUTH`, `AI`, `CANVAS`, `MAIL`, `DB`, `SSR`, `API`).
 
 ---
 
 ## 2. What is logged
 
-### Audit — administrative mutations (success path only)
+### Audit — administrative mutations
 
 | Event | What it records |
 | --- | --- |
@@ -50,24 +57,41 @@ Writes are **fire-and-forget**: a failed log write never blocks or fails the use
 | Topic created | A course topic was added. |
 | Topic updated | A course topic was modified. |
 | Topic deleted | A course topic was removed. |
-| AI provider changed | An AI provider configuration was added, updated, or removed. |
-| AI model changed | An AI model configuration was added, updated, or removed. |
+| Student profile updated | A student's profile (e.g. student number) was changed. |
+| User TA courses changed | A user's TA course assignments were changed. |
+| AI provider changed | An AI provider configuration was added, updated, or removed (`AI_PROVIDER_CREATED` / `_UPDATED` / `_DELETED`). |
+| AI model changed | An AI model configuration was added, updated, or removed (`AI_MODEL_CREATED` / `_UPDATED` / `_DELETED`). |
+| Provider config saved | A user's own provider settings were saved. |
+| Routing model setting updated | An Auto-routing mode was enabled or disabled. |
+| Chat daily limit settings updated | The per-role daily local-model quota was changed. |
+| Bedrock overflow settings updated | The Bedrock overflow configuration was changed. |
 | Embedding settings changed | The embedding configuration was modified. |
 | Re-embed job created | A job to re-embed existing materials was queued. |
-| Canvas integration saved | Canvas LMS integration settings were saved. |
+| Policy flag updated | An admin toggled a platform policy flag. |
+| Canvas integration saved / deleted | Canvas LMS credentials were stored or removed. |
+| Canvas read / quiz write / callback received | A Canvas API read, a quiz write, or an inbound Canvas callback. |
 | Bug report status changed | The status of a bug report was updated. |
+| Course deleted (cascade) | A course delete was propagated (`DELETE_COURSE`). |
+
+The authoritative list is whatever `actionCode:` string literals exist in `apps/core/app/`:
+
+```bash
+grep -rhoE 'actionCode: "[A-Z_]+"' apps/core/app | sort -u
+```
 
 ### Security — auth & access
 
 | Event | What it records |
 | --- | --- |
-| Login success | A user authenticated successfully. |
-| Login failed | An authentication attempt was rejected. |
+| Login success | A user authenticated successfully (`LOGIN_SUCCESS` / `LOGIN`). |
+| Login failed | An authentication attempt was rejected (`LOGIN_FAILED` / `FAILED_LOGIN`). |
 | Logout | A user ended their session. |
-| Admin access denied | A non-admin was blocked from an admin-only resource. |
+| Admin access denied | A non-admin was blocked from an admin-only resource (`ADMIN_ACCESS_DENIED`). |
+| API key denied | An `x-api-key` request came from a non-admin, inactive, or unknown key owner (`API_KEY_DENIED`). |
+| Invitation access denied | A caller without invitation authority hit an invitation endpoint (`INVITATION_ACCESS_DENIED`). |
+| Policy denied | An action was blocked by an admin-disabled policy flag (`POLICY_DENIED`). |
 | Canvas access denied | A user was blocked from a Canvas-gated resource. |
-| Service key missing | A service-to-service request arrived without the required key. |
-| Service key invalid | A service-to-service request presented an invalid key. |
+| Service key missing / invalid | A server-to-server request arrived without, or with a wrong, `EDUAI_API_KEY`. |
 | Rate limit exceeded | A client tripped a rate limit (abuse signal). |
 
 ### System — errors
@@ -76,11 +100,24 @@ Writes are **fire-and-forget**: a failed log write never blocks or fails the use
 | --- | --- |
 | Mail send failed | An outbound email (e.g. an invitation) failed to send. |
 | Material embed failed | A course material failed during embedding. |
+| Outbound request failed | A call to an external service (Canvas, an AI provider, an extension) failed. |
+| DB connect failed | The Prisma client could not reach Postgres. |
 
-These are caught server-side failures, logged before re-throwing so behaviour is unchanged.
+These are caught server-side failures, logged before re-throwing so behaviour is unchanged. `createSystemError` handles the DB-down case internally, so a logging failure during a database outage does not cascade.
 
 ### Not logged (data minimization)
-High-volume product activity is **deliberately excluded**: chat messages, AI generation (`/api/eduai`), RAG retrieval, and assistive-events. Ordinary reads/list views are not audited — only mutations and access-denials.
+High-volume product activity is **deliberately excluded from `audit_logs` / `system_logs`**: chat messages, AI generation, RAG retrieval, and assistive events. Ordinary reads/list views are not audited — only mutations and access-denials.
+
+Those product surfaces have their **own** purpose-scoped tables, which are outside this subsystem and outside its retention policy:
+
+| Table | Written by | Contains |
+| --- | --- | --- |
+| `chats` / `chat_messages` | `/api/chat` | Conversation content, owned by the user, deleted with the chat |
+| `ai_interactions` | `routing/telemetry.server.ts` | Per-turn model/router/token/energy telemetry |
+| `assistive_events` | `assistive-events.server.ts` | Assistive-Mode compliance metrics |
+| `cron_job_runs` | the cron worker | Job status, duration, and captured output |
+
+Treat those as separate PIA line items; this document covers only the three admin-facing streams above.
 
 ---
 
@@ -136,7 +173,9 @@ Each row may contain:
 
 ## 7. Source map
 
-- Schema/migrations: `apps/core/prisma/schema.prisma`, `prisma/migrations/*_add_logging_subsystem`
-- Facade & redaction: `app/lib/logging.server.ts`
+- Schema/migrations: `apps/core/prisma/schema.prisma` (`AuditLog`, `SystemLog`, `LogRetentionPolicy`), `prisma/migrations/*_add_logging_subsystem`
+- Facade: `app/lib/logging.server.ts` (`logAuditAction`, `logSecurityEvent`, `logSystemError`, `fireAndForget`)
+- Redaction: `app/lib/redact.server.ts` (`sanitizeSensitiveData`, `redactErrorForConsole`, `redactErrorForMessage`, `redactSecretValuesInString`)
+- Request/actor context: `app/lib/request-context.server.ts` (`getRequestContext`, `getActorContext`)
 - Data access: `app/lib/db.auditlog.server.ts`, `db.systemlog.server.ts`, `db.log-retention-policy.server.ts`
 - Viewer: `app/routes/admin.logs.tsx`, `app/components/admin/logs-admin-view.tsx`
