@@ -2,6 +2,8 @@
 
 This guide explains how to move around EduAI and complete the most common workflows in EduAI Core, AI Tutor, and Question Maker. What you can see and do depends on your platform role and, for course-specific actions, your enrollment in that course.
 
+Setting up a course for the first time? Follow the step-by-step [instructor onboarding walkthrough](INSTRUCTOR_ONBOARDING.md) instead, then come back here as a reference.
+
 This guide reflects the current repository and the technically traced actor workflows in the [use-case documentation](use-cases/README.md):
 
 - [Core actor scenarios](use-cases/core/) cover admins, unit admins, instructors, TAs, students, unauthenticated visitors, and service callers.

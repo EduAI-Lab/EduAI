@@ -1,17 +1,22 @@
 # EduAI instructor onboarding
 
-**Who this is for:** Instructors joining the EduAI pilot.  
+**Who this is for:** Instructors joining the EduAI pilot.
 **What you will do:** Create your account, connect Canvas, set up a course in Core, then try AI Tutor and Question Maker.
+**How long it takes:** About 20–30 minutes, once.
 
-| App | URL |
-|-----|-----|
-| EduAI (Core) | https://my.eduai.ok.ubc.ca |
-| AI Tutor | https://ai-tutor.eduai.ok.ubc.ca |
-| Question Maker | https://qm.eduai.ok.ubc.ca |
+This is a guided first-run walkthrough. For a full reference on every screen, role, and workflow across the three apps, use the [user guide](USER_GUIDE.md) instead.
 
-If login fails, confirm the Core host with your pilot coordinator (some internal docs also mention `eduai.ok.ubc.ca`).
+## Where to sign in
 
-You sign in once on Core. The other apps reuse that session (same browser). Use the app switcher in the header to move between apps.
+| App | Production | Pilot / dev |
+|-----|-----------|-------------|
+| EduAI (Core) | https://my.eduai.ok.ubc.ca | https://dev.eduai.ok.ubc.ca |
+| AI Tutor | https://aitutor.eduai.ok.ubc.ca | https://dev.aitutor.eduai.ok.ubc.ca |
+| Question Maker | https://questionmaker.eduai.ok.ubc.ca | https://dev.questionmaker.eduai.ok.ubc.ca |
+
+Ask your pilot coordinator which of the two sets applies to you — most pilot participants are on the `dev.` hosts.
+
+You sign in once on Core, and the other two apps reuse that session in the same browser. Move between them with **Switch app** at the bottom of the sidebar.
 
 ---
 
@@ -19,11 +24,13 @@ You sign in once on Core. The other apps reuse that session (same browser). Use 
 
 EduAI has three parts:
 
-1. **Core** — courses, materials, enrollments, chat with course materials, Canvas connection  
-2. **AI Tutor** — modules, lessons, activities, and tutoring chat for students  
-3. **Question Maker** — question banks and AI-assisted question drafting  
+1. **Core** — courses, materials, enrollments, course-aware chat, and the Canvas connection. This is where course and roster changes are made first.
+2. **AI Tutor** — modules, lessons, activities, and tutoring chat for students.
+3. **Question Maker** — question banks, AI-assisted question variants, and assessments.
 
-This guide walks a **happy path** from your invitation email through a first useful setup in each app. Short “If you’re stuck” tips are at the end.
+This guide walks a **happy path** from your invitation email through a first useful setup in each app. Troubleshooting is at the end.
+
+Throughout, the Core sidebar holds **Dashboard**, **Courses**, and **Course Chat**, with **Help & guide**, **Switch app**, and your profile menu pinned at the bottom. The header has search (`Ctrl+K` / `Cmd+K`), a platform status indicator, the theme control, and **Report a bug**.
 
 ---
 
@@ -31,116 +38,86 @@ This guide walks a **happy path** from your invitation email through a first use
 
 ### Accept your invitation
 
-Your admin (or unit admin) sends an invitation email. Open the link and set your password when prompted.
-
-> **Screenshot needed:** `invite-email-or-accept`  
-> Capture: Invitation email **or** the accept-invitation page (`/auth/accept-invitation`).  
-> Show: Clear call-to-action to accept / set password.
+Your admin (or unit admin) sends an invitation email. Open the link and set your password when prompted. The link opens Core's `/auth/accept-invitation` page.
 
 ### Sign in
 
-Go to https://my.eduai.ok.ubc.ca and sign in (campus login / EduAI sign-in as shown on the page).
-
-![Core sign-in page](./images/instructor-onboarding/sign-in.png)
-
+Go to your Core host from the table above and sign in.
 
 ### Land on your dashboard
 
-After sign-in you should see the Core home / courses area.
+After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom.
 
-![Core dashboard page](./images/instructor-onboarding/dashboard.png)
-
-
-**If you’re stuck:** The invite link expired — ask your admin to resend. Wrong role (e.g. Student) — ask them to invite you as **Instructor**.
+**If you're stuck:** The invite link expired — ask your admin to resend. Wrong role (for example Student) — ask them to re-invite you as **Instructor**.
 
 ---
 
-## 3. Connect Canvas and sync courses
+## 3. Connect Canvas and fetch courses
 
-Canvas is how many pilot courses enter EduAI.
+Canvas is how most pilot courses enter EduAI.
 
-### Open Canvas settings
+### Create a Canvas access token
 
-In Core, open **Settings**. Find the **Canvas** section.
+Do this in Canvas, not in EduAI:
 
-![Connect canvas page](./images/instructor-onboarding/canvas-connect.png)
+1. Open the Canvas global navigation on the left, choose **Account**, then **Settings**.
+2. Scroll to **Approved Integrations** and choose **+ New Access Token**.
+3. Fill in **Purpose** (for example `EduAI`). Leave the expiration fields blank for a token that does not expire, or set a date past the end of your pilot. Choose **Generate Token**.
+4. The **Access Token Details** dialog shows the token once. **Copy it now** — once you leave that page Canvas will not show it again, and you would have to regenerate it.
 
+The token needs permission to read the courses you teach.
 
-### Connect
+### Connect it in EduAI
 
-1. Enter your institution canvas URL (for example http://canvas.ubc.ca).  
-2. Paste a Canvas personal access token with permission to read your courses.  
-3. Save / Connect. Wait for a success state (not an error).
+Open the **profile menu** at the bottom of the Core sidebar, choose **Settings**, then the **Canvas** tab. Settings has four tabs: Account, Accessibility, Providers, and Canvas.
 
-#### To get your canvas token:
+Fill in the **Canvas Integration** card:
 
-![Connect canvas - step 1](./images/instructor-onboarding/canvas-step-1.png)
-![Connect canvas - step 2](./images/instructor-onboarding/canvas-step-2.png)
-![Connect canvas - step 3](./images/instructor-onboarding/canvas-step-3.png)
-![Connect canvas - step 4](./images/instructor-onboarding/canvas-step-4.png)
+1. **Canvas instance URL** — the site root only, for example `https://canvas.ubc.ca`. No trailing slash, and no `/api/v1`.
+2. **Personal access token** — paste the token you just copied.
+3. Choose **Connect Canvas** and wait for a success state.
 
+Your token is encrypted on the EduAI server and is never returned to the browser after saving.
 
+### Fetch courses into EduAI
 
-### Sync courses into EduAI
+Go back to **Dashboard** and scroll to the **Canvas courses** card at the bottom. It names the Canvas instance you are connected to. Choose **Fetch from Canvas**.
 
-Return to **Courses**. Use **Sync from Canvas** (or equivalent) and choose the course(s) to bring into EduAI.
+A dialog lists the Canvas courses you teach, each with a checkbox. Tick the ones you want and choose **Fetch selected**. Clicking a course that has already been fetched opens it instead.
 
-
-![Sync course](./images/instructor-onboarding/sync-course.png)
-![Sync course - 1](./images/instructor-onboarding/sync-course-1.png)
-
-After synching, you should be able to see the course on your Courses page.
-
-![Courses](./images/instructor-onboarding/courses.png)
-
+Your fetched courses now appear under **Courses**, grouped by term, each card showing its code, title, term, and a **Published** or **Draft** badge. The page has a search box, Status and Term filters, and paging controls at the bottom — search covers your whole course list, not just the page you are looking at.
 
 Open the course you will teach.
 
-**If you’re stuck:** No courses after sync — confirm the Canvas token can see teacher courses, and that the Canvas policy for instructors is enabled on this deployment. Connection errors — check URL (no trailing path junk) and whether it was expired token.
+**If you're stuck:** No courses listed — confirm the Canvas token can see your teacher-role courses, and that your admin has left **Instructors can manage Canvas integration** enabled. Connection errors — re-check the URL is a bare site root, and that the token has not expired.
 
 ---
 
 ## 4. Core course basics
 
-On the course page you will use tabs (or sections) for materials, enrollments, and publish.
+A course page has these tabs: **Overview**, **Materials**, **Topics**, **Enrollments**, **Staff**, **Settings**, and **Chat history**.
 
-![Course detail](./images/instructor-onboarding/course-detail.png)
+**Overview** summarises the course: student, material, and embedded-chunk counts, then course information (code, term, status, published state) and the assigned instructor and TAs.
 
+**Chat history** is greyed out unless an admin has turned on the instructor chat-viewing policy, which is **off by default**. A disabled tab here is expected, not a bug.
 
 ### Materials
 
-You can either manually upload materials from your device
+On the **Materials** tab you can either upload files from your device, or pull them from the linked Canvas course.
 
-![Course material - upload](./images/instructor-onboarding/course-material-upload.png)
-
-or sync materials from the canvas course
-
-![Course material - sync](./images/instructor-onboarding/course-material-canvas.png)
-
-![Course material](./images/instructor-onboarding/course-material.png)
-
-
+Uploaded material is chunked and indexed before course-aware chat can use it. Watch the **Material status** panel on your dashboard: a file is only usable once it reaches **Ready**. A **Failed** file will not appear in AI answers.
 
 ### Enrollments
 
-Review who is enrolled. Add students or TAs as your pilot process requires.
+On the **Enrollments** tab, review who is enrolled and add students or TAs as your pilot process requires.
 
-![Course enrollment - student](./images/instructor-onboarding/course-enrollment-student.png)
-
-![Course enrollment - TA](./images/instructor-onboarding/course-enrollment-TA.png)
-
-
-> For courses synched from canvas, once your student or TA registers and adds their student id, they will be automatically enrolled into the course.
-
+> For courses fetched from Canvas, students and TAs are enrolled automatically once they register and add their student ID.
 
 ### Publish the course
 
-When the course should be visible to students, use **Publish** (unpublished courses stay instructor-only for students).
+Publishing is on the **Courses** page, not inside the course. Open the **⋮** menu on the course card and choose **Publish course** — the same menu reads **Unpublish course** when the course is already live, alongside **Edit course** and **Delete course**. The card badge tracks the current state.
 
-![Course publishing](./images/instructor-onboarding/course-publishing.png)
-
-
-**If you’re stuck:** Cannot publish — a platform policy may disable instructor publish; ask your admin. Students cannot see the course — confirm publish **and** that they have are enrolled in the course.
+**If you're stuck:** No publish option — your admin may have turned off the instructor publish policy. Students cannot see the course — confirm it is Published **and** that they hold an active enrollment.
 
 ---
 
@@ -148,27 +125,19 @@ When the course should be visible to students, use **Publish** (unpublished cour
 
 ### Open AI Tutor
 
-From Core, use the **app switcher** (brand / apps control in the header) and choose **AI Tutor**.
+Choose **Switch app** at the bottom of the sidebar and pick **AI Tutor**.
 
-![App switching](./images/instructor-onboarding/switch-app.png)
-
-You should land on an instructor-friendly home (dashboard or course list).
-
-![Dashboard](./images/instructor-onboarding/aitutor-dashboard.png)
-
+You do not import anything. The courses you teach in Core appear in AI Tutor automatically the first time you sign in, and each one keeps Core's published state.
 
 ### Publish a module or lesson
 
-Open your course → a module → (optionally) a lesson. Use the **Publish** control so students can see that content when the parent course/module rules allow.
+Open your course. The course page has **Content**, **Submissions**, **Feedback**, and **Analytics** tabs.
 
-![Course](./images/instructor-onboarding/aitutor-courses.png)
+On **Content**, use **Add module** to create one. New modules start as **Draft** and are marked *Hidden from students*. Open the module's **⋮** menu and choose **Publish module**.
 
-![Module](./images/instructor-onboarding/aitutor-module-publish.png)
+Lessons and activities publish the same way, and students only see them when the parent course and module are published too.
 
-![Lesson](./images/instructor-onboarding/aitutor-module-lesson.png)
-
-
-**If you’re stuck:** AI Tutor asks you to sign in again — return to Core, sign in, then use the app switcher (you stay signed in across apps in the same browser). Course missing — import/link from Core or wait for sync; ask support if it never appears.
+**If you're stuck:** AI Tutor asks you to sign in again — sign in on Core first, in the same browser, then use Switch app. A course is missing — see the sync timings in [Known limitations](#8-known-limitations).
 
 ---
 
@@ -176,81 +145,81 @@ Open your course → a module → (optionally) a lesson. Use the **Publish** con
 
 ### Open Question Maker
 
-From the app switcher, open **Question Maker**.
+From **Switch app**, open **Question Maker**.
 
-### Select or link your course
+As in AI Tutor, the courses you teach appear on their own — there is no import step. Each course is also given a starter **Practice Exam** assessment automatically.
 
-Pick the EduAI course you just set up (link to Core if prompted).
+### Open the course workspace
 
-> **Screenshot needed:** `qm-course-picker`  
-> Capture: Course list or course picker / link-to-Core UI.  
-> Show: Your course selected or available.
+Select your course. The workspace has **Overview**, **Questions**, **Assessments**, and **Canvas** tabs.
 
-### Generate questions once
+### Create a question, then generate an AI variant
 
-Use AI-assisted generation for a small set of questions (one topic is enough for this walkthrough).
+Question Maker's AI assist rewrites an *existing* question rather than inventing a set from a topic, so create one question first.
 
-> **Screenshot needed:** `qm-generate-questions`  
-> Capture: Generate-questions UI mid-flow or ready to submit.  
-> Show: Model/provider defaults as shown in the UI (do not paste secrets).
+1. On **Questions**, add a question with its text, type, difficulty, topics, and choices.
+2. Generate an **AI variant** of that question.
+3. Review and edit the draft — treat everything the model produced as a draft, not an answer key.
+4. **Approve** the variant to push the finished question into Core.
 
-### Confirm they appear in the bank
+### Confirm it appears in the bank
 
-Open the question bank / course questions list and find the new items.
+Open **Questions** for the course, or the cross-course **Question Library** in the sidebar, and find the new item.
 
-> **Screenshot needed:** `qm-question-in-bank`  
-> Capture: Question bank with at least one generated question.  
-> Show: Title/stem visible.
-
-**If you’re stuck:** Generation fails — campus model may be busy; retry or ask your coordinator. Course not listed — confirm Core enrollment/instructor access and that QM can reach Core.
+**If you're stuck:** Generation fails — the campus model may be busy; retry or ask your coordinator. Approval fails — the linked Core course or topic changed; refresh the course data, fix the topic mapping, and retry.
 
 ---
 
-## 7. If you’re stuck (quick reference)
+## 7. If you're stuck (quick reference)
+
+Onboarding-specific problems:
 
 | Symptom | What to try |
 |---------|-------------|
-| Invite link dead | Ask admin to resend invitation |
-| Signed in but “wrong” home | Confirm your role is Instructor (not Student-only) |
-| No courses after Canvas sync | Re-check Canvas token permissions; retry sync |
-| Cannot publish | Ask admin about instructor publish policy |
-| AI Tutor or Question Maker sends you to login | Sign in on Core first, same browser, then app switcher |
-| Students cannot see content | Course published + content published + active enrollment |
+| Invite link dead | Ask your admin to resend the invitation |
+| Signed in but no teaching tools | Confirm your platform role is Instructor, not Student |
+| No courses after fetching from Canvas | Re-check the token's permissions, then retry the fetch |
+| Course in Core but not yet in AI Tutor or Question Maker | Wait about a minute and reload — see [Known limitations](#8-known-limitations) |
+| Publish option missing | Ask your admin about the instructor publish policy |
+| Question Maker shows access denied | Question Maker is instructor-only; confirm your role |
+
+The [user guide's troubleshooting table](USER_GUIDE.md#troubleshooting) covers the rest of the platform, for all roles.
 
 ---
 
 ## 8. Known limitations
 
-These are honest limits for the current pilot:
+Honest limits for the current pilot:
 
-- **Course search after Canvas sync:** If a newly synced course does not show up in Core search, clear the search box and check later pages. Search currently scans only the page you are on, not your full course list.
-- **Canvas sync edge cases:** Sync is under active improvement. In rare cases, roster or publish state from Canvas may not match what you see in Core, or removed Canvas files may still appear in AI answers until materials are refreshed.
-- **AI Tutor enrollments can lag Core:** The enrollments panel in AI Tutor may not match Core immediately. Refresh the page or sign in again on Core if roster changes do not appear.
-- **Large course catalogs:** AI Tutor and Question Maker course pickers may not list every course if you have a very large catalog. Search across all your courses is coming later.
-- **AI answers and materials:** Chat relies on uploaded or synced materials. If retrieval fails quietly, replies may lack course context.
-- **Cross-app sync lag:** Core is where course and roster changes are made first. AI Tutor and Question Maker may not show those changes until you refresh or sign in again on Core.
-- **Same browser sign-in:** If AI Tutor or Question Maker sends you back to login after a platform update, sign in again on Core in the same browser, then use the app switcher.
-- **Admin policy flags:** Some instructor actions (create course, connect Canvas, publish) can be turned off by admin policy. If a button is missing, it may be intentional for this pilot — ask your coordinator rather than assuming a bug.
+- **Cross-app sync is not instant.** Core is the source of truth. The course list each extension mirrors refreshes at most once a minute per user, and rosters refresh on about a 30-second cycle. If a change you made in Core is not visible yet, wait a minute and reload rather than signing out.
+- **Canvas sync edge cases.** Sync is under active improvement. Roster or publish state from Canvas may occasionally disagree with Core, and files removed in Canvas can still appear in AI answers until materials are refreshed.
+- **AI answers depend on processed materials.** Chat grounds its answers in material that finished indexing. If retrieval fails quietly, replies may lack course context — check the material status panel before assuming the model is at fault.
+- **Large course catalogs.** The AI Tutor and Question Maker course pickers may not list every course if your catalog is very large. Core's own course search and pagination are server-side and do cover your whole list.
+- **Same-browser sign-in.** The extensions rely on Core's session in the same browser. After a platform update, sign in again on Core and then use Switch app.
+- **Admin policy flags.** Creating courses, connecting Canvas, managing enrollments, publishing, and viewing course chats are each governed by a policy an admin can switch off. Instructor chat viewing is off by default; the others are on by default. A missing button may be deliberate for this pilot — ask your coordinator before filing a bug.
 
 ---
 
 ## 9. Walkthrough checklist (team dry-run)
 
-Have a teammate act as a **new instructor** and check each box (or file a follow-up issue):
+Internal QA only — not part of instructor onboarding. Have a teammate act as a **new instructor** and check each box, or file a follow-up issue:
 
-- [ ] Accepted invite and signed in on Core  
-- [ ] Connected Canvas and synced at least one course  
-- [ ] Opened materials, enrollments, and publish on Core  
-- [ ] Opened AI Tutor via app switcher; published a module or lesson  
-- [ ] Opened enrollments panel in AI Tutor  
-- [ ] In Question Maker: selected course, generated questions, saw them in the bank  
-- [ ] Screenshot placeholders make sense / list any missing shots  
-- [ ] Notes / confusion points captured for doc edits  
+- [ ] Accepted invite and signed in on Core
+- [ ] Created a Canvas access token and connected it in Settings → Canvas
+- [ ] Fetched at least one course from the dashboard's Canvas courses card
+- [ ] Uploaded a material and saw it reach Ready
+- [ ] Reviewed the Enrollments tab
+- [ ] Published the course from the course card's ⋮ menu
+- [ ] Opened AI Tutor via Switch app and confirmed the course was already there
+- [ ] Added and published a module
+- [ ] In Question Maker: confirmed the course was already there, created a question, generated and approved an AI variant
+- [ ] Captured confusion points and any step whose wording no longer matches the UI
 
 ---
 
-## For IT / developers
+## Related documentation
 
-Extension auth wiring and service keys: [`EXTENSION_ONBOARDING.md`](./EXTENSION_ONBOARDING.md).  
-Deployment and hostnames: [`DEPLOYMENT.md`](./DEPLOYMENT.md).  
+Full platform reference for every role: [`USER_GUIDE.md`](./USER_GUIDE.md).
+Extension auth wiring and service keys: [`EXTENSION_ONBOARDING.md`](./EXTENSION_ONBOARDING.md).
+Deployment and hostnames: [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 Architecture overview: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
