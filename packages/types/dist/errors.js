@@ -289,7 +289,7 @@ export function normalizeError(cause) {
             // restated as a status gate so it also covers errors this module has
             // never heard of.
             const ownCode = cause.code;
-            const code = 
+            const code =
             // oxlint-disable-next-line anti-slop/no-runtime-typeof
             exposed && typeof ownCode === "string" && ownCode.length > 0 ? ownCode : codeForStatus(raw);
             return {

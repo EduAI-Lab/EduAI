@@ -270,19 +270,18 @@ test.describe("AI Tutor ADMIN — Settings", () => {
     await expect(page.getByText(/Personalize how AI Tutor looks and feels/i)).toBeVisible();
   });
 
-  test("the Providers tab offers per-user keys and says they stay in the browser", async ({
-    page,
-  }) => {
+  test("the Providers tab offers per-user keys and says they are Core-backed", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-settings-providers");
     await gotoAiTutor(page, "/settings");
     await openTab(page, "Providers");
 
     await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
     // The distinction from the admin-managed EduAI key matters: these are
-    // browser-local BYOK keys, never persisted server-side. The copy also
-    // says they leave the browser only to be validated or used.
-    await expect(page.getByText(/Keys are stored for this account in this browser/)).toBeVisible();
-    await expect(page.getByText(/Signing out removes them from this browser/)).toBeVisible();
+    // per-user BYOK keys, persisted account-scoped in Core rather than only in
+    // this browser. The copy also says they leave the browser only to be
+    // validated or used.
+    await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
+    await expect(page.getByText(/sent through EduAI services/)).toBeVisible();
     await expect(page.getByText("Gemini")).toBeVisible();
     await expect(page.getByText("OpenAI")).toBeVisible();
   });

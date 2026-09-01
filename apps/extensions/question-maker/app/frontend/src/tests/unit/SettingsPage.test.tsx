@@ -14,8 +14,9 @@ const { apiKeyStorage, eduaiService, canvasService, useAuthMock, setThemeMock, t
     return {
       apiKeyStorage: {
         getAllApiKeys: vi.fn(),
-        setApiKey: vi.fn(),
+        setApiKey: vi.fn(async () => ({ storedRemotely: true })),
         removeApiKey: vi.fn(),
+        removeProviderSetting: vi.fn(async () => undefined),
       },
       eduaiService: { listModels: vi.fn() },
       canvasService: {
@@ -32,7 +33,10 @@ const { apiKeyStorage, eduaiService, canvasService, useAuthMock, setThemeMock, t
 
 vi.mock("sonner", () => ({ toast: toastFn }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
-vi.mock("@/services/apiKeyStorage", () => ({ default: apiKeyStorage }));
+vi.mock("@/services/apiKeyStorage", () => ({
+  CORE_STORED_KEY: "__core_stored__",
+  default: apiKeyStorage,
+}));
 vi.mock("@/services/eduaiService", () => ({ eduaiService }));
 vi.mock("@/services/canvasService", () => ({ canvasService }));
 vi.mock("@/services/canvasDefaults", () => ({
@@ -102,7 +106,7 @@ describe("SettingsPage", () => {
     apiKeyStorage.getAllApiKeys
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ google: "AIzaSyABCDEFGH1234" });
-    apiKeyStorage.setApiKey.mockResolvedValue(undefined);
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText("Google AI (Gemini)")).toBeInTheDocument());
 
@@ -124,7 +128,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText(/Configured/)).toBeInTheDocument());
     fireEvent.click(screen.getByText("Remove"));
-    await waitFor(() => expect(apiKeyStorage.removeApiKey).toHaveBeenCalledWith("google"));
+    await waitFor(() => expect(apiKeyStorage.removeProviderSetting).toHaveBeenCalledWith("google"));
     expect(toastFn).toHaveBeenCalledWith("Google AI (Gemini) API key removed");
   });
 

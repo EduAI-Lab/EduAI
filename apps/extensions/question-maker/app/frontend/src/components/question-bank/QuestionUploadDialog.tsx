@@ -66,7 +66,7 @@ import { MCQChoicesField } from "../questions/MCQChoicesField";
 import { Topic } from "../../types/topic";
 import { questionService } from "../../services/questionService";
 import { eduaiService, EduAIModelOption } from "../../services/eduaiService";
-import { apiKeyStorage, type ProviderApiKeys } from "../../services/apiKeyStorage";
+import { apiKeyStorage, CORE_STORED_KEY, type ProviderApiKeys } from "../../services/apiKeyStorage";
 import { useOCRHistory } from "../../hooks/use-ocr-history";
 import { OCRHistoryPanel } from "../ocr/OCRHistoryPanel";
 import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
@@ -361,6 +361,7 @@ export const QuestionUploadDialog = ({
   const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
   const [aiModel, setAiModel] = useState(FALLBACK_GENERATION_MODEL);
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerKeySaved, setProviderKeySaved] = useState(false);
   const [apiKeySaveState, setApiKeySaveState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -477,8 +478,10 @@ export const QuestionUploadDialog = ({
       const provider = apiKeyStorage.getProviderFromModel(aiModel);
       if (provider) {
         const savedKey = await apiKeyStorage.getApiKey(provider);
-        setProviderApiKey(savedKey || "");
+        setProviderKeySaved(savedKey === CORE_STORED_KEY);
+        setProviderApiKey(savedKey === CORE_STORED_KEY ? "" : savedKey || "");
       } else {
+        setProviderKeySaved(false);
         setProviderApiKey("");
       }
     };
@@ -492,10 +495,14 @@ export const QuestionUploadDialog = ({
     if (!provider || !providerApiKey.trim()) return;
     setApiKeySaveState("saving");
     try {
-      await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+      const result = await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
       setApiKeySaveState("saved");
+      setProviderKeySaved(result.storedRemotely);
+      if (result.storedRemotely) setProviderApiKey("");
       toast("API key saved", {
-        description: "Stored for this account in this browser until you remove it or sign out.",
+        description: result.storedRemotely
+          ? "Stored securely in Core for your account."
+          : "Core is unavailable; using an encrypted browser fallback until it reconnects.",
       });
     } catch {
       setApiKeySaveState("error");
@@ -1290,12 +1297,16 @@ export const QuestionUploadDialog = ({
                                   {apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API
                                   Key
                                 </Label>
-                                {providerApiKey ? (
+                                {providerKeySaved || providerApiKey ? (
                                   <div className="flex items-center gap-2">
                                     <Input
                                       id="provider-api-key-expanded"
                                       type="text"
-                                      value={`${providerApiKey.substring(0, 8)}${"•".repeat(Math.max(0, providerApiKey.length - 8))}`}
+                                      value={
+                                        providerKeySaved
+                                          ? "••••••••"
+                                          : `${providerApiKey.substring(0, 8)}${"•".repeat(Math.max(0, providerApiKey.length - 8))}`
+                                      }
                                       disabled
                                       className="flex-1"
                                     />
@@ -1307,8 +1318,13 @@ export const QuestionUploadDialog = ({
                                         const provider =
                                           apiKeyStorage.getProviderFromModel(aiModel);
                                         if (provider) {
-                                          apiKeyStorage.removeApiKey(provider);
-                                          setProviderApiKey("");
+                                          void apiKeyStorage
+                                            .removeApiKey(provider)
+                                            .then(() => {
+                                              setProviderKeySaved(false);
+                                              setProviderApiKey("");
+                                            })
+                                            .catch(() => toast.error("Failed to remove API key"));
                                         }
                                       }}
                                     >
@@ -1346,8 +1362,8 @@ export const QuestionUploadDialog = ({
                                   </div>
                                 )}
                                 <p className="text-xs text-muted-foreground">
-                                  Your key is stored for this account in this browser and sent
-                                  through EduAI services when you use AI. Signing out removes it.
+                                  Your key is stored securely in Core for your account and sent
+                                  through EduAI services when you use AI.
                                 </p>
                               </div>
                             )}
@@ -1668,12 +1684,16 @@ export const QuestionUploadDialog = ({
                           <Label htmlFor="provider-api-key">
                             {apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API Key
                           </Label>
-                          {providerApiKey ? (
+                          {providerKeySaved || providerApiKey ? (
                             <div className="flex items-center gap-2">
                               <Input
                                 id="provider-api-key"
                                 type="text"
-                                value={`${providerApiKey.substring(0, 8)}${"•".repeat(Math.max(0, providerApiKey.length - 8))}`}
+                                value={
+                                  providerKeySaved
+                                    ? "••••••••"
+                                    : `${providerApiKey.substring(0, 8)}${"•".repeat(Math.max(0, providerApiKey.length - 8))}`
+                                }
                                 disabled
                                 className="flex-1"
                               />
@@ -1684,8 +1704,13 @@ export const QuestionUploadDialog = ({
                                 onClick={() => {
                                   const provider = apiKeyStorage.getProviderFromModel(aiModel);
                                   if (provider) {
-                                    apiKeyStorage.removeApiKey(provider);
-                                    setProviderApiKey("");
+                                    void apiKeyStorage
+                                      .removeApiKey(provider)
+                                      .then(() => {
+                                        setProviderKeySaved(false);
+                                        setProviderApiKey("");
+                                      })
+                                      .catch(() => toast.error("Failed to remove API key"));
                                   }
                                 }}
                               >
@@ -1721,8 +1746,8 @@ export const QuestionUploadDialog = ({
                             </div>
                           )}
                           <p className="text-xs text-muted-foreground">
-                            Your key is stored for this account in this browser and sent through
-                            EduAI services when you use AI. Signing out removes it.
+                            Your key is stored securely in Core for your account and sent through
+                            EduAI services when you use AI.
                           </p>
                         </div>
                       )}

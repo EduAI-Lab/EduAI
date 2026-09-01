@@ -3,8 +3,9 @@ import { useLocalUser } from "~/hooks/useLocalUser";
 import api from "~/lib/api";
 import {
   API_KEYS_CLEARED_EVENT,
+  CORE_STORED_KEY,
   loadApiKeysFromStorage,
-  saveApiKeysToStorage,
+  removeApiKeyFromStorage,
 } from "~/lib/provider-keys";
 
 export type UseApiKeysResult = {
@@ -14,8 +15,8 @@ export type UseApiKeysResult = {
   loaded: boolean;
   hasKey: (provider: string) => boolean;
   getKey: (provider: string) => string;
-  setKey: (provider: string, key: string) => void;
-  removeKey: (provider: string) => void;
+  setKey: (provider: string, key: string) => Promise<void>;
+  removeKey: (provider: string) => Promise<void>;
   validateKey: (provider: string, key: string) => Promise<{ valid: boolean; error?: string }>;
 };
 
@@ -37,7 +38,61 @@ export function useApiKeys(): UseApiKeysResult {
   const loaded = isCurrentAccount && accountKeys.loaded;
 
   useEffect(() => {
-    setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
+    let active = true;
+    setAccountKeys({ userId, keys: {}, loaded: false });
+    void api
+      .getUserProviderSettings()
+      .then((rows) => {
+        if (!active) return;
+        const localKeys = loadApiKeysFromStorage(userId);
+        const remoteByProvider = new Map(rows.map((row) => [row.providerName, row]));
+        const nextKeys: Record<string, string> = {};
+        const migratedProviders = new Set<string>();
+        const pendingMigrationKeys = new Map<string, string>();
+
+        void (async () => {
+          for (const [provider, key] of Object.entries(localKeys)) {
+            const remote = remoteByProvider.get(provider);
+            try {
+              if (remote?.hasKey) {
+                removeApiKeyFromStorage(userId, provider);
+              } else if (!remote) {
+                await api.saveUserProviderSetting({
+                  providerName: provider,
+                  isEnabled: true,
+                  apiKey: key,
+                });
+                removeApiKeyFromStorage(userId, provider);
+                migratedProviders.add(provider);
+              }
+            } catch {
+              // Keep the legacy copy when migration cannot be persisted.
+              pendingMigrationKeys.set(provider, key);
+              continue;
+            }
+          }
+
+          if (!active) return;
+          for (const row of rows) {
+            if (row.isEnabled && row.hasKey) nextKeys[row.providerName] = CORE_STORED_KEY;
+          }
+          for (const provider of Object.keys(localKeys)) {
+            if (!nextKeys[provider] && migratedProviders.has(provider)) {
+              nextKeys[provider] = CORE_STORED_KEY;
+            }
+            if (!nextKeys[provider] && pendingMigrationKeys.has(provider)) {
+              nextKeys[provider] = pendingMigrationKeys.get(provider) ?? "";
+            }
+          }
+          setAccountKeys({ userId, keys: nextKeys, loaded: true });
+        })();
+      })
+      .catch(() => {
+        if (active) setAccountKeys({ userId, keys: loadApiKeysFromStorage(userId), loaded: true });
+      });
+    return () => {
+      active = false;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -51,12 +106,40 @@ export function useApiKeys(): UseApiKeysResult {
   }, [userId]);
 
   const setKey = useCallback(
-    (provider: string, key: string) => {
+    async (provider: string, key: string) => {
       if (!userId) return;
+      // Capture the pre-optimistic value so a rejected Core save can restore
+      // it instead of leaving the UI reporting "Connected" for a key Core
+      // never persisted.
+      let previousValue: string | undefined;
       setAccountKeys((previous) => {
-        const previousKeys = previous.userId === userId ? previous.keys : {};
-        const next = { ...previousKeys, [provider]: key };
-        saveApiKeysToStorage(userId, next);
+        const next = previous.userId === userId ? { ...previous.keys } : {};
+        previousValue = next[provider];
+        next[provider] = key;
+        return { userId, keys: next, loaded: true };
+      });
+      try {
+        await api.saveUserProviderSetting({
+          providerName: provider,
+          isEnabled: true,
+          apiKey: key,
+        });
+      } catch (err) {
+        setAccountKeys((previous) => {
+          const next = previous.userId === userId ? { ...previous.keys } : {};
+          if (previousValue === undefined) {
+            delete next[provider];
+          } else {
+            next[provider] = previousValue;
+          }
+          return { userId, keys: next, loaded: true };
+        });
+        throw err;
+      }
+      removeApiKeyFromStorage(userId, provider);
+      setAccountKeys((previous) => {
+        const next = previous.userId === userId ? { ...previous.keys } : {};
+        next[provider] = CORE_STORED_KEY;
         return { userId, keys: next, loaded: true };
       });
     },
@@ -64,14 +147,13 @@ export function useApiKeys(): UseApiKeysResult {
   );
 
   const removeKey = useCallback(
-    (provider: string) => {
+    async (provider: string) => {
       if (!userId) return;
+      await api.deleteUserProviderSetting(provider);
+      removeApiKeyFromStorage(userId, provider);
       setAccountKeys((previous) => {
-        // Keys belonging to a different user are never carried into this one.
-        const existing = previous.userId === userId ? previous.keys : undefined;
-        const next = { ...existing };
+        const next = previous.userId === userId ? { ...previous.keys } : {};
         delete next[provider];
-        saveApiKeysToStorage(userId, next);
         return { userId, keys: next, loaded: true };
       });
     },

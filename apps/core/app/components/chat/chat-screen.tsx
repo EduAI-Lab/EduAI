@@ -76,7 +76,11 @@ function useChatCourseSelection({
   const [searchParams, setSearchParams] = useSearchParams();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   // Facets are only consumed by the course-list filter toolbar, so skip them.
-  const { courses, loading: coursesLoading } = useCourses({ pageSize: 200, includeFacets: false });
+  const { courses, loading: coursesLoading } = useCourses({
+    pageSize: 200,
+    includeFacets: false,
+    loadAll: true,
+  });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
