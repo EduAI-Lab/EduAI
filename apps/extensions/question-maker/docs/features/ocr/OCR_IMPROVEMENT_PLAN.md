@@ -203,7 +203,7 @@ This document identifies **potential failing points** in the current OCR → ext
 | **3.1** Block-aware chunking | Done in `aiService.js`: `splitIntoQuestionBlocks`, `chunkByQuestionBlocks`. |
 | **3.2** Stronger extraction prompt | Done: multipart rules, one-block example, continuation note for chunk 2+. |
 | **3.4** Block count for `numQuestions` | Done: per-chunk `blockCountsPerChunk` used when > 0. |
-| **Unit tests** | `app/backend/test/extraction.test.js` — block split and chunk tests; Jest ESM via `jest.config.js` + `node --experimental-vm-modules`. |
+| **Unit tests** | `app/backend/tests/unit/extraction.test.js` — block split and chunk tests, run through Vitest (`npm run test:unit` in `app/backend`); there is no Jest or `jest.config.js` anywhere in this extension. |
 | **3.3** PDF line-break preservation | Done in `QuestionUploadDialog.tsx`: `pdfItemsToTextWithLineBreaks` (uses `hasEOL`; fallback `pdfItemsToTextByPosition` by Y). |
 | **3.5** Deduplication and ordering | Done in `aiService.js`: `extractedQuestionDedupeKey` (normalized prefix 150 chars), `deduplicateExtractedQuestions` (preserves order, keeps longer when same key). |
 | **Extraction prompt vs generate** | Done: EduAI `generateQuestions` accepts `systemPromptOverride` and `userPromptOverride`; extraction uses extraction-specific system/user prompts (extract only, assignment parts as blocks). |

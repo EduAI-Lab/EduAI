@@ -110,4 +110,5 @@ The system prompt dominates the framing (“generate … based on course materia
 - EduAI generator: `app/backend/src/services/eduaiService.js` → `generateQuestions` (fixed system prompt, error object handling at ~293–296).
 - Background extraction: `QuestionUploadDialog.tsx` → `processFile`, `onExtractInBackground`; `CourseDetailPage.tsx (formerly Homepage.tsx)` → `handleExtractInBackground`.
 - OCR history: `app/frontend/src/hooks/use-ocr-history.ts`, `app/frontend/src/types/ocr.ts` (status: `pending` | `processing` | `success` | `error` | `discarded`).
-- OCR improvement plan: `docs/troubleshooting/OCR_IMPROVEMENT_PLAN.md`.
+- OCR improvement plan: [`OCR_IMPROVEMENT_PLAN.md`](OCR_IMPROVEMENT_PLAN.md) (same directory —
+  `docs/features/ocr/OCR_IMPROVEMENT_PLAN.md`, not `docs/troubleshooting/`).

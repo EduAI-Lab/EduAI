@@ -13,7 +13,7 @@ instead of Sequelize, and Canvas credentials now live in Core). Read `app/backen
   `POST /api/sessions/validate` (`src/middleware/auth.js`, `requireAuth`/`authenticateToken`). QM
   keeps only a thin local `User` row (id/email/name) for FK integrity — `services/authService.js`
   upserts it on first sight of a Core user, memoized per-process for `USER_ROW_CACHE_TTL_MS`.
-- **Prisma, not Sequelize.** The data model lives in `app/backend/prisma/schema.prisma` (11 models:
+- **Prisma, not Sequelize.** The data model lives in `app/backend/prisma/schema.prisma` (13 models:
   `User`, `Course`, `CourseAccess`, `Topics`, `QuestionMetadata`, `Variants`, `Assessments`,
   `AssessmentSections`, `SectionVariants`, `CanvasCourseMapping`, `VariantSelectionCursor`,
   `CanvasBankMapping`, `CanvasBankQuestionMapping`). Migrations under `prisma/migrations/` are applied
@@ -26,8 +26,10 @@ instead of Sequelize, and Canvas credentials now live in Core). Read `app/backen
 - **Canvas credentials live in Core**, not in this database. QM proxies every Canvas call through
   Core's `/api/canvas/*` routes (`services/canvasService.js` + `services/coreApiService.js`); there is
   no `CanvasIntegration` table in `schema.prisma` and no encrypted-credential storage on this side.
-  `utils/encryption.js` (AES-256-GCM) is kept only for the one-time migration script that copied any
-  pre-existing QM-stored tokens into Core — see [features/ENCRYPTION.md](features/ENCRYPTION.md).
+  `utils/encryption.js` (AES-256-GCM) still exists but is dead code in production (its only caller is
+  its own unit test) — the one-time migration script that copied any pre-existing QM-stored tokens
+  into Core uses its own separate implementation instead
+  (`scripts/lib/canvasCredentialReencrypt.js`); see [features/ENCRYPTION.md](features/ENCRYPTION.md).
 - **AI calls are admission-controlled.** Every route that reaches EduAI (`middleware/aiAdmission.js`)
   reserves a caller-scoped provider-call budget and a shared operation deadline *before* touching the
   database or making an upstream call, on top of a per-caller `express-rate-limit` window.

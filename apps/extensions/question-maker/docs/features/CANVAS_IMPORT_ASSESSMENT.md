@@ -92,8 +92,11 @@ What happens on the backend (`importQuestionBankFromCanvas`):
 - **"This course is not linked to a Canvas course"** — sync/link the course from Canvas first; neither
   dialog lets you pick a Canvas course ad hoc.
 - **Questions skipped** — check `skippedQuestions` (quiz import) or the `skipped` count (bank sync);
-  the reason is almost always an unsupported Canvas question type (matching, numerical, and most
-  `fill_in_multiple_blanks_question` variants aren't converted).
+  the reason is almost always a genuinely unsupported Canvas question type (matching, numerical, and
+  others outside `multiple_choice_question`/`true_false_question`/`essay_question`/
+  `short_answer_question`/`fill_in_multiple_blanks_question`). Note that `fill_in_multiple_blanks_question`
+  itself is *not* skipped — it's imported as a Short Answer question, but only the first blank's answer
+  text is kept; the multi-blank structure isn't reconstructed.
 - **"This Canvas question bank is already synced to another local course"** — a bank→course mapping
   is per-instructor and permanent; sync into the original course, or ask an instructor who owns that
   mapping.

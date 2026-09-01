@@ -11,9 +11,6 @@ and `services/topicSyncService.js`.)
   layer). See §3.6 of [features/ocr/OCR_IMPROVEMENT_PLAN.md](features/ocr/OCR_IMPROVEMENT_PLAN.md).
 - **Assignment-preamble handling** — Assignment-wide instructions that precede the first numbered
   question aren't consistently attached anywhere during extraction. See §3.7 of the same plan.
-- **Assessment section reorder test coverage** — Section CRUD is covered, but there's no dedicated
-  integration test for the reorder endpoint (`PUT .../sections/reorder`); add one alongside any future
-  change there.
 - **Broader walkthrough testing** — Try key flows in a real browser against test systems (Playwright/
   Cypress), not only Vitest unit/integration checks.
 - **Reliable automatic updates** — Keep the scheduled "pull latest `development`" server job

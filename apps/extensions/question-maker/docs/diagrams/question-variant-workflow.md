@@ -2,8 +2,13 @@
 
 This diagram covers the manual/AI-assisted variant flow through the full-page composer
 (`pages/QuestionComposerPage.tsx`, route `/courses/:courseId/questions/new?variantOf=<questionId>`),
-which replaced the old `AddQuestionDialog` modal. The same composer also handles plain "new question"
-and "edit" modes; this diagram follows the `variant` mode specifically.
+which is the "Create Variant" entry point reached from the question bank / course detail pages. The
+same composer also handles plain "new question" and "edit" modes; this diagram follows the `variant`
+mode specifically. Note that this did not fully retire the old `AddQuestionDialog` modal
+(`components/questions/AddQuestionDialog.tsx`): that component still exists and is still used for its
+own `variant`-mode creation flow when a question/variant is added in-context from
+`pages/AssessmentBuilderPage.tsx` (so a user building an assessment doesn't navigate away), as well as
+for the read-only question-detail view (`mode="view"`) used across several pages.
 
 ```mermaid
 flowchart TD

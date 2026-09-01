@@ -9,7 +9,8 @@ This file supplements `README.md` and the in-app **Help Center**. It captures be
    both the backend and frontend read from this one).
 2. Start the stack from the **monorepo root** (`npm install && npm run dev`, or
    `npx turbo run dev --filter='question-maker-*'` for just this extension). The Compose-only path
-   (`npm run dev:up` from this directory) still works but is not the primary dev workflow anymore.
+   (`docker compose -f docker-compose.dev.yml up` from this directory — no `npm run dev:up` wrapper
+   script exists) still works but is not the primary dev workflow anymore.
 3. Sign in through Core — there is no local login form. Question Maker trusts whatever Core session
    cookie the browser already has; `EDUAI_API_KEY` in your `.env` must match Core's.
    - New users start with zero courses. Real courses arrive by linking/importing a Core course from

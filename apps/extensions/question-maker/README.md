@@ -25,7 +25,10 @@ Nested: [Backend README](app/backend/README.md).
 
 ### Optional: Compose-only stack
 
-`npm run dev:up` / `dev:down` / `dev:logs` remain available for a QM-centric Docker Compose workflow. Prefer the monorepo root path for normal platform development.
+There is no `npm run dev:up`/`dev:down`/`dev:logs` wrapper script (this extension's `package.json` has
+none) — the QM-centric Docker Compose workflow is invoked directly against `docker-compose.dev.yml`
+from this directory, e.g. `docker compose -f docker-compose.dev.yml up` / `down` / `logs -f`. Prefer
+the monorepo root path for normal platform development.
 
 ## Tech stack
 
@@ -109,9 +112,9 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 | `npm run dev` | `app/backend` | API (migrate/generate/seed-if-empty + nodemon) |
 | `npm run dev` | `app/frontend` | Vite UI |
 | `npm test` / `test:integration` | backend or frontend | See package scripts |
-| `npm run dev:up` | extension root | Optional Compose stack |
-| `npm run dev:down` | extension root | Stop optional Compose stack |
-| `npm run dev:logs` | extension root | Follow optional Compose logs |
+| `docker compose -f docker-compose.dev.yml up` | extension root | Optional Compose stack (no npm wrapper script exists) |
+| `docker compose -f docker-compose.dev.yml down` | extension root | Stop optional Compose stack |
+| `docker compose -f docker-compose.dev.yml logs -f` | extension root | Follow optional Compose logs |
 | `npm run seed:production` | extension root | Seed production-style questions (see script) |
 
 ### Backend (`app/backend`)
@@ -120,11 +123,11 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 |---------|-------------|
 | `npm run dev` | API with nodemon |
 | `npm start` | Production start |
-| `npm test` | Unit tests |
-| `npm run test:integration` | Integration tests (needs DB) |
-| `npm run lint` | ESLint |
+| `npm test` | Unit + integration Vitest suites (`vitest run && vitest run --config vitest.integration.config.js`) |
+| `npm run test:unit` | Unit tests only |
+| `npm run test:integration` | Integration tests only (needs DB) |
+| `npm run lint` | `oxlint .` (not ESLint) |
 | `npm run seed:production` | Seed script |
-| `npm run migrate:1072` | One-time hand-run migration: drops `courses.name`/`code` and `assessments.semester` (#1072 §4 step 10 — Core-owned, superseded by read-through). Idempotent; safe to re-run. |
 
 ### Frontend (`app/frontend`)
 

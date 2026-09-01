@@ -78,8 +78,10 @@ question/variant/assessment authoring data and reaches everything else through C
     Core's bank id).
   - Bug reports: none locally — `routes/bug-reports.js` proxies straight to Core's bug-report API with
     the service key; there is no local `BugReport` model or `bugReportService.js`.
-  - Encryption: `utils/encryption.js` (AES-256-GCM) — kept for the one-time Canvas-credential
-    migration script; see [features/ENCRYPTION.md](features/ENCRYPTION.md).
+  - Encryption: `utils/encryption.js` (AES-256-GCM) — its only remaining caller is its own unit test;
+    the one-time Canvas-credential migration script uses a separate, standalone implementation
+    (`scripts/lib/canvasCredentialReencrypt.js`), not this file. See
+    [features/ENCRYPTION.md](features/ENCRYPTION.md).
 - **Routes** (`src/routes/`, all mounted in `src/app.js`):
   - `/api` — `routes/auth.js` (`GET /auth/me`, `POST /auth/logout`), `routes/bug-reports.js`
     (`POST /bug-reports`, `GET/PATCH /admin/bug-reports*`)
@@ -113,10 +115,20 @@ question/variant/assessment authoring data and reaches everything else through C
     session-cookie authenticated) with an account-scoped, AES-GCM-encrypted `localStorage` fallback
     for when Core is unreachable.
 - Key screens: `pages/CourseSelectionPage.tsx`, `pages/CourseDetailPage.tsx` (replaced the old
-  `Homepage.tsx`), `pages/QuestionComposerPage.tsx` (replaced the old `AddQuestionDialog` modal — a
-  full-page create/variant/edit composer), `pages/AssessmentBuilderPage.tsx`,
-  `pages/AssessmentVariantPage.tsx`, `pages/BankDetailPage.tsx`, `pages/QuestionBankPage.tsx` (the
-  cross-course `/library`), `pages/HelpPage.tsx`, `pages/BugReportsAdminPage.tsx`.
+  `Homepage.tsx`), `pages/QuestionComposerPage.tsx` (a full-page create/variant/edit composer — the
+  route-based entry point for "add a new question to the course" from `CourseDetailPage.tsx` and for
+  "create a variant from the bank" from `CourseDetailPage.tsx`/`BankDetailPage.tsx`),
+  `pages/AssessmentBuilderPage.tsx`, `pages/AssessmentVariantPage.tsx`, `pages/BankDetailPage.tsx`,
+  `pages/QuestionBankPage.tsx` (the cross-course `/library`), `pages/HelpPage.tsx`,
+  `pages/BugReportsAdminPage.tsx`.
+  - `components/questions/AddQuestionDialog.tsx` (routed through `components/questions/
+    QuestionModal.tsx`) still exists and is still actively used — not fully replaced by the composer:
+    in `mode="view"` it's the question-detail viewer used from `CourseDetailPage.tsx`,
+    `BankDetailPage.tsx`, and `AssessmentBuilderPage.tsx`; in `mode="create"`/`"variant"` it's still
+    the in-context way to add a question or a variant directly while building an assessment
+    (`AssessmentBuilderPage.tsx`'s "Add question" button). `QuestionComposerPage.tsx` replaced it only
+    for the course-level "add a new question to the bank" and bank-level "create a variant" entry
+    points, which now navigate to the composer route instead of opening the dialog.
 
 ## Main Product Flows (Code Pointers)
 

@@ -12,8 +12,11 @@
 `app/backend/src/utils/encryption.js` still exists, unchanged in algorithm (AES-256-GCM,
 PBKDF2-SHA512 key derivation, `salt:iv:tag:data` base64 format — see "Technical Details" below), but
 its only remaining caller in this repository is its own unit test
-(`app/backend/tests/unit/encryption.test.js`). It is kept for one reason: the one-time migration
-script that copies any pre-existing QM-stored Canvas token into Core.
+(`app/backend/tests/unit/encryption.test.js`) — it is genuinely dead code in production. The one-time
+Canvas-credential migration script does **not** import it: it has its own separate, algorithmically
+identical implementation in `scripts/lib/canvasCredentialReencrypt.js` (`decryptWithKey`/
+`encryptWithKey`/`reencryptCanvasApiKey`), used only by that script. `utils/encryption.js` is kept
+around only because nothing has removed it yet, not because the migration script depends on it.
 
 ### The Canvas-credential migration (`scripts/migrate-canvas-integrations-to-core.mjs`)
 
