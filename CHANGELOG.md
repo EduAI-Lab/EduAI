@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.01
 
-- PR Link: #PR
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1720
 - Add `docs/INSTRUCTOR_ONBOARDING.md`, a pilot instructor walkthrough covering sign-in, Canvas connection, Core course setup, AI Tutor, and Question Maker; register it in the root `README.md` documentation index.
 - Correct the guide against the current UI: the AI Tutor and Question Maker hostnames (`aitutor.` / `questionmaker.`, not `ai-tutor.` / `qm.`), Canvas course fetching (dashboard **Fetch from Canvas**, not a Courses-page sync), course publishing (the course card's ⋮ menu), and the app switcher (**Switch app** in the sidebar footer, not the header).
 - Drop the manual "import course from Core" steps for both extensions — AI Tutor and Question Maker auto-import taught courses on login — and describe Question Maker's real flow as generating an AI variant of an existing question rather than bulk generation from a topic.
