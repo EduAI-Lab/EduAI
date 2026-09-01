@@ -74,7 +74,7 @@ function CronStatusBadge({
         style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}
       >
         <span
-          className="w-[5px] h-[5px] rounded-full flex-shrink-0 animate-pulse"
+          className="w-[5px] h-[5px] rounded-full shrink-0 animate-pulse"
           style={{ background: "var(--color-warning-500)" }}
         />
         Running
@@ -88,7 +88,7 @@ function CronStatusBadge({
         style={{ background: "var(--color-success-100)", color: "var(--color-success-700)" }}
       >
         <span
-          className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+          className="w-[5px] h-[5px] rounded-full shrink-0"
           style={{ background: "var(--color-success-500)" }}
         />
         Success
@@ -102,7 +102,7 @@ function CronStatusBadge({
       style={{ background: "var(--color-error-100)", color: "var(--destructive)" }}
     >
       <span
-        className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        className="w-[5px] h-[5px] rounded-full shrink-0"
         style={{ background: "var(--destructive)" }}
       />
       Error

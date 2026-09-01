@@ -31,11 +31,10 @@
  * activate fleet routing (and its live health probes) in every checkout,
  * including CI, against servers that checkout usually can't reach.
  */
-import type { JsonValue } from "~/lib/json-value";
+import { asJsonObject, asPresentText, jsonValueSchema, type JsonValue } from "~/lib/json-value";
 import { z } from "zod";
-import { asJsonObject, asPresentText, jsonValueSchema } from "~/lib/json-value";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type { FleetServer, JobType } from "./types";
 
 const DEFAULT_CONFIG_PATH = "./fleet.config.json";
@@ -50,6 +49,10 @@ export class FleetConfigError extends Error {
 
 function configPath(): string {
   return process.env.FLEET_CONFIG_PATH?.trim() || DEFAULT_CONFIG_PATH;
+}
+
+function resolvedConfigPath(): string {
+  return resolve(configPath());
 }
 
 function normalizeBaseUrl(url: string): string {
@@ -123,7 +126,7 @@ export type FleetConfigFile = {
  * a typo'd config would leave the fleet quietly misrouted.
  */
 export function loadFleetConfigFile(): FleetConfigFile | null {
-  const path = resolve(configPath());
+  const path = resolvedConfigPath();
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
@@ -160,4 +163,42 @@ export function loadFleetConfigFile(): FleetConfigFile | null {
   }
 
   return { servers };
+}
+
+/** Validate and atomically write the host-local fleet config. */
+export function saveFleetConfigFile(config: FleetConfigFile): FleetConfigFile {
+  const path = resolvedConfigPath();
+  if (!config || !Array.isArray(config.servers)) {
+    throw new FleetConfigError('fleet config must have a top-level "servers" array');
+  }
+
+  const servers = config.servers.map((server, index) =>
+    parseServerEntry(server as JsonValue, index),
+  );
+  const ids = new Set<string>();
+  for (const server of servers) {
+    if (ids.has(server.id)) {
+      throw new FleetConfigError(`fleet config has a duplicate server id: ${server.id}`);
+    }
+    ids.add(server.id);
+  }
+
+  const normalized = { servers };
+  const temporaryPath = join(dirname(path), `.${basename(path)}.tmp-${process.pid}-${Date.now()}`);
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(normalized, null, 2)}\n`, {
+      encoding: "utf-8",
+      mode: 0o640,
+    });
+    renameSync(temporaryPath, path);
+  } catch (err) {
+    try {
+      unlinkSync(temporaryPath);
+    } catch {
+      // The temporary file may not have been created; preserve the write error.
+    }
+    throw new FleetConfigError(`failed to write fleet config file at ${path}: ${String(err)}`);
+  }
+
+  return normalized;
 }

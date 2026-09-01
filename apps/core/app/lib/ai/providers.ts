@@ -222,7 +222,6 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     });
   }
 
-  // Create and return the registry
   return createProviderRegistry(providers, { separator: ":" });
 }
 

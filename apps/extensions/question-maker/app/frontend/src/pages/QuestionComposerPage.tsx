@@ -1071,10 +1071,12 @@ export function QuestionComposerPage() {
               if (!provider || !providerApiKey.trim()) return;
               setApiKeySaveState("saving");
               try {
-                await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+                const result = await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState("saved");
                 toast("API key saved", {
-                  description: "Stored locally in your browser for this provider.",
+                  description: result.storedRemotely
+                    ? "Stored securely in Core for your account."
+                    : "Core is unavailable; using an encrypted browser fallback until it reconnects.",
                 });
               } catch {
                 setApiKeySaveState("error");

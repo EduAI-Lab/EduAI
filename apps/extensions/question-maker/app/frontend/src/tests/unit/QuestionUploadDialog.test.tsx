@@ -34,9 +34,10 @@ vi.mock("@/services/eduaiService", () => ({
 const getProviderFromModel = vi.fn().mockReturnValue(null);
 const getApiKey = vi.fn().mockResolvedValue(null);
 const setApiKey = vi.fn().mockResolvedValue(undefined);
-const removeApiKey = vi.fn();
+const removeApiKey = vi.fn().mockResolvedValue(undefined);
 const requiresApiKey = vi.fn().mockReturnValue(false);
 vi.mock("@/services/apiKeyStorage", () => ({
+  CORE_STORED_KEY: "__core_stored__",
   apiKeyStorage: {
     getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
     getApiKey: (...args: unknown[]) => getApiKey(...args),
@@ -123,7 +124,7 @@ describe("QuestionUploadDialog", () => {
     getProviderFromModel.mockReset().mockReturnValue(null);
     getApiKey.mockReset().mockResolvedValue(null);
     setApiKey.mockReset().mockResolvedValue(undefined);
-    removeApiKey.mockReset();
+    removeApiKey.mockReset().mockResolvedValue(undefined);
     requiresApiKey.mockReset().mockReturnValue(false);
   });
 
@@ -477,7 +478,7 @@ describe("QuestionUploadDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
 
     expect(removeApiKey).toHaveBeenCalledWith("openai");
-    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
+    await waitFor(() => expect(screen.getByLabelText("OPENAI API Key")).toHaveValue(""));
   });
 
   it("edits a draft's summary, question text, difficulty, topic, and switches it to MCQ", async () => {
@@ -652,7 +653,7 @@ describe("QuestionUploadDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
 
     expect(removeApiKey).toHaveBeenCalledWith("openai");
-    expect(await screen.findByLabelText("OPENAI API Key")).toHaveValue("");
+    await waitFor(() => expect(screen.getByLabelText("OPENAI API Key")).toHaveValue(""));
   });
 });
 

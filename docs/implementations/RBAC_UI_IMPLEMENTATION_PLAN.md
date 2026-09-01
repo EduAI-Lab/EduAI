@@ -4,7 +4,7 @@
 
 - Master plan: [eduai_rbac_ui_plan.md](../eduai_rbac_ui_plan.md)
 - Permissions spec: [rbac-matrix.md](./rbac-matrix.md) §4–13
-- Two-person split: [RBAC_UI_TWO_PERSON_ASSIGNMENT.md](../../apps/core/docs/RBAC_UI_TWO_PERSON_ASSIGNMENT.md)
+- Permission layer: `apps/core/app/lib/rbac/`
 
 **Issue:** S: Week 5 — RBAC matrix EduAI + demo + frontend tests (#386)  
 **Branch:** `feat/rbac-ui`  
@@ -61,7 +61,8 @@ git fetch origin && git merge origin/feature/rbac
 cd apps/core && npx prisma migrate dev && npm run typecheck
 ```
 
-Then add `app/lib/rbac/` before any view work. Lead checklist: [RBAC_UI_TWO_PERSON_ASSIGNMENT.md](../../apps/core/docs/RBAC_UI_TWO_PERSON_ASSIGNMENT.md).
+Then add `app/lib/rbac/` before any view work — see `apps/core/app/lib/rbac/`
+for the current permission layer.
 
 ---
 

@@ -47,6 +47,7 @@ const FALLBACK_MESSAGE =
 const SUPERVISOR_REVISION_FEEDBACK =
   "Revise the response to stay more Socratic and avoid directly revealing the answer.";
 const GENERATION_ERROR_MESSAGE = "AI study buddy not available right now. Please try again later.";
+const CORE_STORED_KEY = "__core_stored__";
 
 function getModelProvider(modelId) {
   if (typeof modelId !== "string") return null;
@@ -386,17 +387,36 @@ async function callEduAI({
   // map. For UBC-hosted providers with no keys held at all this stays empty, so
   // Core falls through to its own deployment settings.
   const heldKeys = {};
+  const storedProviders = new Set();
   if (providerApiKeys && typeof providerApiKeys === "object" && !Array.isArray(providerApiKeys)) {
     for (const [providerId, secret] of Object.entries(providerApiKeys)) {
-      if (typeof secret === "string" && secret.trim()) heldKeys[providerId] = secret;
+      const value =
+        typeof secret === "string"
+          ? secret
+          : secret && typeof secret === "object" && typeof secret.apiKey === "string"
+            ? secret.apiKey
+            : null;
+      if (!value || !value.trim()) continue;
+      if (value === CORE_STORED_KEY) storedProviders.add(providerId);
+      else heldKeys[providerId] = value;
     }
   }
-  if (typeof userApiKey === "string" && userApiKey.trim() && !heldKeys[provider]) {
+  if (
+    typeof userApiKey === "string" &&
+    userApiKey.trim() &&
+    userApiKey !== CORE_STORED_KEY &&
+    !heldKeys[provider]
+  ) {
     heldKeys[provider] = userApiKey;
+  } else if (userApiKey === CORE_STORED_KEY) {
+    storedProviders.add(provider);
   }
   const apiKeys = {};
   for (const [providerId, secret] of Object.entries(heldKeys)) {
     apiKeys[providerId] = { apiKey: secret, isEnabled: true };
+  }
+  for (const storedProvider of storedProviders) {
+    if (!apiKeys[storedProvider]) apiKeys[storedProvider] = { isEnabled: true };
   }
 
   // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.

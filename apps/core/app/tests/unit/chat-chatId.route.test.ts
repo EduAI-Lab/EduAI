@@ -30,6 +30,7 @@ const USER = { id: "u1", role: "STUDENT" };
 
 const BASE_DATA = {
   chatModels: [],
+  assistModelId: null,
   routerAutoEnabled: false,
   showRoutingModels: false,
   user: USER,

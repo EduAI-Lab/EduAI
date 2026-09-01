@@ -52,7 +52,7 @@ export function CourseHeroCard({
           {code} · {termLabel(term, year)}
         </div>
         {topRightBadges.length > 0 && (
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 shrink-0">
             {topRightBadges.map((label) => (
               <span
                 key={label}
@@ -90,7 +90,7 @@ export function CourseHeroCard({
               </span>
             ))}
           </div>
-          {topicsAction && <div className="ml-auto flex-shrink-0">{topicsAction}</div>}
+          {topicsAction && <div className="ml-auto shrink-0">{topicsAction}</div>}
         </div>
       )}
 

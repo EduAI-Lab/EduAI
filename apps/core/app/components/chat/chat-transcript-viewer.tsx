@@ -43,8 +43,8 @@ export function ChatTranscriptViewer({
   return (
     <div className={className}>
       {/* Read-only banner */}
-      <div className="flex items-center gap-2 rounded-[var(--radius-lg)] border border-border bg-muted/50 px-4 py-2.5 mb-5">
-        <IconEye size={15} className="text-muted-foreground flex-shrink-0" stroke={1.7} />
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-2.5 mb-5">
+        <IconEye size={15} className="text-muted-foreground shrink-0" stroke={1.7} />
         <p className="text-[13px] text-muted-foreground">Read-only transcript</p>
         <div className="ml-auto flex items-center gap-2">
           {continueChatId && (

@@ -16,7 +16,7 @@ export function ChatHistoryRail({ className, onNewChat, ...listProps }: ChatHist
   return (
     <aside
       className={cn(
-        "chat-history-rail hidden md:flex flex-col flex-shrink-0 h-full min-h-0 w-[240px] lg:w-[260px]",
+        "chat-history-rail hidden md:flex flex-col shrink-0 h-full min-h-0 w-[240px] lg:w-[260px]",
         "border-r border-border/35 bg-background/50 backdrop-blur-md",
         "transition-[background-color,border-color] duration-200",
         "hover:bg-background/75 hover:border-border/50",
@@ -25,7 +25,7 @@ export function ChatHistoryRail({ className, onNewChat, ...listProps }: ChatHist
       aria-label="Chat history"
     >
       <div className="flex flex-col h-full min-h-0">
-        <div className="flex-shrink-0 px-3 py-3 border-b border-border/35">
+        <div className="shrink-0 px-3 py-3 border-b border-border/35">
           <button
             type="button"
             onClick={onNewChat}

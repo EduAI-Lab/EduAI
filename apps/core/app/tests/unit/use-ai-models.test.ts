@@ -124,6 +124,7 @@ describe("useAiModels", () => {
     supportsTools: false,
     supportsStreaming: true,
     isActive: true,
+    routerTier: null,
     providerId: "provider-1",
     ...overrides,
   });

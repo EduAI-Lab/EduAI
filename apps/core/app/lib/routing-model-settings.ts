@@ -4,14 +4,14 @@ export const ROUTING_MODEL_SETTING_DEFINITIONS = {
     name: "Auto",
     default: true,
     description:
-      "Uses a lightweight LLM classifier to choose the smallest active routing-tier model that can answer each prompt.",
+      "Uses a lightweight classifier to choose between the configured Small and Large model groups for each prompt.",
   },
   autoRulesEnabled: {
     id: "auto",
     name: "Auto (rules)",
     default: false,
     description:
-      "Uses fixed prompt, image, tool, and course-context rules to choose among active routing-tier models.",
+      "Uses fixed prompt, image, tool, and course-context rules to choose between the configured Small and Large model groups.",
   },
 } as const;
 

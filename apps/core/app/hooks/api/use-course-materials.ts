@@ -13,7 +13,7 @@ export interface CourseMaterial {
   updatedAt: string;
   processedAt: string | null;
   chunkCount?: number;
-  // uploadedBy will be available after #300 schema update
+  /** Owner FK; null on rows with no owner (e.g. pre-#294 rows). */
   uploadedBy?: string;
   /** Student-visibility gate (staff-only field). See #839. */
   visibleToStudents?: boolean;

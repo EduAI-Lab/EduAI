@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FleetConfigError, loadFleetConfigFile } from "~/lib/ai/routing/fleet/config-file";
+import {
+  FleetConfigError,
+  loadFleetConfigFile,
+  saveFleetConfigFile,
+} from "~/lib/ai/routing/fleet/config-file";
 
 describe("loadFleetConfigFile", () => {
   let tmpDir: string;
@@ -123,5 +127,29 @@ describe("loadFleetConfigFile", () => {
       }),
     );
     expect(() => loadFleetConfigFile()).toThrow(/duplicate server id/);
+  });
+
+  it("validates and atomically writes a normalized config", () => {
+    const path = join(tmpDir, "new-fleet.config.json");
+    process.env.FLEET_CONFIG_PATH = path;
+
+    const saved = saveFleetConfigFile({
+      servers: [
+        {
+          id: " cmps01 ",
+          baseUrl: " http://cmps01.ok.ubc.ca:8001/ ",
+          jobTypes: ["interactive"],
+          models: ["qwen2.5-7b-instruct"],
+        },
+      ],
+    });
+
+    expect(saved.servers[0]).toEqual({
+      id: "cmps01",
+      baseUrl: "http://cmps01.ok.ubc.ca:8001",
+      jobTypes: ["interactive"],
+      models: ["qwen2.5-7b-instruct"],
+    });
+    expect(loadFleetConfigFile()).toEqual(saved);
   });
 });
