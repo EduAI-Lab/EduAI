@@ -19,6 +19,7 @@ investigations.
 | Measure current behavior without relying on old numbers | [`PERFORMANCE.md`](./PERFORMANCE.md) |
 | Run RAG, embedding, and fleet checks | [`TESTING.md`](./TESTING.md) |
 | Review possible, not-yet-implemented HELPME upgrades | [`FUTURE_WORK.md`](./FUTURE_WORK.md) |
+| Review historical fleet-router benchmark numbers | [`PERFORMANCE.md`](./PERFORMANCE.md#historical-fleet-router-reports) — restored by deployment PR [#1707](https://github.com/EduAI-Lab/EduAI/pull/1707); not a current capacity guarantee |
 
 ## Current invariants
 

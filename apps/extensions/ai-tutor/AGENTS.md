@@ -2,15 +2,15 @@
 
 ## Project Structure and Module Organization
 
-- `app/` hosts the React Router v7 client (SPA mode, `ssr: false`). `app/routes.ts` maps flat routes under `app/routes/`, powering `home.tsx` for EduAI OAuth login, `student.*.tsx` dashboards, `instructor.*.tsx` authoring screens, and `admin.tsx` for system management. Better Auth session state is managed in `app/hooks/useLocalUser.tsx`, shared UI in `app/components/` (including `StudentAiChat.tsx`, `ActivityDetailsCard.tsx`, guided tour components), helpers in `app/lib/`, and Tailwind v4 utilities in `app/app.css`; `app/root.tsx` renders the HTML shell with Auth, BugReport, and Tour providers.
-- `server/` is the Express 5 API (`src/index.js`) with Better Auth + EduAI OAuth config in `src/auth.js`, session middleware in `src/middleware/`, route handlers in `src/routes/` (11 route files), business logic in `src/services/` (AI guidance, analytics, cloning, enrollment sync, topic sync, model policy, bug reports), and response mappers in `src/utils/`. Prisma schema, migrations, and seeds live under `prisma/`.
+- `app/` hosts the React Router v7 client (SPA mode, `ssr: false`). `app/routes.ts` maps flat routes under `app/routes/`, powering `home.tsx` (redirects to EduAI Core's login when signed out), a shared `dashboard.tsx` every role lands on, `student.*.tsx` learner screens, `instructor.*.tsx` authoring screens (also used by `TA`/`UNIT_ADMIN`/`ADMIN`), and `admin.tsx` for system management. Session state is managed in `app/hooks/useLocalUser.tsx` (calls `GET /api/me`; there is no local login or OAuth client), shared UI in `app/components/` (including `StudentAiChat.tsx`, `ActivityDetailsCard.tsx`, guided tour components), helpers in `app/lib/`, and Tailwind v4 utilities in `app/app.css`; `app/root.tsx` renders the HTML shell with Auth, BugReport, Tour, AssistiveMode, and UiPreferences providers.
+- `server/` is the Express 5 API (`src/index.js`). There is no local auth config file — `src/middleware/auth.js` forwards the incoming session cookie to EduAI Core's `POST /api/sessions/validate` on every request instead. Route handlers live in `src/routes/`, business logic in `src/services/` (AI guidance, analytics, cloning, enrollment sync, topic sync, model policy, bug reports), and response mappers in `src/utils/`. Prisma schema, migrations, and seeds live under `prisma/`.
 - `shared/schemas/` contains Zod validation schemas (`activity.js`, `aiGuidance.js`) shared between frontend and backend.
 - `public/` holds static assets; builds land in `build/client` only (SPA mode). Configs (`vite.config.ts`, `react-router.config.ts`, `tsconfig.json`) coordinate Tailwind, SPA builds, and the `~/` alias.
 
 ## Build, Test, and Development Commands
 
 - Use npm for all scripts locally (`npm install`, `npm run`, and `npx`).
-- `npm run dev` — Vite dev server at `http://localhost:5173` with hot reload.
+- `npm run dev` — Vite dev server at `http://localhost:3001` with hot reload.
 - `cd server && npm run dev` — Express API with nodemon on port 4000.
 - `cd server && npx prisma migrate deploy` — apply migrations.
 - `cd server && npm run seed` — reset and seed demo data after schema updates (destructive).
@@ -65,4 +65,4 @@ The `.githooks/pre-commit` hook runs scoped checks on staged files:
 - `EDUAI_BASE_URL` defaults to `http://localhost:5174/api` when unset.
 - Ensure Postgres is running before migrations or seeds.
 - After modifying Tailwind, routing, or the Prisma schema, rerun `npm run typecheck` and refresh seeds to keep generated artifacts aligned.
-- Auth is EduAI OAuth (OIDC + PKCE), not email/password. No JWT or bearer tokens.
+- Auth is delegated entirely to EduAI Core: no local login form, no OAuth client, no JWT or bearer-token flow. The browser carries Core's session cookie; `server/src/middleware/auth.js` re-validates it against Core on every request.
