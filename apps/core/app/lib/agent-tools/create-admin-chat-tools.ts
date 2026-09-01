@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { ChatToolContext } from "./chat-mode";
 import { runIdempotentAdminMutation } from "./idempotent-admin-mutation.server";
+import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -60,6 +61,8 @@ import {
   deleteAdminAiModelMutation,
   triggerAdminCronJobMutation,
 } from "./admin-mutations.server";
+import type { MutationResult } from "./admin-mutations.server";
+import type { ToolInput } from "./tool-input";
 import {
   getAdminCourseRagSettings,
   getAdminCourseEmbeddingSettings,
@@ -82,7 +85,7 @@ const confirmedWrite = z
   .boolean()
   .default(false)
   .describe(
-    "false until the admin explicitly confirms in a later chat message; then true to apply the write (same-generation confirmed:true is rejected)",
+    "Protocol only, not authorization. Use false to get a server confirmationCode. Use true only after the latest admin message contains exactly that code on a later turn.",
   );
 
 const enrollmentRole = z.enum(["STUDENT", "TA", "INSTRUCTOR"]);
@@ -92,19 +95,12 @@ const courseScope = {
     .string()
     .optional()
     .describe("Course id (CUID); required unless courseCode is provided"),
-  courseCode: z
-    .string()
-    .optional()
-    .describe("Course code; required unless courseId is provided"),
+  courseCode: z.string().optional().describe("Course code; required unless courseId is provided"),
 };
 
 const userRef = {
   userId: z.string().optional().describe("Platform user id (CUID)"),
-  userEmail: z
-    .string()
-    .email()
-    .optional()
-    .describe("Platform user email — use when id is unknown"),
+  userEmail: z.string().email().optional().describe("Platform user email — use when id is unknown"),
 };
 
 const instructorRef = {
@@ -112,24 +108,85 @@ const instructorRef = {
     .string()
     .optional()
     .describe("Instructor user id — omit to use the admin's own Canvas integration"),
-  instructorEmail: z
-    .string()
-    .email()
-    .optional()
-    .describe("Instructor email when id is unknown"),
+  instructorEmail: z.string().email().optional().describe("Instructor email when id is unknown"),
 };
+
+/**
+ * #1665 review (context budget): the full registry below has grown to 63
+ * tool() entries — sending every schema on every request costs
+ * `estimateToolDefinitionTokens(63)` ≈ 26.7k tokens, which alone blows past
+ * the seeded tool-capable vLLM model's 16k context window before system
+ * prompt/history/output are even counted. This is the same set already
+ * named in {@link formatAdminCourseContext} / the default admin system
+ * prompt's "Read tools" and write-safety lists (chat-mode.ts) — the tools a
+ * default-prompt admin session actually tells the model it has. Keep this
+ * list and those prompt strings in sync.
+ *
+ * `createAdminChatTools` still returns the full registry (large-context
+ * models — e.g. the seeded OpenAI/Gemini rows — get every tool); the admin
+ * route (`routes/api/chat.ts`) calls {@link pickCoreAdminChatTools} to trim
+ * to this set only when the resolved model's context window is too small
+ * to fit the full registry.
+ */
+export const ADMIN_CORE_TOOL_NAMES = [
+  "listCourses",
+  "getCourse",
+  "listCourseEnrollments",
+  "listCourseTopics",
+  "getCourseTopic",
+  "searchCourseMaterials",
+  "listUsers",
+  "listBugReports",
+  "createUser",
+  "updateUser",
+  "deleteUser",
+  "createCourseEnrollment",
+  "updateCourseEnrollment",
+  "deactivateCourseEnrollment",
+  "createCourseTopic",
+  "updateCourseTopic",
+  "deleteCourseTopic",
+  "updateBugReportStatus",
+] as const;
+
+export type AdminChatToolRegistry = ReturnType<typeof createAdminChatTools>;
+
+/**
+ * Trim the full admin tool registry down to {@link ADMIN_CORE_TOOL_NAMES}
+ * for small-context models. See the comment above that constant — this is
+ * the real fix for the #1665 review's context-budget finding: rather than
+ * silently blow the budget (or just raise it without understanding why),
+ * a small-context request gets the subset the default system prompt already
+ * documents to the model, which comfortably fits a 16k window.
+ */
+export function pickCoreAdminChatTools(
+  tools: AdminChatToolRegistry,
+): Partial<AdminChatToolRegistry> {
+  const entries = ADMIN_CORE_TOOL_NAMES.map((name) => [name, tools[name]] as const);
+  // SAFETY: `entries` is built by reading each key in ADMIN_CORE_TOOL_NAMES
+  // straight off `tools: AdminChatToolRegistry`, so the object below is a
+  // genuine (partial) AdminChatToolRegistry — TS just can't verify the
+  // Object.fromEntries round-trip distributes over the union of tool types.
+  return Object.fromEntries(entries) as Partial<AdminChatToolRegistry>;
+}
 
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
   const { user, effectiveCourseId, effectiveCourseCode } = ctx;
-  const turnId = ctx.turnId ?? null;
   const confirmWrite = (
     toolName: string,
     confirmed: boolean,
-    run: () => Promise<Record<string, unknown>>,
-    payload: Record<string, unknown> = {},
-  ) => runConfirmedAdminWriteTool(toolName, user, confirmed, run, payload, turnId);
-
+    run: () => Promise<MutationResult>,
+    payload: ToolInput = {},
+  ) =>
+    runConfirmedAdminWriteTool({
+      toolName,
+      actor: user,
+      confirmed,
+      run,
+      payload,
+      confirmation: ctx.adminWriteConfirmation,
+    });
 
   const resolveCourse = (courseId?: string, courseCode?: string) =>
     resolveAdminCourseId(user, {
@@ -217,8 +274,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     getCourseTopic: tool({
-      description:
-        "Get one course topic by id. Requires courseId or courseCode plus topicId.",
+      description: "Get one course topic by id. Requires courseId or courseCode plus topicId.",
       parameters: z.object({
         ...courseScope,
         topicId: z.string().describe("Topic id (CUID)"),
@@ -229,6 +285,34 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           return resolved;
         }
         return getAdminCourseTopic(user, resolved.courseId, topicId);
+      },
+    }),
+
+    // #1658: the ADMIN-scoped counterpart to learning chat's RAG tool (see
+    // runCourseMaterialSearchTool's doc for the shared retrieval body) —
+    // course resolution goes through the same resolveCourse() every other
+    // admin course tool uses here.
+    searchCourseMaterials: tool({
+      description:
+        "Search a course's uploaded materials (syllabus, lecture notes, assignments, etc.) for grounded facts — dates, policies, assignment details. Requires courseId or courseCode plus a question. Use this instead of guessing when the admin asks about a specific course's content.",
+      parameters: z.object({
+        ...courseScope,
+        question: z.string().describe("The question to search this course's materials for"),
+      }),
+      execute: async ({ courseId, courseCode, question }) => {
+        const resolved = await resolveCourse(courseId, courseCode);
+        if ("error" in resolved) {
+          return resolved;
+        }
+        const result = await runCourseMaterialSearchTool(
+          question,
+          resolved.courseId,
+          ctx.restrictToStudentVisible,
+        );
+        if ("error" in result) {
+          return result;
+        }
+        return { ...resolved, ...result };
       },
     }),
 
@@ -248,8 +332,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           .describe("Substring search on email or name when email is unknown"),
         limit: z.number().int().min(1).max(50).optional(),
       }),
-      execute: async ({ email, query, limit }) =>
-        listAdminUsers(user, { email, query, limit }),
+      execute: async ({ email, query, limit }) => listAdminUsers(user, { email, query, limit }),
     }),
 
     listBugReports: tool({
@@ -302,14 +385,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         idempotencyKey: z.string().min(1),
       }),
       execute: async ({ confirmed, idempotencyKey, ...input }) =>
-        confirmWrite("createUser", confirmed, () =>
-          runIdempotentAdminMutation(
-            user.id,
-            "POST /api/users",
-            idempotencyKey,
-            input,
-            () => createAdminUser(user, input),
-          ), { idempotencyKey, ...input }),
+        confirmWrite(
+          "createUser",
+          confirmed,
+          () =>
+            runIdempotentAdminMutation(user.id, "POST /api/users", idempotencyKey, input, () =>
+              createAdminUser(user, input),
+            ),
+          { idempotencyKey, ...input },
+        ),
     }),
 
     updateUser: tool({
@@ -328,14 +412,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         if (userRefError) {
           return userRefError;
         }
-        return confirmWrite("updateUser", confirmed, async () => {
-          const { resolveAdminUserId } = await import("./admin-context.server");
-          const target = await resolveAdminUserId(user, { userId, userEmail });
-          if ("error" in target) {
-            return target;
-          }
-          return updateAdminUser(user, target.userId, updates);
-        }, { ...updates, userId, userEmail });
+        return confirmWrite(
+          "updateUser",
+          confirmed,
+          async () => {
+            const { resolveAdminUserId } = await import("./admin-context.server");
+            const target = await resolveAdminUserId(user, { userId, userEmail });
+            if ("error" in target) {
+              return target;
+            }
+            return updateAdminUser(user, target.userId, updates);
+          },
+          { ...updates, userId, userEmail },
+        );
       },
     }),
 
@@ -351,14 +440,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         if (userRefError) {
           return userRefError;
         }
-        return confirmWrite("deleteUser", confirmed, async () => {
-          const { resolveAdminUserId } = await import("./admin-context.server");
-          const target = await resolveAdminUserId(user, { userId, userEmail });
-          if ("error" in target) {
-            return target;
-          }
-          return deleteAdminUser(user, target.userId);
-        }, { userId, userEmail });
+        return confirmWrite(
+          "deleteUser",
+          confirmed,
+          async () => {
+            const { resolveAdminUserId } = await import("./admin-context.server");
+            const target = await resolveAdminUserId(user, { userId, userEmail });
+            if ("error" in target) {
+              return target;
+            }
+            return deleteAdminUser(user, target.userId);
+          },
+          { userId, userEmail },
+        );
       },
     }),
 
@@ -393,14 +487,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           userEmail,
           role,
         };
-        return confirmWrite("createCourseEnrollment", confirmed, () =>
-          runIdempotentAdminMutation(
-            user.id,
-            "POST /api/courses/:id/enrollments",
-            idempotencyKey,
-            input,
-            () => createAdminEnrollment(user, input),
-          ), { courseId, courseCode, userId, userEmail, role, idempotencyKey });
+        return confirmWrite(
+          "createCourseEnrollment",
+          confirmed,
+          () =>
+            runIdempotentAdminMutation(
+              user.id,
+              "POST /api/courses/:id/enrollments",
+              idempotencyKey,
+              input,
+              () => createAdminEnrollment(user, input),
+            ),
+          { courseId, courseCode, userId, userEmail, role, idempotencyKey },
+        );
       },
     }),
 
@@ -414,14 +513,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         role: enrollmentRole,
       }),
       execute: async ({ confirmed, courseId, courseCode, enrollmentId, role }) =>
-        confirmWrite("updateCourseEnrollment", confirmed, () =>
-          updateAdminEnrollmentRole(user, {
-            courseId,
-            courseCode,
-            fallbackCourseId: effectiveCourseId,
-            enrollmentId,
-            role,
-          }), { courseId, courseCode, enrollmentId, role }),
+        confirmWrite(
+          "updateCourseEnrollment",
+          confirmed,
+          () =>
+            updateAdminEnrollmentRole(user, {
+              courseId,
+              courseCode,
+              fallbackCourseId: effectiveCourseId,
+              enrollmentId,
+              role,
+            }),
+          { courseId, courseCode, enrollmentId, role },
+        ),
     }),
 
     deactivateCourseEnrollment: tool({
@@ -433,25 +537,35 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         enrollmentId: z.string().describe("Enrollment id (CUID)"),
       }),
       execute: async ({ confirmed, courseId, courseCode, enrollmentId }) =>
-        confirmWrite("deactivateCourseEnrollment", confirmed, () =>
-          deactivateAdminEnrollment(user, {
-            courseId,
-            courseCode,
-            fallbackCourseId: effectiveCourseId,
-            enrollmentId,
-          }), { courseId, courseCode, enrollmentId }),
+        confirmWrite(
+          "deactivateCourseEnrollment",
+          confirmed,
+          () =>
+            deactivateAdminEnrollment(user, {
+              courseId,
+              courseCode,
+              fallbackCourseId: effectiveCourseId,
+              enrollmentId,
+            }),
+          { courseId, courseCode, enrollmentId },
+        ),
     }),
 
     updateBugReportStatus: tool({
-      description: "Update triage status on a bug report. Use confirmed=true only after admin confirms.",
+      description:
+        "Update triage status on a bug report. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         reportId: z.string().describe("Bug report id"),
         status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]),
       }),
       execute: async ({ confirmed, reportId, status }) =>
-        confirmWrite("updateBugReportStatus", confirmed, () =>
-          updateAdminBugReportStatus(user, reportId, status), { reportId, status }),
+        confirmWrite(
+          "updateBugReportStatus",
+          confirmed,
+          () => updateAdminBugReportStatus(user, reportId, status),
+          { reportId, status },
+        ),
     }),
 
     createCourseTopic: tool({
@@ -463,13 +577,18 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         name: z.string().min(1).describe("Topic display name"),
       }),
       execute: async ({ confirmed, courseId, courseCode, name }) =>
-        confirmWrite("createCourseTopic", confirmed, () =>
-          createAdminCourseTopic(user, {
-            courseId,
-            courseCode,
-            fallbackCourseId: effectiveCourseId,
-            name,
-          }), { courseId, courseCode, name }),
+        confirmWrite(
+          "createCourseTopic",
+          confirmed,
+          () =>
+            createAdminCourseTopic(user, {
+              courseId,
+              courseCode,
+              fallbackCourseId: effectiveCourseId,
+              name,
+            }),
+          { courseId, courseCode, name },
+        ),
     }),
 
     updateCourseTopic: tool({
@@ -482,14 +601,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         name: z.string().min(1).describe("New topic name"),
       }),
       execute: async ({ confirmed, courseId, courseCode, topicId, name }) =>
-        confirmWrite("updateCourseTopic", confirmed, () =>
-          updateAdminCourseTopic(user, {
-            courseId,
-            courseCode,
-            fallbackCourseId: effectiveCourseId,
-            topicId,
-            name,
-          }), { courseId, courseCode, topicId, name }),
+        confirmWrite(
+          "updateCourseTopic",
+          confirmed,
+          () =>
+            updateAdminCourseTopic(user, {
+              courseId,
+              courseCode,
+              fallbackCourseId: effectiveCourseId,
+              topicId,
+              name,
+            }),
+          { courseId, courseCode, topicId, name },
+        ),
     }),
 
     deleteCourseTopic: tool({
@@ -502,14 +626,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         name: z.string().optional().describe("Topic name when id is unknown"),
       }),
       execute: async ({ confirmed, courseId, courseCode, topicId, name }) =>
-        confirmWrite("deleteCourseTopic", confirmed, () =>
-          deleteAdminCourseTopic(user, {
-            courseId,
-            courseCode,
-            fallbackCourseId: effectiveCourseId,
-            topicId,
-            name,
-          }), { courseId, courseCode, topicId, name }),
+        confirmWrite(
+          "deleteCourseTopic",
+          confirmed,
+          () =>
+            deleteAdminCourseTopic(user, {
+              courseId,
+              courseCode,
+              fallbackCourseId: effectiveCourseId,
+              topicId,
+              name,
+            }),
+          { courseId, courseCode, topicId, name },
+        ),
     }),
 
     createInvitation: tool({
@@ -526,8 +655,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           .describe("Required when role is UNIT_ADMIN"),
       }),
       execute: async ({ confirmed, email, name, role, authorizedUnits }) =>
-        confirmWrite("createInvitation", confirmed, () =>
-          createAdminInvitationMutation(user, { email, name, role, authorizedUnits }), { email, name, role, authorizedUnits }),
+        confirmWrite(
+          "createInvitation",
+          confirmed,
+          () => createAdminInvitationMutation(user, { email, name, role, authorizedUnits }),
+          { email, name, role, authorizedUnits },
+        ),
     }),
 
     revokeInvitation: tool({
@@ -538,8 +671,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         invitationId: z.string().describe("Invitation id (CUID)"),
       }),
       execute: async ({ confirmed, invitationId }) =>
-        confirmWrite("revokeInvitation", confirmed, () =>
-          revokeAdminInvitationMutation(user, invitationId), { invitationId }),
+        confirmWrite(
+          "revokeInvitation",
+          confirmed,
+          () => revokeAdminInvitationMutation(user, invitationId),
+          { invitationId },
+        ),
     }),
 
     resendInvitation: tool({
@@ -550,8 +687,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         invitationId: z.string().describe("Invitation id (CUID)"),
       }),
       execute: async ({ confirmed, invitationId }) =>
-        confirmWrite("resendInvitation", confirmed, () =>
-          resendAdminInvitationMutation(user, invitationId), { invitationId }),
+        confirmWrite(
+          "resendInvitation",
+          confirmed,
+          () => resendAdminInvitationMutation(user, invitationId),
+          { invitationId },
+        ),
     }),
 
     connectCanvas: tool({
@@ -572,14 +713,19 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         apiKey,
         isTestMode,
       }) =>
-        confirmWrite("connectCanvas", confirmed, () =>
-          connectAdminCanvas(user, {
-            instructorUserId,
-            instructorEmail,
-            canvasUrl,
-            apiKey,
-            isTestMode,
-          }), { instructorUserId, instructorEmail, canvasUrl, apiKey, isTestMode }),
+        confirmWrite(
+          "connectCanvas",
+          confirmed,
+          () =>
+            connectAdminCanvas(user, {
+              instructorUserId,
+              instructorEmail,
+              canvasUrl,
+              apiKey,
+              isTestMode,
+            }),
+          { instructorUserId, instructorEmail, canvasUrl, apiKey, isTestMode },
+        ),
     }),
 
     syncCanvasCourses: tool({
@@ -590,18 +736,18 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...instructorRef,
         canvasCourseIds: z.array(z.string()).describe("Canvas course ids to sync"),
       }),
-      execute: async ({
-        confirmed,
-        instructorUserId,
-        instructorEmail,
-        canvasCourseIds,
-      }) =>
-        confirmWrite("syncCanvasCourses", confirmed, () =>
-          syncAdminCanvasCourses(user, {
-            instructorUserId,
-            instructorEmail,
-            canvasCourseIds,
-          }), { instructorUserId, instructorEmail, canvasCourseIds }),
+      execute: async ({ confirmed, instructorUserId, instructorEmail, canvasCourseIds }) =>
+        confirmWrite(
+          "syncCanvasCourses",
+          confirmed,
+          () =>
+            syncAdminCanvasCourses(user, {
+              instructorUserId,
+              instructorEmail,
+              canvasCourseIds,
+            }),
+          { instructorUserId, instructorEmail, canvasCourseIds },
+        ),
     }),
 
     disconnectCanvas: tool({
@@ -612,8 +758,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...instructorRef,
       }),
       execute: async ({ confirmed, instructorUserId, instructorEmail }) =>
-        confirmWrite("disconnectCanvas", confirmed, () =>
-          disconnectAdminCanvas(user, { instructorUserId, instructorEmail }), { instructorUserId, instructorEmail }),
+        confirmWrite(
+          "disconnectCanvas",
+          confirmed,
+          () => disconnectAdminCanvas(user, { instructorUserId, instructorEmail }),
+          { instructorUserId, instructorEmail },
+        ),
     }),
 
     linkCanvasRoster: tool({
@@ -629,8 +779,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         if (userRefError) {
           return userRefError;
         }
-        return confirmWrite("linkCanvasRoster", confirmed, () =>
-          linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }), { userId, userEmail, studentNumber });
+        return confirmWrite(
+          "linkCanvasRoster",
+          confirmed,
+          () => linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }),
+          { userId, userEmail, studentNumber },
+        );
       },
     }),
 
@@ -653,13 +807,16 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         instructorUserIds: z.array(z.string()).min(1),
       }),
       execute: async ({ confirmed, ...input }) =>
-        confirmWrite("createCourse", confirmed, () =>
-          createAdminCourseMutation(user, input), input),
+        confirmWrite(
+          "createCourse",
+          confirmed,
+          () => createAdminCourseMutation(user, input),
+          input,
+        ),
     }),
 
     updateCourse: tool({
-      description:
-        "Update course metadata. Use confirmed=true only after admin confirms.",
+      description: "Update course metadata. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
@@ -678,8 +835,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         instructorId: z.string().optional(),
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
-        confirmWrite("updateCourse", confirmed, () =>
-          updateAdminCourseMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
+        confirmWrite(
+          "updateCourse",
+          confirmed,
+          () => updateAdminCourseMutation(user, courseOpts(courseId, courseCode), input),
+          { courseId, courseCode, ...input },
+        ),
     }),
 
     deleteCourse: tool({
@@ -689,8 +850,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...courseScope,
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
-        confirmWrite("deleteCourse", confirmed, () =>
-          deleteAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
+        confirmWrite(
+          "deleteCourse",
+          confirmed,
+          () => deleteAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+          { courseId, courseCode },
+        ),
     }),
 
     publishCourse: tool({
@@ -700,8 +865,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...courseScope,
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
-        confirmWrite("publishCourse", confirmed, () =>
-          publishAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
+        confirmWrite(
+          "publishCourse",
+          confirmed,
+          () => publishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+          { courseId, courseCode },
+        ),
     }),
 
     unpublishCourse: tool({
@@ -711,8 +880,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...courseScope,
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
-        confirmWrite("unpublishCourse", confirmed, () =>
-          unpublishAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
+        confirmWrite(
+          "unpublishCourse",
+          confirmed,
+          () => unpublishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+          { courseId, courseCode },
+        ),
     }),
 
     getCourseRagSettings: tool({
@@ -732,8 +905,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ragSimilarityThreshold: z.number().gt(0).lt(1).nullable().optional(),
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
-        confirmWrite("updateCourseRagSettings", confirmed, () =>
-          updateAdminCourseRagSettingsMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
+        confirmWrite(
+          "updateCourseRagSettings",
+          confirmed,
+          () => updateAdminCourseRagSettingsMutation(user, courseOpts(courseId, courseCode), input),
+          { courseId, courseCode, ...input },
+        ),
     }),
 
     listCourseMaterials: tool({
@@ -744,8 +921,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     renameCourseMaterial: tool({
-      description:
-        "Rename a course material. Use confirmed=true only after admin confirms.",
+      description: "Rename a course material. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
@@ -753,28 +929,37 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         name: z.string().min(1),
       }),
       execute: async ({ confirmed, courseId, courseCode, materialId, name }) =>
-        confirmWrite("renameCourseMaterial", confirmed, () =>
-          renameAdminCourseMaterialMutation(user, {
-            ...courseOpts(courseId, courseCode),
-            materialId,
-            name,
-          }), { courseId, courseCode, materialId, name }),
+        confirmWrite(
+          "renameCourseMaterial",
+          confirmed,
+          () =>
+            renameAdminCourseMaterialMutation(user, {
+              ...courseOpts(courseId, courseCode),
+              materialId,
+              name,
+            }),
+          { courseId, courseCode, materialId, name },
+        ),
     }),
 
     deleteCourseMaterial: tool({
-      description:
-        "Soft-delete a course material. Use confirmed=true only after admin confirms.",
+      description: "Soft-delete a course material. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
         materialId: z.string().min(1),
       }),
       execute: async ({ confirmed, courseId, courseCode, materialId }) =>
-        confirmWrite("deleteCourseMaterial", confirmed, () =>
-          deleteAdminCourseMaterialMutation(user, {
-            ...courseOpts(courseId, courseCode),
-            materialId,
-          }), { courseId, courseCode, materialId }),
+        confirmWrite(
+          "deleteCourseMaterial",
+          confirmed,
+          () =>
+            deleteAdminCourseMaterialMutation(user, {
+              ...courseOpts(courseId, courseCode),
+              materialId,
+            }),
+          { courseId, courseCode, materialId },
+        ),
     }),
 
     listCanvasMaterials: tool({
@@ -793,11 +978,16 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         canvasFileIds: z.array(z.string()).min(1),
       }),
       execute: async ({ confirmed, courseId, courseCode, canvasFileIds }) =>
-        confirmWrite("syncCanvasMaterials", confirmed, () =>
-          syncAdminCanvasMaterialsMutation(user, {
-            ...courseOpts(courseId, courseCode),
-            canvasFileIds,
-          }), { courseId, courseCode, canvasFileIds }),
+        confirmWrite(
+          "syncCanvasMaterials",
+          confirmed,
+          () =>
+            syncAdminCanvasMaterialsMutation(user, {
+              ...courseOpts(courseId, courseCode),
+              canvasFileIds,
+            }),
+          { courseId, courseCode, canvasFileIds },
+        ),
     }),
 
     getCourseEmbeddingSettings: tool({
@@ -817,8 +1007,17 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         embeddingModel: z.string().optional(),
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
-        confirmWrite("updateCourseEmbeddingSettings", confirmed, () =>
-          updateAdminCourseEmbeddingSettingsMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
+        confirmWrite(
+          "updateCourseEmbeddingSettings",
+          confirmed,
+          () =>
+            updateAdminCourseEmbeddingSettingsMutation(
+              user,
+              courseOpts(courseId, courseCode),
+              input,
+            ),
+          { courseId, courseCode, ...input },
+        ),
     }),
 
     startCourseReEmbed: tool({
@@ -829,8 +1028,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...courseScope,
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
-        confirmWrite("startCourseReEmbed", confirmed, () =>
-          startAdminCourseReEmbedMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
+        confirmWrite(
+          "startCourseReEmbed",
+          confirmed,
+          () => startAdminCourseReEmbedMutation(user, courseOpts(courseId, courseCode)),
+          { courseId, courseCode },
+        ),
     }),
 
     getCourseReEmbedJob: tool({
@@ -851,29 +1054,35 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     addCourseTA: tool({
-      description:
-        "Add a TA enrollment to a course. Use confirmed=true only after admin confirms.",
+      description: "Add a TA enrollment to a course. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
         userId: z.string().min(1),
       }),
       execute: async ({ confirmed, courseId, courseCode, userId }) =>
-        confirmWrite("addCourseTA", confirmed, () =>
-          addAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }), { courseId, courseCode, userId }),
+        confirmWrite(
+          "addCourseTA",
+          confirmed,
+          () => addAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
+          { courseId, courseCode, userId },
+        ),
     }),
 
     removeCourseTA: tool({
-      description:
-        "Remove a TA from a course. Use confirmed=true only after admin confirms.",
+      description: "Remove a TA from a course. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
         userId: z.string().min(1),
       }),
       execute: async ({ confirmed, courseId, courseCode, userId }) =>
-        confirmWrite("removeCourseTA", confirmed, () =>
-          removeAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }), { courseId, courseCode, userId }),
+        confirmWrite(
+          "removeCourseTA",
+          confirmed,
+          () => removeAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
+          { courseId, courseCode, userId },
+        ),
     }),
 
     listCourseChats: tool({
@@ -902,16 +1111,17 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     updatePolicy: tool({
-      description:
-        "Update a platform policy flag. Use confirmed=true only after admin confirms.",
+      description: "Update a platform policy flag. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         key: z.string().min(1),
         value: z.boolean(),
       }),
       execute: async ({ confirmed, key, value }) =>
-        confirmWrite("updatePolicy", confirmed, () =>
-          updateAdminPolicyMutation(user, key, value), { key, value }),
+        confirmWrite("updatePolicy", confirmed, () => updateAdminPolicyMutation(user, key, value), {
+          key,
+          value,
+        }),
     }),
 
     listAiProviders: tool({
@@ -921,8 +1131,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     createAiProvider: tool({
-      description:
-        "Create an AI provider. Use confirmed=true only after admin confirms.",
+      description: "Create an AI provider. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         name: z.string().min(1),
@@ -934,13 +1143,16 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         isActive: z.boolean().optional(),
       }),
       execute: async ({ confirmed, ...input }) =>
-        confirmWrite("createAiProvider", confirmed, () =>
-          createAdminAiProviderMutation(user, input), input),
+        confirmWrite(
+          "createAiProvider",
+          confirmed,
+          () => createAdminAiProviderMutation(user, input),
+          input,
+        ),
     }),
 
     updateAiProvider: tool({
-      description:
-        "Update an AI provider. Use confirmed=true only after admin confirms.",
+      description: "Update an AI provider. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         providerId: z.string().min(1),
@@ -953,20 +1165,27 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         isActive: z.boolean().optional(),
       }),
       execute: async ({ confirmed, providerId, ...input }) =>
-        confirmWrite("updateAiProvider", confirmed, () =>
-          updateAdminAiProviderMutation(user, providerId, input), { providerId, ...input }),
+        confirmWrite(
+          "updateAiProvider",
+          confirmed,
+          () => updateAdminAiProviderMutation(user, providerId, input),
+          { providerId, ...input },
+        ),
     }),
 
     deleteAiProvider: tool({
-      description:
-        "Delete an AI provider. Use confirmed=true only after admin confirms.",
+      description: "Delete an AI provider. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         providerId: z.string().min(1),
       }),
       execute: async ({ confirmed, providerId }) =>
-        confirmWrite("deleteAiProvider", confirmed, () =>
-          deleteAdminAiProviderMutation(user, providerId), { providerId }),
+        confirmWrite(
+          "deleteAiProvider",
+          confirmed,
+          () => deleteAdminAiProviderMutation(user, providerId),
+          { providerId },
+        ),
     }),
 
     createAiModel: tool({
@@ -984,11 +1203,24 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         supportsStreaming: z.boolean().optional(),
         inputPricing: z.number().min(0).optional(),
         outputPricing: z.number().min(0).optional(),
+        contextFillRatio: z
+          .number()
+          .min(0.5)
+          .max(0.98)
+          .nullable()
+          .optional()
+          .describe(
+            "Per-model chat context fill ratio override (#1639); 0.5–0.98, null clears back to env/default",
+          ),
         isActive: z.boolean().optional(),
       }),
       execute: async ({ confirmed, ...input }) =>
-        confirmWrite("createAiModel", confirmed, () =>
-          createAdminAiModelMutation(user, input), input),
+        confirmWrite(
+          "createAiModel",
+          confirmed,
+          () => createAdminAiModelMutation(user, input),
+          input,
+        ),
     }),
 
     updateAiModel: tool({
@@ -1006,12 +1238,25 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         supportsStreaming: z.boolean().optional(),
         inputPricing: z.number().min(0).optional(),
         outputPricing: z.number().min(0).optional(),
+        contextFillRatio: z
+          .number()
+          .min(0.5)
+          .max(0.98)
+          .nullable()
+          .optional()
+          .describe(
+            "Per-model chat context fill ratio override (#1639); 0.5–0.98, null clears back to env/default",
+          ),
         isActive: z.boolean().optional(),
         providerId: z.string().min(1).optional(),
       }),
       execute: async ({ confirmed, id, ...input }) =>
-        confirmWrite("updateAiModel", confirmed, () =>
-          updateAdminAiModelMutation(user, id, input), { id, ...input }),
+        confirmWrite(
+          "updateAiModel",
+          confirmed,
+          () => updateAdminAiModelMutation(user, id, input),
+          { id, ...input },
+        ),
     }),
 
     deleteAiModel: tool({
@@ -1021,8 +1266,9 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         id: z.string().min(1).describe("Database id of the model row"),
       }),
       execute: async ({ confirmed, id }) =>
-        confirmWrite("deleteAiModel", confirmed, () =>
-          deleteAdminAiModelMutation(user, id), { id }),
+        confirmWrite("deleteAiModel", confirmed, () => deleteAdminAiModelMutation(user, id), {
+          id,
+        }),
     }),
 
     listOllamaModels: tool({
@@ -1054,7 +1300,9 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         idempotencyKey: z.string().min(1),
       }),
       execute: async ({ confirmed, jobName, idempotencyKey }) =>
-        confirmWrite("triggerCronJob", confirmed,
+        confirmWrite(
+          "triggerCronJob",
+          confirmed,
           () =>
             runIdempotentAdminMutation(
               user.id,

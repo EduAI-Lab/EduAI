@@ -12,67 +12,75 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 25;
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json({ error: "Course ID is required" }, 400);
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json({ error: "Course ID is required" }, 400);
+      }
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
+      const session = await getRequestSession(request);
+      if (!session?.user) {
+        return json({ error: "Unauthorized" }, 401);
+      }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
-  if (!course) {
-    return json({ error: "COURSE_NOT_FOUND" }, 404);
-  }
-  if (!access || access.rank < 2) {
-    return json({ error: "Forbidden" }, 403);
-  }
+      const { course, access } = await resolveCourseAccessGate(session.user, courseId);
+      if (!course) {
+        return json({ error: "COURSE_NOT_FOUND" }, 404);
+      }
+      if (!access || access.rank < 2) {
+        return json({ error: "Forbidden" }, 403);
+      }
 
-  const url = new URL(request.url);
-  const q = url.searchParams.get("q")?.trim() || null;
-  const rawLimit = Number(url.searchParams.get("limit"));
-  const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(MAX_LIMIT, Math.floor(rawLimit)) : DEFAULT_LIMIT;
-  // "ta" excludes users already an active TA in this course; the default
-  // ("enrolled") excludes anyone with any active enrollment — used by the
-  // "add student" picker so an existing TA/instructor can't be re-added as a
-  // student. Anti-join via `enrollments: { none }` keeps the exclusion
-  // bounded — no unbounded `NOT IN` list of every enrollment userId.
-  const exclude = url.searchParams.get("exclude") === "ta" ? "ta" : "enrolled";
-  const enrollmentNone =
-    exclude === "ta"
-      ? { courseId, role: "TA" as const, isActive: true }
-      : { courseId, isActive: true };
+      const url = new URL(request.url);
+      const q = url.searchParams.get("q")?.trim() || null;
+      const rawLimit = Number(url.searchParams.get("limit"));
+      const limit =
+        Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.min(MAX_LIMIT, Math.floor(rawLimit))
+          : DEFAULT_LIMIT;
+      // "ta" excludes users already an active TA in this course; the default
+      // ("enrolled") excludes anyone with any active enrollment — used by the
+      // "add student" picker so an existing TA/instructor can't be re-added as a
+      // student. Anti-join via `enrollments: { none }` keeps the exclusion
+      // bounded — no unbounded `NOT IN` list of every enrollment userId.
+      const exclude = url.searchParams.get("exclude") === "ta" ? "ta" : "enrolled";
+      const enrollmentNone =
+        exclude === "ta"
+          ? { courseId, role: "TA" as const, isActive: true }
+          : { courseId, isActive: true };
 
-  const candidates = await prisma.user.findMany({
-    where: {
-      role: "STUDENT",
-      isActive: true,
-      enrollments: { none: enrollmentNone },
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { email: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      const candidates = await prisma.user.findMany({
+        where: {
+          role: "STUDENT",
+          isActive: true,
+          enrollments: { none: enrollmentNone },
+          // Without a search term the candidate list is unfiltered; `undefined` is
+          // Prisma's "no constraint".
+          OR: q
+            ? [
+                { name: { contains: q, mode: "insensitive" } },
+                { email: { contains: q, mode: "insensitive" } },
+              ]
+            : undefined,
+        },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: "asc" },
+        take: limit,
+      });
+
+      return json({ candidates });
     },
-    select: { id: true, name: true, email: true },
-    orderBy: { name: "asc" },
-    take: limit,
-  });
-
-  return json({ candidates });
+    { request },
+  );
 }

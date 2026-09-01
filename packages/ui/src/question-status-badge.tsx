@@ -1,10 +1,10 @@
-import { Badge } from "./ui/badge"
+import { Badge } from "./ui/badge";
 
-export type QuestionStatusVariant = "warning" | "success"
+export type QuestionStatusVariant = "warning" | "success";
 
 export interface QuestionStatus {
-  label: string
-  variant: QuestionStatusVariant
+  label: string;
+  variant: QuestionStatusVariant;
 }
 
 /**
@@ -16,21 +16,25 @@ export interface QuestionStatus {
 export function questionStatus(isDraft: boolean): QuestionStatus {
   return isDraft
     ? { label: "Draft", variant: "warning" }
-    : { label: "Reviewed", variant: "success" }
+    : { label: "Reviewed", variant: "success" };
 }
 
 export interface QuestionStatusBadgeProps {
-  isDraft: boolean
-  size?: "sm" | "default" | "lg"
-  className?: string
+  isDraft: boolean;
+  size?: "sm" | "default" | "lg";
+  className?: string;
 }
 
 /** Canonical Draft / Reviewed badge for a question. */
-export function QuestionStatusBadge({ isDraft, size = "default", className }: QuestionStatusBadgeProps) {
-  const status = questionStatus(isDraft)
+export function QuestionStatusBadge({
+  isDraft,
+  size = "default",
+  className,
+}: QuestionStatusBadgeProps) {
+  const status = questionStatus(isDraft);
   return (
     <Badge variant={status.variant} size={size} className={className}>
       {status.label}
     </Badge>
-  )
+  );
 }

@@ -1,0 +1,28 @@
+[Unit]
+Description=EduAI Core cron scheduler worker (production)
+After=network-online.target eduai-core.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eduai-cron
+Group=eduai-cron
+SupplementaryGroups=eduai
+UMask=0002
+WorkingDirectory=/srv/www/eduai-production/current/apps/core
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/eduai/eduai-core.env
+Environment=HOME=/var/lib/eduai-cron
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=CRON_SCRIPT_DIR=/opt/eduai/cron
+ExecStartPre=/usr/bin/test -r /etc/eduai/eduai-core.env
+ExecStartPre=/usr/bin/test -r /etc/eduai/cron.env
+ExecStartPre=/usr/bin/test -x /opt/eduai/cron/backup-nightly.sh
+ExecStart=/usr/local/bin/node /srv/www/eduai-production/current/node_modules/tsx/dist/cli.mjs scripts/cron-worker.ts
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

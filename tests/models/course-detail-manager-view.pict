@@ -1,0 +1,14 @@
+# S10 — course-detail-manager-view (issue #1189). Drift-override BUILD.
+# Client predicates in course-detail-manager-view.tsx vs backend gates in permissions.ts.
+# PolicyOn = the capability-relevant flag (topics / enrollments / chats); ignored when N/A.
+# docs/PICT_CENSUS.md § S10
+Access:        admin, unit, instructor, ta, student, none
+Capability:    manage-topics, manage-instructors, manage-students, staff-tab, chat-tab, manage-rag, delete-material
+PolicyOn:      yes, no
+MaterialOwn:   yes, no
+
+# PolicyOn is only meaningful for TA (topics) and instructor/unit (staff/chat flags).
+IF [Access] in {"admin", "student", "none"} THEN [PolicyOn] = "no";
+IF [Capability] <> "delete-material" THEN [MaterialOwn] = "yes";
+IF [Capability] in {"manage-instructors", "manage-students", "manage-rag"} THEN [PolicyOn] = "no";
+IF [Access] = "unit" THEN [Capability] in {"manage-instructors", "manage-students", "staff-tab", "chat-tab", "manage-rag"};

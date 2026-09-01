@@ -5,8 +5,8 @@
  * optional window "open" event identically everywhere. The matching header search
  * button (`CommandSearchButton`) dispatches that same event.
  */
-import * as React from "react"
-import { IconSearch } from "@tabler/icons-react"
+import * as React from "react";
+import { IconSearch } from "@tabler/icons-react";
 
 import {
   CommandDialog,
@@ -17,19 +17,20 @@ import {
   CommandItem,
   CommandSeparator,
   CommandShortcut,
-} from "./ui/command"
-import { visibleAppsForRole, type LauncherApp } from "./app-launcher"
-import { cn } from "./utils"
+} from "./ui/command";
+import { visibleAppsForRole, type LauncherApp } from "./app-launcher";
+import { cn } from "./utils";
+import { hasNavigator, isBrowser } from "./lib/runtime-env";
 
 export interface CommandPaletteItem {
-  icon?: React.ReactNode
-  label: string
+  icon?: React.ReactNode;
+  label: string;
   /** Secondary muted text shown after the label. */
-  sublabel?: string
+  sublabel?: string;
   /** Keyboard hint chip on the right (e.g. "C"). */
-  shortcut?: string
+  shortcut?: string;
   /** cmdk match string; defaults to the label. Use to make an item searchable by code/name. */
-  value?: string
+  value?: string;
   /**
    * Render as an inert notice rather than a destination — cmdk skips it in
    * keyboard navigation, so it can never be the auto-highlighted row that Enter
@@ -37,13 +38,13 @@ export interface CommandPaletteItem {
    * the dialog: an item with a no-op `onSelect` still dismisses the palette and
    * discards the query, which is the opposite of a no-op.
    */
-  disabled?: boolean
-  onSelect: () => void
+  disabled?: boolean;
+  onSelect: () => void;
 }
 
 export interface CommandPaletteGroup {
-  heading?: string
-  items: CommandPaletteItem[]
+  heading?: string;
+  items: CommandPaletteItem[];
 }
 
 /**
@@ -54,12 +55,12 @@ export interface CommandPaletteGroup {
  * palettes offer the identical switcher.
  */
 export function buildAppSwitcherGroup(opts: {
-  apps: LauncherApp[]
-  currentAppId: string
-  role?: string | null
-  heading?: string
+  apps: LauncherApp[];
+  currentAppId: string;
+  role?: string | null;
+  heading?: string;
 }): CommandPaletteGroup {
-  const { apps, currentAppId, role, heading = "Switch app" } = opts
+  const { apps, currentAppId, role, heading = "Switch app" } = opts;
   const items: CommandPaletteItem[] = visibleAppsForRole(apps, role)
     .filter((app) => app.id !== currentAppId)
     .map((app) => ({
@@ -68,20 +69,20 @@ export function buildAppSwitcherGroup(opts: {
       value: `app ${app.name}`,
       icon: app.icon,
       onSelect: () => {
-        if (typeof window !== "undefined") window.location.href = app.url
+        if (isBrowser()) window.location.href = app.url;
       },
-    }))
-  return { heading, items }
+    }));
+  return { heading, items };
 }
 
 export interface CommandPaletteProps {
-  groups: CommandPaletteGroup[]
-  placeholder?: string
-  emptyText?: string
+  groups: CommandPaletteGroup[];
+  placeholder?: string;
+  emptyText?: string;
   /** Window event name that also opens the palette (dispatched by CommandSearchButton). */
-  openEventName?: string
+  openEventName?: string;
   /** Fires on every open/close — use to lazily load data (e.g. courses) on first open. */
-  onOpenChange?: (open: boolean) => void
+  onOpenChange?: (open: boolean) => void;
   /**
    * Fires on every keystroke in the search box (#1143). Providing it switches
    * the palette to host-driven results: cmdk's own filtering is turned off, so
@@ -89,7 +90,7 @@ export interface CommandPaletteProps {
    * server-paginated — cmdk can only filter the rows already loaded, which for
    * a paged list is just the first page.
    */
-  onQueryChange?: (query: string) => void
+  onQueryChange?: (query: string) => void;
 }
 
 export function CommandPalette({
@@ -100,65 +101,65 @@ export function CommandPalette({
   onOpenChange,
   onQueryChange,
 }: CommandPaletteProps) {
-  const [open, setOpen] = React.useState(false)
-  const [query, setQuery] = React.useState("")
-  const hostFiltered = Boolean(onQueryChange)
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const hostFiltered = Boolean(onQueryChange);
 
   // Fire onOpenChange from an effect keyed on `open`, not from inside the state
   // updater — an impure updater double-fires under React 18 StrictMode. Skip the
   // initial mount so it only signals real open/close transitions. The latest
   // callback is held in a ref so the effect stays keyed purely on `open`.
-  const onOpenChangeRef = React.useRef(onOpenChange)
+  const onOpenChangeRef = React.useRef(onOpenChange);
   React.useEffect(() => {
-    onOpenChangeRef.current = onOpenChange
-  })
-  const firstRender = React.useRef(true)
+    onOpenChangeRef.current = onOpenChange;
+  });
+  const firstRender = React.useRef(true);
   React.useEffect(() => {
     if (firstRender.current) {
-      firstRender.current = false
-      return
+      firstRender.current = false;
+      return;
     }
-    onOpenChangeRef.current?.(open)
-  }, [open])
+    onOpenChangeRef.current?.(open);
+  }, [open]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        setOpen((o) => !o)
+        e.preventDefault();
+        setOpen((o) => !o);
       }
-    }
-    document.addEventListener("keydown", onKey)
-    let onOpen: (() => void) | undefined
+    };
+    document.addEventListener("keydown", onKey);
+    let onOpen: (() => void) | undefined;
     if (openEventName) {
-      onOpen = () => setOpen(true)
-      window.addEventListener(openEventName, onOpen)
+      onOpen = () => setOpen(true);
+      window.addEventListener(openEventName, onOpen);
     }
     return () => {
-      document.removeEventListener("keydown", onKey)
-      if (openEventName && onOpen) window.removeEventListener(openEventName, onOpen)
-    }
-  }, [openEventName])
+      document.removeEventListener("keydown", onKey);
+      if (openEventName && onOpen) window.removeEventListener(openEventName, onOpen);
+    };
+  }, [openEventName]);
 
   // Reset the query on close so the next open starts from the full list rather
   // than the previous search's narrowed results.
   React.useEffect(() => {
     if (!open && hostFiltered && query !== "") {
-      setQuery("")
-      onQueryChange?.("")
+      setQuery("");
+      onQueryChange?.("");
     }
     // `onQueryChange` is intentionally omitted: this must fire on close, not
     // when the host happens to pass a new callback identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hostFiltered])
+  }, [open, hostFiltered]);
 
   const run = (fn: () => void) => {
-    setOpen(false)
-    fn()
-  }
+    setOpen(false);
+    fn();
+  };
 
   // Groups with no items are dropped so empty sections never render a heading.
-  const visible = groups.filter((g) => g.items.length > 0)
+  const visible = groups.filter((g) => g.items.length > 0);
 
   return (
     <CommandDialog
@@ -172,8 +173,8 @@ export function CommandPalette({
           ? {
               value: query,
               onValueChange: (value: string) => {
-                setQuery(value)
-                onQueryChange?.(value)
+                setQuery(value);
+                onQueryChange?.(value);
               },
             }
           : {})}
@@ -190,8 +191,8 @@ export function CommandPalette({
                   value={item.value ?? item.label}
                   disabled={item.disabled}
                   onSelect={() => {
-                    if (item.disabled) return
-                    run(item.onSelect)
+                    if (item.disabled) return;
+                    run(item.onSelect);
                   }}
                 >
                   {item.icon}
@@ -207,15 +208,15 @@ export function CommandPalette({
         ))}
       </CommandList>
     </CommandDialog>
-  )
+  );
 }
 
 export interface CommandSearchButtonProps {
   /** Called on click; if omitted, dispatches `eventName` on window. */
-  onOpen?: () => void
-  eventName?: string
-  label?: string
-  className?: string
+  onOpen?: () => void;
+  eventName?: string;
+  label?: string;
+  className?: string;
 }
 
 /** Header trigger for the command palette — matches the shared palette's look. */
@@ -225,18 +226,18 @@ export function CommandSearchButton({
   label = "Search",
   className,
 }: CommandSearchButtonProps) {
-  const shortcut = useShortcutLabel()
+  const shortcut = useShortcutLabel();
   const handle = () => {
-    if (onOpen) onOpen()
-    else if (eventName) window.dispatchEvent(new CustomEvent(eventName))
-  }
+    if (onOpen) onOpen();
+    else if (eventName) window.dispatchEvent(new CustomEvent(eventName));
+  };
   return (
     <button
       type="button"
       onClick={handle}
       aria-label="Open command palette"
       className={cn(
-        "flex h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-muted",
+        "flex h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-sm text-muted-foreground shadow-sm transition-colors cursor-pointer hover:bg-muted",
         className,
       )}
     >
@@ -246,7 +247,7 @@ export function CommandSearchButton({
         {shortcut}
       </kbd>
     </button>
-  )
+  );
 }
 
 /**
@@ -255,15 +256,15 @@ export function CommandSearchButton({
  * corrects to "Ctrl K" on non-Apple platforms after mount.
  */
 function useShortcutLabel(): string {
-  const [isMac, setIsMac] = React.useState(true)
+  const [isMac, setIsMac] = React.useState(true);
   React.useEffect(() => {
     const p =
-      (typeof navigator !== "undefined" &&
+      (hasNavigator() &&
         ((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
           navigator.platform ||
           navigator.userAgent)) ||
-      ""
-    setIsMac(/Mac|iPhone|iPad|iPod/i.test(p))
-  }, [])
-  return isMac ? "⌘K" : "Ctrl K"
+      "";
+    setIsMac(/Mac|iPhone|iPad|iPod/i.test(p));
+  }, []);
+  return isMac ? "⌘K" : "Ctrl K";
 }

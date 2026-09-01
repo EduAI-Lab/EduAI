@@ -1,14 +1,22 @@
+import type { JsonValue } from "~/lib/json-value";
+import { z } from "zod";
+import { jsonObjectSchema } from "~/lib/json-value";
 import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import {
-  redactDiagnosticLogString,
-  sanitizeSensitiveData,
-} from "~/lib/redact.server";
+import { redactDiagnosticLogString, sanitizeSensitiveData } from "~/lib/redact.server";
 
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
-type BugReportSource = (typeof VALID_SOURCES)[number];
 
 const VALID_BUG_TYPES = Object.values(BugReportType);
+
+/**
+ * A screenshot is a base64 image data URL captured client-side. Anything else
+ * (a `javascript:`/`http(s):`/arbitrary string) is rejected at write (#1570):
+ * the value is later rendered to an admin as an `<a href>`, so an unvalidated
+ * scheme is an admin-clickable link-injection sink. Only these image data URLs
+ * are stored; other values drop to null (the report itself still persists).
+ */
+const SCREENSHOT_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif|avif);base64,/i;
 
 /** Field size caps (#979) — bound storage and admin-list payload amplification. */
 export const BUG_REPORT_FIELD_LIMITS = {
@@ -32,34 +40,42 @@ function validationError(fields: Record<string, string>): CreateBugReportResult 
 }
 
 /**
+ * A field that survived the size cap, or the reason it did not. `value` is null
+ * when the payload simply did not carry a string there.
+ */
+type CappedString = { ok: true; value: string | null } | { ok: false; reason: string };
+
+/**
  * Optional string fields: non-strings are ignored (null), oversized values rejected.
  * Matches prior createBugReport coercion while adding #979 size caps.
  */
-function optionalCappedString(
-  value: unknown,
-  maxChars: number,
-): { ok: true; value: string | null } | { ok: false; reason: string } {
-  if (typeof value !== "string") {
+function optionalCappedString(value: JsonValue | undefined, maxChars: number): CappedString {
+  const text = z.string().safeParse(value);
+  if (!text.success) {
     return { ok: true, value: null };
   }
-  if (value.length > maxChars) {
+  if (text.data.length > maxChars) {
     return { ok: false, reason: `exceeds ${maxChars} chars` };
   }
-  return { ok: true, value };
+  return { ok: true, value: text.data };
 }
+
+/** A diagnostic blob after redaction and truncation; null when there was none. */
+type PreparedDiagnosticLogs = { ok: true; value: string | null };
 
 /**
  * Redact then truncate diagnostic log blobs. Truncation is safe for triage text;
  * secrets must be scrubbed first so a cut mid-token cannot leave a partial secret.
  */
 function prepareDiagnosticLogs(
-  value: unknown,
+  value: JsonValue | undefined,
   maxChars: number,
-): { ok: true; value: string | null } {
-  if (typeof value !== "string") {
+): PreparedDiagnosticLogs {
+  const text = z.string().safeParse(value);
+  if (!text.success) {
     return { ok: true, value: null };
   }
-  const redacted = redactDiagnosticLogString(value);
+  const redacted = redactDiagnosticLogString(text.data);
   return {
     ok: true,
     value: redacted.length > maxChars ? redacted.slice(0, maxChars) : redacted,
@@ -71,13 +87,16 @@ function prepareDiagnosticLogs(
  * Oversized or non-serializable context is dropped to DbNull so the
  * description and logs still persist (#1116 review).
  */
-function prepareContext(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+function prepareContext(
+  value: JsonValue | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull {
   // Non-object / array context was previously coerced to DbNull — keep that behavior.
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const envelope = jsonObjectSchema.safeParse(value);
+  if (!envelope.success) {
     return Prisma.DbNull;
   }
 
-  const sanitized = sanitizeSensitiveData(value);
+  const sanitized = sanitizeSensitiveData(envelope.data);
   let serialized: string;
   try {
     serialized = JSON.stringify(sanitized);
@@ -92,26 +111,42 @@ function prepareContext(value: unknown): Prisma.InputJsonValue | typeof Prisma.D
   return sanitized as Prisma.InputJsonValue;
 }
 
-export async function createBugReport(raw: unknown): Promise<CreateBugReportResult> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+/**
+ * The submitted body, checked only for being a plain object.
+ *
+ * Deliberately shallow. `context` is diagnostic garnish that can legitimately
+ * carry a value JSON cannot hold — a `BigInt` out of a caller's telemetry, say
+ * — and `prepareContext` drops that to `DbNull` rather than losing the report
+ * over it. Walking the whole tree here would reject the submission instead, so
+ * each field is decoded on its own below. Values are `JsonValue` because that
+ * is what `createBugReport` accepts.
+ */
+const bugReportBodySchema = z.record(z.custom<JsonValue | undefined>());
+
+export async function createBugReport(raw: JsonValue | undefined): Promise<CreateBugReportResult> {
+  const envelope = bugReportBodySchema.safeParse(raw);
+  if (!envelope.success) {
     return validationError({ body: "invalid payload" });
   }
 
-  const p = raw as Record<string, unknown>;
+  const p = envelope.data;
 
-  if (!VALID_SOURCES.includes(p.source as BugReportSource)) {
+  const source = z.enum(VALID_SOURCES).safeParse(p.source);
+  if (!source.success) {
     return validationError({ source: "must be AI_TUTOR or QUESTION_MAKER" });
   }
 
-  if (typeof p.userId !== "string" || p.userId.trim().length === 0) {
+  const userId = z.string().trim().min(1).safeParse(p.userId);
+  if (!userId.success) {
     return validationError({ userId: "required string" });
   }
 
-  if (typeof p.description !== "string") {
+  const description = z.string().safeParse(p.description);
+  if (!description.success) {
     return validationError({ description: "required string" });
   }
 
-  if (p.description.length > BUG_REPORT_FIELD_LIMITS.description) {
+  if (description.data.length > BUG_REPORT_FIELD_LIMITS.description) {
     return validationError({
       description: `exceeds ${BUG_REPORT_FIELD_LIMITS.description} chars`,
     });
@@ -119,30 +154,30 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
 
   let bugType: BugReportType | null = null;
   if (p.bugType !== undefined && p.bugType !== null) {
-    if (!VALID_BUG_TYPES.includes(p.bugType as BugReportType)) {
+    const decoded = z.nativeEnum(BugReportType).safeParse(p.bugType);
+    if (!decoded.success) {
       return validationError({ bugType: `must be one of: ${VALID_BUG_TYPES.join(", ")}` });
     }
-    bugType = p.bugType as BugReportType;
+    bugType = decoded.data;
   }
 
-  const consoleLogs = prepareDiagnosticLogs(
-    p.consoleLogs,
-    BUG_REPORT_FIELD_LIMITS.consoleLogs,
-  );
-  const networkLogs = prepareDiagnosticLogs(
-    p.networkLogs,
-    BUG_REPORT_FIELD_LIMITS.networkLogs,
-  );
+  const consoleLogs = prepareDiagnosticLogs(p.consoleLogs, BUG_REPORT_FIELD_LIMITS.consoleLogs);
+  const networkLogs = prepareDiagnosticLogs(p.networkLogs, BUG_REPORT_FIELD_LIMITS.networkLogs);
 
   // Oversized screenshot is dropped, not rejected: truncating a data URL yields
   // a broken image, and failing the submit would lose the description + logs
   // with it (full-page captures trip the cap easily — #1116 review).
   // Empty strings are stored as null so has* flags stay consistent.
+  // Non-image-data-URL values are also dropped to null (#1570): the screenshot
+  // is rendered to an admin as an `<a href>`, so only a real base64 image data
+  // URL may be stored — never a `javascript:`/`http(s):`/arbitrary string.
+  const screenshot = z.string().safeParse(p.screenshot);
   const screenshotValue =
-    typeof p.screenshot === "string" &&
-    p.screenshot.length > 0 &&
-    p.screenshot.length <= BUG_REPORT_FIELD_LIMITS.screenshot
-      ? p.screenshot
+    screenshot.success &&
+    screenshot.data.length > 0 &&
+    screenshot.data.length <= BUG_REPORT_FIELD_LIMITS.screenshot &&
+    SCREENSHOT_DATA_URL_RE.test(screenshot.data)
+      ? screenshot.data
       : null;
 
   const pageUrl = optionalCappedString(p.pageUrl, BUG_REPORT_FIELD_LIMITS.pageUrl);
@@ -157,20 +192,21 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
 
   const context = prepareContext(p.context);
 
-  const userId = p.userId.trim();
-
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId.data },
+    select: { id: true },
+  });
   if (!user) {
     return { ok: false, status: 422, error: "USER_NOT_FOUND" };
   }
 
   const report = await prisma.bugReport.create({
     data: {
-      source: p.source as BugReportSource,
-      userId,
-      description: p.description,
+      source: source.data,
+      userId: userId.data,
+      description: description.data,
       bugType,
-      isAnonymous: typeof p.isAnonymous === "boolean" ? p.isAnonymous : false,
+      isAnonymous: z.boolean().catch(false).parse(p.isAnonymous),
       consoleLogs: consoleLogs.value,
       networkLogs: networkLogs.value,
       screenshot: screenshotValue,
@@ -186,14 +222,16 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
 const VALID_STATUSES = ["UNHANDLED", "IN_PROGRESS", "RESOLVED"] as const;
 type BugReportStatus = (typeof VALID_STATUSES)[number];
 
-export function isBugReportStatus(value: unknown): value is BugReportStatus {
-  return typeof value === "string" && (VALID_STATUSES as readonly string[]).includes(value);
+export function isBugReportStatus(value: JsonValue | undefined): value is BugReportStatus {
+  return z.enum(VALID_STATUSES).safeParse(value).success;
 }
 
 const ADMIN_LIST_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 
-export function isBugReportSource(value: unknown): value is (typeof ADMIN_LIST_SOURCES)[number] {
-  return typeof value === "string" && (ADMIN_LIST_SOURCES as readonly string[]).includes(value);
+export function isBugReportSource(
+  value: JsonValue | undefined,
+): value is (typeof ADMIN_LIST_SOURCES)[number] {
+  return z.enum(ADMIN_LIST_SOURCES).safeParse(value).success;
 }
 
 function maskReporter(r: {
@@ -268,9 +306,7 @@ export async function listBugReports(params: {
     conditions.push(Prisma.sql`br.status = ${status}::"BugReportStatus"`);
   }
   const whereSql =
-    conditions.length > 0
-      ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
-      : Prisma.sql``;
+    conditions.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.sql``;
 
   const [reports, total] = await Promise.all([
     prisma.$queryRaw<ListBugReportRow[]>`

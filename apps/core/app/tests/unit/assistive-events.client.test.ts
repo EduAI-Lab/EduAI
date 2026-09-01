@@ -3,10 +3,7 @@ import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
 describe("postAssistiveClientEvent", () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(null, { status: 201 })),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 201 })));
   });
 
   afterEach(() => {

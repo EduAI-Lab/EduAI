@@ -45,9 +45,12 @@ export async function seedMaterialChunkWithEmbedding(
   embedding: number[],
   content = "seeded chunk content",
 ) {
-  const chunk = await prisma.materialChunk.create({
-    data: { materialId, index: 0, content },
-  });
+  const id = randomUUID();
+  await prisma.$executeRaw`
+    INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+    VALUES (${id}, ${materialId}, 0, ${content}, NOW())
+  `;
+  const chunk = await prisma.materialChunk.findUniqueOrThrow({ where: { id } });
   await prisma.$executeRaw`
     INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
     VALUES (${randomUUID()}, ${chunk.id}, ${formatPgVectorLiteral(embedding)}::vector, NOW())

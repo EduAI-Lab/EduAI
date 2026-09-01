@@ -1,10 +1,10 @@
-import { prisma } from '../config/database.js';
-import { fetchCoreCourseSafe, fetchCoreTopicSafe } from '../services/eduaiClient.js';
+import { prisma } from "../config/database.js";
+import { fetchCoreCourseSafe, fetchCoreTopicSafe } from "../services/eduaiClient.js";
 import {
   syncCourseEnrollments,
   clearEnrollmentSyncThrottle,
   AUTO_SYNC_TIMEOUT_MS,
-} from '../services/enrollmentSync.js';
+} from "../services/enrollmentSync.js";
 
 /**
  * Daily reconciliation job: iterates all CourseOffering and Topic rows that
@@ -15,7 +15,7 @@ import {
  * the next run. Only a strict 404 triggers cleanup.
  */
 export async function runReconciliation() {
-  console.log('[reconcile] Starting daily reconciliation');
+  console.log("[reconcile] Starting daily reconciliation");
 
   // Phase 1 — every CourseOffering row is linked to Core by construction
   // (#1072 step 4 made `coreOfferingId` required + unique — there is no
@@ -40,7 +40,9 @@ export async function runReconciliation() {
         await prisma.courseOffering.delete({ where: { id: offering.id } });
         deletedOfferingIds.add(offering.id);
         clearEnrollmentSyncThrottle(offering.id);
-        console.log(`[reconcile] Deleted CourseOffering ${offering.id} (Core 404, cascades to modules/lessons/activities)`);
+        console.log(
+          `[reconcile] Deleted CourseOffering ${offering.id} (Core 404, cascades to modules/lessons/activities)`,
+        );
       }
     } catch (err) {
       console.warn(`[reconcile] Skipping CourseOffering ${offering.id}: ${err.message}`);
@@ -94,9 +96,11 @@ export async function runReconciliation() {
         );
       }
     } catch (err) {
-      console.warn(`[reconcile] Skipping enrollment sync for CourseOffering ${offering.id}: ${err.message}`);
+      console.warn(
+        `[reconcile] Skipping enrollment sync for CourseOffering ${offering.id}: ${err.message}`,
+      );
     }
   }
 
-  console.log('[reconcile] Reconciliation complete');
+  console.log("[reconcile] Reconciliation complete");
 }

@@ -25,8 +25,7 @@ export interface ProviderFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider?: AIProvider | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onSubmit: (data: any) => void;
+  onSubmit: (data: ProviderFormData) => void;
 }
 
 export { type ProviderFormData };
@@ -58,7 +57,7 @@ export function ProviderFormDialog({
       open={open}
       onOpenChange={onOpenChange}
       provider={baseProvider}
-      onSubmit={onSubmit as SharedProviderFormDialogProps["onSubmit"]}
+      onSubmit={onSubmit}
     />
   );
 }

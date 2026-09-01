@@ -2,16 +2,16 @@
  * Resolve campus vs cloud models from Core's /api/ai-models payload.
  * Avoid hardcoding served-model names so GPU catalog changes don't break QM.
  */
-import { modelSizeRankFromText } from '../utils/modelSizeRanks.js';
+import { modelSizeRankFromText } from "../utils/modelSizeRanks.js";
 
-const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
-export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';
-export const FALLBACK_GENERATION_MODEL = 'vllm:qwen2.5-32b-instruct';
+const CAMPUS_PROVIDERS = new Set(["vllm", "ollama"]);
+export const FALLBACK_PROBE_MODEL = "vllm:qwen3.5-2b-instruct";
+export const FALLBACK_GENERATION_MODEL = "vllm:qwen3.5-9b-instruct";
 
 function providerName(raw) {
-  if (!raw) return 'unknown';
-  if (typeof raw === 'string') return raw;
-  if (typeof raw === 'object' && raw.name) return String(raw.name);
+  if (!raw) return "unknown";
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object" && raw.name) return String(raw.name);
   return String(raw);
 }
 
@@ -21,7 +21,7 @@ function normalizeModels(rawModels) {
     .filter((m) => m && m.isActive !== false)
     .map((m) => {
       const provider = providerName(m.provider);
-      const modelId = m.modelId || m.id || '';
+      const modelId = m.modelId || m.id || "";
       return {
         id: `${provider}:${modelId}`,
         modelId: String(modelId),
@@ -66,7 +66,7 @@ export function campusProbeParams(rawModels) {
   const picked = pickCampusProbeFromCatalog(rawModels);
   if (!picked) {
     return {
-      provider: 'vllm',
+      provider: "vllm",
       model: FALLBACK_PROBE_MODEL,
       apiKeys: { vllm: { isEnabled: true } },
     };

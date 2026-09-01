@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { makeProfessor, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
-import { cloneCourseContent, cloneLessonsFromOffering } from '../../src/services/courseCloning.js';
+import { describe, it, expect, beforeEach } from "vitest";
+import { makeProfessor, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
+import { cloneCourseContent, cloneLessonsFromOffering } from "../../src/services/courseCloning.js";
 
-describe('courseCloning service', () => {
+describe("courseCloning service", () => {
   let sourceProf;
   let targetProf;
   let source; // { user, course, module, lesson, topic }
@@ -25,8 +25,8 @@ describe('courseCloning service', () => {
       data: {
         lessonId,
         mainTopicId,
-        instructionsMd: 'Default instructions',
-        config: { question: 'What is 1+1?', questionType: 'MCQ', options: ['1', '2'], answer: 1 },
+        instructionsMd: "Default instructions",
+        config: { question: "What is 1+1?", questionType: "MCQ", options: ["1", "2"], answer: 1 },
         position: 0,
         ...overrides,
       },
@@ -37,8 +37,8 @@ describe('courseCloning service', () => {
   // cloneCourseContent
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('cloneCourseContent', () => {
-    it('clones all modules, lessons, and activities from source to target', async () => {
+  describe("cloneCourseContent", () => {
+    it("clones all modules, lessons, and activities from source to target", async () => {
       await createActivity(source.lesson.id, source.topic.id);
 
       await cloneCourseContent(source.course.id, target.course.id);
@@ -52,24 +52,24 @@ describe('courseCloning service', () => {
       expect(targetModules.length).toBe(2);
 
       const clonedModule = targetModules.find(
-        (m) => m.title === 'Test Module' && m.id !== target.module.id,
+        (m) => m.title === "Test Module" && m.id !== target.module.id,
       );
       expect(clonedModule).toBeDefined();
       expect(clonedModule.lessons.length).toBe(1);
       expect(clonedModule.lessons[0].activities.length).toBe(1);
     });
 
-    it('assigns cloned modules incrementing positions after existing target modules', async () => {
+    it("assigns cloned modules incrementing positions after existing target modules", async () => {
       // Add a second module to the source
       const sourceModule2 = await prisma.module.create({
         data: {
-          title: 'Source Module 2',
+          title: "Source Module 2",
           position: 1,
           courseOfferingId: source.course.id,
         },
       });
       await prisma.lesson.create({
-        data: { title: 'Lesson in M2', position: 0, moduleId: sourceModule2.id },
+        data: { title: "Lesson in M2", position: 0, moduleId: sourceModule2.id },
       });
 
       // Target already has module at position 0
@@ -77,7 +77,7 @@ describe('courseCloning service', () => {
 
       const targetModules = await prisma.module.findMany({
         where: { courseOfferingId: target.course.id },
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
       });
 
       // Seed target module at position 0, cloned modules at 1 and 2
@@ -87,15 +87,22 @@ describe('courseCloning service', () => {
       expect(targetModules[2].position).toBe(2);
     });
 
-    it('preserves activity config JSON during cloning', async () => {
+    it("preserves activity config JSON during cloning", async () => {
       const config = {
-        question: 'Complex question?',
-        questionType: 'MCQ',
-        options: ['A', 'B', 'C'],
+        question: "Complex question?",
+        questionType: "MCQ",
+        options: ["A", "B", "C"],
         answer: 2,
-        hints: ['Think carefully'],
+        hints: ["Think carefully"],
       };
-      await createActivity(source.lesson.id, source.topic.id, { config });
+      await createActivity(source.lesson.id, source.topic.id, {
+        config,
+        customPrompt: "Use a Socratic hint only.",
+        customPromptTitle: "Custom hint",
+        enableTeachMode: false,
+        enableGuideMode: true,
+        enableCustomMode: true,
+      });
 
       await cloneCourseContent(source.course.id, target.course.id);
 
@@ -107,12 +114,17 @@ describe('courseCloning service', () => {
 
       expect(clonedActivities.length).toBe(1);
       expect(clonedActivities[0].config).toEqual(config);
+      expect(clonedActivities[0].customPrompt).toBe("Use a Socratic hint only.");
+      expect(clonedActivities[0].customPromptTitle).toBe("Custom hint");
+      expect(clonedActivities[0].enableTeachMode).toBe(false);
+      expect(clonedActivities[0].enableGuideMode).toBe(true);
+      expect(clonedActivities[0].enableCustomMode).toBe(true);
     });
 
-    it('maps source topics to target course (creates if not exists)', async () => {
+    it("maps source topics to target course (creates if not exists)", async () => {
       // Create a new topic in the source course
       const sourceTopic2 = await prisma.topic.create({
-        data: { name: 'Unique Source Topic', courseOfferingId: source.course.id },
+        data: { name: "Unique Source Topic", courseOfferingId: source.course.id },
       });
       await createActivity(source.lesson.id, sourceTopic2.id);
 
@@ -122,7 +134,7 @@ describe('courseCloning service', () => {
       const targetTopics = await prisma.topic.findMany({
         where: { courseOfferingId: target.course.id },
       });
-      const mappedTopic = targetTopics.find((t) => t.name === 'Unique Source Topic');
+      const mappedTopic = targetTopics.find((t) => t.name === "Unique Source Topic");
       expect(mappedTopic).toBeDefined();
 
       // The cloned activity should reference the target topic, not the source one
@@ -134,9 +146,9 @@ describe('courseCloning service', () => {
       expect(clonedActivity.mainTopicId).toBe(mappedTopic.id);
     });
 
-    it('clones secondary topics with correct mapping', async () => {
+    it("clones secondary topics with correct mapping", async () => {
       const sourceTopic2 = await prisma.topic.create({
-        data: { name: 'Secondary Topic', courseOfferingId: source.course.id },
+        data: { name: "Secondary Topic", courseOfferingId: source.course.id },
       });
 
       const activity = await createActivity(source.lesson.id, source.topic.id);
@@ -161,16 +173,16 @@ describe('courseCloning service', () => {
         where: { id: clonedActivity.secondaryTopics[0].topicId },
       });
       expect(targetSecondaryTopic.courseOfferingId).toBe(target.course.id);
-      expect(targetSecondaryTopic.name).toBe('Secondary Topic');
+      expect(targetSecondaryTopic.name).toBe("Secondary Topic");
     });
 
-    it('filters by moduleIds when provided', async () => {
+    it("filters by moduleIds when provided", async () => {
       // Add a second module+lesson to the source
       const sourceModule2 = await prisma.module.create({
-        data: { title: 'Source Module 2', position: 1, courseOfferingId: source.course.id },
+        data: { title: "Source Module 2", position: 1, courseOfferingId: source.course.id },
       });
       const lesson2 = await prisma.lesson.create({
-        data: { title: 'Lesson in M2', position: 0, moduleId: sourceModule2.id },
+        data: { title: "Lesson in M2", position: 0, moduleId: sourceModule2.id },
       });
       await createActivity(source.lesson.id, source.topic.id);
       await createActivity(lesson2.id, source.topic.id);
@@ -185,13 +197,13 @@ describe('courseCloning service', () => {
       });
 
       expect(clonedModules.length).toBe(1);
-      expect(clonedModules[0].title).toBe('Source Module 2');
+      expect(clonedModules[0].title).toBe("Source Module 2");
     });
 
-    it('does nothing when source has no modules', async () => {
+    it("does nothing when source has no modules", async () => {
       // Create an empty course
       const emptyCourse = await prisma.courseOffering.create({
-        data: { coreOfferingId: 'core-empty-course' },
+        data: { coreOfferingId: "core-empty-course" },
       });
 
       const moduleCountBefore = await prisma.module.count({
@@ -212,8 +224,8 @@ describe('courseCloning service', () => {
   // cloneLessonsFromOffering
   // ══════════════════════════════════════════════════════════════════════
 
-  describe('cloneLessonsFromOffering', () => {
-    it('clones specific lessons into a target module', async () => {
+  describe("cloneLessonsFromOffering", () => {
+    it("clones specific lessons into a target module", async () => {
       await createActivity(source.lesson.id, source.topic.id);
 
       await cloneLessonsFromOffering([source.lesson.id], target.module.id);
@@ -228,14 +240,14 @@ describe('courseCloning service', () => {
 
       const clonedLesson = targetLessons.find((l) => l.id !== target.lesson.id);
       expect(clonedLesson).toBeDefined();
-      expect(clonedLesson.title).toBe('Test Lesson');
+      expect(clonedLesson.title).toBe("Test Lesson");
       expect(clonedLesson.activities.length).toBe(1);
     });
 
-    it('assigns cloned lessons incrementing positions after existing lessons', async () => {
+    it("assigns cloned lessons incrementing positions after existing lessons", async () => {
       // Create a second lesson in source
       const sourceLesson2 = await prisma.lesson.create({
-        data: { title: 'Source Lesson 2', position: 1, moduleId: source.module.id },
+        data: { title: "Source Lesson 2", position: 1, moduleId: source.module.id },
       });
 
       // Target lesson already at position 0
@@ -243,7 +255,7 @@ describe('courseCloning service', () => {
 
       const targetLessons = await prisma.lesson.findMany({
         where: { moduleId: target.module.id },
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
       });
 
       expect(targetLessons.length).toBe(3);
@@ -252,9 +264,9 @@ describe('courseCloning service', () => {
       expect(targetLessons[2].position).toBe(2);
     });
 
-    it('maps activity topics to the target course correctly', async () => {
+    it("maps activity topics to the target course correctly", async () => {
       const uniqueTopic = await prisma.topic.create({
-        data: { name: 'Clone Lesson Topic', courseOfferingId: source.course.id },
+        data: { name: "Clone Lesson Topic", courseOfferingId: source.course.id },
       });
       await createActivity(source.lesson.id, uniqueTopic.id);
 
@@ -269,15 +281,15 @@ describe('courseCloning service', () => {
 
       // The topic should exist in the target course
       const targetTopic = await prisma.topic.findFirst({
-        where: { courseOfferingId: target.course.id, name: 'Clone Lesson Topic' },
+        where: { courseOfferingId: target.course.id, name: "Clone Lesson Topic" },
       });
       expect(targetTopic).toBeDefined();
       expect(clonedLesson.activities[0].mainTopicId).toBe(targetTopic.id);
     });
 
-    it('reuses existing topic in target when name matches (collision)', async () => {
+    it("reuses existing topic in target when name matches (collision)", async () => {
       // Create a topic in the target with the same name as the source topic
-      const sharedName = 'Shared Topic Name';
+      const sharedName = "Shared Topic Name";
       const sourceTopic = await prisma.topic.create({
         data: { name: sharedName, courseOfferingId: source.course.id },
       });
@@ -304,7 +316,7 @@ describe('courseCloning service', () => {
       expect(clonedLesson.activities[0].mainTopicId).toBe(existingTargetTopic.id);
     });
 
-    it('does nothing when lesson list is empty', async () => {
+    it("does nothing when lesson list is empty", async () => {
       const lessonCountBefore = await prisma.lesson.count({
         where: { moduleId: target.module.id },
       });
@@ -316,6 +328,164 @@ describe('courseCloning service', () => {
       });
 
       expect(lessonCountAfter).toBe(lessonCountBefore);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Batched-write invariants
+  // ══════════════════════════════════════════════════════════════════════
+
+  describe("batched clone invariants", () => {
+    it("keeps parent/child links correct when titles and positions collide", async () => {
+      // Every level is written with one insert and correlated back by array
+      // position, so a tree that is ambiguous by title and position is the case
+      // that catches a mis-correlation.
+      const lessonSpecs = [
+        { moduleTitle: "Test Module", contentMd: "A2", module: source.module },
+        { moduleTitle: "Module B", contentMd: "B1", module: null },
+        { moduleTitle: "Module B", contentMd: "B2", module: null },
+      ];
+
+      const moduleB = await prisma.module.create({
+        data: {
+          title: "Module B",
+          description: "second module",
+          position: 1,
+          courseOfferingId: source.course.id,
+        },
+      });
+      lessonSpecs[1].module = moduleB;
+      lessonSpecs[2].module = moduleB;
+
+      // The seeded lesson is the fourth member of the collision set.
+      const sourceLessons = [{ lesson: source.lesson, contentMd: "Test content" }];
+      for (const spec of lessonSpecs) {
+        const lesson = await prisma.lesson.create({
+          data: {
+            title: "Test Lesson",
+            contentMd: spec.contentMd,
+            position: 0,
+            moduleId: spec.module.id,
+          },
+        });
+        sourceLessons.push({ lesson, contentMd: spec.contentMd });
+      }
+
+      for (const { lesson, contentMd } of sourceLessons) {
+        await createActivity(lesson.id, source.topic.id, { instructionsMd: `${contentMd}-a0` });
+        await createActivity(lesson.id, source.topic.id, { instructionsMd: `${contentMd}-a1` });
+      }
+
+      await cloneCourseContent(source.course.id, target.course.id);
+
+      const clonedModules = await prisma.module.findMany({
+        where: { courseOfferingId: target.course.id, id: { not: target.module.id } },
+        include: { lessons: { include: { activities: true } } },
+      });
+
+      const clonedLessons = clonedModules.flatMap((module) => module.lessons);
+      expect(clonedLessons.length).toBe(4);
+
+      // Each lesson must carry exactly its own two activities, never a mix.
+      for (const lesson of clonedLessons) {
+        const instructions = lesson.activities
+          .map((activity) => activity.instructionsMd)
+          .toSorted();
+        expect(instructions).toEqual([`${lesson.contentMd}-a0`, `${lesson.contentMd}-a1`]);
+      }
+
+      // And each lesson must sit under the module it came from.
+      const groupedByModule = clonedModules.map((module) =>
+        module.lessons.map((lesson) => lesson.contentMd).toSorted(),
+      );
+      expect(groupedByModule).toContainEqual(["A2", "Test content"]);
+      expect(groupedByModule).toContainEqual(["B1", "B2"]);
+    });
+
+    it("clones an activity whose config is null", async () => {
+      await createActivity(source.lesson.id, source.topic.id, { config: undefined });
+
+      await cloneCourseContent(source.course.id, target.course.id);
+
+      const clonedActivity = await prisma.activity.findFirst({
+        where: {
+          lesson: { module: { courseOfferingId: target.course.id, id: { not: target.module.id } } },
+        },
+      });
+      expect(clonedActivity).toBeDefined();
+      expect(clonedActivity.config).toBeNull();
+    });
+
+    it("creates one target topic when many activities share a source topic", async () => {
+      const sharedTopic = await prisma.topic.create({
+        data: { name: "Shared Topic", courseOfferingId: source.course.id },
+      });
+      const secondModule = await prisma.module.create({
+        data: { title: "Second Module", position: 1, courseOfferingId: source.course.id },
+      });
+      const secondLesson = await prisma.lesson.create({
+        data: { title: "Second Lesson", position: 0, moduleId: secondModule.id },
+      });
+
+      await createActivity(source.lesson.id, sharedTopic.id);
+      await createActivity(secondLesson.id, sharedTopic.id);
+
+      await cloneCourseContent(source.course.id, target.course.id);
+
+      const targetSharedTopics = await prisma.topic.findMany({
+        where: { courseOfferingId: target.course.id, name: "Shared Topic" },
+      });
+      expect(targetSharedTopics.length).toBe(1);
+    });
+
+    it("collapses same-named topics from different source courses into one target topic", async () => {
+      const otherProf = makeProfessor();
+      const other = await seedMinimalCourse(otherProf.id);
+
+      const sourceDupTopic = await prisma.topic.create({
+        data: { name: "Dup Topic", courseOfferingId: source.course.id },
+      });
+      const otherDupTopic = await prisma.topic.create({
+        data: { name: "Dup Topic", courseOfferingId: other.course.id },
+      });
+
+      await createActivity(source.lesson.id, sourceDupTopic.id);
+      await createActivity(other.lesson.id, otherDupTopic.id);
+
+      await cloneLessonsFromOffering([source.lesson.id, other.lesson.id], target.module.id);
+
+      const targetDupTopics = await prisma.topic.findMany({
+        where: { courseOfferingId: target.course.id, name: "Dup Topic" },
+      });
+      expect(targetDupTopics.length).toBe(1);
+
+      const clonedActivities = await prisma.activity.findMany({
+        where: { lesson: { moduleId: target.module.id, id: { not: target.lesson.id } } },
+      });
+      expect(clonedActivities.length).toBe(2);
+      for (const activity of clonedActivities) {
+        expect(activity.mainTopicId).toBe(targetDupTopics[0].id);
+      }
+    });
+
+    it("clones a lesson that has no activities", async () => {
+      const emptyLesson = await prisma.lesson.create({
+        data: { title: "Empty Lesson", position: 1, moduleId: source.module.id },
+      });
+      await createActivity(source.lesson.id, source.topic.id);
+
+      await cloneCourseContent(source.course.id, target.course.id);
+
+      const clonedEmpty = await prisma.lesson.findFirst({
+        where: {
+          title: "Empty Lesson",
+          id: { not: emptyLesson.id },
+          module: { courseOfferingId: target.course.id },
+        },
+        include: { activities: true },
+      });
+      expect(clonedEmpty).toBeDefined();
+      expect(clonedEmpty.activities.length).toBe(0);
     });
   });
 });

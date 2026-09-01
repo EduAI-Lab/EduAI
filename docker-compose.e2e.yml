@@ -65,6 +65,10 @@ services:
       BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
       BETTER_AUTH_URL: http://localhost:3000
       BETTER_AUTH_DISABLE_RATE_LIMIT: "1"
+      # No SMTP in the E2E stack: fresh sign-ups cannot receive verification
+      # links, so requireEmailVerification is skipped and new users are minted
+      # pre-verified. See EMAIL_VERIFICATION_DISABLED in auth/server.ts.
+      BETTER_AUTH_DISABLE_EMAIL_VERIFICATION: "1"
       # Core's own /api/sessions/validate limiter (rate-limit.server.ts,
       # default 300 req/60s per IP) — three extension servers validating every
       # authenticated request from one compose network IP exceed that in a
@@ -103,6 +107,7 @@ services:
       PORT: "4000"
       CORE_URL: http://e2e-eduai-app:3000
       CORE_PUBLIC_ORIGIN: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3001
       EDUAI_DISCOVERY_URL: http://e2e-eduai-app:3000/api/auth/.well-known/openid-configuration
       EDUAI_CLIENT_ID: e2e-client-id
       EDUAI_CLIENT_SECRET: e2e-client-secret
@@ -159,6 +164,10 @@ services:
       # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
       CORE_PUBLIC_ORIGIN: http://localhost:3000
       CORS_ORIGINS: http://localhost:5173
+      # Point the QM EduAI proxy (including the connectivity probe) at the
+      # in-stack Core so E2E probes reach the real course-free /api/completion
+      # boundary instead of the public https://eduai.ok.ubc.ca default.
+      EDUAI_API_URL: http://e2e-eduai-app:3000
       EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "8000:8000"
@@ -178,6 +187,9 @@ services:
       context: .
       dockerfile: docker/tests/Dockerfile.qm-app
       target: serve
+      args:
+        VITE_API_URL: ${QM_BACKEND_URL:-http://localhost:8000}
+        VITE_CORE_URL: ${CORE_URL:-http://localhost:3000}
     environment:
       PORT: "5173"
     ports:
@@ -206,6 +218,7 @@ services:
       QM_BACKEND_URL: http://localhost:8000
       QM_FRONTEND_URL: http://localhost:5173
       BASE_URL: http://localhost:3000
+      EDUAI_API_KEY: test-service-key-not-for-production
       CI: "true"
     volumes:
       - ./playwright-report:/e2e/playwright-report

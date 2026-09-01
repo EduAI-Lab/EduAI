@@ -21,6 +21,7 @@ const existingModel: AIModel = {
   inputPricing: 0,
   outputPricing: 0,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId,
@@ -54,6 +55,7 @@ describe("buildOllamaModelCreatePayload", () => {
       inputPricing: 0,
       outputPricing: 0,
     });
+    expect(payload.routerTier).toBeNull();
   });
 });
 
@@ -68,6 +70,17 @@ describe("buildVllmModelCreatePayload", () => {
       modelId: "qwen2.5-7b-instruct",
       name: "Qwen2.5 7b Instruct",
       supportsTools: false,
+    });
+    expect(payload.routerTier).toBeNull();
+  });
+
+  it("marks the managed Qwen3.8 model as tool-capable and multimodal", () => {
+    const payload = buildVllmModelCreatePayload({ id: "qwen3.8-27b-instruct" });
+
+    expect(payload).toMatchObject({
+      modelId: "qwen3.8-27b-instruct",
+      supportsTools: true,
+      supportsImages: true,
     });
   });
 });

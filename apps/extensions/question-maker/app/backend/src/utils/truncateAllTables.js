@@ -16,6 +16,6 @@ export async function truncateAllTables(prisma) {
      WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
   `;
   if (tables.length === 0) return;
-  const list = tables.map((r) => `"${r.tablename}"`).join(', ');
+  const list = tables.map((r) => `"${r.tablename}"`).join(", ");
   await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
 }

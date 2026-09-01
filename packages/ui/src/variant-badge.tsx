@@ -1,16 +1,16 @@
-import { IconGitBranch, IconStar } from "@tabler/icons-react"
+import { IconGitBranch, IconStar } from "@tabler/icons-react";
 
-import { Badge } from "./ui/badge"
-import { cn } from "./utils"
+import { Badge } from "./ui/badge";
+import { cn } from "./utils";
 
 export interface VariantIdentity {
   /**
    * Id of the original/base question this question is a variant of. When `null`
    * or `undefined` the question is treated as the original (not a variant).
    */
-  referenceId?: number | null
+  referenceId?: number | null;
   /** Optional ordinal among siblings, e.g. `2` renders "Variant 2 of #4". */
-  variantNumber?: number | null
+  variantNumber?: number | null;
 }
 
 /**
@@ -18,17 +18,17 @@ export interface VariantIdentity {
  * Originals → "Original"; variants → "Variant of #4" or "Variant 2 of #4".
  */
 export function variantLabel({ referenceId, variantNumber }: VariantIdentity): string {
-  if (referenceId == null) return "Original"
+  if (referenceId == null) return "Original";
   return variantNumber != null
     ? `Variant ${variantNumber} of #${referenceId}`
-    : `Variant of #${referenceId}`
+    : `Variant of #${referenceId}`;
 }
 
 export interface VariantBadgeProps extends VariantIdentity {
   /** Render nothing for originals instead of an "Original" badge. Default false. */
-  hideOriginal?: boolean
-  size?: "sm" | "default" | "lg"
-  className?: string
+  hideOriginal?: boolean;
+  size?: "sm" | "default" | "lg";
+  className?: string;
 }
 
 /**
@@ -43,8 +43,8 @@ export function VariantBadge({
   size = "default",
   className,
 }: VariantBadgeProps) {
-  const isVariant = referenceId != null
-  if (!isVariant && hideOriginal) return null
+  const isVariant = referenceId != null;
+  if (!isVariant && hideOriginal) return null;
   return (
     <Badge
       variant="outline"
@@ -54,5 +54,5 @@ export function VariantBadge({
       {isVariant ? <IconGitBranch className="size-3.5" /> : <IconStar className="size-3.5" />}
       {variantLabel({ referenceId, variantNumber })}
     </Badge>
-  )
+  );
 }

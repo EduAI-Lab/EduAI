@@ -4,7 +4,7 @@
  * multi-select list of the course's questions. Built on @eduai/ui primitives and the shared
  * difficulty palette so it matches the rest of the redesigned surfaces (dark-mode safe).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   Button,
   Input,
@@ -12,7 +12,6 @@ import {
   ScrollArea,
   Separator,
   Badge,
-  Checkbox,
   Combobox,
   MultiSelect,
   cn,
@@ -21,10 +20,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@eduai/ui';
-import { IconSearch, IconFilterOff, IconListCheck, IconCheck } from '@tabler/icons-react';
-import { QuestionDifficulty, QuestionType, QuestionVariantEntry, Topic } from '../../types/question';
-import { difficultyChipClass } from '../../lib/difficulty';
+} from "@eduai/ui";
+import { IconSearch, IconFilterOff, IconListCheck, IconCheck } from "@tabler/icons-react";
+import {
+  QuestionDifficulty,
+  QuestionType,
+  QuestionVariantEntry,
+  Topic,
+} from "../../types/question";
+import { difficultyChipClass } from "../../lib/difficulty";
 
 interface AssessmentQuestionPickerProps {
   open: boolean;
@@ -44,21 +48,21 @@ type PickerFilter = {
 };
 
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
-  { value: 'MCQ', label: 'Multiple choice' },
-  { value: 'SA', label: 'Short answer' },
-  { value: 'LA', label: 'Long answer' },
+  { value: "MCQ", label: "Multiple choice" },
+  { value: "SA", label: "Short answer" },
+  { value: "LA", label: "Long answer" },
 ];
-const DIFFICULTIES: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
+const DIFFICULTIES: QuestionDifficulty[] = ["easy", "medium", "hard"];
 
 const EMPTY_FILTER: PickerFilter = {
   types: [],
   difficulties: [],
-  primaryTopicId: '',
+  primaryTopicId: "",
   secondaryTopicIds: [],
-  search: '',
+  search: "",
 };
 
-const SECTION_LABEL = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const SECTION_LABEL = "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
 
 export function AssessmentQuestionPicker({
   open,
@@ -79,15 +83,18 @@ export function AssessmentQuestionPicker({
   const filteredQuestions = useMemo(() => {
     return availableQuestions.filter((entry) => {
       if (filter.types.length > 0 && !filter.types.includes(entry.questionType)) return false;
-      if (filter.difficulties.length > 0 && !filter.difficulties.includes(entry.variant.difficulty)) return false;
-      if (filter.primaryTopicId && entry.primaryTopicId.toString() !== filter.primaryTopicId) return false;
+      if (filter.difficulties.length > 0 && !filter.difficulties.includes(entry.variant.difficulty))
+        return false;
+      if (filter.primaryTopicId && entry.primaryTopicId.toString() !== filter.primaryTopicId)
+        return false;
       if (filter.secondaryTopicIds.length > 0) {
         const variantSecondary = entry.variant.secondaryTopicsId ?? [];
         if (!filter.secondaryTopicIds.some((id) => variantSecondary.includes(id))) return false;
       }
       if (filter.search.trim()) {
         const needle = filter.search.toLowerCase();
-        const haystack = `${entry.variant.questionText} ${entry.questionDescription ?? ''}`.toLowerCase();
+        const haystack =
+          `${entry.variant.questionText} ${entry.questionDescription ?? ""}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       return true;
@@ -104,7 +111,9 @@ export function AssessmentQuestionPicker({
   const toggleType = (type: QuestionType) =>
     setFilter((prev) => ({
       ...prev,
-      types: prev.types.includes(type) ? prev.types.filter((t) => t !== type) : [...prev.types, type],
+      types: prev.types.includes(type)
+        ? prev.types.filter((t) => t !== type)
+        : [...prev.types, type],
     }));
 
   const toggleDifficulty = (diff: QuestionDifficulty) =>
@@ -124,7 +133,8 @@ export function AssessmentQuestionPicker({
     });
   };
 
-  const allFilteredSelected = selected.size === filteredQuestions.length && filteredQuestions.length > 0;
+  const allFilteredSelected =
+    selected.size === filteredQuestions.length && filteredQuestions.length > 0;
   const handleSelectAll = () => {
     if (allFilteredSelected) setSelected(new Set());
     else setSelected(new Set(filteredQuestions.map((q) => q.variant.id)));
@@ -166,9 +176,12 @@ export function AssessmentQuestionPicker({
               <IconListCheck className="size-5" aria-hidden />
             </span>
             <div className="min-w-0">
-              <DialogTitle className="text-base font-semibold text-foreground">Select questions</DialogTitle>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Select questions
+              </DialogTitle>
               <p className="text-xs text-muted-foreground">
-                {availableQuestions.length} available question{availableQuestions.length === 1 ? '' : 's'} in this course
+                {availableQuestions.length} available question
+                {availableQuestions.length === 1 ? "" : "s"} in this course
               </p>
             </div>
           </div>
@@ -220,10 +233,10 @@ export function AssessmentQuestionPicker({
                           onClick={() => toggleType(value)}
                           aria-pressed={active}
                           className={cn(
-                            'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                            "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                             active
-                              ? 'border-accent bg-accent/15 text-accent'
-                              : 'border-border text-muted-foreground hover:border-accent/50 hover:text-foreground',
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-border text-muted-foreground hover:border-accent/50 hover:text-foreground",
                           )}
                         >
                           {label}
@@ -245,10 +258,10 @@ export function AssessmentQuestionPicker({
                           onClick={() => toggleDifficulty(diff)}
                           aria-pressed={active}
                           className={cn(
-                            'rounded-full border px-2.5 py-1 text-xs font-medium capitalize transition-colors',
+                            "rounded-full border px-2.5 py-1 text-xs font-medium capitalize transition-colors",
                             active
                               ? difficultyChipClass[diff]
-                              : 'border-border text-muted-foreground hover:border-accent/50 hover:text-foreground',
+                              : "border-border text-muted-foreground hover:border-accent/50 hover:text-foreground",
                           )}
                         >
                           {diff}
@@ -268,7 +281,7 @@ export function AssessmentQuestionPicker({
                     onValueChange={(v) =>
                       setFilter((prev) => ({
                         ...prev,
-                        primaryTopicId: v ?? '',
+                        primaryTopicId: v ?? "",
                         secondaryTopicIds: prev.secondaryTopicIds.filter((id) => id !== v),
                       }))
                     }
@@ -283,7 +296,9 @@ export function AssessmentQuestionPicker({
                   <MultiSelect
                     options={secondaryTopicOptions}
                     value={filter.secondaryTopicIds}
-                    onValueChange={(ids) => setFilter((prev) => ({ ...prev, secondaryTopicIds: ids }))}
+                    onValueChange={(ids) =>
+                      setFilter((prev) => ({ ...prev, secondaryTopicIds: ids }))
+                    }
                     placeholder="All topics"
                     searchPlaceholder="Search topics…"
                     emptyText="No topics"
@@ -297,8 +312,12 @@ export function AssessmentQuestionPicker({
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <span className="text-sm text-muted-foreground">
-                {filteredQuestions.length} match{filteredQuestions.length === 1 ? '' : 'es'}
-                {selected.size > 0 && <span className="ml-1.5 font-semibold text-primary-text">· {selected.size} selected</span>}
+                {filteredQuestions.length} match{filteredQuestions.length === 1 ? "" : "es"}
+                {selected.size > 0 && (
+                  <span className="ml-1.5 font-semibold text-primary-text">
+                    · {selected.size} selected
+                  </span>
+                )}
               </span>
               <Button
                 type="button"
@@ -308,7 +327,7 @@ export function AssessmentQuestionPicker({
                 className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                 disabled={filteredQuestions.length === 0}
               >
-                {allFilteredSelected ? 'Clear selection' : 'Select all'}
+                {allFilteredSelected ? "Clear selection" : "Select all"}
               </Button>
             </div>
 
@@ -320,20 +339,26 @@ export function AssessmentQuestionPicker({
                   </div>
                   <p className="text-sm font-medium text-foreground">
                     {hasActiveFilters && availableQuestions.length > 0
-                      ? 'No questions match'
+                      ? "No questions match"
                       : availableQuestions.length === 0 && questionBank.length > 0
-                        ? 'No more questions'
-                        : 'No questions to add'}
+                        ? "No more questions"
+                        : "No questions to add"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {hasActiveFilters && availableQuestions.length > 0
-                      ? 'Try clearing or loosening the filters.'
+                      ? "Try clearing or loosening the filters."
                       : availableQuestions.length === 0 && questionBank.length > 0
-                        ? 'No more questions. Add more in the question library.'
-                        : 'This course has no questions yet. Add some in the question library.'}
+                        ? "No more questions. Add more in the question library."
+                        : "This course has no questions yet. Add some in the question library."}
                   </p>
                   {hasActiveFilters && availableQuestions.length > 0 && (
-                    <Button type="button" variant="outline" size="sm" onClick={handleClearFilters} className="mt-1 gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearFilters}
+                      className="mt-1 gap-1.5"
+                    >
                       <IconFilterOff className="size-3.5" /> Clear filters
                     </Button>
                   )}
@@ -342,7 +367,9 @@ export function AssessmentQuestionPicker({
                 <div className="flex flex-col gap-2 p-3">
                   {filteredQuestions.map((entry) => {
                     const checked = selected.has(entry.variant.id);
-                    const topicName = entry.primaryTopicName || topics.find((t) => t.id === entry.primaryTopicId)?.name;
+                    const topicName =
+                      entry.primaryTopicName ||
+                      topics.find((t) => t.id === entry.primaryTopicId)?.name;
                     const diff = entry.variant.difficulty as QuestionDifficulty | undefined;
                     return (
                       <button
@@ -351,15 +378,27 @@ export function AssessmentQuestionPicker({
                         onClick={() => handleToggleQuestion(entry.variant.id)}
                         aria-pressed={checked}
                         className={cn(
-                          'flex items-start gap-3 rounded-[var(--radius-lg)] border px-3.5 py-3 text-left transition-colors',
+                          "flex items-start gap-3 rounded-[var(--radius-lg)] border px-3.5 py-3 text-left transition-colors",
                           checked
-                            ? 'border-accent bg-accent/10'
-                            : 'border-border bg-card hover:border-accent/40 hover:bg-muted/40',
+                            ? "border-accent bg-accent/10"
+                            : "border-border bg-card hover:border-accent/40 hover:bg-muted/40",
                         )}
                       >
-                        <Checkbox checked={checked} className="pointer-events-none mt-0.5" tabIndex={-1} aria-hidden />
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-secondary bg-secondary text-secondary-foreground"
+                              : "border-input bg-background",
+                          )}
+                        >
+                          {checked && <IconCheck className="size-3" />}
+                        </span>
                         <div className="min-w-0 flex-1 space-y-1.5">
-                          <p className="line-clamp-2 text-sm leading-relaxed text-foreground">{entry.variant.questionText}</p>
+                          <p className="line-clamp-2 text-sm leading-relaxed text-foreground">
+                            {entry.variant.questionText}
+                          </p>
                           <div className="flex flex-wrap items-center gap-1.5">
                             <Badge variant="muted" size="sm" className="capitalize">
                               {entry.questionType}
@@ -367,7 +406,7 @@ export function AssessmentQuestionPicker({
                             {diff && (
                               <span
                                 className={cn(
-                                  'inline-flex h-[18px] items-center rounded-full border px-2 text-[10px] font-medium capitalize',
+                                  "inline-flex h-[18px] items-center rounded-full border px-2 text-[10px] font-medium capitalize",
                                   difficultyChipClass[diff],
                                 )}
                               >
@@ -375,11 +414,12 @@ export function AssessmentQuestionPicker({
                               </span>
                             )}
                             {topicName && (
-                              <span className="max-w-[12rem] truncate text-[11px] text-muted-foreground">{topicName}</span>
+                              <span className="max-w-[12rem] truncate text-[11px] text-muted-foreground">
+                                {topicName}
+                              </span>
                             )}
                           </div>
                         </div>
-                        {checked && <IconCheck className="mt-0.5 size-4 shrink-0 text-accent" />}
                       </button>
                     );
                   })}
@@ -391,15 +431,20 @@ export function AssessmentQuestionPicker({
 
         <DialogFooter className="mt-0 shrink-0 sm:items-center sm:justify-between gap-2 border-t border-border px-6 py-4">
           <span className="text-sm text-muted-foreground">
-            {selected.size} question{selected.size === 1 ? '' : 's'} selected
+            {selected.size} question{selected.size === 1 ? "" : "s"} selected
           </span>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={() => handleClose(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={handleConfirm} disabled={selected.size === 0} className="gap-1.5">
+            <Button
+              type="button"
+              onClick={handleConfirm}
+              disabled={selected.size === 0}
+              className="gap-1.5"
+            >
               <IconCheck className="size-4" />
-              Add {selected.size > 0 ? selected.size : ''} question{selected.size === 1 ? '' : 's'}
+              Add {selected.size > 0 ? selected.size : ""} question{selected.size === 1 ? "" : "s"}
             </Button>
           </div>
         </DialogFooter>

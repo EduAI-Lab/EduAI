@@ -8,7 +8,7 @@
  *   3. global env default (RAG_SIMILARITY_THRESHOLD, falls back to 0.5)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be hoisted before any imports that pull in the modules
@@ -23,11 +23,21 @@ vi.mock("~/lib/courses/server", () => ({
 }));
 
 const queryRawMock = vi.hoisted(() => vi.fn());
+const executeRawMock = vi.hoisted(() => vi.fn());
 const courseFindUniqueMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $queryRaw: queryRawMock,
+    // findRelevantContent (#940) wraps a chained `SELECT set_config(...)` GUC
+    // statement + the query in a transaction so both run on the same pooled
+    // connection. The real PrismaClient accepts an array of pending raw-query
+    // promises; mimic that by resolving each entry and returning the results.
+    // The version-gate check for ivfflat.iterative_scan / max_probes also goes
+    // through $queryRaw (SELECT extversion ...), so default it to a pgvector
+    // 0.8+ row; individual tests can override via queryRawMock.mockResolvedValueOnce.
+    $executeRaw: executeRawMock,
+    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     // loadEffectiveEmbeddingSettings inside generateEmbedding also hits prisma.course.findUnique
     // (for embeddingProvider / embeddingModel). Return null so it falls through to server defaults.
     course: { findUnique: courseFindUniqueMock },
@@ -58,25 +68,45 @@ vi.mock("@ai-sdk/openai", () => ({
 // uses Google (the 1024 branch only accepts OpenRouter / OpenAI).
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-google-key";
 process.env.EMBEDDING_DIMENSION = "3";
+const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
 
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { findRelevantContent, __resetPgvectorIterativeScanCacheForTests } from "~/lib/ai/embedding";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Pull the interpolated values out of a tagged-template mock call. */
+/**
+ * Pull the interpolated values out of the retrieval query's tagged-template
+ * mock call. `pgvectorSupportsIterativeScan()` also issues a one-time,
+ * process-cached `SELECT extversion ...` via `$queryRaw` — reset via
+ * `__resetPgvectorIterativeScanCacheForTests()` in `beforeEach` and always
+ * skip that call (index 0) so this keeps pointing at the retrieval query
+ * regardless of call order.
+ */
 function getQueryArgs(callIndex = 0): unknown[] {
-  // When $queryRaw is called as a tagged template literal,
-  // mock.calls[n][0] is the TemplateStringsArray, and [1..n] are the interpolations.
-  return queryRawMock.mock.calls[callIndex].slice(1);
+  const retrievalCallIndex = callIndex + 1;
+  return queryRawMock.mock.calls[retrievalCallIndex].slice(1);
 }
 
 beforeEach(() => {
+  // Vite loads the developer's apps/core/.env during unit tests. Keep this
+  // mocked cloud-provider suite independent of a local Ollama configuration.
+  process.env.EMBEDDING_PROVIDER = "cloud";
   vi.clearAllMocks();
+  __resetPgvectorIterativeScanCacheForTests();
+  // First $queryRaw call in every test is the cached pgvector version check
+  // (`SELECT extversion FROM pg_extension ...`); report 0.8.0 so iterative
+  // scanning is enabled, matching the repository's minimum supported image.
+  queryRawMock.mockResolvedValueOnce([{ extversion: "0.8.0" }]);
   queryRawMock.mockResolvedValue([]);
   // loadEffectiveEmbeddingSettings needs a course row; null = use server-level defaults.
   courseFindUniqueMock.mockResolvedValue(null);
+});
+
+afterAll(() => {
+  if (originalEmbeddingProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+  else process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
 });
 
 // ---------------------------------------------------------------------------

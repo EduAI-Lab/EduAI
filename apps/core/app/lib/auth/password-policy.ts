@@ -4,6 +4,9 @@
  * must stay free of server-only imports.
  */
 
+import type { JsonValue } from "~/lib/json-value";
+import { asJsonObject, asText } from "~/lib/json-value";
+
 /** Minimum length for a complex password that mixes character classes. */
 export const MIN_COMPLEX_PASSWORD_LENGTH = 8;
 /** Minimum length for a passphrase that need not mix character classes. */
@@ -25,9 +28,7 @@ export type PasswordRequirementStatus = {
 };
 
 /** Return each policy check so forms can explain unmet requirements live. */
-export function getPasswordRequirementStatus(
-  password: string,
-): PasswordRequirementStatus {
+export function getPasswordRequirementStatus(password: string): PasswordRequirementStatus {
   const minimumLength = password.length >= MIN_COMPLEX_PASSWORD_LENGTH;
   const lowercase = /[a-z]/.test(password);
   const uppercase = /[A-Z]/.test(password);
@@ -57,12 +58,22 @@ export function isStrongPassword(password: string): boolean {
 /**
  * Maps auth paths to the password field in the request body.
  */
-const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
-  "/sign-up/email": "password",
-  "/change-password": "newPassword",
-  "/reset-password": "newPassword",
-  "/set-password": "newPassword",
-};
+const PASSWORD_SETTING_PATHS = new Map<string, "password" | "newPassword">([
+  ["/sign-up/email", "password"],
+  ["/change-password", "newPassword"],
+  ["/reset-password", "newPassword"],
+  ["/set-password", "newPassword"],
+]);
+
+/**
+ * `setPassword` is declared `serverOnly`, so it has no route and `ctx.path`
+ * is `undefined` for it — better-auth still gives every dispatch a stable
+ * `operationId` (the `auth.api.*` map key) even when there's no path, so
+ * that's the identity a server-only endpoint has to be matched on instead.
+ */
+const PASSWORD_SETTING_OPERATIONS = new Map<string, "password" | "newPassword">([
+  ["setPassword", "newPassword"],
+]);
 
 /**
  * Auth paths that resolve a user via a reset token instead of a session.
@@ -76,12 +87,23 @@ export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
 
 /**
  * Returns the password from a password-setting auth request, if present.
+ * `path` is `undefined` for server-only endpoints (no route), in which case
+ * `operationId` is used to identify the endpoint instead.
  */
-export function extractPolicyPassword(path: string, body: unknown): string | null {
-  const field = PASSWORD_SETTING_PATHS[path];
+export function extractPolicyPassword(
+  path: string | undefined,
+  operationId: string | undefined,
+  body: JsonValue | undefined,
+): string | null {
+  const field =
+    (path ? PASSWORD_SETTING_PATHS.get(path) : undefined) ??
+    (operationId ? PASSWORD_SETTING_OPERATIONS.get(operationId) : undefined);
   if (!field) {
     return null;
   }
-  const value = (body as Record<string, unknown> | null | undefined)?.[field];
-  return typeof value === "string" ? value : null;
+  const fields = asJsonObject(body ?? undefined);
+  if (!fields) {
+    return null;
+  }
+  return asText(fields[field]);
 }

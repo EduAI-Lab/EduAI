@@ -81,7 +81,7 @@ function toCanvasFileApi(
     size: 128,
     updated_at: upstream.updatedAt.toISOString(),
     url: upstream.url,
-    ...(canvasPublished === "no" ? { hidden: true } : {}),
+    hidden: canvasPublished === "no" ? true : undefined,
   };
 }
 
@@ -117,9 +117,7 @@ async function buildRow(row: ImportReconcileRow, index: number): Promise<BuiltRo
   if (row.ExistingPresent === "yes") {
     existingDeletedAt = row.DeletedAt === "yes" ? DELETED_AT : null;
     existingCanvasUpdatedAt =
-      row.StaleAndReady === "yes"
-        ? STALE_CANVAS_UPDATED_AT
-        : new Date("2025-01-09T00:00:00.000Z");
+      row.StaleAndReady === "yes" ? STALE_CANVAS_UPDATED_AT : new Date("2025-01-09T00:00:00.000Z");
 
     const existing = await prisma.courseMaterial.create({
       data: {
@@ -201,23 +199,14 @@ async function assertPostConditions(
 ) {
   const verdict = importReconcileOracle(row);
 
-  if (verdict.outcome === "skipped" && verdict.kind === "deleted") {
-    expect(built.existingMaterialId).not.toBeNull();
-    const material = await prisma.courseMaterial.findUnique({
-      where: { id: built.existingMaterialId! },
-    });
-    expect(material?.deletedAt).not.toBeNull();
-    expect(downloadCanvasFile).not.toHaveBeenCalled();
-    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
-    return;
-  }
-
   if (verdict.outcome === "skipped" && verdict.kind === "not-modified-fresh-ready") {
     expect(built.existingMaterialId).not.toBeNull();
     const material = await prisma.courseMaterial.findUnique({
       where: { id: built.existingMaterialId! },
     });
     expect(material?.status).toBe("READY");
+    expect(material?.deletedAt).toBeNull();
+    expect(material?.unpublishedAt).toBeNull();
     expect(material?.canvasUpdatedAt?.toISOString()).toBe(
       built.existingCanvasUpdatedAt?.toISOString(),
     );
@@ -275,11 +264,9 @@ async function assertPostConditions(
     expect(material?.status).toBe("READY");
     expect(material?.canvasUpdatedAt?.toISOString()).toBe(UPSTREAM_UPDATED_AT.toISOString());
     expect(material?.checksum).toBe(STUB_CHECKSUM);
-    expect(processMaterialEmbeddings).toHaveBeenCalledWith(
-      built.existingMaterialId,
-      "hello",
-      { replace: true },
-    );
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith(built.existingMaterialId, "hello", {
+      replace: true,
+    });
   }
 }
 

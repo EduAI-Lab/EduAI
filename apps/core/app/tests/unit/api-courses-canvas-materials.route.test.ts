@@ -9,7 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/client.server", async (importOriginal) => {
@@ -38,7 +38,7 @@ vi.mock("~/lib/canvas/materials.server", async (importOriginal) => {
 
 import { loader, action } from "~/routes/api/courses.canvas-materials.$";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { CanvasApiError } from "~/lib/canvas/client.server";
 import { InvalidCanvasCourseAccessError } from "~/lib/canvas/courses.server";
 import {
@@ -46,6 +46,7 @@ import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(courseId?: string, query = "") {
   return {
@@ -55,14 +56,15 @@ function makeLoaderArgs(courseId?: string, query = "") {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "POST", courseId?: string) {
+function makeActionArgs(body?: RouteRequestBody, method = "POST", courseId?: string) {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request("http://localhost/api/courses/course-1/canvas-materials", {
-      method,
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    }),
+    request: new Request("http://localhost/api/courses/course-1/canvas-materials", init),
     params: courseId === undefined ? { courseId: "course-1" } : { courseId },
     context: {} as never,
   } as never;
@@ -73,7 +75,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "instructor-1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "course-1" },
     access: { level: "instructor", rank: 2 },
   } as never);
@@ -92,13 +94,13 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
   });
 
   it("returns 404 when the course does not exist", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({ course: null, access: null });
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({ course: null, access: null });
     const res = await loader(makeLoaderArgs());
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for a non-instructor (e.g. a TA)", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "ta", rank: 1 },
     } as never);
@@ -114,14 +116,14 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
     expect(body.data.files).toEqual([{ id: "f1" }]);
   });
 
-  it("passes recheck=true through to discoverCanvasMaterialsForCourse", async () => {
+  it("does not permit publish-state writes through a GET query", async () => {
     vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([]);
     await loader(makeLoaderArgs(undefined, "?recheck=true"));
     expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith(
       "instructor-1",
       "course-1",
       undefined,
-      { recheckPublishState: true },
+      { recheckPublishState: false },
     );
   });
 
@@ -133,6 +135,20 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
 });
 
 describe("POST /api/courses/:courseId/canvas-materials", () => {
+  it("rechecks publish state through the CSRF-protected action", async () => {
+    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([{ id: "f1" }] as never);
+
+    const res = await action(makeActionArgs({ intent: "discover" }));
+
+    expect(res.status).toBe(200);
+    expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith(
+      "instructor-1",
+      "course-1",
+      undefined,
+      { recheckPublishState: true },
+    );
+  });
+
   it("returns 400 when courseId is missing", async () => {
     const res = await action(makeActionArgs({}, "POST", ""));
     expect(res.status).toBe(400);
@@ -144,7 +160,7 @@ describe("POST /api/courses/:courseId/canvas-materials", () => {
   });
 
   it("returns 403 for a non-instructor before parsing the body", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);
@@ -173,7 +189,10 @@ describe("POST /api/courses/:courseId/canvas-materials", () => {
     vi.mocked(syncSelectedCanvasMaterials).mockResolvedValue({ synced: 2 } as never);
     const res = await action(makeActionArgs({ canvasFileIds: ["f1", "f2"] }));
     expect(res.status).toBe(200);
-    expect(syncSelectedCanvasMaterials).toHaveBeenCalledWith("instructor-1", "course-1", ["f1", "f2"]);
+    expect(syncSelectedCanvasMaterials).toHaveBeenCalledWith("instructor-1", "course-1", [
+      "f1",
+      "f2",
+    ]);
   });
 
   it("maps a CanvasMaterialSyncError to its statusCode", async () => {

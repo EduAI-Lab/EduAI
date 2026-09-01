@@ -58,8 +58,14 @@ describe("auth/accept-invitation loader", () => {
   });
 
   it("maps a service error code to a friendly message", async () => {
-    vi.mocked(getInvitationByToken).mockResolvedValue({ ok: false, status: 410, error: "INVITATION_EXPIRED" });
-    const result = await loader(makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"));
+    vi.mocked(getInvitationByToken).mockResolvedValue({
+      ok: false,
+      status: 410,
+      error: "INVITATION_EXPIRED",
+    });
+    const result = await loader(
+      makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"),
+    );
     expect(result).toEqual({ ok: false, error: expect.stringContaining("expired") });
   });
 
@@ -68,7 +74,9 @@ describe("auth/accept-invitation loader", () => {
       ok: true,
       invitation: { email: "new@student.ubc.ca", role: "STUDENT", name: "New User" },
     } as never);
-    const result = await loader(makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"));
+    const result = await loader(
+      makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"),
+    );
     expect(result).toEqual({
       ok: true,
       token: "abc",
@@ -93,8 +101,35 @@ describe("auth/accept-invitation action", () => {
     expect(acceptInvitation).not.toHaveBeenCalled();
   });
 
+  it("returns HTTP 413 for an oversized declared form before invitation work", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("token=x"));
+      },
+    });
+    const result = (await action({
+      request: new Request("http://localhost/auth/accept-invitation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": String(64 * 1024 + 1),
+        },
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(acceptInvitation).not.toHaveBeenCalled();
+  });
+
   it("returns a friendly formError when acceptInvitation fails", async () => {
-    vi.mocked(acceptInvitation).mockResolvedValue({ ok: false, status: 400, error: "INVALID_TOKEN" });
+    vi.mocked(acceptInvitation).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "INVALID_TOKEN",
+    });
     const result = (await action(
       makeActionArgs({
         token: "bad-token",
@@ -133,7 +168,7 @@ describe("auth/accept-invitation action", () => {
       ok: true,
       user: { id: "u1", role: "STUDENT", email: "new@student.ubc.ca" },
       invitationId: "invite-1",
-      headers: new Headers(),
+      headers: new Headers({ "Set-Cookie": "better-auth.session=abc" }),
     } as never);
     vi.mocked(userNeedsStudentIdOnboarding).mockResolvedValue(true);
 
@@ -146,5 +181,25 @@ describe("auth/accept-invitation action", () => {
       }),
     )) as Response;
     expect(res.headers.get("Location")).toBe("/onboarding/student-id");
+  });
+
+  it("falls back to login when invitation session creation fails", async () => {
+    vi.mocked(acceptInvitation).mockResolvedValue({
+      ok: true,
+      user: { id: "u1", role: "STUDENT", email: "new@student.ubc.ca" },
+      invitationId: "invite-1",
+      headers: new Headers(),
+    } as never);
+    vi.mocked(userNeedsStudentIdOnboarding).mockResolvedValue(true);
+
+    const res = (await action(
+      makeActionArgs({
+        token: "good-token",
+        name: "New User",
+        password: STRONG_PASSWORD,
+        confirmPassword: STRONG_PASSWORD,
+      }),
+    )) as Response;
+    expect(res.headers.get("Location")).toBe("/auth/login");
   });
 });

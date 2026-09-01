@@ -6,15 +6,18 @@
  * of router.ts:
  *
  *   1. Per-request `modeOverride` (e.g. chat `model=auto-llm`) wins over `ROUTER_MODE`.
- *   2. Every non-rules mode still routes through Phase-1 hard rules when images are present
- *      (pick source becomes rules; mode telemetry stays on the active resolver).
+ *   2. Images are a *model-pool* constraint, not a routing-mode override (PR #1403: the
+ *      dedicated image-escalation rule was retired because "the model family handles
+ *      images natively... image presence is no longer a capability boundary"). Every
+ *      mode picks its tier exactly as it would for a text-only prompt; `router.ts`'s
+ *      `finalizePick` then filters the tier's candidate pool to `supportsImages` models
+ *      uniformly across rules/kNN/hybrid/LLM picks. Pick source therefore follows the
+ *      normal per-mode rule below regardless of `ImagesPresent`.
  *   3. Hybrid uses kNN tier pick only when neighbor confidence meets the minimum; otherwise
  *      it falls back to Phase-1 rules (same gate as `ROUTING_KNN_MIN_SIM`).
  *   4. LLM mode: tier-3 escalation rules win over the classifier (pick source rules).
  *   5. LLM mode: classifier failure is fail-open — silently downgrade pick source to rules
  *      while keeping LLM mode telemetry (`llm_classifier_fallback_rules`).
- *
- * Pure rules / knn modes map pick source to themselves when images are absent.
  *
  * This file is intentionally app-agnostic (no imports from apps/core). The adapter maps
  * the verdict to observable router features (`routerMode`, `pickSource`, `rule`, etc.).
@@ -49,15 +52,10 @@ export function resolveEffectiveMode(row: AutoRouterRow): RouterMode {
 export function autoRouterOracle(row: AutoRouterRow): AutoRouterVerdict {
   const effectiveMode = resolveEffectiveMode(row);
 
-  // Hard rule: attachments/images always delegate tier pick to Phase-1 rules.
-  if (row.ImagesPresent === "yes") {
-    return {
-      effectiveMode,
-      pickSource: "rules",
-      downgradedFromThrow: false,
-    };
-  }
-
+  // Images no longer redirect pick source to Phase-1 rules (see file header,
+  // point 2) — `ImagesPresent` only constrains the candidate pool
+  // (`requireImages`) applied uniformly after each mode's own tier pick, so
+  // it falls straight through to the normal per-mode switch below.
   switch (effectiveMode) {
     case "rules":
       return { effectiveMode, pickSource: "rules", downgradedFromThrow: false };

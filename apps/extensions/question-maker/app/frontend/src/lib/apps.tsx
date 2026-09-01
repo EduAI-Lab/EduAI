@@ -1,11 +1,11 @@
-import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui';
-import { getCoreUrl, getAiTutorUrl } from './coreUrl';
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@eduai/ui";
+import { getCoreUrl, getAiTutorUrl } from "./coreUrl";
 
 /** Stable id for the app rendering this sidebar — passed to AppLauncher. */
-export const CURRENT_APP_ID = 'question-maker';
+export const CURRENT_APP_ID = "question-maker";
 
 function getQuestionMakerUrl(): string {
-  return import.meta.env.VITE_QUESTION_MAKER_URL?.trim() || 'http://localhost:5173';
+  return import.meta.env.VITE_QUESTION_MAKER_URL?.trim() || "http://localhost:5173";
 }
 
 /**
@@ -14,7 +14,7 @@ function getQuestionMakerUrl(): string {
  * Core, AI Tutor, and Question Maker agree on one canonical list; this app
  * only resolves its own per-env URLs and injects them.
  */
-export function getLauncherApps(): LauncherApp[] {
+export function getLauncherApps(coreCourseId?: string | null): LauncherApp[] {
   return getSharedLauncherApps({
     currentAppId: CURRENT_APP_ID,
     urls: {
@@ -22,5 +22,6 @@ export function getLauncherApps(): LauncherApp[] {
       aiTutor: getAiTutorUrl(),
       questionMaker: getQuestionMakerUrl(),
     },
+    coreCourseId,
   });
 }

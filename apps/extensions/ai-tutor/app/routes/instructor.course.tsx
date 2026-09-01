@@ -18,11 +18,11 @@
  *     mid-load.
  * Related: routes/instructor.tsx (parent), routes/instructor.module.tsx (child)
  */
-import type { FormEvent } from 'react';
-import { useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { toast } from 'sonner';
-import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
+import type { FormEvent } from "react";
+import { useOptimistic, useRef, useState } from "react";
+import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
+import { toast } from "sonner";
+import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import {
   Button,
   Card,
@@ -51,45 +51,78 @@ import {
   SortableItem,
   DragHandle,
   Textarea,
-} from '@eduai/ui';
-import { PublishMenu } from '../components/PublishMenu';
-import { ModuleCard } from '../components/courses/ModuleCard';
-import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import api from '../lib/api';
-import type { Course, Module } from '../lib/types';
-import type { Route } from './+types/instructor.course';
-import { requireClientUser } from '~/lib/client-auth';
-import { useLocalUser } from '../hooks/useLocalUser';
-import { useAtPermissions } from '../hooks/useAtPermissions';
-import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
-import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
-import { CourseFeedbackPanel } from '../components/courses/CourseFeedbackPanel';
-import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
-import { PermissionGate } from '@eduai/ui';
-import { getCourseDetailTabs } from '~/lib/rbac/nav';
-import { useCourseTopics } from '../hooks/useCourseTopics';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+} from "@eduai/ui";
+import { PublishMenu } from "../components/PublishMenu";
+import { ModuleCard } from "../components/courses/ModuleCard";
+import {
+  accentForCourse,
+  courseCode,
+  courseName,
+  courseTerm,
+  courseYear,
+} from "../lib/course-display";
+import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
+import type { ModuleCreatePayload } from "../lib/api";
+import type { Course, Module } from "../lib/types";
+import type { Route } from "./+types/instructor.course";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "../hooks/useLocalUser";
+import { useAtPermissions } from "../hooks/useAtPermissions";
+import { CourseAnalyticsPanel } from "../components/courses/CourseAnalyticsPanel";
+import { CourseTopicsHeroAction } from "../components/courses/CourseTopicsHeroAction";
+import { CourseFeedbackPanel } from "../components/courses/CourseFeedbackPanel";
+import { CourseSubmissionsPanel } from "../components/courses/CourseSubmissionsPanel";
+import { PermissionGate } from "@eduai/ui";
+import { getCourseDetailTabs } from "~/lib/rbac/nav";
+import { useCourseTopics } from "../hooks/useCourseTopics";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { ListSearchInput } from "~/components/common/ListSearchInput";
+import { MoveToPositionDialog } from "~/components/common/MoveToPositionDialog";
+import {
+  absoluteOrdinal,
+  movedRowIndex,
+  parseListUrlParams,
+  redirectPastEnd,
+} from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
  * if the route param isn't numeric so the router renders the error boundary.
  */
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
+  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
-    throw new Response('Invalid course id', { status: 400 });
+    throw new Response("Invalid course id", { status: 400 });
   }
 
+  // #1207: page and search both live in the URL, so the list is bookmarkable
+  // and survives reload. `search` is applied server-side — nothing below
+  // filters `modulesPage.data` again.
+  const { page, search } = parseListUrlParams(request);
+
   const [course, modulesPage] = await Promise.all([
-    api.courseById(courseId) as Promise<Course>,
-    // #1043: modules endpoint returns the pagination envelope. Reorder host —
-    // keep `total` so we can refuse a partial-order persist past the page.
-    api.modulesForCourse(courseId),
+    api.courseById(courseId),
+    api.modulesForCourse(courseId, { page, search }),
   ]);
 
-  return { course, modules: modulesPage.data, modulesTotal: modulesPage.total };
+  redirectPastEnd(request, {
+    page,
+    total: modulesPage.total,
+    pageSize: modulesPage.pageSize,
+  });
+
+  return {
+    course,
+    modules: modulesPage.data,
+    modulesTotal: modulesPage.total,
+    page: modulesPage.page,
+    pageSize: modulesPage.pageSize,
+    search,
+  };
 }
 
 /**
@@ -99,25 +132,54 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function InstructorCourseModules({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
   const { courseId } = useParams();
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
-  const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
-  const { course, modules: initialModules, modulesTotal: initialModulesTotal } = loaderData;
+  const {
+    course,
+    modules: initialModules,
+    modulesTotal: initialModulesTotal,
+    page,
+    pageSize,
+    search,
+  } = loaderData;
+  // #1644: gate staff tabs on the viewer's role *on this course* (from the
+  // loader), not the global effective role — a global-effective TA who is only a
+  // STUDENT here must not see staff tabs whose content the server 403s.
+  const tabs = getCourseDetailTabs(
+    user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
+    course.viewerRole ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  // #1644: the router reuses this instance when CourseSwitcher changes only
+  // `:courseId`, so `activeTab` survives the switch. If the new course's
+  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
+  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
+  // trigger and every tab panel hides — the page renders blank. Clamp back to
+  // `content` during render whenever the active tab is no longer available.
+  if (!tabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab("content");
+  }
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
-  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
-  // all replace `modules`, so the truncation flag has to move with them or it
-  // goes stale and re-enables reorder after the list crosses the page bound.
+  // `total` is state, not a loader constant — refresh/create/import all replace
+  // `modules`, and the pager reads this.
   const [modulesTotal, setModulesTotal] = useState(initialModulesTotal);
-  // More modules than the bounded page we loaded — reorder is disabled all the
-  // way down (provider, item, drag handle) so a partial-order persist can't
-  // orphan the unseen tail, and the UI never advertises a drag it will reject.
-  const modulesTruncated = modulesTotal > modules.length;
-  const [title, setTitle] = useState('');
+  // #1207: reorder is no longer disabled past the page bound — a drag persists
+  // an absolute ordinal via `PATCH /modules/:id/position`, so the rows this
+  // page never loaded get shifted server-side. It IS disabled while a search is
+  // active: a filtered list hides the rows between two visible matches, so a
+  // drop index doesn't describe a real destination.
+  const [movingModule, setMovingModule] = useState<Module | null>(null);
+  const searching = search !== "";
+  const [title, setTitle] = useState("");
+  // Optional at creation time, same field the edit dialog writes. Without it a
+  // description could only be added after the fact, from the card kebab.
+  const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -130,8 +192,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
   const [editingModule, setEditingModule] = useState<Module | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editDescription, setEditDescription] = useState('');
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingModule, setDeletingModule] = useState<Module | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -159,15 +221,77 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     setModulesTotal(initialModulesTotal);
   }
 
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("page", String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
+
+  // Narrowing the term invalidates the current page number, so reset to page 1
+  // alongside it — otherwise `?page=7` against 3 pages of matches would bounce
+  // through the loader's past-the-end redirect on every keystroke.
+  const setModuleSearch = (term: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (term === "") next.delete("search");
+      else next.set("search", term);
+      next.delete("page");
+      return next;
+    });
+  };
+
+  // Refetch the CURRENT page and term (#1207) — refetching page 1 would jump
+  // the user somewhere else after every create/delete/reorder.
   const refreshModules = async () => {
     if (!numericCourseId) return;
     try {
-      const modulesData = await api.modulesForCourse(numericCourseId);
+      const modulesData = await api.modulesForCourse(numericCourseId, { page, search });
       setModules(modulesData.data);
       setModulesTotal(modulesData.total);
     } catch (error) {
-      console.error('Failed to refresh modules', error);
+      console.error("Failed to refresh modules", error);
     }
+  };
+
+  /**
+   * Land the instructor on the page that actually contains a just-created
+   * module (#1207).
+   *
+   * A new module is appended, so it lands on the last page — while the pager is
+   * usually sitting on an earlier one, and an active search almost certainly
+   * doesn't match the new title. Plain `refreshModules()` would then redraw the
+   * same rows, the dialog would close over an unchanged grid, and the create
+   * would read as a silent failure.
+   */
+  const revealNewestModule = async () => {
+    // `+ 1`: state still holds the pre-create count. `modulesTotal` counts
+    // matches while a search is active, so ask the server for the real count.
+    let unfilteredTotal = modulesTotal + 1;
+    if (searching && numericCourseId) {
+      try {
+        unfilteredTotal = (await api.modulesForCourse(numericCourseId, { page: 1, search: "" }))
+          .total;
+      } catch (error) {
+        console.error("Failed to count modules after create", error);
+      }
+    }
+
+    const lastPage = Math.max(1, Math.ceil(unfilteredTotal / pageSize));
+    if (searching || page !== lastPage) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("search");
+        next.set("page", String(lastPage));
+        return next;
+      });
+      return;
+    }
+    await refreshModules();
   };
 
   const ensureSourceCoursesLoaded = () => {
@@ -182,7 +306,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           : data;
         setAvailableCourses(nextCourses);
       })
-      .catch((error) => console.error('Failed to load courses', error))
+      .catch((error) => console.error("Failed to load courses", error))
       .finally(() => setLoadingSourceCourses(false));
   };
 
@@ -202,13 +326,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
     setLoadingSourceModules(true);
     try {
-      const data = await api.modulesForCourse(nextCourseId);
+      const data = await api.modulesForCourse(nextCourseId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (modulesRequestIdRef.current === requestId) {
         setSourceModules(data.data);
       }
     } catch (error) {
       if (modulesRequestIdRef.current === requestId) {
-        console.error('Failed to load modules for course', error);
+        console.error("Failed to load modules for course", error);
         setSourceModules([]);
       }
     } finally {
@@ -223,12 +349,17 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     if (!numericCourseId || !title.trim()) return;
     setCreating(true);
     try {
-      await api.createModule(numericCourseId, { title: title.trim() });
-      setTitle('');
+      const payload: ModuleCreatePayload = { title: title.trim() };
+      // Omit rather than send "" — the column is nullable and a blank string
+      // would render as an empty description line on the card.
+      if (description.trim()) payload.description = description.trim();
+      await api.createModule(numericCourseId, payload);
+      setTitle("");
+      setDescription("");
       setCreateOpen(false);
-      await refreshModules();
+      await revealNewestModule();
     } catch (error) {
-      console.error('Failed to create module', error);
+      console.error("Failed to create module", error);
     } finally {
       setCreating(false);
     }
@@ -267,7 +398,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       await handleSourceCourseSelection(null);
       await refreshModules();
     } catch (error) {
-      console.error('Import failed', error);
+      console.error("Import failed", error);
     } finally {
       setImporting(false);
     }
@@ -287,7 +418,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       // Confirm with server response
       setModules((prev) => prev.map((m) => (m.id === moduleId ? updated : m)));
     } catch (error) {
-      console.error('Failed to toggle publish status', error);
+      console.error("Failed to toggle publish status", error);
       // Rollback on error to clear optimistic change
       setModules((prev) =>
         prev.map((m) => (m.id === moduleId ? { ...m, isPublished: currentlyPublished } : m)),
@@ -297,44 +428,62 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
-  // Persist a drag-reordered module list: reorder the local list to match the
-  // dropped order optimistically, then confirm with the bulk reorder endpoint;
-  // a failure rolls back to the prior order.
-  const reorderModulesList = async (orderedIds: number[]) => {
-    if (!numericCourseId) return;
-    if (modulesTruncated) {
-      toast.error('This course has more modules than can be reordered at once.');
-      return;
-    }
+  /**
+   * Persist a single module move to an absolute ordinal (#1207).
+   *
+   * Both entry points land here: a drag supplies the row's new index on the
+   * current page, which becomes `(page - 1) * pageSize + index`; the "Move to
+   * position…" dialog supplies the ordinal directly. Sending one ordinal rather
+   * than a full ordered id list is what lets this work on page 3 — the server
+   * shifts the siblings this page never loaded.
+   *
+   * The page is refetched afterwards rather than patched locally, because a
+   * move can push this row (or another) onto a different page entirely.
+   */
+  const moveModule = async (moduleId: number, targetOrdinal: number) => {
     const current = modules;
-    const byId = new Map(current.map((m) => [m.id, m]));
-    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
-    if (next.length !== current.length) {
-      // Dropped order came from a stale render (list changed mid-drag);
-      // refetch rather than persisting a partial order.
-      toast.error('The module list changed while reordering. Refreshing — please try again.');
-      await refreshModules();
-      return;
-    }
-
-    setModules(next);
     setReorderingModules(true);
     try {
-      const updated = await api.reorderModules(numericCourseId, orderedIds);
-      setModules(updated);
+      await api.moveModuleToPosition(moduleId, targetOrdinal);
+      await refreshModules();
     } catch (error) {
-      console.error('Failed to reorder modules', error);
-      toast.error('Failed to reorder modules. The previous order was restored.');
+      console.error("Failed to move module", error);
+      toast.error("Failed to reorder modules. The previous order was restored.");
       setModules(current);
     } finally {
       setReorderingModules(false);
+      setMovingModule(null);
     }
+  };
+
+  // Drag-drop handler. `SortableProvider` hands back the ids in their new
+  // on-page order; `movedRowIndex` recovers which row was dragged.
+  const reorderModulesList = async (orderedIds: number[]) => {
+    if (!numericCourseId || searching) return;
+    const previousIds = modules.map((m) => m.id);
+    const movedIndex = movedRowIndex(orderedIds, previousIds);
+    if (movedIndex === -1) return;
+
+    const byId = new Map(modules.map((m) => [m.id, m]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
+    if (next.length !== modules.length) {
+      // Dropped order came from a stale render (list changed mid-drag); refetch
+      // rather than persisting a move against a list we no longer have.
+      toast.error("The module list changed while reordering. Refreshing — please try again.");
+      await refreshModules();
+      return;
+    }
+    // Show the dropped order immediately so the card doesn't snap back while
+    // the request is in flight.
+    setModules(next);
+
+    await moveModule(orderedIds[movedIndex], absoluteOrdinal(page, pageSize, movedIndex));
   };
 
   const openEditModule = (module: Module) => {
     setEditingModule(module);
     setEditTitle(module.title);
-    setEditDescription(module.description ?? '');
+    setEditDescription(module.description ?? "");
   };
 
   const onSaveEdit = async (event: FormEvent) => {
@@ -349,7 +498,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       setEditingModule(null);
       await refreshModules();
     } catch (error) {
-      console.error('Failed to update module', error);
+      console.error("Failed to update module", error);
     } finally {
       setSavingEdit(false);
     }
@@ -363,22 +512,22 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       setDeletingModule(null);
       await refreshModules();
     } catch (error) {
-      console.error('Failed to delete module', error);
+      console.error("Failed to delete module", error);
     } finally {
       setDeleting(false);
     }
   };
 
   useShellBreadcrumbs([
-    { label: 'Courses', href: '/instructor' },
+    { label: "Courses", href: "/instructor" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         numericCourseId != null ? (
           <CourseSwitcher
             courseId={numericCourseId}
             basePath="/instructor"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },
@@ -395,15 +544,22 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           name={courseName(course)}
           description={course.description}
           accentColor={accentForCourse(course)}
-          topics={courseTopics.topics.map((topic) => topic.name)}
-          topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
+          // #1207: the chip row shows a page of topics; append a "+N more" chip
+          // rather than ending silently at the page bound.
+          topics={[
+            ...courseTopics.topics.map((topic) => topic.name),
+            ...(courseTopics.total > courseTopics.topics.length
+              ? [`+${courseTopics.total - courseTopics.topics.length} more`]
+              : []),
+          ]}
+          topRightBadges={[course.isPublished ? "Published" : "Draft"]}
           topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
         />
       }
     >
       <PageTabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as (typeof tabs)[number]['id'])}
+        onValueChange={(value) => setActiveTab(value as (typeof tabs)[number]["id"])}
       >
         <PageTabsList>
           {tabs.map((tab) => (
@@ -416,23 +572,39 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <PageTabsContent value="content" className="space-y-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Modules</h2>
-            <PermissionGate allow={perms.canManageContent}>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {/* #1660: TA excluded — a TA already has a real (non-preview)
+                  view of this course via /student, not a preview of someone
+                  else's. */}
+              {perms.canPreviewAsStudent && numericCourseId != null ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => handleImportOpenChange(true)}
+                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
                 >
-                  <IconDownload className="size-4" aria-hidden="true" />
-                  Import
+                  <IconEye className="size-4" aria-hidden="true" />
+                  Preview as student
                 </Button>
-                <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                  <IconPlus className="size-4" aria-hidden="true" />
-                  Add module
-                </Button>
-              </div>
-            </PermissionGate>
+              ) : null}
+              <PermissionGate allow={perms.canManageContent}>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleImportOpenChange(true)}
+                  >
+                    <IconDownload className="size-4" aria-hidden="true" />
+                    Import
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                    <IconPlus className="size-4" aria-hidden="true" />
+                    Add module
+                  </Button>
+                </div>
+              </PermissionGate>
+            </div>
           </div>
 
           <PermissionGate allow={perms.canManageContent}>
@@ -446,8 +618,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 <DialogHeader>
                   <DialogTitle>Add module</DialogTitle>
                   <DialogDescription>
-                    Create a new module in {course.title}. Add lessons and activities to it once
-                    it exists.
+                    Create a new module in {course.title}. Add lessons and activities to it once it
+                    exists.
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={onCreateModule} className="grid gap-4 py-2">
@@ -462,6 +634,16 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       required
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-module-description">Description</Label>
+                    <Textarea
+                      id="new-module-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Optional — what this module covers"
+                      rows={3}
+                    />
+                  </div>
                   <DialogFooter>
                     <Button
                       type="button"
@@ -472,7 +654,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       Cancel
                     </Button>
                     <Button type="submit" disabled={creating || !title.trim()}>
-                      {creating ? 'Adding…' : 'Add module'}
+                      {creating ? "Adding…" : "Add module"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -524,14 +706,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       Cancel
                     </Button>
                     <Button type="submit" disabled={savingEdit || !editTitle.trim()}>
-                      {savingEdit ? 'Saving…' : 'Save changes'}
+                      {savingEdit ? "Saving…" : "Save changes"}
                     </Button>
                   </DialogFooter>
                 </form>
               </DialogContent>
             </Dialog>
           </PermissionGate>
-
 
           <PermissionGate allow={perms.canManageContent}>
             <Dialog
@@ -544,7 +725,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 <DialogHeader>
                   <DialogTitle>Delete module</DialogTitle>
                   <DialogDescription>
-                    Delete <span className="font-semibold text-foreground">{deletingModule?.title}</span>?
+                    Delete{" "}
+                    <span className="font-semibold text-foreground">{deletingModule?.title}</span>?
                     This removes its lessons and activities and can't be undone.
                   </DialogDescription>
                 </DialogHeader>
@@ -557,8 +739,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   >
                     Cancel
                   </Button>
-                  <Button type="button" variant="destructive" onClick={onConfirmDelete} disabled={deleting}>
-                    {deleting ? 'Deleting…' : 'Delete module'}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={onConfirmDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? "Deleting…" : "Delete module"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -580,9 +767,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   <div className="space-y-1.5">
                     <Label htmlFor="import-source-course">Choose course to copy</Label>
                     <Select
-                      value={
-                        selectedSourceCourseId != null ? String(selectedSourceCourseId) : undefined
-                      }
+                      value={selectedSourceCourseId != null ? String(selectedSourceCourseId) : ""}
                       onValueChange={(value) => {
                         const nextValue = value ? Number(value) : null;
                         void handleSourceCourseSelection(nextValue);
@@ -630,8 +815,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                             key={module.id}
                             className={`cursor-pointer rounded-[var(--radius-lg)] border p-4 transition ${
                               selectedModuleIds.has(module.id)
-                                ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
-                                : 'border-border hover:border-primary/50'
+                                ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                                : "border-border hover:border-primary/50"
                             }`}
                           >
                             <input
@@ -670,26 +855,34 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     }
                   >
                     {importing
-                      ? 'Importing…'
+                      ? "Importing…"
                       : selectedModuleIds.size > 0
-                        ? `Import ${selectedModuleIds.size} module${selectedModuleIds.size === 1 ? '' : 's'}`
-                        : 'Import modules'}
+                        ? `Import ${selectedModuleIds.size} module${selectedModuleIds.size === 1 ? "" : "s"}`
+                        : "Import modules"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
           </PermissionGate>
 
-          {modulesTruncated && perms.canManageContent ? (
-            <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-              Showing {modules.length} of {modulesTotal} modules. Reordering is unavailable until the
-              full list fits on one page, so a partial order can&apos;t be saved over the rest.
-            </p>
-          ) : null}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <ListSearchInput
+              value={search}
+              label="Search modules"
+              placeholder="Search modules…"
+              onSearchChange={setModuleSearch}
+            />
+            {searching && perms.canManageContent ? (
+              <p className="text-sm text-muted-foreground">Clear the search to reorder modules.</p>
+            ) : null}
+          </div>
 
           {oModules.length === 0 ? (
             <Card>
-              <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
+              <EmptyState
+                icon={<IconLayoutGrid size={22} aria-hidden="true" />}
+                title={searching ? "No modules match your search." : "No modules yet."}
+              />
             </Card>
           ) : (
             <SortableProvider
@@ -697,10 +890,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               onReorder={reorderModulesList}
               strategy="grid"
               disabled={
-                !perms.canManageContent ||
-                oModules.length < 2 ||
-                reorderingModules ||
-                modulesTruncated
+                !perms.canManageContent || modulesTotal < 2 || reorderingModules || searching
               }
             >
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -708,47 +898,67 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   const canPublish = course?.isPublished;
                   const blocked = !m.isPublished && !canPublish;
                   const tooltipMessage = blocked
-                    ? `Publish ${m.title} after publishing ${course?.title ?? 'the parent course'}.`
+                    ? `Publish ${m.title} after publishing ${course?.title ?? "the parent course"}.`
                     : null;
                   const busy = publishingId === m.id;
-                  const canReorder =
-                    perms.canManageContent && oModules.length > 1 && !modulesTruncated;
+                  const canReorder = perms.canManageContent && modulesTotal > 1 && !searching;
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
                       {({ handleProps }) => (
-                          <ModuleCard
-                            index={idx}
-                            title={m.title}
-                            description={m.description}
-                            accentColor={accentColor}
-                            isPublished={m.isPublished}
-                            onClick={() => navigate(`/instructor/module/${m.id}`)}
-                            leading={
-                              canReorder ? (
-                                <DragHandle handleProps={handleProps} label={`Drag to reorder ${m.title}`} />
-                              ) : undefined
-                            }
-                            actions={
-                              perms.canPublishContent || perms.canManageContent ? (
-                                <PublishMenu
-                                  isPublished={m.isPublished}
-                                  pending={busy}
-                                  blockedReason={tooltipMessage}
-                                  itemLabel="module"
-                                  onToggle={
-                                    perms.canPublishContent
-                                      ? () => {
-                                          if (busy || blocked) return;
-                                          setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
-                                        }
-                                      : undefined
-                                  }
-                                  onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
-                                  onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
-                                />
-                              ) : undefined
-                            }
-                          />
+                        <ModuleCard
+                          // Absolute ordinal, so numbering continues across
+                          // pages instead of restarting at 1 on page 2.
+                          index={absoluteOrdinal(page, pageSize, idx)}
+                          title={m.title}
+                          description={m.description}
+                          accentColor={accentColor}
+                          isPublished={m.isPublished}
+                          onClick={() => navigate(`/instructor/module/${m.id}`)}
+                          leading={
+                            canReorder ? (
+                              <DragHandle
+                                handleProps={handleProps}
+                                label={`Drag to reorder ${m.title}`}
+                              />
+                            ) : undefined
+                          }
+                          actions={
+                            perms.canPublishContent || perms.canManageContent ? (
+                              <PublishMenu
+                                isPublished={m.isPublished}
+                                pending={busy}
+                                blockedReason={tooltipMessage}
+                                itemLabel="module"
+                                onToggle={
+                                  perms.canPublishContent
+                                    ? () => {
+                                        if (busy || blocked) return;
+                                        setPendingPublish({
+                                          id: m.id,
+                                          isPublished: m.isPublished,
+                                          title: m.title,
+                                        });
+                                      }
+                                    : undefined
+                                }
+                                onEdit={
+                                  perms.canManageContent ? () => openEditModule(m) : undefined
+                                }
+                                onDelete={
+                                  perms.canManageContent ? () => setDeletingModule(m) : undefined
+                                }
+                                // Cross-page move: drag can only reach rows
+                                // on this page, so anything further needs an
+                                // explicit destination (#1207).
+                                onMove={
+                                  perms.canManageContent && modulesTotal > 1 && !searching
+                                    ? () => setMovingModule(m)
+                                    : undefined
+                                }
+                              />
+                            ) : undefined
+                          }
+                        />
                       )}
                     </SortableItem>
                   );
@@ -756,27 +966,56 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               </div>
             </SortableProvider>
           )}
+
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={modulesTotal}
+            onPageChange={goToPage}
+            disabled={navigation.state === "loading" || reorderingModules}
+          />
         </PageTabsContent>
 
-
-        {tabs.some((tab) => tab.id === 'feedback') && (
+        {tabs.some((tab) => tab.id === "feedback") && (
           <PageTabsContent value="feedback">
             {numericCourseId ? <CourseFeedbackPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
 
-        {tabs.some((tab) => tab.id === 'submissions') && (
+        {tabs.some((tab) => tab.id === "submissions") && (
           <PageTabsContent value="submissions">
             {numericCourseId ? <CourseSubmissionsPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
 
-        {tabs.some((tab) => tab.id === 'analytics') && (
+        {tabs.some((tab) => tab.id === "analytics") && (
           <PageTabsContent value="analytics" className="space-y-6">
             {numericCourseId ? <CourseAnalyticsPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
       </PageTabs>
+      <MoveToPositionDialog
+        open={movingModule !== null}
+        onOpenChange={(open) => {
+          if (!open) setMovingModule(null);
+        }}
+        itemTitle={movingModule?.title ?? ""}
+        itemNoun="module"
+        currentPosition={
+          movingModule
+            ? absoluteOrdinal(
+                page,
+                pageSize,
+                modules.findIndex((m) => m.id === movingModule.id),
+              ) + 1
+            : 1
+        }
+        total={modulesTotal}
+        submitting={reorderingModules}
+        onSubmit={(position) => {
+          if (movingModule) return moveModule(movingModule.id, position);
+        }}
+      />
       <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => {
@@ -787,17 +1026,17 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             ? pendingPublish.isPublished
               ? `Unpublish "${pendingPublish.title}"?`
               : `Publish "${pendingPublish.title}"?`
-            : ''
+            : ""
         }
         description={
           pendingPublish
             ? pendingPublish.isPublished
-              ? 'Students will lose access to this content.'
-              : 'Students will be able to see this content.'
-            : ''
+              ? "Students will lose access to this content."
+              : "Students will be able to see this content."
+            : ""
         }
-        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
-        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
+        variant={pendingPublish?.isPublished ? "destructive" : "default"}
         onConfirm={() => {
           if (!pendingPublish) return;
           void togglePublish(pendingPublish.id, pendingPublish.isPublished);
@@ -807,3 +1046,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

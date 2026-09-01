@@ -4,6 +4,13 @@
 **Status:** Design — frozen for handoff (v1)
 **Covers:** EduAICore #912 (design). Unblocks the dequeue/dispatch worker (Deployment epic #168) and the producer track (#914 enqueue, #915 backpressure, #916 tests, #917 ETA).
 
+> **Pre-MVP operational status (August 2026): hard-disabled.** This document is
+> a future design contract, not a deployment runbook. Core ignores the legacy
+> `QUEUE_ENQUEUE_ENABLED` flag, `/api/chat` stays on direct chat, and the worker
+> entry point exits before creating Redis/BullMQ resources. Re-enabling requires
+> owner-scoped authenticated status/cancellation plus server-side model/provider
+> authorization; an environment-only rollout is intentionally impossible.
+
 > **This doc is the frozen contract** between the two sides — the producer/enqueue side (`enqueue()`, the `AiJob` model, status read model) and the dequeue/dispatch side (routing into the GPU fleet, epic #168). It fixes the job schema and the queue interface. Neither side may change a field or a status transition without updating this doc.
 
 ---
@@ -76,8 +83,8 @@ only inference is sent to the picked GPU host (see fleet doc, *Request path*).
 
 `JobType` is **not** a new enum. It is the *same* type the fleet router already consumes to pick
 a server pool, defined in `apps/core/app/lib/ai/routing/fleet/types.ts` and documented as the
-authority in [`docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md`](../rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md)
-(§ *Job types — how we pick a server pool*).
+authority in [`docs/rag-ai/MODEL_ROUTING.md`](../rag-ai/MODEL_ROUTING.md)
+(§ *Fleet pools*).
 
 ```typescript
 type JobType = "interactive" | "background";
@@ -290,7 +297,8 @@ Steps (all-or-nothing on the DB row):
    `job.type` (`interactive → high`, `background → low`).
 3. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queueName` = the queue resolved in
    step 2). Position is not stored (§5).
-4. **Add** to that queue with priority and the durable row id:
+4. **Add** to that queue with priority and the durable row id embedded in the payload, so a worker
+   can always find its row independent of step 5 below:
    `queue.add(job.kind, { ...job, aiJobId: aiJob.id }, { jobId: job.idempotencyKey, priority })`.
 5. **Persist** the returned BullMQ id into `AiJob.bullJobId` — unique against `queueName`, never
    on its own (§5).
@@ -298,9 +306,17 @@ Steps (all-or-nothing on the DB row):
    returned here; the client reads them from the status endpoint (§8), which is the single source
    of position (computed live per poll). `enqueue` accepts work; it does not report on the queue.
 
-Failure between steps 3 and 4 (Redis down) leaves a `PENDING` row with no `bullJobId` — a reaper
-(#915) marks such rows `FAILED`. Backpressure / queue-full rejection is specified in **#915**;
-this contract only guarantees the signature and the row lifecycle above.
+Failure at step 4 (Redis down / queue unreachable) used to leave a `PENDING` row with no
+`bullJobId` for a #915 reaper, or (an earlier #1112 pass) delete it. **#1269 review** settles this:
+the producer marks the row **`FAILED`** (never deletes it) and throws `QueueUnavailableError` so
+routes return **HTTP 503** — a deleted keyed row would let a same-key retry mint a second row that
+silently no-ops against Redis if the original add actually succeeded despite the client-visible
+failure, leaving that second row stuck `PENDING` forever; a `FAILED` row is discoverable by both a
+status poll and the idempotency fast path instead. A failure at step 5 does **not** mark the row
+FAILED — the job is already durably queued and a worker will still complete it via the embedded
+`aiJobId`; only a future idempotency lookup by `bullJobId` would miss it, a narrower documented gap.
+Backpressure / queue-full rejection remains **#915**; this contract guarantees the signature, the
+row lifecycle above, and no orphan `PENDING` on a failed push.
 
 `jobId` returned to callers is the **`AiJob.id`** (stable, DB-backed), never the raw BullMQ id.
 
@@ -366,10 +382,16 @@ This read model is the **single source of queue position and ETA** — `enqueue`
 never stale. Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps),
 matching `serializeReEmbedJob`:
 
+Served by `GET /api/ai-jobs/:jobId`, scoped to the caller's own jobs (a session, or the
+`EDUAI_API_KEY` service-key path for jobs Question Maker/AI Tutor create under the synthetic
+`service` user) — 404s rather than 403s on a job id the caller doesn't own, so the response can't
+confirm the id exists.
+
 ```typescript
 {
   id, kind, type, source, status,
   queuePosition,          // computed at read: PENDING jobs ahead in the same queue (not a column)
+  etaSeconds,             // advisory live estimate from recent completions in that pool, or null
   result,                 // null until COMPLETED
   errorMessage,           // null unless FAILED
   attempts,
@@ -377,10 +399,14 @@ matching `serializeReEmbedJob`:
 }
 ```
 
-**ETA (#917)** is derived, not stored: `eta ≈ queuePosition × rollingMeanJobDuration(type)`, where
-the rolling mean comes from recent `completedAt − startedAt` per pool. Position is recomputed from
-the queue at read time so it decreases as the worker drains the pool. This is a later issue; the
-contract only guarantees the `queuePosition` field and the timestamps ETA is computed from.
+**ETA (#917)** is derived, not stored: `etaSeconds ≈ queuePosition × rollingMeanJobDuration(pool) /
+worker-sized waves, `ceil((runningCount + queuePosition) / poolConcurrency) × rollingMeanJobDuration(pool)`.
+The rolling mean uses the most recent completed jobs with both `startedAt` and `completedAt` in the
+same persisted pool. The estimate also counts currently `RUNNING` jobs in that pool so a saturated
+worker set is not treated as idle. It is advisory and returns `null` until that pool has a usable
+sample. Position is recomputed from the queue at read time so it decreases as the worker drains the
+pool. The duration lookup is backed by the `(queueName, status, completedAt)` index and capped to
+the most recent sample window.
 
 ---
 

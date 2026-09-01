@@ -1,23 +1,27 @@
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
-import { IconNotebook } from '@tabler/icons-react';
-import { Card, DetailPageScaffold, EmptyState } from '@eduai/ui';
-import { LessonCard } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { accentForCourse } from '../lib/course-display';
-import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/student.module';
-import api from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { splitTitle } from '~/lib/course-title';
+import { useMemo } from "react";
+import { useNavigate } from "react-router";
+import { IconNotebook } from "@tabler/icons-react";
+import { Card, DetailPageScaffold, EmptyState } from "@eduai/ui";
+import { LessonCard } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { accentForCourse } from "../lib/course-display";
+import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
+import type { Route } from "./+types/student.module";
+import api, { FULL_TREE_READ_PAGE_SIZE } from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { splitTitle } from "~/lib/course-title";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
-    throw new Response('Invalid module id', { status: 400 });
+    throw new Response("Invalid module id", { status: 400 });
   }
 
   const [module, lessons] = await Promise.all([
@@ -25,20 +29,22 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     // #1043: lessons endpoint returns the pagination envelope; unwrap the
     // bounded page. moduleProgress below aggregates over the full lesson set,
     // which this bounded page still represents (a module's lessons fit 200).
-    api.lessonsForModule(moduleId).then((r) => r.data),
+    api.lessonsForModule(moduleId, { pageSize: FULL_TREE_READ_PAGE_SIZE }).then((r) => r.data),
   ]);
 
-  // Course + ordered module list in parallel — the sibling list gives the
-  // module's true 1-based ordinal for the hero watermark (see instructor.module).
+  // #1207: the module's 1-based ordinal for the hero watermark comes from the
+  // server, matching instructor.module. It used to be a `findIndex` over one
+  // bounded page of siblings — but the student course grid is paged now, so a
+  // module past that bound is reachable and scored -1, rendering as "0".
   let course: Course | null = null;
   let moduleOrder = 0;
   if (module.courseOfferingId) {
-    const [courseData, siblingModules] = await Promise.all([
+    const [courseData, moduleContext] = await Promise.all([
       api.courseById(module.courseOfferingId) as Promise<Course>,
-      api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+      api.moduleContext(moduleId),
     ]);
     course = courseData;
-    moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
+    moduleOrder = moduleContext.moduleOrdinal;
   }
 
   return { course, module, lessons, moduleOrder };
@@ -46,6 +52,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
 export default function StudentModuleLessons({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
+  const previewRole = resolvePreviewRole(user);
   const { course, module, lessons, moduleOrder } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const lessonList = useMemo(() => lessons ?? [], [lessons]);
@@ -53,45 +61,66 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
   // Aggregate progress across all lessons in the module — real, derived from
   // each lesson's own progress payload (never fabricated).
   const moduleProgress = useMemo(() => {
-    const withProgress = lessonList.filter((lesson) => lesson.progress && lesson.progress.total > 0);
+    const withProgress = lessonList.filter(
+      (lesson) => lesson.progress && lesson.progress.total > 0,
+    );
     if (withProgress.length === 0) return null;
-    const completed = withProgress.reduce((sum, lesson) => sum + (lesson.progress?.completed ?? 0), 0);
+    const completed = withProgress.reduce(
+      (sum, lesson) => sum + (lesson.progress?.completed ?? 0),
+      0,
+    );
     const total = withProgress.reduce((sum, lesson) => sum + (lesson.progress?.total ?? 0), 0);
     return { completed, total };
   }, [lessonList]);
 
   useShellBreadcrumbs([
-    { label: 'Courses', href: '/student' },
+    { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         course?.id != null ? (
-          <CourseSwitcher courseId={course.id} basePath="/student" currentTitle={course?.title || 'Course'} />
+          <CourseSwitcher
+            courseId={course.id}
+            basePath="/student"
+            currentTitle={course?.title || "Course"}
+          />
         ) : undefined,
     },
     module?.title
       ? { label: splitTitle(module.title).label, title: module.title }
-      : { label: 'Module' },
+      : { label: "Module" },
   ]);
 
   const heroStats = [
     {
-      label: lessonList.length === 1 ? 'Lesson' : 'Lessons',
+      label: lessonList.length === 1 ? "Lesson" : "Lessons",
       value: lessonList.length,
       accent: true,
     },
-    ...(moduleProgress
-      ? [{ label: 'Activities', value: moduleProgress.total }]
-      : []),
+    ...(moduleProgress ? [{ label: "Activities", value: moduleProgress.total }] : []),
   ];
 
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={
+        previewRole ? (
+          <StudentPreviewBanner
+            role={previewRole}
+            exitHref={
+              module?.id != null
+                ? `/instructor/module/${module.id}`
+                : course?.id != null
+                  ? `/instructor/courses/${course.id}`
+                  : "/instructor"
+            }
+          />
+        ) : null
+      }
       hero={
         <ModuleHero
           order={moduleOrder > 0 ? moduleOrder : undefined}
-          title={module?.title || 'Module'}
+          title={module?.title || "Module"}
           description={module?.description}
           accentColor={accentColor}
           stats={heroStats}
@@ -100,7 +129,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
       }
     >
       {lessonList.length === 0 ? (
-        <Card className="mx-auto max-w-lg">
+        <Card className="mx-auto max-w-lg" data-tour="student-lessons-empty">
           <EmptyState
             icon={<IconNotebook size={22} aria-hidden="true" />}
             title="No lessons available"
@@ -120,7 +149,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
               progress={lesson.progress}
               isPublished={lesson.isPublished ? undefined : false}
               onClick={() => navigate(`/student/lesson/${lesson.id}`)}
-              dataTour={index === 0 ? 'student-lesson-card-first' : undefined}
+              dataTour={index === 0 ? "student-lesson-card-first" : undefined}
               dataTourRoute={index === 0 ? `/student/lesson/${lesson.id}` : undefined}
             />
           ))}
@@ -129,3 +158,9 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

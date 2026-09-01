@@ -11,23 +11,25 @@ const sampleCourses: Course[] = [
 describe("CourseSelector — rendering", () => {
   it("renders the course selection heading", () => {
     render(
-      <CourseSelector courses={sampleCourses} selectedCourseId={null} onCourseSelect={vi.fn()} />
+      <CourseSelector courses={sampleCourses} selectedCourseId={null} onCourseSelect={vi.fn()} />,
     );
     expect(screen.getByText("Course Selection")).toBeInTheDocument();
   });
 
   it("shows the prompt to enable RAG when no course is selected", () => {
     render(
-      <CourseSelector courses={sampleCourses} selectedCourseId={null} onCourseSelect={vi.fn()} />
+      <CourseSelector courses={sampleCourses} selectedCourseId={null} onCourseSelect={vi.fn()} />,
     );
     expect(screen.getByText(/search its materials in chat/)).toBeInTheDocument();
   });
 
   it("shows the active-course message when a course is selected", () => {
     render(
-      <CourseSelector courses={sampleCourses} selectedCourseId="c1" onCourseSelect={vi.fn()} />
+      <CourseSelector courses={sampleCourses} selectedCourseId="c1" onCourseSelect={vi.fn()} />,
     );
-    expect(screen.getByText(/search through materials from the selected course/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/search through materials from the selected course/),
+    ).toBeInTheDocument();
   });
 });
 

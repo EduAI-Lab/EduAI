@@ -11,7 +11,7 @@ export const MAX_LIST_LIMIT = 200;
  * input isn't re-interpreted as escaping the `%`/`_` we add after it.
  */
 export function escapeLikeLiteral(value) {
-  return String(value).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  return String(value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 /**
@@ -26,9 +26,7 @@ export function parseLimitOffset(
   const rawLimit = Number.parseInt(query.limit, 10);
   const rawOffset = Number.parseInt(query.offset, 10);
   const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0
-      ? Math.min(rawLimit, maxLimit)
-      : defaultLimit;
+    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, maxLimit) : defaultLimit;
   const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
   return { limit, offset };
 }

@@ -24,13 +24,27 @@ export type RbacUser = {
   authorizedUnits?: string[] | null;
 };
 
-const LEVELS: Record<AccessLevel["level"], AccessLevel> = {
+const LEVELS = {
   admin: { level: "admin", rank: 4 },
   unit: { level: "unit", rank: 3 },
   instructor: { level: "instructor", rank: 2 },
   ta: { level: "ta", rank: 1 },
   student: { level: "student", rank: 0 },
-};
+} satisfies Record<AccessLevel["level"], AccessLevel>;
+
+/** Look up the shared AccessLevel for a resolved course access level string. */
+export function accessLevelFor(level: AccessLevel["level"]): AccessLevel {
+  return LEVELS[level];
+}
+
+/**
+ * RAG settings route gate (`GET`/`PATCH /api/courses/:id/rag-settings`):
+ * instructor-or-above only — `access.rank >= 2` (admin / unit / instructor).
+ * Shared so the route and drift-contract tests cannot diverge.
+ */
+export function canManageCourseRagSettings(access: AccessLevel | null): boolean {
+  return access != null && access.rank >= 2;
+}
 
 /**
  * Session users don't carry `authorizedUnits` (not a better-auth additional
@@ -46,23 +60,66 @@ export async function getAuthorizedUnits(user: RbacUser): Promise<string[]> {
 }
 
 /**
- * Core-local refinement of the shared contract: resolves access AND returns
- * the course row (fetched once, `deletedAt: null`) so route handlers can
- * distinguish 404 (course === null) from 403 (access === null) without a
- * second query, and apply the student publish gate themselves:
- *
- *   if (access.level === "student" && !course.isPublished) → 403
- *
- * The publish gate deliberately lives in callers — own-resource paths and
- * rank-gated write paths legitimately bypass it (§19).
+ * The only columns the access decision itself reads (`department`), plus the
+ * fields gate-only callers need to answer 404 / 403 / publish questions.
+ * Deliberately narrow: the Course row is ~30 columns wide (RAG + model config,
+ * Canvas sync state, long text) and every course-scoped request pays for it.
  */
-export async function resolveCourseAccessWithCourse(
+export const GATE_COURSE_SELECT = {
+  id: true,
+  department: true,
+  isPublished: true,
+  instructorId: true,
+  deletedAt: true,
+} satisfies Prisma.CourseSelect;
+
+/** Projected course row returned by `resolveCourseAccessGate`. */
+export type GateCourse = Prisma.CourseGetPayload<{
+  select: typeof GATE_COURSE_SELECT;
+}>;
+
+/**
+ * Single home for the access decision (rbac-matrix.md §3, §19). Both public
+ * resolvers below delegate here and differ ONLY in how wide a course row they
+ * ask for — the RBAC logic is never duplicated.
+ *
+ * Neither companion lookup depends on the course row, so both can start
+ * alongside it. Each is *speculated* only for the roles that consult it:
+ *   - The enrollment (keyed on `courseId`/`userId`) for every role except
+ *     ADMIN, which short-circuits before reading it, and UNIT_ADMIN, which
+ *     reaches it only after the unit check falls through.
+ *   - The authorized units (keyed on `user.id`) for UNIT_ADMIN only. Free when
+ *     the caller already carries `authorizedUnits` — `getAuthorizedUnits`
+ *     returns without a query.
+ * The common path therefore drops a round trip: one parallel batch instead of
+ * two sequential queries.
+ *
+ * Deliberate tradeoff (PR #1493 review): speculation is not free on the paths
+ * that previously short-circuited. A missing or soft-deleted course still pays
+ * for the lookup its role would have needed, and a UNIT_ADMIN hitting a
+ * null-department course pays for a units read the §19 unit lock would have
+ * skipped. Both are bounded at one extra query on a request that 404s or falls
+ * through to the enrollment check anyway, so the hot-path win is worth it.
+ * Query counts on those paths are pinned in `course-access.server.test.ts`.
+ */
+async function resolveAccess<C extends { department: string | null }>(
   user: RbacUser,
   courseId: string,
-): Promise<{ course: Course | null; access: AccessLevel | null }> {
-  const course = await prisma.course.findFirst({
-    where: { id: courseId, deletedAt: null },
-  });
+  fetchCourse: () => Promise<C | null>,
+): Promise<{ course: C | null; access: AccessLevel | null }> {
+  const findEnrollment = () =>
+    prisma.enrollment.findUnique({
+      where: { courseId_userId: { courseId, userId: user.id } },
+    });
+
+  const speculated = user.role !== "ADMIN" && user.role !== "UNIT_ADMIN";
+  const speculatedUnits = user.role === "UNIT_ADMIN";
+  const [course, preloadedEnrollment, preloadedUnits] = await Promise.all([
+    fetchCourse(),
+    speculated ? findEnrollment() : null,
+    speculatedUnits ? getAuthorizedUnits(user) : null,
+  ]);
+
   if (!course) return { course: null, access: null };
 
   if (user.role === "ADMIN") return { course, access: LEVELS.admin };
@@ -70,7 +127,9 @@ export async function resolveCourseAccessWithCourse(
   if (user.role === "UNIT_ADMIN") {
     // §19 unit lock: a null department is never a match for UNIT_ADMIN.
     if (course.department !== null) {
-      const units = await getAuthorizedUnits(user);
+      // `preloadedUnits` is always populated here (speculatedUnits is true for
+      // UNIT_ADMIN); the fallback only guards future callers.
+      const units = preloadedUnits ?? (await getAuthorizedUnits(user));
       if (units.includes(course.department)) {
         return { course, access: LEVELS.unit };
       }
@@ -78,9 +137,10 @@ export async function resolveCourseAccessWithCourse(
     // UNIT_ADMIN outside their units may still hold an enrollment — fall through.
   }
 
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { courseId_userId: { courseId, userId: user.id } },
-  });
+  // `speculated` (not `preloadedEnrollment != null`) decides whether to reuse:
+  // a speculated query that found nothing is a real "no enrollment" answer and
+  // must not be re-issued.
+  const enrollment = speculated ? preloadedEnrollment : await findEnrollment();
   if (!enrollment?.isActive) return { course, access: null };
 
   switch (enrollment.role) {
@@ -96,6 +156,50 @@ export async function resolveCourseAccessWithCourse(
 }
 
 /**
+ * Core-local refinement of the shared contract: resolves access AND returns
+ * a projected course row (fetched once, `deletedAt: null`) so route handlers
+ * can distinguish 404 (course === null) from 403 (access === null) without a
+ * second query, and apply the student publish gate themselves:
+ *
+ *   if (access.level === "student" && !course.isPublished) → 403
+ *
+ * The publish gate deliberately lives in callers — own-resource paths and
+ * rank-gated write paths legitimately bypass it (§19).
+ *
+ * This is the default for course-scoped guards. Reach for
+ * `resolveCourseAccessWithCourse` only when the caller genuinely serializes or
+ * reads columns outside `GATE_COURSE_SELECT`.
+ */
+export async function resolveCourseAccessGate(
+  user: RbacUser,
+  courseId: string,
+): Promise<{ course: GateCourse | null; access: AccessLevel | null }> {
+  return resolveAccess(user, courseId, () =>
+    prisma.course.findFirst({
+      where: { id: courseId, deletedAt: null },
+      select: GATE_COURSE_SELECT,
+    }),
+  );
+}
+
+/**
+ * Same access decision as `resolveCourseAccessGate`, but returns the FULL
+ * Course row. Reserved for the handful of callers that serialize the course to
+ * a client or read wide columns (embedding settings, RAG/response-style config);
+ * everything else should use the gate.
+ */
+export async function resolveCourseAccessWithCourse(
+  user: RbacUser,
+  courseId: string,
+): Promise<{ course: Course | null; access: AccessLevel | null }> {
+  return resolveAccess(user, courseId, () =>
+    prisma.course.findFirst({
+      where: { id: courseId, deletedAt: null },
+    }),
+  );
+}
+
+/**
  * Shared contract entry point (rbac-matrix.md §3):
  * `resolveCourseAccess(user, courseId) → Promise<AccessLevel | null>`.
  * Returns null when the course does not exist (or is soft-deleted) or the
@@ -105,7 +209,7 @@ export async function resolveCourseAccess(
   user: RbacUser,
   courseId: string,
 ): Promise<AccessLevel | null> {
-  const { access } = await resolveCourseAccessWithCourse(user, courseId);
+  const { access } = await resolveCourseAccessGate(user, courseId);
   return access;
 }
 
@@ -164,22 +268,21 @@ export function wantsIncludeDeleted(
   user: { role?: string | null } | null | undefined,
 ): boolean {
   return (
-    user?.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true"
+    user?.role === "ADMIN" && new URL(request.url).searchParams.get("includeDeleted") === "true"
   );
 }
 
 /**
- * §19 answer-visibility rule: `Question.answer` is never returned to a caller
- * whose resolved access is `student`. Enforced at the serialization layer —
- * call this on every question response path, regardless of route guards.
- * Returns the input untouched for every other access level.
+ * §19 answer-visibility rule: `Question.answer` / `correctAnswers` are never
+ * returned to a caller whose resolved access is `student`. Enforced at the
+ * serialization layer — call this on every question response path, regardless
+ * of route guards. Returns the input untouched for every other access level.
  */
-export function stripAnswerForStudents<T extends { answer?: unknown }>(
+export function stripAnswerForStudents<T extends { answer?: unknown; correctAnswers?: unknown }>(
   question: T,
   access: AccessLevel | null,
-): T | Omit<T, "answer"> {
+): T | Omit<T, "answer" | "correctAnswers"> {
   if (access?.level !== "student") return question;
-  const { answer: _answer, ...rest } = question;
+  const { answer: _answer, correctAnswers: _correctAnswers, ...rest } = question;
   return rest;
 }

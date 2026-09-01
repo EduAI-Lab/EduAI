@@ -1,29 +1,31 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
 import { type Message } from "ai";
 import { Button } from "@eduai/ui";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
-import {
-  Message as BasicMessage,
-  MessageContent,
-  MessageActions,
-  MessageAction
-} from "@eduai/ui";
+import { Message as BasicMessage, MessageContent, MessageActions, MessageAction } from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
-import { Tool } from "@eduai/ui";
+import { Tool, MarkdownStylesProvider, type MarkdownStyles } from "@eduai/ui";
 import {
   CHAT_MESSAGE_ACTIVE_CLASS,
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
-import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
+import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
-import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
+import {
+  relabelAssistiveHeadings,
+  transformAssistiveDisplayCopy,
+} from "~/components/chat/assistive-display-transform";
+import { shouldApplyAssistiveDisplayTransform } from "~/components/chat/chat-progress-stage";
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
-// KaTeX + streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
+// Streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
 // Every Core surface that renders markdown reaches ChatMessage, so importing here
-// keeps the stylesheet (and the KaTeX fonts) off routes that render no markdown.
+// keeps the stylesheet off routes that render no markdown. KaTeX's sheet is not
+// in here — it loads on demand per message, see MARKDOWN_STYLES below (#1342).
 import "~/styles/chat-markdown.css";
 
 export interface ChatMessageProps {
@@ -33,8 +35,10 @@ export interface ChatMessageProps {
   answeredByLabel?: string | null;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
-  /** When true, relabel Assistive policy headings at display time only (#699). */
   assistiveDisplay?: boolean;
+  showContinue?: boolean;
+  onContinue?: () => void;
+  continueDisabled?: boolean;
 }
 
 /**
@@ -50,41 +54,68 @@ export interface ChatMessageProps {
  *   - array of parts with `.type === "text"` → join their `.text` values
  *   - anything else  → JSON.stringify (last resort, always a string)
  */
-export function coerceMessageContent(content: unknown): string {
-  if (typeof content === "string") return content;
+export function coerceMessageContent(content: JsonValue | undefined): string {
+  const plain = asText(content);
+  if (plain !== null) return plain;
   if (content === null || content === undefined) return "";
-  if (Array.isArray(content)) {
+
+  const parts = asJsonArray(content);
+  if (parts) {
     // Array of message parts — gather text parts
-    const texts = content
-      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
-      .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => p.text as string);
+    const texts = parts.flatMap((part) => {
+      const fields = asJsonObject(part);
+      if (!fields || fields.type !== "text") return [];
+      const partText = asText(fields.text);
+      return partText === null ? [] : [partText];
+    });
     if (texts.length > 0) return texts.join("\n");
     // Fall through to JSON.stringify below
   }
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj.text === "string") return obj.text;
-  }
+
+  const objectText = asText(asJsonObject(content)?.text);
+  if (objectText !== null) return objectText;
   return JSON.stringify(content);
 }
 
-export function ChatMessage({
+/**
+ * KaTeX's stylesheet is loaded on demand, only for messages that actually
+ * contain math (#1342). Module-level so its identity is stable — the shared
+ * markdown renderer caches a Streamdown variant per loader.
+ */
+const MARKDOWN_STYLES: MarkdownStyles = {
+  loadKatexStyles: () => import("katex/dist/katex.min.css"),
+};
+
+export function ChatMessage(props: ChatMessageProps) {
+  return (
+    <MarkdownStylesProvider value={MARKDOWN_STYLES}>
+      <ChatMessageBody {...props} />
+    </MarkdownStylesProvider>
+  );
+}
+
+function ChatMessageBody({
   message,
   isStreaming = false,
   answeredByLabel,
   highlightRole = null,
   webToolsEnabled = false,
   assistiveDisplay = false,
+  showContinue = false,
+  onContinue,
+  continueDisabled = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     // Extract text content from all text parts
-    const textContent = message.parts
-      ?.filter((part) => part != null && part.type === "text")
-      .map((part) => (part as any).text as string)
-      .join("\n") || coerceMessageContent(message.content) || "";
+    const textContent =
+      message.parts
+        ?.filter((part) => part != null && part.type === "text")
+        .map((part) => (part as any).text as string)
+        .join("\n") ||
+      coerceMessageContent(message.content) ||
+      "";
 
     await navigator.clipboard.writeText(textContent);
     setCopied(true);
@@ -95,32 +126,32 @@ export function ChatMessage({
 
   // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
-    if (!part || typeof part.type !== "string") return null;
+    const partType = asText(part?.type);
+    if (partType === null) return null;
 
-    if (part.type === "tool-invocation") {
+    if (partType === "tool-invocation") {
       // Guard against missing toolInvocation on a nominally-typed part
       if (!part.toolInvocation) return null;
       return {
         type: part.toolInvocation.toolName ?? "unknown",
         state: part.toolInvocation.state === "result" ? "output-available" : "input-available",
         input: part.toolInvocation.args,
-        output: part.toolInvocation.state === "result"
-          ? (part.toolInvocation as any).result
-          : undefined,
+        output:
+          part.toolInvocation.state === "result" ? (part.toolInvocation as any).result : undefined,
         toolCallId: part.toolInvocation.toolCallId,
-        errorText: undefined
+        errorText: undefined,
       };
     }
 
     // Handle dynamic tool parts from AI SDK v5+ format
-    if (part.type.startsWith("tool-")) {
+    if (partType.startsWith("tool-")) {
       return {
-        type: part.toolName || part.type.replace("tool-", ""),
+        type: part.toolName || partType.replace("tool-", ""),
         state: part.state || "input-available",
         input: part.input,
         output: part.output,
         toolCallId: part.toolCallId,
-        errorText: part.errorText
+        errorText: part.errorText,
       };
     }
 
@@ -131,8 +162,8 @@ export function ChatMessage({
   const safeParts = message.parts?.filter((part) => part != null) ?? [];
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
-    const t = (part as any).type as string | undefined;
-    if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
+    const t = asText((part as any).type);
+    if (t === null || (t !== "tool-invocation" && !t.startsWith("tool-"))) {
       return false;
     }
 
@@ -150,9 +181,18 @@ export function ChatMessage({
   const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
   const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
   // #699: relabel Assistive policy headings at display time only (non-user).
+  // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
+  // defer full reorder + diagram widgets until structure is safe (idle stream,
+  // or Next?/closed diagram — never wait for both Top+Next, which snapped).
+  const applyAssistiveReorder =
+    assistiveDisplay &&
+    !isUser &&
+    shouldApplyAssistiveDisplayTransform(normalizedContent, isStreaming);
   const textContent =
     assistiveDisplay && !isUser
-      ? transformAssistiveDisplayCopy(normalizedContent)
+      ? applyAssistiveReorder
+        ? transformAssistiveDisplayCopy(normalizedContent)
+        : relabelAssistiveHeadings(normalizedContent)
       : normalizedContent;
 
   const hasTextContent = textContent.length > 0;
@@ -169,7 +209,12 @@ export function ChatMessage({
     return (
       <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="rounded-2xl bg-muted/60 px-4 py-3 max-w-[80%] min-w-0">
-          <div className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", READING_SURFACE_CLASS)}>
+          <div
+            className={cn(
+              "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
+              READING_SURFACE_CLASS,
+            )}
+          >
             {textContent}
           </div>
         </div>
@@ -191,7 +236,9 @@ export function ChatMessage({
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
-                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
+                displayName={
+                  getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type
+                }
                 defaultOpen={
                   toolPart.state === "input-streaming" ||
                   (toolPart.state === "output-available" &&
@@ -210,39 +257,53 @@ export function ChatMessage({
         <BasicMessage className="group">
           <div className="flex flex-col gap-2 flex-1 min-w-0">
             {/* Interactive eduai-diagram widgets are Assist-only so baseline
-                chat keeps fences as ordinary markdown code blocks. */}
-            {assistiveDisplay
-              ? splitEduaiDiagrams(textContent).map((segment, index) =>
-                  segment.kind === "diagram" ? (
-                    <EduaiDiagram
-                      key={`diagram-${index}-${segment.payload.typeId}`}
-                      payload={segment.payload}
-                    />
-                  ) : segment.text.trim().length === 0 ? null : (
-                    <MessageContent
-                      key={`md-${index}`}
-                      markdown={true}
-                      isAnimating={isStreaming}
-                      className="bg-transparent p-0 text-foreground"
-                    >
-                      {segment.text}
-                    </MessageContent>
-                  ),
-                )
-              : (
-                <MessageContent
-                  markdown={true}
-                  isAnimating={isStreaming}
-                  className="bg-transparent p-0 text-foreground"
+                chat keeps fences as ordinary markdown code blocks. While an
+                Assist reply is still streaming incomplete structure, keep plain
+                markdown (#1171) so half fences don't mount broken widgets. */}
+            {applyAssistiveReorder ? (
+              splitEduaiDiagrams(textContent).map((segment, index) =>
+                segment.kind === "diagram" ? (
+                  <EduaiDiagram
+                    key={`diagram-${index}-${segment.payload.typeId}`}
+                    payload={segment.payload}
+                  />
+                ) : segment.text.trim().length === 0 ? null : (
+                  <MessageContent
+                    key={`md-${index}`}
+                    markdown={true}
+                    isAnimating={isStreaming}
+                    className="bg-transparent p-0 text-foreground"
+                  >
+                    {segment.text}
+                  </MessageContent>
+                ),
+              )
+            ) : (
+              <MessageContent
+                markdown={true}
+                isAnimating={isStreaming}
+                className="bg-transparent p-0 text-foreground"
+              >
+                {textContent}
+              </MessageContent>
+            )}
+
+            {showContinue && onContinue && (
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onContinue}
+                  disabled={continueDisabled}
                 >
-                  {textContent}
-                </MessageContent>
-              )}
+                  Continue
+                </Button>
+              </div>
+            )}
 
             {answeredByLabel ? (
-              <p className="text-xs text-muted-foreground px-1">
-                Answered by {answeredByLabel}
-              </p>
+              <p className="text-xs text-muted-foreground px-1">Answered by {answeredByLabel}</p>
             ) : null}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -252,6 +313,7 @@ export function ChatMessage({
                   size="sm"
                   onClick={handleCopy}
                   className="h-8 w-8 p-0"
+                  aria-label={copied ? "Copied" : "Copy message"}
                 >
                   {copied ? (
                     <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />

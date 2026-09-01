@@ -1,29 +1,30 @@
-import { execSync, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve, dirname, parse } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { resolveIntegrationTestDatabaseUrl } from './test-database-url';
+import { execSync, execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve, dirname, parse } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveIntegrationTestDatabaseUrl } from "./test-database-url";
+import type { ExecBinOptions } from "./helpers/route-fixtures";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const appRoot = resolve(__dirname, '..', '..'); // apps/core
+const appRoot = resolve(__dirname, "..", ".."); // apps/core
 
-const isWindows = process.platform === 'win32';
+const isWindows = process.platform === "win32";
 
 function findBin(name: string): string {
   const binName = isWindows ? `${name}.cmd` : name;
   let dir = appRoot;
   const { root } = parse(dir);
   while (dir !== root) {
-    const bin = resolve(dir, 'node_modules', '.bin', binName);
+    const bin = resolve(dir, "node_modules", ".bin", binName);
     if (existsSync(bin)) return bin;
-    dir = resolve(dir, '..');
+    dir = resolve(dir, "..");
   }
   throw new Error(`Could not find ${name} binary. Make sure it is installed.`);
 }
 
-function execBin(bin: string, args: string[], opts: object): void {
+function execBin(bin: string, args: string[], opts: ExecBinOptions): void {
   if (isWindows) {
-    execFileSync('cmd.exe', ['/c', bin, ...args], opts);
+    execFileSync("cmd.exe", ["/c", bin, ...args], opts);
   } else {
     execFileSync(bin, args, opts);
   }
@@ -32,23 +33,23 @@ function execBin(bin: string, args: string[], opts: object): void {
 export async function setup() {
   const dbUrl = resolveIntegrationTestDatabaseUrl();
   const parsedUrl = new URL(dbUrl);
-  const dbName = parsedUrl.pathname.replace(/^\//, '').split('?')[0];
+  const dbName = parsedUrl.pathname.replace(/^\//, "").split("?")[0];
   const dbUser = decodeURIComponent(parsedUrl.username);
   const dbPassword = decodeURIComponent(parsedUrl.password);
-  const dbHost = parsedUrl.hostname || 'localhost';
+  const dbHost = parsedUrl.hostname || "localhost";
   const pgEnv = { ...process.env, PGPASSWORD: dbPassword };
 
   // Ensure the test database exists
   try {
     execSync(
       `psql -h ${dbHost} -U ${dbUser} -tc "SELECT 1 FROM pg_database WHERE datname = '${dbName}'" | grep -q 1 || psql -h ${dbHost} -U ${dbUser} -c "CREATE DATABASE \\"${dbName}\\""`,
-      { env: pgEnv, stdio: 'pipe' },
+      { env: pgEnv, stdio: "pipe" },
     );
   } catch {
     try {
       execSync(`createdb -h ${dbHost} -U ${dbUser} "${dbName}"`, {
         env: pgEnv,
-        stdio: 'pipe',
+        stdio: "pipe",
       });
     } catch {
       // Already exists — fine
@@ -58,7 +59,7 @@ export async function setup() {
   // Docker fallback when psql/createdb are not on PATH (common on Windows).
   try {
     execSync(`docker exec eduai-db psql -U ${dbUser} -c "CREATE DATABASE \\"${dbName}\\""`, {
-      stdio: 'pipe',
+      stdio: "pipe",
     });
   } catch {
     // Already exists — fine
@@ -67,10 +68,13 @@ export async function setup() {
   // Enable pgvector extension (idempotent).
   let vectorEnabled = false;
   try {
-    execSync(`psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`, {
-      env: pgEnv,
-      stdio: 'pipe',
-    });
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`,
+      {
+        env: pgEnv,
+        stdio: "pipe",
+      },
+    );
     vectorEnabled = true;
   } catch {}
 
@@ -78,19 +82,89 @@ export async function setup() {
     try {
       execSync(
         `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`,
-        { stdio: 'pipe' },
+        { stdio: "pipe" },
       );
     } catch {
       // If both fail, db push below will surface the error
     }
   }
 
-  const prismaBin = findBin('prisma');
+  const prismaBin = findBin("prisma");
+
+  const dropContentTsv = () => {
+    try {
+      execSync(
+        `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE IF EXISTS material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        { env: pgEnv, stdio: "pipe" },
+      );
+    } catch {
+      execSync(
+        `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE IF EXISTS material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+        { stdio: "pipe" },
+      );
+    }
+  };
+
+  // A previous integration run leaves the raw generated column in place.
+  // Prisma cannot alter generated columns, so remove it before schema sync.
+  dropContentTsv();
 
   // Sync schema to test DB (idempotent, no migration history needed)
-  execBin(prismaBin, ['db', 'push', '--accept-data-loss', '--skip-generate'], {
+  execBin(prismaBin, ["db", "push", "--accept-data-loss", "--skip-generate"], {
     cwd: appRoot,
     env: { ...process.env, DATABASE_URL: dbUrl },
-    stdio: 'pipe',
+    stdio: "pipe",
   });
+
+  // `content_tsv` is a `GENERATED ALWAYS ... STORED` tsvector column that
+  // Prisma has no first-class type for (Unsupported("tsvector") in
+  // schema.prisma). `db push` above still provisions *some* column for it —
+  // a plain, non-generated one, since it can't express STORED/GENERATED —
+  // and the raw migration's `ADD COLUMN IF NOT EXISTS` then silently no-ops
+  // against that pre-existing plain column, leaving every row's content_tsv
+  // NULL with no generation expression (#1354 CI: `is_generated` reads
+  // 'NEVER' instead of 'ALWAYS', and inserts 23502 on a stray NOT NULL).
+  // Drop whatever db push created first so the migration's ADD COLUMN is the
+  // one that actually runs.
+  dropContentTsv();
+
+  // db push provisions only schema.prisma, so apply the idempotent raw migration
+  // afterward to keep integration databases aligned with deployed databases.
+  const contentTsvMigration = resolve(
+    appRoot,
+    "prisma",
+    "migrations",
+    "20260804180000_material_chunks_content_tsv_gin",
+    "migration.sql",
+  );
+  execBin(
+    prismaBin,
+    [
+      "db",
+      "execute",
+      "--file",
+      contentTsvMigration,
+      "--schema",
+      resolve(appRoot, "prisma", "schema.prisma"),
+    ],
+    {
+      cwd: appRoot,
+      env: { ...process.env, DATABASE_URL: dbUrl },
+      stdio: "pipe",
+    },
+  );
+
+  // Prisma cannot represent an ivfflat index on Unsupported(vector), and
+  // db push intentionally ignores the raw-SQL migration. Recreate it for the
+  // integration database after every schema sync so ANN tests exercise the
+  // same plan as development/production.
+  try {
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE INDEX IF NOT EXISTS \\"material_embeddings_embedding_ivfflat_idx\\" ON \\"material_embeddings\\" USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"`,
+      { env: pgEnv, stdio: "pipe" },
+    );
+  } catch {
+    // The integration database may not have material_embeddings yet; the
+    // migration/test setup will report a real schema error when retrieval runs.
+  }
 }

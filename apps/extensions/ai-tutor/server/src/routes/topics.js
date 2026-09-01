@@ -7,8 +7,8 @@
  * Callers: Mounted under `/api`; consumed by the instructor topic UI and any
  *   activity-create flow that picks a `mainTopicId`/`secondaryTopicIds`.
  * Gotchas:
- *   - Topics for imported (EduAI) courses are managed exclusively by sync;
- *     manual creation is rejected (POST /courses/:id/topics).
+ *   - Core is the source of truth for current CourseOffering rows; topic
+ *     creation pushes to Core first, then updates AI Tutor's local mirror.
  *   - Sync is name-keyed and additive — it never deletes local topics that
  *     drift away upstream. Drift is surfaced via the `missingTopics` array on
  *     the deprecated POST .../sync response, but as of #1031 there is no UI
@@ -33,41 +33,44 @@
  * Related: services/topicSync.js, services/eduaiAuth.js
  */
 
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { mapTopic } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
-import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
+import { mapTopic } from "../utils/mappers.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  PaginationError,
+} from "../utils/pagination.js";
+import {
+  syncExternalCourseTopics,
+  AUTO_SYNC_TTL_MS,
+  AUTO_SYNC_TIMEOUT_MS,
+} from "../services/topicSync.js";
+import {
+  ensureCourseTopicAccess,
+  remapCourseTopics,
+  TopicMutationError,
+} from "../services/topicManagement.js";
+import { CreateTopicSchema, TopicRemapSchema } from "../../../shared/schemas/mutations.js";
+import { createEduAiCourseTopic } from "../services/eduaiClient.js";
 
 const router = express.Router();
 
-async function ensureCourseAccess(courseId, user) {
-  const userId = user?.id;
-  const course = await prisma.courseOffering.findUnique({
-    where: { id: courseId },
-    include: {
-      instructors: true,
-      enrollments: true,
-    },
-  });
-
-  if (!course) {
-    return { course: null, authorized: false };
-  }
-
-  const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
-  const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
-  // Platform admins can read any course's topics (admin ⊇ instructor).
-  const isAdmin = user?.role === 'ADMIN';
-
-  return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
-}
+// Keep this router independently fenced. It is mounted separately from the
+// course router, so topic authorization must not depend on mount order.
+router.use("/courses/:courseId/topics", gateCourseById());
 
 /**
  * GET /courses/:courseId/topics — list topics for a course.
  *
- * Auth: enrolled student or course instructor.
+ * Auth: enrolled student, or course staff — an assigned instructor, a
+ * UNIT_ADMIN whose `authorizedUnits` cover the course's department, or ADMIN
+ * (see `ensureCourseTopicAccess`).
  *
  * Why: Core is the source of truth for topics. For EduAI-imported courses,
  * this pulls the latest topic list from Core before responding, so the topic
@@ -80,28 +83,32 @@ async function ensureCourseAccess(courseId, user) {
  * fetch or local write) falls back to serving the local mirror rather than
  * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
  */
-router.get('/courses/:courseId/topics', async (req, res) => {
+router.get("/courses/:courseId/topics", async (req, res) => {
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
+    return res.status(400).json({ error: "Invalid course id" });
   }
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
-    const { course, authorized } = await ensureCourseAccess(courseId, req.user);
+    const { course, authorized } = await ensureCourseTopicAccess(courseId, req.user);
     if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+      return res.status(404).json({ error: "Course not found" });
     }
     if (!authorized) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+      return res.status(403).json({ error: "Not authorized for this course" });
     }
 
-    // Structure-bounded list. Topic <Select> dropdowns `.find()` the saved
-    // value and validate with `.some()`, so the picker needs the whole set;
-    // callers request one bounded page (pageSize=200). Pagination optional.
+    // #1207: `search` narrows in SQL on the topic name. Topic <Select>
+    // dropdowns still need their saved value present, so the client fetches a
+    // missing saved topic by id rather than assuming it is on the loaded page.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = searchWhere(search, ["name"]);
+    const scope = { courseOfferingId: courseId };
+    const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
 
     // For imported courses, run sync for its upsert side-effect (it keeps the
     // local mirror current); its returned list is intentionally ignored so the
@@ -114,16 +121,16 @@ router.get('/courses/:courseId/topics', async (req, res) => {
           signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
         });
       } catch (e) {
-        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+        const phase = e?.phase === "write" ? "local write" : "Core fetch";
+        logSafeError(`[topics] Auto-sync (${phase}) failed; serving local mirror`, e);
       }
     }
 
     const [total, topics] = await prisma.$transaction([
-      prisma.topic.count({ where: { courseOfferingId: courseId } }),
+      prisma.topic.count({ where: whereClause }),
       prisma.topic.findMany({
-        where: { courseOfferingId: courseId },
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        where: whereClause,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),
@@ -133,62 +140,80 @@ router.get('/courses/:courseId/topics', async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
 /**
- * POST /courses/:courseId/topics — create a topic on a native course.
+ * POST /courses/:courseId/topics — create a topic in Core and mirror it locally.
  *
  * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Side effects: inserts a Topic row; 409 on unique-name collision.
  *
- * Why: blocked for imported courses — those topics are owned by EduAI and a
- * manual addition would be wiped on next sync (or worse, drift silently).
+ * Core is written first so a topic created inside an AI Tutor authoring modal
+ * is immediately available to Question Maker and the Core course page too.
  */
-router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-  if (!name) {
-    return res.status(400).json({ error: 'name is required' });
-  }
-
-  try {
-    const { course } = await ensureCourseAccess(courseId, instructor);
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
-    }
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    // Block manual topic creation for imported (external) courses
-    if (course.coreOfferingId) {
-      return res.status(403).json({
-        error: 'Topics for imported courses are managed by EduAI and cannot be added here',
-      });
+    const parsedBody = CreateTopicSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      return res.status(400).json({ error: "name is required" });
     }
+    const { name } = parsedBody.data;
 
-    const topic = await prisma.topic.create({
-      data: {
-        name,
-        courseOfferingId: courseId,
-      },
-    });
+    try {
+      const { course } = await ensureCourseTopicAccess(courseId, instructor);
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+      if (!(await isCourseAdmin(instructor, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
 
-    res.status(201).json(topic);
-  } catch (e) {
-    if (e?.code === 'P2002') {
-      return res.status(409).json({ error: 'Topic name already exists for this course' });
+      let topic;
+      if (course.coreOfferingId) {
+        let coreTopic;
+        try {
+          coreTopic = await createEduAiCourseTopic(course.coreOfferingId, name);
+        } catch (e) {
+          const status = Number.isInteger(e?.status) ? e.status : 502;
+          return res.status(status).json({ error: e?.message || "Failed to create topic in Core" });
+        }
+
+        topic = await prisma.topic.upsert({
+          where: {
+            courseOfferingId_name: { courseOfferingId: courseId, name },
+          },
+          update: { coreTopicId: coreTopic.id, name: coreTopic.name },
+          create: {
+            name: coreTopic.name,
+            courseOfferingId: courseId,
+            coreTopicId: coreTopic.id,
+          },
+        });
+      } else {
+        // Compatibility for pre-anchor data; current production rows always
+        // have a Core id, so normal requests take the branch above.
+        topic = await prisma.topic.create({ data: { name, courseOfferingId: courseId } });
+      }
+
+      res.status(201).json(mapTopic(topic));
+    } catch (e) {
+      if (e?.code === "P2002") {
+        return res.status(409).json({ error: "Topic name already exists for this course" });
+      }
+      sendSafeError(res, e, "Internal server error");
     }
-    res.status(500).json({ error: String(e) });
-  }
-});
+  },
+);
 
 export default router;
 
@@ -209,49 +234,54 @@ export default router;
  * Why: name-keyed additive sync preserves activity references even if a topic
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
-router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
-    }
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics/sync",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    if (!course.coreOfferingId) {
-      return res.status(400).json({ error: 'Course is not imported from EduAI' });
-    }
-
-    let upstreamNames = [];
     try {
-      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
-      upstreamNames = upstream || [];
-    } catch (e) {
-      const status = Number.isInteger(e?.status) ? e.status : 502;
-      return res.status(status).json({ error: e?.message || 'Failed to sync topics from EduAI' });
-    }
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+      if (!(await isCourseAdmin(instructor, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
 
-    const topics = await prisma.topic.findMany({
-      where: { courseOfferingId: courseId },
-      orderBy: { name: 'asc' },
-    });
-    const upstreamSet = new Set(upstreamNames);
-    const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
-    res.json({ ok: true, topics, missingTopics });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      if (!course.coreOfferingId) {
+        return res.status(400).json({ error: "Course is not imported from EduAI" });
+      }
+
+      let upstreamNames = [];
+      try {
+        const { upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
+        upstreamNames = upstream || [];
+      } catch (e) {
+        const status = Number.isInteger(e?.status) ? e.status : 502;
+        logSafeError("[topics] Explicit sync failed", e);
+        return sendSafeError(res, e, "Failed to sync topics from EduAI", { status });
+      }
+
+      const topics = await prisma.topic.findMany({
+        where: { courseOfferingId: courseId },
+        orderBy: { name: "asc" },
+      });
+      const upstreamSet = new Set(upstreamNames);
+      const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
+      res.json({ ok: true, topics, missingTopics });
+    } catch (e) {
+      sendSafeError(res, e, "Internal server error");
+    }
+  },
+);
 
 /**
  * POST /courses/:courseId/topics/remap — move activities between topics.
@@ -273,103 +303,45 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
  * call. Since GET .../topics now auto-syncs (#1031) and there's no UI path
  * to `missingTopics` anymore, drifted local topics otherwise pile up
  * silently — this is the only remaining way to clean them up.
+ *
+ * Query cost (#1372): `mappings` length is caller-controlled and the whole
+ * batch runs in one transaction holding row locks, so per-pair reads were the
+ * expensive part. Topic resolution is now a single `findMany` for the entire
+ * request, and the `ActivitySecondaryTopic` reads are hoisted too whenever the
+ * pairs are independent (see `services/topicManagement.js`). On that path the writes
+ * collapse as well — one `createMany`, one `deleteMany`, one `topic.deleteMany`
+ * for the whole batch — so roughly 8N queries drop to N + 6, with only the
+ * main-topic `updateMany` left per pair (each carries different `data`).
+ * Requests whose pairs observe each other keep the per-pair path.
  */
-router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
-  const normalized = mappings
-    .map((m) => ({ fromTopicId: String(m?.fromTopicId ?? ''), toTopicId: String(m?.toTopicId ?? '') }))
-    .filter(
-      (m) =>
-        m.fromTopicId.length > 0 &&
-        m.toTopicId.length > 0 &&
-        m.fromTopicId !== m.toTopicId,
-    );
-
-  if (normalized.length === 0) {
-    return res.status(400).json({ error: 'No valid mappings provided' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics/remap",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
+    }
+    const parsedBody = TopicRemapSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      return res.status(400).json({ error: "No valid mappings provided" });
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const { fromTopicId, toTopicId } of normalized) {
-        // Validate topics belong to this course
-        const [fromTopic, toTopic] = await Promise.all([
-          tx.topic.findUnique({ where: { id: fromTopicId } }),
-          tx.topic.findUnique({ where: { id: toTopicId } }),
-        ]);
-        if (!fromTopic || fromTopic.courseOfferingId !== courseId) {
-          throw new Error('fromTopicId does not belong to this course');
-        }
-        if (!toTopic || toTopic.courseOfferingId !== courseId) {
-          throw new Error('toTopicId does not belong to this course');
-        }
-
-        // Reassign main topics
-        await tx.activity.updateMany({
-          where: {
-            mainTopicId: fromTopicId,
-            lesson: { module: { courseOfferingId: courseId } },
-          },
-          data: { mainTopicId: toTopicId },
-        });
-
-        // Reassign secondary topics: create missing target relations, then delete old relations
-        const secondary = await tx.activitySecondaryTopic.findMany({
-          where: {
-            topicId: fromTopicId,
-            activity: { lesson: { module: { courseOfferingId: courseId } } },
-          },
-          select: { activityId: true },
-        });
-        const activityIds = Array.from(new Set(secondary.map((s) => s.activityId)));
-
-        if (activityIds.length > 0) {
-          // Create missing target relations
-          const existingTarget = await tx.activitySecondaryTopic.findMany({
-            where: { topicId: toTopicId, activityId: { in: activityIds } },
-            select: { activityId: true },
-          });
-          const have = new Set(existingTarget.map((e) => e.activityId));
-          const toCreate = activityIds.filter((id) => !have.has(id));
-          if (toCreate.length > 0) {
-            await tx.activitySecondaryTopic.createMany({
-              data: toCreate.map((id) => ({ activityId: id, topicId: toTopicId })),
-              skipDuplicates: true,
-            });
-          }
-
-          // Remove old relations
-          await tx.activitySecondaryTopic.deleteMany({
-            where: { topicId: fromTopicId, activityId: { in: activityIds } },
-          });
-        }
-
-        // Attempt to delete the old topic now that it’s unused
-        try {
-          await tx.topic.delete({ where: { id: fromTopicId } });
-        } catch (_) {
-          // If still referenced somehow, leave it.
-        }
+    try {
+      await remapCourseTopics({
+        courseId,
+        user: instructor,
+        body: parsedBody.data,
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      if (e instanceof TopicMutationError) {
+        // JSON.stringify drops an undefined value, so an error without a
+        // machine-readable code still serializes to a bare `{ error }`.
+        return res.status(e.status).json({ error: e.message, code: e.code || undefined });
       }
-    });
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      sendSafeError(res, e, "Internal server error");
+    }
+  },
+);

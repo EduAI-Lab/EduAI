@@ -1,11 +1,11 @@
 export type CourseChangeAction =
   | { kind: "noop" }
-  | { kind: "update"; courseCode: string | null }
-  | { kind: "new-chat"; courseCode: string | null; to: string };
+  | { kind: "update"; courseId: string | null }
+  | { kind: "new-chat"; courseId: string | null; to: string };
 
 type ResolveCourseChangeActionOptions = {
-  currentCourseCode: string | null;
-  nextCourseCode: string | null;
+  currentCourseId: string | null;
+  nextCourseId: string | null;
   chatId: string | null;
 };
 
@@ -14,25 +14,23 @@ type ResolveCourseChangeActionOptions = {
  * must start a new chat instead of submitting the old chatId with new context.
  */
 export function resolveCourseChangeAction({
-  currentCourseCode,
-  nextCourseCode,
+  currentCourseId,
+  nextCourseId,
   chatId,
 }: ResolveCourseChangeActionOptions): CourseChangeAction {
-  if (nextCourseCode === currentCourseCode) {
+  if (nextCourseId === currentCourseId) {
     return { kind: "noop" };
   }
 
   if (!chatId) {
-    return { kind: "update", courseCode: nextCourseCode };
+    return { kind: "update", courseId: nextCourseId };
   }
 
-  const query = nextCourseCode
-    ? `?courseCode=${encodeURIComponent(nextCourseCode)}`
-    : "";
+  const query = nextCourseId ? `?courseId=${encodeURIComponent(nextCourseId)}` : "";
 
   return {
     kind: "new-chat",
-    courseCode: nextCourseCode,
+    courseId: nextCourseId,
     to: `/chat${query}`,
   };
 }

@@ -1,23 +1,26 @@
 // @vitest-environment node
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
     ...actual,
     streamText: vi.fn(),
-    createDataStreamResponse: vi.fn(({ execute }) => {
+    createDataStreamResponse: vi.fn(({ execute, headers }) => {
       const chunks: string[] = [];
       const dataStream = {
         write: (part: string) => {
           chunks.push(part);
         },
+        writeMessageAnnotation: vi.fn(),
       };
       execute(dataStream);
-      return new Response(chunks.join(""), { status: 200 });
+      return new Response(chunks.join(""), { status: 200, headers });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -46,7 +49,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -72,12 +78,12 @@ vi.mock("~/lib/ai/embedding", async (importOriginal) => {
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
-	    course: { findFirst: vi.fn() },
-	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
-	  },
-	}));
+    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
+    course: { findFirst: vi.fn() },
+    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  },
+}));
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
@@ -86,12 +92,13 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
-	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-	import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-	import { invalidatePolicyCache } from "~/lib/policy.server";
-	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
-	import prisma from "~/lib/prisma.server";
+import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { findRelevantContent } from "~/lib/ai/embedding";
+import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { invalidatePolicyCache } from "~/lib/policy.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const USER_ID = "user-1";
@@ -100,10 +107,21 @@ const OVERSEEN = `**Top summary**
 - Fixed point
 
 **Next?** Want to continue?`;
+const STRUCTURED_ASSIST = JSON.stringify({
+  title: "Gradient descent",
+  answer: "The optimizer lowers error by following the slope downhill.",
+  stages: [
+    { label: "Start point", detail: "Pick initial parameter values." },
+    { label: "Compute gradient", detail: "Measure the uphill direction." },
+    { label: "Step downhill", detail: "Move opposite the gradient." },
+  ],
+  tldr: "Follow the slope downhill, one measured step at a time.",
+  next: "try one update yourself",
+});
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -132,7 +150,7 @@ function mockStreamResult(args: {
   text: string;
   messages?: Array<{ id: string; role: string; content: unknown }>;
 }) {
-  vi.mocked(streamText).mockResolvedValue({
+  vi.mocked(streamText).mockReturnValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve(args.text),
     usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -162,7 +180,7 @@ function mockPriorAssistant(text: string) {
   ] as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
     model: "vllm:test-model",
@@ -176,10 +194,10 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-	  resetRateLimitsForTests();
-	  process.env.VLLM_BASE_URL = "http://localhost:8001";
-	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
-	  invalidatePolicyCache();
+  resetRateLimitsForTests();
+  process.env.VLLM_BASE_URL = "http://localhost:8001";
+  process.env.ADHD_ASSIST_OVERSIGHT = "true";
+  invalidatePolicyCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },
@@ -193,10 +211,10 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-	  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
-	  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
-	  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
-	});
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+});
 
 afterEach(() => {
   if (originalVllm === undefined) delete process.env.VLLM_BASE_URL;
@@ -208,7 +226,33 @@ function lastPersistedRows() {
   return Array.isArray(data) ? data : data ? [data] : [];
 }
 
+function allPersistedRows() {
+  return vi.mocked(prisma.chatMessage.createMany).mock.calls.flatMap(([args]) => {
+    if (!args) return [];
+    const data = args.data;
+    return Array.isArray(data) ? data : [data];
+  });
+}
+
 describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
+  it("persists a non-streaming assistant response exactly once", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: DRAFT,
+      messages: [{ id: "assistant-final", role: "assistant", content: DRAFT }],
+    });
+
+    const res = await action(makeArgs(baseBody({ streaming: false })));
+    expect(res.status).toBe(200);
+
+    const assistantRows = allPersistedRows().filter((row) => row.role === "assistant");
+    expect(assistantRows).toHaveLength(1);
+    expect(assistantRows[0]).toMatchObject({
+      messageId: "assistant-final",
+      role: "assistant",
+    });
+  });
+
   it("persists tool-step assistant messages with overseen final content (non-streaming)", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
@@ -221,10 +265,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(body.content).toContain("**Next?**");
 
     expect(prisma.chatMessage.createMany).toHaveBeenCalled();
+
+    expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(2);
+
     const persisted = lastPersistedRows();
     expect(persisted).toHaveLength(2);
-    expect(persisted[0]).toMatchObject({ messageId: "tool-step", role: "assistant" });
-    expect(persisted[1]).toMatchObject({ messageId: "final-step", role: "assistant" });
+    expect(persisted[0]).toMatchObject({
+      messageId: "tool-step",
+      role: "assistant",
+    });
+    expect(persisted[1]).toMatchObject({
+      messageId: "final-step",
+      role: "assistant",
+    });
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Top summary**");
     expect(persisted[0]?.content).toMatchObject({
       metadata: { resolvedModelId: "vllm:test-model" },
@@ -251,19 +304,131 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(await res.text()).toContain("Want to continue?");
   });
 
+  it("normalizes valid structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("**Top summary**"),
+      }),
+    );
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("normalizes valid structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.stringContaining("### Step ladder"),
+      }),
+    );
+    expect(vi.mocked(auditAndMaybeRewrite).mock.calls[0]?.[0].draft).not.toBe(STRUCTURED_ASSIST);
+  });
+
+  it("rejects malformed structured Assist output before non-streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
+  it("rejects malformed structured Assist output before streaming oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "true";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain("Step ladder");
+  });
+
+  it("preserves RAG latency telemetry on overseen streaming replies", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(baseBody({ streaming: true, chatMode: "learning", courseId: "c1" })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(findRelevantContent).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("X-RAG-Latency-Ms")).toMatch(/^\d+$/);
+  });
+
   it("returns 500 when overseen persistence fails instead of showing unsaved text", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();
     vi.mocked(prisma.chatMessage.createMany)
       .mockResolvedValueOnce({ count: 1 })
-      .mockRejectedValueOnce(new Error("db down"));
+      .mockRejectedValueOnce(
+        new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+      );
 
     const res = await action(makeArgs(baseBody({ streaming: true })));
     expect(res.status).toBe(500);
 
     const body = await res.json();
     expect(body.error).toBe("Failed to generate overseen response");
-    expect(body.details).toContain("db down");
+    expect(body.code).toBe("ADHD_OVERSIGHT_FAILED");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
   });
 
   it("skips oversight when ADHD_ASSIST_OVERSIGHT is disabled", async () => {
@@ -276,6 +441,211 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const body = await res.json();
     expect(body.content).toBe(DRAFT);
     expect(body.content).not.toContain("**Top summary**");
+  });
+
+  it("renders structured Assist output when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.content).toContain("**Top summary**");
+    expect(body.content).toContain("### Step ladder");
+    expect(body.content).not.toBe(STRUCTURED_ASSIST);
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it("normalizes structured Assist output before a streaming response when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("**Top summary**");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true] as const)(
+    "preserves the required diagram after capping a long visual response (streaming=%s)",
+    async (streaming) => {
+      process.env.ADHD_ASSIST_OVERSIGHT = "false";
+      const longAnswer = `${"This explanation adds useful context. ".repeat(120)}Keep the stages visible.`;
+      mockStreamResult({
+        text: JSON.stringify({
+          ...JSON.parse(STRUCTURED_ASSIST),
+          answer: longAnswer,
+        }),
+      });
+
+      const res = await action(
+        makeArgs(
+          baseBody({
+            streaming,
+            model: "vllm:qwen3.5-2b-instruct",
+            messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("```eduai-diagram");
+      expect(body.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(300);
+    },
+  );
+
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "keeps valid structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: STRUCTURED_ASSIST });
+      mockAuditResult();
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(200);
+      const body = streaming ? await res.text() : (await res.json()).content;
+      expect(body).toContain("**Top summary**");
+      expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+        expect.objectContaining({ draft: expect.stringContaining("### Step ladder") }),
+      );
+    },
+  );
+
+  it.each([
+    ["vllm:qwen3.5-2b-instruct", false],
+    ["vllm:qwen3.5-2b-instruct", true],
+    ["vllm:qwen3.5-9b-instruct", false],
+    ["vllm:qwen3.5-9b-instruct", true],
+  ] as const)(
+    "rejects malformed structured output on the default oversight path for %s (streaming=%s)",
+    async (model, streaming) => {
+      mockStreamResult({ text: "not valid Assist JSON" });
+
+      const res = await action(makeArgs(baseBody({ model, streaming })));
+      expect(res.status).toBe(502);
+      const body = await res.json();
+      expect(body.error).toBe("Provider request failed");
+      expect(body.code).toBe("PROVIDER_REQUEST_FAILED");
+      expect(body).not.toHaveProperty("details");
+      expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not expose persistence errors from the no-oversight structured path", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+    vi.mocked(prisma.chatMessage.createMany).mockRejectedValue(
+      new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+    );
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("INTERNAL_ERROR");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
+  });
+
+  it("adds a Sources footer before persisting no-oversight structured RAG output", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    vi.mocked(findRelevantContent).mockResolvedValue([
+      {
+        content: "Tax brackets group taxable income.",
+        similarity: 0.95,
+        materialTitle: "Lecture 1",
+      },
+    ]);
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          model: "vllm:qwen3.5-2b-instruct",
+          streaming: false,
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("Sources: Retrieved materials used this turn.");
+    expect(JSON.stringify(lastPersistedRows())).toContain(
+      "Sources: Retrieved materials used this turn.",
+    );
+  });
+
+  it("rejects malformed or Markdown Assist output without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
+  });
+
+  it("rejects malformed or Markdown Assist output on the streaming path without oversight", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: "### Step ladder\n1. First\n2. Second\n3. Third",
+    });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          model: "vllm:qwen3.5-2b-instruct",
+          messages: [{ id: "u1", role: "user", content: "Draw a diagram of gradient descent" }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to render structured Assist response");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("### Step ladder");
   });
 });
 
@@ -309,9 +679,7 @@ describe("POST /api/chat — compliance telemetry on the non-streaming path", ()
       systemPrompt: null,
     } as never);
 
-    const res = await action(
-      makeArgs(baseBody({ streaming: false, adhdAssist: false })),
-    );
+    const res = await action(makeArgs(baseBody({ streaming: false, adhdAssist: false })));
     expect(res.status).toBe(200);
 
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();

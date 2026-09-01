@@ -1,59 +1,111 @@
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
-import { IconFolders } from '@tabler/icons-react';
-import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from '@eduai/ui';
-import { ModuleCard } from '../components/courses/ModuleCard';
-import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import type { Course, Module } from '../lib/types';
-import type { Route } from './+types/student.course';
-import { useCourseTopics } from '../hooks/useCourseTopics';
-import api from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { useMemo } from "react";
+import { useNavigate, useNavigation, useSearchParams } from "react-router";
+import { IconFolders } from "@tabler/icons-react";
+import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from "@eduai/ui";
+import { ModuleCard } from "../components/courses/ModuleCard";
+import {
+  accentForCourse,
+  courseCode,
+  courseName,
+  courseTerm,
+  courseYear,
+} from "../lib/course-display";
+import type { Course, Module } from "../lib/types";
+import type { Route } from "./+types/student.course";
+import { useCourseTopics } from "../hooks/useCourseTopics";
+import api from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { StudentPreviewBanner } from "~/components/rbac/StudentPreviewBanner";
+import { previewRole as resolvePreviewRole, STUDENT_ROUTE_ROLES } from "~/lib/rbac/permissions";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
+  await requireClientUser(STUDENT_ROUTE_ROLES);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
-    throw new Response('Invalid course id', { status: 400 });
+    throw new Response("Invalid course id", { status: 400 });
   }
 
-  const [course, modules] = await Promise.all([
+  // #1207: the module grid is paged from the URL. It used to unwrap one bounded
+  // page and render it as if it were the whole tree, so a course with more
+  // modules than the page size silently hid the tail.
+  const { page } = parseListUrlParams(request);
+
+  const [course, modulesPage] = await Promise.all([
     api.courseById(courseId) as Promise<Course>,
-    // #1043: modules endpoint returns the pagination envelope; a course's
-    // module tree fits one bounded page (client default 200). Unwrap to keep
-    // the module grid rendering the full ordered set.
-    api.modulesForCourse(courseId).then((r) => r.data),
+    api.modulesForCourse(courseId, { page }),
   ]);
 
-  return { course, modules };
+  redirectPastEnd(request, {
+    page,
+    total: modulesPage.total,
+    pageSize: modulesPage.pageSize,
+  });
+
+  return {
+    course,
+    modules: modulesPage.data,
+    modulesTotal: modulesPage.total,
+    page: modulesPage.page,
+    pageSize: modulesPage.pageSize,
+  };
 }
 
 export default function StudentCourseModules({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
-  const { course, modules } = loaderData;
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
+  const { user } = useLocalUser();
+  // #1660: only set when the viewer is previewing (not a real STUDENT/TA of
+  // this course) — see StudentPreviewBanner for why this is purely a label.
+  const previewRole = resolvePreviewRole(user);
+  const { course, modules, modulesTotal, page, pageSize } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
+
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("page", String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
   const accentColor = accentForCourse(course);
-  const { topics } = useCourseTopics(course?.id ?? null);
+  const { topics, total: topicsTotal } = useCourseTopics(course?.id ?? null);
 
   useShellBreadcrumbs([
-    { label: 'Courses', href: '/student' },
+    { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
-      node: course?.id != null ? (
-        <CourseSwitcher
-          courseId={course.id}
-          basePath="/student"
-          currentTitle={course?.title || 'Course'}
-        />
-      ) : undefined,
+      label: course?.title || "Course",
+      node:
+        course?.id != null ? (
+          <CourseSwitcher
+            courseId={course.id}
+            basePath="/student"
+            currentTitle={course?.title || "Course"}
+          />
+        ) : undefined,
     },
   ]);
 
   return (
     <DetailPageScaffold
       padding="app"
+      beforeHero={
+        previewRole ? (
+          <StudentPreviewBanner
+            role={previewRole}
+            exitHref={course?.id != null ? `/instructor/courses/${course.id}` : "/instructor"}
+          />
+        ) : null
+      }
       hero={
         <CourseHeroCard
           code={courseCode(course)}
@@ -62,13 +114,18 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
           name={courseName(course)}
           description={course.description}
           accentColor={accentForCourse(course)}
-          topics={topics.map((topic) => topic.name)}
-          topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
+          // #1207: "+N more" rather than silently ending at the page bound.
+          topics={[
+            ...topics.map((topic) => topic.name),
+            ...(topicsTotal > topics.length ? [`+${topicsTotal - topics.length} more`] : []),
+          ]}
+          // #1207: count the whole course, not the loaded page.
+          topRightBadges={[`${modulesTotal} ${modulesTotal === 1 ? "module" : "modules"}`]}
         />
       }
     >
       {moduleList.length === 0 ? (
-        <Card className="mx-auto max-w-lg">
+        <Card className="mx-auto max-w-lg" data-tour="student-modules-empty">
           <EmptyState
             icon={<IconFolders size={22} aria-hidden="true" />}
             title="No modules available"
@@ -80,19 +137,34 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
           {moduleList.map((module, index) => (
             <ModuleCard
               key={module.id}
-              index={index}
+              // Absolute ordinal so numbering continues across pages.
+              index={absoluteOrdinal(page, pageSize, index)}
               title={module.title}
               description={module.description}
               accentColor={accentColor}
               showProgress
               progress={module.progress}
               onClick={() => navigate(`/student/module/${module.id}`)}
-              dataTour={index === 0 ? 'student-module-card-first' : undefined}
+              dataTour={index === 0 ? "student-module-card-first" : undefined}
               dataTourRoute={index === 0 ? `/student/module/${module.id}` : undefined}
             />
           ))}
         </div>
       )}
+
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        total={modulesTotal}
+        onPageChange={goToPage}
+        disabled={navigation.state === "loading"}
+      />
     </DetailPageScaffold>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

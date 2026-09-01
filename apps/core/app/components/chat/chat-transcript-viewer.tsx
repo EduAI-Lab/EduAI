@@ -10,7 +10,7 @@
  * button that deep-links to /chat/<id> — only pass this when the
  * current user is the owner of the chat (canEdit === true).
  */
-import { type Message } from "ai";
+import type { StoredChatMessage } from "~/lib/chat/revive-message.server";
 import { Spinner } from "@eduai/ui";
 import { IconEye, IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { Link } from "react-router";
@@ -18,7 +18,7 @@ import { Button } from "@eduai/ui";
 import { ChatMessage } from "~/components/chat/chat-message";
 
 interface ChatTranscriptViewerProps {
-  messages: Array<Record<string, unknown>>;
+  messages: StoredChatMessage[];
   /** Owner display name — shown in the read-only banner. */
   ownerName?: string | null;
   courseCode?: string | null;
@@ -43,11 +43,9 @@ export function ChatTranscriptViewer({
   return (
     <div className={className}>
       {/* Read-only banner */}
-      <div className="flex items-center gap-2 rounded-[var(--radius-lg)] border border-border bg-muted/50 px-4 py-2.5 mb-5">
-        <IconEye size={15} className="text-muted-foreground flex-shrink-0" stroke={1.7} />
-        <p className="text-[13px] text-muted-foreground">
-          Read-only transcript
-        </p>
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-2.5 mb-5">
+        <IconEye size={15} className="text-muted-foreground shrink-0" stroke={1.7} />
+        <p className="text-[13px] text-muted-foreground">Read-only transcript</p>
         <div className="ml-auto flex items-center gap-2">
           {continueChatId && (
             <Button asChild size="sm" variant="default" className="h-7 px-3 text-[12px] gap-1.5">
@@ -83,10 +81,7 @@ export function ChatTranscriptViewer({
       ) : (
         <div className="space-y-5">
           {messages.map((message, index) => (
-            <ChatMessage
-              key={typeof message.id === "string" && message.id ? message.id : `msg-${index}`}
-              message={message as unknown as Message}
-            />
+            <ChatMessage key={message.id || `msg-${index}`} message={message} />
           ))}
         </div>
       )}

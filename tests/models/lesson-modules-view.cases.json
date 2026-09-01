@@ -1,0 +1,72 @@
+[
+  {
+    "Role": "STUDENT",
+    "Published": "no",
+    "Found": "no"
+  },
+  {
+    "Role": "NONE",
+    "Published": "yes",
+    "Found": "yes"
+  },
+  {
+    "Role": "TA",
+    "Published": "yes",
+    "Found": "no"
+  },
+  {
+    "Role": "NONE",
+    "Published": "no",
+    "Found": "no"
+  },
+  {
+    "Role": "TA",
+    "Published": "no",
+    "Found": "yes"
+  },
+  {
+    "Role": "ADMIN",
+    "Published": "yes",
+    "Found": "yes"
+  },
+  {
+    "Role": "STUDENT",
+    "Published": "yes",
+    "Found": "yes"
+  },
+  {
+    "Role": "ANON",
+    "Published": "no",
+    "Found": "yes"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Published": "no",
+    "Found": "yes"
+  },
+  {
+    "Role": "ADMIN",
+    "Published": "no",
+    "Found": "no"
+  },
+  {
+    "Role": "ANON",
+    "Published": "yes",
+    "Found": "yes"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Published": "yes",
+    "Found": "no"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Published": "no",
+    "Found": "no"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Published": "yes",
+    "Found": "yes"
+  }
+]

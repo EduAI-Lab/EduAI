@@ -1,11 +1,22 @@
 import { z } from "zod";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import {
   upsertUserProviderSetting,
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
 import prisma from "~/lib/prisma.server";
+import { readBoundedJson } from "~/lib/chat-input.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  BEDROCK_USER_SETTINGS_ERROR,
+  isBedrockProviderName,
+} from "~/lib/ai/routing/bedrock/bedrock-settings";
+import { withErrorResponse } from "~/lib/errors.server";
+
+const PROVIDER_SETTINGS_MAX_BODY_BYTES = 32 * 1024;
+const PROVIDER_NAME_MAX_CHARS = 64;
+const PROVIDER_API_KEY_MAX_CHARS = 16_384;
+const PROVIDER_BASE_URL_MAX_CHARS = 2_048;
 
 function unauthorized() {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -16,90 +27,140 @@ function unauthorized() {
 
 /** GET — returns provider settings for the current user. Never exposes the raw key. */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return unauthorized();
+  return withErrorResponse(
+    async () => {
+      const session = await getRequestSession(request);
+      if (!session?.user) return unauthorized();
 
-  const rows = await prisma.userProviderSettings.findMany({
-    where: { userId: session.user.id },
-    select: {
-      isEnabled: true,
-      apiKey: true,
-      baseUrl: true,
-      provider: { select: { name: true } },
+      const rows = await prisma.userProviderSettings.findMany({
+        where: { userId: session.user.id },
+        select: {
+          isEnabled: true,
+          apiKey: true,
+          baseUrl: true,
+          provider: { select: { name: true } },
+        },
+      });
+
+      const result = rows
+        .filter((row) => !isBedrockProviderName(row.provider.name))
+        .map((row) => ({
+          providerName: row.provider.name,
+          isEnabled: row.isEnabled,
+          hasKey: row.apiKey != null,
+          baseUrl: row.baseUrl,
+        }));
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     },
-  });
-
-  const result = rows.map((row) => ({
-    providerName: row.provider.name,
-    isEnabled: row.isEnabled,
-    hasKey: row.apiKey != null,
-    baseUrl: row.baseUrl,
-  }));
-
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+    { request },
+  );
 }
 
 const UpsertSchema = z.object({
-  providerName: z.string().min(1),
+  providerName: z.string().min(1).max(PROVIDER_NAME_MAX_CHARS),
   isEnabled: z.boolean(),
-  apiKey: z.string().optional(),
-  baseUrl: z.string().optional(),
+  apiKey: z.string().max(PROVIDER_API_KEY_MAX_CHARS).optional(),
+  baseUrl: z.string().max(PROVIDER_BASE_URL_MAX_CHARS).optional(),
 });
 
 const DeleteSchema = z.object({
-  providerName: z.string().min(1),
+  providerName: z.string().min(1).max(PROVIDER_NAME_MAX_CHARS),
 });
+
+async function readProviderSettingsBody(request: Request) {
+  return readBoundedJson(
+    request,
+    PROVIDER_SETTINGS_MAX_BODY_BYTES,
+    "Provider settings request body exceeds size limit",
+  );
+}
 
 /** POST to upsert, DELETE to remove. */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return unauthorized();
+  return withErrorResponse(
+    async () => {
+      const session = await getRequestSession(request);
+      if (!session?.user) return unauthorized();
 
-  if (request.method === "POST") {
-    const body = await request.json();
-    const parsed = UpsertSchema.safeParse(body);
-    if (!parsed.success) {
-      return new Response(JSON.stringify({ error: "Invalid body" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    try {
-      await upsertUserProviderSetting(session.user.id, parsed.data.providerName, {
-        isEnabled: parsed.data.isEnabled,
-        apiKey: parsed.data.apiKey,
-        baseUrl: parsed.data.baseUrl,
-      });
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.startsWith("Unknown provider")) {
-        return new Response(JSON.stringify({ error: err.message }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (request.method === "POST") {
+        const bodyResult = await readProviderSettingsBody(request);
+        if (!bodyResult.ok) {
+          return new Response(JSON.stringify({ error: bodyResult.error }), {
+            status: bodyResult.status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const parsed = UpsertSchema.safeParse(bodyResult.body);
+        if (!parsed.success) {
+          return new Response(JSON.stringify({ error: "Invalid body" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (isBedrockProviderName(parsed.data.providerName)) {
+          return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        try {
+          await upsertUserProviderSetting(session.user.id, parsed.data.providerName, {
+            isEnabled: parsed.data.isEnabled,
+            apiKey: parsed.data.apiKey,
+            baseUrl: parsed.data.baseUrl,
+          });
+        } catch (err: unknown) {
+          if (err instanceof Error && err.message.startsWith("Unknown provider")) {
+            return new Response(JSON.stringify({ error: err.message }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          if (err instanceof Error && err.message === BEDROCK_USER_SETTINGS_ERROR) {
+            return new Response(JSON.stringify({ error: err.message }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          throw err;
+        }
+        return new Response(null, { status: 204 });
       }
-      throw err;
-    }
-    return new Response(null, { status: 204 });
-  }
 
-  if (request.method === "DELETE") {
-    const body = await request.json();
-    const parsed = DeleteSchema.safeParse(body);
-    if (!parsed.success) {
-      return new Response(JSON.stringify({ error: "Invalid body" }), {
-        status: 400,
+      if (request.method === "DELETE") {
+        const bodyResult = await readProviderSettingsBody(request);
+        if (!bodyResult.ok) {
+          return new Response(JSON.stringify({ error: bodyResult.error }), {
+            status: bodyResult.status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const parsed = DeleteSchema.safeParse(bodyResult.body);
+        if (!parsed.success) {
+          return new Response(JSON.stringify({ error: "Invalid body" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (isBedrockProviderName(parsed.data.providerName)) {
+          return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        await deleteUserProviderSetting(session.user.id, parsed.data.providerName);
+        return new Response(null, { status: 204 });
+      }
+
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
         headers: { "Content-Type": "application/json" },
       });
-    }
-    await deleteUserProviderSetting(session.user.id, parsed.data.providerName);
-    return new Response(null, { status: 204 });
-  }
-
-  return new Response(JSON.stringify({ error: "Method not allowed" }), {
-    status: 405,
-    headers: { "Content-Type": "application/json" },
-  });
+    },
+    { request },
+  );
 }

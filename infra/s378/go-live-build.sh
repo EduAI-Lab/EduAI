@@ -8,7 +8,7 @@
 #
 # Order is the whole point and is not negotiable:
 #
-#   env  ->  generate  ->  migrate  ->  seed  ->  BUILD  ->  restart
+#   env  ->  generate  ->  migrate  ->  extension seed  ->  BUILD  ->  restart
 #
 # `go-live-env.sh` rewrites the VITE_* public URLs. Those used to be read when
 # the dev server started; now they are BAKED INTO THE BUNDLE at build time. Run
@@ -123,22 +123,35 @@ step "prisma generate"
 # Before #1243's pinning, ai-tutor and question-maker both resolved to the same
 # root client and whichever generated last silently won — the loser's models came
 # back `undefined` at runtime, which was live on s378.
-( cd apps/core                                  && npx prisma generate )
-( cd apps/extensions/ai-tutor/server            && npx prisma generate )
+if want core; then
+  ( cd apps/core                                  && npx prisma generate )
+fi
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npx prisma generate )
+fi
 # Question Maker keeps its .env at the EXTENSION root, not next to its schema, so
 # the Prisma CLI's own dotenv resolution (schema dir / cwd only) never finds
 # DATABASE_URL — a bare `npx prisma generate` here dies with P1012. Its
 # scripts/withPrismaEnv.js wrapper loads that file first.
-( cd apps/extensions/question-maker/app/backend && npm run db:generate )
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run db:generate )
+fi
 
 step "assert each app resolves its OWN prisma client"
 # Regression guard for the collision above. Ships with #1243; skipped with a
 # warning on branches that predate it rather than failing the deploy.
-if [ -f scripts/verify-prisma-client-isolation.mjs ]; then
+if [ -z "$ONLY" ] && [ -f scripts/verify-prisma-client-isolation.mjs ]; then
   npm run test:prisma-client-isolation
+elif [ -n "$ONLY" ] && [ -f scripts/verify-prisma-client-isolation.mjs ]; then
+  echo "  skipping client-isolation check for --only $ONLY"
 else
   echo "  WARNING: scripts/verify-prisma-client-isolation.mjs not on this branch —"
   echo "           skipping the client-isolation check (expected before #1243 merges)."
+fi
+
+step "migration preflight"
+if want core; then
+  ( cd apps/core && npm run db:migrate:preflight )
 fi
 
 step "migrate"
@@ -146,21 +159,39 @@ step "migrate"
 # Restart=always, which would re-run a migration on every crash-loop iteration.
 # They are also NOT in the `start` scripts the units now exec, so without this
 # step a branch carrying a schema change deploys as a runtime crash.
-( cd apps/core                                  && npx prisma migrate deploy )
-( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
-# Same wrapper reason as the generate step above; db:migrate:deploy also runs the
-# baseline script first.
-( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
+if want core; then
+  ( cd apps/core                                  && npx prisma migrate deploy )
+fi
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
+fi
+# QM db:migrate:deploy runs migrate-canvas-integrations-to-core.mjs BEFORE prisma
+# migrate deploy. That copier decrypts with QM ENCRYPTION_KEY and re-encrypts with
+# Core ENCRYPTION_KEY; the following Prisma migration only renames QM's
+# canvas_integrations table to a backup (it does not DROP). See docs/DEPLOYMENT.md.
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
+fi
 
-step "seed if empty"
-# The old units exec'd `npm run dev`, whose script chained `seed:if-empty` for all
-# three apps. The new units exec the server directly, so without this a freshly
-# reset or recreated database comes up with no AI providers and no admin user:
-# every unit reports active, BUILD_OK prints, and nobody can sign in.
-# All three are no-ops when the database already has rows.
-( cd apps/core                                  && npm run db:seed:if-empty )
-( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
-( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
+step "seed reference and extension data"
+# Core fixture seeding is intentionally disabled on s378. Core's seed contains
+# fixed demo identities, including an ADMIN account, and its local-only guard
+# must never be bypassed by a shared deployment. Bootstrap the first real Core
+# administrator through the documented operator bootstrap flow instead.
+# Reference catalogs contain no identities and use idempotent upserts, so they
+# are safe and required on a freshly migrated shared database.
+if want core; then
+  ( cd apps/core                                  && npm run db:seed:reference )
+fi
+#
+# The extension seeds contain only local application/catalog data and remain
+# no-ops when their databases already have rows.
+if want aitutor; then
+  ( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
+fi
+if want qm; then
+  ( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
+fi
 
 step "build"
 # NEVER `turbo run build` here. turbo.json's build task declares no `inputs` and
@@ -171,6 +202,13 @@ CORE_RESTARTED=0
 if want core; then
   step "build: core (SSR)"
   npm run build -w edu-ai
+  # Gate Core's own restart before touching the running service. The final
+  # all-app verification below also checks this path, but it happens after the
+  # extension builds and would be too late for this early restart.
+  test -f apps/core/build/server/index.js \
+    || { echo "ERROR: Core build artifact missing" >&2; exit 1; }
+  test -f apps/core/node_modules/@prisma/client/index.js \
+    || { echo "ERROR: Core generated Prisma client missing" >&2; exit 1; }
   # Restart Core HERE, not with the rest of the stack at the end. `react-router
   # build` empties and repopulates build/client with fresh content hashes while
   # the running process still renders the OLD asset URLs off disk. Deferring the
@@ -202,6 +240,30 @@ if want qm; then
   fi
 fi
 
+step "verify deploy artifacts"
+# A successful bundler exit is not enough: a bad install can still leave one
+# extension without its local Prisma client, or a frontend without the index
+# Apache serves. Core's equivalent gate runs before its early restart above.
+if want core; then
+  test -f apps/core/build/server/index.js \
+    || { echo "ERROR: Core build artifact missing" >&2; exit 1; }
+  test -f apps/core/node_modules/@prisma/client/index.js \
+    || { echo "ERROR: Core generated Prisma client missing" >&2; exit 1; }
+fi
+if want aitutor; then
+  test -f apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/index.js \
+    || { echo "ERROR: AI Tutor generated Prisma client missing" >&2; exit 1; }
+  test -f apps/extensions/ai-tutor/build/client/index.html \
+    || { echo "ERROR: AI Tutor frontend artifact missing" >&2; exit 1; }
+fi
+if want qm; then
+  test -f apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js \
+    || { echo "ERROR: Question Maker generated Prisma client missing" >&2; exit 1; }
+  test -f apps/extensions/question-maker/app/frontend/dist/index.html \
+    || { echo "ERROR: Question Maker frontend artifact missing" >&2; exit 1; }
+fi
+echo "required generated clients and frontend entrypoints present"
+
 step "verify the builds carry development semantics"
 # If NODE_ENV failed to reach the bundler, the build still succeeds and still
 # serves fine — it just silently drops every import.meta.env.DEV branch. These
@@ -218,6 +280,19 @@ fi
 
 if [ "$DO_RESTART" = "1" ]; then
   step "restart"
+  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
+    echo "ERROR: eduai-cron-worker.service is not installed on this host."
+    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
+    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
+    exit 1
+  fi
+  if want core; then
+    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
+    # not from the web checkout. Sync them on every Core deploy so a script
+    # change cannot remain stale after the worker restarts.
+    echo "  syncing cron scripts to /opt/eduai/cron"
+    sudo /usr/local/sbin/eduai-cron-sync
+  fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already
@@ -227,6 +302,9 @@ if [ "$DO_RESTART" = "1" ]; then
   # whose bundle did not change is a pointless outage on a shared box.
   RESTART_UNITS=()
   if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  # The cron worker imports Core server code directly, so it must restart with
+  # every Core deployment even when Core itself was restarted after its build.
+  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
   if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
   if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
 
@@ -267,6 +345,10 @@ if [ "$DO_RESTART" = "1" ]; then
   # stopped would be a false alarm.
   UNHEALTHY=()
   if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
+    echo "  eduai-cron-worker        NOT active"
+    UNHEALTHY+=(eduai-cron-worker)
+  fi
   if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
   if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
 

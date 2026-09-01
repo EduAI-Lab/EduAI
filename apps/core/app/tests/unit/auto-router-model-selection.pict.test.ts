@@ -1,8 +1,14 @@
 // PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
 // row table (tests/models/auto-router-model-selection.cases.json) and one spec-derived
 // oracle (tests/models/auto-router-model-selection.oracle.ts) assert observable router
-// telemetry from resolveRoutedModel — mode override, image hard-rules, hybrid kNN gate,
-// LLM tier-3 escalation, and classifier fail-open — without HTTP chat or a live DB.
+// telemetry from resolveRoutedModel — mode override, image pool-filtering, hybrid kNN
+// gate, LLM tier-3 escalation, and classifier fail-open — without HTTP chat or a live DB.
+//
+// Post-#1403: images no longer force pick source to Phase-1 rules. The dedicated
+// image-escalation rule was retired ("the model family handles images natively"), so
+// `ImagesPresent` now only constrains the candidate pool (`requireImages`) applied
+// uniformly after each mode's own tier pick — pick source follows the normal per-mode
+// rule regardless of images (see oracle.ts header for the full rationale).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RouterInputContext } from "~/lib/ai/routing/router";
@@ -10,9 +16,7 @@ import type { KnnTierPrediction } from "~/lib/ai/routing/knn";
 import type { LlmRouteClassification } from "~/lib/ai/routing/llm-classifier";
 
 const mockPredictTierKnn = vi.hoisted(() => vi.fn<() => Promise<KnnTierPrediction>>());
-const mockClassifyPromptForTier = vi.hoisted(() =>
-  vi.fn<() => Promise<LlmRouteClassification>>(),
-);
+const mockClassifyPromptForTier = vi.hoisted(() => vi.fn<() => Promise<LlmRouteClassification>>());
 const mockPickModelForSpec = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ai/routing/knn", () => ({
@@ -84,18 +88,20 @@ const ORIGINAL_ENV = {
   VLLM_BASE_URL: process.env.VLLM_BASE_URL,
 };
 
-function buildRouterInputs(row: AutoRouterRow): {
+/** The three arguments a PICT row turns into for the router call. */
+type RouterInputs = {
   prompt: string;
   context: RouterInputContext;
   modeOverride?: RouterMode;
-} {
+};
+
+function buildRouterInputs(row: AutoRouterRow): RouterInputs {
   const prompt = row.Tier3RuleMatch === "yes" ? TIER3_PROMPT : NEUTRAL_PROMPT;
   const context: RouterInputContext = {
     courseId: row.Tier3RuleMatch === "yes" ? null : "course-1",
     imagesPresent: row.ImagesPresent === "yes",
   };
-  const modeOverride =
-    row.ModeOverride === "none" ? undefined : (row.ModeOverride as RouterMode);
+  const modeOverride = row.ModeOverride === "none" ? undefined : (row.ModeOverride as RouterMode);
   return { prompt, context, modeOverride };
 }
 
@@ -143,9 +149,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
 
       expect(decision.features.routerMode).toBe(verdict.effectiveMode);
       expect(decision.features.pickSource).toBe(verdict.pickSource);
-      expect(decision.features.routerVersion).toBe(
-        expectedRouterVersion(verdict.effectiveMode),
-      );
+      expect(decision.features.routerVersion).toBe(expectedRouterVersion(verdict.effectiveMode));
 
       if (verdict.downgradedFromThrow) {
         expect(decision.features.rule).toBe("llm_classifier_fallback_rules");
@@ -154,14 +158,15 @@ describe.each(rows.map((row, index) => ({ row, index })))(
         expect(decision.features.rule).toBe(expectedRuleId(row));
       }
 
+      // Images are a pool filter (`requireImages`) applied after each mode's
+      // own tier pick, not a routing-mode override (PR #1403) — kNN/LLM
+      // classifier calls happen exactly as they would for a text-only
+      // prompt, regardless of `ImagesPresent`.
       const effectiveMode = resolveEffectiveMode(row);
       const usesKnn = effectiveMode === "knn" || effectiveMode === "hybrid";
-      const usesClassifier =
-        effectiveMode === "llm" &&
-        row.ImagesPresent === "no" &&
-        row.Tier3RuleMatch === "no";
+      const usesClassifier = effectiveMode === "llm" && row.Tier3RuleMatch === "no";
 
-      if (usesKnn && row.ImagesPresent === "no") {
+      if (usesKnn) {
         expect(mockPredictTierKnn).toHaveBeenCalledWith(prompt);
       } else {
         expect(mockPredictTierKnn).not.toHaveBeenCalled();

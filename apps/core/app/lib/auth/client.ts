@@ -1,6 +1,7 @@
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 export const authClient = createAuthClient({
   plugins: [
@@ -8,21 +9,21 @@ export const authClient = createAuthClient({
     inferAdditionalFields({
       user: {
         role: {
-        type: "string",
-        defaultValue: "STUDENT",
-        required: false,
-        returned: true,
-      },
-      isActive: {
-        type: "boolean",
-        defaultValue: true,
-        required: false,
-        returned: true,
-      },
+          type: "string",
+          defaultValue: "STUDENT",
+          required: false,
+          returned: true,
+        },
+        isActive: {
+          type: "boolean",
+          defaultValue: true,
+          required: false,
+          returned: true,
+        },
       },
     }),
   ],
-  baseURL: typeof window !== "undefined" ? window.location.origin : undefined,
+  baseURL: isBrowser() ? window.location.origin : undefined,
 });
 
 // Export convenience methods

@@ -11,57 +11,73 @@ context (user roles, features, workflows), see [`SYSTEM_OVERVIEW.md`](SYSTEM_OVE
 
 ## High-Level Topology
 
-The platform is composed of four independent processes that communicate over HTTP. The frontend
+The platform is composed of independent processes that communicate over HTTP. The frontend
 is a static SPA; nothing about it is server-rendered.
 
 ```mermaid
 flowchart LR
     Browser["Browser<br/>(React Router v7 SPA, ssr:false)"]
     API["Express API<br/>:4000<br/>(server/src/index.js)"]
-    DB[("PostgreSQL 16<br/>Docker, host :54321")]
-    EduAI["EduAI<br/>OIDC + Chat API<br/>(default :5174/api)"]
+    DB[("PostgreSQL<br/>Docker in production, loopback-only")]
+    Core["EduAI Core<br/>session validation + course data + LLM proxy"]
 
     Browser -- "fetch /api/* (cookies)" --> API
-    Browser -. "OAuth redirect" .-> EduAI
+    Browser -. "sign-in redirect" .-> Core
     API -- "Prisma" --> DB
-    API -- "Bearer + apiKeys" --> EduAI
-    API -- "Better Auth getSession" --> DB
+    API -- "POST /api/sessions/validate (cookie)" --> Core
+    API -- "Bearer service key + apiKeys" --> Core
 ```
 
-| Component | Process | Source | Default Port |
-|-----------|---------|--------|--------------|
-| SPA       | Static assets served by Apache (prod) or `vite dev` | `app/` | `5173` (dev) |
-| API       | Node/Express, single PM2 process `aitutor-api`     | `server/src/index.js` | `4000` |
-| DB        | PostgreSQL 16-alpine in Docker                      | `docker-compose.yml` | `54321` host -> `5432` container |
-| EduAI     | External service (auth + LLM proxy)                 | not in this repo | `5174` (dev) |
+There is no separate "EduAI" AI service in this deployment — **EduAI Core is both the identity
+provider and the LLM proxy**. AI Tutor's own database (`CourseOffering` and everything under it) holds
+no course metadata of its own; course fields, publish state, and enrollment are read through live from
+Core on (almost) every request. See [Data Model Overview](#data-model-overview-prisma) and
+[Authentication Flow](#authentication-flow) below.
 
-The Apache reverse proxy in production sits in front of API and serves the SPA build at the root.
-See [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) for the production layout.
+| Component | Process | Source | Default Port |
+| --- | --- | --- | --- |
+| SPA | Static assets served by Apache in production; `vite dev` locally | `app/` | `3001` (pinned in `vite.config.ts`, regardless of how `vite dev` is invoked) |
+| API | Node/Express, a systemd-managed process in current production (see [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) for the two coexisting production mechanisms, one of which still uses PM2) | `server/src/index.js` | `4000` |
+| DB | PostgreSQL (Docker locally) | `docker-compose.yml` (dev/legacy); a dedicated non-Docker `ai_tutor_prod` role/db in current production | `127.0.0.1:54321` locally |
+| Core | External service (this monorepo's `apps/core`) | not in this app's tree | `3000` (dev default) |
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for exactly what runs where in production — it differs from a
+casual reading of the Dockerfile.
 
 ---
 
 ## Provider Stack at App Root
 
-The SPA's React tree is wrapped by three providers in this exact order at
-[`app/root.tsx:91-101`](../app/root.tsx):
+The SPA's React tree is wrapped by five providers, in this exact order, in
+[`app/root.tsx`](../app/root.tsx):
 
 ```tsx
 <AuthProvider initialUser={null}>
   <BugReportProvider>
     <TourProvider>
-      <Outlet />
+      <AssistiveModeProvider>
+        <UiPreferencesProvider>
+          <ThemeSyncInitializer />
+          <Outlet />
+        </UiPreferencesProvider>
+      </AssistiveModeProvider>
     </TourProvider>
   </BugReportProvider>
 </AuthProvider>
 ```
 
+(`ThemeProvider` and `Toaster` wrap this whole tree one level further out, in `Layout()` — they render
+for every user including the pre-auth home page, so they stay outside `AuthProvider`.)
+
 **Ordering is load-bearing.** Do not rearrange without understanding the dependencies:
 
 | Provider | Source | Why this position |
-|----------|--------|-------------------|
-| `AuthProvider` | [`app/hooks/useLocalUser.tsx`](../app/hooks/useLocalUser.tsx) | Outermost. On mount it calls `GET /api/me` and exposes the session user via context. Every other provider and route loader assumes auth state is resolvable. |
-| `BugReportProvider` | [`app/components/bug-report/BugReportProvider.tsx`](../app/components/bug-report/BugReportProvider.tsx) | Wraps the tour layer because `useBugReportCapture` monkey-patches `window.fetch` and `console.{log,warn,error}` on mount. It must be live before any user-facing flow (tours included) starts producing logs we may want to capture in a bug report. |
-| `TourProvider` | [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) | Innermost because it consumes `useLocation` / `useNavigate` and drives DOM-level highlighting via `driver.js`. It depends on the route subtree being mounted, and it surfaces UI on top of all other content. |
+| --- | --- | --- |
+| `AuthProvider` | [`app/hooks/useLocalUser.tsx`](../app/hooks/useLocalUser.tsx) | Outermost. On mount it calls `GET /api/me` (with retry, since a fresh dev-stack API may not be listening yet) and exposes the session user via context. Every other provider and route loader assumes auth state is resolvable. |
+| `BugReportProvider` | [`app/components/bug-report/BugReportProvider.tsx`](../app/components/bug-report/BugReportProvider.tsx) | Wraps everything inside it because `useBugReportCapture` monkey-patches `window.fetch` and `console.{log,warn,error}` on mount. It must be live before any user-facing flow starts producing logs a bug report might want to capture. |
+| `TourProvider` | [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) | Consumes `useLocation` / `useNavigate` and drives DOM-level highlighting via `driver.js`; depends on the route subtree being mounted. |
+| `AssistiveModeProvider` | [`app/components/settings/assistive-mode.tsx`](../app/components/settings/assistive-mode.tsx) | Reads its preference from `localStorage` (this is a client-only SPA — there is no server-resolved initial value to hand it) and toggles `<html data-assistive>`. |
+| `UiPreferencesProvider` | [`app/components/settings/ui-preferences.tsx`](../app/components/settings/ui-preferences.tsx) | Same `localStorage`-backed pattern, for density and reduced-motion (`data-density` / `data-reduce-motion`). |
 
 If `AuthProvider` is moved inside `BugReportProvider`, the patched `fetch` runs before the
 auth bootstrap and can capture noise from unauthenticated `/api/me` calls in every bug report.
@@ -69,110 +85,81 @@ If `TourProvider` is moved outside the route tree, `useLocation` will throw.
 
 ---
 
-## Request Lifecycle: Authenticated API Call
+## Authentication Flow
 
-The flow below is what happens when the SPA calls something like
-`api.modulesForCourse(123)` from [`app/lib/api.ts`](../app/lib/api.ts).
+**There is no local login, no JWT, and no Better Auth instance anywhere in this app.** Session
+validation is delegated entirely to EduAI Core. If you find a doc, comment, or environment-variable
+list that mentions Better Auth, `genericOAuth`, `EDUAI_DISCOVERY_URL`, `EDUAI_CLIENT_ID`, or a
+`server/src/auth.js` file for this app, it describes an earlier design this app no longer has — there
+is no such file under `server/src/`.
+
+What actually happens:
+
+1. The browser signs in against **Core**, not this app. AI Tutor's own home page (`/`) has no
+   credential form; when there's no session it redirects to Core's login (`getCoreLoginUrl()` in
+   `app/lib/coreUrl.ts`), and the user comes back to AI Tutor already carrying Core's session cookie.
+2. Every request from the SPA sets `credentials: 'include'` (`app/lib/api.ts`), so the browser attaches
+   that cookie automatically.
+3. `middleware/auth.js`'s `requireAuth` runs on every `/api/*` request (except `/api/health`,
+   `POST /api/logout`, and `/api/internal/*`). It forwards the incoming `Cookie` header, plus this
+   server's own `EDUAI_API_KEY` as a `Bearer` header and the caller's real IP as
+   `X-EduAI-Client-Ip`, to Core's `POST /api/sessions/validate`. Core's JSON response supplies
+   `req.user = { id, email, name, role }` (with an unrecognized role normalized down to `STUDENT`).
+   **The role check happens on every request** — there is no session-cached role that could go stale.
+4. `GET /api/me` additionally promotes a base `STUDENT` role to the effective role `TA` when the
+   caller's Core course list shows them teaching at least one course as a TA
+   (`server/src/routes/authentication.js`). This is the *global effective role* surfaced to the
+   frontend; it is intentionally distinct from a caller's live enrollment role on one *specific*
+   course (see `viewerEnrollmentRole` in the lesson breadcrumb response) — a global-effective TA can
+   still be a plain `STUDENT` on a course they aren't assisting with, and several routes (answer
+   submission, the three AI-tutoring endpoints) check the per-course role, not the global one, for
+   exactly that reason.
+5. `POST /api/logout` proxies to Core's own `/api/auth/sign-out` server-to-server (bypassing the
+   browser's CORS restrictions on a cross-origin sign-out call), using the service key. It is exempt
+   from `requireAuth` so signing out an already-invalid session is a no-op, not a 401.
+6. On the frontend, a 401 from any `/api/*` call redirects to Core's login page
+   (`window.location.href = getCoreLoginUrl()` inside `http()` in `app/lib/api.ts`); a 403 is
+   surfaced as a normal thrown error instead — the caller is already authenticated, so bouncing them
+   back to login would just loop.
 
 ```mermaid
 sequenceDiagram
     participant SPA as SPA (api.ts)
-    participant BA as Better Auth handler<br/>/api/auth/*
-    participant MW as attachSession<br/>middleware/auth.js
-    participant Gate as Auth + Admin gate<br/>app.js
+    participant Core as EduAI Core
+    participant MW as requireAuth<br/>middleware/auth.js
+    participant Gate as Admin isolation gate<br/>app.js
     participant Route as Route handler
-    participant Map as mappers.js
     participant DB as Postgres (Prisma)
 
-    SPA->>BA: (separately) sign-in via OAuth, sets cookie
+    SPA->>Core: (separately) sign-in at Core, cookie set
     SPA->>MW: GET /api/courses/123/modules<br/>(credentials: include)
-    MW->>BA: auth.api.getSession({ headers })
-    BA->>DB: SELECT Session/User by token
-    DB-->>BA: session row
-    BA-->>MW: { user }
-    MW->>DB: prisma.user.findUnique(id)
-    DB-->>MW: full User (with role)
-    MW->>Gate: req.user = User
-    Gate->>Gate: requireAuth (401 if absent)
-    Gate->>Gate: admin isolation gate
+    MW->>Core: POST /api/sessions/validate<br/>(cookie + Bearer service key + client IP)
+    Core-->>MW: { user: { id, email, name, role } }
+    MW->>Gate: req.user = normalized user
+    Gate->>Gate: ADMIN/UNIT_ADMIN path isolation
     Gate->>Route: next()
     Route->>DB: prisma.module.findMany(...)
-    DB-->>Route: rows
-    Route->>Map: mapModule(row)
-    Map-->>Route: client-shape JSON
-    Route-->>SPA: 200 JSON
-    Note over SPA: 401/403 -> window.location.href = "/"
+    DB-->>Route: local rows (position/publish flags only)
+    Route-->>SPA: 200 JSON (mapped via utils/mappers.js)
+    Note over SPA: 401 -> redirect to Core login. 403 -> thrown error, no redirect.
 ```
 
-Key implementation details:
+### Role model
 
-1. **Cookie in, user out.** The browser sends Better Auth's session cookie automatically because
-   every `fetch` in `app/lib/api.ts` uses `credentials: 'include'` (see lines 25-32).
-2. **`attachSession` re-reads the user from Postgres on every request.** It does *not* trust the
-   role claim from the session — it calls `prisma.user.findUnique({ where: { id } })` so that role
-   changes take effect immediately ([`server/src/middleware/auth.js:6-23`](../server/src/middleware/auth.js)).
-3. **Two gates run in series in `createApp()`** ([`server/src/app.js:73-95`](../server/src/app.js)):
-   - `requireAuth` 401s if `req.user` is null (skipped for `/api/health` and `/api/auth/*`).
-   - The admin-isolation gate 403s admins for any path that is not `/api/me`, `/api/admin/*`,
-     `/api/ai-models`, or `/api/ai-models/*`. Admins are intentionally fenced off from
-     student/instructor data; this is enforced by `isAllowedAdminPath()` in `app.js:19-26`.
-4. **Mappers are the contract.** All resource handlers shape rows through
-   [`server/src/utils/mappers.js`](../server/src/utils/mappers.js) before responding. The SPA's
-   typed wrappers in `app/lib/api.ts` and `app/lib/types.ts` mirror those shapes; see
-   [Frontend↔Backend Coupling Seams](#frontendbackend-coupling-seams).
-5. **Frontend short-circuits 401/403.** `http()` in `app/lib/api.ts:34-46` redirects to `/` on
-   401 or 403 unless already there, then throws so callers don't continue.
+Five roles, defined in `@eduai/types`' `UserRole` plus the local `"TA"` overlay
+(`app/lib/rbac/permissions.ts`): `ADMIN`, `UNIT_ADMIN`, `INSTRUCTOR`, `TA`, `STUDENT`. `TA` is never a
+role Core assigns to the platform account directly — it exists only as the derived overlay described
+above. `UNIT_ADMIN` scopes to a set of `authorizedUnits` (Core departments); everything else is either
+platform-wide (`ADMIN`) or resolved per course from a live Core enrollment/instructor check.
 
----
+### Live course authorization, not a cached mirror
 
-## Authentication Flow
-
-AI Tutor uses **Better Auth session cookies**. There is no JWT, no `Authorization: Bearer` header
-from the SPA, and no token storage in `localStorage`. The legacy "useLocalUser" name is historical;
-that hook now just wraps the cookie-backed session.
-
-### Identity provider: EduAI
-
-EduAI is an external service that hosts an OIDC provider plus the LLM proxy used by the dual-loop
-tutor. Better Auth is configured with the
-[`genericOAuth`](https://better-auth.com/docs/plugins/generic-oauth) plugin pointing at EduAI's
-discovery URL ([`server/src/auth.js:72-109`](../server/src/auth.js)).
-
-| Setting | Source | Default |
-|---------|--------|---------|
-| Discovery URL | `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| Userinfo URL  | `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
-| Client ID     | `EDUAI_CLIENT_ID`     | `aitutor-local` |
-| Client secret | `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
-| Scopes        | (hardcoded)           | `openid profile email offline_access` |
-| PKCE          | (hardcoded)           | enabled, with issuer validation |
-
-### Role mapping
-
-EduAI returns the user's role inside a namespaced claim, `https://eduai.app/role`. The custom
-`getUserInfo` callback in `auth.js` reads that claim and normalizes it via `normalizeEduAiRole()`
-([`auth.js:25-30`](../server/src/auth.js)) onto the local Prisma `Role` enum:
-
-| EduAI claim value | Local `Role` |
-|-------------------|--------------|
-| `ADMIN`           | `ADMIN`      |
-| `PROFESSOR`       | `PROFESSOR`  |
-| `TA`              | `TA`         |
-| anything else / missing | `STUDENT` |
-
-### Account linking
-
-`accountLinking.trustedProviders: ['eduai']` ([`auth.js:60-64`](../server/src/auth.js)) means the
-first time a user signs in via EduAI, Better Auth will *automatically link* the OIDC account to
-any existing local `User` row matching that email — no email-verification handshake. The
-`updateUserInfoOnLink: true` flag also lets EduAI overwrite name/picture on link. Treat any
-change to this block as security-sensitive.
-
-### Trusted origins
-
-The Better Auth handler accepts cross-origin auth callbacks only from
-`http://localhost:5173` and `https://aitutor.ok.ubc.ca`
-([`auth.js:38`](../server/src/auth.js)). New deployment domains must be added here.
+`CourseInstructor` and `CourseEnrollment` exist locally, but they are a **sync mirror, not the source
+of authorization truth**. Every staff-only write and every AI-tutoring/answer-submission request
+re-checks the caller's *live* Core role via `services/liveCoursePrincipal.js` /
+`services/enrollmentSync.js` before proceeding — a stale local row cannot grant access after a Core-side
+revocation. The local tables exist so ordinary reads (course lists, rosters) don't have to make a Core
+round trip on every request; they're refreshed on a short TTL (30s) and on-demand.
 
 ---
 
@@ -180,17 +167,20 @@ The Better Auth handler accepts cross-origin auth callbacks only from
 
 Located in [`server/src/services/aiGuidance.js`](../server/src/services/aiGuidance.js). Three
 exported entry points (`generateTeachResponse`, `generateGuideResponse`, `generateCustomResponse`)
-all funnel through `generateWithSupervisor()` -> `supervisedGenerate()`.
+all funnel through `generateWithSupervisor()` -> `supervisedGenerate()`. See
+[`two-agent-supervisor-system.md`](two-agent-supervisor-system.md) for the complete design, including
+the JSON verdict contract, the iteration loop, and how a supervisor JSON-parse failure is actually
+handled (it is *not* a tutor-only recovery pass, contrary to an earlier version of that doc).
 
-### The loop
+### The loop, at a glance
 
 ```mermaid
 flowchart TD
     Start([Student message]) --> Build[Build user message + system prompt<br/>from PromptTemplate]
-    Build --> Tutor[Call EduAI tutor model]
+    Build --> Tutor[Call EduAI /completion — tutor model]
     Tutor --> Enabled{dualLoopEnabled?}
     Enabled -- "false" --> Return1([Return tutor draft as-is<br/>finalOutcome: single_pass])
-    Enabled -- "true" --> Sup[Call supervisor model<br/>with hidden context + answer key]
+    Enabled -- "true" --> Sup[Call EduAI /completion — supervisor model<br/>with hidden context + answer key]
     Sup --> Verdict{verdict.approved?}
     Verdict -- "yes" --> Return2([Return tutor draft<br/>finalOutcome: approved])
     Verdict -- "no" --> Iter{iteration < max?}
@@ -201,47 +191,17 @@ flowchart TD
 
 ### Modes
 
-Each mode maps 1:1 to a `PromptTemplate.slug`:
-
 | Mode (API) | Endpoint | Prompt template slug | Purpose |
-|------------|----------|----------------------|---------|
-| `teach`    | `POST /api/activities/:id/teach`  | `learning-prompt`   | Open-ended explanation around a topic. |
-| `guide`    | `POST /api/activities/:id/guide`  | `exercise-prompt`   | Socratic hints for a specific question (uses `config.question/options/answer`). |
-| `custom`   | `POST /api/activities/:id/custom` | (uses `activity.customPrompt` directly) | Per-activity instructor-authored prompt. |
+| --- | --- | --- | --- |
+| `teach` | `POST /api/activities/:id/teach` | `learning-prompt` | Open-ended explanation around a topic. |
+| `guide` | `POST /api/activities/:id/guide` | `exercise-prompt` | Socratic hints for a specific question (uses `config.question/options/answer`). |
+| `custom` | `POST /api/activities/:id/custom` | (uses `activity.customPrompt` directly) | Per-activity instructor-authored prompt. |
 
-All three use the same supervisor flow. The supervisor itself is driven by a separate template
-with slug `supervisor-prompt`, fetched in `callSupervisor()`
-([`aiGuidance.js:124-197`](../server/src/services/aiGuidance.js)).
+### Non-streaming
 
-### Visible vs. hidden context
-
-The supervisor receives **two** context blobs per turn:
-
-- **VISIBLE STUDENT CONTEXT** — the same prompt the tutor saw.
-- **HIDDEN REVIEW CONTEXT** — adds the student's `knowledgeLevel` and (for guide/custom) the
-  formatted answer key from `config.answer` (`buildGuideSupervisorContexts`, `formatAnswerKey`).
-
-This is how the supervisor can tell whether the tutor is "leaking" the answer without ever giving
-the tutor the answer in its system prompt.
-
-### Verdict shape and fallback
-
-The supervisor must return JSON of the form `{ approved, reason, feedbackToTutor, safeResponseToStudent }`.
-If parsing fails, `callSupervisor` retries once with an explicit "YOUR PREVIOUS RESPONSE WAS NOT
-VALID JSON" hint, then gives up and returns a hardcoded conservative verdict marked
-`parseFailed: true`.
-
-When the iteration budget (`maxSupervisorIterations`, default 3) is exhausted without an approval,
-the function returns the supervisor's `safeResponseToStudent` from the last verdict instead of the
-tutor draft. The trace records `finalOutcome: 'safe_fallback'`.
-
-### API key forwarding
-
-The user's per-EduAI API key arrives in the request body as `apiKey` (validated by
-[`shared/schemas/aiGuidance.js`](../shared/schemas/aiGuidance.js)) and is forwarded to EduAI as
-`apiKeys[provider] = { apiKey, isEnabled: true }` in `callEduAI()`
-([`aiGuidance.js:43-49`](../server/src/services/aiGuidance.js)). It is **never persisted** —
-the only API key the server stores is the optional `EDUAI_API_KEY` system override (see below).
+The EduAI/Core `/completion` call is made with `streaming: false`. The frontend's chat UI shows a
+"Thinking…" indicator and swaps in the full response once the whole tutor↔supervisor exchange
+settles — there is no token-by-token streaming anywhere in this pipeline.
 
 ---
 
@@ -265,44 +225,53 @@ erDiagram
     ActivitySecondaryTopic }o--|| Topic : ""
     Activity ||--o{ Submission : receives
     Activity ||--o{ AiChatSession : powers
+    AiChatSession ||--o{ AiInteractionTrace : logs
     Activity }o--o| PromptTemplate : "uses (optional)"
 ```
 
 Notable invariants:
 
-- **`CourseOffering.coreOfferingId`** is the only Core-link field (#1072 step 3 consolidated the
-  old `externalId`/`externalSource` pair into it — they were always `'EDUAI'` plus a redundant
-  copy of the same id). `CourseOffering` is otherwise a pure anchor row: title/description/
-  department/dates/isPublished/term/year/aiInstructions are Core-owned and read live through
-  `services/courseResolver.js` + `mapCourseOffering` on every request, never stored locally.
+- **`CourseOffering` is a pure anchor row.** It carries only `id`, `coreOfferingId` (unique, required),
+  `createdAt`, `updatedAt`. Title, description, department, dates, `isPublished`, term, year, and
+  `aiInstructions` are **not columns on this table** — they are Core-owned and resolved live on every
+  read through `services/courseResolver.js` + `mapCourseOffering()` in `utils/mappers.js`. A course
+  never exists without a `coreOfferingId`; there is no such thing as a native, Core-less offering.
+- **Publish state for a course is never stored locally either.** `resolveIsPublished()` /
+  `isCoursePublishedLive()` in `courseResolver.js` read Core's `isPublished` field and **fail closed**
+  (`false`) when Core is unreachable or the offering isn't in the resolved batch — an unpublished-or-
+  unknown course is never shown to a student as a fallback. Modules and lessons, by contrast, *do*
+  store their own `isPublished` column locally; only the course level is Core-owned.
 - **`Activity.mainTopicId` is non-nullable.** Every activity must have exactly one main topic.
   Secondary topics are M:N via `ActivitySecondaryTopic`.
 - **`Activity.config` is a free-form `Json` column** carrying `question`, `options`, `answer`,
   `hints`, and `questionType` (`MCQ` or `SHORT_TEXT`). Mappers normalize `options` to
   `{ choices: string[] }` on the wire even though the column may store a bare array.
 - **Three per-activity mode flags** — `enableTeachMode`, `enableGuideMode`, `enableCustomMode` —
-  control which `/teach|/guide|/custom` endpoints are available for that activity.
-- **`Submission.attemptNumber`** is a simple monotonically-increasing per-student counter; rows
-  are not overwritten on resubmit.
-- **`AiChatSession` is unique on `[userId, activityId, mode]`.** A student gets exactly one
-  persistent EduAI `chatId` per (activity, mode) combo. `AiInteractionTrace` rows belong to a
-  session and store the full dual-loop trace JSON.
+  control which `/teach|/guide|/custom` endpoints are available for that activity. At least one must
+  stay `true`; both the client editor and the server re-validate this.
+- **`Submission.attemptNumber`** is a simple monotonically-increasing per-student counter
+  (`@@unique([userId, activityId, attemptNumber])`); rows are not overwritten on resubmit.
+- **`AiChatSession` has no uniqueness constraint on `(userId, activityId, mode)`** — the model's only
+  unique column is `chatId` (the Core chat id). A student can hold multiple sessions per
+  (activity, mode) over time; that's what the chat-history panel lists.
+- **`CourseInstructor` / `CourseEnrollment` are a Core sync mirror**, not authorization truth — see
+  [Live course authorization](#live-course-authorization-not-a-cached-mirror) above.
 
 ### System settings
 
-`SystemSetting` is a flat key/value table. Two keys are in active use today
-([`server/src/services/systemSettings.js`](../server/src/services/systemSettings.js)):
+`SystemSetting` is a flat key/value table (`server/src/services/systemSettings.js`). Two keys are in
+active use:
 
 | Key | Used for |
-|-----|----------|
-| `EDUAI_API_KEY` | Server-wide EduAI API key override (admin UI). Falls back to `process.env.EDUAI_API_KEY` if unset. |
-| `AI_MODEL_POLICY` | JSON blob describing the tutor/supervisor model policy and dual-loop defaults; managed via `/api/admin/settings/ai-model-policy`. |
+| --- | --- |
+| `EDUAI_API_KEY` | Admin-settable override for the service key used on outbound EduAI/Core calls. Encrypted at rest (AES-256-GCM) when `ENCRYPTION_KEY` is configured; falls back to plaintext with a console warning outside production, and fails closed (refuses to write) in production with no `ENCRYPTION_KEY` set. Falls back to the `EDUAI_API_KEY` env var when unset. **This DB-stored override is never used to authenticate *to* Core** (`serviceAuthHeader()` always uses the raw env var) — only Core's own env key is what Core's mutation guard validates against. |
+| `AI_MODEL_POLICY` | JSON blob: the tutor/supervisor model allow-list, defaults, `dualLoopEnabled`, `maxSupervisorIterations`. Managed via `/api/admin/settings/ai-model-policy`; see `services/aiModelPolicy.js`. |
 
-### Better Auth tables
+### No Better Auth tables
 
-`User`, `Session`, `Account`, `Verification` are owned by Better Auth via the Prisma adapter. The
-`User.role` column is added as an `additionalField` in `auth.js`. Do not reshape these tables
-without consulting Better Auth's adapter expectations.
+There are no `User`, `Session`, `Account`, or `Verification` tables in this schema. Identity is owned
+entirely by Core; every local row that needs to reference a user stores a bare `userId` string (Core's
+CUID) with no local foreign key.
 
 ---
 
@@ -310,24 +279,23 @@ without consulting Better Auth's adapter expectations.
 
 Tours are powered by [driver.js](https://driverjs.com) and orchestrated by
 [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) plus the engine in
-[`app/lib/tours/`](../app/lib/tours/).
+[`app/lib/tours/`](../app/lib/tours/). Three tours are defined
+(`app/lib/tours/tour-definitions.ts`): `student-journey`, `student-lesson-help`, and
+`unit-admin-orientation` — the last is staff-voiced and scoped to exactly the `/dashboard` and
+`/instructor` routes it walks.
 
 The contract that route components must honor:
 
 | Attribute | Purpose | Example |
-|-----------|---------|---------|
+| --- | --- | --- |
 | `data-tour="<step-id>"` | Marks an element as the target for a tour step. The step's `target` selector in `tour-definitions.ts` is `[data-tour="<step-id>"]`. | `<header data-tour="student-dashboard-header">` |
-| `data-tour-route="<href>"` | On a "selectable" card, tells the engine which route to follow next when this card is highlighted. The engine reads it via `readRouteFromElement()` in [`tour-utils.ts:41-45`](../app/lib/tours/tour-utils.ts) and stores it in `selectedCourseRoute` / `selectedModuleRoute` / `selectedLessonRoute` on the session context. | `data-tour-route={`/student/courses/${course.id}`}` |
+| `data-tour-route="<href>"` | On a "selectable" card, tells the engine which route to follow next when this card is highlighted. Read via `readRouteFromElement()` in `tour-utils.ts` and stored in `selectedCourseRoute` / `selectedModuleRoute` / `selectedLessonRoute` on the session context. | `data-tour-route={`/student/courses/${course.id}`}` |
+| `emptyTarget` (in the step definition, not a DOM attribute) | An optional selector for an empty-state sentinel. When it appears before the real target, the step and everything downstream that depends on it are skipped immediately instead of stalling on the full 4s timeout. | A course with no modules yet. |
 
-**Removing or renaming either attribute silently breaks the tour** — `waitForElement()` in
-`tour-utils.ts` will time out after 4s and the step will be skipped via
-`moveSessionAfterMissingTarget`. There is no compile-time guard. When you change a route
-component that participates in a tour, grep for the existing `data-tour` value before deleting
+**Removing or renaming `data-tour`/`data-tour-route` silently breaks the tour** — `waitForElement()`
+in `tour-utils.ts` will time out after 4s and the step will be skipped via
+`moveSessionAfterMissingTarget`. There is no compile-time guard; grep for the value before deleting
 markup.
-
-Current consumers (non-exhaustive — run `grep -r 'data-tour' app/` for the full list):
-`student.tsx`, `student.course.tsx`, `student.module.tsx`, `student.lesson.tsx`,
-`StudentAiChat.tsx`, `TourButton.tsx`.
 
 ---
 
@@ -340,40 +308,42 @@ On mount the hook **monkey-patches global APIs**:
 
 - `console.log`, `console.warn`, `console.error` — wrappers push entries onto a ring buffer
   (max 200), then call the original.
-- `window.fetch` — wrapper times the request, snapshots request/response headers and bodies
-  (response body via `response.clone().text()`), and pushes onto a network ring buffer
-  (max 100). The original `fetch` is invoked unchanged so app behavior is unaffected.
+- `window.fetch` — wrapper times the request and pushes `{ method, url, status, durationMs, timestamp }`
+  onto a network ring buffer (max 100). The original `fetch` is invoked unchanged so app behavior is
+  unaffected; response bodies are not captured.
 
-On unmount the originals are restored from `originalsRef`. **Do not mount this provider more
-than once** — `patchedRef` guards against a double-patch in the same render but does not protect
-against multiple `BugReportProvider` instances.
+On unmount the originals are restored. **Do not mount this provider more than once** — `patchedRef`
+guards against a double-patch in the same render but does not protect against multiple
+`BugReportProvider` instances.
 
 Screenshots are produced by lazily importing `html2canvas` only when the user opens the bug-report
-dialog (`captureScreenshot()` at lines 178-197). The result is cached for 5 seconds
-(`SCREENSHOT_CACHE_WINDOW_MS = 5_000`) so reopening the dialog quickly does not re-render the page.
+dialog. The result is cached for 5 seconds (`SCREENSHOT_CACHE_WINDOW_MS`) so reopening the dialog
+quickly does not re-render the page, and is captured as JPEG (not PNG) to stay under Core's screenshot
+size cap.
 
 The dialog reads `consoleLogs`, `networkLogs`, and `screenshot` via `getCapturedData()` and posts
 them to `POST /api/bug-reports` along with the page URL, user agent, and the
-`courseOfferingId/moduleId/lessonId/activityId` context that route components have set on the
+`courseOfferingId/moduleId/lessonId/activityId` context that route components set on the
 provider via `setContext()`.
 
 ---
 
 ## Frontend↔Backend Coupling Seams
 
-These three seams are the most common source of "everything compiles but the page is blank"
-bugs. There is **no shared TypeScript type generation** across the boundary; the contract is
-maintained by hand.
+These are the most common source of "everything compiles but the page is blank" bugs. There is
+**no shared TypeScript type generation** across the boundary; the contract is maintained by hand
+(though the frontend does decode every response against a Zod schema in `app/lib/api-schemas.ts` at
+the wire boundary, which turns a drifted shape into a thrown parse error instead of a silent
+`undefined`).
 
 ### 1. `app/lib/api.ts` ↔ `server/src/utils/mappers.js`
 
-The mappers in `mappers.js` define the JSON shape the server sends. The typed wrappers in
-`app/lib/api.ts` and the TypeScript types in `app/lib/types.ts` must mirror those shapes by
-hand. Adding a field to `mapActivity()` without updating `app/lib/types.ts` produces a silently
-discarded field on the client; renaming one produces `undefined` reads with no compile error.
+The mappers in `mappers.js` define the JSON shape the server sends. The TypeScript types in
+`app/lib/types.ts` and the Zod schemas in `app/lib/api-schemas.ts` must mirror those shapes by hand.
 
 When you change a mapper:
-1. Update the matching type in `app/lib/types.ts`.
+
+1. Update the matching type in `app/lib/types.ts` and the matching schema in `app/lib/api-schemas.ts`.
 2. Update the call site in `app/lib/api.ts` if the new field is part of a request payload.
 3. Update any consumer that destructures the old shape.
 
@@ -381,24 +351,24 @@ When you change a mapper:
 
 The Zod schemas in [`shared/schemas/aiGuidance.js`](../shared/schemas/aiGuidance.js)
 (`TeachRequestSchema`, `GuideRequestSchema`, `CustomRequestSchema`,
-`ActivityFeedbackRequestSchema`) are imported by the server's activity routes for validation.
-The frontend's `api.sendTeachMessage / sendGuideMessage / sendCustomMessage` payload shapes
-in `app/lib/api.ts:229-277` must keep field names and types aligned. Renaming `apiKey` ->
-`apiToken` on either side would 400 every AI request.
+`ActivityFeedbackRequestSchema`) are imported by the server's activity routes for validation. The
+frontend's `api.sendTeachMessage` / `sendGuideMessage` / `sendCustomMessage` payload shapes in
+`app/lib/api.ts` must keep field names and types aligned. Renaming `apiKey` -> `apiToken` on either
+side would 400 every AI request.
 
 ### 3. Tour DOM selectors
 
 Covered above in [Tour System Contract](#tour-system-contract). Steps in
-`app/lib/tours/tour-definitions.ts` reference DOM by `[data-tour="..."]` selectors. The
-selectors are matched at runtime via `document.querySelector` — there is no static checking.
-A grep for the step id before any markup change is the only safety net.
+`app/lib/tours/tour-definitions.ts` reference DOM by `[data-tour="..."]` selectors, matched at
+runtime via `document.querySelector` — there is no static checking.
 
 ---
 
 ## Further Reading
 
 - Product / feature overview: [`SYSTEM_OVERVIEW.md`](SYSTEM_OVERVIEW.md)
-- Deployment, PM2, Apache, Docker layout: [`docs/DEPLOYMENT.md`](DEPLOYMENT.md)
-- Two-agent supervisor design notes: [`docs/two-agent-supervisor-system.md`](two-agent-supervisor-system.md)
+- Deployment (systemd/Apache in current production, PM2 in the legacy path), Docker layout: [`docs/DEPLOYMENT.md`](DEPLOYMENT.md)
+- Two-agent supervisor design: [`docs/two-agent-supervisor-system.md`](two-agent-supervisor-system.md)
 - API endpoint reference: [`docs/api-reference.md`](api-reference.md)
+- RBAC endpoint map: [`docs/rbac-endpoints-ai-tutor.md`](rbac-endpoints-ai-tutor.md)
 - Contributor workflow + git hooks: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)

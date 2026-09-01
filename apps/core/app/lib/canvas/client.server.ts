@@ -1,12 +1,66 @@
 import { request as undiciRequest } from "undici";
+import type { JsonValue } from "~/lib/json-value";
 import { getPinnedDispatcher } from "~/lib/net/pinned-dispatcher.server";
 import { assertPublicHostname, assertPublicIpLiteral } from "~/lib/net/ssrf-guard.server";
+import { z } from "zod";
 
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
 const CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS = 10;
 const CANVAS_PAGE_SIZE = 100;
 const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
+
+/**
+ * Pagination is driven by an upstream `Link` header, so it needs its own
+ * bounds in addition to the per-request timeout. These defaults are generous
+ * enough for a large Canvas course while making a hostile or broken endpoint
+ * finite. They can be overridden per call with `CanvasPaginationOptions` or
+ * with the corresponding environment variables.
+ */
+export const CANVAS_PAGINATION_MAX_PAGES = 100;
+export const CANVAS_PAGINATION_MAX_ITEMS = 10_000;
+export const CANVAS_PAGINATION_DEADLINE_MS = 120_000;
+
+export type CanvasPaginationOptions = {
+  maxPages?: number;
+  maxItems?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+};
+
+export const CANVAS_PAGINATION_LINK_ERROR =
+  "Canvas pagination link is invalid or outside the configured Canvas origin";
+export const CANVAS_PAGINATION_CYCLE_ERROR = "Canvas pagination cycle detected";
+export const CANVAS_PAGINATION_PAGE_LIMIT_ERROR = "Canvas pagination exceeded the page limit";
+export const CANVAS_PAGINATION_ITEM_LIMIT_ERROR = "Canvas pagination exceeded the item limit";
+export const CANVAS_PAGINATION_DEADLINE_ERROR = "Canvas pagination exceeded its deadline";
+export const CANVAS_PAGINATION_CANCELLED_ERROR = "Canvas pagination was cancelled";
+const CANVAS_PAGINATION_CONFIG_ERROR = "Canvas pagination limits must be positive integers";
+
+export const CANVAS_URL_CREDENTIALS_ERROR = "Canvas URL may not contain credentials";
+export const CANVAS_URL_QUERY_OR_FRAGMENT_ERROR = "Canvas URL may not contain a query or fragment";
+
+/**
+ * Egress budgets for Canvas JSON traffic. Centralizing QM's Canvas calls in
+ * Core moved its request/response size limits here: without them a write body
+ * assembled from local content, or a hostile/broken Canvas response, is only
+ * bounded by the per-request timeout.
+ */
+export const CANVAS_MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
+export const CANVAS_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+export const CANVAS_REQUEST_BODY_LIMIT_ERROR =
+  "Canvas request body exceeded the configured size limit";
+export const CANVAS_RESPONSE_LIMIT_ERROR = "Canvas response exceeded the configured size limit";
+
+/**
+ * Machine-readable code for a Canvas 403. Relayed verbatim to QM so a caller
+ * can tell "you may not read this resource" apart from a broken token or a
+ * transport failure.
+ */
+export const CANVAS_PERMISSION_DENIED_ERROR = "CANVAS_PERMISSION_DENIED";
+
+/** Absolute cap for streamed Canvas response bytes. */
+const MAX_CANVAS_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const CANVAS_EXTERNAL_SOURCE = "canvas";
 
@@ -62,11 +116,14 @@ export type CanvasFileApi = {
   unlock_at?: string | null;
 };
 
+/** Whether a Canvas file is visible to students right now. */
+export type CanvasFilePublishState = { isPublished: boolean };
+
 /** Computes whether a Canvas file is currently visible to students (not hidden/locked/outside its unlock-lock window). */
 export function computeCanvasFilePublishState(
   file: Pick<CanvasFileApi, "hidden" | "locked" | "lock_at" | "unlock_at">,
   now: Date = new Date(),
-): { isPublished: boolean } {
+): CanvasFilePublishState {
   if (file.hidden || file.locked) {
     return { isPublished: false };
   }
@@ -93,54 +150,83 @@ export type CanvasModuleApi = {
 };
 
 const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
-  { id: 1, name: "Introduction to Computer Science", course_code: "COSC 101", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
-  { id: 2, name: "Data Structures and Algorithms", course_code: "COSC 201", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
-  { id: 3, name: "Machine Architecture", course_code: "COSC 211", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
+  {
+    id: 1,
+    name: "Introduction to Computer Science",
+    course_code: "COSC 101",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
+  {
+    id: 2,
+    name: "Data Structures and Algorithms",
+    course_code: "COSC 201",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
+  {
+    id: 3,
+    name: "Machine Architecture",
+    course_code: "COSC 211",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
 ];
 
-const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
-  1: [
-    { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "10000001" },
-    { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "10000002" },
+// Keyed by course id with `Map` rather than an object: the lookups below take a
+// course id the caller chose, so "this key may not be here" is part of the
+// contract, and `get` says that where an index signature would not.
+const MOCK_CANVAS_ROSTER = new Map<number, CanvasCourseUserApi[]>([
+  [
+    1,
+    [
+      { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "10000001" },
+      { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "10000002" },
+    ],
   ],
-  2: [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "10000003" }],
-  3: [],
-};
+  [2, [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "10000003" }]],
+  [3, []],
+]);
 
-const MOCK_CANVAS_FILES: Record<number, CanvasFileApi[]> = {
-  1: [
-    {
-      id: 1001,
-      display_name: "Lecture 1 - Intro.txt",
-      filename: "lecture1.txt",
-      "content-type": "text/plain",
-      size: 2048,
-      updated_at: "2025-01-10T12:00:00.000Z",
-      url: "mock://canvas/files/1001",
-    },
-    {
-      id: 1002,
-      display_name: "Week 1 Notes.txt",
-      filename: "week1.txt",
-      "content-type": "text/plain",
-      size: 512,
-      updated_at: "2025-01-12T09:00:00.000Z",
-      url: "mock://canvas/files/1002",
-    },
+const MOCK_CANVAS_FILES = new Map<number, CanvasFileApi[]>([
+  [
+    1,
+    [
+      {
+        id: 1001,
+        display_name: "Lecture 1 - Intro.txt",
+        filename: "lecture1.txt",
+        "content-type": "text/plain",
+        size: 2048,
+        updated_at: "2025-01-10T12:00:00.000Z",
+        url: "mock://canvas/files/1001",
+      },
+      {
+        id: 1002,
+        display_name: "Week 1 Notes.txt",
+        filename: "week1.txt",
+        "content-type": "text/plain",
+        size: 512,
+        updated_at: "2025-01-12T09:00:00.000Z",
+        url: "mock://canvas/files/1002",
+      },
+    ],
   ],
-  2: [
-    {
-      id: 2001,
-      display_name: "Algorithms Overview.pptx",
-      filename: "algorithms.pptx",
-      "content-type":
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      size: 4096,
-      updated_at: "2025-02-01T10:00:00.000Z",
-      url: "mock://canvas/files/2001",
-    },
+  [
+    2,
+    [
+      {
+        id: 2001,
+        display_name: "Algorithms Overview.pptx",
+        filename: "algorithms.pptx",
+        "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        size: 4096,
+        updated_at: "2025-02-01T10:00:00.000Z",
+        url: "mock://canvas/files/2001",
+      },
+    ],
   ],
-};
+]);
 
 export class CanvasApiError extends Error {
   readonly statusCode: number;
@@ -152,13 +238,122 @@ export class CanvasApiError extends Error {
   }
 }
 
+type AbortSignalHandle = {
+  signal: AbortSignal;
+  cancel: () => void;
+};
+
+/** Creates a cancellable deadline signal without leaving a timer behind. */
+function createAbortDeadline(ms: number, reason: string): AbortSignalHandle {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(reason)), ms);
+  // A pagination deadline should not keep a short-lived server process alive.
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+/** Composes signals while remaining compatible with runtimes without AbortSignal.any. */
+function composeAbortSignals(signals: Array<AbortSignal | undefined>): AbortSignalHandle {
+  const present = signals.filter((signal): signal is AbortSignal => signal !== undefined);
+  if (present.length === 0) {
+    const controller = new AbortController();
+    return { signal: controller.signal, cancel: () => controller.abort() };
+  }
+
+  const controller = new AbortController();
+  const listeners: Array<() => void> = [];
+  const abort = (signal: AbortSignal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+
+  for (const signal of present) {
+    if (signal.aborted) {
+      abort(signal);
+      break;
+    }
+    const listener = () => abort(signal);
+    signal.addEventListener("abort", listener, { once: true });
+    listeners.push(() => signal.removeEventListener("abort", listener));
+  }
+
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      for (const removeListener of listeners) removeListener();
+    },
+  };
+}
+
+/**
+ * A test fetch implementation may not observe an AbortSignal. Race it anyway
+ * so a pagination deadline remains deterministic while real fetch still gets
+ * the same signal and can cancel its underlying socket.
+ */
+async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("The operation was aborted");
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(
+        signal.reason instanceof Error ? signal.reason : new Error("The operation was aborted"),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function parsePositiveInteger(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolvePaginationOption(
+  explicit: number | undefined,
+  envName: string,
+  fallback: number,
+): number {
+  if (explicit !== undefined) {
+    if (!Number.isSafeInteger(explicit) || explicit <= 0) {
+      throw new CanvasApiError(CANVAS_PAGINATION_CONFIG_ERROR, 500);
+    }
+    return explicit;
+  }
+  return parsePositiveInteger(process.env[envName]) ?? fallback;
+}
+
+function resolvePaginationOptions(
+  options: CanvasPaginationOptions,
+): Required<Pick<CanvasPaginationOptions, "maxPages" | "maxItems" | "deadlineMs">> &
+  Pick<CanvasPaginationOptions, "signal"> {
+  return {
+    maxPages: resolvePaginationOption(
+      options.maxPages,
+      "CANVAS_PAGINATION_MAX_PAGES",
+      CANVAS_PAGINATION_MAX_PAGES,
+    ),
+    maxItems: resolvePaginationOption(
+      options.maxItems,
+      "CANVAS_PAGINATION_MAX_ITEMS",
+      CANVAS_PAGINATION_MAX_ITEMS,
+    ),
+    deadlineMs: resolvePaginationOption(
+      options.deadlineMs,
+      "CANVAS_PAGINATION_DEADLINE_MS",
+      CANVAS_PAGINATION_DEADLINE_MS,
+    ),
+    signal: options.signal,
+  };
+}
+
 /** Hostnames allowed to use plain HTTP (local Canvas dev). Production must use HTTPS. */
-const HTTP_ALLOWED_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "::1",
-  "canvas.docker",
-]);
+const HTTP_ALLOWED_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "canvas.docker"]);
 
 export class CanvasVerificationError extends Error {
   readonly statusCode: 400 | 502;
@@ -176,7 +371,12 @@ export class CanvasVerificationError extends Error {
  * talked into an unencrypted request to a loopback address.
  */
 function allowsLocalHttpCanvas(): boolean {
-  return process.env.NODE_ENV !== "production";
+  return process.env.NODE_ENV !== "production" && process.env.CANVAS_ALLOW_LOCAL_HTTP === "true";
+}
+
+function isAllowedLocalCanvasPort(hostname: string, port: string): boolean {
+  if (hostname === LOCAL_CANVAS_DOCKER_HOST) return port === "" || port === "80" || port === "8080";
+  return port === "8080";
 }
 
 /**
@@ -196,12 +396,25 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
     throw new CanvasVerificationError("Invalid Canvas URL format", 400);
   }
 
+  // A Canvas base URL is an origin plus an optional deployment sub-path and
+  // nothing else. Userinfo would smuggle credentials into every derived
+  // request URL (and into audit records); a query or fragment would be
+  // silently dropped or re-interpreted once `/api/v1/...` is appended. Reject
+  // all three here so a non-canonical base can never be persisted or used.
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new CanvasVerificationError(CANVAS_URL_CREDENTIALS_ERROR, 400);
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new CanvasVerificationError(CANVAS_URL_QUERY_OR_FRAGMENT_ERROR, 400);
+  }
+
   const hostname = parsed.hostname.toLowerCase();
   // Scoped to http: the allowance exists for the dev docker Canvas, so an
   // https URL aimed at a loopback address gets the IP check like any other.
   const isAllowedLocalHost =
     parsed.protocol === "http:" &&
     HTTP_ALLOWED_HOSTNAMES.has(hostname) &&
+    isAllowedLocalCanvasPort(hostname, parsed.port) &&
     allowsLocalHttpCanvas();
 
   if (!isAllowedLocalHost) {
@@ -237,9 +450,19 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
   throw new CanvasVerificationError("Canvas URL must use HTTP or HTTPS", 400);
 }
 
+/**
+ * Origin plus the configured deployment sub-path, trailing slashes trimmed.
+ * A Canvas hosted at `https://lms.example.edu/ubc` serves its API under
+ * `/ubc/api/v1/...`, so rebuilding from `origin` alone would silently target
+ * the wrong host root.
+ */
+export function canonicalCanvasBaseUrl(parsed: URL): string {
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+
 function buildCanvasProfileUrl(canvasUrl: string): string {
   const parsed = parseAndValidateCanvasUrl(canvasUrl);
-  return `${parsed.origin}/api/v1/users/self/profile`;
+  return `${canonicalCanvasBaseUrl(parsed)}/api/v1/users/self/profile`;
 }
 
 /**
@@ -368,7 +591,7 @@ export async function verifyCanvasCredentials(
 function buildCanvasApiUrl(canvasUrl: string, path: string): string {
   const parsed = parseAndValidateCanvasUrl(canvasUrl);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${parsed.origin}/api/v1${normalizedPath}`;
+  return `${canonicalCanvasBaseUrl(parsed)}/api/v1${normalizedPath}`;
 }
 
 function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
@@ -377,13 +600,121 @@ function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
   }
 
   for (const part of linkHeader.split(",")) {
-    const match = part.match(/<([^>]+)>;\s*rel="next"/);
-    if (match?.[1]) {
-      return match[1];
+    const relMatch = part.match(/(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^\s;,]+))/i);
+    if (!relMatch) continue;
+
+    const rels = (relMatch[1] ?? relMatch[2] ?? "").split(/\s+/);
+    if (!rels.some((rel) => rel.toLowerCase() === "next")) continue;
+
+    const urlMatch = part.match(/^\s*<([^>]*)>/);
+    if (!urlMatch?.[1]) {
+      throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
     }
+    return urlMatch[1];
   }
 
   return null;
+}
+
+/**
+ * Canvas controls pagination links. Resolve relative links against the page
+ * that emitted them, then require the effective origin (protocol, hostname,
+ * and port) to exactly match the configured Canvas origin before a bearer is
+ * ever attached to the next request.
+ */
+function resolveCanvasPaginationNextUrl(
+  rawUrl: string,
+  currentUrl: string,
+  canvasUrl: string,
+): string {
+  // WHATWG URL accepts spaces and malformed percent escapes by normalizing
+  // them into a relative path. They are not valid URI references in a Link
+  // header, so reject them before normalization makes the error ambiguous.
+  if (
+    rawUrl.length === 0 ||
+    // oxlint-disable-next-line no-control-regex -- URI controls are rejected deliberately.
+    /[\u0000-\u0020<>]/.test(rawUrl) ||
+    /%(?![0-9a-f]{2})/i.test(rawUrl)
+  ) {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  let next: URL;
+  let configured: URL;
+  try {
+    next = new URL(rawUrl, currentUrl);
+    configured = parseAndValidateCanvasUrl(canvasUrl);
+  } catch {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  if (next.origin !== configured.origin || next.username !== "" || next.password !== "") {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  // Fragments are not sent over HTTP and make cycle detection ambiguous.
+  next.hash = "";
+  return next.href;
+}
+
+function canonicalizeCanvasPaginationUrl(url: string): string {
+  return new URL(url).href;
+}
+
+function canvasByteLimit(envName: string, fallback: number): number {
+  return parsePositiveInteger(process.env[envName]) ?? fallback;
+}
+
+/**
+ * Reads a Canvas JSON response with a hard byte ceiling, cancelling the body
+ * stream as soon as the budget is exceeded rather than buffering the whole
+ * payload first. `Content-Length`, when Canvas sends one, short-circuits the
+ * read entirely. Responses without a readable stream (e.g. an empty body) fall
+ * back to `response.json()`, whose failure modes are unchanged.
+ */
+async function readBoundedCanvasJson<T>(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<T> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isSafeInteger(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    throw new CanvasApiError(CANVAS_RESPONSE_LIMIT_ERROR, 502);
+  }
+
+  const body = response.body;
+  if (!body) {
+    // SAFETY: no stream to meter (an empty body, or a fetch stand-in that only
+    // implements `json()`), so the existing parse path and its failure modes
+    // are preserved; the Content-Length check above still applies.
+    return (await raceWithAbort(response.json(), signal)) as T;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytesRead = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await raceWithAbort(reader.read(), signal);
+      if (done) break;
+      if (!value) continue;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        throw new CanvasApiError(CANVAS_RESPONSE_LIMIT_ERROR, 502);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+
+  // SAFETY: the caller declares the Canvas payload shape it expects, exactly as
+  // `response.json()` would have; this parse only adds the byte ceiling.
+  return JSON.parse(text) as T;
 }
 
 async function canvasFetchJson<T>(
@@ -391,78 +722,344 @@ async function canvasFetchJson<T>(
   canvasUrl: string,
   apiKey: string,
   fetchImpl: typeof fetch,
+  options: {
+    method?: string;
+    body?: JsonValue;
+    signal?: AbortSignal;
+    deadlineSignal?: AbortSignal;
+    cancellationSignal?: AbortSignal;
+  } = {},
 ): Promise<{ data: T; linkHeader: string | null }> {
-  try {
-    await assertSafeCanvasRequestHost(url, canvasUrl);
+  const requestDeadline = createAbortDeadline(
+    CANVAS_REQUEST_TIMEOUT_MS,
+    "Canvas request timed out",
+  );
+  const requestSignal = composeAbortSignals([options.signal, requestDeadline.signal]);
+  // A write carries its own content type; a read must not advertise one at all,
+  // so the two header sets are built as whole literals rather than mutated.
+  const requestBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  const maxRequestBodyBytes = canvasByteLimit(
+    "CANVAS_MAX_REQUEST_BODY_BYTES",
+    CANVAS_MAX_REQUEST_BODY_BYTES,
+  );
+  if (requestBody !== undefined && Buffer.byteLength(requestBody, "utf8") > maxRequestBodyBytes) {
+    requestDeadline.cancel();
+    requestSignal.cancel();
+    throw new CanvasApiError(CANVAS_REQUEST_BODY_LIMIT_ERROR, 413);
+  }
+  const headers =
+    requestBody === undefined
+      ? { Authorization: `Bearer ${apiKey}` }
+      : { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
 
-    const response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
-      redirect: "manual",
-      dispatcher: canvasRequestDispatcher(url, canvasUrl),
-    } as CanvasFetchInit);
+  try {
+    await raceWithAbort(assertSafeCanvasRequestHost(url, canvasUrl), requestSignal.signal);
+
+    const response = await raceWithAbort(
+      fetchImpl(url, {
+        method: options.method,
+        headers,
+        body: requestBody,
+        signal: requestSignal.signal,
+        redirect: "manual",
+        dispatcher: canvasRequestDispatcher(url, canvasUrl),
+      } as CanvasFetchInit),
+      requestSignal.signal,
+    );
 
     if (isRedirect(response.status)) {
       throw new CanvasApiError(REDIRECT_REFUSED_MESSAGE, 502);
     }
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new CanvasApiError("Invalid Canvas API token", 401);
+    }
+
+    // A 403 is about *this* resource, not the token, and callers act on the
+    // difference — QM's quiz import falls back to the list item when a single
+    // question is not readable, but must fail the import on any other error.
+    if (response.status === 403) {
+      throw new CanvasApiError(CANVAS_PERMISSION_DENIED_ERROR, 403);
     }
 
     if (!response.ok) {
       throw new CanvasApiError(`Canvas API error: ${response.status}`, response.status);
     }
 
-    const data = (await response.json()) as T;
+    const data = await readBoundedCanvasJson<T>(
+      response,
+      canvasByteLimit("CANVAS_MAX_RESPONSE_BYTES", CANVAS_MAX_RESPONSE_BYTES),
+      requestSignal.signal,
+    );
     return { data, linkHeader: response.headers.get("link") };
   } catch (error) {
     if (error instanceof CanvasApiError || error instanceof CanvasVerificationError) {
       throw error;
     }
+    if (options.deadlineSignal?.aborted) {
+      throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+    }
+    if (options.cancellationSignal?.aborted) {
+      throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+    }
     throw new CanvasApiError("Could not reach Canvas", 502);
+  } finally {
+    requestSignal.cancel();
+    requestDeadline.cancel();
   }
 }
 
+export type CanvasRequestJsonOptions = {
+  method?: string;
+  body?: JsonValue;
+};
+
+/** Performs a single Canvas API request (GET/POST/etc.) and returns parsed JSON. */
+export async function canvasRequestJson<T>(
+  credentials: CanvasIntegrationCredentials,
+  path: string,
+  options: CanvasRequestJsonOptions = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  const method = options.method ?? "GET";
+  const body = options.body;
+
+  if (credentials.isTestMode) {
+    return getMockCanvasRequestResponse<T>(path, method, body);
+  }
+
+  const url = buildCanvasApiUrl(credentials.canvasUrl, path);
+  const { data } = await canvasFetchJson<T>(
+    url,
+    credentials.canvasUrl,
+    credentials.apiKey,
+    fetchImpl,
+    { method, body },
+  );
+  return data;
+}
+
+function getMockCanvasRequestResponse<T>(path: string, method: string, body?: JsonValue): T {
+  if (path.includes("/question_banks") && method === "GET") {
+    const bankQuestionsMatch = path.match(/\/question_banks\/(\d+)\/questions/);
+    if (bankQuestionsMatch) {
+      return [
+        {
+          id: 1,
+          question_name: "1. Bank Question",
+          question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+          question_type: "multiple_choice_question",
+          position: 1,
+          answers: [
+            { id: 1, answer_text: "3", answer_weight: 0 },
+            { id: 2, answer_text: "4", answer_weight: 100 },
+            { id: 3, answer_text: "5", answer_weight: 0 },
+            { id: 4, answer_text: "6", answer_weight: 0 },
+          ],
+        },
+      ] as T;
+    }
+
+    const singleBankMatch = path.match(/\/question_banks\/(\d+)/);
+    if (singleBankMatch) {
+      return {
+        id: Number(singleBankMatch[1]),
+        title: "Test Question Bank",
+        question_count: 1,
+      } as T;
+    }
+
+    return [
+      { id: 1, title: "Test Question Bank 1", question_count: 1 },
+      { id: 2, title: "Test Question Bank 2", question_count: 0 },
+    ] as T;
+  }
+
+  if (path.includes("/quizzes") && method === "POST") {
+    const quizBody = body as { quiz?: { title?: string } } | undefined;
+    return {
+      id: Math.floor(Math.random() * 1000),
+      title: quizBody?.quiz?.title ?? "Test Quiz",
+    } as T;
+  }
+
+  if (path.includes("/quizzes") && method === "DELETE") {
+    const quizId = Number(path.match(/\/quizzes\/(\d+)$/)?.[1] ?? 1);
+    return { id: quizId, title: "Deleted Test Quiz" } as T;
+  }
+
+  if (path.includes("/quizzes") && method === "GET" && !path.includes("/questions")) {
+    const singleQuizMatch = path.match(/\/quizzes\/(\d+)$/);
+    if (singleQuizMatch) {
+      const quizId = Number(singleQuizMatch[1]);
+      return {
+        id: quizId,
+        title: "Test Quiz",
+        quiz_type: "assignment",
+        published: false,
+      } as T;
+    }
+    return [
+      { id: 1, title: "Test Quiz 1", quiz_type: "assignment", published: false },
+      { id: 2, title: "Test Quiz 2", quiz_type: "assignment", published: true },
+    ] as T;
+  }
+
+  if (path.includes("/questions") && method === "POST") {
+    return { id: Math.floor(Math.random() * 1000) } as T;
+  }
+
+  if (path.includes("/questions") && method === "GET") {
+    const singleQuestionMatch = path.match(/\/questions\/(\d+)$/);
+    const singleQuestion = {
+      id: 1,
+      question_name: "1. Test Question",
+      question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+      question_type: "multiple_choice_question",
+      position: 1,
+      answers: [
+        { id: 1, answer_text: "3", answer_weight: 0 },
+        { id: 2, answer_text: "4", answer_weight: 100 },
+        { id: 3, answer_text: "5", answer_weight: 0 },
+        { id: 4, answer_text: "6", answer_weight: 0 },
+      ],
+    };
+    if (singleQuestionMatch) {
+      return {
+        ...singleQuestion,
+        id: Number(singleQuestionMatch[1]),
+      } as T;
+    }
+    return [singleQuestion] as T;
+  }
+
+  return { success: true } as T;
+}
+
 /** Fetches all pages from a Canvas list endpoint. */
+/**
+ * Which of the two overloads the caller used: older call sites pass a `fetch`
+ * implementation in the third position, newer ones pass pagination options.
+ */
+const isFetchImpl = (value: typeof fetch | CanvasPaginationOptions): value is typeof fetch =>
+  z.function().safeParse(value).success;
+
 export async function canvasGetPaginated<T>(
   credentials: CanvasIntegrationCredentials,
   path: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImplOrOptions: typeof fetch | CanvasPaginationOptions = fetch,
+  suppliedOptions: CanvasPaginationOptions = {},
 ): Promise<T[]> {
   if (credentials.isTestMode) {
     return getMockPaginatedResponse<T>(path);
   }
+
+  const suppliedFetch = isFetchImpl(fetchImplOrOptions);
+  const fetchImpl = suppliedFetch ? fetchImplOrOptions : fetch;
+  const options = suppliedFetch ? suppliedOptions : fetchImplOrOptions;
+  const limits = resolvePaginationOptions(options);
 
   const separator = path.includes("?") ? "&" : "?";
   let nextUrl: string | null = buildCanvasApiUrl(
     credentials.canvasUrl,
     `${path}${separator}per_page=${CANVAS_PAGE_SIZE}`,
   );
+
+  const deadline = createAbortDeadline(limits.deadlineMs, CANVAS_PAGINATION_DEADLINE_ERROR);
+  const paginationSignal = composeAbortSignals([deadline.signal, limits.signal]);
+
   const results: T[] = [];
+  const visitedUrls = new Set<string>();
+  let pageCount = 0;
 
-  while (nextUrl) {
-    const { data, linkHeader } = await canvasFetchJson<T[]>(
-      nextUrl,
-      credentials.canvasUrl,
-      credentials.apiKey,
-      fetchImpl,
-    );
-    if (Array.isArray(data) && data.length > 0) {
-      results.push(...data);
+  try {
+    while (nextUrl) {
+      if (deadline.signal.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+      }
+      if (limits.signal?.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+      }
+      if (pageCount >= limits.maxPages) {
+        throw new CanvasApiError(CANVAS_PAGINATION_PAGE_LIMIT_ERROR, 502);
+      }
+      const canonicalNextUrl = canonicalizeCanvasPaginationUrl(nextUrl);
+      if (visitedUrls.has(canonicalNextUrl)) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CYCLE_ERROR, 502);
+      }
+      visitedUrls.add(canonicalNextUrl);
+      pageCount += 1;
+
+      const { data, linkHeader } = await canvasFetchJson<T[]>(
+        nextUrl,
+        credentials.canvasUrl,
+        credentials.apiKey,
+        fetchImpl,
+        {
+          signal: paginationSignal.signal,
+          deadlineSignal: deadline.signal,
+          cancellationSignal: limits.signal,
+        },
+      );
+
+      if (deadline.signal.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+      }
+      if (limits.signal?.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        if (results.length + data.length > limits.maxItems) {
+          throw new CanvasApiError(CANVAS_PAGINATION_ITEM_LIMIT_ERROR, 502);
+        }
+        results.push(...data);
+      }
+
+      const rawNextUrl = parseLinkHeaderNextUrl(linkHeader);
+      if (rawNextUrl && results.length >= limits.maxItems) {
+        throw new CanvasApiError(CANVAS_PAGINATION_ITEM_LIMIT_ERROR, 502);
+      }
+      if (!rawNextUrl) {
+        nextUrl = null;
+      } else {
+        const resolvedNextUrl = resolveCanvasPaginationNextUrl(
+          rawNextUrl,
+          nextUrl,
+          credentials.canvasUrl,
+        );
+        if (visitedUrls.has(canonicalizeCanvasPaginationUrl(resolvedNextUrl))) {
+          throw new CanvasApiError(CANVAS_PAGINATION_CYCLE_ERROR, 502);
+        }
+        nextUrl = resolvedNextUrl;
+      }
     }
-    nextUrl = parseLinkHeaderNextUrl(linkHeader);
-  }
 
-  return results;
+    return results;
+  } finally {
+    paginationSignal.cancel();
+    deadline.cancel();
+  }
 }
 
 function getMockPaginatedResponse<T>(path: string): T[] {
+  // Quiz, quiz-question and question-bank collections are page-walked like any
+  // other Canvas list, but their test-mode fixtures live with the single-request
+  // mocks — reuse them rather than duplicating the payloads here.
+  if (
+    path.includes("/quizzes") ||
+    path.includes("/questions") ||
+    path.includes("/question_banks")
+  ) {
+    const data = getMockCanvasRequestResponse<T | T[]>(path, "GET");
+    return (Array.isArray(data) ? data : [data]).filter(Boolean) as T[];
+  }
+
   if (path.includes("/courses") && path.includes("/files")) {
     const courseMatch = path.match(/\/courses\/(\d+)\/files/);
     if (courseMatch) {
       const courseId = Number(courseMatch[1]);
-      return (MOCK_CANVAS_FILES[courseId] ?? []) as T[];
+      return (MOCK_CANVAS_FILES.get(courseId) ?? []) as T[];
     }
   }
 
@@ -477,7 +1074,7 @@ function getMockPaginatedResponse<T>(path: string): T[] {
   const courseMatch = path.match(/\/courses\/(\d+)\/users/);
   if (courseMatch) {
     const courseId = Number(courseMatch[1]);
-    return (MOCK_CANVAS_ROSTER[courseId] ?? []) as T[];
+    return (MOCK_CANVAS_ROSTER.get(courseId) ?? []) as T[];
   }
 
   return [];
@@ -506,15 +1103,10 @@ export async function getCanvasCourseWithTerm(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CanvasCourseApi | null> {
   if (credentials.isTestMode) {
-    return (
-      MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null
-    );
+    return MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null;
   }
 
-  const url = buildCanvasApiUrl(
-    credentials.canvasUrl,
-    `/courses/${canvasCourseId}?include[]=term`,
-  );
+  const url = buildCanvasApiUrl(credentials.canvasUrl, `/courses/${canvasCourseId}?include[]=term`);
 
   try {
     const { data } = await canvasFetchJson<CanvasCourseApi>(
@@ -607,8 +1199,283 @@ function shouldUseLocalCanvasDockerTransport(canvasUrl: string, fileUrl: string)
 type CanvasFileDownloadResponse = {
   status: number;
   getHeader(name: string): string | null;
-  arrayBuffer(): Promise<ArrayBuffer>;
+  body: CanvasFileDownloadBody | null;
 };
+
+type CanvasFileDownloadBody = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  cancel(reason: Error): Promise<void>;
+  release(): void;
+};
+
+const SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION = {
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+} satisfies Record<string, string>;
+
+const SUPPORTED_CANVAS_FILE_MIME_TYPES = new Set(
+  Object.values(SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION),
+);
+
+const GENERIC_BINARY_MIME_TYPES = new Set([
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/download",
+  "application/x-download",
+]);
+
+const PDF_SIGNATURE = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]); // %PDF-
+const ZIP_SIGNATURES = [
+  new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+  new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+  new Uint8Array([0x50, 0x4b, 0x07, 0x08]),
+];
+
+function normalizeResponseMimeType(value: string | null | undefined): string | null {
+  const normalized = value?.split(";")[0]?.trim().toLowerCase();
+  return normalized || null;
+}
+
+function resolveExpectedCanvasFileMime(
+  file: Pick<CanvasFileApi, "filename" | "content-type">,
+): string {
+  const filename = file.filename.toLowerCase();
+  for (const [extension, mimeType] of Object.entries(SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION)) {
+    if (filename.endsWith(extension)) return mimeType;
+  }
+
+  const metadataMime = normalizeResponseMimeType(file["content-type"]);
+  if (metadataMime && SUPPORTED_CANVAS_FILE_MIME_TYPES.has(metadataMime)) {
+    return metadataMime;
+  }
+
+  throw new CanvasApiError("Unsupported Canvas file type", 415);
+}
+
+function responseMimeMatchesExpected(actual: string | null, expected: string): boolean {
+  if (!actual || GENERIC_BINARY_MIME_TYPES.has(actual)) return true;
+
+  if (expected === "text/plain" || expected === "text/markdown") {
+    return actual === "text/plain" || actual === "text/markdown" || actual === "text/x-markdown";
+  }
+
+  if (expected === "application/pdf") {
+    return actual === "application/pdf" || actual === "application/x-pdf";
+  }
+
+  if (
+    expected === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    expected === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return (
+      actual === expected ||
+      actual === "application/zip" ||
+      actual === "application/x-zip-compressed"
+    );
+  }
+
+  return actual === expected;
+}
+
+function startsWithBytes(bytes: Uint8Array, signature: Uint8Array): boolean {
+  if (bytes.length < signature.length) return false;
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function containsAscii(bytes: Uint8Array, text: string): boolean {
+  const needle = new TextEncoder().encode(text);
+  if (needle.length === 0 || bytes.length < needle.length) return false;
+
+  outer: for (let offset = 0; offset <= bytes.length - needle.length; offset++) {
+    for (let index = 0; index < needle.length; index++) {
+      if (bytes[offset + index] !== needle[index]) continue outer;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikeUtf8Text(bytes: Uint8Array): boolean {
+  const sample = bytes.subarray(0, Math.min(bytes.length, 8 * 1024));
+  if (sample.includes(0)) return false;
+
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(sample, {
+      stream: sample.length < bytes.length,
+    });
+    const start = decoded.trimStart().slice(0, 64).toLowerCase();
+    return !start.startsWith("<!doctype html") && !/^<html(?:\s|>)/.test(start);
+  } catch {
+    return false;
+  }
+}
+
+function bytesMatchExpectedType(bytes: Uint8Array, expectedMime: string): boolean {
+  if (expectedMime === "application/pdf") {
+    return startsWithBytes(bytes, PDF_SIGNATURE);
+  }
+
+  if (expectedMime === "text/plain" || expectedMime === "text/markdown") {
+    return looksLikeUtf8Text(bytes);
+  }
+
+  const hasZipSignature = ZIP_SIGNATURES.some((signature) => startsWithBytes(bytes, signature));
+  if (!hasZipSignature) return false;
+
+  if (expectedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return containsAscii(bytes, "word/");
+  }
+  if (
+    expectedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return containsAscii(bytes, "ppt/");
+  }
+
+  return false;
+}
+
+function parseCanvasContentLength(value: string | null): number | null {
+  if (value === null) return null;
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new CanvasApiError("Canvas file response had an invalid Content-Length", 502);
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new CanvasApiError("Canvas file response had an invalid Content-Length", 502);
+  }
+  return parsed;
+}
+
+function createWebDownloadBody(
+  stream: ReadableStream<Uint8Array> | null,
+): CanvasFileDownloadBody | null {
+  if (!stream) return null;
+  const reader = stream.getReader();
+  let released = false;
+
+  return {
+    read: () => reader.read(),
+    cancel: async (reason) => {
+      await reader.cancel(reason);
+    },
+    release: () => {
+      if (released) return;
+      released = true;
+      reader.releaseLock();
+    },
+  };
+}
+
+function createUndiciDownloadBody(
+  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): void },
+): CanvasFileDownloadBody {
+  const iterator = stream[Symbol.asyncIterator]();
+  return {
+    read: async () => {
+      const result = await iterator.next();
+      return {
+        done: Boolean(result.done),
+        value: result.value ? new Uint8Array(result.value) : undefined,
+      };
+    },
+    cancel: async () => {
+      stream.destroy();
+      await iterator.return?.();
+    },
+    release: () => {},
+  };
+}
+
+async function cancelCanvasFileBody(
+  response: CanvasFileDownloadResponse,
+  reason: Error,
+): Promise<void> {
+  if (!response.body) return;
+  try {
+    await response.body.cancel(reason);
+  } catch {
+    // Preserve the validation/transport error that caused cancellation.
+  }
+}
+
+async function readCanvasFileResponse(
+  response: CanvasFileDownloadResponse,
+  file: Pick<CanvasFileApi, "filename" | "content-type">,
+): Promise<Uint8Array> {
+  let failure: Error | null = null;
+
+  try {
+    const expectedMime = resolveExpectedCanvasFileMime(file);
+    const responseMime = normalizeResponseMimeType(response.getHeader("content-type"));
+    if (!responseMimeMatchesExpected(responseMime, expectedMime)) {
+      throw new CanvasApiError(
+        "Canvas file response type did not match the requested document",
+        415,
+      );
+    }
+
+    const declaredLength = parseCanvasContentLength(response.getHeader("content-length"));
+    if (declaredLength !== null && declaredLength > MAX_CANVAS_FILE_SIZE_BYTES) {
+      throw new CanvasApiError("Canvas file exceeds the 50 MiB download limit", 413);
+    }
+
+    const contentEncoding = normalizeResponseMimeType(response.getHeader("content-encoding"));
+    const compareDeclaredLength = !contentEncoding || contentEncoding === "identity";
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    while (response.body) {
+      const { done, value } = await response.body.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+
+      if (value.byteLength > MAX_CANVAS_FILE_SIZE_BYTES - totalBytes) {
+        throw new CanvasApiError("Canvas file exceeds the 50 MiB download limit", 413);
+      }
+
+      totalBytes += value.byteLength;
+      if (compareDeclaredLength && declaredLength !== null && totalBytes > declaredLength) {
+        throw new CanvasApiError("Canvas file response exceeded its declared Content-Length", 502);
+      }
+      chunks.push(value);
+    }
+
+    if (compareDeclaredLength && declaredLength !== null && totalBytes !== declaredLength) {
+      throw new CanvasApiError(
+        "Canvas file response did not match its declared Content-Length",
+        502,
+      );
+    }
+
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    if (!bytesMatchExpectedType(bytes, expectedMime)) {
+      throw new CanvasApiError(
+        "Canvas file contents did not match the requested document type",
+        415,
+      );
+    }
+
+    return bytes;
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error("Canvas file download failed");
+    throw error;
+  } finally {
+    if (failure) await cancelCanvasFileBody(response, failure);
+    response.body?.release();
+  }
+}
 
 async function performCanvasFileDownloadRequest(
   url: string,
@@ -625,7 +1492,11 @@ async function performCanvasFileDownloadRequest(
 
   if (useUndici) {
     const requestUrl = resolveCanvasFileDownloadUrl(url, credentials.canvasUrl);
-    const { statusCode, headers: responseHeaders, body } = await undiciRequest(requestUrl, {
+    const {
+      statusCode,
+      headers: responseHeaders,
+      body,
+    } = await undiciRequest(requestUrl, {
       headers: {
         ...headers,
         host: LOCAL_CANVAS_DOCKER_HOST,
@@ -636,7 +1507,7 @@ async function performCanvasFileDownloadRequest(
     return {
       status: statusCode,
       getHeader: (name) => normalizedHeaders.get(name),
-      arrayBuffer: () => body.arrayBuffer(),
+      body: createUndiciDownloadBody(body),
     };
   }
 
@@ -649,47 +1520,61 @@ async function performCanvasFileDownloadRequest(
   return {
     status: response.status,
     getHeader: (name) => response.headers.get(name),
-    arrayBuffer: () => response.arrayBuffer(),
+    body: createWebDownloadBody(response.body),
   };
 }
 
 async function fetchCanvasFileBytes(
   credentials: CanvasIntegrationCredentials,
-  initialUrl: string,
+  file: Pick<CanvasFileApi, "url" | "filename" | "content-type">,
   fetchImpl: typeof fetch,
 ): Promise<Uint8Array> {
-  let url = resolveCanvasFileDownloadUrl(initialUrl, credentials.canvasUrl);
+  let url = resolveCanvasFileDownloadUrl(file.url, credentials.canvasUrl);
 
-  for (let redirectCount = 0; redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; redirectCount++) {
+  for (
+    let redirectCount = 0;
+    redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS;
+    redirectCount++
+  ) {
     const headers: Record<string, string> = {};
     if (!url.includes("sf_verifier")) {
       headers.Authorization = `Bearer ${credentials.apiKey}`;
     }
 
-    const response = await performCanvasFileDownloadRequest(
-      url,
-      headers,
-      credentials,
-      fetchImpl,
-    );
+    const response = await performCanvasFileDownloadRequest(url, headers, credentials, fetchImpl);
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.getHeader("location");
       if (!location) {
+        await cancelCanvasFileBody(
+          response,
+          new CanvasApiError(
+            `Canvas file download redirect missing Location (${response.status})`,
+            502,
+          ),
+        );
+        response.body?.release();
         throw new CanvasApiError(
           `Canvas file download redirect missing Location (${response.status})`,
           502,
         );
       }
+      await cancelCanvasFileBody(response, new Error("Following validated Canvas redirect"));
+      response.body?.release();
       url = resolveCanvasFileDownloadUrl(new URL(location, url).href, credentials.canvasUrl);
       continue;
     }
 
     if (response.status < 200 || response.status >= 300) {
+      await cancelCanvasFileBody(
+        response,
+        new CanvasApiError(`Canvas file download failed: ${response.status}`, response.status),
+      );
+      response.body?.release();
       throw new CanvasApiError(`Canvas file download failed: ${response.status}`, response.status);
     }
 
-    return new Uint8Array(await response.arrayBuffer());
+    return readCanvasFileResponse(response, file);
   }
 
   throw new CanvasApiError("Canvas file download exceeded redirect limit", 502);
@@ -707,7 +1592,7 @@ export async function downloadCanvasFile(
   }
 
   try {
-    return await fetchCanvasFileBytes(credentials, file.url, fetchImpl);
+    return await fetchCanvasFileBytes(credentials, file, fetchImpl);
   } catch (error) {
     if (error instanceof CanvasApiError) {
       throw error;

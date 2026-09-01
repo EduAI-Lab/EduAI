@@ -8,6 +8,13 @@ import { prisma } from "../config/database.js";
 import eduaiService from "./eduaiService.js";
 import { enrichCourseDetail } from "./courseListService.js";
 import {
+  assertQmAiDeadline,
+  generationBudgetError,
+  isQmAiDeadlineError,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
+import { toStableUpstreamError, safeRequestLogFields } from "../utils/safeLogging.js";
+import {
   normalizeExtractText,
   chunkText,
   splitIntoQuestionBlocks,
@@ -21,6 +28,40 @@ const AI_PROVIDERS = {
   GROQ: "groq",
   OPENAI: "openai",
   DEEPSEEK: "deepseek",
+};
+
+const configuredPositiveInt = (value, fallback) =>
+  Number.isInteger(value) && value > 0 ? value : fallback;
+
+const qmMaxExtractTextChars = () => configuredPositiveInt(config.qmMaxExtractTextChars, 120_000);
+const qmMaxExtractChunks = () => configuredPositiveInt(config.qmMaxExtractChunks, 24);
+const qmMaxExtractProviderCalls = () => configuredPositiveInt(config.qmMaxExtractProviderCalls, 36);
+const qmExtractDeadlineMs = () => configuredPositiveInt(config.qmExtractDeadlineMs, 120_000);
+const qmAiProviderTimeoutMs = () => configuredPositiveInt(config.qmAiProviderTimeoutMs, 30_000);
+
+const extractionBudgetError = (message, status = 413, code = "QM_EXTRACT_LIMIT") => {
+  const error = new Error(message);
+  // errorHandler uses `status`; statusCode is retained for callers/services
+  // that already consume the upstream-style field.
+  error.status = status;
+  error.statusCode = status;
+  error.code = code;
+  error.isPublic = true;
+  return error;
+};
+
+const withTimeout = async (promise, timeoutMs, timeoutError) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 };
 
 /** Calls the Groq chat API with a structured prompt and returns the raw content string. */
@@ -66,12 +107,13 @@ const callGroqAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.groqApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+        timeout: qmAiProviderTimeoutMs(),
+      },
     );
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`Groq API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "Groq API" });
   }
 };
 
@@ -114,12 +156,13 @@ const callOpenAIAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.openaiApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+        timeout: qmAiProviderTimeoutMs(),
+      },
     );
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`OpenAI API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
   }
 };
 
@@ -160,12 +203,13 @@ const callDeepSeekAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.deepseekApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+        timeout: qmAiProviderTimeoutMs(),
+      },
     );
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`DeepSeek API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "DeepSeek API" });
   }
 };
 
@@ -213,29 +257,20 @@ const buildDifficultyCounts = (total) => {
 
 /** Cleans and normalizes EduAI question objects into the format expected by uploads. */
 const sanitizeEduAIQuestion = (question) => {
-  const content =
-    typeof question?.content === "string" ? question.content.trim() : "";
+  const content = typeof question?.content === "string" ? question.content.trim() : "";
   if (!content) return null;
   const summarySource =
-    typeof question?.description === "string" &&
-    question.description.trim().length > 0
+    typeof question?.description === "string" && question.description.trim().length > 0
       ? question.description.trim()
       : summarizeQuestion(content);
 
-  const difficulty = ["easy", "medium", "hard"].includes(
-    question?.difficulty?.toLowerCase()
-  )
+  const difficulty = ["easy", "medium", "hard"].includes(question?.difficulty?.toLowerCase())
     ? question.difficulty.toLowerCase()
     : "medium";
 
-  const type = question?.type === "MCQ"
-    ? "MCQ"
-    : question?.type === "LA"
-      ? "LA"
-      : "SA";
+  const type = question?.type === "MCQ" ? "MCQ" : question?.type === "LA" ? "LA" : "SA";
   const primaryTopicId =
-    Number.isInteger(question?.primary_topic_id) &&
-    question.primary_topic_id > 0
+    Number.isInteger(question?.primary_topic_id) && question.primary_topic_id > 0
       ? Number(question.primary_topic_id)
       : null;
   const secondaryTopicIds = Array.isArray(question?.secondary_topic_ids)
@@ -243,10 +278,8 @@ const sanitizeEduAIQuestion = (question) => {
         new Set(
           question.secondary_topic_ids
             .map((value) => Number(value))
-            .filter(
-              (value) => Number.isInteger(value) && value !== primaryTopicId
-            )
-        )
+            .filter((value) => Number.isInteger(value) && value !== primaryTopicId),
+        ),
       )
     : [];
 
@@ -256,10 +289,7 @@ const sanitizeEduAIQuestion = (question) => {
     choices = question.choices
       .filter(
         (c) =>
-          c &&
-          typeof c === "object" &&
-          typeof c.letter === "string" &&
-          typeof c.text === "string"
+          c && typeof c === "object" && typeof c.letter === "string" && typeof c.text === "string",
       )
       .map((c) => ({
         letter: String(c.letter).trim().toUpperCase() || "A",
@@ -289,22 +319,49 @@ const sanitizeEduAIQuestion = (question) => {
 };
 
 /** Uses EduAI to extract questions from OCR’d text, chunking input and deduplicating outputs. */
-const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.5-flash", apiKeys = {}, { cookie } = {}) => {
-  if (!eduaiService.isConfigured()) {
-    throw new Error(
-      "EduAI service is not configured. Please set EDUAI_API_KEY."
+const extractQuestionsWithEduAI = async (
+  text,
+  course,
+  model = "google:gemini-2.5-flash",
+  apiKeys = {},
+  { cookie, signal, deadlineAt } = {},
+) => {
+  assertQmAiDeadline({ signal, deadlineAt });
+  const maxTextChars = qmMaxExtractTextChars();
+  if (typeof text !== "string" || text.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      "QM_EXTRACT_TEXT_TOO_LARGE",
     );
+  }
+
+  if (!eduaiService.isConfigured()) {
+    throw new Error("EduAI service is not configured. Please set EDUAI_API_KEY.");
   }
 
   // Preserve original spacing/casing so Core can resolve by code when
   // coreCourseId is absent. Prefer course.coreCourseId (Core CUID) below.
-  const courseCode =
-    (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
+  const courseCode = (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
   const coreCourseId =
     typeof course?.coreCourseId === "string" && course.coreCourseId.trim()
       ? course.coreCourseId.trim()
       : undefined;
   const { chunks, blockCountsPerChunk } = chunkByQuestionBlocks(text, 5000);
+  const maxChunks = qmMaxExtractChunks();
+  if (chunks.length > maxChunks) {
+    throw extractionBudgetError(
+      `OCR text produces ${chunks.length} chunks; the maximum is ${maxChunks}`,
+      413,
+      "QM_EXTRACT_CHUNK_LIMIT",
+    );
+  }
+
+  const extractionStartedAt = Date.now();
+  let providerCalls = 0;
+  const maxProviderCalls = qmMaxExtractProviderCalls();
+  const deadlineMs = qmExtractDeadlineMs();
+  const providerTimeoutMs = qmAiProviderTimeoutMs();
   const extracted = [];
 
   // Fetch topics for the course to include in the prompt
@@ -314,25 +371,27 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
       topics = await prisma.topics.findMany({
         where: { courseId: course.id },
         select: { id: true, name: true },
-        orderBy: { name: 'asc' }
+        orderBy: { name: "asc" },
       });
     } catch (error) {
-      console.error("Failed to fetch topics for course", error.message);
+      console.error("Failed to fetch topics for course", safeRequestLogFields(error));
       // Continue without topics if fetch fails
     }
   }
 
   // Format topics for the prompt
-  const topicsSection = topics.length > 0
-    ? `\n\nCourse topics:\n${topics.map(t => `- ID ${t.id}: ${t.name}`).join('\n')}\n`
-    : '';
+  const topicsSection =
+    topics.length > 0
+      ? `\n\nCourse topics:\n${topics.map((t) => `- ID ${t.id}: ${t.name}`).join("\n")}\n`
+      : "";
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const blockCount = blockCountsPerChunk[i];
-    const numQuestions = blockCount != null && blockCount > 0
-      ? Math.max(1, Math.min(blockCount, 15))
-      : calculateQuestionTarget(chunk);
+    const numQuestions =
+      blockCount != null && blockCount > 0
+        ? Math.max(1, Math.min(blockCount, 15))
+        : calculateQuestionTarget(chunk);
     const difficultyDistribution = buildDifficultyCounts(numQuestions);
     const reasoningDistribution = {
       factual: 40,
@@ -340,9 +399,10 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
       application: 30,
     };
 
-    const continuationNote = i > 0
-      ? " This segment continues from the previous one; do not treat content as a new \"Question 1\" unless the source explicitly starts a new numbered question.\n\n"
-      : "";
+    const continuationNote =
+      i > 0
+        ? ' This segment continues from the previous one; do not treat content as a new "Question 1" unless the source explicitly starts a new numbered question.\n\n'
+        : "";
 
     const extractionSystemPrompt = `You are an assistant that EXTRACTS exam-ready questions from source material. Your job is to list every complete question block that appears in the text. Do NOT generate new questions or improvise—only extract or paraphrase what is actually in the source.
 
@@ -387,7 +447,27 @@ ${chunk}
     const extractionRetryUserPrompt = `Extract all questions from:\n"""${chunk}"""`;
 
     const runChunkExtraction = async (systemPrompt, userPrompt) => {
-      const questions = await eduaiService.generateQuestions({
+      assertQmAiDeadline({ signal, deadlineAt });
+      const elapsedMs = Date.now() - extractionStartedAt;
+      const remainingMs = deadlineMs - elapsedMs;
+      if (remainingMs <= 0) {
+        throw extractionBudgetError(
+          "Question extraction exceeded its time limit; try a smaller upload",
+          504,
+          "QM_EXTRACT_DEADLINE",
+        );
+      }
+      if (providerCalls >= maxProviderCalls) {
+        throw extractionBudgetError(
+          "Question extraction reached its provider-call limit; try a smaller upload",
+          429,
+          "QM_EXTRACT_PROVIDER_CALL_LIMIT",
+        );
+      }
+
+      providerCalls += 1;
+      const callTimeoutMs = Math.min(providerTimeoutMs, remainingMs);
+      const questionsPromise = eduaiService.generateQuestions({
         prompt: chunk,
         courseCode,
         courseId: coreCourseId,
@@ -399,10 +479,20 @@ ${chunk}
         systemPromptOverride: systemPrompt,
         userPromptOverride: userPrompt,
         cookie,
+        timeoutMs: callTimeoutMs,
+        signal,
+        deadlineAt,
       });
-      return questions
-        .map((question) => sanitizeEduAIQuestion(question))
-        .filter(Boolean);
+      const questions = await withTimeout(
+        questionsPromise,
+        callTimeoutMs,
+        extractionBudgetError(
+          "Question extraction provider timed out; try a smaller upload",
+          504,
+          "QM_EXTRACT_DEADLINE",
+        ),
+      );
+      return questions.map((question) => sanitizeEduAIQuestion(question)).filter(Boolean);
     };
 
     try {
@@ -412,21 +502,27 @@ ${chunk}
       }
       extracted.push(...sanitized);
     } catch (error) {
+      if (
+        isQmAiDeadlineError(error) ||
+        (typeof error?.code === "string" && error.code.startsWith("QM_EXTRACT_"))
+      ) {
+        throw error;
+      }
       console.warn("EduAI extraction chunk failed, retrying with simplified prompt", {
         chunkIndex: i,
-        message: error.message,
+        ...safeRequestLogFields(error),
       });
       try {
         const sanitizedRetry = await runChunkExtraction(
           extractionRetrySystemPrompt,
-          extractionRetryUserPrompt
+          extractionRetryUserPrompt,
         );
         if (sanitizedRetry.length === 0) {
-          throw new Error(error.message || "Extraction produced no questions");
+          throw new Error("Extraction produced no questions");
         }
         extracted.push(...sanitizedRetry);
       } catch (retryError) {
-        console.error("EduAI extraction failed for chunk", retryError.message);
+        console.error("EduAI extraction failed for chunk", safeRequestLogFields(retryError));
         throw retryError;
       }
     }
@@ -440,9 +536,7 @@ ${chunk}
 /** Legacy helper that asks OpenAI to extract structured questions from a chunk of text. */
 const callOpenAIForExtraction = async (textChunk) => {
   if (!config.openaiApiKey) {
-    throw new Error(
-      "OpenAI API key is not configured. Please add it to the .env file."
-    );
+    throw new Error("OpenAI API key is not configured. Please add it to the .env file.");
   }
 
   const systemPrompt = `You are an assistant that extracts study questions from source material.
@@ -471,24 +565,29 @@ Source material:
 ${textChunk}
 """`;
 
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-3.5-turbo",
-      temperature: 0.2,
-      max_tokens: 1500,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
-        "Content-Type": "application/json",
+  let response;
+  try {
+    response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-3.5-turbo",
+        temperature: 0.2,
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
       },
-    }
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${config.openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+  } catch (error) {
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
+  }
 
   const content = response.data?.choices?.[0]?.message?.content ?? "[]";
   return content;
@@ -500,8 +599,7 @@ const sanitizeExtractedQuestion = (raw) => {
     return null;
   }
 
-  const questionText =
-    typeof raw.question === "string" ? raw.question.trim() : "";
+  const questionText = typeof raw.question === "string" ? raw.question.trim() : "";
   if (!questionText) {
     return null;
   }
@@ -511,26 +609,17 @@ const sanitizeExtractedQuestion = (raw) => {
     return null;
   }
 
-  const difficulty =
-    typeof raw.difficulty === "string"
-      ? raw.difficulty.toLowerCase().trim()
-      : "";
+  const difficulty = typeof raw.difficulty === "string" ? raw.difficulty.toLowerCase().trim() : "";
 
-  const allowedDifficulty = ["easy", "medium", "hard"].includes(difficulty)
-    ? difficulty
-    : "medium";
+  const allowedDifficulty = ["easy", "medium", "hard"].includes(difficulty) ? difficulty : "medium";
   const type =
-    typeof raw.type === "string" && ["MCQ", "SA", "LA"].includes(raw.type)
-      ? raw.type
-      : "SA";
+    typeof raw.type === "string" && ["MCQ", "SA", "LA"].includes(raw.type) ? raw.type : "SA";
 
   return {
     summary,
     question: questionText,
     instructions:
-      typeof raw.instructions === "string"
-        ? raw.instructions.trim() || undefined
-        : undefined,
+      typeof raw.instructions === "string" ? raw.instructions.trim() || undefined : undefined,
     difficulty: allowedDifficulty,
     answer: typeof raw.answer === "string" ? raw.answer.trim() || null : null,
     type,
@@ -543,9 +632,7 @@ const sanitizeExtractedQuestion = (raw) => {
 /** Legacy helper that calls OpenAI to assign topic IDs to extracted questions. */
 const callOpenAIForTopicAssignment = async (questions, topics) => {
   if (!config.openaiApiKey) {
-    throw new Error(
-      "OpenAI API key is not configured. Please add it to the .env file."
-    );
+    throw new Error("OpenAI API key is not configured. Please add it to the .env file.");
   }
 
   const systemPrompt = `You are an assistant that assigns course topics to questions.
@@ -575,27 +662,32 @@ Use only IDs from the provided topics. Keep the array order identical to the inp
       })),
     },
     null,
-    2
+    2,
   );
 
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-3.5-turbo",
-      temperature: 0,
-      max_tokens: 1200,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: payload },
-      ],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
-        "Content-Type": "application/json",
+  let response;
+  try {
+    response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-3.5-turbo",
+        temperature: 0,
+        max_tokens: 1200,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: payload },
+        ],
       },
-    }
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${config.openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+  } catch (error) {
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
+  }
 
   return response.data?.choices?.[0]?.message?.content ?? "[]";
 };
@@ -685,18 +777,13 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
     return questions.map((question, index) => {
       const assignment = assignmentMap.get(index);
       const primaryTopicId =
-        assignment?.primaryTopicId ??
-        fallbackTopicId ??
-        question.primaryTopicId ??
-        null;
+        assignment?.primaryTopicId ?? fallbackTopicId ?? question.primaryTopicId ?? null;
       const candidateSecondary = Array.isArray(assignment?.secondaryTopicIds)
         ? [...assignment.secondaryTopicIds]
         : Array.isArray(question.secondaryTopicIds)
-        ? [...question.secondaryTopicIds]
-        : [];
-      const secondaryTopicIds = candidateSecondary.filter(
-        (id) => id !== primaryTopicId
-      );
+          ? [...question.secondaryTopicIds]
+          : [];
+      const secondaryTopicIds = candidateSecondary.filter((id) => id !== primaryTopicId);
 
       return {
         ...question,
@@ -705,16 +792,38 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
       };
     });
   } catch (error) {
-    console.error("Failed to assign topics via AI", error);
+    console.error("Failed to assign topics via AI", safeRequestLogFields(error));
     return questions;
   }
 };
 
 /** Public API to normalize raw upload text and run EduAI extraction for a course. */
-export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys, { cookie } = {}) => {
+export const extractQuestionsFromText = async (
+  rawText,
+  courseId,
+  model,
+  apiKeys,
+  { cookie, signal, deadlineAt } = {},
+) => {
+  assertQmAiDeadline({ signal, deadlineAt });
+  const maxTextChars = qmMaxExtractTextChars();
+  if (typeof rawText === "string" && rawText.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      "QM_EXTRACT_TEXT_TOO_LARGE",
+    );
+  }
   const normalized = normalizeExtractText(rawText);
   if (!normalized) {
     return [];
+  }
+  if (normalized.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      "QM_EXTRACT_TEXT_TOO_LARGE",
+    );
   }
 
   // `code`/`name` are Core-owned and no longer stored locally (#1072 §4 step
@@ -723,72 +832,92 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
     where: { id: courseId },
     select: { id: true, coreCourseId: true },
   });
-  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
+  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie, signal }) : null;
+  assertQmAiDeadline({ signal, deadlineAt });
 
-  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, { cookie });
+  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, {
+    cookie,
+    signal,
+    deadlineAt,
+  });
   return extracted;
 };
 
 /** Invokes the selected AI provider to generate structured questions, parsing/validating results. */
-export const generateQuestions = async (prompt, provider, params) => {
+export const generateQuestions = async (prompt, provider, params = {}) => {
+  const safeParams = params && typeof params === "object" ? params : {};
+  const budget = validateGenerationBudget({
+    prompt,
+    numQuestions: safeParams.numQuestions,
+  });
+  if (budget.status) {
+    throw generationBudgetError(budget);
+  }
+
+  const boundedParams = {
+    ...safeParams,
+    numQuestions: budget.numQuestions,
+    difficultyDistribution: safeParams.difficultyDistribution ?? {
+      easy: 1,
+      medium: 2,
+      hard: 2,
+    },
+  };
+
+  let response;
+
+  switch (provider) {
+    case AI_PROVIDERS.GROQ:
+      response = await callGroqAPI(budget.prompt, boundedParams);
+      break;
+    case AI_PROVIDERS.OPENAI:
+      response = await callOpenAIAPI(budget.prompt, boundedParams);
+      break;
+    case AI_PROVIDERS.DEEPSEEK:
+      response = await callDeepSeekAPI(budget.prompt, boundedParams);
+      break;
+    default:
+      throw Object.assign(new Error("Unsupported AI provider"), {
+        status: 400,
+        statusCode: 400,
+        code: "QM_PROVIDER_UNSUPPORTED",
+        isPublic: true,
+      });
+  }
+
   try {
-    let response;
-
-    switch (provider) {
-      case AI_PROVIDERS.GROQ:
-        response = await callGroqAPI(prompt, params);
-        break;
-      case AI_PROVIDERS.OPENAI:
-        response = await callOpenAIAPI(prompt, params);
-        break;
-      case AI_PROVIDERS.DEEPSEEK:
-        response = await callDeepSeekAPI(prompt, params);
-        break;
-      default:
-        throw new Error(`Unsupported AI provider: ${provider}`);
+    const questions = JSON.parse(response);
+    if (!Array.isArray(questions)) {
+      throw new Error("Response is not an array");
     }
 
-    // Parse and validate response
-    try {
-      const questions = JSON.parse(response);
-      if (!Array.isArray(questions)) {
-        throw new Error("Response is not an array");
-      }
+    // Validate each question
+    const validQuestions = questions.filter(
+      (q) =>
+        q.content &&
+        q.difficulty &&
+        q.bloom_level &&
+        ["easy", "medium", "hard"].includes(q.difficulty) &&
+        ["remember", "understand", "apply", "analyze", "evaluate", "create"].includes(
+          q.bloom_level,
+        ),
+    );
 
-      // Validate each question
-      const validQuestions = questions.filter(
-        (q) =>
-          q.content &&
-          q.difficulty &&
-          q.bloom_level &&
-          ["easy", "medium", "hard"].includes(q.difficulty) &&
-          [
-            "remember",
-            "understand",
-            "apply",
-            "analyze",
-            "evaluate",
-            "create",
-          ].includes(q.bloom_level)
-      );
-
-      if (validQuestions.length === 0) {
-        throw new Error("No valid questions found in response");
-      }
-
-      return validQuestions;
-    } catch (parseError) {
-      // If parsing fails, return a single question with the response text
-      return [
-        {
-          content: response,
-          difficulty: "medium",
-          bloom_level: "understand",
-        },
-      ];
+    if (validQuestions.length === 0) {
+      throw new Error("No valid questions found in response");
     }
-  } catch (error) {
-    throw error;
+
+    // Legacy providers may return more rows than requested despite the prompt.
+    return validQuestions.slice(0, budget.numQuestions);
+  } catch (parseError) {
+    // If parsing fails, return a single question with the response text
+    return [
+      {
+        content: response,
+        difficulty: "medium",
+        bloom_level: "understand",
+      },
+    ];
   }
 };
 

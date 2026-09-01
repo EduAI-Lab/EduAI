@@ -2,16 +2,19 @@
  * Client for assessment CRUD, section management, and variant linkage calls to the backend API.
  * Shapes payloads (e.g., blueprintConfig) and returns typed responses for UI consumers.
  */
-import api from './api';
-import { fetchAllPages } from './pagination';
+import type { JsonObject, JsonValue } from "@eduai/types";
+
+import api from "./api";
+import { fetchAllPages } from "./pagination";
 import {
   Assessment,
   AssessmentGenerationParams,
   AssessmentBlueprintConfig,
   AssessmentSection,
   AssessmentSectionCreateInput,
-  SectionVariantLink
-} from '../types/question';
+  SectionVariantLink,
+} from "../types/question";
+import { isNumber } from "@eduai/ui/primitive-union";
 
 type GetAssessmentsOptions = {
   courseId?: number;
@@ -31,7 +34,7 @@ const SERVER_MAX_LIST_LIMIT = 200;
 const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
-function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
+function unwrapPaginatedList<T>(data: JsonValue): PaginatedList<T> {
   if (Array.isArray(data)) {
     return {
       items: data as T[],
@@ -40,13 +43,13 @@ function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
       offset: 0,
     };
   }
-  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+  if (data instanceof Object && Array.isArray((data as { items?: unknown }).items)) {
     const page = data as PaginatedList<T>;
     return {
       items: page.items,
-      total: typeof page.total === 'number' ? page.total : page.items.length,
-      limit: typeof page.limit === 'number' ? page.limit : page.items.length,
-      offset: typeof page.offset === 'number' ? page.offset : 0,
+      total: isNumber(page.total) ? page.total : page.items.length,
+      limit: isNumber(page.limit) ? page.limit : page.items.length,
+      offset: isNumber(page.offset) ? page.offset : 0,
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };
@@ -81,7 +84,7 @@ async function fetchAllOffsetPages<T>(
   if (maxItems === MAX_FETCH_ALL && all.length >= MAX_FETCH_ALL && all.length < total) {
     throw new Error(
       `Result set has ${total} rows, exceeding the ${MAX_FETCH_ALL}-row fetch-all safety cap. ` +
-        'Use getAssessmentsPage() with explicit pagination instead of fetching all rows.',
+        "Use getAssessmentsPage() with explicit pagination instead of fetching all rows.",
     );
   }
 
@@ -94,19 +97,21 @@ const toBlueprintConfig = (payload: AssessmentGenerationParams): AssessmentBluep
   excludedTopicIds: payload.excludedTopicIds,
   difficultyDistribution: payload.difficultyDistribution,
   reasoningDistribution: payload.reasoningDistribution,
-  reasoningData: payload.reasoningData
+  reasoningData: payload.reasoningData,
 });
 
 export const assessmentService = {
   /** Fetches one page of assessments with pagination metadata (#1040). */
-  async getAssessmentsPage(options: GetAssessmentsOptions = {}): Promise<PaginatedList<Assessment>> {
+  async getAssessmentsPage(
+    options: GetAssessmentsOptions = {},
+  ): Promise<PaginatedList<Assessment>> {
     const params: Record<string, number> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;
 
-    const response = await api.get('/api/assessments', {
-      params: Object.keys(params).length ? params : undefined
+    const response = await api.get("/api/assessments", {
+      params: Object.keys(params).length ? params : undefined,
     });
     return unwrapPaginatedList<Assessment>(response.data.data);
   },
@@ -144,9 +149,9 @@ export const assessmentService = {
   async createPracticeExamForCourse(courseId: number): Promise<Assessment> {
     const payload: AssessmentGenerationParams = {
       courseId,
-      name: 'Practice Exam',
-      type: 'Quiz',
-      description: '',
+      name: "Practice Exam",
+      type: "Quiz",
+      description: "",
       primaryTopicIds: [],
       secondaryTopicIds: [],
       excludedTopicIds: [],
@@ -155,33 +160,36 @@ export const assessmentService = {
       reasoningData: {
         factual: { total: 0, easyBoundary: 0, hardBoundary: 0 },
         analytical: { total: 0, easyBoundary: 0, hardBoundary: 0 },
-        application: { total: 0, easyBoundary: 0, hardBoundary: 0 }
-      }
+        application: { total: 0, easyBoundary: 0, hardBoundary: 0 },
+      },
     };
     return this.createAssessment(payload);
   },
 
   /** Creates an assessment with blueprint configuration derived from generation params. */
   async createAssessment(payload: AssessmentGenerationParams): Promise<Assessment> {
-    const response = await api.post('/api/assessments', {
+    const response = await api.post("/api/assessments", {
       type: payload.type,
       name: payload.name,
       description: payload.description,
       courseId: payload.courseId,
-      blueprintConfig: toBlueprintConfig(payload)
+      blueprintConfig: toBlueprintConfig(payload),
     });
 
     return response.data.data;
   },
 
   /** Updates an existing assessment’s metadata and blueprint configuration. */
-  async updateAssessment(assessmentId: number, payload: AssessmentGenerationParams): Promise<Assessment> {
+  async updateAssessment(
+    assessmentId: number,
+    payload: AssessmentGenerationParams,
+  ): Promise<Assessment> {
     const response = await api.put(`/api/assessments/${assessmentId}`, {
       type: payload.type,
       name: payload.name,
       description: payload.description,
       courseId: payload.courseId,
-      blueprintConfig: toBlueprintConfig(payload)
+      blueprintConfig: toBlueprintConfig(payload),
     });
 
     return response.data.data;
@@ -205,7 +213,10 @@ export const assessmentService = {
   },
 
   /** Creates a new section under an assessment. */
-  async createSection(assessmentId: number, payload: AssessmentSectionCreateInput): Promise<AssessmentSection> {
+  async createSection(
+    assessmentId: number,
+    payload: AssessmentSectionCreateInput,
+  ): Promise<AssessmentSection> {
     const response = await api.post(`/api/assessments/${assessmentId}/sections`, payload);
     return response.data.data;
   },
@@ -214,15 +225,26 @@ export const assessmentService = {
   async updateSection(
     assessmentId: number,
     sectionId: number,
-    payload: Partial<AssessmentSectionCreateInput>
+    payload: Partial<AssessmentSectionCreateInput>,
   ): Promise<AssessmentSection> {
-    const response = await api.put(`/api/assessments/${assessmentId}/sections/${sectionId}`, payload);
+    const response = await api.put(
+      `/api/assessments/${assessmentId}/sections/${sectionId}`,
+      payload,
+    );
     return response.data.data;
   },
 
   /** Deletes a section from an assessment. */
   async deleteSection(assessmentId: number, sectionId: number): Promise<void> {
     await api.delete(`/api/assessments/${assessmentId}/sections/${sectionId}`);
+  },
+
+  /** Bulk-rewrite section positions (1..n) for the assessment. */
+  async reorderSections(assessmentId: number, sectionIds: number[]): Promise<AssessmentSection[]> {
+    const response = await api.put(`/api/assessments/${assessmentId}/sections/reorder`, {
+      sectionIds,
+    });
+    return response.data.data;
   },
 
   /** Deletes an assessment. */
@@ -234,11 +256,11 @@ export const assessmentService = {
   async addVariantToSection(
     assessmentId: number,
     sectionId: number,
-    payload: { variantId: number; displayOrder?: number; metadata?: Record<string, unknown> }
+    payload: { variantId: number; displayOrder?: number; metadata?: JsonObject },
   ): Promise<SectionVariantLink> {
     const response = await api.post(
       `/api/assessments/${assessmentId}/sections/${sectionId}/variants`,
-      payload
+      payload,
     );
     return response.data.data;
   },
@@ -247,10 +269,10 @@ export const assessmentService = {
   async removeVariantFromSection(
     assessmentId: number,
     sectionId: number,
-    variantId: number
+    variantId: number,
   ): Promise<void> {
     await api.delete(
-      `/api/assessments/${assessmentId}/sections/${sectionId}/variants/${variantId}`
+      `/api/assessments/${assessmentId}/sections/${sectionId}/variants/${variantId}`,
     );
   },
 
@@ -259,15 +281,21 @@ export const assessmentService = {
     await api.delete(`/api/assessments/${assessmentId}/questions/${questionId}`);
   },
 
-  async checkQuestionInAssessments(questionId: number): Promise<{ isInAssessments: boolean; assessmentIds: number[] }> {
+  async checkQuestionInAssessments(
+    questionId: number,
+  ): Promise<{ isInAssessments: boolean; assessmentIds: number[] }> {
     const response = await api.get(`/api/assessments/questions/${questionId}/check-in-assessments`);
     return response.data.data;
   },
 
-  async removeQuestionFromAllSections(questionId: number): Promise<{ removedLinks: number; affectedAssessments: number[] }> {
-    const response = await api.delete(`/api/assessments/questions/${questionId}/remove-from-all-sections`);
+  async removeQuestionFromAllSections(
+    questionId: number,
+  ): Promise<{ removedLinks: number; affectedAssessments: number[] }> {
+    const response = await api.delete(
+      `/api/assessments/questions/${questionId}/remove-from-all-sections`,
+    );
     return response.data.data;
-  }
+  },
 };
 
 export default assessmentService;

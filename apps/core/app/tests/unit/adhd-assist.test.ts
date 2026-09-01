@@ -1,11 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  ADHD_ASSIST_AUTO_MODEL_ID,
   ADHD_ASSIST_POLICY_BLOCK,
+  ADHD_ASSIST_POLICY_VERSION,
   composeSystemPrompt,
   ensureDiagramBeforeNext,
   hasDiagramBlock,
   resolveAdhdAssistPolicyBlock,
+  resolveAdhdAssistAutoModelId,
   resolveEffectiveAdhdAssist,
+  shouldUseRetainedAdhdAssistModel,
 } from "~/lib/ai/adhd-assist";
 
 describe("composeSystemPrompt", () => {
@@ -42,16 +46,32 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
   });
 
   it("uses greeting policy without Top summary when profile is greeting", () => {
-    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "greeting" });
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "greeting",
+    });
     expect(result).toContain("ADHD ASSIST MODE (greeting)");
     expect(result).toContain('Do NOT use "Top summary"');
     expect(result).not.toContain("Step ladder");
   });
 
   it("uses redirect policy for redirect profile", () => {
-    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "redirect",
+    });
     expect(result).toContain("ADHD ASSIST MODE (redirect)");
     expect(result).toContain("one-topic boundary");
+  });
+
+  it("redirect policy forbids explaining the second topic and caps sentences (#1313)", () => {
+    const result = composeSystemPrompt(base, {
+      adhdAssist: true,
+      profile: "redirect",
+    });
+    expect(result).toContain("Do NOT explain, define, or give any fact about the second topic");
+    expect(result).toContain("Max 3 sentences total");
+    expect(result).toContain("that instruction does not");
   });
 
   it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
@@ -63,25 +83,94 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 describe("resolveEffectiveAdhdAssist", () => {
   it("uses the body value when the field is present and true", () => {
     expect(
-      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: true, chatValue: false }),
+      resolveEffectiveAdhdAssist({
+        hasField: true,
+        bodyValue: true,
+        chatValue: false,
+      }),
     ).toBe(true);
   });
 
   it("uses the body value when the field is present and false, even if chat is true", () => {
     expect(
-      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: false, chatValue: true }),
+      resolveEffectiveAdhdAssist({
+        hasField: true,
+        bodyValue: false,
+        chatValue: true,
+      }),
     ).toBe(false);
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is true", () => {
     expect(
-      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: false, chatValue: true }),
+      resolveEffectiveAdhdAssist({
+        hasField: false,
+        bodyValue: false,
+        chatValue: true,
+      }),
     ).toBe(true);
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is false", () => {
     expect(
-      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: true, chatValue: false }),
+      resolveEffectiveAdhdAssist({
+        hasField: false,
+        bodyValue: true,
+        chatValue: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("Assist Auto model contract", () => {
+  it("defaults to the retained Qwen2.5 32B model", () => {
+    const original = process.env.ADHD_ASSIST_AUTO_MODEL;
+    delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    expect(resolveAdhdAssistAutoModelId()).toBe(ADHD_ASSIST_AUTO_MODEL_ID);
+    if (original === undefined) delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    else process.env.ADHD_ASSIST_AUTO_MODEL = original;
+  });
+
+  it("allows a controlled deployment override", () => {
+    const original = process.env.ADHD_ASSIST_AUTO_MODEL;
+    process.env.ADHD_ASSIST_AUTO_MODEL = "vllm:qwen3.5-9b-instruct";
+    expect(resolveAdhdAssistAutoModelId()).toBe("vllm:qwen3.5-9b-instruct");
+    if (original === undefined) delete process.env.ADHD_ASSIST_AUTO_MODEL;
+    else process.env.ADHD_ASSIST_AUTO_MODEL = original;
+  });
+
+  it("pins Assist only when the user chose Auto routing", () => {
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        routeWithAuto: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: true,
+        chatMode: "learning",
+        routeWithAuto: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "admin",
+        routeWithAuto: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        routeWithAuto: false,
+      }),
     ).toBe(false);
   });
 });
@@ -112,7 +201,10 @@ describe("v1.1 response-format rules", () => {
   });
 
   it("short profiles (core rules) also enforce anti-urgency and citations", () => {
-    const greeting = composeSystemPrompt("", { adhdAssist: true, profile: "greeting" });
+    const greeting = composeSystemPrompt("", {
+      adhdAssist: true,
+      profile: "greeting",
+    });
     expect(greeting).toContain("No urgency or time-pressure");
     expect(greeting).toContain("No condescension");
     expect(greeting).toContain('"Sources:" line');
@@ -134,8 +226,12 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("do not emit a bare type-id-only fence");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("How a bill becomes law");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the **Next?** line");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("FIRST LINE of the reply must be exactly: **Top summary**");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("LAST structural line must start exactly: **Next?**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
+      "FIRST LINE of the reply must be exactly: **Top summary**",
+    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
+      "LAST structural line must start exactly: **Next?**",
+    );
     expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
       "UI shows Step ladder → diagram → TLDR → Continue",
     );
@@ -146,15 +242,25 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
       "AND the learner asked for one. Never add diagrams by default.",
     );
-    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
-      "gradient-descent needs only the type id line",
-    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain("gradient-descent needs only the type id line");
   });
 
   it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('Do not rename **Top summary** or **Next?**');
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Do not rename **Top summary** or **Next?**");
+  });
+});
+
+describe("v2.3 step recall rule (#1245)", () => {
+  it("full tutoring block tells the model to regenerate, not copy, a revisited step", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("STEP RECALL:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("### Step ladder");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("bare quote or near-copy");
+  });
+
+  it("stamps the bumped policy version", () => {
+    expect(ADHD_ASSIST_POLICY_VERSION).toBe("2.3");
   });
 });
 

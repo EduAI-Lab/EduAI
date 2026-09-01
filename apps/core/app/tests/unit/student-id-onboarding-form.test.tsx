@@ -16,13 +16,24 @@ describe("StudentIdOnboardingForm", () => {
   it("renders the student number field and actions", () => {
     renderForm();
 
-    expect(screen.getByRole("heading", { name: /link your ubc student number/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /link your ubc student number/i }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("UBC Student Number")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Link student number" })).toBeInTheDocument();
+    const skip = screen.getByRole("button", {
+      name: /I don't have a UBC student number/i,
+    });
+    expect(skip).toHaveAttribute("name", "intent");
+    expect(skip).toHaveAttribute("value", "skip");
+    expect((skip as HTMLButtonElement).formNoValidate).toBe(true);
   });
 
   it("shows a form error when provided", () => {
-    renderForm({ formError: "This student number is already linked to another account. Contact an admin if you believe this is an error." });
+    renderForm({
+      formError:
+        "This student number is already linked to another account. Contact an admin if you believe this is an error.",
+    });
 
     expect(screen.getByRole("alert")).toHaveTextContent("already linked to another account");
   });

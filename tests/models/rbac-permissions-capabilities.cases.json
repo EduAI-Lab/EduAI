@@ -1,0 +1,268 @@
+[
+  {
+    "Access": "instructor",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "admin",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "view-material",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "view-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "view-topics",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "view-material",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "view-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "view-topics",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "view-material",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "view-topics",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "ta",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "student",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "view-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "none",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "view-material",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "view-topics",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "view-course-chats",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "student",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "delete-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "admin",
+    "Capability": "view-topics",
+    "IsPublished": "no",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "ta",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "rename-material",
+    "IsPublished": "yes",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "manage-topics",
+    "IsPublished": "yes",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  }
+]

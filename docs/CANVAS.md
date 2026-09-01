@@ -22,6 +22,38 @@ The Quick Start environment is **development-only** (no production email, simpli
 
 ---
 
+## How EduAI talks to Canvas
+
+Canvas is reached with a **per-instructor personal access token**, stored in Core's `canvas_integrations` table and encrypted at rest with AES-256-GCM under Core's `ENCRYPTION_KEY`. There is no Canvas API token in any `.env.example` — see [`docs/ENVIRONMENT.md` § Canvas credentials](ENVIRONMENT.md#canvas-credentials--not-in-any-envexample).
+Question Maker no longer stores Canvas tokens of its own; it reaches Canvas through Core.
+
+All Canvas server code lives under `apps/core/app/lib/canvas/`:
+
+| Module | Responsibility |
+|---|---|
+| `client.server.ts` | Raw Canvas API calls — paginated fetch, file download, SSRF-guarded URL validation |
+| `client.ts` | Browser-facing wrapper (types only; re-exports from `schemas.ts` / `@eduai/types`) |
+| `encryption.ts` | AES-256-GCM encrypt/decrypt for the stored token |
+| `integration.server.ts` | Store / retrieve / delete an instructor's Canvas credentials |
+| `courses.server.ts` | Course listing, upsert, instructor enrollment |
+| `sync.server.ts` | Orchestrates `syncCanvasCourses` (delta between current and requested) |
+| `roster.server.ts` | Student/TA roster sync into the `CanvasRosterMember` staging table |
+| `link-roster.server.ts`, `enrollment-link.server.ts`, `student-id.server.ts`, `student-number.ts` | Linking staged roster rows to real EduAI users by student number |
+| `materials.server.ts` | Discover importable Canvas files and sync them as `CourseMaterial` rows |
+| `quizzes.server.ts`, `question-banks.server.ts` | Quiz and question-bank import/export |
+| `term.server.ts` | Canvas term → EduAI term/year mapping |
+| `onboarding.server.ts` | First-connect setup flow |
+| `guards.server.ts` | Per-user rate limiting for sync and roster-link |
+| `schemas.ts` | Zod schemas for every Canvas API input |
+
+HTTP surface: everything is served by the single catch-all route `apps/core/app/routes/api/canvas.$.ts` (`/api/canvas/*`) — `integration`, `courses`, `connect`, `sync`, `disconnect`, `link-roster`, `quizzes`, `question-banks`.
+
+Rate limits are in-memory and per user: `CANVAS_SYNC_RATE_LIMIT` / `CANVAS_SYNC_RATE_WINDOW_MS` (default 1 per 30 s) and `CANVAS_LINK_ROSTER_RATE_LIMIT` / `CANVAS_LINK_ROSTER_RATE_WINDOW_MS` (default 10 per 15 min).
+
+Canvas activity is audited: `CANVAS_INTEGRATION_SAVED` / `_DELETED`, `CANVAS_READ`, `CANVAS_QUIZ_WRITE`, `CANVAS_CALLBACK_RECEIVED`, and `CANVAS_ACCESS_DENIED` — see [`docs/LOGGING.md`](LOGGING.md).
+
+---
+
 ## Requirements
 
 Instructure recommends for `docker_dev_setup.sh`:
@@ -227,11 +259,32 @@ Confirm in a browser: `http://localhost:8080/` (or your chosen port).
 
 To add test users and courses manually: **Admin** → create users/courses, or use **People** on a course to enroll students.
 
+### Seeding test data
+
+`apps/core/scripts/seed_local_canvas.sh` creates teachers, courses, and students in a local Canvas. It needs `curl` and `jq`, and reads three shell variables (export them; they do **not** belong in any `.env` file):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CANVAS_URL` | `http://localhost:8080` | Local Canvas base URL |
+| `CANVAS_ADMIN_TOKEN` | — | Site-admin access token (Account → Settings → New Access Token) |
+| `CANVAS_SEED_PASSWORD` | `password123` | Password assigned to seeded users |
+
+```bash
+export CANVAS_URL=http://localhost:8080
+export CANVAS_ADMIN_TOKEN='1234~...'
+./apps/core/scripts/seed_local_canvas.sh              # wipes non-admin users/courses, then seeds
+./apps/core/scripts/seed_local_canvas.sh --no-reset   # upsert only
+./apps/core/scripts/seed_local_canvas.sh --reset-only # wipe only
+```
+
+**The default run is destructive** — it deletes every course and non-admin user in that Canvas instance first. Only point it at a local dev instance.
+
 ---
 
 ## Create an API access token
 
-Needed for API testing or the seed script (admin token).
+Needed for API testing, for connecting an instructor account in Core's
+**Settings → Canvas** tab, or for the seed script (admin token).
 
 1. Log in (admin or instructor).
 2. **Account** → **Settings**.

@@ -1,8 +1,14 @@
 import { Prisma } from "@prisma/client";
 import cron from "node-cron";
+import { z } from "zod";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { CreateAIProviderSchema, CreateAIModelSchema, UpdateAIProviderSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
+import {
+  CreateAIProviderSchema,
+  CreateAIModelSchema,
+  UpdateAIProviderSchema,
+  UpdateAIModelSchema,
+} from "~/lib/ai/schemas";
 import {
   isEmbeddingIndexStale,
   parseEmbeddingSettingsUpdate,
@@ -11,15 +17,12 @@ import {
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
+import { InvalidOllamaBaseUrlError, ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
-  InvalidOllamaBaseUrlError,
-  ollamaTagsUrl,
-} from "~/lib/ai/ollama-url.server";
-import {
-  findActiveReEmbedJob,
   getReEmbedJobForCourse,
   serializeReEmbedJob,
-  startReEmbedJob,
+  startOrResumeReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import {
@@ -27,21 +30,13 @@ import {
   UpdateCourseRagSettingsSchema,
   UpdateCourseSchema,
 } from "~/lib/courses/schemas";
-import {
-  getCourseRagSettings,
-  invalidateCourseRagSettingsCache,
-} from "~/lib/courses/server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { addCourseTA, getCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
-import {
-  getPolicies,
-  getPolicyDefinitions,
-  isPolicyKey,
-  setPolicy,
-} from "~/lib/policy.server";
+import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
@@ -54,6 +49,7 @@ import {
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
 import prisma from "~/lib/prisma.server";
 import { resolveAdminCourseId } from "./admin-context.server";
+import type { ToolInput } from "./tool-input";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
@@ -64,7 +60,7 @@ function requirePlatformAdmin(user: RbacUser): ToolError | null {
   return null;
 }
 
-function adminPayload<T extends Record<string, unknown>>(data: T) {
+function adminPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     queriedAt: new Date().toISOString(),
@@ -72,6 +68,13 @@ function adminPayload<T extends Record<string, unknown>>(data: T) {
   };
 }
 
+/**
+ * The resolved course, or the error that stopped it.
+ *
+ * Both arms stay objects so callers narrow with `"error" in resolved`, the same
+ * way they narrow every other tool result. Flattening the success arm to a bare
+ * string would leave the shape of the value as the only thing to branch on.
+ */
 async function resolveCourseId(
   actor: RbacUser,
   opts: {
@@ -79,20 +82,17 @@ async function resolveCourseId(
     courseCode?: string;
     fallbackCourseId?: string | null;
   },
-): Promise<string | ToolError> {
+): Promise<{ courseId: string } | ToolError> {
   const resolved = await resolveAdminCourseId(actor, opts);
   if ("error" in resolved) {
     return resolved;
   }
-  return resolved.courseId;
+  return { courseId: resolved.courseId };
 }
 
 // ── Courses ───────────────────────────────────────────────────────────────────
 
-export async function createAdminCourse(
-  actor: RbacUser,
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+export async function createAdminCourse(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -139,6 +139,8 @@ export async function createAdminCourse(
         isActive: true,
       })),
     });
+    const { ensureDefaultBank } = await import("~/lib/question-banks/server");
+    await ensureDefaultBank(created.id, tx);
     return created;
   });
 
@@ -148,13 +150,14 @@ export async function createAdminCourse(
 export async function updateAdminCourse(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const parsed = UpdateCourseSchema.safeParse(input);
   if (!parsed.success) {
@@ -176,12 +179,13 @@ export async function updateAdminCourse(
 export async function deleteAdminCourse(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   await prisma.course.update({
     where: { id: courseId },
@@ -194,12 +198,13 @@ export async function setAdminCoursePublished(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
   publish: boolean,
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const course = await prisma.course.update({
     where: { id: courseId, deletedAt: null },
@@ -216,8 +221,9 @@ export async function getAdminCourseRagSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const settings = await getCourseRagSettings(courseId);
   if (!settings) return { error: "COURSE_NOT_FOUND" };
@@ -227,13 +233,14 @@ export async function getAdminCourseRagSettings(
 export async function updateAdminCourseRagSettings(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const parsed = UpdateCourseRagSettingsSchema.safeParse(input);
   if (!parsed.success) {
@@ -263,8 +270,9 @@ export async function listAdminCourseMaterials(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null },
@@ -290,12 +298,13 @@ export async function renameAdminCourseMaterial(
     materialId: string;
     name: string;
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const material = await prisma.courseMaterial.update({
     where: { id: opts.materialId, courseId, deletedAt: null },
@@ -313,12 +322,13 @@ export async function deleteAdminCourseMaterial(
     fallbackCourseId?: string | null;
     materialId: string;
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   await prisma.courseMaterial.update({
     where: { id: opts.materialId, courseId },
@@ -334,8 +344,9 @@ export async function getAdminCourseEmbeddingSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const course = await getCourseIfCanManageMaterials(actor, courseId);
   if (!course) return { error: "COURSE_NOT_FOUND" };
@@ -358,13 +369,14 @@ export async function getAdminCourseEmbeddingSettings(
 export async function updateAdminCourseEmbeddingSettings(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const course = await getCourseIfCanManageMaterials(actor, courseId);
   if (!course) return { error: "COURSE_NOT_FOUND" };
@@ -400,16 +412,12 @@ export async function startAdminCourseReEmbed(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
-  const active = await findActiveReEmbedJob(courseId);
-  if (active) {
-    return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
-  }
-
-  const job = await startReEmbedJob(courseId);
-  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
+  const { job, created } = await startOrResumeReEmbedJob(courseId);
+  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: !created });
 }
 
 export async function getAdminCourseReEmbedJob(
@@ -424,8 +432,9 @@ export async function getAdminCourseReEmbedJob(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const job = await getReEmbedJobForCourse(courseId, opts.jobId);
   if (!job) return { error: "JOB_NOT_FOUND" };
@@ -439,8 +448,9 @@ export async function listAdminCanvasMaterials(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const materials = await discoverCanvasMaterialsForCourse(actor.id, courseId);
   return adminPayload({ materials, count: materials.length });
@@ -454,12 +464,13 @@ export async function syncAdminCanvasMaterials(
     fallbackCourseId?: string | null;
     canvasFileIds: string[];
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
@@ -486,8 +497,9 @@ export async function listAdminCourseTAs(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const tas = await getCourseTA(courseId);
   return adminPayload({ tas, count: tas.length });
@@ -495,28 +507,40 @@ export async function listAdminCourseTAs(
 
 export async function addAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const result = await addCourseTA(courseId, { userId: opts.userId });
   if ("error" in result) return { error: result.error };
-  return { ok: true, ta: result };
+  return { ok: true, ta: result.ta };
 }
 
 export async function removeAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const result = await removeCourseTA(courseId, { userId: opts.userId });
   if ("error" in result) return { error: result.error };
@@ -525,13 +549,19 @@ export async function removeAdminCourseTA(
 
 export async function listAdminCourseChats(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    limit?: number;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(actor, opts);
-  if (typeof courseId !== "string") return courseId;
+  const resolved = await resolveCourseId(actor, opts);
+  if ("error" in resolved) return resolved;
+  const { courseId } = resolved;
 
   const limit = Math.min(opts.limit ?? 50, 200);
   const chats = await prisma.chat.findMany({
@@ -549,11 +579,7 @@ export async function listAdminCourseChats(
   return adminPayload({ chats, count: chats.length });
 }
 
-export async function listAdminUnitChats(
-  actor: RbacUser,
-  department: string,
-  limit = 50,
-) {
+export async function listAdminUnitChats(actor: RbacUser, department: string, limit = 50) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -583,11 +609,7 @@ export async function getAdminPolicies(actor: RbacUser) {
   });
 }
 
-export async function updateAdminPolicy(
-  actor: RbacUser,
-  key: string,
-  value: boolean,
-): Promise<Record<string, unknown> | ToolError> {
+export async function updateAdminPolicy(actor: RbacUser, key: string, value: boolean) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -610,7 +632,7 @@ export async function listAdminAiProviders(actor: RbacUser) {
   return adminPayload({ providers, count: providers.length });
 }
 
-export async function createAdminAiProvider(actor: RbacUser, input: Record<string, unknown>) {
+export async function createAdminAiProvider(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -636,11 +658,7 @@ export async function createAdminAiProvider(actor: RbacUser, input: Record<strin
   }
 }
 
-export async function updateAdminAiProvider(
-  actor: RbacUser,
-  providerId: string,
-  input: Record<string, unknown>,
-) {
+export async function updateAdminAiProvider(actor: RbacUser, providerId: string, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -671,7 +689,7 @@ export async function deleteAdminAiProvider(actor: RbacUser, providerId: string)
   return { ok: true, providerId };
 }
 
-export async function createAdminAiModel(actor: RbacUser, input: Record<string, unknown>) {
+export async function createAdminAiModel(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -690,11 +708,7 @@ export async function createAdminAiModel(actor: RbacUser, input: Record<string, 
   return { ok: true, model };
 }
 
-export async function updateAdminAiModel(
-  actor: RbacUser,
-  modelId: string,
-  input: Record<string, unknown>,
-) {
+export async function updateAdminAiModel(actor: RbacUser, modelId: string, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -748,17 +762,11 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
-  const { findRunningCronRun, startCronRun } = await import("~/lib/db.cron-jobs.server");
-  const alreadyRunning = await findRunningCronRun(jobName);
-  if (alreadyRunning) {
-    return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
+  const result = await startCronRun(jobName);
+  if (result.created) {
+    triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
   }
-
-  const { runId, created } = await startCronRun(jobName);
-  if (created) {
-    triggerCronJobAsync(jobName, job.script, runId);
-  }
-  return { ok: true, runId, jobName, reused: !created };
+  return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 
 export async function updateAdminCronSchedule(
@@ -796,16 +804,23 @@ export async function getAdminDashboardStats(actor: RbacUser) {
   const week = new Date();
   week.setDate(week.getDate() - 7);
 
-  const [chatCount, chatCountWeek, materialCount, studentCount, instructorCount, totalUsers, activeCourseCount] =
-    await Promise.all([
-      prisma.chat.count(),
-      prisma.chat.count({ where: { createdAt: { gte: week } } }),
-      prisma.courseMaterial.count({ where: { deletedAt: null } }),
-      prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
-      prisma.user.count({ where: { role: "INSTRUCTOR" } }),
-      prisma.user.count(),
-      prisma.course.count({ where: { isActive: true, deletedAt: null } }),
-    ]);
+  const [
+    chatCount,
+    chatCountWeek,
+    materialCount,
+    studentCount,
+    instructorCount,
+    totalUsers,
+    activeCourseCount,
+  ] = await Promise.all([
+    prisma.chat.count(),
+    prisma.chat.count({ where: { createdAt: { gte: week } } }),
+    prisma.courseMaterial.count({ where: { deletedAt: null } }),
+    prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
+    prisma.user.count({ where: { role: "INSTRUCTOR" } }),
+    prisma.user.count(),
+    prisma.course.count({ where: { isActive: true, deletedAt: null } }),
+  ]);
 
   return adminPayload({
     stats: {
@@ -829,6 +844,26 @@ function resolveVllmBaseUrl(raw: string): string {
 }
 
 /** ADMIN — list models from local Ollama (GET /api/ollama-models). */
+/**
+ * The `/api/tags` fields this tool surfaces. Ollama sends more per entry and is
+ * free to omit any of these, so every field is optional; a payload whose
+ * `models` is not an array of objects is a genuine protocol mismatch and fails.
+ */
+const OllamaTagsSchema = z.object({
+  models: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        model: z.string().optional(),
+        size: z.number().optional(),
+        modified_at: z.string().optional(),
+      }),
+    )
+    // `nullish`, not `optional`: an Ollama host with nothing pulled answers
+    // `{"models": null}`, which is "no models", not a protocol mismatch.
+    .nullish(),
+});
+
 export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -852,11 +887,12 @@ export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
     if (!response.ok) {
       return { error: `OLLAMA_FETCH_FAILED: ${response.status} ${response.statusText}` };
     }
-    const data = (await response.json()) as {
-      models?: Array<Record<string, unknown>>;
-    };
+    const tags = OllamaTagsSchema.safeParse(await response.json());
+    if (!tags.success) {
+      return { error: "OLLAMA_FETCH_FAILED: unexpected /api/tags payload" };
+    }
     const models =
-      data.models?.map((model) => ({
+      tags.data.models?.map((model) => ({
         name: model.name,
         model: model.model ?? model.name,
         size: model.size,
@@ -881,7 +917,10 @@ export async function listAdminVllmModels(actor: RbacUser) {
   const vllmPort = process.env.VLLM_PORT || "8001";
   const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    return { error: "VLLM_API_KEY_NOT_CONFIGURED" };
+  }
 
   try {
     const modelsUrl = `${baseUrl}/models`;

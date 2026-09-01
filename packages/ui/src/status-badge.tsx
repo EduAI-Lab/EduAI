@@ -1,11 +1,16 @@
 export interface StatusBadgeProps {
-  active: boolean
-  activeLabel?: string
-  inactiveLabel?: string
-  className?: string
+  active: boolean;
+  activeLabel?: string;
+  inactiveLabel?: string;
+  className?: string;
 }
 
-export function StatusBadge({ active, activeLabel = "Active", inactiveLabel = "Inactive", className }: StatusBadgeProps) {
+export function StatusBadge({
+  active,
+  activeLabel = "Active",
+  inactiveLabel = "Inactive",
+  className,
+}: StatusBadgeProps) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full${className ? ` ${className}` : ""}`}
@@ -15,10 +20,10 @@ export function StatusBadge({ active, activeLabel = "Active", inactiveLabel = "I
       }}
     >
       <span
-        className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        className="w-[5px] h-[5px] rounded-full shrink-0"
         style={{ background: active ? "var(--color-success-500)" : "var(--muted-foreground)" }}
       />
       {active ? activeLabel : inactiveLabel}
     </span>
-  )
+  );
 }

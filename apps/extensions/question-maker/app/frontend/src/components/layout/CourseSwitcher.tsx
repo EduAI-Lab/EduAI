@@ -3,11 +3,23 @@
  * `@eduai/ui` CourseSwitcher (issue #764), so Core, QuestionMaker, and AI Tutor
  * share one switcher. Carries the active workspace tab across the switch.
  */
-import { useNavigate, useSearchParams } from 'react-router';
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from '@eduai/ui';
-import { useDisplayCourses } from '@/hooks/useDisplayCourses';
+import { useLocation, useNavigate, useSearchParams } from "react-router";
+import {
+  CourseSwitcher as SharedCourseSwitcher,
+  courseSwitcherSublabel,
+  type CourseSwitcherOption,
+} from "@eduai/ui";
+import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 
-const TAB_SAFE = new Set(['overview', 'questions', 'assessments', 'topics', 'canvas']);
+const TAB_SAFE = new Set(["overview", "questions", "banks", "assessments", "topics", "canvas"]);
+
+/** Infer workspace tab from deep routes that don't carry `?tab=`. */
+function tabFromPathname(pathname: string): string | null {
+  if (/\/banks(\/|$)/.test(pathname)) return "banks";
+  if (/\/assessments(\/|$)/.test(pathname)) return "assessments";
+  if (/\/questions(\/|$)/.test(pathname)) return "questions";
+  return null;
+}
 
 interface CourseSwitcherProps {
   courseId: number;
@@ -15,17 +27,27 @@ interface CourseSwitcherProps {
 
 export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { displayCourses } = useDisplayCourses();
 
   // Carry the active tab across the switch when it's a real workspace tab.
-  const tabParam = searchParams.get('tab');
-  const targetTab = tabParam && TAB_SAFE.has(tabParam) ? tabParam : 'overview';
+  // Deep routes (bank detail, assessment builder) have no `?tab=` — infer it.
+  const tabParam = searchParams.get("tab");
+  const inferred = tabFromPathname(pathname);
+  const targetTab =
+    tabParam && TAB_SAFE.has(tabParam)
+      ? tabParam
+      : inferred && TAB_SAFE.has(inferred)
+        ? inferred
+        : "overview";
 
+  // The code alone repeats across terms, so the row's second line carries the
+  // term next to the name — two offerings of one course are otherwise identical.
   const options: CourseSwitcherOption[] = displayCourses.map((c) => ({
     id: c.id,
     label: c.code || c.name,
-    sublabel: c.code ? c.name : undefined,
+    sublabel: courseSwitcherSublabel(c),
   }));
 
   // Seed the current course when the loaded list doesn't contain it (still
@@ -40,8 +62,8 @@ export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
       courses={options}
       currentId={courseId}
       onSelect={(id) => navigate(`/courses/${id}?tab=${targetTab}`)}
-      onOpenCurrent={() => navigate(`/courses/${courseId}?tab=overview`)}
-      onViewAll={() => navigate('/courses')}
+      onOpenCurrent={() => navigate(`/courses/${courseId}?tab=${targetTab}`)}
+      onViewAll={() => navigate("/courses")}
     />
   );
 }

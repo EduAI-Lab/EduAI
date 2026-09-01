@@ -5,13 +5,13 @@
  * part of the dashboard redesign, #938). Entirely driven by real per-course
  * `progress` data from `api.listCourses()` — no fabricated numbers.
  */
-import { useNavigate } from 'react-router';
-import { IconBooks, IconArrowRight } from '@tabler/icons-react';
-import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
-import type { Course } from '~/lib/types';
-import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
-import { findResumeCourse, inProgressCourses } from './dashboard-helpers';
+import { useNavigate } from "react-router";
+import { IconBooks, IconArrowRight } from "@tabler/icons-react";
+import { Card, CardContent, courseHeroBackgroundStyle } from "@eduai/ui";
+import type { Course } from "~/lib/types";
+import { accentForCourse, courseCode, courseName } from "~/lib/course-display";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
+import { findResumeCourse, inProgressCourses } from "./dashboard-helpers";
 
 type ContinueLearningPanelProps = {
   courses: Course[];
@@ -76,7 +76,7 @@ export function ContinueLearningPanel({
         type="button"
         onClick={() => navigate(`${coursesBaseHref}/courses/${resumeCourse.id}`)}
         style={courseHeroBackgroundStyle(accent)}
-        className="group relative w-full cursor-pointer overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group relative w-full cursor-pointer overflow-hidden rounded-xl p-5 text-left text-white shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <div className="relative flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -84,9 +84,11 @@ export function ContinueLearningPanel({
               <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-white/70">
                 {courseCode(resumeCourse)}
               </div>
-              <h3 className="text-lg font-semibold leading-snug text-white">{courseName(resumeCourse)}</h3>
+              <h3 className="text-lg font-semibold leading-snug text-white">
+                {courseName(resumeCourse)}
+              </h3>
             </div>
-            <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
               In progress
             </span>
@@ -109,10 +111,14 @@ export function ContinueLearningPanel({
 
           <span
             style={{ color: ctaTextColor }}
-            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
+            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
           >
             Continue learning
-            <IconArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
+            <IconArrowRight
+              size={16}
+              aria-hidden="true"
+              className="transition-transform group-hover:translate-x-0.5"
+            />
           </span>
         </div>
       </button>
@@ -131,7 +137,7 @@ export function ContinueLearningPanel({
                   className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
                 >
                   <span
-                    className="h-9 w-1 flex-shrink-0 rounded-full"
+                    className="h-9 w-1 shrink-0 rounded-full"
                     style={{ background: otherAccent }}
                     aria-hidden="true"
                   />
@@ -141,7 +147,7 @@ export function ContinueLearningPanel({
                     </div>
                     <div className="truncate text-xs text-muted-foreground">{course.title}</div>
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted sm:block">
                       <div
                         className="h-full rounded-full"

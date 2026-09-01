@@ -73,7 +73,9 @@ describe("units.$department.chats loader", () => {
       user: { id: "ua-1", role: "UNIT_ADMIN" },
     } as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ authorizedUnits: ["COSC"] } as never);
-    vi.mocked(prisma.discipline.findUnique).mockResolvedValue({ name: "Computer Science" } as never);
+    vi.mocked(prisma.discipline.findUnique).mockResolvedValue({
+      name: "Computer Science",
+    } as never);
 
     const result = await loader(makeArgs());
     expect(result).toEqual({

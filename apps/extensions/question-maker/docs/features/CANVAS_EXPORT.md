@@ -2,6 +2,12 @@
 
 This guide explains how to export assessments from Question Maker to Canvas LMS as quizzes.
 
+> **Since #1084, your Canvas credentials are stored and encrypted by EduAI Core, not by Question
+> Maker.** The in-app "Connect Canvas" flow described below is unchanged from the user's point of
+> view, but every Canvas API call it triggers is proxied through Core
+> (`app/backend/src/services/canvasService.js` → Core's `/api/canvas/*` routes) — Question Maker never
+> talks to Canvas directly and has no local table for your API key.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -116,22 +122,25 @@ Now you're ready to export your assessment to Canvas.
 
 1. **Open Question Maker**
 
-   - Log in to your Question Maker account
-   - Navigate to the **Assessments** page
+   - Question Maker uses your existing Core session — there's no separate Question Maker login.
+   - Open a course (`/courses/:courseId`) and go to its **Assessments** tab, or navigate straight to
+     `/courses/:courseId/assessments/:assessmentId`.
 
 2. **Select Assessment**
    - Click on the assessment you want to export
    - Ensure the assessment has:
      - At least one section
-     - Questions added to sections
-     - Variants for each question
+     - Questions (variants) added to sections
+     - No draft (unreviewed) variants in any section — export is blocked until every variant in the
+       assessment is marked **Reviewed**
 
 ### 4.2 Initiate Export
 
 1. **Click Export Button**
 
-   - In the assessment view page, click the **"Export to Canvas"** button
-   - Located in the top-right area, next to the "Delete Assessment" button
+   - On the assessment page, click the **"Export"** button in the header (it opens a menu with
+     "Send to Canvas", "Download as Word (.docx)", and "Download as text (.txt)") and choose
+     **"Send to Canvas"**.
 
 2. **Connect Canvas Account (First Time)**
 
@@ -155,33 +164,23 @@ Now you're ready to export your assessment to Canvas.
    - Click **"Connect Canvas"** (or **"Enable Test Mode"** for test mode)
    - Wait for connection confirmation
 
-3. **Select Canvas Course**
+3. **Canvas course is not a picker — it's whatever this course is linked to**
 
-   After connecting:
+   - There is no "choose a Canvas course" step in the export dialog. The dialog shows the Canvas
+     course this local course is already mapped to (`GET /api/canvas/mapping/:courseId`); if there is
+     no mapping yet, it tells you to sync the course from Canvas first and stops there.
+   - The mapping is created the first time you import a quiz or bank from Canvas into this course, or
+     export an assessment from it, and is then immutable for that course.
 
-   a. **View Available Courses**
+4. **Choose whether to publish, then export**
 
-   - Question Maker will load your Canvas courses
-   - You'll see a dropdown list of courses where you have instructor access
+   a. **"Publish in Canvas" checkbox** — off by default. A published Canvas quiz is visible to
+      students immediately; leave this unchecked to land an unpublished draft you publish from Canvas
+      yourself when ready.
 
-   b. **Select Target Course**
+   b. **Click "Export to Canvas"**
 
-   - Choose the course where you want to create the quiz
-   - Course names appear as: `[Course Code] - [Course Name]`
-   - Example: `COSC 211 - Machine Architecture`
-
-4. **Export Assessment**
-
-   a. **Review Selection**
-
-   - Verify you've selected the correct course
-   - The assessment name will be used as the quiz title
-
-   b. **Click Export**
-
-   - Click **"Export to Canvas"** button
-   - Wait for the export process to complete
-   - Progress indicators will show during export
+   - Wait for the export process to complete.
 
 5. **Export Confirmation**
 
@@ -199,19 +198,25 @@ The export process creates:
 - **Quiz**: A new quiz in Canvas with:
 
   - Title: Same as your assessment name
-  - Description: Assessment description (if provided)
-  - Type: Assignment quiz
-  - Status: Unpublished (you can publish it later in Canvas)
+  - Description: Assessment description (if provided), or a default "Exported from Question Maker"
+  - Type: `assignment` (a graded quiz — Canvas lists it under both Quizzes and Assignments once
+    published)
+  - Status: published or unpublished depending on the "Publish in Canvas" checkbox (unchecked by
+    default)
 
-- **Questions**: Each question variant becomes a Canvas question:
+- **Questions**: Each variant becomes a Canvas question, built from its structured fields (not by
+  parsing the question text):
 
-  - **MCQ Questions**: Converted to multiple choice questions
-    - Options parsed from question text (A, B, C, D format)
-    - Correct answer marked based on variant answer field
-  - **Short Answer Questions**: Converted to short answer questions
-    - Answer text from variant answer field
+  - **MCQ**: `multiple_choice_question`, built from the variant's `choices` array (each
+    `{ letter, text }`) with the correct one flagged from `answer`
+  - **Short Answer (SA)**: `short_answer_question`, using the variant's `answer` text
+  - **Long Answer (LA)**: `essay_question`, using the variant's `answer` text as a sample answer
 
-- **Question Order**: Questions maintain their section order and display order
+- **Question order**: preserved from the section's display order.
+- **If anything fails partway through** (a question create call errors after the quiz and some
+  questions already exist in Canvas), Question Maker deletes the partially-created Canvas quiz rather
+  than leaving an incomplete one behind. If that cleanup call itself fails, the response says so
+  explicitly so you know to remove the quiz by hand.
 
 ## Step 5: Find Exported Quiz in Canvas
 

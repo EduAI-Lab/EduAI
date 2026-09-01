@@ -2,296 +2,169 @@
 
 ## Overview
 
-The AI Tutor uses a two-agent system to ensure pedagogically sound responses. Instead of a single AI responding to students, we have:
+The AI tutor uses a two-agent system to keep responses pedagogically sound. Instead of a single model answering the student directly, every turn goes through:
 
-- **AI1 (Primary Tutor)**: Interacts directly with students, presenting scenarios and responding to questions
-- **AI2 (Supervisor)**: Reviews AI1's responses before they reach the student, ensuring they guide rather than give answers
+- **Tutor** — drafts the reply the student will see (Socratic explanation, hint, or the instructor's custom prompt).
+- **Supervisor** — reviews the tutor's draft before it reaches the student, checking that it guides rather than gives the answer away.
 
-### Why This Matters
+### Why this matters
 
-Traditional AI tutors can accidentally reveal answers when students ask directly. Our supervisor agent acts as a safety net, catching responses that:
-- Directly reveal answers or solutions
-- Confirm if a student's answer is correct/incorrect
-- Do the thinking for the student instead of guiding them
+A tutoring model asked directly "just tell me the answer" will often do exactly that. The supervisor is a safety net that catches a draft that:
 
-### How It Works (Simple)
+- Directly reveals the answer or the correct MCQ option.
+- Explicitly confirms whether the student's own answer is correct or incorrect.
+- Does the student's thinking for them instead of guiding them there.
+
+### How it works
 
 ```
-Student asks question
+Student sends a message
         |
         v
-   AI1 generates response
+  Tutor drafts a response
         |
         v
-   AI2 reviews response
+  Supervisor reviews it (sees the answer key; the student and tutor never do)
         |
     +---+---+
     |       |
  Approved  Rejected
     |       |
     v       v
- Return   AI1 revises response
- to         (up to 3 attempts)
- student        |
-                v
-           If still rejected:
-           Generic fallback message
+ Return    Tutor redrafts, with the supervisor's
+ to          feedback prepended to its next message
+ student            |
+                     v
+              Still rejected after maxSupervisorIterations passes:
+              return the supervisor's own safe fallback text
 ```
 
-## Technical Implementation
+This lives almost entirely in one file: [`server/src/services/aiGuidance.js`](../server/src/services/aiGuidance.js). Every claim below was checked against that file directly — line numbers aren't cited because they drift with every edit, but the exported function names are stable.
 
-### Files Modified
+## Where each mode gets its prompt
 
-| File | Purpose |
-|------|---------|
-| `server/prisma/seed.ts` | Added `supervisor-prompt` template |
-| `server/src/services/aiGuidance.js` | Core supervisor logic |
+| Mode | Route | Prompt source | Notes |
+| --- | --- | --- | --- |
+| Teach | `POST /api/activities/:id/teach` | `PromptTemplate` row with slug `learning-prompt` | Open-ended explanation, scoped to a topic. |
+| Guide | `POST /api/activities/:id/guide` | `PromptTemplate` row with slug `exercise-prompt` | Includes the question, MCQ options, and the student's current answer attempt. |
+| Custom | `POST /api/activities/:id/custom` | `activity.customPrompt` (instructor-authored, per activity) | Requires both `enableCustomMode` and a non-empty `customPrompt`. |
 
-### Architecture
+All three funnel through the same `generateWithSupervisor()` → `supervisedGenerate()` pipeline; the only thing that differs between them is which system prompt and user-message builder gets closed over. `learning-prompt`, `exercise-prompt`, and `supervisor-prompt` must exist as seeded `PromptTemplate` rows (`server/prisma/seed.ts`) — a missing row throws and the route returns a generic "AI study buddy not available right now" response, not a 500 stack trace.
 
-#### 1. Supervisor Prompt Template
+## The supervisor's verdict
 
-Stored in database (`PromptTemplate` table) with slug `supervisor-prompt`:
+`callSupervisor()` fetches the `supervisor-prompt` template and asks it to review the tutor's draft against a **visible** context (the same prompt the tutor saw) and a **hidden** context the tutor never sees, which adds the student's knowledge level and — for guide/custom — the formatted answer key (`formatAnswerKey()`). This is how the supervisor can tell a draft is leaking the answer without ever handing the answer to the tutor.
 
-```
-You are a pedagogical supervisor reviewing a tutor's response to a student.
+The supervisor must respond with JSON shaped:
 
-RULES the tutor MUST follow:
-1. NEVER directly reveal answers, solutions, or correct options
-2. Guide via questions, hints, analogies — not direct statements
-3. Never explicitly confirm "correct" or "incorrect"
-4. Be encouraging but don't do the thinking for the student
-5. If student asks for the answer directly, redirect them to think critically
-
-Respond with ONLY valid JSON:
-{"approved": true}
-OR
-{"approved": false, "reason": "...", "suggestion": "..."}
-```
-
-#### 2. Core Functions
-
-**`callSupervisor()`** - Calls EduAI with supervisor prompt to review tutor response. Includes a retry on invalid JSON and a recovery path:
-
-```javascript
-async function callSupervisor({ studentMessage, studentContext, tutorResponse, modelId, userApiKey }) {
-  // attempt once; if JSON parse fails, retry with parse error details
-  const first = await attemptParse();
-  if (first.ok) return first.verdict;
-
-  const second = await attemptParse(first.parseError.message);
-  if (second.ok) return second.verdict;
-
-  // if still invalid, mark parseFailed so we can fall back to tutor recovery
-  return { approved: false, parseFailed: true, reason: 'Supervisor response invalid after retry' };
+```json
+{
+  "approved": true
 }
 ```
 
-**`generateWithSupervisor()`** - High-level wrapper used by all chat modes:
+or
 
-```javascript
-async function generateWithSupervisor({
-  systemPrompt,
-  buildUserMessage,  // Function returning user message string
-  message,           // Original student message
-  modelId, apiKey, chatId, messageId, proxyUser, courseCode,
-}) {
-  const context = {
-    originalStudentMessage: message,
-    modelId,
-    userApiKey: apiKey,
-    chatId,
-    lastFeedback: null,
-  };
-
-  const generateFn = async (currentChatId, isRevision) => {
-    let userMessage = buildUserMessage();
-    
-    // Prepend supervisor feedback on revision attempts
-    if (isRevision && context.lastFeedback) {
-      userMessage = `[REVISION NEEDED: ${context.lastFeedback.reason}. Suggestion: ${context.lastFeedback.suggestion}. Guide without revealing answers.]\n\n` + userMessage;
-    }
-
-    return callEduAI({ systemPrompt, userMessage, modelId, userApiKey: apiKey, chatId: currentChatId, ... });
-  };
-
-  return supervisedGenerate(generateFn, context);
+```json
+{
+  "approved": false,
+  "reason": "why this draft is a problem",
+  "feedbackToTutor": "what the tutor should change on its next attempt",
+  "safeResponseToStudent": "a safe, generic response to show the student if every retry still fails"
 }
 ```
 
-**`supervisedGenerate()`** - Internal loop that handles revision iterations:
+`normalizeSupervisorVerdict()` fills in sane defaults for any missing field, so a partially-valid verdict is still usable. Models routinely wrap this in a ` ```json ` fence despite the instruction not to — `stripMarkdownFence()` strips it before `JSON.parse`.
 
-```javascript
-async function supervisedGenerate(generateFn, context) {
-  for (let iteration = 0; iteration < MAX_SUPERVISOR_ITERATIONS; iteration++) {
-    const tutorResult = await generateFn(currentChatId, iteration > 0);
-    const verdict = await callSupervisor({ ...context, tutorResponse: tutorResult.message });
+### When the JSON doesn't parse
 
-    if (verdict.parseFailed) {
-      // one recovery pass without supervisor
-      const recovery = await generateFn(currentChatId, true);
-      return { message: recovery.message, chatId: recovery.chatId || currentChatId };
-    }
+`callSupervisor()` tries once, and if `JSON.parse` throws, tries a **second and final** time with the parse error appended to the prompt so the model can self-correct. If that second attempt *also* fails to parse, the function does **not** fall back to a tutor-only recovery pass — it synthesizes a conservative verdict:
 
-    if (verdict.approved) return { message: tutorResult.message, chatId: currentChatId };
-
-    context.lastFeedback = { reason: verdict.reason, suggestion: verdict.suggestion };
-  }
-
-  return { message: FALLBACK_MESSAGE, chatId: currentChatId };
+```js
+{
+  approved: false,
+  reason: "Supervisor response invalid after retry",
+  feedbackToTutor: "Revise the reply to avoid revealing the answer and stay focused on a single helpful hint.",
+  safeResponseToStudent: "Let's slow down and focus on one clue at a time. …",
+  parseFailed: true,
 }
 ```
 
-### Supervisor context
+That synthesized verdict is then treated exactly like a genuine rejection: it goes back into the same iteration loop below (the tutor gets the canned `feedbackToTutor` and redrafts, or — if the iteration budget is already exhausted — the canned `safeResponseToStudent` is what the student sees). There is no separate "recovery pass without supervision" path; a two-time parse failure just behaves like two rejections in a row.
 
-- Supervisor sees the full question/options/knowledge context (not just the raw student message) plus the tutor draft, so it can detect answer leaks like “option C is correct.”
-- Supervisor also receives “hidden context” containing the answer key (only the supervisor sees this, never the student or tutor).
-- The dual-loop is controlled by the **admin AI model policy** (`dualLoopEnabled`) configured via the admin settings panel at `/admin`. The `AI_SUPERVISOR_ENABLED` env var is no longer used at runtime.
+## The iteration loop
 
-### Failure handling
+`supervisedGenerate(generateFn, context)` is the actual driver:
 
-- If the supervisor returns non-JSON, we retry once, including the parse error in the prompt.
-- If the second attempt is still invalid, we do a single tutor recovery pass with a revision note and return that to the student (no further supervisor checks).
+1. If the admin policy's `dualLoopEnabled` is `false` (or the supervisor's own provider has no usable key — see below), the tutor's first draft is returned as-is, with `trace.finalOutcome = "single_pass"`. No supervisor call happens at all.
+2. Otherwise, for up to `maxSupervisorIterations` passes (admin-configurable 1–5, default 3):
+   - Call the tutor. On the first pass this sends the plain user message; on every later pass the previous verdict's `feedbackToTutor` is prepended as `[SUPERVISOR FEEDBACK: ...]\n\n<message>`, and a **fresh** `messageId` is generated (only the very first turn reuses the caller-supplied one) so EduAI doesn't dedupe the revision as the same turn.
+   - Call `callSupervisor()` on that draft.
+   - If `verdict.approved`, return the tutor's draft immediately, `finalOutcome: "approved"`.
+   - Otherwise, remember `verdict.safeResponseToStudent` as the current fallback and loop again.
+3. If the loop exhausts every iteration without an approval, return the **last** verdict's `safeResponseToStudent` — never the tutor's last unapproved draft — with `finalOutcome: "safe_fallback"`. The system would rather be vague than risk showing an answer that was never actually cleared.
+4. If the supervisor call itself throws (network failure, EduAI outage, etc.) mid-loop, `supervisedGenerate` does not swallow it — it wraps the cause in a new `Error("AI study buddy encountered an issue reviewing the response…")` and throws. Every one of `generateTeachResponse` / `generateGuideResponse` / `generateCustomResponse` wraps its own call to `generateWithSupervisor` in a try/catch and, on **any** thrown error (this one included), returns a fixed `"AI study buddy not available right now. Please try again later."` message to the student rather than propagating the internal error text — so the more alarming-sounding "encountered an issue reviewing the response" string is never actually what a student sees; it only appears in server logs, via `getSafeAiErrorMetadata()`.
 
-#### 3. Integration with Chat Modes
+Every iteration's tutor draft and supervisor verdict is appended to a `trace` object, which the route handler persists as an `AiInteractionTrace` row (see below) — this is what backs the admin AI-oversight dashboard (`GET /api/admin/ai-traces`, `AiOversightPanel.tsx`).
 
-All three chat modes use `generateWithSupervisor()`:
+## Model and key resolution
 
-| Mode | Function | Prompt Source |
-|------|----------|---------------|
-| Teach | `generateTeachResponse()` | `learning-prompt` template |
-| Guide | `generateGuideResponse()` | `exercise-prompt` template |
-| Custom | `generateCustomResponse()` | `activity.customPrompt` field |
+- The tutor model comes from the request (`payload.modelId`), validated server-side against the admin's `allowedTutorModelIds` allow-list (`services/aiModelPolicy.js#resolveTutorModelSelection`) before this file is ever reached — a request for a model the admin didn't allow-list is rejected upstream with `403`, regardless of which BYOK key the student holds.
+- The supervisor model comes from the admin policy's `defaultSupervisorModelId`, falling back to `defaultTutorModelId`, falling back to the hardcoded `DEFAULT_TUTOR_MODEL` (`google:gemini-2.5-flash`) — see `resolveSupervisorSettings()`.
+- UBC-hosted providers (`vllm`, `ollama`) are served with the deployment's own key and never need a student-supplied one. Every other provider is BYOK: the tutor call requires the caller to hold a key for the tutor model's provider, and the request 400s before any model runs if they don't. A supervisor call is skipped (dual-loop effectively forced off for that turn) only when the supervisor's own provider is BYOK and the caller holds no key for it — a missing supervisor key never blocks the tutor draft from reaching the student unsupervised in that specific case.
+- The full map of provider→key the student holds (`apiKeys`) is forwarded to EduAI on every call, not just the selected provider's key, so Core's own fleet-down fallback can switch providers mid-request.
 
-Each function provides its system prompt and user message builder:
-
-```javascript
-export async function generateTeachResponse({ activity, topicName, message, modelId, apiKey, chatId, ... }) {
-  const template = await getPromptTemplateBySlug('learning-prompt');
-  const resolvedTopicName = topicName || activity.mainTopic?.name || 'the subject';
-
-  return await generateWithSupervisor({
-    systemPrompt: buildSystemPrompt(template.systemPrompt, { topic: resolvedTopicName, knowledgeLevel }),
-    buildUserMessage: () => buildTeachUserMessage({ topicName: resolvedTopicName, message }),
-    message,
-    modelId, apiKey, chatId, ...
-  });
-}
-```
-
-### Data Flow
+## Data flow
 
 ```
 Frontend (StudentAiChat.tsx)
     |
-    | POST /api/activities/:id/guide
-    | { message, knowledgeLevel, modelId, apiKey }
+    | POST /api/activities/:id/teach|guide|custom
+    | { message, knowledgeLevel, modelId, apiKey, apiKeys, chatId, messageId }
     v
-Backend Route (activities.js)
+Route handler (server/src/routes/activities.js)
+    | role + course-enrollment + published-content checks
+    | generateTeachResponse() / generateGuideResponse() / generateCustomResponse()
+    v
+aiGuidance.js: generateWithSupervisor() -> supervisedGenerate()
     |
-    | generateGuideResponse()
-    v
-aiGuidance.js
+    +---> callEduAI() [tutor]  --> EduAI /completion endpoint (non-streaming)
+    +---> callSupervisor() [supervisor] --> same endpoint, different system prompt
     |
-    +---> callEduAI() [AI1 - Tutor]
-    |         |
-    |         v
-    |     EduAI /chat endpoint
-    |         |
-    |         v
-    +---> callSupervisor() [AI2 - Supervisor]
-    |         |
-    |         v
-    |     EduAI /chat endpoint
-    |         |
-    |     Parse JSON verdict
-    |         |
-    +----<----+
-    |    (loop if rejected, max 3x)
+    | (loop while rejected, up to maxSupervisorIterations)
     v
-Return approved response to frontend
+Route persists an AiChatSession + AiInteractionTrace row, then returns
+{ message, chatId } to the frontend
 ```
 
-### Configuration
+The EduAI call is **not streaming** (`streaming: false` in the request body) — the frontend shows a "Thinking…" indicator and swaps in the full response once the whole tutor↔supervisor exchange settles, not token-by-token.
 
-| Setting | Default | Configurable | Purpose |
-|---------|---------|-------------|---------|
-| `dualLoopEnabled` | `true` | Admin AI model policy | Enables/disables the supervisor loop |
-| `maxSupervisorIterations` | `3` | Admin AI model policy (1-5) | Max revision attempts before fallback |
-| `defaultSupervisorModel` | Same as tutor | Admin AI model policy | Model used for supervisor reviews |
-| `SUPERVISOR_ERROR_MESSAGE` | "AI study buddy encountered an issue..." | Code constant | Shown if supervisor call fails |
-| `FALLBACK_MESSAGE` | "I'm having trouble formulating..." | Code constant | Shown after max iterations |
+## Configuration
 
-Admins configure these settings via the **Settings** tab in the admin panel (`/admin`), under **AI Model Policy**.
+| Setting | Default | Configured via | Purpose |
+| --- | --- | --- | --- |
+| `dualLoopEnabled` | `true` | Admin AI model policy (`/admin` → AI settings) | Off skips the supervisor entirely for every request. |
+| `maxSupervisorIterations` | `3` | Admin AI model policy, clamped 1–5 | Revision attempts before falling back to the supervisor's safe text. |
+| `defaultSupervisorModelId` | falls back to the tutor default | Admin AI model policy | Model used for supervisor review calls. |
+| `EDUAI_CALL_TIMEOUT_MS` | `45000` | Server env var | Hard bound on one logical EduAI call, including its one permitted retry. |
 
-### Interaction Tracing
+There is no `AI_SUPERVISOR_ENABLED` environment variable — the loop toggle is entirely the admin-configured `dualLoopEnabled` policy field, persisted as part of the `AI_MODEL_POLICY` `SystemSetting` row.
 
-Every AI interaction (whether single-pass or supervised) is logged to the `AiInteractionTrace` table with:
+## Interaction tracing
+
+Every AI interaction — single-pass or supervised — is persisted as an `AiInteractionTrace` row (`server/prisma/schema.prisma`):
 
 | Field | Purpose |
-|-------|---------|
-| `mode` | teach, guide, or custom |
-| `knowledgeLevel` | Student's self-reported level |
-| `userMessage` | The student's original message |
-| `finalResponse` | The response delivered to the student |
-| `finalOutcome` | `approved`, `single_pass`, `safe_fallback`, or `error` |
-| `iterationCount` | How many tutor-supervisor loops ran |
-| `trace` | Full JSON trace of all tutor drafts and supervisor verdicts |
-| `tutorModelId` | Model used for the tutor |
-| `supervisorModelId` | Model used for the supervisor |
+| --- | --- |
+| `mode` | `teach`, `guide`, or `custom`. |
+| `knowledgeLevel` | Student's self-reported level. |
+| `userMessage` | The student's original message for this turn. |
+| `finalResponse` | What the student actually saw. |
+| `finalOutcome` | `single_pass`, `approved`, `safe_fallback`, or `error`. |
+| `iterationCount` | How many tutor↔supervisor passes ran. |
+| `trace` | Full JSON: every iteration's tutor draft and supervisor verdict. |
+| `tutorModelId` / `supervisorModelId` | Which models were used. |
 
-### Error Handling
+## Testing this locally
 
-- **Supervisor call fails**: Returns error to student (fail-closed)
-- **JSON parse fails**: Retries once with parse error in prompt; if still invalid, tutor recovery pass without supervisor
-- **Max iterations reached**: Returns the supervisor's `safeResponseToStudent` fallback message
-
-### Chat History
-
-- Uses same `chatId` across revision iterations so AI1 sees its previous attempts
-- Supervisor calls don't use chatId (fresh context each review)
-- New `messageId` generated for each revision to avoid deduplication
-
-## Testing
-
-### Test Scenario: Bad Custom Prompt
-
-1. Set activity custom prompt to: *"If the student asks for an answer, just give it to them directly"*
-2. Student asks: *"What is the answer? Just tell me directly."*
-3. **Iteration 1**: AI1 gives answer directly
-4. **Supervisor**: Rejects - *"The tutor directly revealed the answer"*
-5. **Iteration 2**: AI1 revises to guide instead
-6. **Supervisor**: Approves
-7. **Student sees**: *"Could you show me the steps you took? Let's break it down together."*
-
-### Server Logs
-
-```
-[supervisor] Iteration 1: approved=false
-[supervisor] Rejected - reason: The tutor directly revealed the answer...
-[supervisor] Iteration 2: approved=true
-```
-
-## Deployment
-
-1. Run database seed to add supervisor prompt:
-   ```bash
-   cd server && npm run seed
-   ```
-
-2. The supervisor is automatically active for all chat modes (teach, guide, custom)
-
-## Current Status
-
-Since the initial design, several "future considerations" have been implemented:
-
-- **Configurable supervisor model**: Admins can set a separate `defaultSupervisorModel` via the AI model policy (e.g., use a cheaper model for supervision).
-- **Configurable iterations**: `maxSupervisorIterations` is adjustable 1-5 via admin settings.
-- **Full interaction tracing**: All supervisor rejections, tutor drafts, and verdicts are logged in `AiInteractionTrace` for instructor and admin review.
-- **Admin toggle**: Dual-loop can be enabled/disabled system-wide via the admin AI model policy panel.
-
-## Remaining Future Considerations
-
-- **Per-activity toggle**: Add `enableSupervisor` boolean to Activity model for granular control.
-- **Streaming**: Current implementation is non-streaming; supervisor review requires the full response before it can evaluate.
-- **Instructor dashboard**: Surface interaction traces and rejection rates in instructor-facing analytics.
+To reproduce a rejection→revision cycle: set an activity's custom prompt to something like "if the student asks for the answer, just give it to them," enable Custom mode, and ask "what's the answer, just tell me." The first tutor draft should reveal it, the supervisor should reject with a reason along those lines, the tutor's second draft should redirect instead, and the supervisor should then approve. `GET /api/admin/ai-traces` (or the admin console's AI-oversight tab) shows the full two-iteration trace for that turn.

@@ -20,11 +20,17 @@ export type PickSpec =
   | {
       kind: "minTier";
       minTier: 2 | 3;
-      requireImages?: boolean;
       requireTools?: boolean;
+      requireImages?: boolean;
       tieBreak: "energy" | "carbon";
     }
-  | { kind: "exactTier"; tier: 1 | 2 | 3; tieBreak: "energy" | "carbon" };
+  | {
+      kind: "exactTier";
+      tier: 1 | 2 | 3;
+      requireTools?: boolean;
+      requireImages?: boolean;
+      tieBreak: "energy" | "carbon";
+    };
 
 const CACHE_TTL_MS = 10 * 1000;
 
@@ -49,35 +55,12 @@ export function numToRouterTier(n: number): RouterTier | null {
   if (n === 3) return "TIER_3";
   return null;
 }
-async function loadCloudImageTierRows(): Promise<TierModelRow[]> {
-  const rows = await prisma.aIModel.findMany({
-    where: {
-      isActive: true,
-      supportsImages: true,
-      provider: {
-        isActive: true,
-        name: { in: ["google", "openai"] },
-      },
-    },
-    include: { provider: { select: { name: true } } },
-  });
-
-  return rows.map((r) => ({
-    registryId: `${r.provider.name}:${r.modelId}`,
-    tier: 2,
-    routerTier: "TIER_2" as RouterTier,
-    estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
-    averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
-    supportsImages: true,
-    supportsTools: r.supportsTools,
-  }));
-}
-
 async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
     where: {
       isActive: true,
       routerTier: { not: null },
+      type: "CHAT",
       provider: { isActive: true },
     },
     include: { provider: { select: { name: true } } },
@@ -86,6 +69,7 @@ async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<Tier
   const localVllmOnly = options?.localVllmOnly ?? isLocalVllmRouting();
 
   return rows
+    .filter((r) => r.type === "CHAT")
     .map((r) => ({
       registryId: `${r.provider.name}:${r.modelId}`,
       tier: routerTierToNum(r.routerTier!),
@@ -107,23 +91,17 @@ export async function getCachedTierModels(): Promise<TierModelRow[]> {
   if (!loading || loading.generation !== generation) {
     const promise = loadTierRows()
       .then((rows) => {
-        if (
-          generation === cacheGeneration &&
-          loading?.generation === generation
-        ) {
+        if (generation === cacheGeneration && loading?.generation === generation) {
           cache = { rows, expiresAt: Date.now() + CACHE_TTL_MS };
           loading = null;
         }
         return rows;
       })
-      .catch((error: unknown) => {
-        if (
-          generation === cacheGeneration &&
-          loading?.generation === generation
-        ) {
+      .catch((cause: unknown) => {
+        if (generation === cacheGeneration && loading?.generation === generation) {
           loading = null;
         }
-        throw error;
+        throw cause;
       });
     loading = { generation, promise };
   }
@@ -150,12 +128,14 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
     filtered = rows.filter((r) => r.tier === spec.tier);
   } else {
     filtered = rows.filter((r) => r.tier >= spec.minTier);
-    if (spec.requireImages) {
-      filtered = filtered.filter((r) => r.supportsImages);
-    }
-    if (spec.requireTools) {
-      filtered = filtered.filter((r) => r.supportsTools);
-    }
+  }
+
+  if (spec.requireTools) {
+    filtered = filtered.filter((r) => r.supportsTools);
+  }
+
+  if (spec.requireImages) {
+    filtered = filtered.filter((r) => r.supportsImages);
   }
 
   if (filtered.length === 0) {
@@ -175,10 +155,6 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
 }
 
 export async function pickModelForSpec(spec: PickSpec): Promise<TierModelRow | null> {
-  const needsCloudImages =
-    isLocalVllmRouting() && spec.kind === "minTier" && spec.requireImages;
-  const rows = needsCloudImages
-    ? await loadCloudImageTierRows()
-    : await getCachedTierModels();
+  const rows = await getCachedTierModels();
   return pickFromCandidates(rows, spec);
 }

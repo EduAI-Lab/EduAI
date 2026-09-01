@@ -32,7 +32,9 @@ vi.mock("~/lib/rbac/resolve-course-access.server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    course: { findUnique: vi.fn().mockResolvedValue({ id: "c1", instructorId: "u1", department: "COSC" }) },
+    course: {
+      findUnique: vi.fn().mockResolvedValue({ id: "c1", instructorId: "u1", department: "COSC" }),
+    },
     user: { findUnique: vi.fn().mockResolvedValue({ authorizedUnits: [] }) },
   },
 }));
@@ -41,10 +43,15 @@ import { loader, action } from "~/routes/api/courses.tas.$";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
+import { getCourseTA } from "~/lib/courses/tas.server";
 
 function loaderArgs(role: string) {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
-  return { request: new Request("http://localhost/api/courses/c1/tas"), params: { courseId: "c1" }, context: {} as never } as any;
+  return {
+    request: new Request("http://localhost/api/courses/c1/tas"),
+    params: { courseId: "c1" },
+    context: {} as never,
+  } as any;
 }
 
 function postArgs(role: string) {
@@ -79,6 +86,28 @@ describe("courses.tas — instructors.canManageEnrollments gate", () => {
     vi.mocked(getPolicy).mockResolvedValue(false);
     const res = await loader(loaderArgs("TA"));
     expect(res.status).toBe(200);
+  });
+
+  // PII boundary (#1571): students see who their TAs are, but not their emails.
+  const ROSTER = [{ id: "e1", user: { id: "ta9", name: "TA Nine", email: "ta9@ubc.ca" } }];
+
+  it("GET: redacts TA email for a student-tier caller", async () => {
+    vi.mocked(resolveCourseAccess).mockResolvedValue("student");
+    vi.mocked(getCourseTA).mockResolvedValue(ROSTER as never);
+    const res = await loader(loaderArgs("STUDENT"));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.tas).toEqual([{ id: "e1", user: { id: "ta9", name: "TA Nine" } }]);
+    expect(body.tas[0].user.email).toBeUndefined();
+  });
+
+  it("GET: keeps TA email for an instructor-tier caller", async () => {
+    vi.mocked(resolveCourseAccess).mockResolvedValue("instructor");
+    vi.mocked(getCourseTA).mockResolvedValue(ROSTER as never);
+    const res = await loader(loaderArgs("INSTRUCTOR"));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.tas[0].user.email).toBe("ta9@ubc.ca");
   });
 
   it("GET: returns 403 only when the viewer has no course access", async () => {

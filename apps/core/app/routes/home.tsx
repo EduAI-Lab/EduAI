@@ -1,25 +1,31 @@
-import { redirect } from "react-router";
+import { Link, redirect } from "react-router";
 import type { Route } from "./+types/home";
-import { Link } from "react-router";
-import { auth } from "~/lib/auth/server";
-import { IconBrain, IconBook, IconUsers, IconBulb, IconArrowRight, IconCode, IconTerminal, IconCpu } from "@tabler/icons-react";
-import { Button } from "@eduai/ui";
-import { Card, CardContent } from "@eduai/ui";
-import { AnimatedBackground } from "~/components/animated-background";
+import { IconArrowRight, IconBulb } from "@tabler/icons-react";
+import { Button, Card, CardContent, PageHeading } from "@eduai/ui";
 import { SiteFooter } from "~/components/site-footer";
-import { ProjectGoals } from "~/components/project-goals";
+import { ApproachSection } from "~/components/approach-section";
+import { HeroBackdrop } from "~/components/hero-backdrop";
+import { HeroDemo } from "~/components/hero-demo";
+import { ProductsSection } from "~/components/products-section";
+import { ResearchSection } from "~/components/research-section";
+import { TeamSection } from "~/components/team-section";
 import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "EduAI Core Learning" },
-    { name: "description", content: "AI-powered learning platform" },
+    { title: `${projectInfo.title}: course-aware AI at UBC Okanagan` },
+    {
+      name: "description",
+      content:
+        "AI study tools from a research lab at UBC Okanagan. They answer from your own course materials and run on the university's own GPUs.",
+    },
   ];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (session?.user) {
     return redirect("/dashboard");
@@ -30,129 +36,129 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      <AnimatedBackground />
-      <SiteNavigation currentPage="home" />
+    <div className="min-h-screen bg-background">
+      <SiteNavigation />
 
-      {/* Hero Section */}
-      <section className="relative py-20 lg:py-32">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <div className="flex justify-center mb-8">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-blue-500 rounded-full blur-xl opacity-30 animate-pulse"></div>
-                <div className="relative bg-gradient-to-r from-green-400 to-blue-500 p-6 rounded-full shadow-2xl">
-                  <IconBrain className="h-16 w-16 text-white" />
-                </div>
-              </div>
-            </div>
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b border-border bg-muted/60 dark:bg-card">
+        <HeroBackdrop />
 
-            <h1 className="text-5xl lg:text-7xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
+        <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-7xl flex-col justify-center px-4 py-16 sm:px-6 lg:px-8">
+          <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-16">
+            <div className="max-w-3xl">
+              <h1 className="text-4xl font-bold text-foreground lg:text-6xl">
                 {projectInfo.title}
-              </span>
-            </h1>
+              </h1>
+              <div
+                aria-hidden="true"
+                className="my-5 h-[3px] w-10 rounded-[2px] bg-[var(--gold)]"
+              />
+              <p className="text-xl leading-relaxed text-muted-foreground lg:text-2xl">
+                {projectInfo.subtitle}
+              </p>
+              <p className="mt-4 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+                {projectInfo.description}
+              </p>
 
-            <div className="mb-8">
-              <p className="text-xl lg:text-2xl text-foreground/70 mb-4 leading-relaxed">{projectInfo.subtitle}</p>
-              <div className="flex justify-center items-center space-x-4 text-muted-foreground font-mono text-sm">
-                <IconTerminal className="h-4 w-4" />
-                <span>{"> python train_model.py --task=education --model=transformer"}</span>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Button asChild size="lg">
+                  <Link to={siteConfig.navigation.signUp}>
+                    Create an account
+                    <IconArrowRight className="ml-1 h-5 w-5" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link to={siteConfig.navigation.login}>Log in</Link>
+                </Button>
               </div>
             </div>
 
-            <p className="text-lg text-muted-foreground mb-12 max-w-3xl mx-auto">{projectInfo.description}</p>
-
-            <Link
-              to={siteConfig.navigation.team}
-              className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-8 py-4 text-lg rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border-0 inline-flex items-center"
-            >
-              <IconCode className="mr-2 h-5 w-5" />
-              Meet our research team
-              <IconArrowRight className="ml-2 h-5 w-5" />
-            </Link>
+            <HeroDemo className="w-full lg:justify-self-end" />
           </div>
         </div>
       </section>
 
-      {/* What is EduAI Section */}
-      <section className="relative py-20 bg-card/50 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-foreground mb-4">What is {projectInfo.title}?</h2>
-            <div className="w-24 h-1 bg-gradient-to-r from-green-400 to-blue-500 mx-auto rounded"></div>
-          </div>
+      {/* Striped content sections: odd = plain, even = muted; dividers between adjacent sections */}
+      <div className="[&>section:nth-child(even)]:bg-muted/60 dark:[&>section:nth-child(even)]:bg-card [&>section+section]:border-t [&>section+section]:border-border">
+        {/* What is EduAI */}
+        <section id="about" className="scroll-mt-20 py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <PageHeading
+              heading={`What is ${projectInfo.title}?`}
+              className="mb-12 text-center [&>div]:mx-auto"
+              headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
+            />
 
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <p className="text-lg text-muted-foreground leading-relaxed mb-6">
-                EduAI is a groundbreaking research initiative at UBC Okanagan that harnesses the power of artificial
-                intelligence to transform educational experiences. Our project focuses on developing intelligent systems
-                that understand, adapt, and respond to individual learning needs.
-              </p>
+            <div className="grid items-start gap-10 lg:grid-cols-2">
+              <div className="space-y-6">
+                <p className="text-lg leading-relaxed text-muted-foreground">
+                  EduAI is a research initiative at UBC Okanagan focused on developing and testing
+                  AI-powered study tools in real-world educational settings.
+                </p>
 
-              <p className="text-lg text-muted-foreground leading-relaxed mb-8">
-                By combining advanced machine learning algorithms, natural language processing, and educational theory,
-                we're creating tools that make learning more personalized, accessible, and effective for students across
-                all disciplines.
-              </p>
-
-              <div className="flex flex-wrap gap-4">
-                <div className="flex items-center bg-green-500/20 border border-green-500/30 px-4 py-2 rounded-full backdrop-blur-sm">
-                  <IconCpu className="h-5 w-5 text-green-400 mr-2" />
-                  <span className="text-green-300 font-medium">Machine learning</span>
-                </div>
-                <div className="flex items-center bg-blue-500/20 border border-blue-500/30 px-4 py-2 rounded-full backdrop-blur-sm">
-                  <IconBook className="h-5 w-5 text-blue-400 mr-2" />
-                  <span className="text-blue-300 font-medium">Educational technology</span>
-                </div>
-                <div className="flex items-center bg-purple-500/20 border border-purple-500/30 px-4 py-2 rounded-full backdrop-blur-sm">
-                  <IconUsers className="h-5 w-5 text-purple-400 mr-2" />
-                  <span className="text-purple-300 font-medium">Personalized learning</span>
-                </div>
+                <p className="text-lg leading-relaxed text-muted-foreground">
+                  Our models run on UBC's own GPUs, so your questions and files stay on campus. We
+                  are studying how to make AI tutors that are accurate, energy-efficient, and fair.
+                </p>
               </div>
-            </div>
 
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-blue-500/20 rounded-2xl blur-xl"></div>
-              <Card className="relative bg-card/80 backdrop-blur-sm border border-border shadow-2xl">
-                <CardContent className="p-8">
-                  <div className="text-center">
-                    <div className="bg-gradient-to-r from-green-400 to-blue-500 p-4 rounded-full w-16 h-16 mx-auto mb-6 flex items-center justify-center">
-                      <IconBulb className="h-8 w-8 text-white" />
+              <Card className="lg:self-stretch">
+                <CardContent className="flex flex-col justify-center px-6 py-8">
+                  <div className="mb-4 flex flex-row items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary">
+                      <IconBulb className="h-6 w-6 text-primary-foreground" />
                     </div>
-                    <h3 className="text-2xl font-bold text-foreground mb-4">Our vision</h3>
-                    <p className="text-muted-foreground leading-relaxed">{projectInfo.vision}</p>
-                    <div className="mt-4 text-green-400 font-mono text-xs opacity-70">
-                      {"// Building the future of education, one algorithm at a time"}
-                    </div>
+                    <h3 className="text-lg font-semibold text-card-foreground">Our vision</h3>
                   </div>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {projectInfo.vision}
+                  </p>
                 </CardContent>
               </Card>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <ProjectGoals />
+        <ApproachSection />
 
-      {/* CTA Section */}
-      <section className="relative py-20 bg-gradient-to-r from-green-600/80 to-blue-600/80 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-4xl font-bold text-white mb-6">Ready to learn more?</h2>
-          <p className="text-xl text-green-100 mb-8 leading-relaxed">
-            Discover the brilliant minds behind EduAI and learn about their groundbreaking contributions to educational
-            artificial intelligence research.
+        <ProductsSection />
+
+        <ResearchSection />
+
+        <TeamSection />
+      </div>
+
+      {/* Closing CTA */}
+      <section className="bg-primary py-20">
+        <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-primary-foreground lg:text-4xl">
+            Try it on your own course
+          </h2>
+          <div
+            aria-hidden="true"
+            className="mx-auto my-5 h-[3px] w-10 rounded-[2px] bg-[var(--gold)]"
+          />
+          <p className="mb-8 text-lg leading-relaxed text-primary-foreground/80">
+            Create a free account and point the tutor at your own slides and syllabus, or log in if
+            you are already set up.
           </p>
 
-          <Link
-            to={siteConfig.navigation.team}
-            className="bg-white/90 text-slate-800 hover:bg-white px-8 py-4 text-lg rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 inline-flex items-center"
-          >
-            <IconTerminal className="mr-2 h-5 w-5" />
-            Explore our research team
-            <IconArrowRight className="ml-2 h-5 w-5" />
-          </Link>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button asChild size="lg" variant="secondary">
+              <Link to={siteConfig.navigation.signUp}>
+                Create an account
+                <IconArrowRight className="ml-1 h-5 w-5" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10"
+            >
+              <Link to={siteConfig.navigation.login}>Log in</Link>
+            </Button>
+          </div>
         </div>
       </section>
 

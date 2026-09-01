@@ -1,8 +1,9 @@
-import { memo, useMemo, useState } from 'react';
-import { IconChevronDown, IconListDetails } from '@tabler/icons-react';
-import { AnswerOption } from '@eduai/ui';
-import { cn } from '~/lib/utils';
-import type { Activity } from '../lib/types';
+import { memo, useMemo, useState } from "react";
+import { IconChevronDown, IconListDetails } from "@tabler/icons-react";
+import { AnswerOption } from "@eduai/ui";
+import { cn } from "~/lib/utils";
+import { readActivityAnswer } from "../lib/api-schemas";
+import type { Activity } from "../lib/types";
 
 type ActivityDetailsCardProps = {
   activity: Activity;
@@ -13,14 +14,14 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
 
   const details = useMemo(() => {
     const choices = activity.options?.choices ?? [];
+    // The answer column is untyped JSON, so decode it before branching. A
+    // malformed `text` has to render nothing rather than reach the DOM as an
+    // object, which React throws on (#1629).
+    const answer = readActivityAnswer(activity.answer);
     const correctChoiceIndex =
-      activity.type === 'MCQ' && typeof activity.answer?.correctIndex === 'number'
-        ? activity.answer.correctIndex
-        : null;
+      activity.type === "MCQ" && answer.correctIndex !== undefined ? answer.correctIndex : null;
     const shortAnswerText =
-      activity.type === 'SHORT_TEXT' && typeof activity.answer?.text === 'string'
-        ? activity.answer.text
-        : null;
+      activity.type === "SHORT_TEXT" && answer.text !== undefined ? answer.text : null;
 
     const hasContent =
       Boolean(activity.title) ||
@@ -54,7 +55,7 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
           Question details
         </span>
         <IconChevronDown
-          className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')}
+          className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")}
           aria-hidden="true"
         />
       </button>
@@ -92,7 +93,7 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
                     key={index}
                     letter={String.fromCharCode(65 + index)}
                     size="compact"
-                    state={details.correctChoiceIndex === index ? 'correct' : 'default'}
+                    state={details.correctChoiceIndex === index ? "correct" : "default"}
                   >
                     {choice}
                   </AnswerOption>
@@ -101,7 +102,7 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
             </div>
           )}
 
-          {activity.type === 'SHORT_TEXT' && details.shortAnswerText && (
+          {activity.type === "SHORT_TEXT" && details.shortAnswerText && (
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Expected answer

@@ -1,7 +1,7 @@
-import * as React from "react"
+import * as React from "react";
 
-import { PageHeading } from "../page-heading"
-import { PageTabs, PageTabsContent, PageTabsList, PageTabsTrigger } from "../page-tabs"
+import { PageHeading } from "../page-heading";
+import { PageTabs, PageTabsContent, PageTabsList, PageTabsTrigger } from "../page-tabs";
 
 /**
  * The 3 observed outer-wrapper variants across the settings pages, mirroring
@@ -13,43 +13,43 @@ const PADDING_CLASSES = {
   none: "flex flex-col gap-8",
   qm: "@container/main flex flex-1 flex-col gap-8 px-4 py-4 md:py-6 lg:px-6",
   app: "@container/main flex flex-1 flex-col gap-8 px-4 pt-6 pb-8 lg:px-6",
-} as const
+} as const;
 
 export interface SettingsTab {
   /** Kebab-case tab id, e.g. "api-keys". */
-  value: string
-  label: string
+  value: string;
+  label: string;
   /** Tabler icon rendered at `h-4 w-4` in the trigger. */
-  icon?: React.ReactNode
-  content: React.ReactNode
+  icon?: React.ReactNode;
+  content: React.ReactNode;
   /**
    * Wraps just the trigger — Core puts its Canvas tab inside a `DisabledTooltip`
    * when the integration is unavailable.
    */
-  wrapTrigger?: (trigger: React.ReactElement) => React.ReactNode
+  wrapTrigger?: (trigger: React.ReactElement) => React.ReactNode;
 }
 
 export interface SettingsPageScaffoldProps {
-  tabs: SettingsTab[]
+  tabs: SettingsTab[];
   /** Defaults to the first tab. */
-  defaultTab?: string
-  subheading?: React.ReactNode
+  defaultTab?: string;
+  subheading?: React.ReactNode;
   /** Defaults to "Settings" — every app uses that today. */
-  heading?: string
-  padding?: keyof typeof PADDING_CLASSES
+  heading?: string;
+  padding?: keyof typeof PADDING_CLASSES;
   /**
    * Rendered after the tab strip, outside `PageTabs` — the sign-out card in
    * Core and ai-tutor. Kept a slot rather than owned, since apps sign out
    * differently.
    */
-  footer?: React.ReactNode
+  footer?: React.ReactNode;
   /** Rendered between the heading and the tab strip — e.g. Core's password-expired banner. */
-  beforeTabs?: React.ReactNode
+  beforeTabs?: React.ReactNode;
   /**
    * Wraps each tab body. Core opts in to its `ScrollReveal` motion here rather
    * than hand-wrapping every tab, which is how its tabs drifted apart.
    */
-  renderTabBody?: (content: React.ReactNode, tab: SettingsTab) => React.ReactNode
+  renderTabBody?: (content: React.ReactNode, tab: SettingsTab) => React.ReactNode;
 }
 
 /**
@@ -72,7 +72,7 @@ export function SettingsPageScaffold({
   beforeTabs,
   renderTabBody,
 }: SettingsPageScaffoldProps) {
-  const [activeTab, setActiveTab] = React.useState(defaultTab ?? tabs[0]?.value ?? "")
+  const [activeTab, setActiveTab] = React.useState(defaultTab ?? tabs[0]?.value ?? "");
 
   return (
     <div className={PADDING_CLASSES[padding]}>
@@ -88,12 +88,12 @@ export function SettingsPageScaffold({
                 {tab.icon}
                 {tab.label}
               </PageTabsTrigger>
-            )
+            );
             return (
               <React.Fragment key={tab.value}>
                 {tab.wrapTrigger ? tab.wrapTrigger(trigger) : trigger}
               </React.Fragment>
-            )
+            );
           })}
         </PageTabsList>
 
@@ -106,5 +106,5 @@ export function SettingsPageScaffold({
 
       {footer}
     </div>
-  )
+  );
 }

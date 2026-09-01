@@ -4,6 +4,7 @@
 // PATCH /api/preferences persists → GET reads back → the root loader
 // (which gates data-assistive on <html>) reflects the stored value.
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, afterAll } from "vitest";
 import prisma from "~/lib/prisma.server";
 
@@ -15,6 +16,7 @@ import { loader, action } from "~/routes/api/preferences";
 import { loader as rootLoader } from "~/root";
 import { getPolicies } from "~/lib/policy.server";
 import { seedUser, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const createdUserIds: string[] = [];
 
@@ -32,7 +34,7 @@ function getArgs(path = "/api/preferences") {
   } as any;
 }
 
-function patchArgs(body: unknown) {
+function patchArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/preferences", {
       method: "PATCH",
@@ -44,9 +46,13 @@ function patchArgs(body: unknown) {
   } as any;
 }
 
-async function expectRootLoader(overrides: Record<string, unknown>) {
+async function expectRootLoader(overrides: JsonObject) {
   return {
     canInvite: false,
+    // #1666 review: resolved once per navigation (root loader) so the
+    // sidebar/command-palette Course Assistant link survives every route.
+    hasInstructorEnrollment: false,
+    hasTeachingAssistantEnrollment: false,
     assistive: false,
     motionReduced: false,
     density: "comfortable",

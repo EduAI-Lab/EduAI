@@ -12,16 +12,16 @@
  *     doesn't flash before the user can navigate.
  */
 
-import { useState } from 'react';
-import { SegmentedControl } from '../segmented-control';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import type { AdminBugReportRow } from './types';
+import { useState } from "react";
+import { SegmentedControl } from "../segmented-control";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import type { AdminBugReportRow } from "./types";
 import {
   CONSOLE_LEVELS,
-  CONSOLE_LEVEL_BADGE_VARIANT,
+  consoleLevelBadgeVariant,
   CONSOLE_LEVEL_OPTIONS,
   NETWORK_TABS,
   NETWORK_TAB_OPTIONS,
@@ -31,7 +31,8 @@ import {
   type ConsoleLogEntry,
   type NetworkLogEntry,
   type ViewerType,
-} from './bug-reports-utils';
+} from "./bug-reports-utils";
+import { isString } from "../lib/primitive-union";
 
 function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
   return (
@@ -48,13 +49,13 @@ function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
 // stack traces are collapsed by default to keep the list scannable.
 function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
   const entries = safeJsonParse<ConsoleLogEntry[]>(report.consoleLogs, []);
-  const [levelFilter, setLevelFilter] = useState<(typeof CONSOLE_LEVELS)[number]>('all');
+  const [levelFilter, setLevelFilter] = useState<(typeof CONSOLE_LEVELS)[number]>("all");
   const [expandedStacks, setExpandedStacks] = useState<Record<number, boolean>>({});
 
   const filtered = entries.filter((entry) => {
-    if (levelFilter === 'all') return true;
+    if (levelFilter === "all") return true;
     // Normalize stored level casing so "WARN"/"Warn"/"warn" all match the chip.
-    return (entry.level ?? 'log').toLowerCase() === levelFilter;
+    return (entry.level ?? "log").toLowerCase() === levelFilter;
   });
 
   return (
@@ -73,22 +74,22 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
           </div>
         ) : (
           filtered.map((entry, index) => {
-            const hasStack = typeof entry.stack === 'string' && entry.stack.length > 0;
+            const hasStack = (entry.stack ?? "").length > 0;
             const expanded = expandedStacks[index] ?? false;
-            const level = (entry.level ?? 'log').toLowerCase();
+            const level = (entry.level ?? "log").toLowerCase();
             return (
               <div
-                key={`${entry.timestamp ?? 'ts'}-${index}`}
+                key={`${entry.timestamp ?? "ts"}-${index}`}
                 className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? 'muted'} size="sm" className="uppercase">
-                    {entry.level ?? 'log'}
+                  <Badge variant={consoleLevelBadgeVariant(level)} size="sm" className="uppercase">
+                    {entry.level ?? "log"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{entry.timestamp ?? '-'}</span>
+                  <span className="text-xs text-muted-foreground">{entry.timestamp ?? "-"}</span>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap wrap-break-word text-foreground">
-                  {entry.message ?? ''}
+                  {entry.message ?? ""}
                 </p>
                 {hasStack ? (
                   <div className="mt-3 space-y-2">
@@ -104,7 +105,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                         }))
                       }
                     >
-                      {expanded ? 'Hide stack trace' : 'Show stack trace'}
+                      {expanded ? "Hide stack trace" : "Show stack trace"}
                     </Button>
                     {expanded ? (
                       <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap wrap-break-word">
@@ -127,7 +128,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
 function NetworkViewer({ report }: { report: AdminBugReportRow }) {
   const entries = safeJsonParse<NetworkLogEntry[]>(report.networkLogs, []);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [tab, setTab] = useState<(typeof NETWORK_TABS)[number]>('meta');
+  const [tab, setTab] = useState<(typeof NETWORK_TABS)[number]>("meta");
 
   const entry = entries[selectedIndex] ?? null;
   const requestBody = entry?.requestBody;
@@ -146,7 +147,7 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             value={String(selectedIndex)}
             onValueChange={(value) => {
               setSelectedIndex(Number(value) || 0);
-              setTab('meta');
+              setTab("meta");
             }}
           >
             <SelectTrigger className="w-full">
@@ -154,8 +155,8 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             </SelectTrigger>
             <SelectContent>
               {entries.map((item, index) => (
-                <SelectItem key={`${item.method ?? 'GET'}-${index}`} value={String(index)}>
-                  {(item.method ?? 'GET').toUpperCase()} {item.url ?? 'Unknown URL'}
+                <SelectItem key={`${item.method ?? "GET"}-${index}`} value={String(index)}>
+                  {(item.method ?? "GET").toUpperCase()} {item.url ?? "Unknown URL"}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -173,35 +174,31 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
       <div className="max-h-[55vh] overflow-auto rounded-xl border border-border/70 bg-background/60 p-4 text-sm">
         {!entry ? (
           <span className="text-muted-foreground">No network logs captured.</span>
-        ) : tab === 'meta' ? (
+        ) : tab === "meta" ? (
           <div className="space-y-2">
             <div>
-              <span className="font-medium">Method:</span> {(entry.method ?? 'GET').toUpperCase()}
+              <span className="font-medium">Method:</span> {(entry.method ?? "GET").toUpperCase()}
             </div>
             <div>
-              <span className="font-medium">URL:</span> {entry.url ?? '-'}
+              <span className="font-medium">URL:</span> {entry.url ?? "-"}
             </div>
             <div>
-              <span className="font-medium">Status:</span> {entry.status ?? '-'}
+              <span className="font-medium">Status:</span> {entry.status ?? "-"}
             </div>
             <div>
-              <span className="font-medium">Duration:</span> {entry.durationMs ?? '-'}ms
+              <span className="font-medium">Duration:</span> {entry.durationMs ?? "-"}ms
             </div>
             <div>
-              <span className="font-medium">Timestamp:</span> {entry.timestamp ?? '-'}
+              <span className="font-medium">Timestamp:</span> {entry.timestamp ?? "-"}
             </div>
           </div>
-        ) : tab === 'request' ? (
+        ) : tab === "request" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof requestBody === 'string'
-              ? requestBody
-              : JSON.stringify(requestBody ?? {}, null, 2)}
+            {isString(requestBody) ? requestBody : JSON.stringify(requestBody ?? {}, null, 2)}
           </pre>
-        ) : tab === 'response' ? (
+        ) : tab === "response" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof responseBody === 'string'
-              ? responseBody
-              : JSON.stringify(responseBody ?? {}, null, 2)}
+            {isString(responseBody) ? responseBody : JSON.stringify(responseBody ?? {}, null, 2)}
           </pre>
         ) : (
           <div className="space-y-4 text-xs">
@@ -224,10 +221,28 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
   );
 }
 
+/**
+ * A screenshot is only ever a base64 raster image data URL or an https image
+ * URL. Guarding the "Open in new tab" `href` to those schemes prevents a
+ * user-authored `javascript:` (or other) value from becoming an
+ * admin-clickable link-injection sink (#1570). The raster allowlist mirrors the
+ * Core write guard (`SCREENSHOT_DATA_URL_RE`) so a `data:image/svg+xml` payload
+ * — which can carry an inline `<script>` that executes when opened top-level at
+ * a null origin — is rejected here too. Server-side ingest also rejects
+ * non-image screenshots; this is the defense-in-depth render guard.
+ */
+function isSafeScreenshotHref(value: string): boolean {
+  return (
+    /^data:image\/(png|jpe?g|webp|gif|avif);base64,/i.test(value) || /^https:\/\//i.test(value)
+  );
+}
+
 function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
   if (!report.screenshot) {
     return <p className="text-sm text-muted-foreground">No screenshot captured.</p>;
   }
+
+  const canOpenInNewTab = isSafeScreenshotHref(report.screenshot);
 
   return (
     <div className="space-y-3">
@@ -238,14 +253,16 @@ function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
           className="w-full rounded-md border"
         />
       </div>
-      <a
-        href={report.screenshot}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex text-sm text-primary-text underline underline-offset-2"
-      >
-        Open in new tab
-      </a>
+      {canOpenInNewTab ? (
+        <a
+          href={report.screenshot}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-sm text-primary-text underline underline-offset-2"
+        >
+          Open in new tab
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -265,33 +282,28 @@ export function ReportViewerDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog
-      open={viewerType !== null}
-      onOpenChange={(open) => (!open ? onClose() : undefined)}
-    >
+    <Dialog open={viewerType !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <DialogContent className="max-w-4xl p-6">
         <DialogHeader>
           <DialogTitle>
-            {viewerType === 'description'
-              ? 'Report Description'
-              : viewerType === 'console'
-                ? 'Console Logs'
-                : viewerType === 'network'
-                  ? 'Network Logs'
-                  : 'Screenshot'}
+            {viewerType === "description"
+              ? "Report Description"
+              : viewerType === "console"
+                ? "Console Logs"
+                : viewerType === "network"
+                  ? "Network Logs"
+                  : "Screenshot"}
           </DialogTitle>
           <DialogDescription>
-            {report
-              ? `${getReporterLabel(report)} • ${formatDateTime(report.createdAt)}`
-              : ''}
+            {report ? `${getReporterLabel(report)} • ${formatDateTime(report.createdAt)}` : ""}
           </DialogDescription>
         </DialogHeader>
         {report ? (
-          viewerType === 'description' ? (
+          viewerType === "description" ? (
             <DescriptionViewer report={report} />
-          ) : viewerType === 'console' ? (
+          ) : viewerType === "console" ? (
             <ConsoleViewer report={report} />
-          ) : viewerType === 'network' ? (
+          ) : viewerType === "network" ? (
             <NetworkViewer report={report} />
           ) : (
             <ScreenshotViewer report={report} />

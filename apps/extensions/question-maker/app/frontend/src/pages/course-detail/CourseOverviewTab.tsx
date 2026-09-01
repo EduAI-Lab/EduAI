@@ -13,13 +13,8 @@ import {
   QuickActionsPanel,
   type QuickAction,
   Button,
-} from '@eduai/ui';
-import {
-  IconPlus,
-  IconClipboardPlus,
-  IconDownload,
-  IconStack2,
-} from '@tabler/icons-react';
+} from "@eduai/ui";
+import { IconPlus, IconClipboardPlus, IconDownload, IconStack2 } from "@tabler/icons-react";
 
 interface CourseOverviewTabProps {
   questionsCount: number;
@@ -27,11 +22,13 @@ interface CourseOverviewTabProps {
   topicsCount: number;
   analytics: QuestionAnalyticsProps;
   /** When set, Overview shows this instead of page-slice / partial pie totals. */
-  analyticsStatus?: 'loading' | 'ready' | 'unavailable';
+  analyticsStatus?: "loading" | "ready" | "unavailable";
   canWrite: boolean;
+  canManageAssessment: boolean;
   onAddQuestion: () => void;
   onNewAssessment: () => void;
-  onImportFromCanvas: () => void;
+  /** Omitted when the course has no Canvas link — the action is then hidden. */
+  onImportFromCanvas?: () => void;
 }
 
 export const CourseOverviewTab = ({
@@ -39,34 +36,47 @@ export const CourseOverviewTab = ({
   assessmentsCount,
   topicsCount,
   analytics,
-  analyticsStatus = 'ready',
+  analyticsStatus = "ready",
   canWrite,
+  canManageAssessment,
   onAddQuestion,
   onNewAssessment,
   onImportFromCanvas,
 }: CourseOverviewTabProps) => {
   const quickActions: QuickAction[] = [
-    {
-      label: 'Add question',
-      description: 'Open the composer',
-      icon: <IconPlus size={18} />,
-      color: '#4F7BE5',
-      onClick: onAddQuestion,
-    },
-    {
-      label: 'New assessment',
-      description: 'Build a quiz or exam',
-      icon: <IconClipboardPlus size={18} />,
-      color: '#2FA67A',
-      onClick: onNewAssessment,
-    },
-    {
-      label: 'Import from Canvas',
-      description: 'Pull in a Canvas quiz',
-      icon: <IconDownload size={18} />,
-      color: '#D8902F',
-      onClick: onImportFromCanvas,
-    },
+    ...(canWrite
+      ? [
+          {
+            label: "Add question",
+            description: "Open the composer",
+            icon: <IconPlus size={18} />,
+            color: "#4F7BE5",
+            onClick: onAddQuestion,
+          },
+        ]
+      : []),
+    ...(canManageAssessment
+      ? [
+          {
+            label: "New assessment",
+            description: "Build a quiz or exam",
+            icon: <IconClipboardPlus size={18} />,
+            color: "#2FA67A",
+            onClick: onNewAssessment,
+          },
+        ]
+      : []),
+    ...(onImportFromCanvas
+      ? [
+          {
+            label: "Import from Canvas",
+            description: "Pull in a Canvas quiz",
+            icon: <IconDownload size={18} />,
+            color: "#D8902F",
+            onClick: onImportFromCanvas,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -77,7 +87,7 @@ export const CourseOverviewTab = ({
         <StatCard label="Topics" value={topicsCount} />
       </div>
 
-      {canWrite && (
+      {quickActions.length > 0 && (
         <QuickActionsPanel actions={quickActions} className="sm:grid-cols-3" />
       )}
 
@@ -96,14 +106,14 @@ export const CourseOverviewTab = ({
             ) : undefined
           }
         />
-      ) : analyticsStatus === 'unavailable' ? (
+      ) : analyticsStatus === "unavailable" ? (
         <EmptyState
           icon={<IconStack2 className="size-6" />}
           title="Analytics unavailable"
           description="Couldn't load course-wide question stats. The question total above is still accurate — try refreshing the page."
           bare={false}
         />
-      ) : analyticsStatus === 'loading' ? (
+      ) : analyticsStatus === "loading" ? (
         <p className="text-sm text-muted-foreground">Loading course analytics…</p>
       ) : (
         <QuestionAnalytics {...analytics} />
@@ -112,8 +122,8 @@ export const CourseOverviewTab = ({
       <Card>
         <CardContent className="py-4">
           <p className="text-sm text-muted-foreground">
-            Student enrollments and permissions are managed in EduAI Core. Changes to course access are
-            reflected here automatically.
+            Student enrollments and permissions are managed in EduAI Core. Changes to course access
+            are reflected here automatically.
           </p>
         </CardContent>
       </Card>

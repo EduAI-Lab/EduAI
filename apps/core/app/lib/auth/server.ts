@@ -1,10 +1,13 @@
+import type { JsonObject } from "~/lib/json-value";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { z } from "zod";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import { resolveAuthCookieDomain } from "./cookie-domain";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
@@ -12,21 +15,21 @@ import {
   PASSWORD_POLICY_MESSAGE,
   SKIP_REUSE_PATHS,
 } from "./password-policy";
-import {
-  isPasswordReused,
-  recordPasswordHistory,
-} from "./password-history.server";
+import { isPasswordReused, recordPasswordHistory } from "./password-history.server";
 import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
+import { asText } from "~/lib/json-value";
+import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
+import { buildEmailVerificationEmail } from "../email/templates/email-verification";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
   import.meta.env.BETTER_AUTH_URL?.trim() ||
   "http://localhost:3000";
 
-const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
+const cookieDomain = resolveAuthCookieDomain();
 const useSecureCookies = authBaseURL.startsWith("https://");
 
 const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
@@ -36,6 +39,21 @@ const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
   "/api-key/update",
   "/api-key/get",
 ]);
+
+const returnedSessionSchema = z.object({
+  user: z.object({
+    isActive: z.boolean().optional(),
+    emailVerified: z.boolean().optional(),
+  }),
+  session: z.object({ token: z.string().min(1) }).nullish(),
+});
+
+// SMTP-less environments (E2E stack, local dev without SMTP) cannot complete
+// email verification: fresh sign-ups would stay unverified and be signed out
+// by the /get-session guard below. Set BETTER_AUTH_DISABLE_EMAIL_VERIFICATION=1
+// to skip the verification requirement and mint new users pre-verified.
+// Production must never set this.
+const EMAIL_VERIFICATION_DISABLED = process.env.BETTER_AUTH_DISABLE_EMAIL_VERIFICATION === "1";
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -47,6 +65,29 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    requireEmailVerification: !EMAIL_VERIFICATION_DISABLED,
+  },
+  emailVerification: {
+    // All three flags only matter when verification is enforceable; in
+    // SMTP-less environments they stay off so better-auth never queues a
+    // verification email it cannot deliver.
+    sendOnSignUp: !EMAIL_VERIFICATION_DISABLED,
+    sendOnSignIn: !EMAIL_VERIFICATION_DISABLED,
+    autoSignInAfterVerification: !EMAIL_VERIFICATION_DISABLED,
+    sendVerificationEmail: async ({ user, url }, request) => {
+      // Invitation acceptance already proves mailbox control and promotes the
+      // account to emailVerified in the same flow. The marker is stripped at
+      // the public auth boundary, so only the trusted server sub-request can
+      // skip this otherwise automatic self-signup email.
+      if (request?.headers.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
+
+      await sendEmail(
+        buildEmailVerificationEmail({
+          to: user.email,
+          verificationUrl: url,
+        }),
+      );
+    },
   },
   plugins: [
     apiKey({
@@ -81,7 +122,9 @@ export const auth = betterAuth({
       }
 
       if (ctx.path === "/api-key/create") {
-        const expiresIn = (ctx.body as Record<string, unknown> | undefined)?.expiresIn;
+        // SAFETY: better-auth types `ctx.body` as `any`; every read below is a
+        // single field off a parsed JSON body, checked before it is used.
+        const expiresIn = (ctx.body as JsonObject | undefined)?.expiresIn;
         if (expiresIn === undefined || expiresIn === null) {
           throw new APIError("BAD_REQUEST", {
             message: "API keys must have an expiration date",
@@ -92,7 +135,8 @@ export const auth = betterAuth({
       // #339: enforce strength policy + no-reuse-of-last-10 on every
       // password-setting path. Runs before Zod schemas (which only guard the
       // app's own forms) so the raw /api/auth/* entry point is also covered.
-      const candidatePassword = extractPolicyPassword(ctx.path, ctx.body);
+      const operationId = (ctx as { operationId?: string }).operationId;
+      const candidatePassword = extractPolicyPassword(ctx.path, operationId, ctx.body);
       if (candidatePassword !== null) {
         if (!isStrongPassword(candidatePassword)) {
           throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
@@ -101,10 +145,10 @@ export const auth = betterAuth({
         if (!SKIP_REUSE_PATHS.has(ctx.path)) {
           // Resolve the userId: token-based reset reads it from the Verification
           // table; all other paths (change, set) have an active session.
-          const token = (ctx.body as Record<string, unknown>)?.token;
+          const token = (ctx.body as JsonObject | undefined)?.token;
           const userId = await resolvePasswordReuseUserId({
             path: ctx.path,
-            token: typeof token === "string" ? token : undefined,
+            token: asText(token) ?? undefined,
             getSessionUserId: async () => (await getSessionFromCtx(ctx as any))?.user?.id ?? null,
           });
 
@@ -121,8 +165,8 @@ export const auth = betterAuth({
           // For change-password: verify the current password first so that an
           // incorrect current password takes precedence over the reuse error.
           if (ctx.path === "/change-password") {
-            const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
-            if (typeof currentPassword === "string") {
+            const currentPassword = asText((ctx.body as JsonObject | undefined)?.currentPassword);
+            if (currentPassword !== null) {
               const credAccount = await prisma.account.findFirst({
                 where: { userId, providerId: "credential" },
                 select: { password: true },
@@ -162,11 +206,18 @@ export const auth = betterAuth({
       // can't be used to distinguish "wrong password" from "deactivated" by
       // response latency.
       if (ctx.path === "/sign-in/email") {
-        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
-        const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
-        if (email) {
+        const email = asText(ctx.body?.email) ?? "";
+        const password = asText(ctx.body?.password) ?? "";
+        const normalizedEmail = email.trim().toLowerCase();
+        // Better Auth's email validator rejects surrounding whitespace. Do not
+        // let the inactive-user guard change that validation outcome by
+        // treating a whitespace-padded address as an existing account.
+        if (email && email === email.trim()) {
           const targetUser = await prisma.user.findUnique({
-            where: { email },
+            // Better Auth lowercases email before its credential lookup.
+            // Normalize the same way here so case variants cannot bypass the
+            // inactive-user gate.
+            where: { email: normalizedEmail },
             select: { isActive: true },
           });
           if (targetUser && !targetUser.isActive) {
@@ -192,9 +243,15 @@ export const auth = betterAuth({
       // Invitation acceptance returned above (its email was UBC-validated at
       // invite creation), so this only guards public registration. Catches
       // direct POSTs to /sign-up/email that bypass register.tsx's zod check.
-      const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+      const email = asText(ctx.body?.email) ?? "";
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
+      }
+      if (process.env.NODE_ENV === "production" && !isSmtpConfigured()) {
+        throw new APIError("SERVICE_UNAVAILABLE", {
+          message: "Registration is temporarily unavailable. Please try again later.",
+          code: "EMAIL_DELIVERY_UNAVAILABLE",
+        });
       }
     }),
     // #971: shared session-resolution guard. `/get-session` is the endpoint
@@ -202,17 +259,19 @@ export const auth = betterAuth({
     // through this same hook pipeline, not just HTTP requests), so gating
     // here closes the guard for every caller at once instead of patching
     // each route individually. Handles the case where a user is deactivated
-    // *after* already holding a valid session: the next request treats them
-    // as signed out and the now-orphaned session row is deleted so a leaked
-    // or cached cookie can't be replayed later.
+    // or an unverified user already holds a session minted before email
+    // verification became mandatory: the next request treats them as signed
+    // out and deletes the now-orphaned session row so a leaked or cached
+    // cookie can't be replayed later.
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/get-session") return;
-      const returned = ctx.context.returned as
-        | { session?: { token?: string }; user?: { isActive?: boolean } }
-        | null
-        | undefined;
-      if (!returned?.user || returned.user.isActive !== false) return;
-      const token = returned.session?.token;
+      const returned = returnedSessionSchema.safeParse(ctx.context.returned);
+      if (!returned.success) return;
+      const isBlocked =
+        returned.data.user.isActive === false || returned.data.user.emailVerified === false;
+      if (!isBlocked) return;
+
+      const token = returned.data.session?.token;
       if (token) {
         await prisma.session.deleteMany({ where: { token } }).catch(() => {});
       }
@@ -257,6 +316,17 @@ export const auth = betterAuth({
         },
       },
     },
+    user: {
+      create: {
+        // SMTP-less environments (E2E stack, local dev without SMTP) cannot
+        // receive verification links; mint those accounts pre-verified so
+        // their sessions are not reaped by the /get-session guard above.
+        before: async (user) => {
+          if (!EMAIL_VERIFICATION_DISABLED) return;
+          return { data: { ...user, emailVerified: true } };
+        },
+      },
+    },
   },
   user: {
     additionalFields: {
@@ -290,8 +360,9 @@ export const auth = betterAuth({
   },
   advanced: {
     useSecureCookies,
-    // Only enable when COOKIE_DOMAIN is set (e.g. ".eduai.ok.ubc.ca" in prod).
-    // On dev without it, cross-subdomain derivation can break session cookies.
+    // Only enable for a real public suffix (e.g. ".eduai.ok.ubc.ca"). Loopback
+    // COOKIE_DOMAIN values are ignored — Domain=localhost plus the host-only
+    // expiry on login deletes the session that was just issued.
     crossSubDomainCookies: cookieDomain
       ? { enabled: true, domain: cookieDomain }
       : { enabled: false },
@@ -299,7 +370,7 @@ export const auth = betterAuth({
   rateLimit: {
     // Disable in E2E/test environments where many sign-ups happen in quick
     // succession. Set BETTER_AUTH_DISABLE_RATE_LIMIT=1 to turn this off.
-    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== '1',
+    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== "1",
     window: 60,
     max: 100,
   },

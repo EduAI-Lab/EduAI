@@ -1,0 +1,206 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildAdhdAssistStructuredResponseSchema,
+  ensureAdhdAssistDiagram,
+  isStructuredAdhdAssistCandidate,
+  parseAdhdStructuredResponse,
+  renderAdhdStructuredResponse,
+  resolveRequestedAssistStageCount,
+} from "~/lib/ai/adhd-structured-output";
+import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
+
+const structuredPayload = {
+  title: "Gradient descent",
+  answer: "The optimizer lowers error by following the slope downhill.",
+  stages: [
+    { label: "Start point", detail: "Pick initial parameter values." },
+    { label: "Compute gradient", detail: "Measure the uphill direction." },
+    { label: "Step downhill", detail: "Move opposite the gradient." },
+    { label: "Repeat to minimum", detail: "Continue until the loss is small." },
+  ],
+  tldr: "Follow the slope downhill, one measured step at a time.",
+  next: "try one update yourself",
+};
+const structured = JSON.stringify(structuredPayload);
+
+describe("structured Assist output", () => {
+  it("accepts complete constrained model output", () => {
+    expect(parseAdhdStructuredResponse(structured)?.stages).toHaveLength(4);
+  });
+
+  it("renders one canonical ladder and diagram from the same stages", () => {
+    const rendered = renderAdhdStructuredResponse({
+      text: structured,
+      userText: "Draw a diagram of gradient descent",
+    });
+
+    expect(rendered).toContain("### Step ladder");
+    expect(rendered).toContain("```eduai-diagram");
+    expect(rendered).toContain("Start point");
+    expect(rendered).toContain("Repeat to minimum");
+    expect(rendered?.match(/^\d+\./gm)).toHaveLength(4);
+    expect(rendered?.indexOf("### Step ladder")).toBeLessThan(
+      rendered?.indexOf("```eduai-diagram") ?? 0,
+    );
+    expect(rendered?.indexOf("### Step ladder")).toBeLessThan(
+      rendered?.indexOf("The optimizer lowers error") ?? 0,
+    );
+    expect(rendered).toContain("**Top summary**");
+    expect(rendered).not.toContain("**TLDR**");
+    expect(rendered?.indexOf("```eduai-diagram")).toBeLessThan(
+      rendered?.indexOf("The optimizer lowers error") ?? 0,
+    );
+  });
+
+  it("round-trips the stored renderer through the display transform once", () => {
+    const rendered = renderAdhdStructuredResponse({
+      text: structured,
+      userText: "Draw a diagram of gradient descent",
+    });
+    const display = transformAssistiveDisplayCopy(rendered ?? "");
+
+    expect(display.match(/\*\*TLDR\*\*/g)).toHaveLength(1);
+    expect(display.match(/\*\*Continue\*\*/g)).toHaveLength(1);
+    expect(display.indexOf("### Step ladder")).toBeLessThan(display.indexOf("```eduai-diagram"));
+    expect(display.indexOf("```eduai-diagram")).toBeLessThan(display.indexOf("**TLDR**"));
+  });
+
+  it("accepts the two-sided compare contract without truncating it", () => {
+    const compare = JSON.stringify({
+      ...JSON.parse(structured),
+      title: "Study methods",
+      answer:
+        "Flashcards emphasize repeated recall, while practice tests simulate retrieval under pressure.",
+      tldr: "Choose flashcards for recall practice and tests for retrieval practice.",
+      next: "try both methods and compare how much you remember",
+      stages: [
+        { label: "Flashcards", detail: "Recall small pieces repeatedly." },
+        { label: "Practice tests", detail: "Retrieve answers under test-like conditions." },
+      ],
+    });
+
+    expect(
+      buildAdhdAssistStructuredResponseSchema(undefined, "compare").properties.stages,
+    ).toMatchObject({
+      minItems: 2,
+      maxItems: 2,
+    });
+    expect(parseAdhdStructuredResponse(compare, undefined, "compare")?.stages).toHaveLength(2);
+    expect(
+      renderAdhdStructuredResponse({
+        text: compare,
+        userText: "Compare flashcards versus practice tests with a diagram",
+      }),
+    ).toContain("```eduai-diagram\ncompare");
+  });
+
+  it("uses the structured path for full-tutoring vLLM Assist turns", () => {
+    expect(
+      isStructuredAdhdAssistCandidate({
+        modelIdentifier: "vllm:qwen3.5-2b-instruct",
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        profile: "full_tutoring",
+        toolsEnabled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps structure for explicit 2B/9B Assist even without a diagram", () => {
+    expect(
+      isStructuredAdhdAssistCandidate({
+        modelIdentifier: "vllm:qwen3.5-9b-instruct",
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        profile: "full_tutoring",
+        toolsEnabled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not enable constrained decoding for the retained 32B Assist model", () => {
+    expect(
+      isStructuredAdhdAssistCandidate({
+        modelIdentifier: "vllm:qwen2.5-32b-instruct",
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        profile: "full_tutoring",
+        toolsEnabled: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("constrains an explicitly requested stage count", () => {
+    expect(
+      resolveRequestedAssistStageCount(
+        "Explain gradient descent visually with exactly five ordered stages.",
+      ),
+    ).toBe(5);
+    expect(resolveRequestedAssistStageCount("show the four steps")).toBe(4);
+    expect(resolveRequestedAssistStageCount("explain this visually")).toBeNull();
+
+    const schema = buildAdhdAssistStructuredResponseSchema(5);
+    expect(schema.properties.stages.minItems).toBe(5);
+    expect(schema.properties.stages.maxItems).toBe(5);
+  });
+
+  it("rejects provider output that ignores an exact stage-count request", () => {
+    expect(parseAdhdStructuredResponse(structured, 5)).toBeNull();
+    expect(
+      parseAdhdStructuredResponse(
+        JSON.stringify({
+          ...structuredPayload,
+          stages: [
+            ...structuredPayload.stages,
+            { label: "Verify result", detail: "Check the final loss." },
+          ],
+        }),
+        5,
+      )?.stages,
+    ).toHaveLength(5);
+  });
+
+  it("does not truncate an explicitly requested flow as a two-sided comparison", () => {
+    const rendered = renderAdhdStructuredResponse({
+      text: structured,
+      userText: "Explain binary search visually with exactly four ordered stages.",
+    });
+
+    expect(rendered?.match(/^\d+\./gm)).toHaveLength(4);
+    expect(rendered).toContain("```eduai-diagram\nprocess-flow");
+  });
+
+  it("adds a canonical diagram when a provider falls back to a Markdown ladder", () => {
+    const markdown = `### Step ladder\n1. First — Do this\n2. Second — Then this\n3. Third — Finish here`;
+    const rendered = ensureAdhdAssistDiagram({
+      text: markdown,
+      userText: "Explain binary search visually with exactly three stages.",
+    });
+    expect(rendered).toContain("```eduai-diagram\nprocess-flow");
+    expect(rendered.match(/^\d+\./gm)).toHaveLength(3);
+  });
+
+  it("recovers a fence-free two-sided comparison", () => {
+    const markdown = `### Step ladder\n1. Flashcards — Recall small pieces repeatedly.\n2. Practice tests — Retrieve answers under test-like conditions.`;
+    const rendered = ensureAdhdAssistDiagram({
+      text: markdown,
+      userText: "Compare flashcards versus practice tests with a diagram",
+    });
+    expect(rendered).toContain("```eduai-diagram\ncompare");
+  });
+
+  it("does not use structured output for images or tool turns", () => {
+    const base = {
+      modelIdentifier: "vllm:qwen3.5-9b-instruct",
+      adhdAssist: true,
+      imagesPresent: false,
+      chatMode: "learning" as const,
+      profile: "full_tutoring" as const,
+    };
+    expect(isStructuredAdhdAssistCandidate({ ...base, imagesPresent: true })).toBe(false);
+    expect(isStructuredAdhdAssistCandidate({ ...base, toolsEnabled: true })).toBe(false);
+  });
+});

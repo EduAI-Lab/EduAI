@@ -21,32 +21,32 @@ const HIERARCHY_PATTERN =
 const COMPARE_PATTERN =
   /\b(compar(e|ison|ing)|versus|\bvs\.?\b|difference\s+between|contrast|pros?\s+and\s+cons?)\b/i;
 
-const TYPE_ALIASES: Record<string, EduaiDiagramCanonicalId> = {
-  gd: "gradient-descent",
-  gradient: "gradient-descent",
-  process: "process-flow",
-  flow: "process-flow",
-  steps: "process-flow",
-  tree: "hierarchy",
-  structure: "hierarchy",
-  vs: "compare",
-  contrast: "compare",
-};
+// A `Map` because the key is a caller-supplied string, not a union this
+// file owns: an unrecognised one has to be able to miss.
+const TYPE_ALIASES = new Map<string, EduaiDiagramCanonicalId>([
+  ["gd", "gradient-descent"],
+  ["gradient", "gradient-descent"],
+  ["process", "process-flow"],
+  ["flow", "process-flow"],
+  ["steps", "process-flow"],
+  ["tree", "hierarchy"],
+  ["structure", "hierarchy"],
+  ["vs", "compare"],
+  ["contrast", "compare"],
+]);
 
 /**
  * Map a fence type token / alias to a canonical id, or null if unknown.
  * Does not fall back to process-flow — use for parse gating so bare labels
  * like "Start" are not swallowed as type ids.
  */
-export function matchExplicitDiagramTypeId(
-  raw: string,
-): EduaiDiagramCanonicalId | null {
+export function matchExplicitDiagramTypeId(raw: string): EduaiDiagramCanonicalId | null {
   const explicit = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!explicit) return null;
   if ((EDUAI_DIAGRAM_CANONICAL_IDS as readonly string[]).includes(explicit)) {
     return explicit as EduaiDiagramCanonicalId;
   }
-  return TYPE_ALIASES[explicit] ?? null;
+  return TYPE_ALIASES.get(explicit) ?? null;
 }
 
 export function resolveEduaiDiagramTypeId(args: {
@@ -72,5 +72,4 @@ export function hasEduaiDiagramFence(text: string): boolean {
 }
 
 /** Global regex for splitting / extracting eduai-diagram fences (reset lastIndex). */
-export const EDUAI_DIAGRAM_FENCE_GLOBAL =
-  /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;
+export const EDUAI_DIAGRAM_FENCE_GLOBAL = /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;

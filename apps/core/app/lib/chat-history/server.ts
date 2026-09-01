@@ -1,8 +1,10 @@
-import type { Prisma } from "@prisma/client";
+import type { ChatbotType, Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy } from "~/lib/policy.server";
+import { z } from "zod";
+import { asJsonArray, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 
 /**
  * Chat-history access control (#chat-history).
@@ -54,16 +56,23 @@ export type ListChatsOptions = {
 /** Pull a short plain-text preview out of a stored ChatMessage `content` JSON. */
 function extractText(content: Prisma.JsonValue | null | undefined): string | null {
   if (!content) return null;
-  if (typeof content === "string") return content.trim() || null;
-  if (typeof content === "object") {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj.content === "string" && obj.content.trim()) return obj.content.trim();
-    if (Array.isArray(obj.parts)) {
-      const text = obj.parts
-        .filter((p): p is { type: string; text: string } =>
-          !!p && typeof p === "object" && (p as any).type === "text" && typeof (p as any).text === "string",
-        )
-        .map((p) => p.text)
+  const plain = z.string().safeParse(content);
+  if (plain.success) return plain.data.trim() || null;
+
+  const obj = asJsonObject(content);
+  if (obj) {
+    const inner = asPresentText(obj.content);
+    if (inner) return inner;
+
+    const parts = asJsonArray(obj.parts);
+    if (parts) {
+      const text = parts
+        .flatMap((part) => {
+          const fields = asJsonObject(part);
+          if (!fields || fields.type !== "text") return [];
+          const partText = asText(fields.text);
+          return partText === null ? [] : [partText];
+        })
         .join(" ")
         .trim();
       if (text) return text;
@@ -102,6 +111,7 @@ export type ChatReadAccess = {
     adhdAssist: boolean;
     createdAt: Date;
     updatedAt: Date;
+    chatbotType: ChatbotType;
     course: { id: string; code: string; name: string } | null;
     user: { id: string; name: string | null; email: string };
   };
@@ -124,7 +134,16 @@ export type ChatReadAccess = {
  * with no policy-flag check and no student-owner restriction.
  *
  * Returns null when the chat is missing OR the viewer may not read it; callers
- * answer 404 either way so there is no existence leak. EDIT is owner-only.
+ * answer 404 either way so there is no existence leak. EDIT is owner-only —
+ * AND (#1659 review) restricted to LEARNING-mode chats. `/chat/:chatId`
+ * (ChatScreen) only ever sends `chatMode: "learning"`, and `/api/chat` 410s
+ * any turn whose persisted `chatbotType` doesn't match the mode a caller
+ * sends — a saved ADMIN or INSTRUCTOR-mode chat can never be resumed there,
+ * only viewed. Restoring the live composer (canEdit) for one would let the
+ * owner type a message that immediately 410s, and the dashboard / admin
+ * "Continue in chat" affordance (gated on this same `canEdit`) would deep-link
+ * straight into that dead end. Those rows still render — read-only, same as
+ * any chat this viewer doesn't own.
  */
 export async function resolveChatReadAccess(
   viewer: ChatHistoryViewer,
@@ -141,6 +160,7 @@ export async function resolveChatReadAccess(
       adhdAssist: true,
       createdAt: true,
       updatedAt: true,
+      chatbotType: true,
       course: { select: { id: true, code: true, name: true } },
       user: { select: { id: true, name: true, email: true } },
     },
@@ -152,7 +172,7 @@ export async function resolveChatReadAccess(
   let authorized = isOwner || viewer.role === "ADMIN";
 
   if (!authorized && chat.courseId) {
-    const { access } = await resolveCourseAccessWithCourse(viewer, chat.courseId);
+    const { access } = await resolveCourseAccessGate(viewer, chat.courseId);
     const gate = courseChatViewPolicyKey(access?.level ?? null);
     const gateOpen = gate === "always" || (gate !== "never" && (await getPolicy(gate)));
     if (gateOpen) {
@@ -171,13 +191,23 @@ export async function resolveChatReadAccess(
 
   if (!authorized) return null;
 
-  return { chat, isOwner, canEdit: isOwner };
+  return { chat, isOwner, canEdit: isOwner && chat.chatbotType === "LEARNING" };
 }
 
 /**
  * List chats visible to `viewer`, optionally narrowed by course/owner. Results
  * are newest-first and carry a lightweight first-user-message preview so the UI
  * has something to show (chat titles are not auto-generated).
+ *
+ * Restricted to LEARNING-mode chats (#1666 review): this feeds the generic
+ * chat sidebar/history and the dashboard's "Continue in chat" panel, both of
+ * which render into `/chat/:chatId` — which only ever resumes as
+ * `chatMode: "learning"` (`resolveChatReadAccess` already only grants
+ * `canEdit` for LEARNING rows, for the same reason). A saved ADMIN or
+ * INSTRUCTOR-mode chat has no way to "continue" there — it just renders
+ * read-only with no indication why — so it is excluded from this listing
+ * entirely rather than shown as a dead end. Those chats live in their own
+ * `/admin/chat` / `/instructor/chat` UIs, which do not use this listing.
  */
 export async function listChats(
   viewer: ChatHistoryViewer,
@@ -186,13 +216,12 @@ export async function listChats(
   const { courseId, userId, scope, limit = 30 } = options;
 
   const visibility =
-    scope === "own"
-      ? { userId: viewer.id }
-      : await buildChatVisibilityFilter(viewer);
+    scope === "own" ? { userId: viewer.id } : await buildChatVisibilityFilter(viewer);
 
   const where: Prisma.ChatWhereInput = {
     AND: [
       visibility,
+      { chatbotType: "LEARNING" },
       ...(courseId ? [{ courseId }] : []),
       ...(userId ? [{ userId }] : []),
     ],

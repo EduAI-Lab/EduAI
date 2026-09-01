@@ -27,6 +27,12 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+// #1571: the admin chatMode gate re-checks isActive against the DB. Default the
+// mocked admin to active; the deactivated-admin test overrides it to false.
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,22 +52,25 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { JsonObject } from "~/lib/json-value";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -76,6 +85,11 @@ function makeArgs(body: object) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  // vi.clearAllMocks() resets call history but NOT implementations, so a test
+  // that stubs an admin api-key session leaks it into every later test. Restore
+  // the default here rather than at each call site.
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -93,14 +107,11 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       error: "Unsupported routing model",
-      details:
-        'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+      details: 'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
     });
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
@@ -111,9 +122,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
       autoRulesEnabled: false,
     });
 
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -122,9 +131,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects Auto (rules) when the administrator disables rule routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -185,6 +192,21 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));
     expect(res.status).toBe(200);
     expect((await res.json()).chatId).toBeNull();
+  });
+
+  it("uses the selected course id when duplicate course codes exist", async () => {
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(
+      makeArgs({ messages: [], courseId: "course-2", courseCode: "COSC 101" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "course-2",
+    );
   });
 
   it("admits a TA even when the course is unpublished", async () => {
@@ -280,8 +302,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
   });
 
   it("rejects a valid service key for admin chatMode", async () => {
@@ -312,6 +344,79 @@ describe("POST /api/chat — admin chatMode gate", () => {
     expect(res.status).toBe(200);
     expect(requireServiceKey).not.toHaveBeenCalled();
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
+// #1659: instructor mode is scoped to ONE published course the caller
+// actually teaches. Unlike admin mode, a course is always required, and the
+// authorization decision reuses the same resolveCourseAccessWithCourse
+// result every other course-scoped route reads — access.level === "instructor"
+// means "an active INSTRUCTOR enrollment on this exact course", regardless of
+// the caller's platform-wide UserRole.
+describe("POST /api/chat — instructor chatMode gate (#1659)", () => {
+  it("returns 400 COURSE_REQUIRED when instructor chatMode omits a course", async () => {
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("requires a course for instructor mode even for a server-to-server (service-key) caller — unlike learning/admin mode (#1659 review)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null); // valid service key
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("admits an INSTRUCTOR of a published course they teach (allow)", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("denies an instructor-level caller when the course is unpublished (deny: unpublished)", async () => {
+    mockAccess({ level: "instructor", rank: 2 }, { ...COURSE, isPublished: false });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a caller with no relationship to the course (deny: other course)", async () => {
+    mockAccess(null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a STUDENT-level enrollment on this course (not their course to run ops on)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a TA-level enrollment on this course", async () => {
+    mockAccess({ level: "ta", rank: 1 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies ADMIN-level access without a real INSTRUCTOR enrollment on this course (use /admin/chat instead)", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies UNIT_ADMIN-level access without a real INSTRUCTOR enrollment on this course", async () => {
+    mockAccess({ level: "unit", rank: 3 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 when the course does not exist", async () => {
+    mockAccess(null, null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
   });
 });
 
@@ -359,9 +464,7 @@ describe("POST /api/chat — chat isolation guards (#225 RAG-03)", () => {
       chatbotType: null,
     } as never);
 
-    const res = await action(
-      makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }),
-    );
+    const res = await action(makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }));
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "COURSE_MISMATCH" });
@@ -538,5 +641,126 @@ describe("POST /api/chat — proxyUser delegation", () => {
       expect.objectContaining({ id: "mapped-user", role: "STUDENT" }),
       "c1",
     );
+  });
+});
+
+describe("POST /api/chat — bounded ingress", () => {
+  it("rejects a body that exceeds the byte budget before routing or persistence", async () => {
+    const body = JSON.stringify({
+      model: "auto-hybrid",
+      messages: [],
+      oversized: "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    const args = {
+      request: new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Deliberately omit Content-Length so the stream byte cap is exercised.
+        },
+        body,
+      }),
+      params: {},
+      context: {} as never,
+    } as any;
+
+    const res = await action(args);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Chat request body exceeds size limit",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized message list before routing or persistence", async () => {
+    const body = {
+      model: "auto-hybrid",
+      messages: Array.from({ length: 101 }, (_, index) => ({
+        id: `message-${index}`,
+        role: "user",
+        content: "hi",
+      })),
+    };
+    const args = makeArgs(body);
+
+    const res = await action(args);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "messages exceeds maximum count",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
+// §19 chat system prompt layering (#1606): a custom system prompt is APPENDED to
+// the EduAI base prompt rather than replacing it, so no caller can delete the
+// assistant's identity, the instructor's response style, or the course-scope
+// guardrail. The composition itself is asserted in
+// course-response-style.route.test.ts; these cover admission and persistence.
+describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
+  const PROMPT = "Reply in bullet points.";
+
+  const send = (body: JsonObject = {}) =>
+    action(makeArgs({ messages: [], courseId: "c1", systemPrompt: PROMPT, ...body }));
+
+  function mockRole(role: string) {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
+  }
+
+  it.each([
+    ["student", 0],
+    ["ta", 1],
+    ["instructor", 2],
+    ["unit", 3],
+    ["admin", 4],
+  ])("admits %s access — layering makes the prompt safe for every role", async (level, rank) => {
+    mockAccess({ level, rank });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+  });
+
+  it("no longer rejects a student's prompt (the #1606 403 gate was replaced by layering)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+    expect(await res.text()).not.toContain("SYSTEM_PROMPT_FORBIDDEN");
+  });
+
+  it("still enforces the course gate before reaching prompt handling", async () => {
+    // Layering relaxes WHAT a prompt can do, not WHO may open a course chat.
+    mockAccess(null);
+    const res = await send();
+    expect(res.status).toBe(403);
+  });
+
+  it("leaves ordinary messages untouched when no prompt is sent", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("a student cookie plus bearer is still a browser caller, not a sessionless service-key caller", async () => {
+    // isServiceKeyCaller only fires when there is no session. A Bearer header
+    // on a real cookie must not skip COURSE_REQUIRED or switch to replace.
+    const args = makeArgs({ messages: [], systemPrompt: PROMPT });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], systemPrompt: PROMPT }),
+    });
+
+    const res = await action(args);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(requireServiceKey).not.toHaveBeenCalled();
   });
 });

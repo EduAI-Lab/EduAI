@@ -7,18 +7,14 @@ describe("PasswordRequirements", () => {
   it("shows both valid password options before the password is valid", () => {
     render(<PasswordRequirements password="" />);
 
-    const eightCharacterRequirement = screen
-      .getByText("8 or more characters")
-      .closest("li");
-    const passphraseRequirement = screen
-      .getByText("16 or more characters")
-      .closest("li");
+    const eightCharacterRequirement = screen.getByText("8 or more characters").closest("li");
+    const passphraseRequirement = screen.getByText("16 or more characters").closest("li");
 
     expect(eightCharacterRequirement).toHaveAttribute("data-state", "unmet");
     expect(passphraseRequirement).toHaveAttribute("data-state", "unmet");
-    expect(
-      eightCharacterRequirement?.compareDocumentPosition(passphraseRequirement!),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(eightCharacterRequirement?.compareDocumentPosition(passphraseRequirement!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.getByText("One uppercase letter").closest("li")).toHaveAttribute(
       "data-state",
       "unmet",
@@ -55,10 +51,7 @@ describe("PasswordRequirements", () => {
       "data-state",
       "unmet",
     );
-    expect(screen.getByText("One number").closest("li")).toHaveAttribute(
-      "data-state",
-      "unmet",
-    );
+    expect(screen.getByText("One number").closest("li")).toHaveAttribute("data-state", "unmet");
   });
 
   it("shows success for a valid complex password", () => {

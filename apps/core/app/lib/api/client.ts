@@ -1,5 +1,6 @@
+import type { JsonObject } from "~/lib/json-value";
 /** Parse a fetch response body as JSON, or return a readable error for HTML/plain 500 pages. */
-export async function readJsonResponse<T = Record<string, unknown>>(
+export async function readJsonResponse<T = JsonObject>(
   response: Response,
 ): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
   const text = await response.text();

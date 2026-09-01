@@ -3,10 +3,13 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
+import type { ModelFormData } from "~/components/admin/model-form-dialog";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
 import { useRoutingModelSettings } from "~/hooks/api/use-routing-model-settings";
+import { useFleetConfig } from "~/hooks/api/use-fleet-config";
+import { useAssistModelSetting } from "~/hooks/api/use-assist-model-setting";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,10 +18,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return redirect("/auth/login");
@@ -73,12 +76,27 @@ export default function AIModelsPage() {
     error: routingModelsError,
     setEnabled: setRoutingModelEnabled,
   } = useRoutingModelSettings();
+  const {
+    servers: fleetServers,
+    connectionTest: fleetConnectionTest,
+    configured: fleetConfigured,
+    source: fleetSource,
+    isLoading: fleetConfigLoading,
+    isSaving: fleetConfigSaving,
+    error: fleetConfigError,
+    save: saveFleetConfig,
+  } = useFleetConfig();
+  const {
+    modelId: assistModelId,
+    error: assistModelSettingError,
+    save: saveAssistModel,
+  } = useAssistModelSetting();
 
   const isLoading = providersLoading || modelsLoading || routingModelsLoading;
-  const error = providersError ?? modelsError ?? routingModelsError;
+  const error = providersError ?? modelsError ?? routingModelsError ?? assistModelSettingError;
 
   const handleCreateModel = useCallback(
-    async (data: Record<string, unknown>) => {
+    async (data: ModelFormData) => {
       await createModel(data);
       await refreshProviders();
     },
@@ -86,7 +104,7 @@ export default function AIModelsPage() {
   );
 
   const handleUpdateModel = useCallback(
-    async (id: string, data: Record<string, unknown>) => {
+    async (id: string, data: Partial<ModelFormData>) => {
       await updateModel(id, data);
       await refreshProviders();
     },
@@ -108,7 +126,9 @@ export default function AIModelsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -148,6 +168,17 @@ export default function AIModelsPage() {
         routingModelSettings={routingModelSettings}
         routingModelDefinitions={routingModelDefinitions}
         onToggleRoutingModel={setRoutingModelEnabled}
+        assistModelId={assistModelId}
+        onSetAssistModel={saveAssistModel}
+        assistModelSettingError={assistModelSettingError}
+        fleetServers={fleetServers}
+        fleetConnectionTest={fleetConnectionTest}
+        fleetConfigured={fleetConfigured}
+        fleetSource={fleetSource}
+        fleetConfigLoading={fleetConfigLoading}
+        fleetConfigSaving={fleetConfigSaving}
+        fleetConfigError={fleetConfigError}
+        onSaveFleetConfig={saveFleetConfig}
       />
     </CoreAppShell>
   );

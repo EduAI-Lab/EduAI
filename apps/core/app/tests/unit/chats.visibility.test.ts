@@ -15,7 +15,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
   getAuthorizedUnits: vi.fn(),
 }));
 
@@ -36,10 +36,7 @@ import { loader as unitChatsLoader } from "~/routes/api/units.chats.$";
 import { loader as chatDetailLoader } from "~/routes/api/chats.$chatId";
 import { loader as chatMessagesLoader } from "~/routes/api/chats.$chatId.messages";
 import { auth } from "~/lib/auth/server";
-import {
-  resolveCourseAccessWithCourse,
-  getAuthorizedUnits,
-} from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate, getAuthorizedUnits } from "~/lib/auth/course-access.server";
 import { getPolicy } from "~/lib/policy.server";
 
 const AT = new Date("2025-01-01T00:00:00.000Z");
@@ -49,7 +46,7 @@ function session(role: string, id = "u1") {
 }
 
 function access(level: string | null, rank = 0) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: level === null ? null : ({ id: "c1", department: "COSC" } as never),
     access: level === null ? null : ({ level, rank } as never),
   });
@@ -186,7 +183,10 @@ describe("GET /api/units/:department/chats", () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     prismaMock.chat.findMany.mockResolvedValue([
       {
-        id: "chat-1", title: "Q", createdAt: AT, updatedAt: AT,
+        id: "chat-1",
+        title: "Q",
+        createdAt: AT,
+        updatedAt: AT,
         user: { id: "s1", name: "Stu" },
         course: { id: "c1", code: "COSC 101", name: "Intro" },
       },
@@ -209,7 +209,10 @@ describe("GET /api/units/:department/chats", () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     prismaMock.chat.findMany.mockResolvedValue([
       {
-        id: "chat-staff", title: "TA notes", createdAt: AT, updatedAt: AT,
+        id: "chat-staff",
+        title: "TA notes",
+        createdAt: AT,
+        updatedAt: AT,
         user: { id: "ta1", name: "TA" },
         course: { id: "c1", code: "COSC 101", name: "Intro" },
       },
@@ -227,7 +230,10 @@ describe("GET /api/units/:department/chats", () => {
     vi.mocked(getPolicy).mockResolvedValue(false);
     prismaMock.chat.findMany.mockResolvedValue([
       {
-        id: "chat-1", title: "Q", createdAt: AT, updatedAt: AT,
+        id: "chat-1",
+        title: "Q",
+        createdAt: AT,
+        updatedAt: AT,
         user: { id: "s1", name: "Stu" },
         course: { id: "c1", code: "COSC 101", name: "Intro" },
       },
@@ -248,9 +254,30 @@ describe("GET /api/units/:department/chats", () => {
     // `take: limit + 1` lookahead — three rows for limit=2 means more data
     // behind the page; only the first two are returned.
     prismaMock.chat.findMany.mockResolvedValueOnce([
-      { id: "chat-2", title: "B", createdAt: AT, updatedAt: AT, user: { id: "s2", name: "Stu2" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
-      { id: "chat-1", title: "A", createdAt: AT, updatedAt: AT, user: { id: "s1", name: "Stu1" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
-      { id: "chat-0", title: "Z", createdAt: AT, updatedAt: AT, user: { id: "s0", name: "Stu0" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+      {
+        id: "chat-2",
+        title: "B",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s2", name: "Stu2" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
+      {
+        id: "chat-1",
+        title: "A",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s1", name: "Stu1" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
+      {
+        id: "chat-0",
+        title: "Z",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s0", name: "Stu0" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
     ]);
     prismaMock.enrollment.findMany.mockResolvedValue([
       { courseId: "c1", userId: "s0" },
@@ -261,17 +288,29 @@ describe("GET /api/units/:department/chats", () => {
     const body = await res.json();
     expect(body.chats).toHaveLength(2);
     expect(body.nextCursor).toBe("chat-1");
-    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 3 }),
-    );
+    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }));
   });
 
   it("marks the stream exhausted when a final raw batch returns exactly `limit` rows (no empty next page)", async () => {
     session("ADMIN");
     // Exactly `limit` rows with take=limit+1 → no lookahead → nextCursor null.
     prismaMock.chat.findMany.mockResolvedValueOnce([
-      { id: "chat-2", title: "B", createdAt: AT, updatedAt: AT, user: { id: "s2", name: "Stu2" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
-      { id: "chat-1", title: "A", createdAt: AT, updatedAt: AT, user: { id: "s1", name: "Stu1" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+      {
+        id: "chat-2",
+        title: "B",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s2", name: "Stu2" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
+      {
+        id: "chat-1",
+        title: "A",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s1", name: "Stu1" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
     ]);
     prismaMock.enrollment.findMany.mockResolvedValue([
       { courseId: "c1", userId: "s1" },
@@ -286,7 +325,14 @@ describe("GET /api/units/:department/chats", () => {
   it("scopes the active-student enrollment check to just the current batch's rows, not the whole department (#1042 review)", async () => {
     session("ADMIN");
     prismaMock.chat.findMany.mockResolvedValueOnce([
-      { id: "chat-1", title: "A", createdAt: AT, updatedAt: AT, user: { id: "s1", name: "Stu1" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+      {
+        id: "chat-1",
+        title: "A",
+        createdAt: AT,
+        updatedAt: AT,
+        user: { id: "s1", name: "Stu1" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
     ]);
     prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", userId: "s1" }]);
     await unitChatsLoader(unitArgs("COSC", "?limit=25"));
@@ -312,14 +358,21 @@ describe("GET /api/units/:department/chats", () => {
   it("does not drop chats that are filtered-in but trimmed by `limit` across batches (regression)", async () => {
     session("ADMIN");
     const row = (id: string, userId: string) => ({
-      id, title: id, createdAt: AT, updatedAt: AT,
+      id,
+      title: id,
+      createdAt: AT,
+      updatedAt: AT,
       user: { id: userId, name: userId },
       course: { id: "c1", code: "COSC 101", name: "Intro" },
     });
     // Batch 1 (raw take=limit+1=3): first two processed — chat-4 matches,
     // chat-3 doesn't (staff). Lookahead row proves the stream continues.
     prismaMock.chat.findMany
-      .mockResolvedValueOnce([row("chat-4", "s1"), row("chat-3", "staff1"), row("chat-x", "staff2")])
+      .mockResolvedValueOnce([
+        row("chat-4", "s1"),
+        row("chat-3", "staff1"),
+        row("chat-x", "staff2"),
+      ])
       // Batch 2: both processed rows match — pushes the accumulated filtered
       // count to 3, one past `limit`=2 (overflow within the *loop*).
       .mockResolvedValueOnce([row("chat-2", "s1"), row("chat-1", "s1")]);
@@ -360,6 +413,7 @@ const CHAT_ROW = {
   adhdAssist: false,
   createdAt: AT,
   updatedAt: AT,
+  chatbotType: "LEARNING",
 };
 
 describe("GET /api/chats/:chatId (course-authorized viewer)", () => {

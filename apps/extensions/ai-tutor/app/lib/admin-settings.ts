@@ -1,7 +1,14 @@
-import api from '~/lib/api';
-import type { EduAiApiKeyStatus } from '~/lib/types';
+import { z } from "zod";
 
-export type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
+import api from "~/lib/api";
+import {
+  adminAiModelPolicySchema,
+  aiModelSchema,
+  type WireAdminAiModelPolicy,
+} from "~/lib/api-schemas";
+import type { EduAiApiKeyStatus } from "~/lib/types";
+
+export type CostTier = "LOW" | "MEDIUM" | "HIGH";
 
 export type AdminAiModelPolicy = {
   allowedTutorModelIds: string[];
@@ -20,18 +27,20 @@ export type AdminAiModelOption = {
   costTier?: CostTier | null;
 };
 
+/**
+ * The AI-policy payload as Core sends it, before `normalizePolicy` applies the
+ * fallbacks. `api` decodes it at the wire boundary; this module only has to
+ * decide what an absent or out-of-range field should fall back to.
+ */
+export type RawAdminAiModelPolicy = WireAdminAiModelPolicy;
+
 export type AdminSettingsLoaderData = {
   status: EduAiApiKeyStatus;
-  aiPolicy: AdminAiModelPolicy | null;
+  /** Unvalidated: consumers call `normalizePolicy` before reading fields. */
+  aiPolicy: RawAdminAiModelPolicy | null;
   aiModels: AdminAiModelOption[];
   aiPolicyAvailable: boolean;
   aiPolicyError: string | null;
-};
-
-type AdminSettingsApi = {
-  getAdminAiModelPolicy?: () => Promise<unknown>;
-  setAdminAiModelPolicy?: (payload: AdminAiModelPolicy) => Promise<unknown>;
-  listAiModels?: () => Promise<unknown>;
 };
 
 export const DEFAULT_POLICY: AdminAiModelPolicy = {
@@ -42,20 +51,28 @@ export const DEFAULT_POLICY: AdminAiModelPolicy = {
   maxSupervisorIterations: 3,
 };
 
-export function getAdminSettingsApi(): AdminSettingsApi {
-  return api as typeof api & AdminSettingsApi;
-}
+const MIN_SUPERVISOR_ITERATIONS = 1;
+const MAX_SUPERVISOR_ITERATIONS = 5;
 
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
-  const settingsApi = getAdminSettingsApi();
-  const aiPolicyAvailable =
-    typeof settingsApi.getAdminAiModelPolicy === 'function' &&
-    typeof settingsApi.setAdminAiModelPolicy === 'function';
+  const hasPolicyApi = api.getAdminAiModelPolicy instanceof Function;
+  const hasModelsApi = api.listAiModels instanceof Function;
+
+  if (!hasPolicyApi && !hasModelsApi) {
+    const status = await api.getEduAiApiKeyStatus();
+    return {
+      status,
+      aiModels: [],
+      aiPolicy: null,
+      aiPolicyError: null,
+      aiPolicyAvailable: false,
+    };
+  }
 
   const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
     api.getEduAiApiKeyStatus(),
-    loadAdminAiModels(settingsApi),
-    loadAdminAiPolicy(settingsApi),
+    loadAdminAiModels(),
+    loadAdminAiPolicy(),
   ]);
 
   return {
@@ -63,123 +80,101 @@ export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> 
     aiModels: aiModelsResult.models,
     aiPolicy: aiPolicyResult.policy,
     aiPolicyError: aiPolicyResult.error,
-    aiPolicyAvailable,
+    aiPolicyAvailable: true,
   };
 }
 
 export function normalizePolicy(
-  raw: unknown,
+  raw: RawAdminAiModelPolicy | null,
   models: AdminAiModelOption[],
 ): AdminAiModelPolicy {
+  const policy = raw ?? adminAiModelPolicySchema.parse({});
   const fallbackTutor = models[0]?.modelId ?? null;
-  const allowedTutorModelIds = Array.isArray(
-    (raw as { allowedTutorModelIds?: unknown })?.allowedTutorModelIds,
-  )
-    ? (raw as { allowedTutorModelIds: unknown[] }).allowedTutorModelIds.filter(
-        (value): value is string => typeof value === 'string',
-      )
-    : fallbackTutor
-      ? [fallbackTutor]
-      : [];
 
+  // `raw` is typed as decoded, but it reaches here straight off the wire on any
+  // path that skipped `adminAiModelPolicySchema` (a stubbed `api`, a cached
+  // payload written by an older client), so every field is decoded again here
+  // rather than trusted. A field that fails its parse falls back; a list drops
+  // only the entries that fail, since one bad id should not blank the policy.
+  const rawAllowed = z
+    .array(z.unknown())
+    .safeParse(policy.allowedTutorModelIds)
+    .data?.flatMap((id) => z.string().safeParse(id).data ?? []);
+
+  const allowedTutorModelIds = rawAllowed ?? (fallbackTutor === null ? [] : [fallbackTutor]);
+
+  const requestedTutor =
+    z.string().safeParse(policy.defaultTutorModelId).data ?? allowedTutorModelIds[0] ?? null;
   const defaultTutorModelId =
-    typeof (raw as { defaultTutorModelId?: unknown })?.defaultTutorModelId === 'string'
-      ? (raw as { defaultTutorModelId: string }).defaultTutorModelId
+    requestedTutor !== null && allowedTutorModelIds.includes(requestedTutor)
+      ? requestedTutor
       : (allowedTutorModelIds[0] ?? null);
+
+  const rawIterations =
+    z.number().safeParse(policy.maxSupervisorIterations).data ??
+    Number(policy.maxSupervisorIterations);
 
   return {
     allowedTutorModelIds,
-    defaultTutorModelId:
-      defaultTutorModelId && allowedTutorModelIds.includes(defaultTutorModelId)
-        ? defaultTutorModelId
-        : (allowedTutorModelIds[0] ?? null),
+    defaultTutorModelId,
     defaultSupervisorModelId:
-      typeof (raw as { defaultSupervisorModelId?: unknown })?.defaultSupervisorModelId === 'string'
-        ? (raw as { defaultSupervisorModelId: string }).defaultSupervisorModelId
-        : (models[0]?.modelId ?? null),
+      z.string().safeParse(policy.defaultSupervisorModelId).data ?? models[0]?.modelId ?? null,
     dualLoopEnabled:
-      typeof (raw as { dualLoopEnabled?: unknown })?.dualLoopEnabled === 'boolean'
-        ? (raw as { dualLoopEnabled: boolean }).dualLoopEnabled
-        : true,
-    maxSupervisorIterations:
-      typeof (raw as { maxSupervisorIterations?: unknown })?.maxSupervisorIterations === 'number'
-        ? Math.max(
-            1,
-            Math.min(5, (raw as { maxSupervisorIterations: number }).maxSupervisorIterations),
-          )
-        : DEFAULT_POLICY.maxSupervisorIterations,
+      z.boolean().safeParse(policy.dualLoopEnabled).data ?? DEFAULT_POLICY.dualLoopEnabled,
+    maxSupervisorIterations: Number.isFinite(rawIterations)
+      ? clampSupervisorIterations(rawIterations)
+      : DEFAULT_POLICY.maxSupervisorIterations,
   };
 }
 
-async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.getAdminAiModelPolicy !== 'function') {
-    return { policy: null, error: null };
-  }
+function clampSupervisorIterations(value: number): number {
+  return Math.max(MIN_SUPERVISOR_ITERATIONS, Math.min(MAX_SUPERVISOR_ITERATIONS, value));
+}
 
+async function loadAdminAiPolicy() {
   try {
-    const policy = await settingsApi.getAdminAiModelPolicy();
-    return { policy: policy as AdminAiModelPolicy, error: null };
+    if (!(api.getAdminAiModelPolicy instanceof Function)) return { policy: null, error: null };
+    const policy = await api.getAdminAiModelPolicy();
+    return { policy, error: null };
   } catch {
     return {
       policy: null,
       error:
-        'AI model settings could not be loaded. The rest of the admin tools are still available.',
+        "AI model settings could not be loaded. The rest of the admin tools are still available.",
     };
   }
 }
 
-async function loadAdminAiModels(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.listAiModels !== 'function') {
-    return { models: [] as AdminAiModelOption[] };
-  }
-
+async function loadAdminAiModels() {
   try {
-    const models = await settingsApi.listAiModels();
-    const normalized = Array.isArray(models)
-      ? models
-          .map((model, index) => normalizeModelOption(model, index))
-          .filter((model): model is AdminAiModelOption => model !== null)
-      : [];
-
-    return { models: normalized };
+    if (!(api.listAiModels instanceof Function)) return { models: [] };
+    // Same reason as `normalizePolicy`: decode each row rather than trust the
+    // declared element type, and drop only the rows that fail so one malformed
+    // entry cannot empty the model picker.
+    const rawModels = await api.listAiModels();
+    const models = (z.array(z.unknown()).safeParse(rawModels).data ?? [])
+      .flatMap((model) => aiModelSchema.safeParse(model).data ?? [])
+      .map((model, index) => toModelOption(model, index));
+    return { models };
   } catch {
-    return { models: [] as AdminAiModelOption[] };
+    const models: AdminAiModelOption[] = [];
+    return { models };
   }
 }
 
-function normalizeModelOption(raw: unknown, index: number): AdminAiModelOption | null {
-  if (!raw || typeof raw !== 'object') return null;
-
-  const record = raw as Record<string, unknown>;
-  const modelId =
-    typeof record.modelId === 'string'
-      ? record.modelId
-      : typeof record.id === 'string'
-        ? record.id
-        : null;
-
-  if (!modelId) {
-    return null;
-  }
-
-  const provider = typeof record.provider === 'string' ? record.provider : inferProvider(modelId);
-  const costTier =
-    record.costTier === 'LOW' || record.costTier === 'MEDIUM' || record.costTier === 'HIGH'
-      ? record.costTier
-      : inferCostTier(modelId, String(record.modelName ?? modelId));
-
+/** One model entry as `api.listAiModels` decoded it, given its admin-facing defaults. */
+function toModelOption(
+  model: Awaited<ReturnType<typeof api.listAiModels>>[number],
+  index: number,
+): AdminAiModelOption {
+  const modelName = model.modelName || model.modelId;
   return {
-    id: typeof record.id === 'string' ? record.id : `${modelId}-${index}`,
-    modelId,
-    modelName:
-      typeof record.modelName === 'string'
-        ? record.modelName
-        : typeof record.name === 'string'
-          ? record.name
-          : modelId,
-    provider,
-    summary: typeof record.summary === 'string' ? record.summary : null,
-    costTier,
+    id: model.id || `${model.modelId}-${index}`,
+    modelId: model.modelId,
+    modelName,
+    provider: model.provider ?? inferProvider(model.modelId),
+    summary: model.summary ?? null,
+    costTier: model.costTier ?? inferCostTier(model.modelId, modelName),
   };
 }
 
@@ -190,29 +185,31 @@ export function buildFallbackSummary(model: AdminAiModelOption) {
 }
 
 export function inferProvider(modelId: string) {
-  const [provider] = modelId.split(':');
-  return provider || 'provider';
+  const [provider] = modelId.split(":");
+  return provider || "provider";
 }
 
 export function inferCostTier(modelId: string, modelName: string): CostTier {
   const haystack = `${modelId} ${modelName}`.toLowerCase();
-  if (haystack.includes('flash') || haystack.includes('mini') || haystack.includes('nano'))
-    return 'LOW';
-  if (haystack.includes('pro') || haystack.includes('4.1') || haystack.includes('ultra'))
-    return 'HIGH';
-  return 'MEDIUM';
+  if (haystack.includes("flash") || haystack.includes("mini") || haystack.includes("nano"))
+    return "LOW";
+  if (haystack.includes("pro") || haystack.includes("4.1") || haystack.includes("ultra"))
+    return "HIGH";
+  return "MEDIUM";
 }
 
+export type ApiKeySourceTag = { label: string };
+
 export function formatCostTier(costTier: CostTier | null | undefined) {
-  if (costTier === 'LOW') return 'Low cost';
-  if (costTier === 'HIGH') return 'Higher cost';
-  return 'Balanced cost';
+  if (costTier === "LOW") return "Low cost";
+  if (costTier === "HIGH") return "Higher cost";
+  return "Balanced cost";
 }
 
 export function clampIterations(value: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_POLICY.maxSupervisorIterations;
-  return Math.max(1, Math.min(5, Math.round(parsed)));
+  const parsed = z.coerce.number().finite().safeParse(value);
+  if (!parsed.success) return DEFAULT_POLICY.maxSupervisorIterations;
+  return clampSupervisorIterations(Math.round(parsed.data));
 }
 
 export function formatApiKeyUpdatedTime(value: string | null) {
@@ -222,9 +219,9 @@ export function formatApiKeyUpdatedTime(value: string | null) {
   return date.toLocaleString();
 }
 
-export function getApiKeySourceTag(status: EduAiApiKeyStatus): { label: string } {
-  if (!status.configured) return { label: 'Not configured' };
-  if (status.source === 'ADMIN') return { label: 'Admin override' };
-  if (status.source === 'ENV') return { label: 'From .env' };
-  return { label: 'Configured' };
+export function getApiKeySourceTag(status: EduAiApiKeyStatus): ApiKeySourceTag {
+  if (!status.configured) return { label: "Not configured" };
+  if (status.source === "ADMIN") return { label: "Admin override" };
+  if (status.source === "ENV") return { label: "From .env" };
+  return { label: "Configured" };
 }

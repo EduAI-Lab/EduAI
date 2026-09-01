@@ -1,6 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { QmCourseAccess } from '@/lib/rbac';
-import { courseService } from '@/services/courseService';
+import { useCallback, useEffect, useState } from "react";
+import type { QmCourseAccess } from "@/lib/rbac";
+import { courseService } from "@/services/courseService";
+
+const accessRequests = new Map<number, Promise<QmCourseAccess>>();
+
+function getCourseAccess(courseId: number): Promise<QmCourseAccess> {
+  const pending = accessRequests.get(courseId);
+  if (pending) return pending;
+
+  const request = courseService.getCourseAccess(courseId);
+  accessRequests.set(courseId, request);
+  request.then(
+    () => accessRequests.delete(courseId),
+    () => accessRequests.delete(courseId),
+  );
+  return request;
+}
 
 /** Fetches per-course access from GET /api/course/:id/access for UI gating. */
 export function useCourseAccess(courseId: number | null | undefined) {
@@ -16,7 +31,7 @@ export function useCourseAccess(courseId: number | null | undefined) {
 
     setIsLoading(true);
     try {
-      const level = await courseService.getCourseAccess(courseId);
+      const level = await getCourseAccess(courseId);
       setAccess(level);
     } catch {
       setAccess(null);

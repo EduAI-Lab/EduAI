@@ -7,6 +7,7 @@ import {
   type PaginatedResponse,
   type PaginationState,
 } from "~/hooks/api/pagination";
+import type { ModelFormData } from "~/components/admin/model-form-dialog";
 import type { AIModel } from "~/hooks/api/types";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -61,7 +62,7 @@ export function useAiModels() {
   }, [refresh]);
 
   const createModel = useCallback(
-    async (data: Record<string, unknown>) => {
+    async (data: ModelFormData) => {
       await apiFetch<AIModel>("/api/ai-models", {
         method: "POST",
         body: JSON.stringify(data),
@@ -72,7 +73,7 @@ export function useAiModels() {
   );
 
   const updateModel = useCallback(
-    async (id: string, data: Record<string, unknown>) => {
+    async (id: string, data: Partial<ModelFormData>) => {
       await apiFetch<AIModel>(`/api/ai-models/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -126,4 +127,22 @@ export async function fetchModelsByProvider(providerId: string): Promise<AIModel
   const params = new URLSearchParams({ providerId, page: "1", pageSize: "200" });
   const response = await apiFetch<PaginatedResponse<AIModel>>(`/api/ai-models?${params}`);
   return response.data;
+}
+
+/** Fetch the complete model list for the Auto configuration dialog. */
+export async function fetchAllModels(): Promise<AIModel[]> {
+  const models: AIModel[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const params = new URLSearchParams({ page: String(page), pageSize: "200" });
+    const response = await apiFetch<PaginatedResponse<AIModel>>(`/api/ai-models?${params}`);
+    models.push(...response.data);
+    total = response.total;
+    page++;
+    if (response.data.length === 0) break;
+  } while (models.length < total);
+
+  return models;
 }

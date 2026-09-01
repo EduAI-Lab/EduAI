@@ -25,45 +25,58 @@
  *   services/enrollmentSync.js, services/eduaiAuth.js, middleware/auth.js
  */
 
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
   getEduAiApiKeyStatus,
   setSystemSetting,
-} from '../services/systemSettings.js';
-import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
-import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
-import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
-import { AUTO_SYNC_TIMEOUT_MS, AUTO_SYNC_TTL_MS, syncCourseEnrollments } from '../services/enrollmentSync.js';
-import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
+} from "../services/systemSettings.js";
+import { SecretEncryptionUnavailableError } from "../utils/encryption.js";
+import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPolicy.js";
+import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
+import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
+import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
+import { indexCoreCoursesById, resolveCoreCourseCatalog } from "../services/courseResolver.js";
+import {
+  AUTO_SYNC_TIMEOUT_MS,
+  AUTO_SYNC_TTL_MS,
+  syncCourseEnrollments,
+} from "../services/enrollmentSync.js";
+import { ensureOfferingAnchors } from "../services/importTaughtCoursesService.js";
 import {
   CORE_PAGE_SIZE,
+  createCoreEnrollment,
   deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   patchCoreEnrollmentRole,
-} from '../services/eduaiClient.js';
+} from "../services/eduaiClient.js";
 
 const router = express.Router();
 
+// Enrollment management is course-scoped even though it lives in the admin
+// router. Reuse the shared live principal result across every nested endpoint.
+router.use("/admin/courses/:courseId", gateCourseById());
 
-router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
   try {
     // #1041: Core requires paging here, so this route pages too rather than
     // proxying a full table. Paging params pass straight through.
-    const cookie = req.headers.cookie ?? '';
+    const cookie = req.headers.cookie ?? "";
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
     const envelope = await listCoreAdminUsers(cookie, {
       page,
       pageSize,
-      ...(req.query.search ? { search: String(req.query.search) } : {}),
-      ...(req.query.role ? { role: String(req.query.role) } : {}),
+      // An absent filter stays undefined; the client only appends the ones it
+      // actually received.
+      search: req.query.search ? String(req.query.search) : undefined,
+      role: req.query.role ? String(req.query.role) : undefined,
     });
     const rows = Array.isArray(envelope?.data) ? envelope.data : [];
     res.json({
@@ -76,8 +89,9 @@ router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
       stats: envelope?.stats ?? { total: 0, active: 0, byRole: {} },
     });
   } catch (e) {
-    const status = typeof e?.status === 'number' ? e.status : 500;
-    res.status(status).json({ error: String(e.message ?? e) });
+    const status = typeof e?.status === "number" ? e.status : 500;
+    logSafeError("[admin] Core user list failed", e);
+    sendSafeError(res, e, "Unable to load users", { status });
   }
 });
 
@@ -89,11 +103,11 @@ router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
  * frontend gets an explicit signal instead of a 404. Do not "fix" by editing
  * the local DB — change the user's role in EduAI instead.
  */
-router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res) => {
-  return res.status(410).json({ error: 'Roles are managed in EduAI' });
+router.patch("/admin/users/:userId/role", requireRole("ADMIN"), async (req, res) => {
+  return res.status(410).json({ error: "Roles are managed in EduAI" });
 });
 
-router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/courses", requireRole("ADMIN"), async (req, res) => {
   try {
     // #1043: unbounded admin list — require explicit paging (Group A contract).
     const pageParams = parsePaginationParams(req);
@@ -105,7 +119,7 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
     const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
-      res.set('X-Core-Status', 'unavailable');
+      res.set("X-Core-Status", "unavailable");
     }
     // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
     // Core course before listing, so this shows Core's full catalog rather
@@ -117,7 +131,7 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     const [total, courses] = await prisma.$transaction([
       prisma.courseOffering.count(),
       prisma.courseOffering.findMany({
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),
@@ -133,7 +147,7 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -160,16 +174,16 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
  * `availableStudentsPage.total` says how many students matched.
  */
 router.get(
-  '/admin/courses/:courseId/enrollments',
-  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  "/admin/courses/:courseId/enrollments",
+  requireRole(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    const studentSearch = (req.query.search ?? '').toString().trim() || undefined;
+    const studentSearch = (req.query.search ?? "").toString().trim() || undefined;
     const requestedPage = Number.parseInt(req.query.page, 10);
     const studentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const requestedPageSize = Number.parseInt(req.query.pageSize, 10);
@@ -187,11 +201,11 @@ router.get(
       });
 
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
 
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       if (course.coreOfferingId) {
@@ -202,8 +216,8 @@ router.get(
             signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
           });
         } catch (e) {
-          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-          console.warn(`[admin] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+          const phase = e?.phase === "write" ? "local write" : "Core fetch";
+          logSafeError(`[admin] Enrollment auto-sync (${phase}) failed; serving local mirror`, e);
         }
       }
 
@@ -215,14 +229,17 @@ router.get(
       let coreEnrollmentMap = new Map();
       if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId, {
-            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
-          });
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(
+            course.coreOfferingId,
+            {
+              signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+            },
+          );
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
         } catch (err) {
-          console.warn('[admin] Could not fetch Core enrollment names for course', courseId, err.message);
+          logSafeError("[admin] Could not fetch Core enrollment names for course", err);
         }
       }
 
@@ -232,15 +249,18 @@ router.get(
       let availableStudentsPage = { total: 0, page: studentPage, pageSize: studentPageSize };
 
       try {
-        const cookie = req.headers.cookie ?? '';
+        const cookie = req.headers.cookie ?? "";
         // #1041/#1125: two targeted reads instead of one full-table fetch —
         // an `?ids=` lookup for the enrolled users' display names, and a
         // searchable, role-scoped page for the "add a student" picker.
         const enrolledIds = [...enrolledUserIds];
         const [enrolledEnvelope, studentEnvelope] = await Promise.all([
-          listCoreAdminUsers(cookie, { ids: enrolledIds, signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS) }),
           listCoreAdminUsers(cookie, {
-            role: 'STUDENT',
+            ids: enrolledIds,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          }),
+          listCoreAdminUsers(cookie, {
+            role: "STUDENT",
             search: studentSearch,
             page: studentPage,
             pageSize: studentPageSize,
@@ -263,7 +283,7 @@ router.get(
           pageSize: studentEnvelope?.pageSize ?? studentPageSize,
         };
       } catch (err) {
-        console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
+        logSafeError("[admin] Could not fetch Core users for enrollment display", err);
       }
 
       res.json({
@@ -276,7 +296,7 @@ router.get(
             return {
               id: e.userId,
               name: displayName,
-              email: userInfo?.email ?? '',
+              email: userInfo?.email ?? "",
               role: e.role,
               createdAt: e.createdAt,
             };
@@ -285,7 +305,7 @@ router.get(
         availableStudentsPage,
       });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -299,25 +319,24 @@ router.get(
  * Why: idempotent so accidental double-clicks in the admin UI don't error.
  */
 router.post(
-  '/admin/courses/:courseId/enrollments',
-  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  "/admin/courses/:courseId/enrollments",
+  requireRole(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     const userId =
-      typeof req.body?.userId === 'string' && req.body.userId.trim().length > 0
+      typeof req.body?.userId === "string" && req.body.userId.trim().length > 0
         ? req.body.userId.trim()
         : null;
     const rawRole = req.body?.role;
-    const enrollmentRole =
-      rawRole === 'TA' || rawRole === 'STUDENT' ? rawRole : 'STUDENT';
+    const enrollmentRole = rawRole === "TA" || rawRole === "STUDENT" ? rawRole : "STUDENT";
 
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     if (!userId) {
-      return res.status(400).json({ error: 'Invalid user id' });
+      return res.status(400).json({ error: "Invalid user id" });
     }
 
     try {
@@ -327,11 +346,24 @@ router.post(
       });
 
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
 
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
+
+      // Write through to Core first, mirroring DELETE below (#812). A local-only
+      // row would grant course access Core's audit trail never recorded — and
+      // PATCH .../role refuses to manage an enrolment Core has never heard of,
+      // so the admin could create something they then could not change.
+      if (course.coreOfferingId) {
+        await createCoreEnrollment(
+          course.coreOfferingId,
+          userId,
+          enrollmentRole,
+          getEduAiCookieForRequest(req),
+        );
       }
 
       await prisma.courseEnrollment.upsert({
@@ -351,25 +383,29 @@ router.post(
 
       res.status(201).json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      // Core's refusal is the useful signal (e.g. it rejects an unknown user), so
+      // pass its status through — same as the DELETE path below. The body stays
+      // generic; `sendSafeError` never serializes the thrown value.
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
 
 router.delete(
-  '/admin/courses/:courseId/enrollments/:userId',
-  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  "/admin/courses/:courseId/enrollments/:userId",
+  requireRole(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
-    const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
+    const userId = typeof req.params.userId === "string" ? req.params.userId.trim() : "";
 
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     if (!userId) {
-      return res.status(400).json({ error: 'Invalid user id' });
+      return res.status(400).json({ error: "Invalid user id" });
     }
 
     try {
@@ -379,11 +415,11 @@ router.delete(
       });
 
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
 
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       // Write through to Core first, so a later sync doesn't re-import the student (#812).
@@ -391,7 +427,7 @@ router.delete(
         const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
-          return res.status(404).json({ error: 'Enrollment not found in Core' });
+          return res.status(404).json({ error: "Enrollment not found in Core" });
         }
         const cookie = getEduAiCookieForRequest(req);
         await deleteCoreEnrollment(course.coreOfferingId, coreEnrollment.id, cookie);
@@ -407,7 +443,7 @@ router.delete(
       res.json({ ok: true });
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 500;
-      res.status(status).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
@@ -423,24 +459,24 @@ router.delete(
  * cycle that would lose audit history on the enrollment row.
  */
 router.patch(
-  '/admin/courses/:courseId/enrollments/:userId/role',
-  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  "/admin/courses/:courseId/enrollments/:userId/role",
+  requireRole(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
-    const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
+    const userId = typeof req.params.userId === "string" ? req.params.userId.trim() : "";
     const rawRole = req.body?.role;
 
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     if (!userId) {
-      return res.status(400).json({ error: 'Invalid user id' });
+      return res.status(400).json({ error: "Invalid user id" });
     }
 
-    if (rawRole !== 'STUDENT' && rawRole !== 'TA') {
-      return res.status(400).json({ error: 'role must be STUDENT or TA' });
+    if (rawRole !== "STUDENT" && rawRole !== "TA") {
+      return res.status(400).json({ error: "role must be STUDENT or TA" });
     }
 
     try {
@@ -450,11 +486,11 @@ router.patch(
       });
 
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
 
-      if (!await isCourseAdmin(authUser, course)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+      if (!(await isCourseAdmin(authUser, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       const enrollment = await prisma.courseEnrollment.findUnique({
@@ -462,7 +498,7 @@ router.patch(
       });
 
       if (!enrollment) {
-        return res.status(404).json({ error: 'Enrollment not found' });
+        return res.status(404).json({ error: "Enrollment not found" });
       }
 
       let coreRollback = null;
@@ -470,12 +506,17 @@ router.patch(
         const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
-          return res.status(404).json({ error: 'Enrollment not found in Core' });
+          return res.status(404).json({ error: "Enrollment not found in Core" });
         }
         const cookie = getEduAiCookieForRequest(req);
         await patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, rawRole, cookie);
         coreRollback = () =>
-          patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
+          patchCoreEnrollmentRole(
+            course.coreOfferingId,
+            coreEnrollment.id,
+            enrollment.role,
+            cookie,
+          ).catch(() => {});
       }
 
       try {
@@ -490,17 +531,17 @@ router.patch(
       }
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 500;
-      res.status(status).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
 
-router.get('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, res) => {
   try {
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -513,15 +554,15 @@ router.get('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, re
  *
  * Why: stored in DB rather than env so admins can rotate without redeploying.
  */
-router.put('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, res) => {
+router.put("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, res) => {
   const apiKey = req.body?.apiKey;
-  if (typeof apiKey !== 'string') {
-    return res.status(400).json({ error: 'apiKey must be a string' });
+  if (typeof apiKey !== "string") {
+    return res.status(400).json({ error: "apiKey must be a string" });
   }
 
   const trimmed = apiKey.trim();
   if (!trimmed) {
-    return res.status(400).json({ error: 'apiKey cannot be empty' });
+    return res.status(400).json({ error: "apiKey cannot be empty" });
   }
 
   try {
@@ -529,26 +570,33 @@ router.put('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, re
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    if (e instanceof SecretEncryptionUnavailableError) {
+      // Fail closed: the deployment refuses to persist the key in plaintext.
+      logSafeError("eduai-api-key write refused (no ENCRYPTION_KEY)", e);
+      return res.status(503).json({
+        error: "Secret storage is not configured. Set ENCRYPTION_KEY to store the EduAI API key.",
+      });
+    }
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
-router.delete('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, res) => {
+router.delete("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, res) => {
   try {
     await clearSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY);
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
-router.get('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (_req, res) => {
+router.get("/admin/settings/ai-model-policy", requireRole("ADMIN"), async (_req, res) => {
   try {
     const state = await getAiModelPolicyState();
     res.json(state);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -564,17 +612,20 @@ router.get('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (_req,
  * "At least one" — those are mapped to 400 here so the admin form can surface
  * field-level errors instead of generic 500s.
  */
-router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, res) => {
+router.put("/admin/settings/ai-model-policy", requireRole("ADMIN"), async (req, res) => {
   try {
     const state = await setAiModelPolicy(req.body || {});
     res.json(state);
   } catch (e) {
     const status = Number.isInteger(e?.status)
       ? e.status
-      : e?.message?.includes('must') || e?.message?.includes('At least one')
+      : e?.message?.includes("must") || e?.message?.includes("At least one")
         ? 400
         : 500;
-    res.status(status).json({ error: String(e.message || e) });
+    logSafeError("[admin] AI model policy update failed", e);
+    sendSafeError(res, e, status === 400 ? "Invalid AI model policy" : "Internal server error", {
+      status,
+    });
   }
 });
 
@@ -597,7 +648,7 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
  * Core outage degrades UNIT_ADMIN's department scope to empty (never a hard
  * error or an unscoped leak).
  */
-router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+router.get("/admin/ai-traces", requireRole(["UNIT_ADMIN", "ADMIN"]), async (req, res) => {
   const authUser = req.user;
   const { unit } = req.query;
 
@@ -605,12 +656,13 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   if (req.query.courseId !== undefined) {
     numericCourseId = Number(req.query.courseId);
     if (!Number.isFinite(numericCourseId)) {
-      return res.status(400).json({ error: 'courseId must be a number' });
+      return res.status(400).json({ error: "courseId must be a number" });
     }
   }
 
   const rawLimit = Number(req.query.limit);
-  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
 
   try {
     // Unified contract (#1072): department/courseTitle are fields — one
@@ -618,19 +670,19 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
     const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
     const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
-      res.set('X-Core-Status', 'unavailable');
+      res.set("X-Core-Status", "unavailable");
     }
 
     const courseOfferingWhere = {};
 
-    if (authUser.role === 'UNIT_ADMIN') {
+    if (authUser.role === "UNIT_ADMIN") {
       const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
       if (units.length === 0) {
         return res.json([]);
       }
       if (unit) {
         if (!units.includes(unit)) {
-          return res.status(403).json({ error: 'Not authorized for this unit' });
+          return res.status(403).json({ error: "Not authorized for this unit" });
         }
         const deptCoreIds = catalogCourses.filter((c) => c?.department === unit).map((c) => c.id);
         courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
@@ -674,22 +726,22 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       take: limit,
     });
 
     let userNameMap = new Map();
     try {
-      const cookie = req.headers.cookie ?? '';
+      const cookie = req.headers.cookie ?? "";
       // #1125: resolve only the users these traces reference. Fetching the whole
       // table to build this map would mean page-looping it under #1041.
       const traceUserIds = [...new Set(traces.map((t) => t.userId).filter(Boolean))];
       const envelope = await listCoreAdminUsers(cookie, { ids: traceUserIds });
       for (const u of envelope?.data ?? []) {
-        userNameMap.set(u.id, u.name ?? '');
+        userNameMap.set(u.id, u.name ?? "");
       }
     } catch (err) {
-      console.warn('[admin] Could not fetch Core users for ai-traces', err.message);
+      logSafeError("[admin] Could not fetch Core users for ai-traces", err);
     }
 
     const result = traces.map((t) => ({
@@ -710,7 +762,7 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
 
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -722,28 +774,28 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
  * has zero remaining callers. Kept unreachable-from-UI for API compatibility,
  * same treatment as `POST /courses/:courseId/topics/sync` (#1031).
  */
-router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), async (req, res) => {
+router.post("/admin/courses/:courseId/sync-enrollments", requireRole("ADMIN"), async (req, res) => {
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
+    return res.status(400).json({ error: "Invalid course id" });
   }
 
   try {
     const course = await prisma.courseOffering.findUnique({ where: { id: courseId } });
     if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+      return res.status(404).json({ error: "Course not found" });
     }
 
     if (!course.coreOfferingId) {
-      return res.status(400).json({ error: 'Course is not imported from EduAI' });
+      return res.status(400).json({ error: "Course is not imported from EduAI" });
     }
 
     const result = await syncCourseEnrollments(courseId, { course });
     res.json(result);
   } catch (error) {
-    console.error('[eduai] Manual enrollment sync failed:', error);
+    logSafeError("[eduai] Manual enrollment sync failed", error);
     const status = Number.isInteger(error?.status) ? error.status : 500;
-    res.status(status).json({ error: error.message || 'Enrollment sync failed' });
+    sendSafeError(res, error, "Enrollment sync failed", { status });
   }
 });
 

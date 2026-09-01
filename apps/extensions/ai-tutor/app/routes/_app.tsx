@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router';
+import { useState } from "react";
+import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
   AIServiceIndicators,
@@ -9,7 +9,7 @@ import {
   ThemeToggle,
   useAiServiceStatus,
   type BugReportSubmitData,
-} from '@eduai/ui';
+} from "@eduai/ui";
 import {
   IconBooks,
   IconBug,
@@ -18,33 +18,35 @@ import {
   IconMessageChatbot,
   IconSettings,
   IconShieldLock,
-} from '@tabler/icons-react';
-import type { Icon } from '@tabler/icons-react';
+} from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
+import { toast } from "sonner";
 
-import api from '~/lib/api';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import { getNavForUser } from '~/lib/rbac/nav';
-import type { AtNavItemKey } from '~/lib/rbac/types';
-import { routeForRole } from '~/lib/role-routing';
-import { CURRENT_APP_ID, getLauncherApps } from '~/lib/apps';
-import { CommandPalette, AITUTOR_COMMAND_EVENT } from '~/components/command/CommandPalette';
-import { useBugReport } from '~/components/bug-report/useBugReport';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import api from "~/lib/api";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { getNavForUser } from "~/lib/rbac/nav";
+import type { AtNavItemKey } from "~/lib/rbac/types";
+import { routeForRole } from "~/lib/role-routing";
+import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
+import { getRouteCourseId } from "~/lib/route-course";
+import { CommandPalette, AITUTOR_COMMAND_EVENT } from "~/components/command/CommandPalette";
+import { useBugReport } from "~/components/bug-report/useBugReport";
+import { ShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbs";
 import {
   ShellBreadcrumbProvider,
   useShellBreadcrumbState,
-} from '~/components/layout/ShellBreadcrumbContext';
-import TourButton from '~/components/TourButton';
+} from "~/components/layout/ShellBreadcrumbContext";
+import TourButton from "~/components/TourButton";
 
-const NAV_ICONS: Record<AtNavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
-  'my-courses': IconBooks,
+  "my-courses": IconBooks,
   teaching: IconBooks,
-  'admin-courses': IconBooks,
-  'admin-bug-reports': IconShieldLock,
+  "admin-courses": IconBooks,
+  "admin-bug-reports": IconShieldLock,
   enrollments: IconBooks,
   analytics: IconBooks,
-};
+} satisfies Record<AtNavItemKey, Icon>;
 
 /**
  * AI Tutor brand mark — canonical shape shared with Core (`app-sidebar.tsx`)
@@ -56,11 +58,11 @@ const AI_TUTOR_LOGO = (
   <>
     <div
       className="flex shrink-0 items-center justify-center"
-      style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--primary)' }}
+      style={{ width: 28, height: 28, borderRadius: 7, background: "var(--primary)" }}
     >
       <IconMessageChatbot className="size-4 text-white" strokeWidth={1.75} aria-hidden />
     </div>
-    <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>
+    <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>
       AI Tutor
     </span>
   </>
@@ -73,13 +75,15 @@ function HeaderBreadcrumbs() {
 }
 
 function AppLayoutInner() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
-  const aiStatus = useAiServiceStatus({ fetcher: () => api.aiStatus() });
+  const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const [capturingScreenshot, setCapturingScreenshot] = useState(false);
+  const routeCourseId = getRouteCourseId(matches);
+  const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -90,23 +94,15 @@ function AppLayoutInner() {
     return <Outlet />;
   }
 
-  const handleOpenBugReport = async () => {
-    setCapturingScreenshot(true);
-    try {
-      await captureScreenshot();
-      setBugReportOpen(true);
-    } finally {
-      setCapturingScreenshot(false);
-    }
-  };
+  const handleOpenBugReport = () => setBugReportOpen(true);
 
   const handleSubmitBugReport = async (data: BugReportSubmitData) => {
     await api.submitBugReport({
       description: data.description,
       bugType: data.bugType,
       isAnonymous: data.isAnonymous,
-      consoleLogs: data.consoleLogs ?? '[]',
-      networkLogs: data.networkLogs ?? '[]',
+      consoleLogs: data.consoleLogs ?? "[]",
+      networkLogs: data.networkLogs ?? "[]",
       screenshot: data.screenshot ?? null,
       pageUrl: data.pageUrl ?? window.location.href,
       userAgent: data.userAgent ?? navigator.userAgent,
@@ -115,8 +111,14 @@ function AppLayoutInner() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    }
   };
 
   const navMain = getNavForUser(user).map((item) => ({
@@ -131,16 +133,20 @@ function AppLayoutInner() {
         logo: AI_TUTOR_LOGO,
         logoHref: routeForRole(user.role),
         navMain,
-        navSecondary: [{ title: 'Help', url: '/help', icon: IconHelpCircle }],
+        navSecondary: [{ title: "Help", url: "/help", icon: IconHelpCircle }],
         currentPath: pathname,
         LinkComponent: Link,
-        launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user.role },
-        user: { name: user.name, email: user.email ?? '', role: user.role },
+        launcher: {
+          apps: getLauncherApps(coreCourseId),
+          currentAppId: CURRENT_APP_ID,
+          role: user.role,
+        },
+        user: { name: user.name, email: user.email ?? "", role: user.role },
         navUser: {
           items: [
             {
-              label: 'Settings',
-              href: '/settings',
+              label: "Settings",
+              href: "/settings",
               icon: <IconSettings size={15} strokeWidth={1.75} />,
             },
           ],
@@ -154,17 +160,16 @@ function AppLayoutInner() {
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
-          <AIServiceIndicators cloud={aiStatus.cloud} ubc={aiStatus.ubc} onRefresh={aiStatus.refresh} />
+          <AIServiceIndicators
+            cloud={aiStatus.cloud}
+            cloudLabel="Managed cloud AI"
+            ubc={aiStatus.ubc}
+            onRefresh={aiStatus.refresh}
+          />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void handleOpenBugReport()}
-            disabled={capturingScreenshot}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
             <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
-            {capturingScreenshot ? 'Preparing…' : 'Report a bug'}
+            Report a bug
           </Button>
         </>
       }

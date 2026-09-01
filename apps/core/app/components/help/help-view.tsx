@@ -60,8 +60,11 @@ const TOPICS: HelpTopic[] = [
     icon: IconBooks,
     points: [
       <>
-        Open <Link to="/courses" className="text-primary-text hover:underline">Courses</Link> to
-        browse everything you're enrolled in or teaching.
+        Open{" "}
+        <Link to="/courses" className="text-primary-text hover:underline">
+          Courses
+        </Link>{" "}
+        to browse everything you're enrolled in or teaching.
       </>,
       "Inside a course, use the tabs to move between overview, materials, topics, and people.",
       "The course name in the breadcrumb is a switcher — click it to jump to another course without leaving the page you're on.",
@@ -73,10 +76,13 @@ const TOPICS: HelpTopic[] = [
     icon: IconRobot,
     points: [
       <>
-        Head to <Link to="/chat" className="text-primary-text hover:underline">Chatbot</Link> to ask
-        questions grounded in your course materials.
+        Head to{" "}
+        <Link to="/chat" className="text-primary-text hover:underline">
+          Chatbot
+        </Link>{" "}
+        to ask questions grounded in your course materials.
       </>,
-      "Course-scoped chats answer from that course's uploaded materials; general chats aren't tied to a course.",
+      "Course Chat conversations are tied to a selected course and use that course's uploaded materials.",
       "Your conversations are saved — reopen any of them from the dashboard or the chat history.",
     ],
   },
@@ -99,7 +105,9 @@ const TOPICS: HelpTopic[] = [
     points: [
       <>
         Manage platform accounts under{" "}
-        <Link to="/admin/users" className="text-primary-text hover:underline">User Management</Link>{" "}
+        <Link to="/admin/users" className="text-primary-text hover:underline">
+          User Management
+        </Link>{" "}
         and invite new people from Invitations.
       </>,
       "Configure AI providers and models in AI Management to control which models power chat and embeddings.",
@@ -108,11 +116,18 @@ const TOPICS: HelpTopic[] = [
   },
 ];
 
-export function HelpView({ role }: { role?: string }) {
-  const topics = TOPICS.filter((t) => !t.roles || (role && t.roles.includes(role)));
+export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean }) {
+  // TAs are platform STUDENTs (Enrollment.role carries TA). They can upload
+  // and manage their own course materials (AUTH-08), so they need the
+  // materials topic even though session.user.role is not in STAFF.
+  const topics = TOPICS.filter((t) => {
+    if (!t.roles) return true;
+    if (role && t.roles.includes(role)) return true;
+    return isTA && t.id === "materials";
+  });
 
   return (
-    <div className="flex flex-col gap-6 px-4 lg:px-6 pb-10">
+    <div className="flex flex-col gap-6 px-4 lg:px-6 pt-6 pb-10">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <PageHeading
           heading="Help & guide"

@@ -26,6 +26,7 @@ Environment=PORT=8000
 # The `start` script also runs db:generate + db:migrate:deploy; both move to
 # go-live-build.sh, so this execs the server directly. Keeping migrate out of the
 # unit matters: Restart=always would re-run it on every crash-loop iteration.
+ExecStartPre=/usr/bin/test -f /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js
 ExecStart=/usr/local/bin/node src/index.js
 
 Restart=always

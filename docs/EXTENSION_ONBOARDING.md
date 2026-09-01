@@ -21,7 +21,7 @@ This guide explains how to connect a new extension to the EduAI Core platform. I
 7. [Calling Core APIs](#7-calling-core-apis)
 8. [Registering with Core's sidebar](#8-registering-with-cores-sidebar)
 9. [Local development setup](#9-local-development-setup)
-9. [Verification checklist](#9-verification-checklist)
+10. [Verification checklist](#10-verification-checklist)
 
 ---
 
@@ -62,7 +62,8 @@ CORE_URL=http://localhost:3000
 EXTENSION_URL=http://localhost:8000
 
 # Shared service key — must match EDUAI_API_KEY in Core's .env
-# Used for server-to-server calls that are not on behalf of a specific user
+# Required for POST /api/sessions/validate (missing key yields 403) and for
+# server-to-server calls that are not on behalf of a specific user
 EDUAI_API_KEY=
 
 # Core API base URL — used by service-level API calls
@@ -88,9 +89,16 @@ function normalizeRole(role) {
 
 export async function requireAuth(req, res, next) {
   try {
+    const headers = { cookie: req.headers.cookie ?? '' };
+    // Core requires EDUAI_API_KEY on POST /api/sessions/validate.
+    // Unset keys produce 403. Still attempt the request so a template can
+    // run without Core (e.g. local UI-only experiments).
+    const serviceKey = process.env.EDUAI_API_KEY?.trim();
+    if (serviceKey) headers.authorization = `Bearer ${serviceKey}`;
+
     const response = await fetch(`${process.env.CORE_URL}/api/sessions/validate`, {
       method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers,
     });
 
     if (!response.ok) {
@@ -112,6 +120,7 @@ export async function requireAuth(req, res, next) {
 
 Key points:
 
+- **`EDUAI_API_KEY` is required for `POST /api/sessions/validate`.** Send `Authorization: Bearer ${EDUAI_API_KEY}` (trim the env var) alongside the cookie. A missing key yields an opaque 403 from Core.
 - **Forward the raw `Cookie` header verbatim.** Do not parse or filter it — Core's session store resolves the correct session from the cookie value.
 - **API routes (`/api/*`) return 401.** These are called by fetch, not browser navigation. Let the client handle it.
 - **All other routes redirect to Core login.** The `?redirect=` param tells Core where to send the user after authentication.
@@ -220,20 +229,15 @@ async function getUserCourses(req, { page = 1, pageSize = 25 } = {}) {
 }
 ```
 
-> **Core's list endpoints are paginated (#1041).** `GET /api/users`, `/api/courses`,
-> `/api/ai-models`, and `/api/ai-providers` **require** `page` and `pageSize` — a
-> request without them is a `400 PAGINATION_REQUIRED`. They all answer with the
-> same envelope:
+> **Core's list endpoints are paginated (#1041).** `GET /api/users`, `/api/courses`, `/api/ai-models`, and `/api/ai-providers` **require** `page` and `pageSize` — a request without them is a `400 PAGINATION_REQUIRED`. They all answer with the same envelope:
 >
 > ```json
 > { "data": [], "total": 0, "page": 1, "pageSize": 25 }
 > ```
 >
-> `pageSize` is clamped to 1–200. If you only need a handful of records you
-> already know the ids of, use `?ids=a,b,c` on `/api/users` and `/api/courses`
-> instead — it is unpaged, returns the same envelope, and cannot be combined
-> with `page`/`pageSize`. `?search=` is also available on both. Do not page-loop
-> a whole table to build an id→record map; that is what `?ids=` is for.
+> `pageSize` is clamped to 1–200. If you only need a handful of records you already know the ids of, use `?ids=a,b,c` on `/api/users` and `/api/courses` instead — it is unpaged, returns the same envelope, and cannot be combined with `page`/`pageSize`. `?search=` is also available on both. Do not page-loop a whole table to build an id→record map; that is what `?ids=` is for.
+>
+> `/api/courses` additionally accepts repeatable `?status=` (`published`|`draft`), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination, and a role-scoped `GET /api/courses/facets` returns those filter option values for the caller's whole accessible set (never just the current page).
 
 ### Service-level calls
 
@@ -251,16 +255,34 @@ async function getEnrollments(courseId) {
 
 **Rule of thumb:** If the result depends on who the user is, forward the cookie. If it's infrastructure data any service can access, use `EDUAI_API_KEY`.
 
+### Writes need the service key, even with a cookie
+
+Core's root middleware rejects any **cookie-bearing** `POST`/`PATCH`/`PUT`/`DELETE` that cannot prove same-site provenance (`Origin`, then `Referer`, then `Sec-Fetch-Site: same-origin`, checked against `BETTER_AUTH_URL`'s origin and the request's own origin):
+
+```json
+HTTP/1.1 403 Forbidden
+{ "error": "CROSS_ORIGIN_MUTATION" }
+```
+
+A server-to-server call has no browser origin, so **a mutation that forwards only the user's cookie will be blocked.** Send `Authorization: Bearer <EDUAI_API_KEY>` alongside the cookie (or on its own) — a valid service key is the documented bypass.
+
+Reads are unaffected. Your own extension should run the mirror-image guard on its own mutating routes; see `requireSameOriginMutation` (AI Tutor) and `csrfOriginGuard` (Question Maker) for two working implementations.
+
 ### Core endpoints that accept service key calls
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/courses` | List all courses (role-filtered if cookie; all if service key) |
+| `POST /api/sessions/validate` | Session validation — **requires** the key; a cookie alone is `403` |
+| `GET /api/courses` | List courses (role-filtered when a cookie is forwarded; unscoped for a bare service key) |
+| `GET /api/courses/:id` | Single-course live read-through |
 | `GET /api/courses/:id/topics` | Topics for a course |
-| `GET /api/courses/:id/enrollments` | Student roster |
+| `GET /api/courses/:id/enrollments` | Course roster |
+| `GET /api/policies` | Platform feature flags |
+| `POST /api/completion` | Stateless LLM completion for extension AI-assist |
 | `POST /api/bug-reports` | Submit a bug report |
 | `POST /api/questions` | Push a question variant to Core |
-| `GET /api/policies` | Fetch platform feature flags |
+
+Core also calls **outward** to extensions using the same key: on course deletion it makes a best-effort cascade call to `QM_BACKEND_URL` / `AI_TUTOR_SERVER_URL` (`/api/internal/...`). If you implement that endpoint, gate it with `requireServiceKey` and make it idempotent — Core does not retry, and your nightly reconcile job is the safety net.
 
 ---
 
@@ -319,9 +341,11 @@ Core and the new extension must run simultaneously for the auth flow to work.
 
 | Service | Default port | `CORE_URL` value |
 |---|---|---|
-| Core | `3000` | — |
-| AI Tutor | `4000` | `http://localhost:3000` |
-| Question Maker | `8000` | `http://localhost:3000` |
+| Core (SSR app + API) | `3000` | — |
+| AI Tutor frontend | `3001` | — (browser only) |
+| AI Tutor API | `4000` | `http://localhost:3000` |
+| Question Maker frontend | `5173` | — (browser only) |
+| Question Maker API | `8000` | `http://localhost:3000` |
 | Example extension | `9000` | `http://localhost:3000` |
 
 **Cookie behavior across ports:**  
@@ -339,6 +363,7 @@ Core sets `Domain=localhost` in development. Modern browsers (Chrome, Firefox, E
 ---
 
 ## 10. Verification checklist
+
 
 Run through these steps after wiring up a new extension. All items must pass before the extension is considered onboarded.
 
@@ -365,8 +390,9 @@ Run through these steps after wiring up a new extension. All items must pass bef
 
 ### API connectivity
 
-- [ ] Make a user-scoped call from the extension to `GET /api/courses` (forwarding the session cookie) — confirm the response contains courses the user has access to.
+- [ ] Make a user-scoped call from the extension to `GET /api/courses?page=1&pageSize=25` (forwarding the session cookie) — confirm the response contains courses the user has access to, in the `{ data, total, page, pageSize }` envelope.
 - [ ] Make a service-level call using `EDUAI_API_KEY` — confirm a `200` response.
+- [ ] Make a **mutating** call to Core with only the cookie — confirm `403 CROSS_ORIGIN_MUTATION`, then confirm the same call succeeds once `Authorization: Bearer <EDUAI_API_KEY>` is added.
 - [ ] Confirm there are no local `/register` or `/login` routes. If a legacy auth system existed, confirm those routes return `404`.
 
 ### Sidebar registration

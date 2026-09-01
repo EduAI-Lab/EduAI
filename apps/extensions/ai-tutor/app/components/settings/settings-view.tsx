@@ -6,16 +6,17 @@
  *
  * Accessibility now composes the shared `AccessibilitySettings` component
  * (`@eduai/ui`) directly, same as Core and Question Maker. Density and
- * reduce-motion have no dedicated CSS in AI Tutor yet (only Core's
- * `app.css` wires `[data-density]` / `[data-reduce-motion]` today) — this
- * mirrors Question Maker's own settings page, which ships the same two
- * toggles as session-only attribute state ahead of shared CSS landing.
+ * reduce-motion are owned by `UiPreferencesProvider` (mounted in `root.tsx`),
+ * which persists them to `localStorage` and applies the `[data-density]` /
+ * `[data-reduce-motion]` hooks app-wide; this app's `app.css` carries the CSS
+ * that reads them, ported from Core's. Question Maker's settings page still
+ * ships the same two toggles as session-only attribute state and needs the
+ * same fix — this screen no longer does.
  * Assistive Mode is passed through unchanged: it is BREB-approved and its
  * `[data-assistive] .reading-surface` contract (see
  * `~/components/settings/assistive-mode.tsx`) must not be touched.
  */
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from "react-router";
 import {
   AccessibilitySettings,
   Avatar,
@@ -29,58 +30,37 @@ import {
   SettingsPageScaffold,
   SignOutCard,
   useTheme,
-  type AccessibilityUiDensity,
   type AccessibilityUiTheme,
-} from '@eduai/ui';
-import { IconAccessible, IconLogout, IconUser, IconWorld } from '@tabler/icons-react';
+} from "@eduai/ui";
+import { IconAccessible, IconLogout, IconUser, IconWorld } from "@tabler/icons-react";
+import { toast } from "sonner";
 
-import { useAssistiveMode } from '~/components/settings/assistive-mode';
-import { ProvidersSettings } from '~/components/settings/providers-settings';
-import { useLocalUser } from '~/hooks/useLocalUser';
-
-function readInitialDensity(): AccessibilityUiDensity {
-  if (typeof document === 'undefined') return 'comfortable';
-  return document.documentElement.getAttribute('data-density') === 'compact'
-    ? 'compact'
-    : 'comfortable';
-}
-
-function readInitialMotionReduced(): boolean {
-  if (typeof document === 'undefined') return false;
-  return document.documentElement.hasAttribute('data-reduce-motion');
-}
+import { useAssistiveMode } from "~/components/settings/assistive-mode";
+import { useUiPreferences } from "~/components/settings/ui-preferences";
+import { ProvidersSettings } from "~/components/settings/providers-settings";
+import { useLocalUser } from "~/hooks/useLocalUser";
 
 export function SettingsView() {
   const { user, logout } = useLocalUser();
   const navigate = useNavigate();
   const { theme: nextTheme, setTheme } = useTheme();
   const { assistive, setAssistive } = useAssistiveMode();
-  const [density, setDensity] = useState<AccessibilityUiDensity>(readInitialDensity);
-  const [motionReduced, setMotionReduced] = useState<boolean>(readInitialMotionReduced);
+  // Owned by `UiPreferencesProvider` (mounted in `root.tsx`), which persists
+  // both and applies the html hooks app-wide — not just while this screen is
+  // mounted, and not lost on reload.
+  const { density, motionReduced, setDensity, setMotionReduced } = useUiPreferences();
 
-  const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? 'system';
-
-  const handleDensityChange = (value: AccessibilityUiDensity) => {
-    setDensity(value);
-    if (value === 'compact') {
-      document.documentElement.setAttribute('data-density', 'compact');
-    } else {
-      document.documentElement.removeAttribute('data-density');
-    }
-  };
-
-  const handleMotionReducedChange = (value: boolean) => {
-    setMotionReduced(value);
-    if (value) {
-      document.documentElement.setAttribute('data-reduce-motion', 'true');
-    } else {
-      document.documentElement.removeAttribute('data-reduce-motion');
-    }
-  };
+  const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? "system";
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    }
   };
 
   return (
@@ -98,33 +78,33 @@ export function SettingsView() {
       }
       tabs={[
         {
-          value: 'account',
-          label: 'Account',
+          value: "account",
+          label: "Account",
           icon: <IconUser className="h-4 w-4" />,
           content: (
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Your account details for this AI Tutor session.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <Avatar name={user?.name ?? 'You'} size={48} radius={12} />
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="truncate text-sm font-medium">{user?.name ?? 'Signed in'}</p>
-                  {user?.email && (
-                    <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-                  )}
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile</CardTitle>
+                <CardDescription>Your account details for this AI Tutor session.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <Avatar name={user?.name ?? "You"} size={48} radius={12} />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="truncate text-sm font-medium">{user?.name ?? "Signed in"}</p>
+                    {user?.email && (
+                      <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                    )}
+                  </div>
+                  {user?.role && <RoleBadge role={user.role} className="shrink-0" />}
                 </div>
-                {user?.role && <RoleBadge role={user.role} className="shrink-0" />}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
           ),
         },
         {
-          value: 'accessibility',
-          label: 'Accessibility',
+          value: "accessibility",
+          label: "Accessibility",
           icon: <IconAccessible className="h-4 w-4" />,
           content: (
             <AccessibilitySettings
@@ -133,16 +113,16 @@ export function SettingsView() {
               motionReduced={motionReduced}
               assistive={assistive}
               onThemeChange={(value) => setTheme(value)}
-              onDensityChange={handleDensityChange}
-              onMotionReducedChange={handleMotionReducedChange}
+              onDensityChange={setDensity}
+              onMotionReducedChange={setMotionReduced}
               onAssistiveChange={setAssistive}
               description="Personalize how AI Tutor looks and feels. These settings are optional for everyone."
             />
           ),
         },
         {
-          value: 'providers',
-          label: 'Providers',
+          value: "providers",
+          label: "Providers",
           icon: <IconWorld className="h-4 w-4" />,
           content: <ProvidersSettings />,
         },

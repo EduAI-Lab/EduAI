@@ -44,7 +44,14 @@ function indexTurnResults(turnResults) {
   return map;
 }
 
-function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, baselineDir, afterDir }) {
+function buildMarkdown({
+  baselineMeta,
+  afterMeta,
+  baselineTurns,
+  afterTurns,
+  baselineDir,
+  afterDir,
+}) {
   const lines = [];
   lines.push("# IURA Form A — Phase 3 oversight before/after record");
   lines.push("");
@@ -61,7 +68,9 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
   lines.push(
     `| Oversight | ${baselineMeta.oversight?.enabled === false ? "off" : "not recorded"} | ${afterMeta.oversight?.enabled === false ? "off" : afterMeta.oversight?.enabled ? "on" : "assumed on"} |`,
   );
-  lines.push(`| Eval dir | \`${path.relative(REPO_ROOT, baselineDir)}\` | \`${path.relative(REPO_ROOT, afterDir)}\` |`);
+  lines.push(
+    `| Eval dir | \`${path.relative(REPO_ROOT, baselineDir)}\` | \`${path.relative(REPO_ROOT, afterDir)}\` |`,
+  );
   lines.push(`| Label | ${baselineMeta.label ?? "—"} | ${afterMeta.label ?? "—"} |`);
   lines.push("");
 
@@ -77,9 +86,7 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
 
   for (const row of afterOn) {
     const key = `${row.scenarioId}.on.t${row.turn}`;
-    const before = baselineOn.find(
-      (b) => b.scenarioId === row.scenarioId && b.turn === row.turn,
-    );
+    const before = baselineOn.find((b) => b.scenarioId === row.scenarioId && b.turn === row.turn);
     const bPass = before?.structuralPass ?? null;
     const aPass = row.structuralPass;
     const delta =
@@ -98,15 +105,15 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
 
   lines.push("## Contextual appropriateness (per turn, Assist ON)");
   lines.push("");
-  lines.push("Pass = response shape matches turn intent (e.g. S2 t2 redirect should **not** get a full Top summary block).");
+  lines.push(
+    "Pass = response profile matches turn intent (e.g. S2 t2 redirect should **not** get a full Top summary block).",
+  );
   lines.push("");
-  lines.push("| Turn | Expected shape | Before contextual | After contextual | Δ |");
+  lines.push("| Turn | Expected response profile | Before contextual | After contextual | Δ |");
   lines.push("| --- | --- | :---: | :---: | :---: |");
 
   for (const row of afterOn) {
-    const before = baselineOn.find(
-      (b) => b.scenarioId === row.scenarioId && b.turn === row.turn,
-    );
+    const before = baselineOn.find((b) => b.scenarioId === row.scenarioId && b.turn === row.turn);
     const bPass = before?.contextualPass ?? null;
     const aPass = row.contextualPass;
     const delta =
@@ -118,7 +125,7 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
             ? "regressed"
             : "same";
     lines.push(
-      `| ${row.scenarioId} t${row.turn} | ${row.expectedShape ?? "—"} | ${passCell(bPass)} | ${passCell(aPass)} | ${delta} |`,
+      `| ${row.scenarioId} t${row.turn} | ${row.expectedResponseProfile ?? "—"} | ${passCell(bPass)} | ${passCell(aPass)} | ${delta} |`,
     );
   }
   lines.push("");
@@ -130,19 +137,31 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
 
   lines.push("## Summary counts (Assist ON turns)");
   lines.push("");
-  lines.push(`- **Strict structural:** before ${beforeStrict}/${baselineOn.length} → after ${afterStrict}/${afterOn.length}`);
-  lines.push(`- **Contextual shape:** before ${beforeContext}/${baselineOn.length} → after ${afterContext}/${afterOn.length}`);
+  lines.push(
+    `- **Strict structural:** before ${beforeStrict}/${baselineOn.length} → after ${afterStrict}/${afterOn.length}`,
+  );
+  lines.push(
+    `- **Contextual profile:** before ${beforeContext}/${baselineOn.length} → after ${afterContext}/${afterOn.length}`,
+  );
   lines.push("");
   lines.push("## Interpretation notes");
   lines.push("");
-  lines.push("- Phase 3 v1 (structural oversight) optimizes **literal anchors** on every non-compliant draft.");
-  lines.push("- A **Dean** second model is still needed when structure should be **context-dependent** (e.g. S2 t2 topic-drift redirect).");
-  lines.push("- If after-capture shows S2 t2 **structural PASS** but **contextual FAIL**, oversight is over-applying templates — Dean should gate structure by turn type.");
+  lines.push(
+    "- Phase 3 v1 (structural oversight) optimizes **literal anchors** on every non-compliant draft.",
+  );
+  lines.push(
+    "- A **Dean** second model is still needed when structure should be **context-dependent** (e.g. S2 t2 topic-drift redirect).",
+  );
+  lines.push(
+    "- If after-capture shows S2 t2 **structural PASS** but **contextual FAIL**, oversight is over-applying templates — Dean should gate structure by turn type.",
+  );
   lines.push("");
   lines.push("## Evidence links");
   lines.push("");
-  for (const id of [...new Set(afterOn.map((t) => t.scenarioId))]) {
-    lines.push(`- ${id}: before \`${path.relative(REPO_ROOT, path.join(baselineDir, `${id}-on.md`))}\`, after \`${path.relative(REPO_ROOT, path.join(afterDir, `${id}-on.md`))}\``);
+  for (const id of new Set(afterOn.map((t) => t.scenarioId))) {
+    lines.push(
+      `- ${id}: before \`${path.relative(REPO_ROOT, path.join(baselineDir, `${id}-on.md`))}\`, after \`${path.relative(REPO_ROOT, path.join(afterDir, `${id}-on.md`))}\``,
+    );
   }
   lines.push("");
 
@@ -160,7 +179,9 @@ async function main() {
   });
 
   if (values.help) {
-    process.stdout.write(`Usage: record-form-a-phase3.mjs --baseline <dir> --after <dir> [--out <file>]\n`);
+    process.stdout.write(
+      `Usage: record-form-a-phase3.mjs --baseline <dir> --after <dir> [--out <file>]\n`,
+    );
     process.exit(0);
   }
 

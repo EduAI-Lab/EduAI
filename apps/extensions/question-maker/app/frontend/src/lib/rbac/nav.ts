@@ -1,7 +1,8 @@
-import type { QmNavItem, QmNavItemKey, QmUser } from './types';
-import { getCoreDashboardUrl } from '@/lib/coreUrl';
-import { canManageAssessment, canTriageBugReports } from './permissions';
-import { resolvePlatformCourseAccess } from './resolve-course-access';
+import type { QmNavItem, QmNavItemKey, QmUser } from "./types";
+import { getCoreDashboardUrl } from "@/lib/coreUrl";
+import { canManageAssessment, canTriageBugReports } from "./permissions";
+import { resolvePlatformCourseAccess } from "./resolve-course-access";
+import { canAccessQm } from "./roles";
 
 /**
  * Main sidebar links, per rbac-matrix §16–18.
@@ -13,40 +14,40 @@ import { resolvePlatformCourseAccess } from './resolve-course-access';
  * applied any role gate — which is why the admin-only Bug reports entry was
  * unreachable from the UI despite this function already gating it correctly.
  */
-const CORE_NAV: Omit<QmNavItem, 'key'>[] = [
+const CORE_NAV: Omit<QmNavItem, "key">[] = [
   {
-    title: 'Dashboard',
-    href: '/dashboard',
-    match: (pathname) => pathname === '/dashboard',
+    title: "Dashboard",
+    href: "/dashboard",
+    match: (pathname) => pathname === "/dashboard",
   },
   {
-    title: 'Courses',
-    href: '/courses',
-    match: (pathname) => pathname.startsWith('/courses'),
+    title: "Courses",
+    href: "/courses",
+    match: (pathname) => pathname.startsWith("/courses"),
   },
   {
-    title: 'Question Library',
-    href: '/library',
-    match: (pathname) => pathname === '/library',
+    title: "Question Library",
+    href: "/library",
+    match: (pathname) => pathname === "/library",
   },
 ];
 
-const NAV_KEYS: QmNavItemKey[] = ['dashboard', 'courses', 'library'];
+const NAV_KEYS: QmNavItemKey[] = ["dashboard", "courses", "library"];
 
-function withKeys(items: Omit<QmNavItem, 'key'>[], keys: QmNavItemKey[]): QmNavItem[] {
+function withKeys(items: Omit<QmNavItem, "key">[], keys: QmNavItemKey[]): QmNavItem[] {
   return items.map((item, index) => ({ ...item, key: keys[index] }));
 }
 
 export function getNavForUser(user: QmUser | null | undefined): QmNavItem[] {
-  if (!user) return [];
+  if (!user || !canAccessQm(user.role)) return [];
   const nav = withKeys(CORE_NAV, NAV_KEYS);
 
   if (canTriageBugReports(user)) {
     nav.push({
-      key: 'bug-reports',
-      title: 'Bug reports',
-      href: '/admin/bug-reports',
-      match: (pathname) => pathname === '/admin/bug-reports',
+      key: "bug-reports",
+      title: "Bug reports",
+      href: "/admin/bug-reports",
+      match: (pathname) => pathname === "/admin/bug-reports",
     });
   }
 
@@ -55,13 +56,13 @@ export function getNavForUser(user: QmUser | null | undefined): QmNavItem[] {
 
 /** Secondary sidebar links. Settings lives in the navUser dropdown, like Core. */
 export function getNavSecondaryForUser(user: QmUser | null | undefined): QmNavItem[] {
-  if (!user) return [];
+  if (!user || !canAccessQm(user.role)) return [];
   return [
     {
-      key: 'help',
-      title: 'Help',
-      href: '/help',
-      match: (pathname) => pathname === '/help',
+      key: "help",
+      title: "Help",
+      href: "/help",
+      match: (pathname) => pathname === "/help",
     },
   ];
 }
@@ -69,8 +70,8 @@ export function getNavSecondaryForUser(user: QmUser | null | undefined): QmNavIt
 export function getFooterNavForUser(_user: QmUser | null | undefined): QmNavItem[] {
   return [
     {
-      key: 'back-to-eduai',
-      title: 'Back to EduAI',
+      key: "back-to-eduai",
+      title: "Back to EduAI",
       href: getCoreDashboardUrl(),
       external: true,
     },
@@ -79,14 +80,16 @@ export function getFooterNavForUser(_user: QmUser | null | undefined): QmNavItem
 
 export function getRoleViewLabel(role: string | undefined): string {
   switch (role) {
-    case 'ADMIN':
-      return 'Administrator';
-    case 'UNIT_ADMIN':
-      return 'Unit administrator';
-    case 'INSTRUCTOR':
-      return 'Instructor';
+    case "ADMIN":
+      return "Administrator";
+    case "UNIT_ADMIN":
+      return "Unit administrator";
+    case "INSTRUCTOR":
+      return "Instructor";
+    case "TA":
+      return "Teaching assistant";
     default:
-      return 'User';
+      return "User";
   }
 }
 

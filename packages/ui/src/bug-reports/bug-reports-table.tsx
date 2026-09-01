@@ -7,14 +7,14 @@
  *   callbacks arrive via props from `BugReportsTab`.
  */
 
-import { hasAttachmentContent } from '@eduai/types';
+import { hasAttachmentContent } from "@eduai/types";
 
-import { RoleBadge } from '../role-badge';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import type { AdminBugReportRow, BugReportStatus } from './types';
+import { RoleBadge } from "../role-badge";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
+import type { AdminBugReportRow, BugReportStatus } from "./types";
 import {
   BUG_TYPE_LABELS,
   STATUS_BADGE_VARIANT,
@@ -28,7 +28,7 @@ import {
   type SortDirection,
   type SortKey,
   type ViewerType,
-} from './bug-reports-utils';
+} from "./bug-reports-utils";
 
 function StatusSelect({
   reportId,
@@ -86,7 +86,7 @@ function SortHeader({
       onClick={() => onToggle(sortKey)}
     >
       <span>{title}</span>
-      <span aria-hidden="true">{isActive ? (direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+      <span aria-hidden="true">{isActive ? (direction === "asc" ? "▲" : "▼") : "↕"}</span>
     </button>
   );
 }
@@ -223,10 +223,13 @@ export function BugReportsTable({
         <TableBody>
           {reports.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={showSourceColumn ? 10 : 9} className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground">
+              <TableCell
+                colSpan={showSourceColumn ? 10 : 9}
+                className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground"
+              >
                 {hasActiveFilters
-                  ? 'No reports match your filters. Try adjusting your search criteria.'
-                  : 'No bug reports yet.'}
+                  ? "No reports match your filters. Try adjusting your search criteria."
+                  : "No bug reports yet."}
               </TableCell>
             </TableRow>
           ) : (
@@ -242,12 +245,12 @@ export function BugReportsTable({
                 </TableCell>
                 <TableCell className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
                   <span className="block truncate">
-                    {report.bugType ? BUG_TYPE_LABELS[report.bugType] : '—'}
+                    {report.bugType ? BUG_TYPE_LABELS[report.bugType] : "—"}
                   </span>
                 </TableCell>
                 {showSourceColumn ? (
                   <TableCell className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
-                    <span className="block truncate">{report.source ?? '—'}</span>
+                    <span className="block truncate">{report.source ?? "—"}</span>
                   </TableCell>
                 ) : null}
                 <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
@@ -255,7 +258,7 @@ export function BugReportsTable({
                     type="button"
                     className="line-clamp-3 w-full wrap-break-word text-left text-foreground hover:text-primary-text"
                     title={report.description}
-                    onClick={() => onOpenViewer('description', report.id)}
+                    onClick={() => onOpenViewer("description", report.id)}
                   >
                     {report.description}
                   </button>
@@ -285,7 +288,7 @@ export function BugReportsTable({
                   </span>
                 </TableCell>
                 <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
-                  <span className="block truncate" title={report.pageUrl ?? ''}>
+                  <span className="block truncate" title={report.pageUrl ?? ""}>
                     {getPathLabel(report.pageUrl)}
                   </span>
                 </TableCell>
@@ -294,16 +297,16 @@ export function BugReportsTable({
                     <Button
                       type="button"
                       size="sm"
-                      variant={copiedReportId === report.id ? 'secondary' : 'outline'}
+                      variant={copiedReportId === report.id ? "secondary" : "outline"}
                       onClick={() => onCopyReport(report)}
                     >
-                      {copiedReportId === report.id ? 'Copied!' : 'Copy'}
+                      {copiedReportId === report.id ? "Copied!" : "Copy"}
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => onOpenViewer('console', report.id)}
+                      onClick={() => onOpenViewer("console", report.id)}
                       disabled={!hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs)}
                     >
                       Console
@@ -312,7 +315,7 @@ export function BugReportsTable({
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => onOpenViewer('network', report.id)}
+                      onClick={() => onOpenViewer("network", report.id)}
                       disabled={!hasAttachmentContent(report.networkLogs, report.hasNetworkLogs)}
                     >
                       Network
@@ -321,7 +324,7 @@ export function BugReportsTable({
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => onOpenViewer('screenshot', report.id)}
+                      onClick={() => onOpenViewer("screenshot", report.id)}
                       disabled={!hasAttachmentContent(report.screenshot, report.hasScreenshot)}
                     >
                       Screenshot

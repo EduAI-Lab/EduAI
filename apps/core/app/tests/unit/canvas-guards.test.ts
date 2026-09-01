@@ -8,9 +8,10 @@ import {
 } from "~/lib/canvas/guards.server";
 
 describe("canManageCanvasIntegration", () => {
-  it("allows instructors and admins", () => {
+  it("allows instructors, admins, and unit admins", () => {
     expect(canManageCanvasIntegration("INSTRUCTOR")).toBe(true);
     expect(canManageCanvasIntegration("ADMIN")).toBe(true);
+    expect(canManageCanvasIntegration("UNIT_ADMIN")).toBe(true);
   });
 
   it("denies students and TAs", () => {
@@ -118,9 +119,8 @@ describe("Canvas rate limits — invalid env fails closed (AUTH-05/CANVAS-13)", 
   it("falls back to the default link-roster limit (10) when CANVAS_LINK_ROSTER_RATE_LIMIT is an empty string", async () => {
     vi.resetModules();
     vi.stubEnv("CANVAS_LINK_ROSTER_RATE_LIMIT", "");
-    const { isCanvasLinkRosterRateLimited: linkLimited } = await import(
-      "~/lib/canvas/guards.server"
-    );
+    const { isCanvasLinkRosterRateLimited: linkLimited } =
+      await import("~/lib/canvas/guards.server");
 
     const userId = `link-empty-${Date.now()}`;
     for (let i = 0; i < 10; i++) {

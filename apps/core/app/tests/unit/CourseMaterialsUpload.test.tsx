@@ -10,6 +10,7 @@ describe("CourseMaterialsUpload — rendering", () => {
     // File input exists but is hidden (sr-only)
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Drag & drop or/i })).not.toContainElement(fileInput);
   });
 
   it("lists the supported formats", () => {
@@ -28,18 +29,13 @@ describe("CourseMaterialsUpload — rendering", () => {
   });
 
   it("renders an error message when error is set", () => {
-    render(
-      <CourseMaterialsUpload onFileSelect={vi.fn()} error="Upload failed" />
-    );
+    render(<CourseMaterialsUpload onFileSelect={vi.fn()} error="Upload failed" />);
     expect(screen.getByText("Upload failed")).toBeInTheDocument();
   });
 
   it("renders a success message when success is set", () => {
     render(
-      <CourseMaterialsUpload
-        onFileSelect={vi.fn()}
-        success="Material uploaded successfully"
-      />
+      <CourseMaterialsUpload onFileSelect={vi.fn()} success="Material uploaded successfully" />,
     );
     expect(screen.getByText("Material uploaded successfully")).toBeInTheDocument();
   });

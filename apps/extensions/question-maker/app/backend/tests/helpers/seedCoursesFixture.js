@@ -10,13 +10,14 @@
  *
  * Every seeded course gets a deterministic, fake `coreCourseId` so it satisfies
  * the "every QM Course row is Core-linked at creation" invariant, same as the
- * `cuid-*` fixture ids used in coreWiringDb.integration.test.js. Tests that
- * stub Core enrollment/course lookups via a catch-all `fetch` mock are
- * unaffected — see resolveAccessForCourse's owner-fallback path.
+ * `cuid-*` fixture ids used in coreWiringDb.integration.test.js. After #1114,
+ * tests that exercise per-course gates must stub Core enrollment (or the
+ * cookie-scoped list) — ownership alone no longer grants access. Prefer
+ * `teachingInstructorFetch` from `tests/helpers/teachingInstructorFetch.js`.
  */
-import { createId } from '@paralleldrive/cuid2';
-import { prisma } from '../../src/config/database.js';
-import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scripts/seedData.js';
+import { createId } from "@paralleldrive/cuid2";
+import { prisma } from "../../src/config/database.js";
+import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from "../../scripts/seedData.js";
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
@@ -51,7 +52,9 @@ export async function seedCoursesForNewUser(userId) {
 
     const courseTopics = [];
     for (const name of topicNames) {
-      const topic = await prisma.topics.create({ data: { id: createId(), name, courseId: course.id } });
+      const topic = await prisma.topics.create({
+        data: { id: createId(), name, courseId: course.id },
+      });
       courseTopics.push(topic);
       topicsCreated++;
     }
@@ -60,22 +63,22 @@ export async function seedCoursesForNewUser(userId) {
     const assessment = await prisma.assessments.create({
       data: {
         courseId: course.id,
-        type: 'Quiz',
-        name: 'Practice Exam'
-      }
+        type: "Quiz",
+        name: "Practice Exam",
+      },
     });
 
     const section = await prisma.assessmentSections.create({
       data: {
         assessmentId: assessment.id,
-        name: 'Exam',
+        name: "Exam",
         description: null,
-        position: 0
-      }
+        position: 0,
+      },
     });
 
-    const difficulties = ['easy', 'medium', 'hard'];
-    const reasoningLevels = ['factual', 'analytical', 'application'];
+    const difficulties = ["easy", "medium", "hard"];
+    const reasoningLevels = ["factual", "analytical", "application"];
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
@@ -89,8 +92,8 @@ export async function seedCoursesForNewUser(userId) {
           type: q.type,
           courseId: course.id,
           primaryTopicId: primaryTopic.id,
-          questionOrder: order
-        }
+          questionOrder: order,
+        },
       });
       questionsCreated++;
 
@@ -100,12 +103,15 @@ export async function seedCoursesForNewUser(userId) {
         reasoningLevel: reasoningLevels[i % 3],
         questionMetadataId: meta.id,
         assessmentId: assessment.id,
-        answer: q.type === 'MCQ' && q.correctAnswer ? q.correctAnswer : q.answer,
+        answer: q.type === "MCQ" && q.correctAnswer ? q.correctAnswer : q.answer,
         isDraft: false,
-        isAiGenerated: false
+        isAiGenerated: false,
       };
-      if (q.type === 'MCQ' && Array.isArray(q.choices) && q.correctAnswer) {
-        variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
+      if (q.type === "MCQ" && Array.isArray(q.choices) && q.correctAnswer) {
+        variantPayload.choices = q.choices.map((c) => ({
+          letter: c.letter,
+          text: c.text,
+        }));
       }
       const variant = await prisma.variants.create({ data: variantPayload });
       variantsCreated++;
@@ -114,8 +120,8 @@ export async function seedCoursesForNewUser(userId) {
         data: {
           sectionId: section.id,
           variantId: variant.id,
-          displayOrder: i
-        }
+          displayOrder: i,
+        },
       });
     }
   }
@@ -124,6 +130,6 @@ export async function seedCoursesForNewUser(userId) {
     coursesCreated: courses.length,
     topicsCreated,
     questionsCreated,
-    variantsCreated
+    variantsCreated,
   };
 }

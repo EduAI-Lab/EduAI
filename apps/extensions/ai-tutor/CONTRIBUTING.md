@@ -22,7 +22,7 @@
 # Terminal 1: Backend (port 4000)
 cd server && npm run dev
 
-# Terminal 2: Frontend (port 5173)
+# Terminal 2: Frontend (port 3001)
 npm run dev
 ```
 
@@ -52,14 +52,14 @@ If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Route
 
 ### Naming Conventions
 
-| Item | Convention | Example |
-|------|-----------|---------|
-| Components | PascalCase | `StudentAiChat.tsx` |
-| Hooks | camelCase with `use` prefix | `useLocalUser.tsx` |
-| Route modules | lowercase with dots | `instructor.list.tsx` |
-| Prisma models | PascalCase | `CourseOffering` |
-| API endpoints | kebab-case | `/api/ai-models/validate-key` |
-| Backend files | camelCase | `aiGuidance.js` |
+| Item          | Convention                  | Example                       |
+| ------------- | --------------------------- | ----------------------------- |
+| Components    | PascalCase                  | `StudentAiChat.tsx`           |
+| Hooks         | camelCase with `use` prefix | `useLocalUser.tsx`            |
+| Route modules | lowercase with dots         | `instructor.list.tsx`         |
+| Prisma models | PascalCase                  | `CourseOffering`              |
+| API endpoints | kebab-case                  | `/api/ai-models/validate-key` |
+| Backend files | camelCase                   | `aiGuidance.js`               |
 
 ### Frontend Patterns
 
@@ -67,7 +67,7 @@ If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Route
 - Preserve cookie-session semantics (`credentials: "include"`) in all API calls.
 - Use `requireClientUser(role)` in `clientLoader` functions for route protection.
 - Prefer `useOptimistic` (React 19) for instant UI feedback on mutations.
-- Use shadcn/ui primitives from `app/components/ui/` for consistent UI.
+- Use shared primitives from `@eduai/ui` for consistent UI — this app keeps no local fork of them; see [`app/README.md`](app/README.md) and [`docs/ui-audit.md`](docs/ui-audit.md).
 
 ### Backend Patterns
 
@@ -125,7 +125,7 @@ npm run test:integration  # Integration tests only
 - **Runner**: Vitest with supertest for HTTP assertions
 - **Location**: `server/tests/unit/` and `server/tests/integration/`
 - **Test DB**: Uses `.env.test` (database `aitutor_test`, port 4001)
-- **Mock auth**: `createApp({ mockUser })` bypasses Better Auth
+- **Mock auth**: `createApp({ mockUser })` bypasses the Core session-validation call and injects `mockUser` as `req.user` directly — there is no local Better Auth instance to bypass
 
 ### What to Test
 
@@ -145,12 +145,12 @@ Uses [Knip](https://knip.dev/) to find unused exports, dependencies, and files.
 
 The `.githooks/pre-commit` hook runs automatically and scopes checks to staged files:
 
-| Check | Trigger | Tool |
-|-------|---------|------|
-| Format | Any staged source file | oxfmt `--check` |
-| Lint | Any staged source file | oxlint `--quiet` |
-| Typecheck | Any `.ts`/`.tsx` file staged | tsgo `--noEmit` |
-| Backend tests | `server/` files staged | vitest `--changed HEAD` |
+| Check          | Trigger                       | Tool                    |
+| -------------- | ----------------------------- | ----------------------- |
+| Format         | Any staged source file        | oxfmt `--check`         |
+| Lint           | Any staged source file        | oxlint `--quiet`        |
+| Typecheck      | Any `.ts`/`.tsx` file staged  | tsgo `--noEmit`         |
+| Backend tests  | `server/` files staged        | vitest `--changed HEAD` |
 | Frontend tests | `app/`/`shared/` files staged | vitest `--changed HEAD` |
 
 To skip in exceptional cases: `git commit --no-verify` (avoid this).
@@ -169,13 +169,13 @@ Run that once per checkout. Verify with `git config core.hooksPath` (should prin
 
 ### Hook inventory
 
-| Hook | Purpose | External dependency |
-|------|---------|---------------------|
-| `pre-commit` | Scoped lint / format / typecheck / tests on staged files (`oxfmt --check`, `oxlint --quiet`, `tsgo --noEmit`, `vitest --changed HEAD`). Skip with `--no-verify`. | `npx`-resolvable tools from `devDependencies` only. |
-| `prepare-commit-msg` | Inserts/condenses an `Entire-Checkpoint` trailer if the current shell is inside an Entire CLI session. | **`entire` binary in `$PATH`** |
-| `commit-msg` | Validates the commit message and strips the auto-trailer when there is no real user content (allows aborting empty commits). Hard-fails the commit if the script errors. | **`entire` binary in `$PATH`** |
-| `post-commit` | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`|| true`). | **`entire` binary in `$PATH`** |
-| `pre-push` | Pushes session logs alongside the user's `git push`. Soft-failing (`|| true`). | **`entire` binary in `$PATH`** |
+| Hook                 | Purpose                                                                                                                                                                    | External dependency                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `pre-commit`         | Scoped lint / format / typecheck / tests on staged files (`oxfmt --check`, `oxlint --quiet`, `tsgo --noEmit`, `vitest --changed HEAD`). Skip with `--no-verify`.         | `npx`-resolvable tools from `devDependencies` only. |
+| `prepare-commit-msg` | Inserts/condenses an `Entire-Checkpoint` trailer if the current shell is inside an Entire CLI session.                                                                   | **`entire` binary in `$PATH`**                      |
+| `commit-msg`         | Validates the commit message and strips the auto-trailer when there is no real user content (allows aborting empty commits). Hard-fails the commit if the script errors. | **`entire` binary in `$PATH`**                      |
+| `post-commit`        | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`\|\| true`).                                                                | **`entire` binary in `$PATH`**                      |
+| `pre-push`           | Pushes session logs alongside the user's `git push`. Soft-failing (`\|\| true`).                                                                                          | **`entire` binary in `$PATH`**                      |
 
 ### What "requires `entire`" actually means
 
@@ -197,8 +197,8 @@ commit.
 
 The `.entire/` directory at the repo root is **session data for the Entire CLI**, not source
 code. It is created and managed by the `entire` binary and the hooks above. Do not hand-edit it.
-It is included in the repo's tracked tree intentionally so that session checkpoints survive
-across machines.
+It is listed in `.gitignore` and stays local to your machine — it is not committed, so session
+checkpoints do not travel with the repo.
 
 ## Commit Messages
 
@@ -212,15 +212,15 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Types
 
-| Type | When |
-|------|------|
-| `feat` | New feature |
-| `fix` | Bug fix |
+| Type       | When                                    |
+| ---------- | --------------------------------------- |
+| `feat`     | New feature                             |
+| `fix`      | Bug fix                                 |
 | `refactor` | Code restructuring (no behavior change) |
-| `chore` | Build, tooling, dependency updates |
-| `docs` | Documentation only |
-| `test` | Adding or updating tests |
-| `perf` | Performance improvement |
+| `chore`    | Build, tooling, dependency updates      |
+| `docs`     | Documentation only                      |
+| `test`     | Adding or updating tests                |
+| `perf`     | Performance improvement                 |
 
 ### Examples
 
@@ -256,33 +256,35 @@ Include:
 
 ```markdown
 ## Summary
+
 - <What changed and why>
 
 ## Test plan
+
 - [ ] <Manual or automated verification steps>
 
 ## Notes
+
 - <Migrations, breaking changes, or deployment considerations>
 ```
 
 ## Project Structure Reference
 
-| Directory | Purpose |
-|-----------|---------|
-| `app/routes/` | React Router v7 route modules |
-| `app/components/` | Shared React components |
-| `app/hooks/` | React context providers and custom hooks |
-| `app/lib/` | API client, auth utilities, type definitions |
-| `app/lib/tours/` | Guided tour engine and definitions |
-| `app/components/ui/` | shadcn/ui primitives |
-| `app/tests/` | Frontend test files |
-| `server/src/routes/` | Express route handlers |
-| `server/src/services/` | Business logic (AI, analytics, cloning, sync) |
-| `server/src/middleware/` | Auth and session middleware |
-| `server/src/utils/` | Response mappers |
-| `server/src/config/` | Database client, admin bootstrap |
-| `server/prisma/` | Schema, migrations, seed |
-| `server/tests/` | Backend test files |
-| `shared/schemas/` | Zod validation schemas (used by both) |
-| `docs/` | Design documents |
-| `scripts/` | E2E and automation scripts |
+| Directory                | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `app/routes/`            | React Router v7 route modules                 |
+| `app/components/`        | Shared React components                       |
+| `app/hooks/`             | React context providers and custom hooks      |
+| `app/lib/`               | API client, auth utilities, type definitions  |
+| `app/lib/tours/`         | Guided tour engine and definitions            |
+| `app/tests/`             | Frontend test files                           |
+| `server/src/routes/`     | Express route handlers                        |
+| `server/src/services/`   | Business logic (AI, analytics, cloning, sync) |
+| `server/src/middleware/` | Auth and session middleware                   |
+| `server/src/utils/`      | Response mappers                              |
+| `server/src/config/`     | Database client, admin bootstrap              |
+| `server/prisma/`         | Schema, migrations, seed                      |
+| `server/tests/`          | Backend test files                            |
+| `shared/schemas/`        | Zod validation schemas (used by both)         |
+| `docs/`                  | Design documents                              |
+| `scripts/`               | E2E and automation scripts                    |

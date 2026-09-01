@@ -5,10 +5,7 @@
 // against the shared oracle + committed cases.
 
 import { describe, expect, it } from "vitest";
-import {
-  CanvasVerificationError,
-  parseAndValidateCanvasUrl,
-} from "~/lib/canvas/client.server";
+import { CanvasVerificationError, parseAndValidateCanvasUrl } from "~/lib/canvas/client.server";
 import parseValidateCases from "../../../../../tests/models/parse-validate-canvas-url.cases.json";
 import {
   canvasUrlStringForRow,
@@ -19,7 +16,10 @@ import {
 
 const rows = parseValidateCases as ParseValidateCanvasUrlRow[];
 
-function runCoreValidator(rawUrl: string): { accept: boolean } {
+/** Whether Core's parser accepted the URL — the oracle's whole output. */
+type ValidatorVerdict = { accept: boolean };
+
+function runCoreValidator(rawUrl: string): ValidatorVerdict {
   try {
     parseAndValidateCanvasUrl(rawUrl);
     return { accept: true };
@@ -32,7 +32,7 @@ function runCoreValidator(rawUrl: string): { accept: boolean } {
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  "parse-validate-canvas-url PICT Core row #$index $row.UrlShape/$row.HostClass/$row.ExtraPath",
+  "parse-validate-canvas-url PICT Core row #$index $row.UrlForm/$row.HostClass/$row.ExtraPath",
   ({ row }) => {
     const expected = parseValidateCanvasUrlOracle(row);
     const rawUrl = canvasUrlStringForRow(row);

@@ -1,58 +1,67 @@
-import type { UserRole } from '@eduai/types'
-export type { UserRole }
+import type { UserRole } from "@eduai/types";
+export type { UserRole };
 
-export type CourseAccess = 'admin' | 'unit' | 'instructor' | 'ta' | 'student' | null
+export type CourseAccess = "admin" | "unit" | "instructor" | "ta" | "student" | null;
 
 export interface RbacUser {
-  id: string
-  role: UserRole
-  authorizedUnits: string[]
+  id: string;
+  role: UserRole;
+  authorizedUnits: string[];
 }
 
 export interface RbacCourse {
-  id: string
-  instructorId: string | null
-  department: string | null
+  id: string;
+  instructorId: string | null;
+  department: string | null;
 }
 
 /** Icons are mapped in `app-sidebar.tsx`. */
 export type NavItemKey =
-  | 'dashboard'
-  | 'courses'
-  | 'chat'
-  | 'question-maker'
-  | 'admin-group'
-  | 'admin-users'
-  | 'admin-ai'
-  | 'admin-bugs'
-  | 'admin-chat'
-  | 'admin-invites'
-  | 'admin-settings'
-  | 'admin-logs'
-  | 'unitadmin-invites'
-  | 'admin-cron'
-  | 'settings'
-  | 'help'
-  | 'ai-tutor'
+  | "dashboard"
+  | "courses"
+  | "chat"
+  | "question-maker"
+  | "admin-group"
+  | "admin-users"
+  | "admin-ai"
+  | "admin-bugs"
+  | "admin-chat"
+  | "instructor-chat"
+  | "admin-invites"
+  | "admin-settings"
+  | "admin-logs"
+  | "unitadmin-invites"
+  | "admin-cron"
+  | "settings"
+  | "help"
+  | "ai-tutor";
 
 export type NavItem = {
-  key: NavItemKey
-  title: string
-  url: string
-  external?: boolean
+  key: NavItemKey;
+  title: string;
+  url: string;
+  external?: boolean;
   /** Render greyed-out and non-navigating (e.g. an admin policy turned it off);
    * the link stays visible so users know the feature exists. See issue #807. */
-  disabled?: boolean
+  disabled?: boolean;
   /** Tooltip explaining why a disabled item is greyed out. */
-  disabledReason?: string
-}
+  disabledReason?: string;
+};
 
 export type NavGroupItem = {
-  key: NavItemKey
-  title: string
-  children: NavItem[]
-}
+  key: NavItemKey;
+  title: string;
+  children: NavItem[];
+};
 
 export type NavUser = {
-  role?: string | null
-}
+  role?: string | null;
+  /**
+   * #1666 review: the route/API allow a platform STUDENT (or TA/UNIT_ADMIN)
+   * with an active `Enrollment(role=INSTRUCTOR)` on some course into
+   * `/instructor/chat` — `role === "INSTRUCTOR"` alone misses them, leaving
+   * the feature undiscoverable. Optional and defaults to falsy for callers
+   * that haven't resolved it, so this is additive.
+   */
+  hasInstructorEnrollment?: boolean;
+};

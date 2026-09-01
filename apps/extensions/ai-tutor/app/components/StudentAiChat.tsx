@@ -6,9 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { Link } from 'react-router';
-import { Spinner } from '@eduai/ui';
+} from "react";
+import { Link } from "react-router";
+import { Spinner } from "@eduai/ui";
 import {
   Badge,
   Button,
@@ -22,6 +22,8 @@ import {
   DialogTitle,
   Input,
   Loader,
+  MarkdownStylesProvider,
+  type MarkdownStyles,
   Message,
   MessageContent,
   PromptInput,
@@ -38,7 +40,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@eduai/ui';
+} from "@eduai/ui";
 import {
   IconAlertCircle,
   IconHistory,
@@ -48,22 +50,43 @@ import {
   IconPlayerStop,
   IconSend,
   IconSparkles,
-} from '@tabler/icons-react';
-import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
-import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
-import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
-import { useApiKeys } from '~/hooks/use-api-keys';
-import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
-import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
-import { cn } from '~/lib/utils';
-import api, { ApiTimeoutError } from '../lib/api';
-import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
+} from "@tabler/icons-react";
+import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
+import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
+import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
+import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
+import { useApiKeys } from "~/hooks/use-api-keys";
+import {
+  getProviderFromModelId,
+  getProviderLabel,
+  maskApiKey,
+  providerRequiresByokKey,
+} from "~/lib/provider-keys";
+import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
+import { z } from "zod";
+import { cn } from "~/lib/utils";
+import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
+import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
+// Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
+// (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
+// see MARKDOWN_STYLES below.
+import "~/styles/chat-markdown.css";
+import { randomId } from "@eduai/ui/runtime-env";
 
-type ChatTab = 'teach' | 'guide' | 'custom';
+/**
+ * KaTeX's stylesheet is loaded on demand, only for messages that actually
+ * contain math (#1342). Module-level so its identity is stable — the shared
+ * markdown renderer caches a Streamdown variant per loader.
+ */
+const MARKDOWN_STYLES: MarkdownStyles = {
+  loadKatexStyles: () => import("katex/dist/katex.min.css"),
+};
+
+type ChatTab = "teach" | "guide" | "custom";
 
 type ChatMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 };
 
@@ -76,14 +99,14 @@ type SingleChatState = {
 
 type ChatState = Record<ChatTab, SingleChatState>;
 
-type TopicOption = { label: string; value: number };
+type TopicOption = { label: string; value: string | number };
 
 type StudentSelectableModel = AiModel & {
   studentSelectable?: boolean;
   isStudentSelectable?: boolean;
   allowedForStudents?: boolean;
   isAllowed?: boolean;
-  availability?: 'allowed' | 'blocked' | 'admin-only';
+  availability?: "allowed" | "blocked" | "admin-only";
   isDefaultTutor?: boolean;
 };
 
@@ -107,47 +130,89 @@ type StudentAiChatProps = {
   /** Open the parent's fuller level picker to change it. */
   onAdjustKnowledgeLevel: () => void;
   topicOptions: TopicOption[];
-  currentTopicId: number | null;
-  onSelectTopic: (topicId: number) => void;
+  currentTopicId: string | number | null;
+  onSelectTopic: (topicId: string | number) => void;
   studentAnswer: number | string | null;
+  /**
+   * Study-buddy availability, gated on the caller's resolved per-course role
+   * (#1626). The tutoring routes (`/teach`, `/guide`, `/custom`) and chat-session
+   * listing 403 any non-STUDENT enrollment, so a course TA's composer would be a
+   * dead control. Fails closed on the same signal as the answer-card Submit:
+   * `"allowed"` only once the per-course role resolves to STUDENT; `"pending"`
+   * while the breadcrumb that carries it is in flight; `"unverified"` if that
+   * breadcrumb failed; `"withheld"` once a non-STUDENT role resolves. For every
+   * non-`"allowed"` state the panel shows a short notice in place of the connect
+   * state / conversation and the composer is withheld entirely — so a TA with a
+   * BYOK key can't drive a dead composer during the unresolved-role window.
+   */
+  studyBuddyState?: "allowed" | "pending" | "unverified" | "withheld";
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */
   className?: string;
+  /**
+   * #1660: true when the parent route resolved the viewer as an
+   * ADMIN/UNIT_ADMIN/INSTRUCTOR previewing the learner experience (its
+   * `previewRole`), not an enrolled STUDENT/TA. Threaded through so a 403
+   * from AI tutoring can be attributed to "this is a preview" only for an
+   * actual previewer — this component has no role info of its own.
+   */
+  isPreview?: boolean;
 };
 
 // Last-resort fallback for when the /ai-models call itself fails and no
 // catalog is available at all. The real default lives server-side (see
 // `aiModelPolicy.js` DEFAULT_TUTOR_MODEL) and is surfaced per-model via the
 // `isDefaultTutor` flag on each /ai-models entry — prefer that over this.
-const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
+const DEFAULT_MODEL_ID = "google:gemini-2.5-flash";
+
+/**
+ * The boolean spellings of "may a student pick this model", in precedence
+ * order. They accumulated as the /ai-models contract changed and any given
+ * deployment sends at most one, so the first field actually present wins.
+ */
+const STUDENT_POLICY_FLAGS = [
+  "studentSelectable",
+  "isStudentSelectable",
+  "allowedForStudents",
+  "isAllowed",
+] as const satisfies readonly (keyof StudentSelectableModel)[];
+
+function studentPolicyFlag(model: StudentSelectableModel): boolean | undefined {
+  for (const key of STUDENT_POLICY_FLAGS) {
+    // Only an actual boolean counts as a decision: `/ai-models` carries these
+    // four spellings through unvalidated, and a `null` there means "not
+    // configured", not "blocked".
+    const value = model[key];
+    if (value === true || value === false) return value;
+  }
+  return undefined;
+}
+
+/** `availability` counts only when the API actually sent a string; a `null` or a
+ * non-string there is "not configured", the same as an absent field. */
+function hasAvailability(model: StudentSelectableModel): boolean {
+  return z.string().safeParse(model.availability).success;
+}
 
 // Detects whether the API has decorated this model with any student-policy field.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
-  return (
-    typeof model.studentSelectable === 'boolean' ||
-    typeof model.isStudentSelectable === 'boolean' ||
-    typeof model.allowedForStudents === 'boolean' ||
-    typeof model.isAllowed === 'boolean' ||
-    typeof model.availability === 'string'
-  );
+  return studentPolicyFlag(model) !== undefined || hasAvailability(model);
 }
 
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
-  if (typeof model.studentSelectable === 'boolean') return model.studentSelectable;
-  if (typeof model.isStudentSelectable === 'boolean') return model.isStudentSelectable;
-  if (typeof model.allowedForStudents === 'boolean') return model.allowedForStudents;
-  if (typeof model.isAllowed === 'boolean') return model.isAllowed;
-  if (typeof model.availability === 'string') return model.availability === 'allowed';
+  const flag = studentPolicyFlag(model);
+  if (flag !== undefined) return flag;
+  if (hasAvailability(model)) return model.availability === "allowed";
   return true;
 }
 
-function getInitialChatState(): ChatState {
+function getInitialChatState() {
   return {
-    teach: { messages: [], input: '', loading: false, chatId: null },
-    guide: { messages: [], input: '', loading: false, chatId: null },
-    custom: { messages: [], input: '', loading: false, chatId: null },
-  };
+    teach: { messages: [], input: "", loading: false, chatId: null },
+    guide: { messages: [], input: "", loading: false, chatId: null },
+    custom: { messages: [], input: "", loading: false, chatId: null },
+  } satisfies ChatState;
 }
 
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(
@@ -161,11 +226,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     currentTopicId,
     onSelectTopic,
     studentAnswer,
+    studyBuddyState = "allowed",
     className,
+    isPreview,
   },
   ref,
 ) {
-  const [activeTab, setActiveTab] = useState<ChatTab>('guide');
+  // Any non-allowed state withholds the composer entirely (not merely disables
+  // it) and drives the notice below — fails closed on the unresolved-role
+  // window as well as a resolved TA (#1626).
+  const studyBuddyWithheld = studyBuddyState !== "allowed";
+  const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
@@ -174,9 +245,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
 
   // BYOK provider keys are owned by the shared hook (also drives Settings → Providers).
-  const { loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
+  const { keys: providerKeys, loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  const [tempApiKey, setTempApiKey] = useState('');
+  const [tempApiKey, setTempApiKey] = useState("");
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
@@ -208,7 +279,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (isMounted) setSuggestedPrompts(prompts);
       })
       .catch((err) => {
-        console.error('Failed to load suggested prompts:', err);
+        console.error("Failed to load suggested prompts:", err);
       });
     return () => {
       isMounted = false;
@@ -219,12 +290,19 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const currentApiKey = getKey(currentProvider);
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
 
+  // #1645: a BYOK key is a fallback, not a precondition. The selected model is
+  // usable when it is UBC-hosted (server key covers it) OR the student holds a
+  // key for its BYOK provider. Only a BYOK model with no key blocks the
+  // composer and shows the "connect a provider" empty state.
+  const selectedModelRequiresKey = providerRequiresByokKey(currentProvider);
+  const modelUsable = !selectedModelRequiresKey || hasApiKey;
+
   const clearActiveTabChat = useCallback(() => {
     restoreSeqRef.current += 1;
     setActiveChatId(null);
     setChatState((prev) => ({
       ...prev,
-      [activeTab]: { messages: [], input: '', loading: false, chatId: null },
+      [activeTab]: { messages: [], input: "", loading: false, chatId: null },
     }));
     setPromptsDismissed((prev) => ({ ...prev, [activeTab]: false }));
   }, [activeTab]);
@@ -243,24 +321,24 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     const tabs = [];
     if (activity.enableTeachMode) {
       tabs.push({
-        value: 'teach' as ChatTab,
-        label: 'Teach me',
-        tooltip: 'Learn concepts and get explanations about the topic',
+        value: "teach" as ChatTab,
+        label: "Teach me",
+        tooltip: "Learn concepts and get explanations about the topic",
       });
     }
     if (activity.enableGuideMode) {
       tabs.push({
-        value: 'guide' as ChatTab,
-        label: 'Guide me',
-        tooltip: 'Get hints and guidance to solve the problem yourself',
+        value: "guide" as ChatTab,
+        label: "Guide me",
+        tooltip: "Get hints and guidance to solve the problem yourself",
       });
     }
     if (activity.enableCustomMode && activity.customPrompt) {
       tabs.push({
-        value: 'custom' as ChatTab,
-        label: activity.customPromptTitle || 'Custom',
+        value: "custom" as ChatTab,
+        label: activity.customPromptTitle || "Custom",
         tooltip:
-          activity.customPrompt.slice(0, 100) + (activity.customPrompt.length > 100 ? '...' : ''),
+          activity.customPrompt.slice(0, 100) + (activity.customPrompt.length > 100 ? "..." : ""),
       });
     }
     return tabs;
@@ -271,17 +349,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const isGuideEnabled = activity?.enableGuideMode ?? false;
   const isCustomEnabled = (activity?.enableCustomMode && activity?.customPrompt) ?? false;
   const currentTabEnabled =
-    (activeTab === 'teach' && isTeachEnabled) ||
-    (activeTab === 'guide' && isGuideEnabled) ||
-    (activeTab === 'custom' && isCustomEnabled);
+    (activeTab === "teach" && isTeachEnabled) ||
+    (activeTab === "guide" && isGuideEnabled) ||
+    (activeTab === "custom" && isCustomEnabled);
 
   // Auto-correct the active tab during render when enabled modes change. Prefer
   // Guide (hints) as the pedagogical default, then Teach, then Custom.
   if (!currentTabEnabled) {
-    if (isGuideEnabled) setActiveTab('guide');
-    else if (isTeachEnabled) setActiveTab('teach');
-    else if (isCustomEnabled) setActiveTab('custom');
-    else if (activeTab !== 'guide') setActiveTab('guide');
+    if (isGuideEnabled) setActiveTab("guide");
+    else if (isTeachEnabled) setActiveTab("teach");
+    else if (isCustomEnabled) setActiveTab("custom");
+    else if (activeTab !== "guide") setActiveTab("guide");
   }
 
   useEffect(() => {
@@ -302,7 +380,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setModelLoadError(false);
       } catch (error) {
         if (!isMounted) return;
-        console.error('Failed to load AI models:', error);
+        console.error("Failed to load AI models:", error);
         setModelLoadError(true);
         setStudentModelPolicyActive(false);
       } finally {
@@ -314,8 +392,15 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     };
   }, []);
 
+  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
+  // held BYOK key never adds models the admin left off the allow-list — the
+  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
+  // serve without one, and Core falls back to a keyed provider when the fleet
+  // is down), not a way to pick a model policy forbids.
+  const pickerModels = availableModels as StudentSelectableModel[];
+
   const appendMessage = useCallback(
-    (tab: ChatTab, role: ChatMessage['role'], content: string, id?: string) => {
+    (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
       setChatState((prev) => ({
         ...prev,
         [tab]: {
@@ -335,7 +420,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       setActiveChatId(session.chatId);
       setChatState((prev) => ({
         ...prev,
-        [tab]: { messages: [], input: '', loading: true, chatId: session.chatId },
+        [tab]: { messages: [], input: "", loading: true, chatId: session.chatId },
       }));
       try {
         const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
@@ -346,7 +431,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         }));
       } catch (error) {
         if (seq !== restoreSeqRef.current) return;
-        console.error('Failed to restore chat session:', error);
+        console.error("Failed to restore chat session:", error);
         // Drop the failed session's chatId too — otherwise the user could keep
         // chatting into a history that never loaded.
         setActiveChatId(null);
@@ -356,7 +441,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         }));
         appendMessage(
           tab,
-          'assistant',
+          "assistant",
           "Couldn't load this conversation. Please open chat history and try again.",
         );
       }
@@ -368,17 +453,24 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     async (tab: ChatTab, overrideMessage?: string) => {
       if (!activity || !isUserReady) return;
 
+      // #1626: hard send boundary. The composer is withheld in the UI for any
+      // non-STUDENT / unresolved course role, but the imperative
+      // `sendGuidePrompt` handle exposed to the parent route bypasses the UI —
+      // block it here too so a TA (or an unresolved role) never issues a tutor
+      // turn the server would 403.
+      if (studyBuddyWithheld) return;
+
       // #998: guard against duplicate concurrent requests for this tab. The
       // manual submit path is already gated by `canSend` (which checks
       // `loading`), but the imperative `sendGuidePrompt` handle exposed to
       // the parent route bypasses that — this guard is the single choke
       // point both paths funnel through.
-      if (chatState[tab].loading) return;
+      if (chatState[tab].loading || abortControllersRef.current[tab]) return;
 
       const modeEnabled =
-        (tab === 'teach' && activity.enableTeachMode) ||
-        (tab === 'guide' && activity.enableGuideMode) ||
-        (tab === 'custom' && activity.enableCustomMode && activity.customPrompt);
+        (tab === "teach" && activity.enableTeachMode) ||
+        (tab === "guide" && activity.enableGuideMode) ||
+        (tab === "custom" && activity.enableCustomMode && activity.customPrompt);
       if (!modeEnabled) {
         console.warn(`Cannot use disabled ${tab} mode for activity ${activity.id}`);
         return;
@@ -387,25 +479,34 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       const message = (overrideMessage ?? chatState[tab].input).trim();
       if (!message) return;
 
-      // Provider key is the only hard requirement; a missing knowledge level
-      // is filled with a sensible default (and remembered) rather than blocking.
+      // #1645: a BYOK key is required only when the selected model is served by
+      // a BYOK provider. UBC-hosted models (vllm/ollama) are covered by the
+      // server key, so they send with no personal key. A missing knowledge
+      // level is filled with a sensible default rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
       const apiKey = getKey(provider);
-      if (!apiKey) {
+      if (providerRequiresByokKey(provider) && !apiKey) {
         setActiveTab(tab);
         return;
       }
+      const forwardedApiKey = apiKey || undefined;
+
+      // #1645: forward every BYOK key the student holds — not only the selected
+      // model's — so Core can fall back to another keyed provider when the UBC
+      // fleet is down. A keyless UBC send still validates (the map is optional).
+      const heldApiKeys = Object.fromEntries(
+        Object.entries(providerKeys).filter(([, value]) => Boolean(value)),
+      );
+      const forwardedApiKeys = Object.keys(heldApiKeys).length ? heldApiKeys : undefined;
 
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
-      const topicId = typeof currentTopicId === 'number' ? currentTopicId : undefined;
-      const normalizedStudentAnswer =
-        typeof studentAnswer === 'number'
-          ? studentAnswer
-          : typeof studentAnswer === 'string' && studentAnswer.trim()
-            ? studentAnswer.trim()
-            : undefined;
+      const topicId = currentTopicId ?? undefined;
+      const answerText = z.string().safeParse(studentAnswer);
+      const normalizedStudentAnswer = answerText.success
+        ? answerText.data.trim() || undefined
+        : (z.number().safeParse(studentAnswer).data ?? undefined);
 
       const messageId = generateMessageId();
 
@@ -414,15 +515,15 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       setChatState((prev) => ({
         ...prev,
-        [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : '', loading: true },
+        [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : "", loading: true },
       }));
       setPromptsDismissed((prev) => ({ ...prev, [tab]: true }));
-      appendMessage(tab, 'user', message, messageId);
+      appendMessage(tab, "user", message, messageId);
 
       try {
         const modelId = selectedModelId || DEFAULT_MODEL_ID;
         let response;
-        if (tab === 'teach') {
+        if (tab === "teach") {
           response = await api.sendTeachMessage(
             activity.id,
             {
@@ -430,13 +531,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               topicId,
               message,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },
             controller.signal,
           );
-        } else if (tab === 'guide') {
+        } else if (tab === "guide") {
           response = await api.sendGuideMessage(
             activity.id,
             {
@@ -444,7 +546,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               message,
               studentAnswer: normalizedStudentAnswer,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -458,7 +561,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               topicId,
               message,
               modelId,
-              apiKey,
+              apiKey: forwardedApiKey,
+              apiKeys: forwardedApiKeys,
               chatId: chatState[tab].chatId,
               messageId,
             },
@@ -470,27 +574,38 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (nextChatId) {
           setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], chatId: nextChatId } }));
         }
-        appendMessage(tab, 'assistant', response.message);
+        appendMessage(tab, "assistant", response.message);
       } catch (error) {
         if (controller.signal.aborted && !(error instanceof ApiTimeoutError)) {
           // User clicked Stop — the in-progress turn is simply dropped, no
           // error bubble (matches Core's stop-generating behavior).
         } else if (error instanceof ApiTimeoutError) {
-          console.error('AI chat timed out:', error);
-          appendMessage(tab, 'assistant', 'That took too long to respond. Please try again.');
+          console.error("AI chat timed out:", error);
+          appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
         } else {
-          console.error('AI chat failed:', error);
+          console.error("AI chat failed:", error);
+          // #1660 review (ariqmuldi): the server 403s these endpoints for
+          // three distinct reasons (server/src/routes/activities.js) — a
+          // non-STUDENT caller (a previewer, what this message is about), a
+          // real student whose enrollment-sync is lagging, or content that
+          // got unpublished mid-session. Gating on the `isPreview` prop
+          // (the parent route's already-resolved role, not this
+          // component's business to re-derive) instead of the bare status
+          // code keeps a genuine STUDENT/TA from seeing "this is a
+          // read-only preview" for one of the other two, unrelated 403s.
           appendMessage(
             tab,
-            'assistant',
-            'AI study buddy not available right now. Please try again later.',
+            "assistant",
+            error instanceof ApiHttpError && error.status === 403 && isPreview
+              ? "AI tutoring is only available to enrolled students — this is a read-only preview."
+              : "AI study buddy not available right now. Please try again later.",
           );
         }
       } finally {
         if (abortControllersRef.current[tab] === controller) {
           delete abortControllersRef.current[tab];
+          setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
         }
-        setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
       }
     },
     [
@@ -504,6 +619,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       onSelectKnowledgeLevel,
       selectedModelId,
       studentAnswer,
+      studyBuddyWithheld,
+      // #1667 review (Whiteknight07): sendChat reads isPreview in the 403
+      // branch; omitting it here would keep a stale closure across an
+      // AuthProvider role change on a still-mounted lesson.
+      isPreview,
     ],
   );
 
@@ -514,22 +634,25 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     () => ({
       sendGuidePrompt: () => {
         if (!activity || !activity.enableGuideMode) return;
-        setActiveTab('guide');
+        setActiveTab("guide");
         const provider = getProviderFromModelId(selectedModelId);
-        if (!getKey(provider)) return; // notice is already visible in the Guide view
-        const fallback = guideInput.trim() || 'I would like guidance on this question.';
-        void sendChat('guide', fallback);
+        // Only a BYOK model with no key blocks here; UBC-hosted models send
+        // with the server key. When it does block, the "add a key" notice is
+        // already visible in the Guide view (#1645).
+        if (providerRequiresByokKey(provider) && !getKey(provider)) return;
+        const fallback = guideInput.trim() || "I would like guidance on this question.";
+        void sendChat("guide", fallback);
       },
     }),
     [activity, getKey, guideInput, selectedModelId, sendChat],
   );
 
-  const chatDisabled = !activity || !hasApiKey || !isUserReady;
+  const chatDisabled = !activity || !modelUsable || !isUserReady || studyBuddyWithheld;
   const activeChat = chatState[activeTab];
   const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
   const currentSuggestedPrompts = useMemo(() => {
-    if (activeTab === 'custom') return [];
+    if (activeTab === "custom") return [];
     return suggestedPrompts.filter((p) => p.mode === activeTab);
   }, [activeTab, suggestedPrompts]);
 
@@ -581,29 +704,38 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     setApiKeyValidating(true);
     setApiKeyError(null);
     try {
-      const result = await validateKey(currentProvider, tempApiKey.trim());
-      if (!result.valid) {
-        setApiKeyError(result.error || 'Invalid API key');
+      let result: { valid: boolean; error?: string };
+      try {
+        result = await validateKey(currentProvider, tempApiKey.trim());
+      } catch {
+        setApiKeyError("Could not validate API key");
         return;
       }
-      setKey(currentProvider, tempApiKey.trim());
+      if (!result.valid) {
+        setApiKeyError(result.error || "Invalid API key");
+        return;
+      }
+      try {
+        await setKey(currentProvider, tempApiKey.trim());
+      } catch {
+        setApiKeyError("Could not save API key");
+        return;
+      }
       setShowApiKeyDialog(false);
-      setTempApiKey('');
-    } catch {
-      setApiKeyError('Could not validate API key');
+      setTempApiKey("");
     } finally {
       setApiKeyValidating(false);
     }
   }, [currentProvider, setKey, tempApiKey, validateKey]);
 
   const showTopicSelect =
-    (activeTab === 'teach' ||
-      (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
+    (activeTab === "teach" ||
+      (activeTab === "custom" && activity?.customPrompt?.includes("[INSERT TOPIC HERE]"))) &&
     topicOptions.length > 1;
 
   const renderMessages = (tab: ChatTab) =>
     chatState[tab].messages.map((msg) =>
-      msg.role === 'user' ? (
+      msg.role === "user" ? (
         <Message key={msg.id} className="justify-end">
           <MessageContent className="max-w-[80%] bg-primary text-primary-foreground">
             {msg.content}
@@ -613,10 +745,16 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         <Message key={msg.id}>
           {/* Match Core's chat: render AI markdown directly on the card (bg-transparent)
               instead of the default bg-secondary bubble, which broke dark-mode contrast.
-              MessageContent applies `reading-surface` internally for Assistive Mode. */}
-          <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
-            {msg.content}
-          </MessageContent>
+              MessageContent applies `reading-surface` internally for Assistive Mode.
+
+              Assistant output is normalized first (#1401) so model LaTeX reaches
+              KaTeX in the delimiters remark-math accepts — same split Core uses in
+              components/chat/chat-message.tsx. User-typed text stays verbatim. */}
+          <MarkdownStylesProvider value={MARKDOWN_STYLES}>
+            <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
+              {normalizeMathMarkdown(msg.content)}
+            </MessageContent>
+          </MarkdownStylesProvider>
         </Message>
       ),
     );
@@ -626,7 +764,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   return (
     <aside
       className={cn(
-        'flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]',
+        "flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]",
         className,
       )}
       data-tour="student-ai-chat"
@@ -641,7 +779,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="font-semibold text-foreground">AI study buddy</div>
             <div className="text-xs text-muted-foreground">Hints, not answers</div>
           </div>
-          {activity && hasApiKey && (
+          {activity && modelUsable && !studyBuddyWithheld && (
             <TooltipProvider delayDuration={300}>
               <div className="flex shrink-0 items-center gap-1">
                 <Tooltip>
@@ -678,43 +816,46 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         </div>
 
         {/* Compact control row: mode + knowledge level (progressive disclosure) */}
-        {activity && hasApiKey && (availableTabs.length > 0 || knowledgeLevel) && (
-          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
-            {showTabToggle ? (
-              <SegmentedControl
-                ariaLabel="Chat mode"
-                value={activeTab}
-                onValueChange={(value) => setActiveTab(value as ChatTab)}
-                size="sm"
-                options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
-              />
-            ) : availableTabs.length === 1 ? (
-              <Badge variant="outline" size="lg">
-                {availableTabs[0].label}
-              </Badge>
-            ) : null}
+        {activity &&
+          modelUsable &&
+          !studyBuddyWithheld &&
+          (availableTabs.length > 0 || knowledgeLevel) && (
+            <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+              {showTabToggle ? (
+                <SegmentedControl
+                  ariaLabel="Chat mode"
+                  value={activeTab}
+                  onValueChange={(value) => setActiveTab(value as ChatTab)}
+                  size="sm"
+                  options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+                />
+              ) : availableTabs.length === 1 ? (
+                <Badge variant="outline" size="lg">
+                  {availableTabs[0].label}
+                </Badge>
+              ) : null}
 
-            {knowledgeLevel && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="ml-auto rounded-full"
-                onClick={onAdjustKnowledgeLevel}
-                aria-label="Change knowledge level"
-              >
-                {knowledgeLevelLabel(knowledgeLevel)}
-              </Button>
-            )}
-          </div>
-        )}
+              {knowledgeLevel && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto rounded-full"
+                  onClick={onAdjustKnowledgeLevel}
+                  aria-label="Change knowledge level"
+                >
+                  {knowledgeLevelLabel(knowledgeLevel)}
+                </Button>
+              )}
+            </div>
+          )}
 
-        {activeTabInfo && activity && hasApiKey && (
+        {activeTabInfo && activity && modelUsable && !studyBuddyWithheld && (
           <p className="px-5 pb-3 text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
         )}
 
         {/* Topic focus (teach / topic-templated custom) */}
-        {activity && hasApiKey && showTopicSelect && (
+        {activity && modelUsable && !studyBuddyWithheld && showTopicSelect && (
           <div className="space-y-1.5 px-5 pb-4">
             <label
               className="block text-xs font-semibold text-muted-foreground"
@@ -723,10 +864,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               Focus topic
             </label>
             <Select
-              value={currentTopicId === null ? '' : String(currentTopicId)}
+              value={currentTopicId === null ? "" : String(currentTopicId)}
               onValueChange={(value) => {
-                const numericValue = Number(value);
-                if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
+                // Options are keyed by `String(topic.value)`, so map the
+                // selected key back to the option's own id rather than
+                // coercing it: topic ids are cuid strings, and `Number()`
+                // turned every real one into `NaN` and dropped the selection.
+                const selected = topicOptions.find((topic) => String(topic.value) === value);
+                if (selected) onSelectTopic(selected.value);
               }}
             >
               <SelectTrigger id="ai-chat-topic" className="w-full">
@@ -765,7 +910,30 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               </div>
               <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
             </div>
-          ) : !hasApiKey ? (
+          ) : studyBuddyWithheld ? (
+            // #1626: the tutoring routes 403 a non-STUDENT enrollment, so the
+            // composer would be a dead control for a course TA — and equally so
+            // while the per-course role is still unresolved. Show why instead —
+            // mirroring the withheld-Submit note on the answer card — rather than
+            // the connect state or a live composer. The message tracks the gate
+            // state so a genuine student sees a transient "checking access"
+            // rather than the TA notice during the breadcrumb window.
+            <div
+              role="note"
+              className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-3 py-10 text-center"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+                <IconSparkles className="h-6 w-6" aria-hidden />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {studyBuddyState === "pending"
+                  ? "Checking your access…"
+                  : studyBuddyState === "unverified"
+                    ? "Couldn't verify your access. Reload to try again."
+                    : "The AI study buddy is available to students enrolled in this course."}
+              </p>
+            </div>
+          ) : !modelUsable ? (
             apiKeysLoaded ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
@@ -850,96 +1018,99 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         <ScrollButton className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-[var(--shadow-sm)]" />
       </ChatContainerRoot>
 
-      {/* Composer */}
-      <div className="space-y-2 border-t border-border p-4">
-        <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
-          <PromptInput
-            value={chatState[activeTab].input}
-            onValueChange={handleValueChange}
-            onSubmit={submitInput}
-            isLoading={activeChat.loading}
-            className="border-none bg-transparent p-0 shadow-none"
-          >
-            <PromptInputTextarea
-              placeholder={
-                chatDisabled
-                  ? 'Connect a provider to start chatting'
-                  : activeTab === 'teach'
-                    ? 'Ask about the topic…'
-                    : activeTab === 'guide'
-                      ? 'Describe where you need guidance…'
-                      : 'Ask a question…'
-              }
-              disabled={chatDisabled || activeChat.loading}
-              className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
-            />
-          </PromptInput>
-
-          <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
-            <Select
-              value={selectedModelId}
-              onValueChange={setSelectedModelId}
-              disabled={!availableModels.length}
+      {/* Composer — withheld entirely for a non-STUDENT course role (#1626); the
+          body shows the withheld notice instead of a dead, disabled input. */}
+      {!studyBuddyWithheld && (
+        <div className="space-y-2 border-t border-border p-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
+            <PromptInput
+              value={chatState[activeTab].input}
+              onValueChange={handleValueChange}
+              onSubmit={submitInput}
+              isLoading={activeChat.loading}
+              className="border-none bg-transparent p-0 shadow-none"
             >
-              <SelectTrigger
-                className="h-8 w-auto gap-1 border-border/60 text-xs"
-                aria-label="Model"
-              >
-                <SelectValue placeholder="Model" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableModels.map((model) => (
-                  <SelectItem key={model.id} value={model.modelId}>
-                    {model.modelName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <PromptInputTextarea
+                placeholder={
+                  chatDisabled
+                    ? "Connect a provider to start chatting"
+                    : activeTab === "teach"
+                      ? "Ask about the topic…"
+                      : activeTab === "guide"
+                        ? "Describe where you need guidance…"
+                        : "Ask a question…"
+                }
+                disabled={chatDisabled || activeChat.loading}
+                className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
+              />
+            </PromptInput>
 
-            <div className="flex-1" />
+            <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
+              <Select
+                value={selectedModelId}
+                onValueChange={setSelectedModelId}
+                disabled={!pickerModels.length}
+              >
+                <SelectTrigger
+                  className="h-8 w-auto gap-1 border-border/60 text-xs"
+                  aria-label="Model"
+                >
+                  <SelectValue placeholder="Model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pickerModels.map((model) => (
+                    <SelectItem key={model.id} value={model.modelId}>
+                      {model.modelName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            {activeChat.loading ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleStop}
-                aria-label="Stop generating"
-              >
-                <IconPlayerStop className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="icon"
-                onClick={submitInput}
-                disabled={!canSend}
-                aria-label="Send message"
-              >
-                <IconSend className="h-4 w-4" />
-              </Button>
-            )}
+              <div className="flex-1" />
+
+              {activeChat.loading ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleStop}
+                  aria-label="Stop generating"
+                >
+                  <IconPlayerStop className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={submitInput}
+                  disabled={!canSend}
+                  aria-label="Send message"
+                >
+                  <IconSend className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {modelsFetched && modelLoadError && (
-          <div className="flex items-center gap-1.5 text-xs text-destructive">
-            <IconAlertCircle className="h-3.5 w-3.5" />
-            Unable to load AI models.
-          </div>
-        )}
-        {modelsFetched && !modelLoadError && !availableModels.length && (
-          <div className="text-xs text-muted-foreground">No AI models configured.</div>
-        )}
-        {modelsFetched &&
-          !modelLoadError &&
-          studentModelPolicyActive &&
-          availableModels.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Tutor model choices are limited by your course configuration.
+          {modelsFetched && modelLoadError && (
+            <div className="flex items-center gap-1.5 text-xs text-destructive">
+              <IconAlertCircle className="h-3.5 w-3.5" />
+              Unable to load AI models.
             </div>
           )}
-      </div>
+          {modelsFetched && !modelLoadError && !pickerModels.length && (
+            <div className="text-xs text-muted-foreground">No AI models configured.</div>
+          )}
+          {modelsFetched &&
+            !modelLoadError &&
+            studentModelPolicyActive &&
+            pickerModels.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Tutor model choices are limited by your course configuration.
+              </div>
+            )}
+        </div>
+      )}
 
       {/* Add / change provider key */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
@@ -947,8 +1118,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored only on this device and sent directly to {getProviderLabel(currentProvider)}.
-              You can also manage keys in Settings → Providers.
+              Stored for your account on this device and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
+              device. You can also manage keys in Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -993,7 +1165,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   Validating…
                 </>
               ) : (
-                'Save'
+                "Save"
               )}
             </Button>
           </DialogFooter>
@@ -1006,8 +1178,5 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 export default StudentAiChat;
 
 function generateMessageId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId();
 }

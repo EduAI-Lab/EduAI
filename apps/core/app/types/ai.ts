@@ -15,6 +15,8 @@ export type AIProvider = {
   };
 };
 
+export type RouterTier = "TIER_1" | "TIER_2" | "TIER_3";
+
 export type AIModel = {
   id: string;
   modelId: string;
@@ -27,9 +29,14 @@ export type AIModel = {
   supportsStreaming: boolean;
   inputPricing?: number;
   outputPricing?: number;
+  contextFillRatio?: number | null;
   isActive: boolean;
+  // `null` = not part of Auto routing's candidate pool. See the comment on
+  // `RouterTierSchema` in `~/lib/ai/schemas` for why TIER_2 is effectively
+  // inert under local-vLLM routing.
+  routerTier: RouterTier | null;
   createdAt: string;
   updatedAt: string;
   providerId: string;
-  provider: Omit<AIProvider, 'models' | '_count'>;
+  provider: Omit<AIProvider, "models" | "_count">;
 };

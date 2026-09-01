@@ -1,163 +1,257 @@
-# s378 extension hosting (dev)
+# s378 shared-development go-live
 
-s378 serves **built** assets. It does not run `npm run dev`.
+Last verified: 2026-08-31
 
-| Host | Served by |
-|------|-----------|
-| `https://dev.eduai.ok.ubc.ca` | Core `:3000` (node, SSR) |
-| `https://dev.aitutor.eduai.ok.ubc.ca` | **Apache, static** from `apps/extensions/ai-tutor/build/client`; `/api/` → `:4000` |
-| `https://dev.questionmaker.eduai.ok.ubc.ca` | **Apache, static** from `apps/extensions/question-maker/app/frontend/dist`; `/api/` → `:8000` |
+This is the canonical runbook for the shared development host, `s378.ok.ubc.ca`.
+It deploys the built Core, AI Tutor, and Question Maker applications plus the
+dedicated cron worker. It does not cover the Discord bot.
 
-Both extension frontends are `ssr: false`, so a build emits plain static files and
-Apache serves them directly — there is no Vite process on `:3001` or `:5173` any
-more. Core stays a node process because it is SSR.
+## Runtime contract
 
-> **A `git pull` no longer changes what dev serves, and neither does restarting a
-> unit.** Every deploy is `git pull` → `go-live-build.sh`. See **Rebuilding** below.
+The checkout is normally:
 
-## Process management
-
-Three **system** units, owned by the `eduai-dev` group:
-
-| Unit | Port |
-|------|------|
-| `eduai-core.service` | `:3000` |
-| `eduai-aitutor-server.service` | `:4000` |
-| `eduai-qm-backend.service` | `:8000` |
-| `eduai-dev.target` | starts/stops all three |
-
-These are system units, not `systemctl --user` units, so **any** `eduai-dev`
-member can restart the stack — no `loginctl enable-linger`, no being locked to
-one account, and no sudo (a polkit rule in `systemd/49-eduai-dev.rules` grants
-the group lifecycle control over `eduai-*` units).
-
-### One-time install on s378
-
-```bash
-bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
-bash infra/s378/go-live-build.sh             # build + start
+```text
+/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 ```
 
-### Day-to-day
+The systemd services and local ports are:
+
+| Unit | Application | Local listener |
+| --- | --- | ---: |
+| `eduai-core` | Core web application | `127.0.0.1:3000` |
+| `eduai-cron-worker` | scheduled backup/maintenance worker | no public HTTP port |
+| `eduai-aitutor-server` | AI Tutor API | `127.0.0.1:4000` |
+| `eduai-qm-backend` | Question Maker backend | `127.0.0.1:8000` |
+
+The browser clients are built during deployment and served by the host web server:
+
+- Core: `https://dev.eduai.ok.ubc.ca`
+- AI Tutor: `https://dev.aitutor.eduai.ok.ubc.ca`
+- Question Maker: `https://dev.questionmaker.eduai.ok.ubc.ca`
+
+There are no supported development `npm run dev` or user-level PM2 processes on
+this host. The current deployment is systemd plus built static assets.
+
+## Current verified snapshot
+
+On 2026-08-31, the `development` checkout was at commit `5795f838f`. The four
+application units were running, the expected listeners were present, and the
+three public HTTPS roots returned HTTP 200. Treat this as a dated observation,
+not a permanent health guarantee. Re-run the checks below after every deployment.
+
+The checkout also contained untracked `.env` backup files. These are operational
+artifacts, not deployment inputs. Preserve them securely and keep them out of Git;
+a dirty checkout can prevent the deployer from proceeding.
+
+## Prerequisites
+
+Before deploying:
+
+1. Connect to s378 with the approved account and use the checkout above.
+2. Confirm the intended branch and commit.
+3. Confirm that no unexpected tracked or untracked files are present.
+4. Confirm that the required application environment files exist and are readable
+   by the service account without exposing their values.
+5. Confirm database and Redis containers are available on the ports expected by the
+   environment.
+6. Confirm that a recent backup exists before applying migrations.
+7. Confirm that the intended inference endpoints are authenticated and advertise
+   the model IDs expected by the application.
+
+Useful read-only preflight commands:
 
 ```bash
-systemctl status eduai-dev.target
-systemctl restart eduai-dev.target       # all three — no sudo, no --user
-systemctl restart eduai-aitutor-server   # one app
-journalctl -u eduai-core -f              # logs
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+git status --short
+git branch --show-current
+git log -1 --oneline
+test -f apps/core/.env
+test -f apps/extensions/ai-tutor/server/.env
+test -f apps/extensions/question-maker/.env
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 ```
 
-Restarting picks up **server-side** `.env` changes. A `VITE_`-prefixed value is
-baked into the bundle at build time, so changing one needs a rebuild, not a
+Do not use `git clean`, `git reset --hard`, or another destructive cleanup to make
+the preflight pass. Resolve or relocate operational artifacts with the owner.
+
+## One-time host installation
+
+From the intended checkout, run:
+
+```bash
+bash infra/s378/go-live-build.sh --install
+```
+
+The install path is designed to be repeatable. It provisions the host support
+needed by the go-live workflow, including:
+
+- the `eduai-cron` service account and required directories;
+- systemd units and the `eduai-dev.target`;
+- polkit rules for the approved service operations;
+- the cron scripts under `/opt/eduai/cron`;
+- backup and log directories;
+- the environment synchronization support used by the services.
+
+Installation does not build the applications or start a deployment by itself. The
+script will also remove or reject unsupported user-unit/linger arrangements rather
+than allowing duplicate service managers to compete with systemd.
+
+## Canonical deployment
+
+Run the deployer from the repository root:
+
+```bash
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+bash infra/s378/go-live-build.sh --install
+```
+
+The implementation owns the order:
+
+1. validate the checkout and environment;
+2. synchronize the host/application environment as configured;
+3. generate the Core, AI Tutor, and Question Maker Prisma clients;
+4. run the migration preflight and migrations;
+5. seed only the reference and extension data required by the script;
+6. build Core and the extension clients;
+7. restart the affected systemd services;
+8. poll expected listeners and report the result.
+
+The Core restart is part of the build sequence so an old server process does not
+continue serving assets from the previous build. Do not manually reorder these
+steps around a migration or frontend build.
+
+Supported scoped options include:
+
+```bash
+bash infra/s378/go-live-build.sh --only core
+bash infra/s378/go-live-build.sh --only aitutor
+bash infra/s378/go-live-build.sh --only qm
+bash infra/s378/go-live-build.sh --no-env
+bash infra/s378/go-live-build.sh --no-restart
+```
+
+Use `--only` when the script's dependency rules make a scoped deployment safe.
+Use `--no-env` only when the environment has already been intentionally prepared.
+Use `--no-restart` for build/migration work that must be reviewed before service
+activation. Read `bash infra/s378/go-live-build.sh --help` before using an option
+not listed here.
+
+The migration preflight may require `EDUAI_ACK_API_KEY_ROTATION=1` when the
+deployment detects an intentional API-key rotation. Set that acknowledgement only
+for the approved rotation; it is not a general workaround for a failed migration.
+
+## Environment and secrets
+
+The shared Core `.env` is the source used for the shared inference/API key
+synchronization. The environment helper writes the host-side service environment
+and propagates the intended `EDUAI_API_KEY` relationship. Keep all values secret.
+
+At minimum, verify these configuration classes without printing values:
+
+- Core `NODE_ENV`, port, database URL, session/cookie settings, and public URL;
+- AI Tutor and Question Maker database URLs and service ports;
+- `REDIS_URL`, queue flags, and cron-worker settings;
+- inference fleet URLs, served model IDs, and the embedding endpoint;
+- CORS/origin settings for the three development vhosts.
+
+The current s378 deployment has queue enqueueing disabled. The cron worker remains a
+separate scheduled-maintenance service; it is not evidence that the AI job queue is
+enabled.
+
+## Static assets and web server
+
+The go-live build produces browser assets for AI Tutor and Question Maker. Their
+systemd units run the APIs; the host web server serves the built client output
+through the configured development vhosts. There is no separate frontend unit to
 restart.
 
-## Rebuilding
-
-> **Order matters: `env` → `build` → `restart`.** Never `env` → `restart`.
-> `go-live-env.sh` rewrites the public `VITE_*` URLs, and those are now compiled
-> into the bundle. Skip the build and the sites keep serving the previous run's
-> URLs. `go-live-build.sh` enforces this order for you.
+After a build:
 
 ```bash
-git pull
-bash infra/s378/go-live-build.sh              # env, generate, migrate, seed, build, restart
-bash infra/s378/go-live-build.sh --install    # after a branch switch (adds npm install)
-bash infra/s378/go-live-build.sh --only qm    # core | aitutor | qm
-                                              # (ai-tutor / question-maker also accepted)
+systemctl --no-pager --full status eduai-core eduai-cron-worker \
+  eduai-aitutor-server eduai-qm-backend
+curl -fsSI https://dev.eduai.ok.ubc.ca/
+curl -fsSI https://dev.aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://dev.questionmaker.eduai.ok.ubc.ca/
 ```
 
-A full build takes roughly 1–3 minutes. `vite build` empties the output directory
-first, so the two extension sites return 404 briefly mid-build. That is expected.
+Use the web-server service and configuration-test command appropriate to the host
+when changing vhosts. Do not assume that a local development web-server command
+applies to the RHEL host.
 
-There is no HMR on s378 — nobody develops on this box, and the tree-shaken build
-is the entire point (the dev server shipped ~12MB of unbundled JS per page).
+## Health and smoke checks
 
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `go-live-build.sh` | **The deploy command.** env → generate → migrate → seed → build → restart |
-| `go-live-env.sh` | Public URLs + **sync `EDUAI_API_KEY` from Core → AI Tutor + QM** |
-| `go-live-apache.sh` | Install/reload the Apache vhosts **from this repo** (needs sudo; rare) |
-| `go-live-systemd-install.sh` | Install/enable the system units + polkit rule (needs sudo; once) |
-
-> `~/dev-vhosts/` is **legacy and no longer a source of truth.** The vhosts and
-> units tracked in `infra/s378/` are what get installed; edit them here.
-
-## Shared `EDUAI_API_KEY` (required for extension APIs)
-
-Core and both extension backends must share the **same** service key.
-
-- **Source of truth:** `apps/core/.env` → `EDUAI_API_KEY`
-- **Copied by** `go-live-env.sh` into:
-  - `apps/extensions/ai-tutor/server/.env`
-  - `apps/extensions/question-maker/.env`
-- Generate (once) with: `openssl rand -hex 32`
-- Core only reads its own `.env` (admin UI overrides do **not** change Core’s key)
-
-### What breaks if the key is missing / mismatched
-
-| Symptom | Cause |
-|---------|--------|
-| QM: `EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core.` | QM `EDUAI_API_KEY` empty and no usable session cookie forwarded to Core `/api/chat` |
-| AI Tutor reconcile / topic sync: `INVALID_SERVICE_KEY` | AI Tutor key ≠ Core key (placeholder `your-eduai-api-key-here` is common) |
-| AI Tutor topics empty on imported courses | Topics come from Core via service-key sync; without a valid key, sync never populates local topics |
-
-### How topics work (AI Tutor)
-
-1. For **imported** Core courses, topics live in Core and are pulled with `POST /api/courses/:id/topics/sync` (uses `EDUAI_API_KEY` + `EDUAI_BASE_URL`).
-2. `GET /api/courses/:id/topics` only reads the **local** AI Tutor DB — it does not auto-sync.
-3. After fixing the key, open the course as instructor and use **Sync topics** (or wait for reconcile once the key matches).
-4. For **native** (non-imported) courses, instructors create topics manually in AI Tutor.
-
-### How question generation works (Question Maker)
-
-1. QM backend calls Core `POST /api/chat`.
-2. Auth preference: **forwarded Core session cookie first**; `Authorization: Bearer <EDUAI_API_KEY>` only if no cookie (server-only jobs).
-3. Core still needs a working model provider key (e.g. `GOOGLE_GENERATIVE_AI_API_KEY` in Core `.env`).
-4. Interactive AI therefore works with shared-cookie login alone; keep `EDUAI_API_KEY` for topic sync / reconcile / cascade, not for day-to-day chat.
-5. Core must receive generation instructions via top-level `systemPrompt` (not `messages[].role=system`, which Core strips). Empty course-RAG refusals are skipped when a custom `systemPrompt` is set.
-
-## Shared session cookie
-
-- Set `COOKIE_DOMAIN=.eduai.ok.ubc.ca` on Core (done by `go-live-env.sh`).
-- After enabling that, users must **sign in again** so the cookie is issued with the shared domain.
-- Extensions redirect to Core login with `?force=1` to avoid a host-only-cookie redirect loop.
-
-## Smoke checks
+Service-local checks:
 
 ```bash
-# Public hosts (all three should be 200)
-for h in dev.eduai dev.aitutor.eduai dev.questionmaker.eduai; do
-  printf '%s -> ' "$h"; curl -sk -o /dev/null -w '%{http_code}\n' "https://$h.ok.ubc.ca/"
+curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:4000/api/health
+curl -fsS http://127.0.0.1:8000/healthz
+```
+
+The Core and AI Tutor APIs use `/api/health`. Question Maker uses `/healthz`.
+Health responses verify reachability only; they do not verify database migrations,
+authentication, inference, or the browser build.
+
+For the inference edge, send the existing key without printing it:
+
+```bash
+for host in cmps01.ok.ubc.ca cmps02.ok.ubc.ca cmps03.ok.ubc.ca; do
+  curl -fsS --max-time 10 \
+    -H "Authorization: Bearer \${VLLM_API_KEY}" \
+    "http://\${host}:8001/v1/models"
 done
-
-# systemd — three units, and nothing left under --user
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
-systemctl --user list-units 'eduai*'        # expect empty
-pgrep -af 'nodemon|vite|react-router dev'   # expect empty
-
-# Built assets, not a dev server
-curl -sk https://dev.questionmaker.eduai.ok.ubc.ca/ | grep -o 'src="[^"]*"'
-#   expect src="/assets/index-<hash>.js", NOT src="/src/main.tsx"
-curl -sk https://dev.aitutor.eduai.ok.ubc.ca/ | grep -c '@vite/client'   # expect 0
-
-# Dev semantics survived the build (NODE_ENV=development reached the bundler)
-grep -rls 'localhost:8080' apps/extensions/question-maker/app/frontend/dist/assets | head -1
-#   present => import.meta.env.DEV baked true
-
-# Server-side NODE_ENV, i.e. Core's isProd gates are off
-systemctl show eduai-core -p Environment --value | tr ' ' '\n' | grep NODE_ENV
-curl -sI http://127.0.0.1:3000/ | grep -i strict-transport   # expect NOTHING from Core
-#   Check Core DIRECTLY on :3000. Do NOT check the public URL for this — Apache
-#   sets Strict-Transport-Security on every vhost on this box, including the two
-#   static extension sites that have no node process at all, so the public header
-#   is always present and tells you nothing about NODE_ENV.
-
-# Key presence only (never print the value)
-grep -c '^EDUAI_API_KEY=.\+' apps/core/.env \
-  apps/extensions/ai-tutor/server/.env \
-  apps/extensions/question-maker/.env
 ```
 
-All three greps should report a non-empty key line. Values must be identical across the three files.
+As of the last verification, CMPS01 and CMPS02 returned authenticated model lists;
+CMPS03 returned HTTP 400 with `no_db_connection`. Direct backend success does not
+clear an edge-proxy failure. See [`infra/cmps01/README.md`](../cmps01/README.md)
+for the inference-host contract.
+
+## Service operations
+
+Prefer the target and units installed by the repository:
+
+```bash
+systemctl --no-pager --full status eduai-dev.target
+systemctl --no-pager --full status eduai-core eduai-cron-worker \
+  eduai-aitutor-server eduai-qm-backend
+journalctl -u eduai-core -n 100 --no-pager
+journalctl -u eduai-cron-worker -n 100 --no-pager
+journalctl -u eduai-aitutor-server -n 100 --no-pager
+journalctl -u eduai-qm-backend -n 100 --no-pager
+```
+
+Restart only the affected unit after a scoped change. Use the deployer's restart
+path for normal releases so build, restart, and verification remain auditable.
+
+## Failure handling and rollback
+
+If the deployment fails:
+
+1. Keep the command output and record the active commit.
+2. Check the first failed phase; later errors may be consequences.
+3. Verify whether migrations completed before retrying.
+4. Check the relevant journal and listener.
+5. Restore the last known-good code/config through a reviewed Git change.
+6. Re-run the canonical deployer and repeat all local and public smoke checks.
+
+s378 is not a release-symlink deployment like production. A code rollback means
+selecting or restoring a reviewed known-good checkout state, then rebuilding and
+restarting through `go-live-build.sh`. Do not overwrite environment backups or
+discard untracked operational evidence while recovering.
+
+## Related source files
+
+The behavior of this runbook is implemented by:
+
+- `infra/s378/go-live-build.sh`
+- `infra/s378/go-live-env.sh`
+- `infra/s378/go-live-systemd-install.sh`
+- `infra/s378/systemd/`
+- `infra/s378/apache/`
+- `infra/s378/polkit/`
+- `infra/s378/cron/`
+
+When this document and those files disagree, update the document after resolving
+the code/configuration change; do not silently invent a third procedure.

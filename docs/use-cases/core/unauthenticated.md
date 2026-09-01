@@ -36,16 +36,16 @@ Core has no single global auth gate: `apps/core/app/root.tsx`'s loader calls `au
 - **Category:** Typical Use
 - **Actor:** No session
 - **Preconditions:** None
-- **Entry point(s):** `apps/core/app/routes/home.tsx`, `apps/core/app/routes/team.tsx`
+- **Entry point(s):** `apps/core/app/routes/home.tsx`
 - **Flow:**
   1. Actor navigates to `/` (`apps/core/app/routes/home.tsx` loader calls `auth.api.getSession`; with no session it returns `{}` and renders the marketing page instead of redirecting)
   2. Root loader (`apps/core/app/root.tsx`) resolves guest UI defaults (`GUEST_ROOT_PREFERENCES`) and platform policies (`getPolicies`) in parallel so the page renders without a session
-  3. Actor clicks through to `/team` (`apps/core/app/routes/team.tsx`) to view the research team page — no session check gates this route
-- **Expected outcome:** `200` with the marketing/team page rendered; no cookies set, no DB writes.
+  3. Actor jumps to the About, Approach, Products, Research and Team sections from the header or footer anchors — the landing page is one scrolling document, so there is no second route to gate
+- **Expected outcome:** `200` with the marketing page rendered; no cookies set, no DB writes.
 - **Failure modes / what could go wrong:** None — this is intentionally public. If a session *does* exist, `home.tsx`'s loader redirects to `/dashboard` instead of showing the marketing page.
 - **Related code:**
   - `apps/core/app/routes/home.tsx`
-  - `apps/core/app/routes/team.tsx`
+  - `apps/core/app/components/team-section.tsx`
   - `apps/core/app/root.tsx`
 
 ---
@@ -191,15 +191,17 @@ Core has no single global auth gate: `apps/core/app/root.tsx`'s loader calls `au
 
 - **Category:** Security
 - **Actor:** Attacker holding a stale/expired or bit-flipped session cookie value (e.g. intercepted from a log, or a guessed token)
-- **Preconditions:** None (the target session may or may not have ever been valid)
+- **Preconditions:** The request reaches Core through a service-authenticated extension; the target session may or may not have ever been valid
 - **Entry point(s):** `apps/core/app/routes/api/sessions.validate.ts`
 - **Flow:**
   1. Attacker sends `POST /api/sessions/validate` with a forged/expired `Cookie` header
-  2. Route first derives the request IP via `getRequestContext` and checks `isRateLimited(ip)` (`apps/core/app/lib/auth/rate-limit.server.ts`, in-memory, default 300/min via `SESSION_VALIDATE_RATE_LIMIT`); if tripped, logs `RATE_LIMIT_EXCEEDED` and returns `429`
-  3. Otherwise calls `auth.api.getSession({ headers: request.headers })`; better-auth verifies the session token/signature against its `Session` table and expiry — a tampered or unknown token fails verification and resolves to `null`
-  4. `if (!session?.user)` returns `401 { error: "Unauthorized" }`
-- **Expected outcome:** `401 { "error": "Unauthorized" }` for any cookie that doesn't map to a live, non-expired, non-deactivated-owner `Session` row; `429` if the same IP has exceeded the validate-endpoint rate limit.
-- **Failure modes / what could go wrong:** The rate limiter (`apps/core/app/lib/auth/rate-limit.server.ts`) is a plain in-memory `Map` keyed by IP with no persistence or distributed coordination — it resets on process restart and does not share state across multiple server instances, so it is a soft mitigation against brute-force/credential-stuffing probing of this endpoint rather than a hard guarantee in a multi-instance deployment. Token verification itself relies entirely on better-auth's internal session-lookup/expiry logic; no separate signature-tampering check was found or needed to be — a modified token simply won't match a stored session.
+  2. Core first compares the extension's `Authorization: Bearer <EDUAI_API_KEY>` in constant time. Valid keys bypass the invalid-auth admission bucket entirely. For a missing/invalid key, Core uses only its trusted direct-client rightmost XFF identity: the first denial per IP/window reaches `requireServiceKey` and writes one audit event; subsequent attempts return `429` before the persistent guard or session lookup.
+  3. The authenticated extension supplies `X-EduAI-Client-IP`, derived from the rightmost Apache-appended XFF entry (socket peer fallback). Core trusts that header only after service-key verification and applies `session-validate:preauth:<original-client-ip>` before Better Auth lookup. If the header is missing or malformed, Core falls back to its own trusted-proxy rightmost XFF identity.
+  4. Otherwise Core calls `auth.api.getSession({ headers: request.headers })`; better-auth verifies the session token/signature against its `Session` table and expiry — a tampered or unknown token fails verification and resolves to `null`
+  5. The route applies the normal post-auth limit using `session-validate:user:<userId>` for a verified user or `session-validate:anonymous:<original-client-ip>` for junk/anonymous traffic (default 300/min via `SESSION_VALIDATE_RATE_LIMIT`)
+  6. `if (!session?.user)` returns `401 { error: "Unauthorized" }`
+- **Expected outcome:** `401 { "error": "Unauthorized" }` for a service-authenticated extension request whose cookie does not map to a live session; an initial `401`/`403` for missing/invalid extension service authentication followed by `429` for that direct IP during the limiter window; `429` when an authenticated original client's pre-auth or isolated post-auth bucket is exceeded.
+- **Failure modes / what could go wrong:** All stages use the same bounded in-memory rate-limit store with no persistence or distributed coordination. Counters reset on process restart and are not shared across instances, so they are soft abuse controls rather than a hard multi-instance guarantee. Invalid-key audit logging is intentionally sampled to one persistent denial per direct IP/window. The extension-to-Core service key is the trust anchor for the forwarded client identity and must match across deployments. Token verification itself relies on better-auth's session-lookup/expiry logic; a modified token simply will not match a stored session.
 - **Related code:**
   - `apps/core/app/routes/api/sessions.validate.ts`
   - `apps/core/app/lib/auth/rate-limit.server.ts`

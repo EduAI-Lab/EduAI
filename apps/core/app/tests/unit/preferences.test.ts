@@ -20,14 +20,14 @@ import { loader, action } from "~/routes/api/preferences";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { saveUserPreference } from "~/lib/user-preferences.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: RouteRequestBody) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/preferences", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/preferences", init),
     params: {},
     context: {} as never,
   } as any;
@@ -157,5 +157,38 @@ describe("PATCH /api/preferences", () => {
       context: {} as never,
     } as any);
     expect(res.status).toBe(400);
+  });
+});
+
+// #1453 — UI prefs are read by `session.user.id`, so nothing here may be
+// stored. The defaults path is a separate `return` and a 200 like any other, so
+// it needs the same guarantee or a user with no row saved leaks the previous
+// account's defaults-vs-stored distinction on a shared profile.
+describe("GET /api/preferences Cache-Control (#1453)", () => {
+  it("forbids storing a stored preference row", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue({
+      assistDefault: true,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    } as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the defaults returned when no row exists", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 });

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE } from "./student-number";
+import { jsonObjectSchema } from "~/lib/json-value";
 
 function normalizeCanvasUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -28,7 +30,10 @@ export type CanvasIntegrationPublic = {
 };
 
 export const SyncCanvasCoursesSchema = z.object({
-  canvasCourseIds: z.array(z.coerce.string().min(1)).min(0),
+  canvasCourseIds: z
+    .array(z.coerce.string().min(1))
+    .max(100, "You can sync at most 100 courses at a time")
+    .transform((ids) => [...new Set(ids)]),
 });
 
 export type SyncCanvasCoursesInput = z.infer<typeof SyncCanvasCoursesSchema>;
@@ -60,19 +65,8 @@ export type SyncCanvasCoursesResult = {
   errors: Array<{ canvasId: string; message: string }>;
 };
 
-/** UBC student numbers are exactly 8 numeric digits (#818). */
-export const UBC_STUDENT_NUMBER_PATTERN = /^\d{8}$/;
-export const UBC_STUDENT_NUMBER_MESSAGE = "Student number must be 8 digits";
-
-export function isValidUbcStudentNumber(value: string): boolean {
-  return UBC_STUDENT_NUMBER_PATTERN.test(value.trim());
-}
-
 export const LinkRosterSchema = z.object({
-  studentNumber: z
-    .string()
-    .trim()
-    .regex(UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE),
+  studentNumber: z.string().trim().regex(UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE),
 });
 
 export type LinkRosterInput = z.infer<typeof LinkRosterSchema>;
@@ -83,10 +77,18 @@ export type LinkRosterResponse = {
 };
 
 export const SyncCanvasMaterialsSchema = z.object({
-  canvasFileIds: z.array(z.coerce.string().min(1)).min(1, "Select at least one file"),
+  canvasFileIds: z
+    .array(z.coerce.string().min(1))
+    .min(1, "Select at least one file")
+    .max(100, "You can sync at most 100 files at a time")
+    .transform((ids) => [...new Set(ids)]),
 });
 
 export type SyncCanvasMaterialsInput = z.infer<typeof SyncCanvasMaterialsSchema>;
+
+export const DiscoverCanvasMaterialsSchema = z.object({
+  intent: z.literal("discover"),
+});
 
 export const ExcludeCanvasMaterialSchema = z.object({
   canvasFileId: z.coerce.string().min(1, "canvasFileId is required"),
@@ -99,3 +101,23 @@ export type {
   CanvasMaterialDiscoverItem,
   SyncCanvasMaterialsResult,
 } from "@eduai/types";
+
+export const CanvasCourseIdQuerySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+});
+
+export type CanvasCourseIdQuery = z.infer<typeof CanvasCourseIdQuerySchema>;
+
+export const CreateCanvasQuizBodySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+  quiz: jsonObjectSchema,
+});
+
+export type CreateCanvasQuizBody = z.infer<typeof CreateCanvasQuizBodySchema>;
+
+export const CreateCanvasQuizQuestionBodySchema = z.object({
+  canvasCourseId: z.coerce.number().int().positive(),
+  question: jsonObjectSchema,
+});
+
+export type CreateCanvasQuizQuestionBody = z.infer<typeof CreateCanvasQuizQuestionBodySchema>;

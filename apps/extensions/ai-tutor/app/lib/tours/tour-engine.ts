@@ -1,6 +1,6 @@
-import type { AppTourDefinition, AppTourStep, TourContextState } from './tour-types';
-import { isLessonRoute } from './tour-storage';
-import { readRouteFromElement, resolveStepRoute } from './tour-utils';
+import type { AppTourDefinition, AppTourStep, TourContextState } from "./tour-types";
+import { isLessonRoute } from "./tour-storage";
+import { readRouteFromElement, resolveStepRoute } from "./tour-utils";
 
 export type ActiveTourSession = {
   tour: AppTourDefinition;
@@ -19,12 +19,32 @@ export function createInitialTourContext(pathname: string): TourContextState {
   };
 }
 
+/**
+ * The step a tour should open on when launched from `pathname`.
+ *
+ * A tour that spans more than one route (the unit-admin one covers /dashboard
+ * and /instructor) must not navigate away the moment it is started: opening it
+ * from the course list should begin at the course-list step, not at step one on
+ * the dashboard. Falls back to the first step when no step lives on this route,
+ * which is the intended behaviour for a TA launching the learner tour from the
+ * instructor shell — going to /student is the point of that tour.
+ */
+export function resolveTourStartStep(tour: AppTourDefinition, context: TourContextState) {
+  const index = tour.steps.findIndex(
+    (step) => resolveStepRoute(step, context) === context.currentPath,
+  );
+
+  return index === -1 ? 0 : index;
+}
+
 export function createTourSession(tour: AppTourDefinition, pathname: string): ActiveTourSession {
+  const context = createInitialTourContext(pathname);
+
   return {
     tour,
-    stepIndex: 0,
+    stepIndex: resolveTourStartStep(tour, context),
     direction: 1,
-    context: createInitialTourContext(pathname),
+    context,
     pendingRoute: null,
   };
 }
@@ -33,16 +53,8 @@ export function getSessionStep(session: ActiveTourSession): AppTourStep {
   return session.tour.steps[session.stepIndex];
 }
 
-export function findStepIndex(
-  session: ActiveTourSession,
-  fromIndex: number,
-  direction: 1 | -1,
-) {
-  for (
-    let index = fromIndex;
-    index >= 0 && index < session.tour.steps.length;
-    index += direction
-  ) {
+export function findStepIndex(session: ActiveTourSession, fromIndex: number, direction: 1 | -1) {
+  for (let index = fromIndex; index >= 0 && index < session.tour.steps.length; index += direction) {
     const route = resolveStepRoute(session.tour.steps[index], session.context);
     if (route) return index;
   }

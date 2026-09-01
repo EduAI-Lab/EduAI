@@ -1,28 +1,48 @@
-import tsconfigPaths from 'vite-tsconfig-paths';
-import { defineConfig } from 'vitest/config';
-import path from 'path';
+import tsconfigPaths from "vite-tsconfig-paths";
+import { defineConfig } from "vitest/config";
+import path from "path";
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
     alias: {
-      '@eduai/ui': path.resolve(__dirname, '../../../packages/ui/src/index.ts'),
+      // Subpath exports must precede the barrel: vite's alias matcher treats
+      // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
+      // would rewrite subpaths to `.../src/index.ts/<subpath>`. Insertion order
+      // is what keeps that from happening.
+      "@eduai/ui/primitive-union": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/lib/primitive-union.ts",
+      ),
+      "@eduai/ui/runtime-env": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/lib/runtime-env.ts",
+      ),
+      "@eduai/ui/math-markdown": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/lib/math-markdown.ts",
+      ),
+      "@eduai/ui": path.resolve(__dirname, "../../../packages/ui/src/index.ts"),
     },
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-    include: ['app/tests/**/*.test.{ts,tsx}'],
-    setupFiles: ['./app/tests/setup.ts'],
+    environment: "jsdom",
+    include: ["app/tests/**/*.test.{ts,tsx}"],
+    setupFiles: ["./app/tests/setup.ts"],
+    // student-preview-loader-gate.test.ts dynamically imports three full route
+    // modules inside one test body; on a cold cache that transform cost alone
+    // can exceed the 5s default, especially under CI's shared-runner load.
+    testTimeout: 15000,
     coverage: {
-      provider: 'v8',
+      provider: "v8",
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.
       reportOnFailure: true,
-      include: ['app/**/*.{ts,tsx}'],
-      exclude: ['app/tests/**', 'app/**/*.test.{ts,tsx}', 'app/root.tsx', 'app/routes.ts'],
+      include: ["app/**/*.{ts,tsx}"],
+      exclude: ["app/tests/**", "app/**/*.test.{ts,tsx}", "app/root.tsx", "app/routes.ts"],
       // lcov.info feeds the per-PR patch-coverage warning (pr-coverage.yml); json-summary
       // feeds the scheduled full-suite report. Both stay gitignored under coverage/.
-      reporter: ['text-summary', 'json-summary', 'lcov'],
+      reporter: ["text-summary", "json-summary", "lcov"],
     },
   },
 });

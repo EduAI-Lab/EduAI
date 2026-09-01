@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useIsMobile } from "~/hooks/use-mobile";
 
-type Listener = (event?: unknown) => void;
+type Listener = (event?: MediaQueryListEvent) => void;
 
 function installMatchMedia() {
   const listeners = new Set<Listener>();

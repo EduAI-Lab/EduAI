@@ -1,0 +1,22 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "package*.json",
+      "node_modules",
+      "cdk.out"
+    ]
+  },
+  "context": {
+    "bedrockRegion": "us-east-1",
+    "modelId": "meta.llama3-70b-instruct-v1:0",
+    "invocationAlarmThreshold": 100,
+    "outputTokenAlarmThreshold": 200000
+  }
+}

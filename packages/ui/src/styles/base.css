@@ -9,10 +9,36 @@
  * Do not add app-specific rules here. Do not fork this file.
  */
 
+/*
+ * Self-hosted Outfit (#1221). Previously each app pulled this from Google Fonts
+ * with a render-blocking preconnect + stylesheet chain in its own document head
+ * — a cold DNS + TLS handshake to a third-party origin measured at 354ms for a
+ * 1KB response, paid once per app. Serving the font from our own origin removes
+ * that hop entirely and lets it share the connection the document already has.
+ *
+ * The import lives here, next to the `--font-sans` declarations it satisfies,
+ * so the token and the file that provides it cannot drift apart. Each app
+ * declares `@fontsource-variable/outfit` as a real dependency; packages/ui
+ * peer-declares it (this package keeps everything as peers so apps control
+ * resolution).
+ *
+ * One variable file covers the whole 100–900 axis, so every weight the platform
+ * uses (400/500/600/700/900) costs a single request. Fontsource splits it by
+ * `unicode-range` into latin (32KB) and latin-ext (15KB); browsers fetch
+ * latin-ext only when a page actually contains those glyphs.
+ */
+@import "@fontsource-variable/outfit";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif,
+  /*
+   * "Outfit Variable" is the family name Fontsource registers for the variable
+   * file — it is NOT interchangeable with "Outfit". Plain "Outfit" is kept next
+   * in the stack so a locally installed static Outfit still wins over the
+   * generic fallbacks.
+   */
+  --font-sans: "Outfit Variable", "Outfit", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
@@ -23,6 +49,33 @@ body {
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;
   }
+}
+
+/*
+ * Reserve the document scrollbar's gutter. Radix locks body scroll when a
+ * dialog opens, removing the bar; without a reserved gutter the page reflows
+ * wider the instant a modal appears, which reads as the layout rescaling.
+ * On platforms with overlay scrollbars (macOS/iOS) the bar takes no space, so
+ * `stable` reserves nothing and this is free — see the scrollbar block below.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
+/*
+ * next-themes writes `.dark` / `.light` on <html>, and that choice must beat the
+ * OS preference above: `color-scheme` is what native scrollbars, form controls
+ * and the overscroll gutter render from, so a dark app on a light OS would
+ * otherwise show light scrollbars.
+ */
+html.light,
+html.light body {
+  color-scheme: light;
+}
+
+html.dark,
+html.dark body {
+  color-scheme: dark;
 }
 
 /*
@@ -67,7 +120,7 @@ body {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: Outfit, sans-serif;
+  --font-sans: "Outfit Variable", Outfit, sans-serif;
   --font-mono: monospace;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 
@@ -233,7 +286,7 @@ body {
   --color-badge-green: #22c55e;
   --color-badge-orange: #f97316;
   --color-badge-red: #ef4444;
-  --font-sans: Outfit, sans-serif;
+  --font-sans: "Outfit Variable", Outfit, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: monospace;
   --radius: 0.5rem;
@@ -332,42 +385,66 @@ body {
   }
 }
 
-/* Scrollbars — 12px width meets WCAG 2.5.8 minimum target guidance */
-* {
+/* Scrollbars.
+ *
+ * The document scroller and ordinary overflow containers deliberately use the
+ * platform's NATIVE scrollbar. Defining `::-webkit-scrollbar` opts Chrome and
+ * Safari out of the macOS/iOS overlay scrollbar into a classic one, which
+ * permanently consumes ~12px of layout width on every scroll container. These
+ * rules used to be attached to `*`, so the whole platform paid that gutter on
+ * every route — and Core had to reserve it on <html> (`scrollbar-gutter`) to
+ * stop the page reflowing when a Radix dialog hid the bar. Native scrollbars
+ * are overlay (0px) where the OS says so and classic where it does not, so the
+ * reserved gutter costs nothing on macOS and still prevents the shift on
+ * Windows and Linux.
+ *
+ * `.scrollbar-hover` opts one pane into the branded 12px bar (12px meets WCAG
+ * 2.5.8 minimum target guidance), kept out of the way with a faint thumb that
+ * strengthens while the pane is hovered. Use it only on panes that scroll
+ * independently of the page, where a native bar reads as OS chrome bleeding
+ * into the design — the chat transcript and history rails. Those panes reserve
+ * their own gutter so their content does not reflow when they start
+ * overflowing.
+ *
+ * Native scrollbars follow `color-scheme`, which is why the theme sets it on
+ * `.dark` as well as via `prefers-color-scheme` — otherwise a dark app on a
+ * light OS renders light scrollbars.
+ */
+.scrollbar-hover {
+  scrollbar-gutter: stable;
   scrollbar-width: auto;
-  scrollbar-color: oklch(0.5 0 0 / 0.45) transparent;
+  scrollbar-color: oklch(0.5 0 0 / 0.2) transparent;
 }
 
-*::-webkit-scrollbar {
+.scrollbar-hover::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
 
-*::-webkit-scrollbar-track {
+.scrollbar-hover::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 0.45);
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.2);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0 / 0.65);
-  background-clip: content-box;
-}
-
-*::-webkit-scrollbar-corner {
+.scrollbar-hover::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* For better UX, show scrollbar on hover for interactive elements */
+/* Strengthen the thumb while the pane is hovered. */
+.scrollbar-hover:hover {
+  scrollbar-color: oklch(0.5 0 0 / 0.45) transparent;
+}
+
 .scrollbar-hover:hover::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 0.2);
+  background: oklch(0.5 0 0 / 0.45);
 }
 
 .scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0 / 0.3);
+  background: oklch(0.5 0 0 / 0.65);
 }

@@ -6,22 +6,28 @@
  * this component owns both halves: server queries for courses, local matching
  * for the static nav rows.
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router';
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 
 const listCourses = vi.fn();
+const getLauncherApps = vi.fn((_coreCourseId?: string | null) => []);
 
-vi.mock('~/lib/api', () => ({
+vi.mock("~/lib/api", () => ({
   default: { listCourses: (...a: unknown[]) => listCourses(...a) },
   api: { listCourses: (...a: unknown[]) => listCourses(...a) },
 }));
 
-vi.mock('~/hooks/useLocalUser', () => ({
-  useLocalUser: () => ({ user: { id: 'u1', name: 'Prof', role: 'INSTRUCTOR' } }),
+vi.mock("~/lib/apps", () => ({
+  CURRENT_APP_ID: "ai-tutor",
+  getLauncherApps: (coreCourseId?: string | null) => getLauncherApps(coreCourseId),
 }));
 
-import { AITUTOR_COMMAND_EVENT, CommandPalette } from '~/components/command/CommandPalette';
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "u1", name: "Prof", role: "INSTRUCTOR" } }),
+}));
+
+import { AITUTOR_COMMAND_EVENT, CommandPalette } from "~/components/command/CommandPalette";
 
 const page = (courses: { id: number; title: string }[], total = courses.length) => ({
   data: courses,
@@ -30,12 +36,17 @@ const page = (courses: { id: number; title: string }[], total = courses.length) 
   pageSize: 200,
 });
 
-function renderPalette() {
-  return render(
-    <MemoryRouter initialEntries={['/instructor']}>
-      <CommandPalette />
-    </MemoryRouter>,
-  );
+function renderPalette({
+  initialEntry = "/instructor",
+  loaderData,
+}: {
+  initialEntry?: string;
+  loaderData?: unknown;
+} = {}) {
+  const route: RouteObject = { path: "*", element: <CommandPalette /> };
+  if (loaderData !== undefined) route.loader = () => loaderData;
+  const router = createMemoryRouter([route], { initialEntries: [initialEntry] });
+  return render(<RouterProvider router={router} />);
 }
 
 /** Open via the window event the header search button dispatches. */
@@ -46,70 +57,92 @@ async function openPalette() {
 }
 
 async function type(value: string) {
-  fireEvent.change(screen.getByRole('combobox'), { target: { value } });
+  fireEvent.change(screen.getByRole("combobox"), { target: { value } });
   await act(async () => {
     vi.advanceTimersByTime(400);
   });
 }
 
-describe('CommandPalette — server course search (#1208)', () => {
+describe("CommandPalette — server course search (#1208)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     listCourses.mockReset();
-    listCourses.mockResolvedValue(page([{ id: 1, title: 'Linear Algebra' }]));
+    listCourses.mockResolvedValue(page([{ id: 1, title: "Linear Algebra" }]));
+    getLauncherApps.mockClear();
+    getLauncherApps.mockReturnValue([]);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('does not fetch courses until the palette opens', () => {
+  it("does not fetch courses until the palette opens", () => {
     renderPalette();
     expect(listCourses).not.toHaveBeenCalled();
   });
 
-  it('loads an unsearched page on open', async () => {
+  it("loads an unsearched page on open", async () => {
     renderPalette();
     await openPalette();
 
     await waitFor(() => expect(listCourses).toHaveBeenCalledWith({ search: undefined }));
-    expect(await screen.findByText('Linear Algebra')).toBeInTheDocument();
+    expect(await screen.findByText("Linear Algebra")).toBeInTheDocument();
   });
 
-  it('re-queries the server as the user types', async () => {
+  it("re-queries the server as the user types", async () => {
     renderPalette();
     await openPalette();
     await waitFor(() => expect(listCourses).toHaveBeenCalledTimes(1));
 
-    listCourses.mockResolvedValue(page([{ id: 7, title: 'Organic Chemistry' }]));
-    await type('organic');
+    listCourses.mockResolvedValue(page([{ id: 7, title: "Organic Chemistry" }]));
+    await type("organic");
 
-    await waitFor(() => expect(listCourses).toHaveBeenLastCalledWith({ search: 'organic' }));
-    expect(await screen.findByText('Organic Chemistry')).toBeInTheDocument();
+    await waitFor(() => expect(listCourses).toHaveBeenLastCalledWith({ search: "organic" }));
+    expect(await screen.findByText("Organic Chemistry")).toBeInTheDocument();
   });
 
-  it('still matches static nav rows locally, since cmdk filtering is off', async () => {
+  it("keeps lesson launcher context when palette search returns another course", async () => {
+    renderPalette({
+      initialEntry: "/instructor/lesson/3",
+      loaderData: {
+        course: { coreOfferingId: "core-course-937" },
+        lesson: { id: 3, title: "Active lesson" },
+      },
+    });
+
+    await waitFor(() => expect(getLauncherApps).toHaveBeenCalledWith("core-course-937"));
+    await openPalette();
+    await waitFor(() => expect(listCourses).toHaveBeenCalled());
+
+    listCourses.mockResolvedValue(page([{ id: 7, title: "Organic Chemistry" }]));
+    await type("organic");
+
+    await waitFor(() => expect(listCourses).toHaveBeenLastCalledWith({ search: "organic" }));
+    expect(getLauncherApps).toHaveBeenLastCalledWith("core-course-937");
+  });
+
+  it("still matches static nav rows locally, since cmdk filtering is off", async () => {
     renderPalette();
     await openPalette();
     await waitFor(() => expect(listCourses).toHaveBeenCalled());
 
-    await type('settings');
+    await type("settings");
 
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
     // A non-matching static row must be gone — otherwise turning off cmdk's
     // filter would leave every nav item permanently visible.
-    expect(screen.queryByText('Help')).not.toBeInTheDocument();
+    expect(screen.queryByText("Help")).not.toBeInTheDocument();
   });
 
-  it('discloses truncation when more courses exist than were returned', async () => {
-    listCourses.mockResolvedValue(page([{ id: 1, title: 'Linear Algebra' }], 4312));
+  it("discloses truncation when more courses exist than were returned", async () => {
+    listCourses.mockResolvedValue(page([{ id: 1, title: "Linear Algebra" }], 4312));
     renderPalette();
     await openPalette();
 
     expect(await screen.findByText(/Showing 1 of 4312 courses/)).toBeInTheDocument();
   });
 
-  it('omits the truncation row when the list is complete', async () => {
+  it("omits the truncation row when the list is complete", async () => {
     renderPalette();
     await openPalette();
     await waitFor(() => expect(listCourses).toHaveBeenCalled());
@@ -117,32 +150,32 @@ describe('CommandPalette — server course search (#1208)', () => {
     expect(screen.queryByText(/keep typing to narrow/)).not.toBeInTheDocument();
   });
 
-  it('keeps the previous list when a query fails', async () => {
+  it("keeps the previous list when a query fails", async () => {
     renderPalette();
     await openPalette();
-    expect(await screen.findByText('Linear Algebra')).toBeInTheDocument();
+    expect(await screen.findByText("Linear Algebra")).toBeInTheDocument();
 
     // A failed query must not wipe what was already listed. The query still
     // matches the loaded row, so it stays visible rather than being narrowed out
     // by the local filter below.
-    listCourses.mockRejectedValue(new Error('network'));
-    await type('linear');
+    listCourses.mockRejectedValue(new Error("network"));
+    await type("linear");
 
-    expect(screen.getByText('Linear Algebra')).toBeInTheDocument();
+    expect(screen.getByText("Linear Algebra")).toBeInTheDocument();
   });
 
-  it('hides loaded courses that do not match the query yet', async () => {
+  it("hides loaded courses that do not match the query yet", async () => {
     renderPalette();
     await openPalette();
-    expect(await screen.findByText('Linear Algebra')).toBeInTheDocument();
+    expect(await screen.findByText("Linear Algebra")).toBeInTheDocument();
 
     // cmdk's own filtering is off, and `courses` trails the input by the
     // debounce plus a round-trip. Without the local narrowing, the stale rows
     // stay rendered AND cmdk auto-highlights the first one, so Enter during that
     // window navigates to an unrelated course.
-    listCourses.mockRejectedValue(new Error('network'));
-    await type('zzz');
+    listCourses.mockRejectedValue(new Error("network"));
+    await type("zzz");
 
-    expect(screen.queryByText('Linear Algebra')).not.toBeInTheDocument();
+    expect(screen.queryByText("Linear Algebra")).not.toBeInTheDocument();
   });
 });

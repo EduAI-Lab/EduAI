@@ -49,10 +49,30 @@ const SUBSTANTIVE_QUESTION_PATTERN =
 
 /** Learner asked for a visual / ASCII diagram — must not use brief policy (no DIAGRAMS rules). */
 export const ADHD_DIAGRAM_REQUEST_PATTERN =
-  /\b(diagram|draw|sketch|animat(?:e|ed|ion)|visuali[sz]e|ascii\s*art|show\s+(me\s+)?(a\s+)?(picture|figure|plot|graph)|make\s+(me\s+)?(a\s+)?diagram)\b/i;
+  /\b(diagram|draw|sketch|animat(?:e|ed|ion)|visual(?:ly|i[sz]e)?|ascii\s*art|flow\s*chart|process\s*flow|show\s+(me\s+)?(a\s+)?(picture|figure|plot|graph)|make\s+(me\s+)?(a\s+)?diagram)\b/i;
 
 export function userRequestedDiagram(userText?: string): boolean {
   return ADHD_DIAGRAM_REQUEST_PATTERN.test((userText ?? "").trim());
+}
+
+/**
+ * Learner references a specific numbered step from an earlier Step ladder
+ * (e.g. "go back to step 2", "expand step 3", "what about step 2?") (#1245).
+ * These replies must include a real Step ladder re-explanation, not just the
+ * bare Top summary / Next? shell — a model can satisfy that shell with a
+ * one-line copy of its earlier wording, which reads as a truncated,
+ * copy-pasted fragment rather than a proper step-recall answer.
+ */
+export const ADHD_STEP_RECALL_PATTERN = /\bstep\s+\d+\b/i;
+
+export function userRequestedStepRecall(args: {
+  userText?: string;
+  priorAssistantText?: string;
+}): boolean {
+  return (
+    hasPriorAssistant(args.priorAssistantText) &&
+    ADHD_STEP_RECALL_PATTERN.test((args.userText ?? "").trim())
+  );
 }
 
 function countWords(text: string): number {

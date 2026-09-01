@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/setup-env.js",
+    "prepare": "lefthook install || true",
     "perf:quality": "node scripts/perf-quality.mjs",
     "perf:endpoints": "node scripts/perf-baseline.mjs",
     "perf:pages": "node scripts/page-profile/profile.mjs",
@@ -30,7 +31,12 @@
     "dev": "turbo run dev",
     "dbseed": "npm run db:seed -w edu-ai && npm run seed -w ai-tutor-server && npm run seed -w question-maker-backend",
     "db:seed:perf": "npm run dbseed && npm run db:seed:perf -w edu-ai && npm run seed:perf -w ai-tutor-server && npm run seed:perf -w question-maker-backend",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && npm run lint:root",
+    "lint:fix": "turbo run lint:fix && oxlint --fix scripts/ tests/ infra/ tools/ ops/ docs/ eduai-summer-2026/",
+    "lint:root": "oxlint scripts/ tests/ infra/ tools/ ops/ docs/ eduai-summer-2026/",
+    "format": "turbo run format && oxfmt .",
+    "format:check": "turbo run format:check && oxfmt --check .",
+    "typecheck": "turbo run typecheck",
     "test": "turbo run test --continue",
     "test:coverage": "turbo run test:coverage --continue --filter=edu-ai --filter=ai-tutor-server --filter=question-maker-backend --filter=@eduai/ui --filter=ai-tutor --filter=question-maker-frontend",
     "test:time-report": "node --test eduai-summer-2026/tests/team-time-report.test.js",
@@ -38,9 +44,11 @@
     "test:token-parity": "node --test eduai-summer-2026/tests/token-parity.test.js",
     "test:prisma-client-isolation": "node scripts/verify-prisma-client-isolation.mjs",
     "test:scripts": "npm run test:time-report && npm run test:patch-coverage && npm run test:token-parity",
-    "test:all": "bash scripts/test-in-docker.sh",
-    "test:unit": "bash scripts/test-in-docker.sh unit",
-    "test:integration": "bash scripts/test-in-docker.sh integration",
+    "test:docker": "bash scripts/test-in-docker.sh",
+    "test:docker:unit": "bash scripts/test-in-docker.sh unit",
+    "test:docker:integration": "bash scripts/test-in-docker.sh integration",
+    "test:unit": "turbo run test:unit --continue",
+    "test:integration": "turbo run test:integration --continue",
     "test:e2e": "bash scripts/e2e-in-docker.sh",
     "test:eduai": "npm run test:eduai:unit && npm run test:eduai:integration",
     "test:eduai:unit": "docker compose -f docker-compose.test.yml run --build --rm eduai-unit-tests",
@@ -59,16 +67,22 @@
     "test:qm:server": "npm run test:qm:server:unit && npm run test:qm:server:integration",
     "test:qm:server:unit": "docker compose -f docker-compose.test.yml run --build --rm qm-server-unit-tests",
     "test:qm:server:integration": "docker compose -f docker-compose.test.yml run --build --rm qm-server-integration-tests",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "syncpack:check": "syncpack lint",
+    "syncpack:fix": "syncpack fix"
   },
   "devDependencies": {
     "@better-auth/core": "1.6.22",
-    "@playwright/test": "^1.60.0",
+    "@oxlint/plugins": "^1.78.0",
+    "@playwright/test": "1.60.0",
     "@types/node": "^22",
     "drizzle-orm": "^0.45.2",
     "jscpd": "^5.0.12",
+    "lefthook": "^2.1.10",
     "madge": "^8.0.0",
     "nodemon": "^3.1.10",
+    "oxfmt": "0.63.0",
+    "oxlint": "^1.78.0",
     "syncpack": "^15",
     "ts-prune": "^0.10.3",
     "tsx": "^4.19.4",
@@ -84,12 +98,16 @@
       "drizzle-orm": "^0.45.2",
       "@mrleebo/prisma-ast": "^0.16.0"
     },
+    "@ai-sdk/provider-utils": {
+      "undici": "6.28.0"
+    },
+    "jsondiffpatch": "0.7.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "clsx": "^2.1.1",
     "class-variance-authority": "^0.7.1"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3"
+    "@prisma/client": "^6.19.3"
   }
 }

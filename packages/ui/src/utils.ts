@@ -1,9 +1,10 @@
-import * as React from "react"
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import * as React from "react";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+import { hasDocument } from "./lib/runtime-env";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 /**
@@ -18,17 +19,17 @@ export function cn(...inputs: ClassValue[]) {
 export function useRestoreBodyPointerEvents() {
   React.useEffect(() => {
     return () => {
-      if (typeof document === "undefined") return
+      if (!hasDocument()) return;
       // Defer to a microtask so the just-closed layer finishes its own cleanup
       // before we check whether anything else is still holding the lock.
       queueMicrotask(() => {
         const stillOpen = document.querySelector(
-          '[data-state="open"][role="dialog"], [data-state="open"][role="alertdialog"], [data-state="open"][role="menu"]'
-        )
-        if (!stillOpen) document.body.style.pointerEvents = ""
-      })
-    }
-  }, [])
+          '[data-state="open"][role="dialog"], [data-state="open"][role="alertdialog"], [data-state="open"][role="menu"]',
+        );
+        if (!stillOpen) document.body.style.pointerEvents = "";
+      });
+    };
+  }, []);
 }
 
 export function getInitials(name: string): string {
@@ -37,5 +38,5 @@ export function getInitials(name: string): string {
     .map((n) => n[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2);
 }

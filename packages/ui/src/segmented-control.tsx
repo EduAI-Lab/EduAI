@@ -1,23 +1,24 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "./utils"
+import { cn } from "./utils";
+import { isString } from "./lib/primitive-union";
 
 export interface SegmentedControlOption<T extends string = string> {
-  value: T
-  label: React.ReactNode
+  value: T;
+  label: React.ReactNode;
   /** Accessible name when label is not plain text */
-  ariaLabel?: string
+  ariaLabel?: string;
 }
 
 export interface SegmentedControlProps<T extends string = string> {
-  value: T
-  onValueChange: (value: T) => void
-  options: SegmentedControlOption<T>[]
-  ariaLabel?: string
-  className?: string
-  size?: "sm" | "default"
+  value: T;
+  onValueChange: (value: T) => void;
+  options: SegmentedControlOption<T>[];
+  ariaLabel?: string;
+  className?: string;
+  size?: "sm" | "default";
 }
 
 /**
@@ -41,9 +42,10 @@ export function SegmentedControl<T extends string = string>({
       )}
     >
       {options.map((option) => {
-        const selected = value === option.value
-        const labelText =
-          typeof option.label === "string" ? option.label : option.ariaLabel ?? option.value
+        const selected = value === option.value;
+        const labelText = isString(option.label)
+          ? option.label
+          : (option.ariaLabel ?? option.value);
 
         return (
           <button
@@ -56,7 +58,9 @@ export function SegmentedControl<T extends string = string>({
             className={cn(
               "relative rounded-lg font-medium transition-all duration-200 ease-out",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              size === "sm" ? "min-w-[4.5rem] px-3 py-1.5 text-xs" : "min-w-[5.25rem] px-4 py-2 text-sm",
+              size === "sm"
+                ? "min-w-[4.5rem] px-3 py-1.5 text-xs"
+                : "min-w-[5.25rem] px-4 py-2 text-sm",
               selected
                 ? "bg-card text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.08)] scale-[1.02]"
                 : "text-muted-foreground hover:bg-card/75 hover:text-foreground hover:shadow-xs active:scale-[0.98]",
@@ -64,8 +68,8 @@ export function SegmentedControl<T extends string = string>({
           >
             {option.label}
           </button>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

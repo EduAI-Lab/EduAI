@@ -1,3 +1,4 @@
+import type { ProviderFormData } from "~/components/admin/provider-form-dialog";
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
@@ -53,7 +54,7 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
   }, [refresh]);
 
   const createProvider = useCallback(
-    async (data: Record<string, unknown>) => {
+    async (data: ProviderFormData) => {
       await apiFetch<AIProvider>("/api/ai-providers", {
         method: "POST",
         body: JSON.stringify(data),
@@ -64,7 +65,7 @@ export function useAiProviders(options: UseAiProvidersOptions = {}) {
   );
 
   const updateProvider = useCallback(
-    async (id: string, data: Record<string, unknown>) => {
+    async (id: string, data: Partial<ProviderFormData>) => {
       await apiFetch<AIProvider>(`/api/ai-providers/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),

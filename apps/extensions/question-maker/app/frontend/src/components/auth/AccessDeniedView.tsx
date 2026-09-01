@@ -1,5 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@eduai/ui';
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 
 export function AccessDeniedView() {
   return (
@@ -7,8 +6,8 @@ export function AccessDeniedView() {
       <CardHeader>
         <CardTitle>Access restricted</CardTitle>
         <CardDescription>
-          Question Maker is available to instructors and administrators. Students and teaching
-          assistants should use EduAI Core or AI Tutor instead.
+          Question Maker is available to instructors, administrators, and assigned teaching
+          assistants. Use EduAI Core or AI Tutor for student coursework.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -17,6 +17,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/courses.topics.$";
 import { auth } from "~/lib/auth/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -35,19 +36,15 @@ const STUDENT_SESSION = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeLoaderArgs(
-  courseId: string,
-  topicId?: string,
-  authorization?: string,
-) {
+function makeLoaderArgs(courseId: string, topicId?: string, authorization?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(
-      `http://localhost/api/courses/${courseId}/topics`,
-      { method: "GET", headers },
-    ),
-    params: { courseId, ...(topicId ? { topicId } : {}) },
+    request: new Request(`http://localhost/api/courses/${courseId}/topics`, {
+      method: "GET",
+      headers,
+    }),
+    params: { courseId, topicId },
     context: {} as never,
   } as any;
 }
@@ -55,29 +52,29 @@ function makeLoaderArgs(
 function makeActionArgs(
   method: "POST" | "DELETE",
   courseId: string,
-  body?: unknown,
+  body?: RouteRequestBody,
   authorization?: string,
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(
-      `http://localhost/api/courses/${courseId}/topics`,
-      { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined },
-    ),
+    request: new Request(`http://localhost/api/courses/${courseId}/topics`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
     params: { courseId },
     context: {} as never,
   } as any;
 }
 
-function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: unknown) {
+function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: RouteRequestBody) {
   const headers = new Headers({ "Content-Type": "application/json" });
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/courses//topics", {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    }),
+    request: new Request("http://localhost/api/courses//topics", init),
     params: {} as Record<string, string>,
     context: {} as never,
   } as any;
@@ -349,12 +346,17 @@ describe("POST /api/courses/:courseId/topics", () => {
     const topic = await res.json();
     expect(topic.name).toBe("Dynamic Programming");
     expect(topic.courseId).toBe(courseId);
-    expect(typeof topic.id).toBe("string");
+    expect(topic.id).toEqual(expect.any(String));
   });
 
   it("returns 201 with the created topic via service key — no session required", async () => {
     const res = await action(
-      makeActionArgs("POST", courseId, { name: "Greedy Algorithms" }, `Bearer ${VALID_SERVICE_KEY}`),
+      makeActionArgs(
+        "POST",
+        courseId,
+        { name: "Greedy Algorithms" },
+        `Bearer ${VALID_SERVICE_KEY}`,
+      ),
     );
     expect(res.status).toBe(201);
     const topic = await res.json();
@@ -405,14 +407,11 @@ describe("POST /api/courses/:courseId/topics", () => {
       // Edit via the new PATCH route
       vi.mocked(auth.api.getSession).mockResolvedValue(instructorSession as never);
       const patched = await action({
-        request: new Request(
-          `http://localhost/api/courses/${courseId}/topics/${topicId}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Lifecycle Topic v2" }),
-          },
-        ),
+        request: new Request(`http://localhost/api/courses/${courseId}/topics/${topicId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Lifecycle Topic v2" }),
+        }),
         params: { courseId, topicId },
         context: {} as never,
       } as any);
@@ -432,7 +431,6 @@ describe("POST /api/courses/:courseId/topics", () => {
       await prisma.user.delete({ where: { id: instructor.id } });
     }
   });
-
 
   it("returns 409 TOPIC_ALREADY_EXISTS with existingId on duplicate name", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
@@ -531,7 +529,9 @@ describe("DELETE /api/courses/:courseId/topics", () => {
   });
 
   it("returns 204 when a service key deletes a topic — no session required", async () => {
-    const extra = await prisma.courseTopic.create({ data: { courseId, name: "Service Delete Topic" } });
+    const extra = await prisma.courseTopic.create({
+      data: { courseId, name: "Service Delete Topic" },
+    });
     const res = await action(
       makeActionArgs("DELETE", courseId, { topicId: extra.id }, `Bearer ${VALID_SERVICE_KEY}`),
     );

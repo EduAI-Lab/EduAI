@@ -49,11 +49,11 @@ export function assertCoreUrlConsistency(env = process.env) {
   if (!consistent) {
     const message =
       `[config] CORE_URL origin (${coreOrigin}) and EDUAI_BASE_URL origin (${eduaiOrigin}) ` +
-      'differ. Session auth (CORE_URL) and course catalog/completion (EDUAI_BASE_URL) will ' +
-      'target different Core backends. Point them at the same origin, or set ' +
-      'EDUAI_ENFORCE_URL_CONSISTENCY=1 to fail startup on this mismatch instead of only warning.';
+      "differ. Session auth (CORE_URL) and course catalog/completion (EDUAI_BASE_URL) will " +
+      "target different Core backends. Point them at the same origin, or set " +
+      "EDUAI_ENFORCE_URL_CONSISTENCY=1 to fail startup on this mismatch instead of only warning.";
 
-    if (env.EDUAI_ENFORCE_URL_CONSISTENCY === '1') {
+    if (env.EDUAI_ENFORCE_URL_CONSISTENCY === "1") {
       throw new Error(message);
     }
     if (!hasWarned) {

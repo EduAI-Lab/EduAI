@@ -4,12 +4,15 @@ import { mergeLocalInferenceFromEnv } from "~/lib/ai/provider-types";
 describe("mergeLocalInferenceFromEnv", () => {
   const originalVllm = process.env.VLLM_BASE_URL;
   const originalOllama = process.env.OLLAMA_BASE_URL;
+  const originalBedrock = process.env.AWS_BEARER_TOKEN_BEDROCK;
 
   afterEach(() => {
     if (originalVllm === undefined) delete process.env.VLLM_BASE_URL;
     else process.env.VLLM_BASE_URL = originalVllm;
     if (originalOllama === undefined) delete process.env.OLLAMA_BASE_URL;
     else process.env.OLLAMA_BASE_URL = originalOllama;
+    if (originalBedrock === undefined) delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+    else process.env.AWS_BEARER_TOKEN_BEDROCK = originalBedrock;
   });
 
   it("enables vllm from server env when chat model is vllm:* (ignores client isEnabled false)", () => {
@@ -43,10 +46,7 @@ describe("mergeLocalInferenceFromEnv", () => {
 
   it("does not touch local providers when chat model is cloud-only", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
-    const merged = mergeLocalInferenceFromEnv(
-      { vllm: { isEnabled: false } },
-      "openai:gpt-4o",
-    );
+    const merged = mergeLocalInferenceFromEnv({ vllm: { isEnabled: false } }, "openai:gpt-4o");
     expect(merged.vllm?.isEnabled).toBe(false);
   });
 
@@ -67,6 +67,15 @@ describe("mergeLocalInferenceFromEnv", () => {
     const merged = mergeLocalInferenceFromEnv({});
     expect(merged.vllm?.isEnabled).toBe(true);
     expect(merged.ollama?.isEnabled).toBe(true);
+  });
+
+  it("does not auto-enable bedrock from AWS_BEARER_TOKEN_BEDROCK", () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
+    const merged = mergeLocalInferenceFromEnv(
+      { bedrock: { isEnabled: false } },
+      "vllm:qwen2.5-7b-instruct",
+    );
+    expect(merged.bedrock?.isEnabled).toBe(false);
   });
 
   it("uses fleet vLLM base URL override when provided", () => {

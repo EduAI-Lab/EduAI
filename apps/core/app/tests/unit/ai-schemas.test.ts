@@ -146,6 +146,56 @@ describe("CreateAIModelSchema", () => {
       expect(result.data.isActive).toBe(true);
     }
   });
+
+  it("leaves routerTier undefined when omitted (does not default to a tier)", () => {
+    const result = CreateAIModelSchema.safeParse(valid);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routerTier).toBeUndefined();
+    }
+  });
+
+  it.each(["TIER_1", "TIER_2", "TIER_3"] as const)("accepts routerTier %s", (routerTier) => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, routerTier });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routerTier).toBe(routerTier);
+    }
+  });
+
+  it("accepts routerTier: null (explicitly not in Auto's pool)", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, routerTier: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routerTier).toBeNull();
+    }
+  });
+
+  it("rejects a routerTier value outside the RouterTier enum", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, routerTier: "TIER_4" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a contextFillRatio inside the 0.5–0.98 clamp (#1639)", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 0.85 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contextFillRatio).toBe(0.85);
+    }
+  });
+
+  it("rejects a contextFillRatio below 0.5 or above 0.98 (#1639)", () => {
+    expect(CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 0.3 }).success).toBe(false);
+    expect(CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: 1.2 }).success).toBe(false);
+  });
+
+  it("accepts null contextFillRatio to clear the per-model override (#1639)", () => {
+    const result = CreateAIModelSchema.safeParse({ ...valid, contextFillRatio: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contextFillRatio).toBeNull();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -160,5 +210,32 @@ describe("UpdateAIModelSchema", () => {
   it("fails when a provided field fails its own constraint", () => {
     const result = UpdateAIModelSchema.safeParse({ type: "INVALID_TYPE" });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a routerTier update to clear a previously-set tier", () => {
+    const result = UpdateAIModelSchema.safeParse({ routerTier: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routerTier).toBeNull();
+    }
+  });
+
+  it("accepts a routerTier update setting a new tier", () => {
+    const result = UpdateAIModelSchema.safeParse({ routerTier: "TIER_3" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routerTier).toBe("TIER_3");
+    }
+  });
+
+  it("rejects a routerTier value outside the RouterTier enum", () => {
+    const result = UpdateAIModelSchema.safeParse({ routerTier: "NOT_A_TIER" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts and clamps contextFillRatio; null clears it (#1639)", () => {
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: 0.9 }).success).toBe(true);
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: null }).success).toBe(true);
+    expect(UpdateAIModelSchema.safeParse({ contextFillRatio: 0.1 }).success).toBe(false);
   });
 });

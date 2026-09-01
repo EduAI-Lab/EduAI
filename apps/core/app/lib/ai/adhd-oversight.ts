@@ -1,15 +1,14 @@
 import { randomUUID } from "crypto";
 import { generateText, type LanguageModel } from "ai";
-import {
-  getProfileRequirements,
-  type AdhdTurnProfile,
-} from "~/lib/ai/adhd-turn-profile";
+import { getProfileRequirements, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
   ADHD_URGENCY_TERMS,
   computeAdhdResponseMetrics,
+  extractStepLadderSection,
   hasSourcesFooter,
+  hasStepLadderSection,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -23,7 +22,7 @@ import {
   hasEduaiDiagramFence,
   resolveAdhdAssistPolicyBlock,
 } from "~/lib/ai/adhd-assist";
-import { userRequestedDiagram } from "~/lib/ai/adhd-turn-profile";
+import { userRequestedDiagram, userRequestedStepRecall } from "~/lib/ai/adhd-turn-profile";
 
 export const ADHD_OVERSIGHT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode chat responses.
 Rewrite the draft to satisfy ALL structural rules without changing facts, numbers, or meaning.
@@ -53,12 +52,27 @@ DIAGRAM REQUIRED (learner asked for a visual):
 - Do NOT describe the diagram in prose instead of emitting the fence.
 - Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
+/** #1245: learner asked to revisit a specific numbered step from an earlier Step ladder. */
+const ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM = `
+
+STEP RECALL (learner asked to revisit/expand a specific step):
+- You MUST include a "### Step ladder" section with at least one numbered
+  step that re-explains the requested step in full — restate the action and
+  its "why it matters" reason in fresh wording.
+- Do NOT just repeat the earlier answer's wording for that step verbatim; a
+  one-line copy is not an acceptable rewrite here.
+- Keep the reply scoped to the requested step only.`;
+
 const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
 The learner asked about a second topic while another is in progress.
 
 RULES:
 - Do NOT add a "Top summary" block.
 - Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
+- Do NOT explain, define, or state any fact about the second topic (#1313)
+  — name it only, do not answer it. Remove any such content from the draft.
+- Max 3 sentences total: acknowledge + (optional) restate the boundary +
+  one forward offer.
 - End with one clear forward continuation question if missing.
 - Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
 - Remove any urgency or time-pressure wording ("quickly", "fast", "hurry"); never rush the learner.
@@ -66,16 +80,14 @@ RULES:
 Return ONLY the rewritten response.`;
 
 const DEFAULT_NEXT_OFFER = "Want me to continue with the next step?";
-const DEFAULT_REDIRECT_NEXT =
-  "Want to come back to the previous topic first, or switch now?";
+const DEFAULT_REDIRECT_NEXT = "Want to come back to the previous topic first, or switch now?";
 /** Generic citation when tools/RAG ran — never invent chapter/page numbers. */
-export const ADHD_OVERSIGHT_GENERIC_SOURCES =
-  "Sources: Retrieved materials used this turn.";
+export const ADHD_OVERSIGHT_GENERIC_SOURCES = "Sources: Retrieved materials used this turn.";
 
 export function buildOversightRewriteSystem(
   profile: AdhdTurnProfile,
   wordCap: number,
-  options?: { requireDiagram?: boolean },
+  options?: { requireDiagram?: boolean; requireStepLadder?: boolean },
 ): string {
   if (profile === "redirect") {
     return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
@@ -94,6 +106,9 @@ export function buildOversightRewriteSystem(
   }
   if (options?.requireDiagram) {
     system += ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM;
+  }
+  if (options?.requireStepLadder) {
+    system += ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM;
   }
   return system;
 }
@@ -117,9 +132,7 @@ export const ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD = 6;
 export const ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS = 1024;
 
 export function resolveOversightRewriteMaxTokens(wordCap: number): number {
-  const fromWordCap = Math.ceil(
-    Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
-  );
+  const fromWordCap = Math.ceil(Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD);
   return Math.max(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS, fromWordCap);
 }
 
@@ -146,6 +159,17 @@ export function isAdhdOversightEnabled(): boolean {
   return true;
 }
 
+/**
+ * Research ablation only (#1226): deterministic-only oversight condition.
+ * When true (and oversight is otherwise enabled), auditAndMaybeRewrite never
+ * calls the LLM rewrite — see the `onlyDeterministic` argument there. Off by
+ * default; not part of the normal product surface.
+ */
+export function isAdhdOversightDeterministicOnly(): boolean {
+  const raw = process.env.ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY?.trim().toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
+}
+
 /** Skip oversight when the model produced no readable assistant prose. */
 export function isOversightEligibleDraft(draft: string): boolean {
   const trimmed = (draft ?? "").trim();
@@ -167,7 +191,10 @@ export function emptyOversightAuditResult(): AuditAndMaybeRewriteResult {
 }
 
 function lastNonEmptyLine(text: string): string | null {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   return lines.length > 0 ? lines[lines.length - 1] : null;
 }
 
@@ -264,9 +291,7 @@ export function normalizeAdhdStructuralAnchors(text: string): string {
 
   const leadingOk = t.replace(/^\s{0,2}/, "").startsWith("**Top summary**");
   if (!leadingOk) {
-    const leading = t.match(
-      /^(\s{0,2})(?:\*{1,2}\s*)?Top\s+summary(?:\*{1,2})?\s*:?\s*\n?/i,
-    );
+    const leading = t.match(/^(\s{0,2})(?:\*{1,2}\s*)?Top\s+summary(?:\*{1,2})?\s*:?\s*\n?/i);
     if (leading) {
       t = `**Top summary**\n${t.slice(leading[0].length)}`;
     }
@@ -278,7 +303,7 @@ export function normalizeAdhdStructuralAnchors(text: string): string {
     const line = raw.trim();
     if (!line) continue;
     const m = line.match(/^(?:\*{0,2})\s*Next\?\s*(?:\*{0,2})\s*(.*)$/i);
-    if (m && !/^\*\*Next\?\*\*/.test(line)) {
+    if (m && !line.startsWith("**Next?**")) {
       const prompt = (m[1] ?? "").trim();
       // Only promote forward offers — never bold a comprehension-check "Next?".
       if (prompt && isForwardContinuationOffer(`Next? ${prompt}`)) {
@@ -338,15 +363,15 @@ function clipBodyPreservingMarkdown(body: string, wordBudget: number): string {
 
   while (i < lines.length && used < wordBudget) {
     const line = lines[i];
-    if (/^```/.test(line.trim())) {
+    if (line.trim().startsWith("```")) {
       const fenceLines = [line];
       let j = i + 1;
       while (j < lines.length) {
         fenceLines.push(lines[j]);
-        if (/^```/.test(lines[j].trim())) break;
+        if (lines[j].trim().startsWith("```")) break;
         j += 1;
       }
-      const closed = j < lines.length && /^```/.test(lines[j].trim());
+      const closed = j < lines.length && lines[j].trim().startsWith("```");
       const fenceText = fenceLines.join("\n");
       const fenceWords = countWords(fenceText);
       // Incomplete fence (no closer): drop it rather than emit broken Markdown.
@@ -388,11 +413,7 @@ const MIN_BODY_WORDS_WHEN_FITTING = 20;
  * `wordCap`. Oversized citation footers are replaced with the short generic
  * Sources line; if even that cannot fit with **Next?**, Sources is dropped.
  */
-function boundStructuralTail(
-  sourcesBlock: string,
-  nextBlock: string,
-  wordCap: number,
-): string {
+function boundStructuralTail(sourcesBlock: string, nextBlock: string, wordCap: number): string {
   const next = (nextBlock ?? "").trim();
   const nextWords = next ? countWords(next) : 0;
   let sources = (sourcesBlock ?? "").trim();
@@ -400,14 +421,8 @@ function boundStructuralTail(
   if (sources) {
     const genericWords = countWords(ADHD_OVERSIGHT_GENERIC_SOURCES);
     // Prefer leaving room for a short body when the cap allows it.
-    const sourcesBudget = Math.max(
-      0,
-      wordCap - nextWords - MIN_BODY_WORDS_WHEN_FITTING,
-    );
-    if (
-      countWords(sources) > sourcesBudget &&
-      sourcesBudget >= genericWords
-    ) {
+    const sourcesBudget = Math.max(0, wordCap - nextWords - MIN_BODY_WORDS_WHEN_FITTING);
+    if (countWords(sources) > sourcesBudget && sourcesBudget >= genericWords) {
       sources = ADHD_OVERSIGHT_GENERIC_SOURCES;
     } else if (countWords(sources) > Math.max(0, wordCap - nextWords)) {
       // Still too large even without a body reserve — swap or drop.
@@ -426,10 +441,7 @@ function boundStructuralTail(
     if (next) {
       return next.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
     }
-    return ADHD_OVERSIGHT_GENERIC_SOURCES.split(/\s+/)
-      .filter(Boolean)
-      .slice(0, wordCap)
-      .join(" ");
+    return ADHD_OVERSIGHT_GENERIC_SOURCES.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
   }
   return tail;
 }
@@ -458,18 +470,10 @@ export function truncateToWordCap(text: string, wordCap: number): string {
     if (nextIdx >= 0 && sourcesIdx >= 0) break;
   }
 
-  const nextBlock =
-    nextIdx >= 0 ? lines.slice(nextIdx).join("\n").trim() : "";
+  const nextBlock = nextIdx >= 0 ? lines.slice(nextIdx).join("\n").trim() : "";
   const sourcesEnd =
-    sourcesIdx >= 0
-      ? nextIdx >= 0 && nextIdx > sourcesIdx
-        ? nextIdx
-        : lines.length
-      : -1;
-  const sourcesBlock =
-    sourcesIdx >= 0
-      ? lines.slice(sourcesIdx, sourcesEnd).join("\n").trim()
-      : "";
+    sourcesIdx >= 0 ? (nextIdx >= 0 && nextIdx > sourcesIdx ? nextIdx : lines.length) : -1;
+  const sourcesBlock = sourcesIdx >= 0 ? lines.slice(sourcesIdx, sourcesEnd).join("\n").trim() : "";
   const bodyEnd =
     sourcesIdx >= 0 && (nextIdx < 0 || sourcesIdx < nextIdx)
       ? sourcesIdx
@@ -584,16 +588,104 @@ function passesProfileStructure(
   return isProfileStructuralPass(metrics, profile, text);
 }
 
+function normalizeForCopyCheck(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** The step number the learner asked to revisit (e.g. "what was step 2 again?"). */
+function extractRequestedStepNumber(userText?: string): string | null {
+  const stepMatch = /\bstep\s+(\d+)\b/i.exec((userText ?? "").trim());
+  return stepMatch ? stepMatch[1] : null;
+}
+
+/** The text of one numbered step line within an already-extracted Step ladder section. */
+function extractStepLine(section: string, stepNumber: string): string | null {
+  const lineRe = new RegExp(`^\\s*${stepNumber}\\.\\s+(.+)$`, "m");
+  const lineMatch = lineRe.exec(section);
+  return lineMatch ? lineMatch[1].trim() : null;
+}
+
+/** Every numbered step line's text within an already-extracted Step ladder section. */
+function extractStepLadderLines(section: string): string[] {
+  return [...section.matchAll(/^\s*\d+\.\s+(.+)$/gm)].map((m) => m[1].trim());
+}
+
+/**
+ * True when the draft's Step ladder section is a copy-paste of the prior
+ * assistant turn's rather than a fresh re-explanation of the recalled step
+ * (#1245). Checks the full section first (catches the common single-step
+ * case), then falls back to matching the requested step's prior-turn line
+ * against any line in the draft by content — a multi-step prior ladder
+ * won't match the full-section check when only one step gets copied, and a
+ * copied step is often renumbered (e.g. down to "1.") in a single-step
+ * reply, so position can't be assumed either (#1245 review).
+ */
+function isStepLadderCopiedFromPrior(
+  draft: string,
+  priorAssistantText?: string,
+  userText?: string,
+): boolean {
+  const priorSection = extractStepLadderSection(priorAssistantText ?? "");
+  if (!priorSection) return false;
+  const draftSection = extractStepLadderSection(draft);
+  if (!draftSection) return false;
+  if (normalizeForCopyCheck(draftSection) === normalizeForCopyCheck(priorSection)) {
+    return true;
+  }
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return false;
+  const priorLine = extractStepLine(priorSection, stepNumber);
+  if (!priorLine) return false;
+  const priorLineNormalized = normalizeForCopyCheck(priorLine);
+  return extractStepLadderLines(draftSection).some(
+    (line) => normalizeForCopyCheck(line) === priorLineNormalized,
+  );
+}
+
+/**
+ * Pull the specific numbered step's line the learner asked to revisit out of
+ * the prior assistant turn's Step ladder, so the last-resort fallback
+ * skeleton can preserve the actual recalled action instead of a generic
+ * "Revisit that step" placeholder (#1245).
+ */
+function extractRecalledStepText(
+  userText: string | undefined,
+  priorAssistantText: string | undefined,
+): string | null {
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return null;
+  const priorSection = extractStepLadderSection(priorAssistantText ?? "");
+  if (!priorSection) return null;
+  return extractStepLine(priorSection, stepNumber);
+}
+
+type StepLadderGateOpts = {
+  requireDiagram?: boolean;
+  expectSources?: boolean;
+  requireStepLadder?: boolean;
+  priorAssistantText?: string;
+  userText?: string;
+};
+
 function contentOk(
   metrics: AdhdStructuralCompliance,
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: StepLadderGateOpts,
 ): boolean {
   if (!passesProfileStructure(metrics, profile, text)) return false;
   if (!metrics.noUrgency) return false;
   if (options?.requireDiagram && !hasEduaiDiagramFence(text)) return false;
   if (options?.expectSources && !metrics.hasSources) return false;
+  if (options?.requireStepLadder && !metrics.stepLadder) return false;
+  // A structurally valid Step ladder section that is just a copy-paste of
+  // the prior turn's isn't a real re-explanation of the recalled step (#1245).
+  if (
+    options?.requireStepLadder &&
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -602,7 +694,7 @@ export function describeOversightRejectReasons(
   metrics: AdhdStructuralCompliance & { profileStructuralPass: boolean },
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: StepLadderGateOpts,
 ): string[] {
   const reasons: string[] = [];
   const req = getProfileRequirements(profile);
@@ -627,6 +719,22 @@ export function describeOversightRejectReasons(
   if (options?.expectSources && !metrics.hasSources) {
     reasons.push("missing Sources footer after tools/RAG ran");
   }
+  if (options?.requireStepLadder && !metrics.stepLadder) {
+    reasons.push(
+      "learner asked to revisit a specific step — reply must include a real ### Step ladder " +
+        "re-explanation of that step (with a why-it-matters clause), not a one-line copy of the earlier wording",
+    );
+  }
+  if (
+    options?.requireStepLadder &&
+    metrics.stepLadder &&
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
+  ) {
+    reasons.push(
+      "the Step ladder section is a verbatim copy of the prior turn's — write a fresh " +
+        "re-explanation of the recalled step, not the same wording again",
+    );
+  }
   if (reasons.length === 0 && !metrics.profileStructuralPass) {
     reasons.push("profile structural pass failed");
   }
@@ -639,6 +747,7 @@ function buildOversightUserPrompt(args: {
   profile: AdhdTurnProfile;
   requireDiagram: boolean;
   expectSources: boolean;
+  requireStepLadder?: boolean;
   rejectReasons?: string[];
 }): string {
   const learner = (args.userText ?? "").trim() || "(unknown)";
@@ -663,6 +772,11 @@ function buildOversightUserPrompt(args: {
       `\nThe learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.`,
     );
   }
+  if (args.requireStepLadder) {
+    parts.push(
+      `\nThe learner asked to revisit a specific numbered step from an earlier plan. Rewrite so the reply includes a "### Step ladder" section that re-explains that step in full (fresh wording, plus a why-it-matters clause) — do not just repeat the earlier answer's line for that step verbatim.`,
+    );
+  }
   parts.push(`\nDRAFT TO REWRITE:\n\n${args.draft}`);
   return parts.join("\n");
 }
@@ -674,8 +788,7 @@ function mergeUsage(
   if (!a && !b) return null;
   return {
     promptTokens: (a?.promptTokens ?? 0) + (b?.promptTokens ?? 0) || undefined,
-    completionTokens:
-      (a?.completionTokens ?? 0) + (b?.completionTokens ?? 0) || undefined,
+    completionTokens: (a?.completionTokens ?? 0) + (b?.completionTokens ?? 0) || undefined,
   };
 }
 
@@ -686,6 +799,7 @@ export function tryDeterministicStructuralFix(
     wordCap?: number;
     profile?: AdhdTurnProfile;
     expectSources?: boolean;
+    requireStepLadder?: boolean;
   },
 ): string | null {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
@@ -693,16 +807,22 @@ export function tryDeterministicStructuralFix(
   const trimmed = normalizeAdhdStructuralAnchors(draft);
   if (!trimmed) return null;
 
+  // A missing Step ladder can't be fixed deterministically (there is no real
+  // step content to insert) — only an LLM rewrite can regenerate it, so bail
+  // out here rather than ship a draft that passes every other check while
+  // still being the thin, copy-pasted fragment #1245 is about.
+  if (options?.requireStepLadder) {
+    const metrics = computeAdhdResponseMetrics(trimmed, { wordCap });
+    if (!metrics.stepLadder) return null;
+  }
+
   if (profile) {
     const before = withProfileStructuralPass(
       computeAdhdResponseMetrics(trimmed, { wordCap }),
       profile,
       trimmed,
     );
-    if (
-      before.profileStructuralPass &&
-      (!options?.expectSources || before.hasSources)
-    ) {
+    if (before.profileStructuralPass && (!options?.expectSources || before.hasSources)) {
       return trimmed;
     }
 
@@ -725,10 +845,7 @@ export function tryDeterministicStructuralFix(
   }
 
   const before = computeAdhdResponseMetrics(trimmed, { wordCap });
-  if (
-    isStructuralCompliancePass(before) &&
-    (!options?.expectSources || before.hasSources)
-  ) {
+  if (isStructuralCompliancePass(before) && (!options?.expectSources || before.hasSources)) {
     return trimmed;
   }
 
@@ -749,8 +866,7 @@ export function tryDeterministicStructuralFix(
   }
 
   const after = computeAdhdResponseMetrics(fixed, { wordCap });
-  return isStructuralCompliancePass(after) &&
-    (!options?.expectSources || after.hasSources)
+  return isStructuralCompliancePass(after) && (!options?.expectSources || after.hasSources)
     ? fixed
     : null;
 }
@@ -761,19 +877,45 @@ export async function auditAndMaybeRewrite(args: {
   wordCap?: number;
   profile?: AdhdTurnProfile;
   userText?: string;
+  priorAssistantText?: string;
   /** When true, require a Sources footer (tools/RAG ran). Never invent page numbers. */
   toolsUsed?: boolean;
+  /**
+   * Research ablation only (#1226): when true, never call the LLM rewrite.
+   * If the cheap deterministic fix (tryDeterministicStructuralFix) doesn't
+   * clear the bar, fall through directly to the same forced_deterministic
+   * wrap normally reserved for LLM-rewrite failure, instead of calling
+   * generateText. Isolates how much of the oversight lift comes from
+   * marker/structure fixing alone vs. the LLM's semantic rewrite.
+   */
+  onlyDeterministic?: boolean;
 }): Promise<AuditAndMaybeRewriteResult> {
   const wordCap = args.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = args.profile ?? "full_tutoring";
   const rawDraft = (args.draft ?? "").trim();
   const trimmed = normalizeAdhdStructuralAnchors(rawDraft);
   const profileReq = getProfileRequirements(profile);
-  const requireDiagram =
-    userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
+  const requireDiagram = userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
   const expectSources = Boolean(args.toolsUsed);
+  // #1245: a step-recall request must get a real Step ladder re-explanation,
+  // not just a bare Top summary / Next? shell around a copy-pasted fragment.
+  // Only full_tutoring's policy block describes Step ladder rules at all.
+  const requireStepLadder =
+    profile === "full_tutoring" &&
+    userRequestedStepRecall({
+      userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
+    }) &&
+    (!hasStepLadderSection(trimmed) ||
+      isStepLadderCopiedFromPrior(trimmed, args.priorAssistantText, args.userText));
   const diagramOpts = { userText: args.userText };
-  const gateOpts = { requireDiagram, expectSources };
+  const gateOpts: StepLadderGateOpts = {
+    requireDiagram,
+    expectSources,
+    requireStepLadder,
+    priorAssistantText: args.priorAssistantText,
+    userText: args.userText,
+  };
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
@@ -845,6 +987,7 @@ export async function auditAndMaybeRewrite(args: {
     wordCap,
     profile,
     expectSources,
+    requireStepLadder,
   });
   if (deterministic && !requireDiagram) {
     const afterMetrics = withProfileStructuralPass(
@@ -866,6 +1009,30 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   const oversightStartedAt = Date.now();
+
+  // Ablation mode: the cheap deterministic fix didn't clear the bar, and
+  // policy here is to never call the LLM — jump straight to the same
+  // forced_deterministic wrap used for LLM-rewrite failure, so this
+  // condition still always ships a structurally compliant reply, just
+  // without ever spending a second model call to get there.
+  if (args.onlyDeterministic) {
+    return finalizeForcedDeterministic({
+      draft: trimmed,
+      rawDraft,
+      wordCap,
+      profile,
+      requireDiagram,
+      expectSources,
+      requireStepLadder,
+      userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
+      beforeMetrics,
+      oversightStartedAt,
+      oversightUsage: null,
+      gateOpts,
+    });
+  }
+
   let usageAcc: OversightUsage | null = null;
 
   // Accept only full contentOk compliance — never ship a rewrite that merely
@@ -885,13 +1052,17 @@ export async function auditAndMaybeRewrite(args: {
       model: args.model,
       temperature: 0.2,
       maxTokens: resolveOversightRewriteMaxTokens(wordCap),
-      system: buildOversightRewriteSystem(profile, wordCap, { requireDiagram }),
+      system: buildOversightRewriteSystem(profile, wordCap, {
+        requireDiagram,
+        requireStepLadder,
+      }),
       prompt: buildOversightUserPrompt({
         draft: trimmed,
         userText: args.userText,
         profile,
         requireDiagram,
         expectSources,
+        requireStepLadder,
         rejectReasons,
       }),
     });
@@ -951,7 +1122,9 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
       beforeMetrics,
       oversightStartedAt,
       oversightUsage: usageAcc,
@@ -967,7 +1140,9 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
       beforeMetrics,
       oversightStartedAt,
       oversightUsage: usageAcc,
@@ -988,11 +1163,13 @@ function finalizeForcedDeterministic(args: {
   profile: AdhdTurnProfile;
   requireDiagram?: boolean;
   expectSources?: boolean;
+  requireStepLadder?: boolean;
   userText?: string;
+  priorAssistantText?: string;
   beforeMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
   oversightStartedAt: number;
   oversightUsage: OversightUsage | null;
-  gateOpts: { requireDiagram?: boolean; expectSources?: boolean };
+  gateOpts: StepLadderGateOpts;
 }): AuditAndMaybeRewriteResult {
   const wrapOpts = {
     wordCap: args.wordCap,
@@ -1010,8 +1187,7 @@ function finalizeForcedDeterministic(args: {
   );
 
   const forcedOk =
-    forcedMetrics.underCap &&
-    contentOk(forcedMetrics, args.profile, forced, args.gateOpts);
+    forcedMetrics.underCap && contentOk(forcedMetrics, args.profile, forced, args.gateOpts);
 
   if (!forcedOk) {
     // Minimal under-cap skeleton — prefer compliance over preserving draft prose.
@@ -1021,6 +1197,18 @@ function finalizeForcedDeterministic(args: {
       parts.push("**Top summary**", "- See the question above.");
     } else {
       parts.push("One topic at a time — happy to switch or return.");
+    }
+    if (args.requireStepLadder) {
+      // Preserve the actual recalled action from the prior turn's Step
+      // ladder when we can find it; only fall back to the generic
+      // placeholder when the source step can't be located (#1245).
+      const recalledStep = extractRecalledStepText(args.userText, args.priorAssistantText);
+      parts.push(
+        "### Step ladder",
+        recalledStep
+          ? `1. ${recalledStep}`
+          : "1. Revisit that step — why it matters: keeps the plan in order so you don't lose your place.",
+      );
     }
     if (args.requireDiagram) {
       parts.push(
@@ -1039,9 +1227,7 @@ function finalizeForcedDeterministic(args: {
     }
     if (req.expectNextLine || req.expectRedirectTemplate) {
       parts.push(
-        `**Next?** ${
-          req.expectRedirectTemplate ? DEFAULT_REDIRECT_NEXT : DEFAULT_NEXT_OFFER
-        }`,
+        `**Next?** ${req.expectRedirectTemplate ? DEFAULT_REDIRECT_NEXT : DEFAULT_NEXT_OFFER}`,
       );
     }
     forced = truncateToWordCap(parts.filter(Boolean).join("\n\n"), args.wordCap);
@@ -1078,14 +1264,10 @@ export function buildOverseenAssistantMessagesToPersist(
   const generateId = options?.generateId ?? randomUUID;
 
   if (responseMessages?.length) {
-    const assistantMessages = responseMessages.filter(
-      (message) => message.role === "assistant",
-    );
+    const assistantMessages = responseMessages.filter((message) => message.role === "assistant");
     if (assistantMessages.length > 0 && overseenText) {
       return assistantMessages.map((message, index) =>
-        index === assistantMessages.length - 1
-          ? { ...message, content: overseenText }
-          : message,
+        index === assistantMessages.length - 1 ? { ...message, content: overseenText } : message,
       );
     }
     return assistantMessages;

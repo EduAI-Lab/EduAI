@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Route tests for smart course RAG gate (#484 + research grounding).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -43,14 +49,24 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
-  getChatModelCapabilities: vi.fn().mockResolvedValue({
-    supportsTools: false,
-    maxTokens: null,
-    name: null,
-  }),
-  modelSupportsTools: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("~/lib/ai/providers.server", async () => {
+  const actual = await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  );
+  return {
+    ...actual,
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: false,
+      supportsImages: false,
+      maxTokens: null,
+      name: null,
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(false),
+    // Delegates to the real resolver by default; a test can force a tiny window
+    // (via mockReturnValueOnce) to exercise the fail-closed fit check (#1643).
+    resolveModelContextWindow: vi.fn(actual.resolveModelContextWindow),
+  };
+});
 
 vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
@@ -69,7 +85,7 @@ vi.mock("~/lib/policy.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
@@ -82,8 +98,9 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { findRelevantContent } from "~/lib/ai/embedding";
-import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { EmbeddingRequestTimeoutError, findRelevantContent } from "~/lib/ai/embedding";
+import { getChatModelCapabilities, resolveModelContextWindow } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
@@ -93,7 +110,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -120,7 +137,7 @@ function mockStream() {
   } as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "What is gradient descent?" }],
     model: "vllm:test-model",
@@ -132,14 +149,18 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> } {
+function lastStreamConfig(): {
+  system?: string;
+  maxTokens?: number;
+  messages?: Array<{ id?: string }>;
+} {
   const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as
     | { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> }
     | undefined;
   return call ?? {};
 }
 
-function lastStreamMessages(): Array<{ id?: string }> {
+function lastStreamMessages(): Array<{ id?: string; content?: string }> {
   return lastStreamConfig().messages ?? [];
 }
 
@@ -156,11 +177,7 @@ function storedRecord(id: string, role: string, content: string) {
 function storedRecordsDesc(count: number) {
   return Array.from({ length: count }, (_, i) => {
     const idx = count - 1 - i;
-    return storedRecord(
-      `stored-${idx}`,
-      idx % 2 === 0 ? "user" : "assistant",
-      `turn-${idx}`,
-    );
+    return storedRecord(`stored-${idx}`, idx % 2 === 0 ? "user" : "assistant", `turn-${idx}`);
   });
 }
 
@@ -182,6 +199,9 @@ beforeEach(() => {
   resetRateLimitsForTests();
   delete process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  // Pin the message-load ceiling so the #225 RAG-11 cap assertions stay exact;
+  // the default was raised to 100 (#1639) and is covered in chat-rag.test.ts.
+  process.env.CHAT_MAX_CONTEXT_MESSAGES = "20";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -195,16 +215,14 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...(args.data ?? {}),
-    })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
@@ -216,6 +234,7 @@ describe("Smart course RAG gate (#484)", () => {
     beforeEach(() => {
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: false,
+        supportsImages: false,
         maxTokens: null,
         name: null,
       });
@@ -232,15 +251,64 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
+    it("keeps a conflicting caller courseCode pinned to the authorized courseId", async () => {
+      vi.mocked(prisma.chat.create).mockResolvedValue({
+        id: CHAT_ID,
+        userId: "user-1",
+        chatbotType: "LEARNING",
+        courseId: COURSE_ID,
+        systemPrompt: null,
+        title: null,
+        adhdAssist: false,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      });
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+
+      const response = await action(
+        makeRequest(
+          baseBody({
+            chatId: undefined,
+            courseCode: "MATH 999",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "user-1" }),
+        COURSE_ID,
+      );
+      expect(findRelevantContent).toHaveBeenCalledWith(
+        expect.any(String),
+        COURSE_ID,
+        expect.any(Number),
+        undefined,
+        true,
+        { signal: expect.any(AbortSignal) },
+      );
+      expect(prisma.chat.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ courseId: COURSE_ID }),
+      });
+      expect(lastStreamConfig().system).toContain("Current course context: COSC101");
+      expect(lastStreamConfig().system).not.toContain("MATH 999");
+      await expect(response.json()).resolves.toMatchObject({ courseCode: "COSC101" });
+    });
+
     it("injects grounding block for course-intent queries", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([
         { content: "Trees are hierarchical.", similarity: 0.7, materialTitle: "Ch 3" },
       ]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Course grounding rules");
@@ -251,9 +319,11 @@ describe("Smart course RAG gate (#484)", () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
@@ -274,9 +344,13 @@ describe("Smart course RAG gate (#484)", () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
@@ -288,9 +362,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -303,9 +381,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Local embedding provider failed (mxbai-embed-large). fetch failed"),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -313,12 +395,28 @@ describe("Smart course RAG gate (#484)", () => {
       expect(streamText).not.toHaveBeenCalled();
     });
 
+    it("fails closed with RAG_RETRIEVAL_TIMEOUT when the embedding deadline expires", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new EmbeddingRequestTimeoutError(100));
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(503);
+      expect((await res.json()).code).toBe("RAG_RETRIEVAL_TIMEOUT");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
     it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -329,9 +427,11 @@ describe("Smart course RAG gate (#484)", () => {
     it("fails closed on prefetch failure for a greeting that would otherwise skip inject", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       expect(streamText).not.toHaveBeenCalled();
@@ -369,6 +469,7 @@ describe("Smart course RAG gate (#484)", () => {
         expect.any(Number),
         undefined,
         expect.any(Boolean),
+        { signal: expect.any(AbortSignal) },
       );
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
       expect(lastStreamConfig().system).not.toContain("did not return relevant excerpts");
@@ -393,8 +494,9 @@ describe("Smart course RAG gate (#484)", () => {
       expect(ids[19]).toBe("incoming-19");
     });
 
-    it("drops the oldest turn when 21 merged messages exceed the cap (#225 RAG-11)", async () => {
+    it("drops the oldest turn over the cap but discloses it in a marker (#225 RAG-11, #1643)", async () => {
       vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(20) as never);
+      vi.mocked(prisma.chatMessage.count).mockResolvedValue(20);
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
 
@@ -406,11 +508,33 @@ describe("Smart course RAG gate (#484)", () => {
         ),
       );
 
-      const ids = lastStreamMessages().map((m) => m.id);
-      expect(ids).toHaveLength(20);
-      expect(ids[0]).toBe("stored-1");
+      const messages = lastStreamMessages();
+      const ids = messages.map((m) => m.id);
+      // The oldest turn is still dropped, but the model is told rather than
+      // losing it in silence: a digest marker leads the context (#1643).
+      expect(ids[0]).toBe("session-digest");
       expect(ids).not.toContain("stored-0");
-      expect(ids[19]).toBe("incoming-20");
+      expect(ids[ids.length - 1]).toBe("incoming-20");
+      expect(messages[0]?.content ?? "").toMatch(/1 earlier turn omitted/);
+    });
+
+    it("does not persist incoming turns that were trimmed from the model context", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const incoming = Array.from({ length: 21 }, (_, index) => ({
+        id: `incoming-${index}`,
+        role: "user",
+        content: `turn-${index}`,
+      }));
+
+      const res = await action(makeRequest(baseBody({ messages: incoming })));
+
+      expect(res.status).toBe(200);
+      const firstPersistCall = vi.mocked(prisma.chatMessage.createMany).mock.calls[0]?.[0];
+      const persisted = Array.isArray(firstPersistCall?.data) ? firstPersistCall.data : [];
+      expect(persisted).toHaveLength(20);
+      expect(persisted.map((row) => row.messageId)).not.toContain("incoming-0");
+      expect(persisted.map((row) => row.messageId)).toContain("incoming-20");
     });
   });
 
@@ -419,6 +543,7 @@ describe("Smart course RAG gate (#484)", () => {
       process.env.VLLM_CHAT_TOOLS = "1";
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: true,
+        supportsImages: false,
         maxTokens: 8192,
         name: "Test tool model",
       });
@@ -447,9 +572,13 @@ describe("Smart course RAG gate (#484)", () => {
       ]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What does the syllabus say about late work?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
@@ -461,9 +590,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What does the syllabus say about late work?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -478,6 +611,7 @@ describe("Smart course RAG gate (#484)", () => {
     beforeEach(() => {
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: false,
+        supportsImages: false,
         maxTokens: null,
         name: null,
       });
@@ -538,5 +672,65 @@ describe("Smart course RAG gate (#484)", () => {
         }),
       );
     });
+  });
+});
+
+describe("token-budget context window — pre-digest omissions and fail-closed fit (#1643)", () => {
+  function firstMessageContent(): string {
+    return lastStreamMessages()[0]?.content ?? "";
+  }
+
+  it("summarizes older turns beyond the load window as content, not just a count (#1643)", async () => {
+    // Load ceiling pinned to 20 (beforeEach), but the chat holds 250 stored
+    // turns. The route loads the 230 older turns beyond the verbatim window into
+    // the digest source, so their CONTENT (old + middle topics) reaches the
+    // digest — the prior fix only disclosed a count, losing the old topics.
+    const recentDesc = Array.from({ length: 20 }, (_, i) => {
+      const idx = 19 - i; // DB desc: newest first
+      return storedRecord(`recent-${idx}`, idx % 2 === 0 ? "user" : "assistant", `RECENT-${idx}`);
+    });
+    const olderDesc = Array.from({ length: 230 }, (_, i) => {
+      const idx = 229 - i; // DB desc: newest first; idx 0 is the oldest turn
+      return storedRecord(`old-${idx}`, idx % 2 === 0 ? "user" : "assistant", `OLD-${idx}`);
+    });
+    vi.mocked(prisma.chatMessage.findMany)
+      .mockResolvedValueOnce(recentDesc as never) // recent verbatim window
+      .mockResolvedValueOnce(olderDesc as never); // older span for the digest
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+    mockAuditResult("The answer.");
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(200);
+
+    const messages = lastStreamMessages();
+    expect(messages[0]?.id).toBe("session-digest");
+    const digest = firstMessageContent();
+    // The OLDEST older turn reached the digest as content — the exact regression
+    // the reviewer flagged (turns beyond the window were previously count-only).
+    expect(digest).toContain("OLD-0");
+    // ...and the newest older turn is anchored too (even-spaced sampling).
+    expect(digest).toContain("OLD-229");
+    // Broad coverage across the span, not just the two endpoints.
+    const coveredOlderTopics = new Set(digest.match(/OLD-\d+/g) ?? []).size;
+    expect(coveredOlderTopics).toBeGreaterThan(5);
+    // Turns the sampling/tail-slice still drop are disclosed as a count.
+    expect(digest).toMatch(/\d+ earlier turns? omitted/);
+  });
+
+  it("fails closed for a non-admin chat whose prompt cannot fit the window", async () => {
+    // Force a tiny context window: after the security block is composed, the
+    // fixed prompt + minimum completion no longer fit. Non-admin used to send
+    // this over-context request; it now returns a clean 400 instead.
+    vi.mocked(resolveModelContextWindow).mockReturnValueOnce(512);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({ code: "CONTEXT_TOO_LARGE" });
+    expect(streamText).not.toHaveBeenCalled();
   });
 });

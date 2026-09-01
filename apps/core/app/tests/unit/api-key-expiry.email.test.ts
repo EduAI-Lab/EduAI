@@ -78,8 +78,8 @@ describe("buildApiKeyExpiryEmail", () => {
 
   it("produces both text and html bodies", () => {
     const msg = buildApiKeyExpiryEmail(BASE_INPUT);
-    expect(typeof msg.text).toBe("string");
-    expect(typeof msg.html).toBe("string");
+    expect(msg.text).toEqual(expect.any(String));
+    expect(msg.html).toEqual(expect.any(String));
     expect(msg.text.length).toBeGreaterThan(0);
     expect(msg.html.length).toBeGreaterThan(0);
   });

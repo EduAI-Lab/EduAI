@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    // JavaScript-only workspace; see `app/backend/tsconfig.json` for why
+    // `checkJs` stays off for now (#1278).
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  // The `app/*` workspaces own their own tsconfig and are typechecked
+  // separately; this config covers only the deploy/seed glue at this level.
+  "include": ["scripts/**/*.js", "*.cjs"],
+  "exclude": ["node_modules", "app"]
+}

@@ -1,0 +1,414 @@
+// @vitest-environment node
+// #1441 review: admission timeout must skip the rethrow after Bedrock overflow
+// activates, so the request reaches streamText on the overflow model.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    streamText: vi.fn(),
+    createDataStreamResponse: vi.fn(({ execute }) => {
+      const chunks: string[] = [];
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
+      execute(dataStream);
+      return new Response(chunks.join(""), { status: 200 });
+    }),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
+  };
+});
+
+vi.mock("~/lib/ai/embedding", () => ({
+  findRelevantContent: vi.fn().mockResolvedValue([]),
+  generateEmbedding: vi.fn().mockResolvedValue([]),
+  processMaterialEmbeddings: vi.fn(),
+}));
+
+vi.mock("~/lib/agent-tools", () => ({
+  buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
+  chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
+  createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn().mockReturnValue(true),
+  parseChatMode: vi.fn().mockReturnValue("admin"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
+}));
+
+vi.mock("~/lib/auth/server", () => ({
+  auth: { api: { getSession: vi.fn() } },
+}));
+
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
+
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
+    course: { id: "course-1", isPublished: true, code: "COSC101" },
+    access: { level: "admin" },
+  }),
+}));
+
+vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  return {
+    ...actual,
+    resolveActiveChatModel: vi.fn().mockResolvedValue({
+      supportsTools: true,
+      maxTokens: 16_384,
+      name: "Qwen test",
+    }),
+    getChatModelCapabilities: vi.fn().mockResolvedValue({
+      supportsTools: true,
+      maxTokens: 16_384,
+      name: "Qwen test",
+    }),
+    modelSupportsTools: vi.fn().mockResolvedValue(true),
+  };
+});
+
+vi.mock("~/lib/assistive-events.server", () => ({
+  recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("~/lib/ai/adhd-oversight", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/adhd-oversight")>();
+  return { ...actual, auditAndMaybeRewrite: vi.fn() };
+});
+
+vi.mock("~/lib/policy.server", () => ({
+  getPolicy: vi.fn().mockResolvedValue(false),
+  invalidatePolicyCache: vi.fn(),
+}));
+
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
+const bedrockSettingsMocks = vi.hoisted(() => ({
+  getBedrockOverflowSettings: vi.fn(),
+}));
+
+vi.mock("~/lib/ai/routing/bedrock/bedrock-settings.server", () => ({
+  getBedrockOverflowSettings: bedrockSettingsMocks.getBedrockOverflowSettings,
+}));
+
+vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  return { ...actual, fleetRoutingEnabled: vi.fn(() => false) };
+});
+
+vi.mock("~/lib/prisma.server", () => ({
+  default: {
+    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn() },
+    aIModel: { findFirst: vi.fn() },
+    systemConfig: { findUnique: vi.fn() },
+  },
+}));
+
+vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/admission.server")>();
+  return {
+    ...actual,
+    acquireAiAdmission: vi.fn(),
+  };
+});
+
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode overflow paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
+import { streamText } from "ai";
+import { action } from "~/routes/api/chat";
+import { action as cancelAction } from "~/routes/api/chat.cancel";
+import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
+import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { parseChatMode } from "~/lib/agent-tools";
+
+const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
+const COURSE_ID = "course-1";
+
+function makeRequest(body: RouteRequestBody, requestId?: string) {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (requestId) headers.set("X-EduAI-Request-Id", requestId);
+
+  return {
+    request: new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+    params: {},
+    context: {} as never,
+  } as never;
+}
+
+function makeCancelRequest(requestId: string) {
+  return {
+    request: new Request("http://localhost/api/chat/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }),
+    }),
+    params: {},
+    context: {} as never,
+  } as never;
+}
+
+function streamingResult() {
+  return {
+    toDataStreamResponse: vi.fn(() => new Response("streamed answer")),
+    consumeStream: vi.fn().mockResolvedValue(undefined),
+    text: Promise.resolve("Overflowed to Bedrock."),
+    usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
+    finishReason: Promise.resolve("stop"),
+    sources: Promise.resolve([]),
+    reasoning: Promise.resolve(undefined),
+    response: Promise.resolve({
+      id: "resp-1",
+      messages: [{ id: "msg-1", role: "assistant", content: "Overflowed to Bedrock." }],
+    }),
+  } as never;
+}
+
+/** One part of the SDK's `fullStream`, as this test feeds them through. */
+type StreamPart = { type?: string; text?: string; textDelta?: string; error?: unknown };
+
+/** What `onChunk` receives: the part, wrapped the way the SDK wraps it. */
+type StreamChunk = { chunk: StreamPart };
+
+function makeFullStream(
+  parts: StreamPart[],
+  onChunk?: (chunk: StreamChunk) => void,
+): ReadableStream<unknown> {
+  return new ReadableStream({
+    async pull(controller) {
+      const part = parts.shift();
+      if (part === undefined) {
+        controller.close();
+        return;
+      }
+      onChunk?.({ chunk: part });
+      controller.enqueue(part);
+    },
+  });
+}
+
+function baseBody(overrides: JsonObject = {}) {
+  return {
+    messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
+    model: "vllm:test-model",
+    apiKeys: {},
+    streaming: false,
+    chatId: CHAT_ID,
+    courseId: COURSE_ID,
+    chatMode: "admin",
+    ...overrides,
+  };
+}
+
+const ENV_KEYS = ["AWS_BEARER_TOKEN_BEDROCK", "VLLM_BASE_URL", "ADHD_ASSIST_OVERSIGHT"] as const;
+const savedEnv: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetRateLimitsForTests();
+  for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
+  process.env.VLLM_BASE_URL = "http://localhost:8001";
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+
+  vi.mocked(acquireAiAdmission).mockRejectedValue(new AdmissionTimeoutError());
+  // #1571: vi.clearAllMocks() above wipes the factory default, so re-arm the
+  // admin isActive re-check for each admin-mode overflow case.
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
+  vi.mocked(auth.api.getSession).mockResolvedValue({
+    user: { id: "user-1", role: "ADMIN" },
+  } as never);
+
+  vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+  } as never);
+  vi.mocked(prisma.chat.update).mockResolvedValue({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+  } as never);
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+  vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
+  vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
+  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+  bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+    enabled: false,
+    dailyUserLimit: 0,
+    monthlyUserLimit: 0,
+    globalLimit: 0,
+    resourceLimit: 0,
+  });
+
+  vi.mocked(streamText).mockImplementation((args) => {
+    args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
+    return {
+      get fullStream() {
+        return makeFullStream(
+          [{ type: "text-delta", text: "Overflowed to Bedrock." }],
+          args.onChunk as never,
+        );
+      },
+      consumeStream: vi.fn().mockResolvedValue(undefined),
+      text: Promise.resolve("Overflowed to Bedrock."),
+      usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
+      finishReason: Promise.resolve("stop"),
+      sources: Promise.resolve([]),
+      reasoning: Promise.resolve(undefined),
+      response: Promise.resolve({
+        id: "resp-1",
+        messages: [{ id: "msg-1", role: "assistant", content: "Overflowed to Bedrock." }],
+      }),
+    } as never;
+  });
+});
+
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
+
+describe("Bedrock overflow after admission timeout (#1441)", () => {
+  it("returns 503 when overflow cannot activate", async () => {
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "Server busy — too many concurrent AI requests. Try again shortly.",
+      code: "AI_ADMISSION_TIMEOUT",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("reaches streamText on Bedrock instead of rethrowing AdmissionTimeoutError", async () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalledTimes(1);
+  });
+
+  // #1529 review (Whiteknight07): structuredOutput/structuredAssistOutput are
+  // derived from the original vLLM Qwen3.5 model before this admission-timeout
+  // overflow can switch streamConfig.model to Bedrock. The custom Bedrock
+  // provider has no object-generation mode, so a stale structured-Assist flag
+  // must not survive the switch — otherwise the plain Bedrock text response
+  // fails the structured-JSON render/reject path and the request 500s instead
+  // of degrading to plain text.
+  it("clears structured Assist output when overflowing a structured candidate to Bedrock", async () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
+    vi.mocked(parseChatMode).mockReturnValue("learning");
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: CHAT_ID,
+      userId: "user-1",
+      courseId: COURSE_ID,
+      adhdAssist: true,
+      systemPrompt: null,
+    } as never);
+    vi.mocked(prisma.chat.update).mockResolvedValue({
+      id: CHAT_ID,
+      userId: "user-1",
+      courseId: COURSE_ID,
+      adhdAssist: true,
+      systemPrompt: null,
+    } as never);
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          chatMode: "learning",
+          adhdAssist: true,
+          model: "vllm:qwen3.5-9b-instruct",
+          messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalledTimes(1);
+    // The stream call must not carry an experimental_output schema through to
+    // Bedrock — the custom provider cannot honor constrained/object output.
+    const callArgs = vi.mocked(streamText).mock.calls[0]?.[0] as { experimental_output?: unknown };
+    expect(callArgs?.experimental_output).toBeUndefined();
+    const body = await res.json();
+    expect(body.content).toBe("Overflowed to Bedrock.");
+  });
+
+  it("keeps request cancellation registered through Bedrock overflow", async () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
+    const requestId = "9f1ac5c9-2abf-4b1e-b2f9-dbc1697e0aac";
+    let resolveStream: ((value: ReturnType<typeof streamingResult>) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    vi.mocked(streamText).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+          markStarted?.();
+        }) as never,
+    );
+
+    const chatAction = action(makeRequest(baseBody({ streaming: true }), requestId));
+    await started;
+    const abortSignal = vi.mocked(streamText).mock.calls.at(-1)?.[0]?.abortSignal;
+    expect(abortSignal?.aborted).toBe(false);
+
+    const cancelResponse = await cancelAction(makeCancelRequest(requestId));
+    expect(cancelResponse.status).toBe(204);
+    expect(abortSignal?.aborted).toBe(true);
+
+    resolveStream?.(streamingResult());
+    await chatAction;
+  });
+});

@@ -21,10 +21,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const baseUrl = (process.env.CORE_SMOKE_BASE_URL || "http://127.0.0.1:3000").replace(
-  /\/$/,
-  "",
-);
+const baseUrl = (process.env.CORE_SMOKE_BASE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const serviceKey = process.env.EDUAI_API_KEY;
 if (!serviceKey) {
   console.error("EDUAI_API_KEY is required");
@@ -74,7 +71,7 @@ async function run(label, routingContext, expectedHosts) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "vllm:qwen2.5-7b-instruct",
+      model: "vllm:qwen3.5-2b-instruct",
       apiKeys: {},
       systemPrompt: "Answer with only the word OK.",
       messages: [{ role: "user", content: "Health check" }],

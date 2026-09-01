@@ -4,6 +4,7 @@ import { runWebSearch } from "~/lib/ai/tools/web-search";
 
 const HYBRID_WEB_MAX_CONTEXT_CHARS = 12_000;
 const HYBRID_WEB_SEARCH_LIMIT = 3;
+const HYBRID_WEB_TOOL_ERROR = "WEB_TOOL_FAILED";
 
 export type HybridWebToolMode = "webSearch" | "fetchPage";
 
@@ -14,7 +15,10 @@ export function inferHybridWebToolMode(question: string): HybridWebToolMode | nu
   if (!trimmed) return null;
 
   const lower = trimmed.toLowerCase();
-  if (URL_IN_PROMPT.test(trimmed) && (lower.includes("fetch") || lower.includes("page at") || lower.includes("headings"))) {
+  if (
+    URL_IN_PROMPT.test(trimmed) &&
+    (lower.includes("fetch") || lower.includes("page at") || lower.includes("headings"))
+  ) {
     return "fetchPage";
   }
 
@@ -58,8 +62,7 @@ function formatSearchResults(results: ExternalSearchResult[]): string {
 
 function formatFetchPageResult(result: Awaited<ReturnType<typeof runFetchPage>>): string {
   if (result.error || !result.markdown) {
-    const detail = result.details ? ` (${result.details})` : "";
-    return `Failed to fetch ${result.url}${detail}. Answer from general knowledge if needed and say the page could not be loaded.`;
+    return "The requested page could not be loaded. Answer from general knowledge if needed and say the page could not be loaded.";
   }
 
   const heading = result.title ? `# ${result.title}\n\n` : "";
@@ -69,7 +72,7 @@ function formatFetchPageResult(result: Awaited<ReturnType<typeof runFetchPage>>)
 export type HybridWebToolContext = {
   mode: HybridWebToolMode | null;
   context: string;
-  error?: string;
+  error?: typeof HYBRID_WEB_TOOL_ERROR | "No URL found in prompt";
 };
 
 export async function buildHybridWebToolContext(
@@ -104,11 +107,11 @@ export async function buildHybridWebToolContext(
         : rawContext;
 
     return { mode: resolved, context };
-  } catch (error) {
+  } catch {
     return {
       mode: resolved,
       context: "",
-      error: error instanceof Error ? error.message : String(error),
+      error: HYBRID_WEB_TOOL_ERROR,
     };
   }
 }

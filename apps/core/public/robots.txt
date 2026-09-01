@@ -1,0 +1,13 @@
+# Crawling of the public pages is allowed on purpose: the app answers every
+# HTML document with `X-Robots-Tag: noimageindex`, which keeps the team roster's
+# photos out of image search. A crawler has to fetch a page to see that header,
+# so blocking the images here would instead freeze whatever is already indexed.
+User-agent: *
+Disallow: /api/
+Disallow: /auth/
+Disallow: /dashboard
+Disallow: /chat
+Disallow: /settings
+Disallow: /admin
+Disallow: /unit-admin
+Disallow: /onboarding

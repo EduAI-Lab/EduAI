@@ -16,8 +16,22 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+/**
+ * What the provider registry hands an SDK factory: the credentials and endpoint
+ * for one provider. Only these two fields are ever asserted on.
+ */
+type ProviderFactoryOptions = { apiKey?: string; baseURL?: string };
+
+/**
+ * The registry map `createProviderRegistry` is built from: a provider id to the
+ * factory result the SDK mock above returned for it. The test only ever reads
+ * it back as an opaque value, so it is named by what it maps, not by the
+ * vendor's provider interface.
+ */
+type ProviderRegistryInput = Record<string, ReturnType<typeof vi.fn>>;
+
 const { createOpenAIMock } = vi.hoisted(() => ({
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: ProviderFactoryOptions) => vi.fn()),
 }));
 
 vi.mock("ollama-ai-provider", () => ({
@@ -25,7 +39,7 @@ vi.mock("ollama-ai-provider", () => ({
 }));
 
 vi.mock("@ai-sdk/openai", () => ({
-  createOpenAI: (opts: Record<string, unknown>) => createOpenAIMock(opts),
+  createOpenAI: (opts: ProviderFactoryOptions) => createOpenAIMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
@@ -33,13 +47,14 @@ vi.mock("@ai-sdk/google", () => ({
 }));
 
 vi.mock("ai", () => ({
-  createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
+  createProviderRegistry: (providers: ProviderRegistryInput) => ({ __providers: providers }),
 }));
 
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 
 const originalVllmUrl = process.env.VLLM_BASE_URL;
 const originalDisableThinking = process.env.VLLM_DISABLE_THINKING;
+const originalVllmApiKey = process.env.VLLM_API_KEY;
 
 afterEach(() => {
   createOpenAIMock.mockClear();
@@ -47,6 +62,8 @@ afterEach(() => {
   else process.env.VLLM_BASE_URL = originalVllmUrl;
   if (originalDisableThinking === undefined) delete process.env.VLLM_DISABLE_THINKING;
   else process.env.VLLM_DISABLE_THINKING = originalDisableThinking;
+  if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
+  else process.env.VLLM_API_KEY = originalVllmApiKey;
 });
 
 function capturedFetch(): typeof fetch {
@@ -58,6 +75,7 @@ function capturedFetch(): typeof fetch {
 describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => {
   it("injects chat_template_kwargs.enable_thinking: false into a /chat/completions POST", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -81,6 +99,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("preserves any existing chat_template_kwargs while forcing enable_thinking: false", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -110,6 +129,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("does not touch non-chat-completions requests", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -132,6 +152,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("is bypassed entirely when VLLM_DISABLE_THINKING=0", () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     process.env.VLLM_DISABLE_THINKING = "0";
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });

@@ -1,23 +1,19 @@
 export const projectInfo = {
-  title: "EduAI Map",
-  subtitle: "Transforming Education with AI",
-  description: "An advanced AI-powered learning platform that adapts to individual student needs and enhances educational outcomes.",
-  vision: "To revolutionize education by creating AI-driven learning experiences that are personalized, engaging, and effective for every student.",
+  title: "EduAI",
+  subtitle: "Course-aware AI for students and the people who teach them",
+  description:
+    "Our study tools answer from your own slides, readings, and syllabus, and run on the university's own GPUs.",
+  attribution: "Developed by EduAI Lab at UBC Okanagan.",
+  vision:
+    "A tutor that reads the same slides and readings the student does, works a hard problem one step at a time instead of handing over the answer, and says so when it isn't sure. We build it here and test it in UBC courses our own team takes.",
 };
 
 export const siteConfig = {
-  name: "EduAI Map",
-  description: "AI-powered learning platform for personalized education",
+  name: "EduAI",
+  description: "Friendly, course-aware AI tools built by students and researchers at UBC Okanagan.",
   navigation: {
     home: "/",
-    team: "/team",
-    dashboard: "/dashboard", // change to Login for better wording
-    courses: "/courses",
-    chat: "/chat",
+    login: "/login",
+    signUp: "/auth/register",
   },
 };
-/// remove the line below EduAI Map
-// change the vision to create a : " provide a platform accesisble to UBC community , utilize gen ai and 
-// 
-// our vision is to establish a sustainable pedagogically driven framework that users across discplines can rely on to make ai enhanced teaching and learning more scalable, secure, accessible and inclusive. 
-// remove the meet our research team button 

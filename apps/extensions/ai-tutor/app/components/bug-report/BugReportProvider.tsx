@@ -1,6 +1,6 @@
-import { createContext, useCallback, useMemo, useState } from 'react';
-import { useBugReportCapture } from '~/hooks/useBugReportCapture';
-import type { BugReportContext as BugReportContextType } from '~/lib/types';
+import { createContext, useCallback, useMemo, useState } from "react";
+import { useBugReportCapture } from "~/hooks/useBugReportCapture";
+import type { BugReportContext as BugReportContextType } from "~/lib/types";
 
 type BugReportProviderValue = {
   context: BugReportContextType;

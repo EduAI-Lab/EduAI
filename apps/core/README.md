@@ -19,12 +19,21 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 ## What Core owns
 
 - Better Auth sessions and OAuth/OIDC for the platform
-- Course / enrollment / materials / Canvas sync APIs
-- Chat + RAG (`POST /api/chat`), embeddings (pgvector), AI provider catalog
+- Course / enrollment / materials APIs, gated by the RBAC permission layer (`app/lib/rbac/`)
+- Canvas LMS integration (`app/lib/canvas/`, 18 modules): roster sync, module/quiz/material sync, instructor token storage (AES-256-GCM), term normalization, student-number linking
+- Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search)), AI provider catalog
+- Agentic chat tools (`app/lib/agent-tools/`): distinct tool sets for learning, instructor, and admin chat modes (Canvas reads/writes, invitations, platform mutations, write-confirmation flow)
+- Background job queue (`app/lib/queue/`, BullMQ-based): chat-turn processing, concurrency/availability/ETA tracking, worker stats
+- Question banks (`app/lib/question-banks/`) and topic data model backing Question Maker
+- Disciplines/departments (`app/lib/disciplines/`) and user invitations (`app/lib/invitations/`, token-hash based, same pattern as the admin bootstrap flow below)
+- Outbound-request hardening (`app/lib/net/`): SSRF guard, bounded response bodies, pinned dispatcher for calls to AI providers/Canvas
+- API-key lifecycle (`app/lib/api-keys/`): access checks and the 1-year expiration cap enforced by the migration preflight (see [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md))
 - Policy registry (`GET /api/policies`) and admin tooling
 - Administrator-managed automatic routing: AI Management controls separate `Auto` (LLM-classified) and `Auto (rules)` (fixed-rule) modes. Both select only active tiered models on active providers, while explicit model selections remain unchanged.
+- ADHD Assist mode: toggling regenerates response **content**, not just styling — the policy (`app/lib/ai/adhd-assist.ts`) enforces a Top summary / Step ladder / Next? structure, and `app/lib/ai/adhd-oversight.ts` audits and rewrites (or forces deterministic fallback) any reply that doesn't comply
 - Course-scope guardrail: an always-on system-prompt policy (Layer A) plus an optional second-pass 7B classifier (Layer B, `COURSE_SCOPE_GUARDRAIL_ENABLED` + each course's `courseScopeGuardrailEnabled` setting) that keeps browser learning chat on-topic for the enrolled course, failing open on classifier errors/timeouts and bypassed by admin preview and service-key calls.
-- Service-key and session APIs consumed by extensions
+- Automatic topic provisioning (#1624): once synced or uploaded material finishes processing, a course-scoped, idempotent background job derives topics from Canvas module titles first, then Chapter/Unit/Week headings in the material, and only falls back to a model (`TOPIC_ANALYSIS_MODEL`) when both come up empty — so authored structure outranks a generated name. Results land as `SUGGESTED` topics carrying origin, confidence, and source materials for an instructor to approve / merge / dismiss on the course Topics tab; the job only ever creates, never renames or deletes, and every course keeps an `Uncategorized` fallback so Question Maker authoring is never blocked while analysis is pending or after it fails.
+- Service-key and session APIs consumed by extensions (`POST /api/sessions/validate`, `EDUAI_API_KEY`-gated — see [`docs/chat-history.md`](./docs/chat-history.md#authentication))
 
 ## Essential environment
 
@@ -37,7 +46,10 @@ Copy from `.env.example` (root `npm install` also auto-copies if missing). Criti
 | `BETTER_AUTH_URL` | `http://localhost:3000` in local dev |
 | `ENCRYPTION_KEY` | Required for Canvas token storage (AES-256-GCM) |
 | `EDUAI_API_KEY` | Same value as AI Tutor server + Question Maker |
-| `EMBEDDING_PROVIDER` / `OPENROUTER_API_KEY` / `OLLAMA_BASE_URL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
+| `REDIS_URL` | Shared queue transport and cross-instance `/api/chat` + `/api/completion` rate-limit state |
+| `CHAT_RATE_LIMIT` / `CHAT_RATE_LIMIT_WINDOW_MS` | Completion sliding-window limit (defaults `100` requests / `60000` ms); full semantics in [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) |
+| `EMBEDDING_PROVIDER` / `VLLM_EMBEDDING_BASE_URL` / `VLLM_EMBEDDING_MODEL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
+| `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search) |
 
 Full inventory: [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) and `apps/core/.env.example`.
 
@@ -54,9 +66,11 @@ npm run db:seed
 
 Prefer root scripts for multi-app work: `npm run test:eduai`, etc. Inventory: [`TESTS.md`](../../TESTS.md).
 
+Browser-level load testing (k6 + Grafana, up to 500 concurrent users): `npm run loadtest:setup`, `npm run loadtest:stress`. See [`loadtest/README.md`](./loadtest/README.md).
+
 ## API discovery
 
-Route handlers under `app/routes/` (API under `app/routes/api/`). Auth guards: `app/lib/auth/`. Course access: `app/lib/auth/course-access.server.ts`.
+Route handlers under `app/routes/` (API under `app/routes/api/`). Auth guards: `app/lib/auth/`. Permission checks (`canX()` functions, nav construction, `resolveCourseAccess`): `app/lib/rbac/`, which shares its `AccessLevel` type with the older `app/lib/auth/course-access.server.ts`.
 
 Do not maintain a curl cookbook — use ARCHITECTURE §6 and §7 plus route modules.
 
@@ -71,3 +85,4 @@ Sustainability-aware tier routing lives under `app/lib/ai/routing/`. Administrat
 | [`docs/EXTENSION_ONBOARDING.md`](../../docs/EXTENSION_ONBOARDING.md) | Extension app integration and auth |
 | [`docs/CANVAS.md`](../../docs/CANVAS.md) | Canvas sync and instructor token setup |
 | [`docs/LOGGING.md`](../../docs/LOGGING.md) | Audit logs, system logs, admin viewer |
+| [`loadtest/README.md`](./loadtest/README.md) | Browser-level UI stress harness (k6 + Grafana), EPIC #63 |
