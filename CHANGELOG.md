@@ -5,6 +5,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 > **Week numbering is inconsistent and has not been corrected here.** `August 10–16, 2026` is claimed by both Week 15 and Week 16; `August 17–23, 2026` is claimed by both Week 16 and Week 17. This predates the 2026-08-31 de-duplication pass, which merged sections by the week number each heading stated and never moved an entry between weeks — an entry's date is its commit date, not its sprint, so re-bucketing by date would have rewritten history. Renumbering is a maintainer call.
+
+## 2026.08.31
+
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/#PR
+- Refresh the root `README.md` against the current monorepo — corrected the `infra/` and `docs/` tree listings, the documentation index, and the fleet-testing and fleet-registry sections, using the code as the source of truth.
+- Refresh the platform guides in `docs/`: architecture, deployment, environment, logging, Canvas, cron jobs, developer guide, user guide, extension onboarding, agent readiness, and the PICT census.
+- Align `TESTS.md` with the tests that actually exist — remove 11 rows for deleted test files and document 10 suites that had no row in either this branch or `development`.
+- Remove superseded planning, research, and architecture documents whose work has since shipped or been replaced.
+
 ## 2026.08.31
 
 - PR Link: https://github.com/EduAI-Lab/EduAI/pull/1707
