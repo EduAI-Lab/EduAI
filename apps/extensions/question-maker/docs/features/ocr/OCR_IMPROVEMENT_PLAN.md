@@ -1,5 +1,14 @@
 # OCR / Question Extraction — Robustness Plan
 
+> **Status: §3.1, 3.2, 3.3, 3.4, and 3.5 below are implemented** (see the "Implementation status"
+> table in §4 — verified current against `app/backend/src/services/extractionUtils.js`,
+> `app/backend/src/services/aiService.js`, and
+> `app/frontend/src/components/question-bank/QuestionUploadDialog.tsx`). §1–2 describe the *original*
+> failure analysis (including the old fixed-4000-char chunking) that motivated the fix; read them as
+> history, not current behavior. One path rename since this was written: the background-extraction
+> caller moved from the retired `Homepage.tsx` to `pages/CourseDetailPage.tsx` when the app became
+> course-centric.
+
 This document identifies **potential failing points** in the current OCR → extraction pipeline and proposes a **concrete improvement plan**. The pipeline covers: PDF/image text extraction (frontend), text normalization and chunking, and AI-based question extraction (backend via EduAI).
 
 **Example failure case:** A PDF like `app/backend/test/ocr_tests/Java_PriorityQueue_Bank_Client_Assignment.pdf` (multipart assignment with questions that have (a), (b), (c) sub-parts) can cause the extractor to "break" — e.g. splitting one logical question into several, dropping sub-parts, or merging unrelated content.
@@ -81,6 +90,10 @@ This document identifies **potential failing points** in the current OCR → ext
 ### 3.1 Semantic / question-boundary-aware chunking (backend)
 
 **Goal:** Never split a single multipart question across chunks; prefer to split only at clear question boundaries.
+
+> Implemented as `splitIntoQuestionBlocks` / `chunkByQuestionBlocks` in
+> `app/backend/src/services/extractionUtils.js`, with a max chunk size of **5000** characters (not the
+> 4000 used by the original fixed-size `chunkText` this replaced).
 
 **Steps:**
 
@@ -190,12 +203,12 @@ This document identifies **potential failing points** in the current OCR → ext
 | **3.1** Block-aware chunking | Done in `aiService.js`: `splitIntoQuestionBlocks`, `chunkByQuestionBlocks`. |
 | **3.2** Stronger extraction prompt | Done: multipart rules, one-block example, continuation note for chunk 2+. |
 | **3.4** Block count for `numQuestions` | Done: per-chunk `blockCountsPerChunk` used when > 0. |
-| **Unit tests** | `app/backend/test/extraction.test.js` — block split and chunk tests; Jest ESM via `jest.config.js` + `node --experimental-vm-modules`. |
+| **Unit tests** | `app/backend/tests/unit/extraction.test.js` — block split and chunk tests, run through Vitest (`npm run test:unit` in `app/backend`); there is no Jest or `jest.config.js` anywhere in this extension. |
 | **3.3** PDF line-break preservation | Done in `QuestionUploadDialog.tsx`: `pdfItemsToTextWithLineBreaks` (uses `hasEOL`; fallback `pdfItemsToTextByPosition` by Y). |
 | **3.5** Deduplication and ordering | Done in `aiService.js`: `extractedQuestionDedupeKey` (normalized prefix 150 chars), `deduplicateExtractedQuestions` (preserves order, keeps longer when same key). |
 | **Extraction prompt vs generate** | Done: EduAI `generateQuestions` accepts `systemPromptOverride` and `userPromptOverride`; extraction uses extraction-specific system/user prompts (extract only, assignment parts as blocks). |
 | **Block detection (Part/Task/Exercise/Section)** | Done: `splitIntoQuestionBlocks` regex includes Part 1, Task N, Exercise N, Section N; unit test added. |
-| **OCR history on background extraction** | Done: `BackgroundExtractionParams` has `jobId` and `onExtractionComplete`; Homepage calls callback on success/error so job status is updated. |
+| **OCR history on background extraction** | Done: `BackgroundExtractionParams` has `jobId` and `onExtractionComplete`; `CourseDetailPage.tsx` (`handleExtractInBackground`) calls the callback on success/error so job status is updated. |
 | **Test script (ocr_tests PDFs)** | Done: `npm run test:ocr` (or `node scripts/testOcrExtraction.js [path]`) uses pdf-parse to extract text and runs block detection on PDFs in `test/ocr_tests`. |
 | **3.6–3.7** | Not yet implemented. |
 
