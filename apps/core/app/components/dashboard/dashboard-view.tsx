@@ -37,7 +37,7 @@ export type DashboardStatDef = {
   trendLabel?: string;
 };
 
-/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing role-view imports. */
+/** @deprecated Use `QuickAction` from `@eduai/ui` directly. */
 export type DashboardQuickAction = QuickAction;
 
 export type DashboardCourse = {
@@ -132,13 +132,13 @@ function CourseListPanel({
   const navigate = useNavigate();
   if (loading) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
             className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 animate-pulse"
           >
-            <div className="w-1 h-11 rounded-sm bg-muted flex-shrink-0" />
+            <div className="w-1 h-11 rounded-sm bg-muted shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-3.5 bg-muted rounded w-24" />
               <div className="h-3 bg-muted rounded w-48" />
@@ -151,7 +151,7 @@ function CourseListPanel({
 
   if (courses.length === 0) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)] px-5 py-8 text-center">
+      <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to="/courses"
@@ -164,7 +164,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+    <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
       {courses.slice(0, 5).map((course, i) => (
         <Link
           key={course.id}
@@ -173,7 +173,7 @@ function CourseListPanel({
         >
           {/* color swatch */}
           <div
-            className="w-1 h-11 rounded-sm flex-shrink-0"
+            className="w-1 h-11 rounded-sm shrink-0"
             style={{ background: COURSE_COLORS[i % COURSE_COLORS.length] }}
           />
           <div className="flex-1 min-w-0">
@@ -222,7 +222,7 @@ function CourseListPanel({
                       ? "You don't teach this course"
                       : "Publish this course to open the ops assistant for it"
                   }
-                  className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-[var(--radius-md)] whitespace-nowrap border border-border cursor-not-allowed"
+                  className="shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-md whitespace-nowrap border border-border cursor-not-allowed"
                 >
                   {notTeaching ? "Not teaching" : "Unpublished"}
                 </span>
@@ -246,7 +246,7 @@ function CourseListPanel({
                       : `courseCode=${encodeURIComponent(course.code)}`;
                   navigate(`${rowChatHref}?${param}`);
                 }}
-                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
+                className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
                 style={{ background: "var(--primary)" }}
               >
                 Chat
@@ -285,7 +285,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
 
   if (loading) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -304,7 +304,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
 
   return (
     <>
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card h-full flex flex-col">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card h-full flex flex-col">
         {chats.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
             <IconMessageCircle size={24} className="mb-2 text-muted-foreground" />
@@ -322,19 +322,19 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
                 <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2 min-w-0">
                     {chat.courseCode ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text shrink-0">
                         <IconBook size={11} />
                         {chat.courseCode}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground shrink-0">
                         <IconMessageCircle size={11} />
                         General
                       </span>
                     )}
                     {chat.userName && (
                       <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground truncate">
-                        <IconUser size={10} className="flex-shrink-0" />
+                        <IconUser size={10} className="shrink-0" />
                         <span className="truncate">{chat.userName}</span>
                       </span>
                     )}
@@ -346,7 +346,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
                       case) rather than mismatch-warn on every dashboard load. */}
                   <span
                     suppressHydrationWarning
-                    className="text-[11px] text-muted-foreground flex-shrink-0 ml-2"
+                    className="text-[11px] text-muted-foreground shrink-0 ml-2"
                   >
                     {relativeTime(chat.updatedAt)}
                   </span>
@@ -361,7 +361,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-[var(--radius-xl)]">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-xl">
           <DialogHeader>
             <DialogTitle>
               {selectedChat?.preview ?? selectedChat?.title ?? "Conversation"}

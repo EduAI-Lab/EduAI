@@ -2767,7 +2767,6 @@ export async function action({ request }: ActionFunctionArgs) {
           });
         };
 
-        // Log the LLM stream configuration
         chatApiDebug("Starting LLM stream", {
           chatMode,
           model,

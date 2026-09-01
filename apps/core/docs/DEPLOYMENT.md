@@ -53,8 +53,12 @@ runbook rather than `npm run db:seed:if-empty`.
 
 After migrations and `npm run db:seed:reference`, an operator can create the
 only unauthenticated administrator invitation. The command refuses to run when
-an ADMIN account or pending ADMIN invitation already exists, and it stores only
-the token hash:
+an ADMIN account already exists, a pending ADMIN invitation already exists, or
+an account with that email already exists, and it stores only the token hash
+(SHA-256; the raw token is never persisted, only printed once to stdout as
+part of the accept-invitation URL). The whole check-and-create runs inside a
+transaction behind a Postgres advisory lock, so two concurrent runs cannot
+both win the race:
 
 ```sh
 cd apps/core
@@ -73,9 +77,12 @@ bootstrap.
 
 Run `npm run db:migrate:preflight` immediately before `prisma migrate deploy`.
 It stops on duplicate external course identities or duplicate active re-embed
-jobs. It also lists each owner whose legacy API key would expire under the
-one-year cap; notify those owners and rotate their keys before acknowledging
-the inventory with `EDUAI_ACK_API_KEY_ROTATION=1 npm run db:migrate:preflight`.
+jobs regardless of migration state. The legacy-API-key check only runs if the
+`20260811120000_better_auth_api_key_contract` migration has **not** yet been
+applied (it's a one-time pre-migration warning, not a standing check); when it
+runs, it lists each owner whose key would expire under the one-year cap —
+notify those owners and rotate their keys before acknowledging the inventory
+with `EDUAI_ACK_API_KEY_ROTATION=1 npm run db:migrate:preflight`.
 
 The Better Auth API-key migration preserves hashes and owners, but converts
 `metadata` and `permissions` from JSONB to text. That cast is intentionally not
@@ -86,6 +93,10 @@ this migration in the deployment maintenance window.
 ## Extension session validation
 
 `EDUAI_API_KEY` is now a hard requirement for any extension calling
-`POST /api/sessions/validate`. Question Maker fails at startup if Core is
-configured and the key is missing. Other extensions that omit it still boot
-and then receive an opaque 403 from Core.
+`POST /api/sessions/validate`. On Core's side (`app/routes/api/sessions.validate.ts`)
+the response is deterministic: no `Authorization: Bearer` header at all →
+`401 {"error":"MISSING_SERVICE_KEY"}`; a header present but not matching
+Core's configured key (or Core has none configured) → `403
+{"error":"INVALID_SERVICE_KEY"}`. Question Maker fails at startup if Core is
+configured and the key is missing; that startup check lives in Question
+Maker's own codebase, not here.

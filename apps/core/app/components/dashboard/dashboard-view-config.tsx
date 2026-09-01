@@ -1,22 +1,14 @@
 /**
- * @file Consolidates Core's 5 per-role dashboard "view" stubs
- * (dashboard-admin-view.tsx / dashboard-unit-admin-view.tsx /
- * dashboard-instructor-view.tsx / dashboard-ta-view.tsx /
- * dashboard-student-view.tsx) into a single role → config map over the
- * shared `DashboardView`. Mirrors the ai-tutor dashboard's `heroCopy(role,
- * firstName)` pattern (`apps/extensions/ai-tutor/app/routes/dashboard.tsx`).
+ * @file Per-role dashboard config: maps each `EffectiveRole` to a config over
+ * the shared `DashboardView`, rendered by `DashboardBody` directly from the
+ * route's SSR-loaded `DashboardData` (no per-role data hooks). Mirrors the
+ * ai-tutor dashboard's `heroCopy(role, firstName)` pattern
+ * (`apps/extensions/ai-tutor/app/routes/dashboard.tsx`).
  *
  * A TA is not a platform `User["role"]` — it's the enrollment-derived
  * `isTA` case computed in the route loader — so it's modeled here as a 6th
  * `EffectiveRole` alongside the 4 real roles ("TA" replacing "STUDENT" when
  * `isTA` is true).
- *
- * The dashboard's data is resolved in the route's SSR loader (#1220), so this
- * file is now purely presentational: `DashboardBody` takes the loader's
- * `DashboardData` and renders the role's `DashboardView`. The old
- * per-role body components that each called `useUsers()`/`useCourses()`/… are
- * gone — with server data there is no conditional hook to work around, so one
- * component covers every role.
  */
 import {
   IconUsers,
