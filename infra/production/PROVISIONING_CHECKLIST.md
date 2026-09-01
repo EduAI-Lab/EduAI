@@ -116,20 +116,34 @@ add CMPS03 or assume CMPS02 has the standard 9B model.
 ## 7. Question Maker
 
 Question Maker is a separate extension with its own application deployment
-documentation and Compose file. The production admin helper in
-`infra/production/admin-helper.sh` currently has no Question Maker provisioning or
-restart action.
+documentation and Compose file. The production helper provides narrowly scoped
+install, enable, and restart actions for its environment, systemd unit, and
+Apache vhost; it does not provide a general Question Maker shell or a combined
+database-provisioning action.
 
 - [ ] Follow [`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
-- [ ] Confirm the backend database migration is complete.
+- [ ] Generate the Question Maker Prisma client and confirm the backend database
+      migration is complete.
 - [ ] Confirm the backend process and its database configuration.
 - [ ] Confirm the frontend build and Apache/static asset configuration.
+- [ ] Install the reviewed environment, systemd unit, and Apache vhost through
+      `install-qm-env`, `install-qm-unit`, and `install-qm-apache`.
 - [ ] Confirm the backend health route is
       `http://127.0.0.1:8000/healthz`; `/api/health` is not its health route.
-- [ ] Do not claim Question Maker is managed by `eduai-production-admin` until a
-      corresponding repository action and template are implemented.
+- [ ] Enable and restart the backend through `enable-qm` and `restart-qm` only
+      after the migration, build, and health checks are ready.
 
-## 8. Web server and systemd
+## 8. Cron worker
+
+- [ ] Create `/etc/eduai/cron.env` with production database, backup, and alert
+      values; keep it root-owned and mode `0640`.
+- [ ] Create the `eduai-cron` account and its intended backup/log directories.
+- [ ] Install the root-owned cron worker unit and synchronize the allow-listed
+      scripts with `install-cron-worker`.
+- [ ] Enable and restart `eduai-cron-worker` only after the Core environment and
+      cron configuration are readable.
+
+## 9. Web server and systemd
 
 - [ ] Confirm required Apache modules, certificates, proxy rules, and vhosts.
 - [ ] Run `apache2ctl configtest` before reloading Apache.
@@ -140,7 +154,7 @@ restart action.
 - [ ] Confirm the active release, unit status, recent journal output, and listeners.
 - [ ] Confirm no unsupported PM2/user-level process is serving the production apps.
 
-## 9. Release verification
+## 10. Release verification
 
 Run and record:
 

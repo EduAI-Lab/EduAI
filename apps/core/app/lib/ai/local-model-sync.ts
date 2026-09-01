@@ -35,6 +35,17 @@ export type LocalModelSyncResult = {
   createdNames: string[];
 };
 
+/** Capabilities for campus vLLM models not described by `/v1/models`. */
+export type LocalModelCapabilities = {
+  supportsImages: boolean;
+  supportsTools: boolean;
+};
+
+export function vllmModelCapabilities(modelId: string): LocalModelCapabilities {
+  const qwen38 = modelId.trim().toLowerCase() === "qwen3.8-27b-instruct";
+  return { supportsImages: qwen38, supportsTools: qwen38 };
+}
+
 export function buildOllamaModelCreatePayload(ollama: OllamaModel): LocalModelCreatePayload {
   const modelId = ollama.name;
   const lower = modelId.toLowerCase();
@@ -55,6 +66,7 @@ export function buildOllamaModelCreatePayload(ollama: OllamaModel): LocalModelCr
 }
 
 export function buildVllmModelCreatePayload(vllm: VllmModel): LocalModelCreatePayload {
+  const capabilities = vllmModelCapabilities(vllm.id);
   const displayName = vllm.id
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -65,8 +77,8 @@ export function buildVllmModelCreatePayload(vllm: VllmModel): LocalModelCreatePa
     name: displayName,
     description: `Local vLLM model: ${vllm.id}`,
     type: "CHAT",
-    supportsImages: false,
-    supportsTools: false,
+    supportsImages: capabilities.supportsImages,
+    supportsTools: capabilities.supportsTools,
     supportsStreaming: true,
     inputPricing: 0,
     outputPricing: 0,

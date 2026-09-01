@@ -126,6 +126,20 @@ if [ "$(id -un)" = "$OLD_OWNER" ]; then
 fi
 
 echo
+echo "=== retiring the stale Question Maker timer ==="
+# An older standalone deploy timer may remain after Question Maker moved into
+# this checkout. Its service points at /srv/www/questionmaker.ok.ubc.ca/
+# pull-and-deploy.sh, which no longer exists; leaving the timer enabled creates
+# a recurring failed job and obscures real service failures.
+if systemctl list-unit-files question-maker-deploy.timer >/dev/null 2>&1; then
+  sudo systemctl disable --now question-maker-deploy.timer 2>/dev/null || true
+  sudo systemctl reset-failed question-maker-deploy.service 2>/dev/null || true
+  echo "  disabled stale question-maker-deploy.timer"
+else
+  echo "  no stale Question Maker timer found"
+fi
+
+echo
 echo "=== installing environment file ==="
 sudo install -d -m 0750 -o root -g eduai-dev "$ENV_DIR"
 sudo install -m 0640 -o root -g eduai-dev "$UNIT_SRC/eduai-dev.env" "$ENV_DIR/eduai-dev.env"

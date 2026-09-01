@@ -23,6 +23,7 @@ The supported application units are:
 | `eduai-core` | Core web application | `127.0.0.1:3000` |
 | `eduai-aitutor-server` | AI Tutor API | `127.0.0.1:4000` |
 | `eduai-qm-backend` | Question Maker backend | `0.0.0.0:8000` in the current deployment |
+| `eduai-cron-worker` | Core scheduled-maintenance worker | none |
 
 Apache terminates public HTTPS and proxies or serves the configured vhosts. The
 production database and Redis are normally host-managed on `127.0.0.1:5432` and
@@ -45,8 +46,8 @@ preflight and health checks before treating any later release as ready.
 
 ## What the repository currently manages
 
-The repository includes production templates and a restricted helper for Core and
-AI Tutor:
+The repository includes production templates and a restricted helper for Core,
+AI Tutor, Question Maker, and the Core cron worker:
 
 - `infra/production/core.env.example`
 - `infra/production/ai-tutor.env.example`
@@ -54,13 +55,15 @@ AI Tutor:
 - `infra/production/apache/`
 - `infra/production/admin-helper.sh`
 - `infra/production/preflight.sh`
+- `infra/cron/`
 
-The current `eduai-production-admin` allow-list manages Core, AI Tutor, Redis,
-release activation, and Apache reload operations. It does not include a Question
-Maker provisioning or restart action. Question Maker has its own application
-Compose/deployment documentation under
-[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md);
-do not document a `provision-qm` helper action until it exists in the repository.
+The current `eduai-production-admin` allow-list manages Core, AI Tutor, Question
+Maker's narrowly scoped install/enable/restart actions, Redis, release
+activation, Apache reload, and the cron worker. It does not provide a general
+Question Maker provisioning shell or a `provision-qm` action. Question Maker's
+application deployment documentation remains authoritative for its database and
+build procedure:
+[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
 
 The old PM2-oriented application scripts are not the production runbook. Do not
 use `apps/core/deploy.sh` or `apps/extensions/ai-tutor/deploy.sh` against the
@@ -89,6 +92,28 @@ ss -lntp
 Do not print environment files while inspecting them. Verify the presence,
 ownership, and permissions of `/etc/eduai/eduai-core.env` and the AI Tutor
 environment files without exposing their values.
+
+## Application cron worker
+
+The Admin → Cron Jobs page is backed by the dedicated
+`eduai-cron-worker.service`; it is not driven by the web process and does not
+use a user crontab. The worker reads Core's database environment, dispatches
+allow-listed jobs, and runs shell jobs as the unprivileged `eduai-cron` user.
+`Restart=always` keeps the worker itself running, while the application services
+retain their own systemd restart policies.
+
+Before enabling it on production, create `/etc/eduai/cron.env`, create the
+`eduai-cron` user and its backup/log directories, and install the root-owned
+worker template through [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md). Then run:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin install-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin enable-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin restart-cron-worker
+```
+
+Review stale `RUNNING` records in Admin → Cron Jobs before restarting the worker;
+it dispatches pending admin-triggered runs when it starts.
 
 ## Provisioning prerequisites
 
