@@ -36,7 +36,7 @@ import {
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { cancelChatRequest, fetchChatWithRequestId } from "./chat-request-cancellation";
 import { resolveCourseChangeAction } from "./chat-course-change";
-import { defaultChatModelId } from "~/lib/chat-auto-model";
+import { defaultChatModelId, isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import type { OwnChatHistory } from "~/routes/chat-layout";
@@ -135,7 +135,8 @@ function useChatCourseSelection({
 }
 
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
-  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } = data;
+  const { chatModels, assistModelId, routerAutoEnabled, user, assistDefault, lastCourseCode } =
+    data;
   // Only an editable (owned) transcript seeds the live composer; everything else
   // opens in the read-only viewer.
   const editableTranscript =
@@ -174,6 +175,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   );
   const [adhdAssist, setAdhdAssist] = useState(
     editableTranscript ? Boolean(editableTranscript.chat.adhdAssist) : (assistDefault ?? assistive),
+  );
+  const configuredAssistModelId =
+    assistModelId && chatModels.some((model) => model.id === assistModelId) ? assistModelId : null;
+  const modelForAssist = useCallback(
+    (assistEnabled: boolean) =>
+      assistEnabled && isAutoRoutingModelId(selectedModel)
+        ? (configuredAssistModelId ?? selectedModel)
+        : selectedModel,
+    [configuredAssistModelId, selectedModel],
   );
   const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(
     initialTranscript && !initialTranscript.canEdit ? initialTranscript : null,
@@ -377,7 +387,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const requestMetadata = {
     chatMode: "learning" as const,
-    model: selectedModel,
+    model: modelForAssist(adhdAssist),
     courseId: selectedCourseId || undefined,
     courseCode: selectedCourseCode || undefined,
     chatId: chatId || undefined,
@@ -574,6 +584,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 ...requestMetadata,
+                model: modelForAssist(checked),
                 systemPrompt: undefined,
                 adhdAssist: checked,
                 regenerateOnly: true,
@@ -643,7 +654,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       messages,
       isLoading,
       chatId,
-      selectedModel,
+      modelForAssist,
       selectedCourseId,
       selectedCourseCode,
       setMessages,
@@ -826,7 +837,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
-          model: selectedModel,
+          model: modelForAssist(adhdAssist),
           courseId: selectedCourseId || undefined,
           courseCode: selectedCourseCode || undefined,
           adhdAssist,

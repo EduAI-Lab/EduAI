@@ -248,9 +248,6 @@ export function ChatInput({
                         className={selectedModel === model.id ? "bg-primary/5" : ""}
                       >
                         <span className="font-semibold">{model.name}</span>
-                        <span className="ml-1.5 text-[11px] text-muted-foreground">
-                          {model.provider}
-                        </span>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>

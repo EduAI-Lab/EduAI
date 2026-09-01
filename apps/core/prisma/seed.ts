@@ -16,10 +16,10 @@ import {
   getLocalSeedPassword,
 } from "../app/lib/deployment-safety.server";
 import {
-  CAMPUS_INTERACTIVE_MODEL_IDS,
-  LEGACY_CAMPUS_MODEL_IDS,
-  RETAINED_ASSIST_MODEL_ID,
-} from "../app/lib/ai/campus-model-catalog";
+  VLLM_MODELS,
+  VLLM_RETIRED_MODEL_IDS,
+  VLLM_ROUTING_TIER_ASSIGNMENTS,
+} from "./ai-model-catalog";
 
 export const prisma = new PrismaClient();
 
@@ -1119,38 +1119,42 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — Qwen3.5 2B/9B plus the retained Assist 32B model. */
-const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: "vllm",
-    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
-    routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.04,
-    averageCarbonGramsPerToken: 8.9e-7,
-  },
-  {
-    providerName: "vllm",
-    modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
-    routerTier: "TIER_2" as const,
-    estEnergyJoulesPerToken: 0.2,
-    averageCarbonGramsPerToken: 4.45e-6,
-  },
-  {
-    providerName: "vllm",
-    modelId: RETAINED_ASSIST_MODEL_ID,
-    routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
+/**
+ * Research routing pool — vLLM tier 1 (small) + tier 3 (large) only; no cloud
+ * tier in Auto. Tier 2 is intentionally absent: it exists in the `RouterTier`
+ * enum for a cloud-overflow tier, but `normalizePickForLocalVllm` (see
+ * `apps/core/app/lib/ai/routing/local-vllm.ts`) remaps every tier-2 pick to
+ * tier 3 whenever a local vLLM host is configured, and no rule in
+ * `routing/rules.ts` targets tier 2 directly either — so a tier-2 row would
+ * never receive Auto traffic under this deployment.
+ *
+ * This list only affects models present under the given `modelId` at seed
+ * time — `applyRoutingTierAssignments` warns (does not fail) when a row is
+ * missing, e.g. after the vLLM fleet is upgraded to a new model generation.
+ * Update this list whenever the deployed fleet changes, and note the
+ * production deploy procedure (`infra/production/README.md`) does not run
+ * `db:seed:reference` — that seed step only self-heals `eduai-dev`/s378 via
+ * `infra/s378/go-live-build.sh`; keep production's tier assignment in sync
+ * manually until that gap is closed, or apply this seed step to production
+ * deploys too.
+ */
+// The shared catalog is the source of truth for seeded vLLM models and their
+// `ESTIMATED_FROM_TOKENS` values used by Auto's energy/carbon tie-breaks.
+export const ROUTING_TIER_ASSIGNMENTS = VLLM_ROUTING_TIER_ASSIGNMENTS;
 
-async function applyRoutingTierAssignments() {
+export async function applyRoutingTierAssignments() {
   console.log("Applying routing tier and energy constants...");
 
+  // Providers touched below, keyed by name, so the retired-vLLM-row cleanup
+  // (after the loop) can reuse the same lookups instead of querying again.
+  const providerByName = new Map<string, { id: string }>();
   for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
+    let provider = providerByName.get(row.providerName);
+    if (!provider) {
+      provider =
+        (await prisma.aIProvider.findUnique({ where: { name: row.providerName } })) ?? undefined;
+      if (provider) providerByName.set(row.providerName, provider);
+    }
     if (!provider) {
       console.warn(`   Skip tier row (unknown provider): ${row.providerName}`);
       continue;
@@ -1174,6 +1178,25 @@ async function applyRoutingTierAssignments() {
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+
+  // Clear only IDs from a known retired fleet generation. Do not clear every
+  // non-catalog row: an administrator may have added an active vLLM model and
+  // intentionally assigned it a tier through the admin UI.
+  const vllm =
+    providerByName.get("vllm") ??
+    (await prisma.aIProvider.findUnique({
+      where: { name: "vllm" },
+    }));
+  if (vllm) {
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+      },
       data: { routerTier: null },
     });
   }
@@ -1329,34 +1352,15 @@ async function seedAIProvidersAndModels() {
     });
   }
 
-  const vllmModels = [
-    {
-      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[0],
-      name: "Qwen3.5 2B Instruct (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: false,
-    },
-    {
-      modelId: CAMPUS_INTERACTIVE_MODEL_IDS[1],
-      name: "Qwen3.5 9B Instruct (vLLM)",
-      description: "Standard chat — tier 2, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: true,
-    },
-    {
-      modelId: RETAINED_ASSIST_MODEL_ID,
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
-      supportsTools: true,
-    },
-  ];
-
-  for (const m of vllmModels) {
+  for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools, supportsImages: false },
+      update: {
+        isActive: true,
+        maxTokens: m.maxTokens,
+        supportsTools: m.supportsTools,
+        supportsImages: false,
+      },
       create: {
         ...m,
         type: "CHAT",
@@ -1366,15 +1370,6 @@ async function seedAIProvidersAndModels() {
       },
     });
   }
-
-  // Do not leave superseded models available to Auto or the public picker.
-  await prisma.aIModel.updateMany({
-    where: {
-      providerId: vllm.id,
-      modelId: { in: [...LEGACY_CAMPUS_MODEL_IDS] },
-    },
-    data: { isActive: false, routerTier: null },
-  });
 
   await prisma.aIModel.upsert({
     where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },

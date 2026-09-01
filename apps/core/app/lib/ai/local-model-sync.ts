@@ -17,6 +17,12 @@ export type LocalModelCreatePayload = {
   inputPricing: number;
   outputPricing: number;
   isActive: boolean;
+  // Sync discovers and registers a model; it does not guess which Auto
+  // routing tier (if any) that model should occupy — that is an admin
+  // decision made afterward in the model edit dialog. Explicitly `null`
+  // rather than omitted so a newly-synced model is never silently missing
+  // this field from its create payload.
+  routerTier: null;
 };
 
 /** A discovered model's fields plus the provider it was discovered under. */
@@ -44,6 +50,7 @@ export function buildOllamaModelCreatePayload(ollama: OllamaModel): LocalModelCr
     inputPricing: 0,
     outputPricing: 0,
     isActive: true,
+    routerTier: null,
   };
 }
 
@@ -64,6 +71,7 @@ export function buildVllmModelCreatePayload(vllm: VllmModel): LocalModelCreatePa
     inputPricing: 0,
     outputPricing: 0,
     isActive: true,
+    routerTier: null,
   };
 }
 

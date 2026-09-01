@@ -178,6 +178,26 @@ describe("POST /api/ai-models", () => {
     expect(response.status).toBe(400);
   });
 
+  it("400s when routerTier is set on a non-CHAT model", async () => {
+    const response = await handleAiModelsApiRequest(
+      request("POST", "/api/ai-models", {
+        ...validBody,
+        type: "EMBEDDING",
+        routerTier: "TIER_1",
+      }),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("allows a null routerTier on a non-CHAT model", async () => {
+    vi.mocked(prisma.aIModel.create).mockResolvedValue(MODEL_ROW as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("POST", "/api/ai-models", { ...validBody, type: "EMBEDDING", routerTier: null }),
+    );
+    expect(response.status).toBe(201);
+  });
+
   it("creates the model, invalidates the tier cache, and returns 201", async () => {
     vi.mocked(prisma.aIModel.create).mockResolvedValue(MODEL_ROW as never);
 
@@ -256,6 +276,54 @@ describe("PATCH /api/ai-models/:id", () => {
       request("PATCH", "/api/ai-models/model-1", { supportsTools: true }),
     );
     expect(response.status).toBe(400);
+  });
+
+  it("400s when the update would set a routerTier on a non-CHAT model", async () => {
+    vi.mocked(prisma.aIModel.findUnique).mockResolvedValue({
+      ...MODEL_ROW,
+      type: "EMBEDDING",
+      supportsTools: false,
+      routerTier: null,
+    } as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("PATCH", "/api/ai-models/model-1", { routerTier: "TIER_1" }),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("400s when a non-CHAT model already has a stored routerTier and the type is left unchanged", async () => {
+    vi.mocked(prisma.aIModel.findUnique).mockResolvedValue({
+      ...MODEL_ROW,
+      type: "EMBEDDING",
+      supportsTools: false,
+      routerTier: "TIER_1",
+    } as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("PATCH", "/api/ai-models/model-1", { name: "Renamed" }),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("allows clearing routerTier on a non-CHAT model", async () => {
+    vi.mocked(prisma.aIModel.findUnique).mockResolvedValue({
+      ...MODEL_ROW,
+      type: "EMBEDDING",
+      supportsTools: false,
+      routerTier: "TIER_1",
+    } as never);
+    vi.mocked(prisma.aIModel.update).mockResolvedValue({
+      ...MODEL_ROW,
+      type: "EMBEDDING",
+      supportsTools: false,
+      routerTier: null,
+    } as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("PATCH", "/api/ai-models/model-1", { routerTier: null }),
+    );
+    expect(response.status).toBe(200);
   });
 
   it("updates the model, invalidates the tier cache, and returns 200", async () => {

@@ -21,6 +21,21 @@ export const UpdateAIProviderSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+// A model must carry a `routerTier` to be eligible for Auto routing at all
+// (see `apps/core/app/lib/ai/routing/tiers.ts` — `loadTierRows` filters on
+// `routerTier: { not: null }`). `null` here means "not part of Auto's pool";
+// it does not mean "unusable" — the model can still be picked explicitly.
+//
+// Tier 2 is effectively unreachable in a local-vLLM-only deployment
+// (`VLLM_BASE_URL` set): `normalizePickForLocalVllm` in
+// `apps/core/app/lib/ai/routing/local-vllm.ts` remaps every tier-2 pick to
+// tier 3 before a model is chosen, and no rule in `routing/rules.ts` targets
+// tier 2 directly either — it exists for a cloud-overflow tier that this
+// deployment doesn't use. Tagging a model TIER_2 here is allowed (e.g. to
+// document intent for a future cloud tier) but it will not receive Auto
+// traffic under local-vLLM routing.
+const RouterTierSchema = z.enum(["TIER_1", "TIER_2", "TIER_3"]).nullable();
+
 // AI Model Schemas
 export const CreateAIModelSchema = z.object({
   modelId: z.string().min(1, "Model ID is required"),
@@ -43,6 +58,7 @@ export const CreateAIModelSchema = z.object({
     .nullable()
     .optional(),
   isActive: z.boolean().default(true),
+  routerTier: RouterTierSchema.optional(),
   providerId: z.string().min(1, "Provider is required"),
 });
 
@@ -64,6 +80,7 @@ export const UpdateAIModelSchema = z.object({
     .nullable()
     .optional(),
   isActive: z.boolean().optional(),
+  routerTier: RouterTierSchema.optional(),
   providerId: z.string().min(1, "Provider is required").optional(),
 });
 

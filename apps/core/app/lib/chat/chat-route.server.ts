@@ -9,6 +9,7 @@ import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/serve
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
 import { withAutoChatModel } from "~/lib/chat-auto-model";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
+import { getAssistModelId } from "~/lib/assist-model-settings.server";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import type { User } from "~/lib/auth/types";
@@ -22,6 +23,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
  */
 export interface ChatBaseData {
   chatModels: ChatModelOption[];
+  assistModelId: string | null;
   routerAutoEnabled: boolean;
   showRoutingModels: boolean;
   user: User;
@@ -54,14 +56,15 @@ export async function requireChatSessionUser(
 /**
  * Resolve chat models + preferences for an already-authenticated user.
  *
- * The routing settings, the model registry read and the accessible course codes
- * are mutually independent, so they run in parallel. Only the preference read
- * is genuinely dependent — it needs `availableCourseCodes` to validate the
- * stored last-course against what the user can still see.
+ * The routing settings, Assist model setting, model registry read and accessible
+ * course codes are mutually independent, so they run in parallel. Only the
+ * preference read is genuinely dependent — it needs `availableCourseCodes` to
+ * validate the stored last-course against what the user can still see.
  */
 export async function loadChatBaseDataForUser(user: User): Promise<ChatBaseData> {
-  const [routingModelSettings, dbModels, availableCourseCodes] = await Promise.all([
+  const [routingModelSettings, assistModelId, dbModels, availableCourseCodes] = await Promise.all([
     getRoutingModelSettings(),
+    getAssistModelId(),
     prisma.aIModel.findMany({
       where: { isActive: true, provider: { isActive: true } },
       // Select only what ChatModelOption needs. `include: { provider: true }`
@@ -101,6 +104,7 @@ export async function loadChatBaseDataForUser(user: User): Promise<ChatBaseData>
 
   return {
     chatModels,
+    assistModelId,
     routerAutoEnabled,
     showRoutingModels,
     user,
