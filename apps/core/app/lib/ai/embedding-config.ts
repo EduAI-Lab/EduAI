@@ -1,4 +1,4 @@
-/** Shared 1024-dim embedding options for per-course settings (LOCAL-EMBEDDINGS). */
+/** Shared embedding options for per-course settings (see docs/rag-ai/EMBEDDINGS.md). */
 
 import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonValue } from "~/lib/json-value";

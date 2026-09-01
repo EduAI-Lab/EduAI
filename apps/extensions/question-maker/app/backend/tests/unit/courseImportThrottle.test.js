@@ -69,6 +69,7 @@ function appFor(user) {
 }
 
 const instructor = { id: "u-1", role: "INSTRUCTOR" };
+const ta = { id: "ta-1", role: "STUDENT" };
 
 describe("GET /api/course auto-import mirror throttle", () => {
   beforeEach(() => {
@@ -130,6 +131,56 @@ describe("GET /api/course auto-import mirror throttle", () => {
     expect(res.status).toBe(200);
     expect(releaseImport).toBeDefined();
     releaseImport({ imported: 0, skipped: 0 });
+  });
+
+  it("waits for a platform student's TA anchors before listing courses", async () => {
+    let releaseImport;
+    importTaughtCoursesFromCore.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseImport = resolve;
+        }),
+    );
+
+    const response = request(appFor(ta))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=ta")
+      .then((result) => result);
+
+    await vi.waitFor(() => expect(importTaughtCoursesFromCore).toHaveBeenCalled());
+    expect(listCoursesPageForUser).not.toHaveBeenCalled();
+    releaseImport({ imported: 1, skipped: 0 });
+
+    expect((await response).status).toBe(200);
+    expect(listCoursesPageForUser).toHaveBeenCalled();
+  });
+
+  it("joins concurrent TA lists to the same in-flight mirror", async () => {
+    let releaseImport;
+    importTaughtCoursesFromCore.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseImport = resolve;
+        }),
+    );
+
+    const app = appFor(ta);
+    const first = request(app)
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=ta")
+      .then((result) => result);
+    const second = request(app)
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=ta")
+      .then((result) => result);
+
+    await vi.waitFor(() => expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1));
+    expect(listCoursesPageForUser).not.toHaveBeenCalled();
+    releaseImport({ imported: 1, skipped: 0 });
+
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(listCoursesPageForUser).toHaveBeenCalledTimes(2);
   });
 
   it("logs and swallows a mirror failure without failing the list response", async () => {

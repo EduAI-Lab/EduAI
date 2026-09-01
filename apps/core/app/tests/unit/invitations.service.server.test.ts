@@ -112,7 +112,10 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "new-u1", email: "invitee@ubc.ca", role: "STUDENT" });
     vi.mocked(auth.handler).mockResolvedValue(
-      new Response(null, { status: 200, headers: { "Set-Cookie": "session=1" } }),
+      Response.json(
+        { user: { id: "new-u1", email: "invitee@ubc.ca" } },
+        { status: 200, headers: { "Set-Cookie": "session=1" } },
+      ),
     );
     prismaMock.__tx.user.update.mockResolvedValue({
       id: "new-u1",
@@ -144,5 +147,25 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
       data: expect.objectContaining({ status: "ACCEPTED" }),
     });
     expect(prismaMock.__tx.invitation.update).not.toHaveBeenCalled();
+  });
+
+  it("never promotes or deletes an account it did not create", async () => {
+    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation());
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    vi.mocked(auth.handler).mockResolvedValue(
+      Response.json({ user: { id: "synthetic-user", email: "invitee@ubc.ca" } }),
+    );
+
+    const result = await acceptInvitation(
+      { token: TOKEN, name: "Invitee", password: "password1", confirmPassword: "password1" },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+
+    expect(result).toEqual({ ok: false, status: 409, error: "USER_EXISTS" });
+    expect(prismaMock.user.findUnique).toHaveBeenLastCalledWith({
+      where: { id: "synthetic-user" },
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.user.delete).not.toHaveBeenCalled();
   });
 });

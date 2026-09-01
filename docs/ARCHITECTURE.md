@@ -138,7 +138,7 @@ The effective provider/model is resolved **per course** by `resolveEffectiveEmbe
 
 **Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env` and the per-course columns.
 
-**Decision record:** [docs/rag-ai/LOCAL-EMBEDDINGS.md](rag-ai/LOCAL-EMBEDDINGS.md). **Team guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Current guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart TD
@@ -272,7 +272,7 @@ The same middleware also applies security headers (static headers, prod HSTS, a 
 
 **Full flowchart, code map, and maintenance notes:** [docs/rag-ai/CHAT_RAG_PIPELINE.md](rag-ai/CHAT_RAG_PIPELINE.md)
 
-Related team docs (latency, routing, dev server): [docs/rag-ai/README.md](rag-ai/README.md).
+Related current RAG, routing, performance, and dev-server docs: [docs/rag-ai/README.md](rag-ai/README.md).
 
 Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. **POST /api/chat** serves three **chat modes** and, within learning mode, **two RAG strategies** chosen from the `AIModel.supportsTools` flag in the database (via `getChatModelCapabilities` in `providers.server.ts`).
 
@@ -290,6 +290,7 @@ Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. 
 | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Hybrid RAG**   | `supportsTools === false` (e.g. the small local vLLM/Ollama models) | With a course selected, `findRelevantContent` is **prefetched once before** `streamText`; excerpts are injected into the **system** prompt when the gate in `course-rag-policy.ts` passes (intent heuristics *or* a similarity floor *or* `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`). No tool loop. |
 | **Tool calling** | `supportsTools === true` (typical cloud models)           | Same prefetch + inject gate, **plus** `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. `getInformation` is a *supplemental* fallback the model may call when the preloaded excerpts are insufficient (up to `maxSteps` internal round-trips per turn). |
+| **Privileged tools** | `chatMode=admin` or `chatMode=instructor` | Mode-specific tool registry (`lib/agent-tools/`); both require a tool-capable model. Admin course search resolves an explicit course and uses the shared retrieval body. |
 
 
 Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server-configured embeddings + pgvector over `material_embeddings`), optionally reranked against a GIN-backed `content_tsv` column when `RAG_HYBRID_BM25=1`. That is independent of which chat provider the user picked in the UI.
@@ -317,7 +318,7 @@ Local **chat** models run on **[cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca)** (sh
 | **vLLM**   | **8001**    | `vllm`               | **LiteLLM proxy** (`network_mode: host`) → backends `127.0.0.1:18001` (7B) / `:18002` (32B AWQ); OpenAI-compatible `/v1`; see `[infra/cmps01/README.md](../infra/cmps01/README.md)` |
 
 
-**Embeddings for RAG** are still **cloud** (OpenRouter / Google / OpenAI env keys) — not served from cmps01 today. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Embeddings for RAG** can use the configured local CMPS/Ollama path or cloud OpenRouter/OpenAI keys, depending on server/course settings. They are separate from chat provider keys. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart LR

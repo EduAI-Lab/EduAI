@@ -4,6 +4,7 @@ set +e
 TARGET_ROOT="${EDUAI_PRODUCTION_ROOT:-/srv/www/eduai-production}"
 LEGACY_ROOT="${EDUAI_LEGACY_ROOT:-/srv/www/my.eduai.ok.ubc.ca}"
 PUBLIC_URL="${EDUAI_PUBLIC_URL:-https://my.eduai.ok.ubc.ca}"
+REQUIRED_CHECK_FAILED=0
 
 ok() { printf 'OK   %s\n' "$1"; }
 warn() { printf 'WARN %s\n' "$1"; }
@@ -14,6 +15,7 @@ check_cmd() {
     ok "$1: $(command -v "$1")"
   else
     fail "$1 is not installed or not on PATH"
+    REQUIRED_CHECK_FAILED=1
   fi
 }
 
@@ -90,3 +92,8 @@ curl -fsS --max-time 10 -o /dev/null -w 'HTTP %{http_code} %{url_effective}\n' "
 
 echo
 echo "Preflight complete; no files or services were changed."
+
+if [ "$REQUIRED_CHECK_FAILED" -ne 0 ]; then
+  echo "Preflight failed: one or more required runtime commands are missing." >&2
+  exit 1
+fi

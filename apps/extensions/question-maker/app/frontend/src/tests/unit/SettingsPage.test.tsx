@@ -67,7 +67,10 @@ import SettingsPage from "@/pages/SettingsPage";
 afterEach(cleanup);
 
 beforeEach(() => {
-  useAuthMock.mockReturnValue({ user: { id: 1, name: "Jane" }, logout: vi.fn() });
+  useAuthMock.mockReturnValue({
+    user: { id: "1", name: "Jane", role: "INSTRUCTOR" },
+    logout: vi.fn(),
+  });
   apiKeyStorage.getAllApiKeys.mockResolvedValue({});
   eduaiService.listModels.mockResolvedValue([]);
   canvasService.getIntegration.mockResolvedValue({ isConnected: false });
@@ -81,6 +84,18 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(apiKeyStorage.getAllApiKeys).toHaveBeenCalled());
     expect(screen.getByText("Google AI (Gemini)")).toBeInTheDocument();
     expect(screen.getByText("OpenCode Go")).toBeInTheDocument();
+  });
+
+  it("does not load or show Canvas settings without platform authoring access", async () => {
+    useAuthMock.mockReturnValue({
+      user: { id: "student-1", name: "Student", role: "STUDENT" },
+      logout: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.queryByText("Canvas Integration")).not.toBeInTheDocument();
+    expect(canvasService.getIntegration).not.toHaveBeenCalled();
   });
 
   it("saves a new API key and shows it masked afterward", async () => {

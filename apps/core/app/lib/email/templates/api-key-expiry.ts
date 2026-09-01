@@ -1,4 +1,5 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
+import { escapeHtml } from "~/lib/email/templates/escape-html";
 
 export type ApiKeyExpiryEmailInput = {
   to: string;
@@ -41,12 +42,4 @@ export function buildApiKeyExpiryEmail(input: ApiKeyExpiryEmailInput): EmailMess
   `.trim();
 
   return { to: input.to, subject, text, html };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

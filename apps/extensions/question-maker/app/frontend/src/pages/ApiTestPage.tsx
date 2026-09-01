@@ -412,7 +412,7 @@ export const ApiTestPage = () => {
                     <SelectItem value="Assignment">Assignment</SelectItem>
                     <SelectItem value="Lab">Lab</SelectItem>
                     <SelectItem value="Quiz">Quiz</SelectItem>
-                    <SelectItem value="Mid">Mid</SelectItem>
+                    <SelectItem value="Midterm">Midterm</SelectItem>
                     <SelectItem value="Final">Final</SelectItem>
                   </SelectContent>
                 </Select>

@@ -20,6 +20,7 @@
  */
 import { getAllFleetServers, fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { getServerHealth } from "~/lib/ai/routing/fleet/health";
+import { ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
 import { probeVllmLoad, type VllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
 
 export type ServiceState = "operational" | "degraded" | "outage" | "unknown";
@@ -143,13 +144,13 @@ export function aggregateUbcStatus(probes: HostProbe[], thresholds: LoadThreshol
   return { state: "operational", detail: `UBC-hosted inference is reachable${scope}.` };
 }
 
-/** GET a URL with a hard timeout; true iff it responds (any HTTP status). */
+/** GET a URL with a hard timeout; true iff the health endpoint succeeds. */
 async function reachable(url: string, timeoutMs = 1500): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    await fetch(url, { method: "GET", signal: controller.signal });
-    return true;
+    const response = await fetch(url, { method: "GET", signal: controller.signal });
+    return response.ok;
   } catch {
     return false;
   } finally {
@@ -191,8 +192,7 @@ async function probeUbcStatus(): Promise<ServiceStatus> {
     probes.push({ reachable: live, load });
   }
   if (ollama) {
-    const base = ollama.replace(/\/$/, "");
-    probes.push({ reachable: await reachable(`${base}/tags`), load: null });
+    probes.push({ reachable: await reachable(ollamaTagsUrl(ollama)), load: null });
   }
   return aggregateUbcStatus(probes, thresholds);
 }

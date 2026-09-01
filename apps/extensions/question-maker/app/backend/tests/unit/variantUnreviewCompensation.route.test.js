@@ -10,7 +10,7 @@
  * where it started — a state a retry repairs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const {
   mockUpdateVariant,
@@ -81,6 +81,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = {
   id: "cuid-instructor",

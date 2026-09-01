@@ -13,6 +13,10 @@ vi.mock("../../src/middleware/auth.js", () => ({
 vi.mock("../../src/middleware/courseAccess.js", () => ({
   requireCourseAccess: () => (req, _res, next) => {
     req.qmCourse = { id: 9, userId: "owner_1", coreCourseId: "core_1" };
+    req.courseAccess = {
+      level: req.user.role === "STUDENT" ? "ta" : "instructor",
+      rank: req.user.role === "STUDENT" ? 1 : 2,
+    };
     next();
   },
   resolveCourseAccessWithCourse: vi.fn(),
@@ -98,6 +102,14 @@ describe("course bank routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([{ id: "bank_default", name: "Course bank" }]);
     expect(ensureDefaultBank).toHaveBeenCalled();
+  });
+
+  it("lets a TA read existing banks without creating a default bank", async () => {
+    const res = await request(appFor({ id: "ta-1", role: "STUDENT" })).get("/api/course/9/banks");
+
+    expect(res.status).toBe(200);
+    expect(listBanks).toHaveBeenCalledWith(9, "ta-1");
+    expect(ensureDefaultBank).not.toHaveBeenCalled();
   });
 
   it("POST /:id/banks creates a bank", async () => {

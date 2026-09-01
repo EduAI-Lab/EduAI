@@ -8,7 +8,7 @@
  * requires no DB truncation. DB-backed route tests live in coreWiringDb.integration.test.js.
  */
 import { vi, describe, it, expect, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -39,6 +39,7 @@ vi.mock("../../src/config/settings.js", () => {
 });
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const INSTRUCTOR = {
   id: "cuid-instructor",

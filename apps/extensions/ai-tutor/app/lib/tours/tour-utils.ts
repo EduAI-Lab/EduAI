@@ -28,7 +28,7 @@ export function waitForElement(selector: string, timeoutMs = 4000) {
       reject(new Error(`Timed out waiting for ${selector}`));
     }, timeoutMs);
 
-    observer.observe(document.body, {
+    observer.observe(document, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -82,7 +82,7 @@ export function waitForEitherElement(selector: string, emptySelector: string, ti
       reject(new Error(`Timed out waiting for ${selector} or ${emptySelector}`));
     }, timeoutMs);
 
-    observer.observe(document.body, {
+    observer.observe(document, {
       childList: true,
       subtree: true,
       attributes: true,

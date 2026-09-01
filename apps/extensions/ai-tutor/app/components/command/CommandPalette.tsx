@@ -12,7 +12,7 @@
  * the server for courses, and narrows the static nav/app rows itself.
  */
 import * as React from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useMatches, useNavigate } from "react-router";
 import {
   CommandPalette as SharedCommandPalette,
   buildAppSwitcherGroup,
@@ -34,6 +34,7 @@ import { getNavForUser } from "~/lib/rbac/nav";
 import type { AtNavItemKey } from "~/lib/rbac/types";
 import api from "~/lib/api";
 import type { Course } from "~/lib/types";
+import { getRouteCourseId } from "~/lib/route-course";
 
 export const AITUTOR_COMMAND_EVENT = "eduai:open-command";
 
@@ -54,12 +55,16 @@ function matchesQuery(item: CommandPaletteItem, query: string): boolean {
 
 export function CommandPalette() {
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const matches = useMatches();
   const { user } = useLocalUser();
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [courseTotal, setCourseTotal] = React.useState(0);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query);
+  const routeCourseId = getRouteCourseId(matches);
+  const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
   // Only the newest request may write state — debouncing narrows the
   // out-of-order window but doesn't close it.
@@ -141,7 +146,7 @@ export function CommandPalette() {
   }
 
   const appGroup = buildAppSwitcherGroup({
-    apps: getLauncherApps(),
+    apps: getLauncherApps(coreCourseId),
     currentAppId: CURRENT_APP_ID,
     role: user.role,
   });

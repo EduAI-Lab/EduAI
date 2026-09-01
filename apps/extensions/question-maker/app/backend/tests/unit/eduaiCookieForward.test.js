@@ -4,7 +4,7 @@
  * back to the unrestricted service key.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import request from "supertest";
+import supertest from "supertest";
 
 const { mockChat, variantSvc, mockCourseFindAll, mockCourseFindOne, mockEnrollments } = vi.hoisted(
   () => ({
@@ -90,6 +90,7 @@ vi.mock("../../src/config/database.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const request = () => supertest.agent(app).set("Sec-Fetch-Site", "same-origin");
 
 const TEST_USER = {
   id: "cuid-test-user",

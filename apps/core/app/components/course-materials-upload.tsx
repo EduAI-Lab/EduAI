@@ -91,17 +91,24 @@ export function CourseMaterialsUpload({
   return (
     <div className="space-y-3">
       {/* Drop zone */}
-      <div
-        role="button"
-        tabIndex={isUploading ? -1 : 0}
-        aria-disabled={isUploading}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED}
+        onChange={handleFileChange}
+        disabled={isUploading}
+        className="sr-only"
+        tabIndex={-1}
+      />
+      <button
+        type="button"
+        disabled={isUploading}
         onClick={triggerPick}
-        onKeyDown={(e) => e.key === "Enter" && triggerPick()}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={cn(
-          "flex flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)]",
+          "flex w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)]",
           "border-2 border-dashed border-border py-9 px-6 outline-none",
           "transition-colors duration-150 select-none",
           isDragging && "border-primary bg-primary/5",
@@ -110,16 +117,6 @@ export function CourseMaterialsUpload({
             : "cursor-pointer hover:border-primary/50 hover:bg-muted/30 focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)]",
         )}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPTED}
-          onChange={handleFileChange}
-          disabled={isUploading}
-          className="sr-only"
-          tabIndex={-1}
-        />
-
         <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
           <IconUpload className="h-5 w-5 text-primary-text" />
         </div>
@@ -133,7 +130,7 @@ export function CourseMaterialsUpload({
           </p>
           <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT, MD</p>
         </div>
-      </div>
+      </button>
 
       {/* Selected file pill (brief flash before upload state takes over) */}
       {showFile && (

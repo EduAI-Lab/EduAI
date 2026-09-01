@@ -99,6 +99,18 @@ describe("parseAndValidateCanvasUrl", () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it("requires explicit opt-in for local HTTP Canvas outside production", () => {
+    try {
+      vi.stubEnv("NODE_ENV", "staging");
+      vi.stubEnv("CANVAS_ALLOW_LOCAL_HTTP", "");
+      expect(() => parseAndValidateCanvasUrl("http://localhost:8080")).toThrow(
+        CanvasVerificationError,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe("verifyCanvasCredentials", () => {

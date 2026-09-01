@@ -1,10 +1,6 @@
-/**
- * Unit tests for parseCorsOrigins — the CORS_ORIGINS allowlist parser rejects a
- * wildcard ("*") outside development/test (#1569 review) so a production
- * `CORS_ORIGINS=*` cannot widen CORS and defeat the CSRF origin backstop.
- */
+/** Unit tests for security-sensitive environment configuration parsers. */
 import { describe, it, expect } from "vitest";
-import { parseCorsOrigins } from "../../src/config/settings.js";
+import { parseCorsOrigins, parseQmAiProviderBudgets } from "../../src/config/settings.js";
 
 describe("parseCorsOrigins", () => {
   it("throws on a wildcard entry in production", () => {
@@ -33,5 +29,18 @@ describe("parseCorsOrigins", () => {
     expect(parseCorsOrigins(undefined, "production")).toEqual(["http://localhost:5173"]);
     expect(parseCorsOrigins("", "production")).toEqual(["http://localhost:5173"]);
     expect(parseCorsOrigins("  ,  ", "production")).toEqual(["http://localhost:5173"]);
+  });
+});
+
+describe("parseQmAiProviderBudgets", () => {
+  it("lets a fresh caller reserve one worst-case extraction", () => {
+    expect(parseQmAiProviderBudgets({})).toEqual({
+      qmMaxExtractProviderCalls: 36,
+      qmAiProviderCallLimit: 72,
+    });
+    expect(parseQmAiProviderBudgets({ QM_MAX_EXTRACT_PROVIDER_CALLS: "40" })).toEqual({
+      qmMaxExtractProviderCalls: 40,
+      qmAiProviderCallLimit: 80,
+    });
   });
 });

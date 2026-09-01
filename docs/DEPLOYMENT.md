@@ -1,27 +1,88 @@
-# Deployment
+# EduAI deployment guide
 
 **Status:** Living document
 **Last updated:** 2026-08-31 (verified against `infra/`, `docker-compose.dev.yml`, and `apps/core/scripts/`)
 
+This page is the deployment index. It describes the supported deployment paths and
+links to the runbook that owns each detail. The repository scripts and the server
+state are authoritative; examples in this document are not proof that a service is
+
 This document covers local development, the shared s378 development deployment, and the production topology. Environment variables are catalogued in [`docs/ENVIRONMENT.md`](ENVIRONMENT.md); this guide only lists values that change how a deployment is wired.
 
-## Service map
+## Choose the right runbook
 
-| Service | Local port | Shared development URL | Served on s378 by |
-|---|---:|---|---|
-| Core | `3000` | `https://dev.eduai.ok.ubc.ca` | node (SSR), proxied |
-| AI Tutor frontend | `3001` | `https://dev.aitutor.eduai.ok.ubc.ca` | Apache, static build output |
-| AI Tutor API | `4000` | `https://dev.aitutor.eduai.ok.ubc.ca/api/` | node, proxied |
-| Question Maker frontend | `5173` | `https://dev.questionmaker.eduai.ok.ubc.ca` | Apache, static build output |
-| Question Maker API | `8000` | `https://dev.questionmaker.eduai.ok.ubc.ca/api/` | node, proxied |
+| Task | Canonical guide | Scope |
+| --- | --- | --- |
+| Local development | This page and each app's README | Workstation-only development services |
+| Shared development / s378 | [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md) | Built Core, AI Tutor, Question Maker, and cron-worker deployment |
+| Production / s348 | [`infra/production/README.md`](../infra/production/README.md) | Release-based production deployment and rollback |
+| Production preflight | [`infra/production/PROVISIONING_CHECKLIST.md`](../infra/production/PROVISIONING_CHECKLIST.md) | Host, database, environment, inference, and web-server checklist |
+| Production privilege boundary | [`infra/production/SUDOERS_SETUP.md`](../infra/production/SUDOERS_SETUP.md) | Restricted administrative helper and root-owned templates |
+| Inference fleet | [`infra/inference/README.md`](../infra/inference/README.md) | Shared fleet contract and CMPS01/02/03 host state |
+| Backups and scheduled maintenance | [`infra/cron/README.md`](../infra/cron/README.md) | Backup scripts and the s378 cron-worker installation |
 
 The two frontend ports are local-development only. On s378 both extensions are built to static files and served straight from disk, so nothing listens on `3001` or `5173` there.
 
 Core owns the browser session. AI Tutor and Question Maker forward the incoming cookie to Core's `POST /api/sessions/validate`; their server-to-server requests use the shared `EDUAI_API_KEY`.
 
+Application-specific deployment notes remain under `apps/`. Authentication and
+first-admin bootstrap are documented in
+[`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
+
+## Operational contacts
+
+- **IT — Ian Courtney** (`ian.courtney@ubc.ca`): contact for all server-related
+  matters involving CMPS01, CMPS02, CMPS03, s348 (production), and s378
+  (development).
+- **CTL — Michael Ogden** (`michael.ogden@ubc.ca`): coordinating additional
+  servers from CTL and UBCV and working with Rich Tape on a potential deal.
+
+## Deployment contracts
+
+The supported runtime layout is:
+
+| Component | Development | Production |
+| --- | --- | --- |
+| Core web application | s378, `127.0.0.1:3000` | s348, `127.0.0.1:3000` |
+| AI Tutor API | s378, `127.0.0.1:4000` | s348, `127.0.0.1:4000` |
+| Question Maker backend | s378, `127.0.0.1:8000` | s348, `0.0.0.0:8000` in the current deployment |
+| Browser frontends | Built static assets served by the web server | Built static assets served by the web server |
+| Database | Development containers on host ports | Host-managed PostgreSQL, normally `127.0.0.1:5432` |
+| Redis | Development container on host port `63790` | Host-managed Redis when enabled; queueing is currently disabled |
+| Inference | CMPS fleet behind port `8001` | Only approved and healthy CMPS endpoints |
+
+Development uses the public hosts below after the web server is configured:
+
+- Core: `https://dev.eduai.ok.ubc.ca`
+- AI Tutor: `https://dev.aitutor.eduai.ok.ubc.ca`
+- Question Maker: `https://dev.questionmaker.eduai.ok.ubc.ca`
+
+Production uses `https://my.eduai.ok.ubc.ca`,
+`https://aitutor.eduai.ok.ubc.ca`, and
+`https://questionmaker.eduai.ok.ubc.ca`.
+
+## Source of truth and safe boundaries
+
+- `infra/s378/go-live-build.sh` is the canonical shared-development deployer.
+- `infra/s378/go-live-systemd-install.sh` installs the s378 system units and
+  supporting files; it does not build or start the applications.
+- `infra/production/admin-helper.sh` is the restricted production administration
+  interface. It is the only supported path for the privileged production actions
+  listed in [`SUDOERS_SETUP.md`](../infra/production/SUDOERS_SETUP.md).
+- `infra/cmps01/migrate.sh` is the repository-managed inference-host procedure.
+- `apps/core/deploy.sh` and `apps/extensions/ai-tutor/deploy.sh` are legacy PM2
+  templates. They are not the s378 or production deployment mechanism and should
+  not be used as a substitute for the runbooks above.
+- Never commit `.env` files, API keys, database passwords, model credentials, or
+  generated secrets. The deployment scripts intentionally refuse some unsafe
+  environment-file and dirty-checkout states.
+- Do not copy commands from a server's current working tree into a runbook without
+  checking them against the corresponding file in the repository. A server may
+  contain an older release, local backup, or an uncommitted operational change.
+
 ## Local development
 
-Install and run from the monorepo root:
+From the repository root:
 
 ```bash
 npm install
@@ -30,13 +91,28 @@ npm run dev
 
 `npm install` creates missing app `.env` files from their examples without overwriting existing values. `npm run dev` starts the development databases and Redis through `docker-compose.dev.yml`, then starts all workspaces through Turborepo. Docker Desktop is started automatically on macOS when possible; start Docker yourself on other platforms.
 
-To run one product after its database is available:
+The root development command starts the application services after the development
+databases are available. The compose file used by the root scripts is
+`docker-compose.dev.yml`:
 
-```bash
-npm run docker:dev:db
-npx turbo run dev --filter=edu-ai
-npx turbo run dev --filter=ai-tutor --filter=ai-tutor-server
-npx turbo run dev --filter='question-maker-*'
+| Service | Host port |
+| --- | ---: |
+| Core PostgreSQL | `54320` |
+| AI Tutor PostgreSQL | `54321` |
+| Question Maker PostgreSQL | `55432` |
+| Redis | `63790` |
+
+For an individual app, use its package scripts and README. Do not use production
+environment files for local development. Before testing an authenticated API,
+complete the Core authentication bootstrap described in
+[`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
+
+## Shared development deployment
+
+The shared development checkout is normally:
+
+```text
+/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 ```
 
 ### Local data services
@@ -91,21 +167,24 @@ cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 
 The checked-in s378 systemd units use that nested checkout path. If the server checkout moves, update `WorkingDirectory` and `Documentation` in `infra/s378/systemd/*.service` before reinstalling the units.
 
+The complete procedure, including one-time systemd installation, belongs in
+[`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md). The short operational path is:
+
 Update the shared branch and prepare generated state:
 
 ```bash
+git status --short
 git fetch origin
 git checkout development
 git pull --ff-only origin development
-npm install
-npm run docker:dev:db
-npm run db:generate -w edu-ai
-# Order matters for Canvas credential copy: Core schema first, then AI Tutor, then QM
-# (QM's migrate deploy copies tokens into Core before renaming its local table).
-cd apps/core && npx prisma migrate deploy
-cd ../extensions/ai-tutor/server && npx prisma migrate deploy
-cd ../../.. && npm run db:migrate:deploy -w question-maker-backend
+bash infra/s378/go-live-build.sh --install
 ```
+
+The deployer performs environment synchronization, Prisma client generation,
+migrations, reference and extension seed steps, builds, service restarts, and
+port checks in a defined order. It must run from the intended checkout and will
+refuse unsafe environment files or an unsuitable working tree. Review the script
+output before treating the deployment as successful.
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is useful before restarting the shared stack because it fails before traffic is sent to an incompatible schema. `go-live-build.sh` runs Core → AI Tutor → Question Maker in that order, so a normal deploy does not need them run by hand. Production QM containers run baseline → canvas→Core copier → `prisma migrate deploy` from their startup command (the same sequence as `npm run db:migrate:deploy`) before starting the API — set `CORE_DATABASE_URL`, `QM_ENCRYPTION_KEY` / `CORE_ENCRYPTION_KEY` (or the respective `ENCRYPTION_KEY` values) in the container env whenever QM still has credential rows.
 
@@ -127,9 +206,10 @@ After verifying Core rows, ops may `DROP TABLE canvas_integrations_pre_core_back
 s378 serves **built** assets. `git pull` alone no longer changes what the sites serve, and neither does restarting a unit — every deploy has to rebuild:
 
 ```bash
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-git fetch origin && git switch <branch>
-bash infra/s378/go-live-build.sh --install     # drop --install if dependencies are unchanged
+bash infra/s378/go-live-build.sh --only core
+bash infra/s378/go-live-build.sh --only aitutor
+bash infra/s378/go-live-build.sh --only qm
+bash infra/s378/go-live-build.sh --no-restart
 ```
 
 The script enforces the one ordering that matters: **env → generate → migrate → build → restart**.
@@ -154,40 +234,83 @@ Both extension frontends build to static files (`ssr: false`) and are served dir
 One-time installation (needs sudo):
 
 ```bash
-bash infra/s378/go-live-systemd-install.sh
+sudo bash infra/s378/go-live-systemd-install.sh
 ```
 
-That installs the units to `/etc/systemd/system`, the shared env file to `/etc/eduai/`, and a polkit rule scoped to `eduai-*` units. No `loginctl enable-linger` — system units survive logout and reboot on their own. Day-to-day operations need no sudo:
+That installs the units to `/etc/systemd/system`, the shared env file to `/etc/eduai/`, and a polkit rule scoped to `eduai-*` units. No `loginctl enable-linger` — system units survive logout and reboot on their own. Day-to-day service operations need no sudo.
+
+The exact aliases and flags are maintained in the script and its runbook. The
+`--install` flag is idempotent setup for the host's systemd/polkit/cron support; it
+does not replace the build and verification steps.
+
+### Shared-development health checks
+
+Use the service-local endpoints when diagnosing a unit, then verify the public
+vhost:
 
 ```bash
-systemctl status eduai-dev.target
-systemctl restart eduai-dev.target
-systemctl restart eduai-core
-journalctl -u eduai-core -f
-systemctl status eduai-cron-worker.service --no-pager
-journalctl -u eduai-cron-worker.service -n 50 --no-pager
+curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:4000/api/health
+curl -fsS http://127.0.0.1:8000/healthz
+curl -fsSI https://dev.eduai.ok.ubc.ca/
+curl -fsSI https://dev.aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://dev.questionmaker.eduai.ok.ubc.ca/
+systemctl --no-pager --full status eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
 ```
+
+The Question Maker health route is `/healthz`; `/api/health` is the Core and AI
+Tutor route. A successful HTTP response does not prove that inference, database
+migrations, authentication, or background jobs are configured correctly.
+
+### Service operation notes
 
 After deploying a change to `infra/cron/*.sh`, `go-live-build.sh` synchronizes those scripts into `/opt/eduai/cron` before restarting the worker. For a one-time upgrade from the old three-unit layout, run `bash infra/s378/go-live-systemd-install.sh` first; it creates the dedicated `eduai-cron` account, directories, env permissions, and worker unit.
 
 Restarting picks up a changed server-side `.env`, but a changed `VITE_`-prefixed value needs a full rebuild. Never start an app with `npm run dev` on s378 — it binds the same port the unit holds.
 
-### Environment and shared auth
-
-On s378, Core must issue a cookie usable by all three development hosts:
-
-```env
-BETTER_AUTH_URL="https://dev.eduai.ok.ubc.ca"
-COOKIE_DOMAIN=".eduai.ok.ubc.ca"
-```
-
-After changing either value, users must sign in again. Keep the service key synchronized without printing it:
-
-```bash
-bash infra/s378/go-live-build.sh
-```
-
 `go-live-env.sh` copies the Core `EDUAI_API_KEY` into the AI Tutor and Question Maker env files and sets their public URLs. The canonical script and operational notes live in [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
+
+## Inference fleet
+
+The current Qwen deployment contract uses these served model IDs:
+
+- small tier: `qwen3.5-2b-instruct`
+- large tier: `qwen3.5-9b-instruct` where that tier is installed
+- planned future capacity: `qwen3.8-27b` (not currently deployed)
+
+The fleet is not homogeneous. As verified on 2026-08-31:
+
+| Host | Direct backends observed | Authenticated port-8001 result |
+| --- | --- | --- |
+| CMPS01 | Qwen 3.5 2B, Qwen 3.5 9B, `mxbai-embed-large` | HTTP 200 with model list |
+| CMPS02 | Qwen 3.5 2B, Qwen 2.5 32B | HTTP 200 with model list |
+| CMPS03 | Qwen 3.5 2B, Qwen 3.5 9B | HTTP 400 `no_db_connection` |
+
+The CMPS03 result is the last verified readiness issue reported to IT; no IT
+resolution was available during this documentation pass. Its direct backends
+responded during the audit, but that does not clear the port-8001 edge failure.
+Keep CMPS03 out of an approved production fleet until the authenticated edge
+check succeeds and the operational owner confirms the host. CMPS02's 32B model
+is a separate capability and must not be documented as the standard 9B large tier.
+
+The port-8001 edge is authenticated. Never put the shared inference key in a
+document, command history, browser URL, or client-side bundle. See
+[`infra/inference/README.md`](../infra/inference/README.md) for the fleet contract
+and [`infra/cmps01/README.md`](../infra/cmps01/README.md) for the host-level proxy
+and model deployment procedure.
+
+## Backups and scheduled work
+
+Core's production scheduler and the s378 `eduai-cron-worker` are distinct from
+the standalone scripts in `infra/cron/`. The scripts back up the Core, AI Tutor,
+and Question Maker databases, apply retention, and support off-site copies. They
+do not create a system crontab by themselves. See
+[`infra/cron/README.md`](../infra/cron/README.md) for installation, environment
+files, schedules, and restore considerations.
+
+Before a migration or release, confirm that a recent backup exists and that the
+backup destination is writable. A backup job completing successfully does not
+prove that a restore has been tested.
 
 ### Async AI-job worker — currently disabled
 
@@ -274,7 +397,12 @@ A public `503 Service Unavailable` on Core or an `/api/` path usually means Apac
 
 Production is an architectural contract, not a single checked-in one-command deployment. Do not use `apps/core/deploy.sh` without adapting and reviewing it; it is a legacy template with host-specific placeholders and destructive Git operations.
 
-### Domain layout
+Production uses release directories under:
+
+```text
+/srv/www/eduai-production/releases/<release-id>
+/srv/www/eduai-production/current -> <release-id>
+```
 
 The checked-in production vhost templates under `infra/production/apache/` are the source of truth for the intended hostnames:
 
@@ -290,27 +418,40 @@ Each app may run on one host or separate hosts. Every public host needs TLS and 
 
 Core's production `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, and trusted origins must match the public domain layout. Extension `CORE_URL` values point to Core, while their browser-facing `VITE_*` values point to the public hosts. Register only redirect URLs that the implemented login flow actually uses; do not infer callback routes from the subdomain name.
 
-### Production release order
+The production runbook and checklist are intentionally release-oriented. They
+cover dependency installation, Prisma generation, migrations, asset builds,
+activation, service management, Apache configuration, health verification, and
+rollback. Do not run `npm run dev`, PM2 deployment templates, or ad-hoc commands
+against the active release.
 
-1. Back up each database and verify the restore procedure.
-2. Fetch the reviewed release commit into a clean checkout.
-3. Install locked dependencies with `npm ci`.
-4. Apply Core, AI Tutor, and Question Maker Prisma migrations.
-5. Build the frontend/server bundles required by the chosen process manager.
-6. Restart one service at a time and verify its local health endpoint.
-7. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
-8. Verify the three public URLs through TLS and the reverse proxy.
+The production verification checklist should always include:
+
+- Core: `http://127.0.0.1:3000/api/health`
+- AI Tutor: `http://127.0.0.1:4000/api/health`
+- Question Maker: `http://127.0.0.1:8000/healthz`
+- public HTTPS checks for the three production vhosts
+- systemd state, recent journal output, database connectivity, and approved
+  inference-edge model IDs
+- queue configuration, which is currently disabled unless deliberately re-enabled
+
+Do not report production as ready from a single HTTP check. Record the active
+release ID, commit, timestamp, and any failed component in the deployment handoff.
+
+## Troubleshooting order
+
+1. Identify the host, active release/checkout, branch or commit, and systemd unit.
+2. Check the unit journal and the service-local health endpoint.
+3. Check environment presence and model IDs without printing secrets.
+4. Confirm database connectivity and migration status.
+5. Confirm the public vhost and Apache configuration.
+6. For inference failures, test the authenticated port-8001 edge and then the
+   direct backend only as a diagnostic comparison.
+7. Record the observed commit, timestamp, HTTP status, and remediation owner in an
+   issue or handoff. Do not turn a one-off incident into a permanent runbook step.
 
 Store secrets outside Git, run services as an unprivileged account, and keep database and Node ports off the public interface. Production backup and lifecycle jobs are documented in [`infra/cron/README.md`](../infra/cron/README.md).
 
 Supporting material under `infra/production/`: `README.md` (bootstrap runbook), `PROVISIONING_CHECKLIST.md` (splits non-privileged prep from interactive sudo/DB/Apache work), `preflight.sh` (read-only host/dependency/service/inference reachability check), `core.env.example` / `ai-tutor.env.example` / `question-maker.env.example` / `aitutor-db.env.example`, `systemd/` units, `apache/` vhosts, `admin-helper.sh`, and `SUDOERS_SETUP.md`.
 
-## Adding an extension
-
-1. Assign a local frontend/API port pair and add workspace scripts.
-2. Add its databases or queues to the appropriate infrastructure configuration.
-3. Register its public URL in Core's extension launcher and trusted-origin configuration.
-4. Implement Core session validation and use the shared service key only for server-to-server calls.
-5. Add a reverse-proxy vhost, TLS certificate, systemd/container service, and health check.
-6. Add its env variables to `docs/ENVIRONMENT.md` and its public URL to this service map.
-7. Test login, logout, session expiry, CORS, API health, and restart recovery through the public host.
+For service-specific commands and rollback details, follow the canonical runbook
+for the environment instead of duplicating them here.

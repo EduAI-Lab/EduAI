@@ -168,7 +168,7 @@ describe("auth/accept-invitation action", () => {
       ok: true,
       user: { id: "u1", role: "STUDENT", email: "new@student.ubc.ca" },
       invitationId: "invite-1",
-      headers: new Headers(),
+      headers: new Headers({ "Set-Cookie": "better-auth.session=abc" }),
     } as never);
     vi.mocked(userNeedsStudentIdOnboarding).mockResolvedValue(true);
 
@@ -181,5 +181,25 @@ describe("auth/accept-invitation action", () => {
       }),
     )) as Response;
     expect(res.headers.get("Location")).toBe("/onboarding/student-id");
+  });
+
+  it("falls back to login when invitation session creation fails", async () => {
+    vi.mocked(acceptInvitation).mockResolvedValue({
+      ok: true,
+      user: { id: "u1", role: "STUDENT", email: "new@student.ubc.ca" },
+      invitationId: "invite-1",
+      headers: new Headers(),
+    } as never);
+    vi.mocked(userNeedsStudentIdOnboarding).mockResolvedValue(true);
+
+    const res = (await action(
+      makeActionArgs({
+        token: "good-token",
+        name: "New User",
+        password: STRONG_PASSWORD,
+        confirmPassword: STRONG_PASSWORD,
+      }),
+    )) as Response;
+    expect(res.headers.get("Location")).toBe("/auth/login");
   });
 });

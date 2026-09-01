@@ -63,6 +63,21 @@ describe("ProvidersTable — rendering", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
+  it("names the row actions for the provider they affect", () => {
+    render(
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("switch", { name: "Disable OpenAI" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit OpenAI" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete OpenAI" })).toBeInTheDocument();
+  });
+
   it("renders the env var name", () => {
     render(
       <ProvidersTable

@@ -109,6 +109,22 @@ describe("ensureDefaultBank", () => {
 
     await expect(ensureDefaultBank(COURSE_ID)).resolves.toEqual(DEFAULT_BANK);
   });
+
+  it("preserves P2002 for the caller to retry outside an aborted transaction", async () => {
+    const error = new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+    const transactionClient = {
+      questionBank: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockRejectedValue(error),
+      },
+    } as unknown as NonNullable<Parameters<typeof ensureDefaultBank>[1]>;
+
+    await expect(ensureDefaultBank(COURSE_ID, transactionClient)).rejects.toBe(error);
+    expect(transactionClient.questionBank.findFirst).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("listQuestionBanks", () => {

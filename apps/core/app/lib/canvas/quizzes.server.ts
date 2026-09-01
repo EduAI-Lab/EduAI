@@ -112,3 +112,18 @@ export async function createCanvasQuizQuestion(
     fetchImpl,
   );
 }
+
+/** Deletes a quiz created by a failed multi-step export. */
+export async function deleteCanvasQuiz(
+  credentials: CanvasIntegrationCredentials,
+  canvasCourseId: number,
+  quizId: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CanvasQuizApi> {
+  return canvasRequestJson<CanvasQuizApi>(
+    credentials,
+    `/courses/${canvasCourseId}/quizzes/${quizId}`,
+    { method: "DELETE" },
+    fetchImpl,
+  );
+}

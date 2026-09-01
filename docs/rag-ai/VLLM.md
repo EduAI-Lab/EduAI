@@ -1,363 +1,197 @@
-# vLLM on cmps01 — developer guide
+# vLLM and local inference
 
-Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat inference. EduAI talks to it through the **`vllm`** provider (`POST /v1/chat/completions`, OpenAI-compatible).
+This is the current application-facing contract for local vLLM inference. Host
+installation details belong in [`infra/cmps01/README.md`](../../infra/cmps01/README.md);
+the shared development deployment is in
+[`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md).
 
-**Not Ollama:** vLLM loads **Hugging Face** weights (e.g. `Qwen/Qwen2.5-7B-Instruct`), not Ollama GGUF blobs.
+## Request path
 
-> **This guide describes one host.** Core now round-robins chat across a **fleet** of GPU hosts (cmps01/02/03) — see `apps/core/app/lib/ai/routing/fleet/` and register them in `fleet.config.json` (copy `apps/core/fleet.config.example.json`; the real file is gitignored because it is host-specific). `VLLM_FLEET_CHAT_URLS` / `VLLM_FLEET_HEAVY_URL` are the legacy fallback used only when no config file is found. Every host that may receive a request must also appear in `VLLM_TRUSTED_BASE_URLS`, which is the SSRF allowlist for both chat and embedding base URLs. The single-host setup below is still the right starting point.
-
-| | |
-| --- | --- |
-| **Host port (public)** | **8001** — LiteLLM proxy (`network_mode: host`) → backends `127.0.0.1:18001` / `:18002` |
-| **Dev app** | `dev.eduai.ok.ubc.ca` (s378) → `http://cmps01.ok.ubc.ca:8001` |
-| **Example model ids** | `vllm:qwen3.5-2b-instruct`, `vllm:qwen3.5-9b-instruct` (register in Admin) |
-| **Issues** | [#435](https://github.com/EduAI-Lab/EduAI/issues/435) install/wire · [#394](https://github.com/EduAI-Lab/EduAI/issues/394) tiered memory spike |
-
----
-
-## New dev? Start here
-
-### 1. What you get vs Ollama
-
-| | **vLLM** (`:8001`) | **Ollama** (`:11434`) |
-| --- | --- | --- |
-| **Best for** | House chat model, concurrent users | Legacy models, **embeddings**, experiments |
-| **Model format** | Hugging Face | GGUF |
-| **While running** | Weights stay in VRAM | `keep_alive` TTL; ~**9–10 s** cold reload after unload |
-| **Parallel load (measured)** | 10 users **~320–380 ms** | 5 users **~2.9 s** (same host, `qwen2.5:7b`) |
-| **Idle GPU power** | **~28 W** (model resident) | varies |
-
-Session **vLLM-S1** (Jun 2026, dev → cmps01): warm direct **~57 ms**; EduAI full stack median **~211 ms**; zero errors under 5–10 parallel direct requests. Details in [Stress test results](#stress-test-results-session-vllm-s1-jun-2026).
-
-### 2. Five-minute dev setup
-
-**On s378** — add to `apps/core/.env`:
-
-```env
-VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="<same value as cmps01's CMPS01_INTERNAL_KEY>"
-```
-
-> **Do not use the `vllm-local` placeholder here (#1115).** `resolveVllmApiKey()` (`app/lib/ai/vllm-api-key.server.ts`) only falls back to `vllm-local` when `VLLM_API_KEY` is
-> **unset** *and* `VLLM_BASE_URL` is loopback — which is the laptop case, not s378. Pointing `VLLM_BASE_URL` at a non-loopback host makes the fallback return `undefined` rather than the placeholder, and the nginx/LiteLLM edge on `:8001` authenticates against a `master_key` rendered from `CMPS01_INTERNAL_KEY` (`infra/cmps01/deploy-edge-proxy.sh`), so the placeholder would be rejected anyway. This guard fires on s378 even though it runs `NODE_ENV=development`.
-
-Restart the service (`systemctl restart eduai-core`, or the dev process if you are running one). Then:
-
-```bash
-cd apps/core
-npm run vllm:smoke
-```
-
-**In the app:** pick chat model **`vllm:qwen3.5-2b-instruct`** or **`vllm:qwen3.5-9b-instruct`**. Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host. Assist Auto may use the retained `vllm:qwen2.5-32b-instruct` on cmps02.
-
-**Admins:** the reference seed and provider sync register the canonical Qwen3.5 2B/9B entries (plus the retained Assist 32B entry). For a newly served model, use **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick the served name → save. Re-registering the same `modelId` returns **409 Conflict**.
-
-### 3. Who does what
-
-| Role | Task |
-| --- | --- |
-| **You (dev)** | `.env`, pick model, run smoke/bench |
-| **IT / ops** | Firewall dev → cmps01 **TCP 8001**, Docker GPU on cmps01 |
-| **On cmps01** | vLLM backends + LiteLLM proxy (see [`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
-
----
-
-## Architecture
+EduAI Core does not run vLLM inside Node. It calls an OpenAI-compatible endpoint
+over HTTP and selects a served model with a registry id such as
+`vllm:<served-model-id>`.
 
 ```text
-dev.eduai.ok.ubc.ca (s378)          cmps01
-        │                              │
-        │  VLLM_BASE_URL :8001         │  eduai-vllm-proxy (LiteLLM, host network)
-        └──────────────────────────────►       ├── 127.0.0.1:18001 → eduai-vllm (7B, GPU 0)
-                                               └── 127.0.0.1:18002 → eduai-vllm-t3 (32B AWQ, GPU 1)
-Ollama :11434 — embeddings + legacy chat (separate service)
+EduAI Core (:3000)
+    │  VLLM_BASE_URL or fleet-selected base URL
+    ▼
+cmps01 / cmps02 / ... (:8001)
+    │
+    └── vLLM or the configured OpenAI-compatible proxy
 ```
 
-LiteLLM uses **`network_mode: host`** so it can reach backends on host loopback. Bridge networking + `host.docker.internal` **does not** work for `127.0.0.1`-bound ports on Linux.
+The campus deployment convention is port `8001`. The backend ports behind a
+host are host-local implementation details; Core should use the configured
+edge/base URL, not a backend port that is not reachable from the app host.
 
----
+## Current server models
 
-## Install on cmps01 (production)
+The current server inventory is Qwen 3.5 2B in the Small tier and Qwen 3.5 9B
+in the Large tier. The routing semantics, Auto-selection rules, and
+repository/deployment model-name drift warning are documented in
+[`MODEL_ROUTING.md`](./MODEL_ROUTING.md).
 
-**Use the repo ops bundle** — do not publish vLLM backends on `:8001`/`:8002` directly:
+Qwen 3.8 27B is intended as a future additional model. It is a planned
+capacity upgrade, not a currently available server model. Before using it,
+deploy it, verify that it appears in the host's `/v1/models` response, and
+register its exact served id in Core's active model catalog with the intended
+routing tier and capabilities.
 
-| Doc / path | Purpose |
-| --- | --- |
-| [`infra/cmps01/README.md`](../../infra/cmps01/README.md) | Migration checklist, container names, troubleshooting |
-| [`infra/cmps01/migrate.sh`](../../infra/cmps01/migrate.sh) | One-shot recreate backends + start proxy |
-| [`infra/cmps01/docker-compose.yml`](../../infra/cmps01/docker-compose.yml) | LiteLLM proxy (`network_mode: host`, port **8001**) |
-| [`infra/cmps01/litellm-config.yaml.template`](../../infra/cmps01/litellm-config.yaml.template) | Routes model ids → `:18001` / `:18002`; rendered to `litellm-config.yaml` by `deploy-edge-proxy.sh` |
-| [`infra/cmps01/deploy-edge-proxy.sh`](../../infra/cmps01/deploy-edge-proxy.sh) | Renders the nginx + LiteLLM config from `CMPS01_INTERNAL_KEY` and restarts the edge |
-| [`infra/cmps01/verify-edge-security.sh`](../../infra/cmps01/verify-edge-security.sh) | Asserts the edge rejects unauthenticated requests |
+The exact API model ids are deployment values; use each host's `/v1/models`
+response rather than deriving an id from the display name. Core's Auto routing
+also requires a matching active `vllm` model row in the database—fleet
+discovery alone does not create that row.
 
-**Deployed containers (Jun 2026):**
+## Core configuration
 
-| Name | Bind | Model id |
-| --- | --- | --- |
-| `eduai-vllm` | `127.0.0.1:18001` | `qwen3.5-2b-instruct` |
-| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen3.5-9b-instruct` |
-| `eduai-vllm-proxy` | host `:8001` | both (via LiteLLM) |
+For a single host, configure the server environment (never commit the real
+secret):
 
-Copy `infra/cmps01` to cmps01 (`~/cmps01`), then `docker compose up -d` after backends are on `18001`/`18002`.
-
-<details>
-<summary>Legacy single-container install (superseded)</summary>
-
-Single public `:8001` vLLM container — replaced by LiteLLM + two backends so **one firewall port** serves **two models**:
-
-```bash
-docker run -d --name eduai-vllm --gpus all \
-  -p 8001:8000 ...  # do not use for multi-model production
+```dotenv
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_API_KEY="<deployment secret>"
 ```
-</details>
 
-<details>
-<summary>venv fallback (if Docker blocked)</summary>
+The provider is server-managed. A browser does not need a vLLM key. Core applies
+the URL allowlist and API-key handling in the server provider/fleet code. In
+production, use an explicit key shared with the protected inference edge; do not
+use a placeholder value.
 
-```bash
-export VLLM_PORT=8001
-python3 -m venv ~/vllm-venv && source ~/vllm-venv/bin/activate
-pip install -U pip vllm
-vllm serve Qwen/Qwen3.5-2B --host 0.0.0.0 --port ${VLLM_PORT} \
-  --served-model-name qwen3.5-2b-instruct --gpu-memory-utilization 0.85 --max-model-len 32768
+`VLLM_DISABLE_THINKING` controls whether Qwen3.5 thinking output is disabled for
+vLLM chat requests. The default behavior is to disable it; set it to `0` only
+when the model's reasoning output is explicitly required.
+
+## Fleet configuration
+
+Fleet routing is optional. The preferred configuration is a host-local,
+gitignored `apps/core/fleet.config.json`, copied from
+[`fleet.config.example.json`](../../apps/core/fleet.config.example.json):
+
+```json
+{
+  "servers": [
+    { "id": "cmps01", "baseUrl": "http://cmps01.ok.ubc.ca:8001", "jobTypes": ["interactive"] },
+    { "id": "cmps02", "baseUrl": "http://cmps02.ok.ubc.ca:8001", "jobTypes": ["interactive"] },
+    { "id": "cmps03", "baseUrl": "http://cmps03.ok.ubc.ca:8001", "jobTypes": ["interactive"] }
+  ]
+}
 ```
-</details>
 
----
+`models` is optional in this file. Core probes each host's `/v1/models` and uses
+the live response for eligibility; static model lists are only a fallback when
+the live probe cannot supply model ids.
 
-## IT / firewall
+If the structured file is absent, Core falls back to:
 
-EduAI on **s378** must reach cmps01 on **HTTP 8001** (same pattern as Ollama **11434**).
+```dotenv
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001"
+# Leave VLLM_FLEET_HEAVY_URL unset; CMPS03 is not a background host.
+# Use the exact served ids returned by /v1/models for the current deployment.
+VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
+```
 
-| Approach | Firewall? | Notes |
-| --- | --- | --- |
-| **A — dev → cmps01 HTTP** | **Yes** | Recommended. Ticket: source = dev app server, dest = cmps01, port = **8001**. |
-| **B — SSH tunnel from s378** | No | **Not viable** — SSH to cmps01 times out from dev (2026-06). |
-| **C — cmps01 localhost only** | No | Laptop SSH + `curl localhost:8001` only; EduAI on dev needs **A**. |
+The `VLLM_FLEET_DEFAULT_MODELS` values shown above are the repository's older
+fallback examples, not the current Qwen 3.5 server inventory. Update them when
+the legacy fallback path is used; live `/v1/models` discovery remains the
+authoritative source when available.
 
-**Text for IT:**
+The interactive pool serves user-facing chat/tutor work. CMPS03 is classified
+as interactive-only and must not be assigned to the heavy/background pool. With
+no heavy pool configured, background work falls back to the interactive pool;
+that fallback should be monitored because it shares capacity with interactive
+requests. Selection, affinity, health, and ejection details are in
+[`MODEL_ROUTING.md`](./MODEL_ROUTING.md).
 
-> Dev EduAI (`dev.eduai.ok.ubc.ca` / s378) needs OpenAI-compatible HTTP to cmps01 port **8001**, plus **host firewall** on cmps01. Same as Ollama **11434**. SSH from s378 is not available.
+## CMPS03 operational status
 
-Permissions: prefer **Docker** over large venv; **docker group** for deployers; sudo via ops (`rbuti`, `shlok10`, Dr Mohamed) for NVIDIA container toolkit if `--gpus all` fails.
+CMPS03 is currently degraded and pending an IT investigation. The investigation
+in [PR #1675](https://github.com/EduAI-Lab/EduAI/pull/1675) did not reproduce the
+reported latency outlier in direct vLLM load tests, but the same investigation
+recorded a separate service-readiness failure through the port-8001 path used by
+the fleet: `/v1/models` returned HTTP 400 with
+`{"type":"no_db_connection","message":"No connected db."}`. This means
+direct vLLM load parity must not be interpreted as proof that CMPS03's proxy or
+service path is healthy.
 
----
+An IT investigation has been requested, and no follow-up resolution is recorded
+as of 2026-08-31. Do not assign CMPS03 to `background` or set
+`VLLM_FLEET_HEAVY_URL` to it. Keep it interactive-only in the fleet registry,
+and require a successful port-8001 `/v1/models` check before treating it as
+ready for traffic. If the health check fails, fleet health should exclude the
+host from model selection.
 
-## Verify
+## Host health and retry behavior
 
-### Smoke test
+The fleet health check calls `GET /v1/models`:
+
+- default timeout: 5 seconds (`FLEET_HEALTH_TIMEOUT_MS`)
+- default health-cache TTL: 30 seconds (`FLEET_HEALTH_CACHE_TTL_MS`)
+- an invalid response shape is unhealthy
+- an explicit empty model list is healthy but cannot satisfy a model request
+- an inference failure ejects the host for 30 seconds by default
+  (`FLEET_FAILURE_EJECTION_MS`), invalidates its cache, and permits one
+  alternate healthy-host retry
+- stream startup probing uses a 10-second soft deadline by default
+  (`FLEET_STREAM_PROBE_MS`)
+
+All duration overrides are bounded by the implementation. A host that is not
+healthy or does not advertise the requested model is not eligible for routing.
+
+## Admission and overflow
+
+Local interactive work uses a process-local FIFO admission limit:
+
+```dotenv
+AI_MAX_INFLIGHT=8
+AI_ADMISSION_WAIT_MS=15000
+```
+
+When local admission or fleet capacity is exhausted, a configured Bedrock
+overflow path may be attempted. Bedrock is not a normal fleet member; its global
+rate limit is an aggregate cost-control boundary. The relevant variables are
+`AWS_BEARER_TOKEN_BEDROCK`, `BEDROCK_REGION`, `BEDROCK_MODEL_ID`,
+`BEDROCK_RATE_LIMIT`, and `BEDROCK_RATE_WINDOW_MS`.
+
+## Smoke checks
+
+From `apps/core`:
 
 ```bash
-cd apps/core
 npm run vllm:smoke
-# 32B (slower first token):
-VLLM_MODEL=qwen3.5-2b-instruct npm run vllm:smoke
+npm run fleet:smoke
+npm run fleet:extensions:smoke
 ```
 
-Reads `apps/core/.env` automatically. On cmps01 (proxy + auth):
+`vllm:smoke` checks a single configured endpoint. `fleet:smoke` checks the
+legacy environment-listed interactive and optional heavy hosts and their
+`/v1/models` responses. `fleet:extensions:smoke` exercises Core's
+`/api/completion` routing for interactive and background extension workloads.
+These smoke scripts currently read the legacy fleet variables, even when the
+runtime fleet registry prefers `fleet.config.json`; set those variables for the
+smoke command or update the script before treating it as a structured-config
+verification.
 
-```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
-curl -s http://127.0.0.1:8001/v1/chat/completions \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
-  -d '{"model":"qwen3.5-2b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
-```
-
-### EduAI bench (full stack)
-
-Use **`CHAT_BENCH_X_API_KEY`** from `.env` (admin API key), not a browser cookie placeholder:
-
-```bash
-cd apps/core
-CHAT_BENCH_LABEL=vllm-eduai-seq \
-CHAT_BENCH_MODEL=vllm:qwen3.5-2b-instruct \
-CHAT_BENCH_API_KEYS='{"vllm":{"isEnabled":true}}' \
-CHAT_BENCH_COUNT=10 CHAT_BENCH_WARMUP=1 \
-npm run bench:chat
-```
-
-Ensure `CHAT_BENCH_URL=https://dev.eduai.ok.ubc.ca/api/chat` is set in `.env`.
-
----
-
-## Stress test results (Session vLLM-S1, Jun 2026)
-
-**Environment:** dev (s378) → `cmps01:8001`, model **`qwen3.5-2b-instruct`**, container **`eduai-vllm`**. Direct tests: `POST /v1/chat/completions`, non-streaming, short prompts.
-
-### Summary
-
-| Probe | Path | N | Result | HTTP |
-| --- | --- | ---: | --- | ---: |
-| Warm sequential | direct `/v1` | 5 | **~57 ms** median (runs 2–5); run 1 **77 ms** | 200 |
-| Parallel | direct `/v1` | 5 | **~195 ms** (184–215 ms) | 200 |
-| Parallel | direct `/v1` | 10 | **~348 ms** (317–380 ms) | 200 |
-| Parallel | Ollama `/api/generate` | 5 | **~2.9 s** (2.79–3.16 s), `qwen2.5:7b` | 200 |
-| EduAI full stack | `POST /api/chat` | 5 | **211 ms** median (122–587 ms) | 200 |
-| First request after restart | direct `/v1` | 2 | **218 ms**, then **157 ms** | 200 |
-
-**Headlines:**
-
-- **~15× faster** than Ollama under 5-way parallel short prompts.
-- **No OOM / 5xx** through 10 concurrent direct requests.
-- **Post-restart inference** (server already loaded, API listening): **~218 ms** first request — not Ollama’s **~9 s** reload. Full container boot (weights into VRAM) is separate — watch `docker logs` until Uvicorn ready.
-
-### EduAI bench detail (`vllm-eduai-seq`)
-
-| # | ms | Prompt |
-| ---: | ---: | --- |
-| 1 | 167 | Reply: ok |
-| 2 | 122 | 19 + 23 |
-| 3 | 587 | Photosynthesis (longer answer) |
-| 4 | 316 | Three North American countries |
-| 5 | 211 | What does HTTP stand for? |
-
-### Reproduce
-
-```bash
-export VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001
-export VLLM_MODEL=qwen3.5-2b-instruct
-
-# Warm sequential
-for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -w "run $i %{time_total}s\n" \
-    "$VLLM_BASE_URL/v1/chat/completions" \
-    -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
-    -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with one word: ok.\"}],\"max_tokens\":16,\"stream\":false}"
-done
-
-# 10 parallel
-seq 1 10 | xargs -P10 -I{} curl -s -o /dev/null -w "req {} %{http_code} %{time_total}s\n" \
-  "$VLLM_BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
-  -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi.\"}],\"max_tokens\":32,\"stream\":false}"
-
-# After docker restart (cmps01), when logs show ready:
-time curl -s -o /dev/null -w "HTTP %{http_code} %{time_total}s\n" \
-  "$VLLM_BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
-  -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}],\"max_tokens\":8,\"stream\":false}"
-```
-
-Log rows in [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md).
-
-### Conclusions (#394)
-
-- Ollama has **no RAM warm tier** after VRAM unload; vLLM **resident VRAM** avoids day-to-day cold reload.
-- **Multi-user:** vLLM continuous batching wins under parallel load; use vLLM for house chat, Ollama for embeddings.
-- **Energy:** ~**28 W** idle on vLLM GPU — 24/7 resident feasible on dev ([Energy](#energy-and-residency)).
-- **Phase 3 residency router:** deferred.
-
----
-
-## Energy and residency
-
-### Always resident while the container runs
-
-vLLM keeps weights in **VRAM** until the container stops. No Ollama-style `keep_alive` auto-unload.
-
-- **Container up** → warm chat (~57 ms direct).
-- **Container restart** → wait for model load in logs, then first HTTP request ~**200 ms** (measured); full boot can take minutes.
-
-### Measured power (cmps01, Jun 2026)
-
-`nvidia-smi --query-gpu=power.draw --format=csv -l 5`
-
-| State | GPU 0 (vLLM) | GPU 1 (idle) |
-| --- | --- | --- |
-| Idle, model resident | **~28 W** | **~19 W** |
-| Single user chatting | **65–299 W** bursts | ~19 W |
-| After chat | back to **~29 W** | ~19 W |
-
-**~0.67 kWh/day** extrapolated (GPU 0 idle only). Inference spikes are brief, not 300 W continuous.
-
-### Sleep mode (optional, off-hours)
-
-[vLLM Sleep Mode](https://docs.vllm.ai/en/stable/features/sleep_mode/) — free VRAM without removing the container. Requires `--enable-sleep-mode` at startup (verify image version).
-
-| Level | Behavior | Typical wake |
-| --- | --- | --- |
-| **1** | Weights → CPU RAM | ~2–3 s |
-| **2** | Weights discarded | ~7–8 s+ |
-| **3** | Weights on GPU; KV dropped | fastest |
-
-```bash
-curl -X POST 'http://127.0.0.1:8001/sleep?level=1'
-curl -X POST 'http://127.0.0.1:8001/wake_up'
-```
-
-**Simpler ops alternative:** cron `docker stop eduai-vllm` nights / `docker start` before class.
-
-Not wired in EduAI yet — manual or future ops ticket.
-
----
-
-## Multiple models (one firewall port)
-
-**One vLLM process = one base model.** For two models on two GPUs, run **two backend containers** on **host loopback** (`127.0.0.1:18001`, `:18002`) and a **LiteLLM proxy** on public **:8001** with **`network_mode: host`**.
-
-| Layer | Port | Firewall from dev? |
-| --- | --- | --- |
-| LiteLLM proxy (`eduai-vllm-proxy`) | **8001** (host network) | **Yes** (only this one) |
-| vLLM backend 1 (`eduai-vllm`) | 127.0.0.1:18001 | No |
-| vLLM backend 2 (`eduai-vllm-t3`) | 127.0.0.1:18002 | No |
-
-**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — initial migration + **§ Adding more models**.
-
-**Quick summary — add another model:**
-
-1. **cmps01** — `docker run` new vLLM on `127.0.0.1:18003` (next free port), unique `--served-model-name`
-2. **`litellm-config.yaml`** — new `model_list` entry pointing at `http://127.0.0.1:18003/v1`
-3. **`docker compose restart`** in `~/cmps01`
-4. **Verify** — new id in `curl :8001/v1/models`; `npm run vllm:smoke` with `VLLM_MODEL=…` from s378
-5. **EduAI** — **Admin → AI Models → Create Model** → vLLM → **Refresh list** → save the new id
-
-Full walkthrough with examples: [`infra/cmps01/README.md` § Adding more models](../../infra/cmps01/README.md#adding-more-models).
-
-EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-model-name>`.
-
-| Pattern | When |
-| --- | --- |
-| **LiteLLM proxy (recommended)** | 2+ models, one firewall port |
-| **LoRA adapters** | Same base, course finetunes |
-| **Sleep / wake** | Swap models — not simultaneous |
-
----
-
-## Shared cmps01 rules
-
-- Do **not** run huge 31B vLLM + large Ollama model simultaneously — VRAM contention.
-- Default: leave vLLM up during dev/teaching windows (~28 W idle).
-- Set **`supportsTools`** per model in Admin when registering (e.g. `false` for 7B hybrid RAG, `true` for 32B with tool-call flags on cmps01).
-- Embeddings stay on **cloud or Ollama** — not vLLM. Keep **`vector(3072)`** in sync with your embed provider on dev ([`EMBEDDINGS.md`](./EMBEDDINGS.md)).
-
----
+For an authenticated end-to-end RAG and concurrency run, use the controlled
+harness described in [`PERFORMANCE.md`](./PERFORMANCE.md), not old benchmark
+numbers committed to the repository.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Checks |
 | --- | --- |
-| Connection refused from dev | `VLLM_BASE_URL` in server `.env`; firewall **8001**; `curl http://cmps01:8001/v1/models` from s378 |
-| SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
-| `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
-| 404 model | `curl /v1/models` — use exact `id` in chat (`qwen3.5-2b-instruct`) |
-| EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart the service (`systemctl restart eduai-core` on s378 — it no longer runs `npm run dev` under tmux); pick a `vllm:` model |
-| Admin **409** adding model | Model already registered — use existing row, don’t duplicate |
-| Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |
-| RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |
-| OOM | Lower `--gpu-memory-utilization` or smaller model |
-| Vite / prisma.client error | `providers.server.ts` split — pull latest `feat/VLLM` |
-| Bench HTTP 401 | Use `CHAT_BENCH_X_API_KEY`, not placeholder cookie |
+| Connection refused or timeout | Check `VLLM_BASE_URL`/fleet URLs, port 8001 reachability, firewall, and `curl <host>/v1/models` from the app host. |
+| Model unavailable | Compare the requested `vllm:<served-name>` with `/v1/models`; static defaults do not prove a model is loaded. |
+| Unauthorized | Use the deployment's real `VLLM_API_KEY` and matching inference-edge key; never paste it into logs or docs. |
+| `X-Fleet-Server` absent | The request may be using single-host mode, a non-vLLM provider, or a smoke script/configuration path that bypasses the fleet. |
+| First token is slow | Inspect admission wait, fleet health/ejection, stream startup probe, model load, and `X-RAG-Latency-Ms` separately. Do not attribute total latency to RAG without measurements. |
 
----
+## Code map
 
-## Related
-
-| Doc | Purpose |
+| Concern | File |
 | --- | --- |
-| [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | SSH, branch switching, and the build/restart flow on s378 |
-| [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) § cmps01 | Quick `.env` for Ollama + vLLM |
-| [`EMBEDDINGS.md`](./EMBEDDINGS.md) | pgvector / embed provider (separate from vLLM chat) |
-| [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | Formal latency ledger |
-| [`ARCHITECTURE.md`](../ARCHITECTURE.md) | cmps01 GPU inference section |
-| `apps/core/app/lib/ai/providers.ts` | `vllm` provider code |
-| `apps/core/scripts/vllm-smoke.mjs` | Smoke test script |
+| vLLM provider registry | [`apps/core/app/lib/ai/providers.ts`](../../apps/core/app/lib/ai/providers.ts) |
+| Server/provider URL and key handling | [`apps/core/app/lib/ai/providers.server.ts`](../../apps/core/app/lib/ai/providers.server.ts) |
+| Fleet registry/config | [`apps/core/app/lib/ai/routing/fleet/registry.ts`](../../apps/core/app/lib/ai/routing/fleet/registry.ts) |
+| Fleet selection and affinity | [`apps/core/app/lib/ai/routing/fleet/resolve-fleet.ts`](../../apps/core/app/lib/ai/routing/fleet/resolve-fleet.ts) |
+| Health cache and host ejection | [`apps/core/app/lib/ai/routing/fleet/health.ts`](../../apps/core/app/lib/ai/routing/fleet/health.ts) |
+| Host installation/operations | [`infra/cmps01/README.md`](../../infra/cmps01/README.md) |

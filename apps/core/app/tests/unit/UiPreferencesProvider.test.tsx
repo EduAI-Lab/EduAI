@@ -3,8 +3,30 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 import {
   UiPreferencesProvider,
+  useMotionReducedPreference,
   useUiPreferences,
 } from "~/components/assistive/ui-preferences-provider";
+
+/** Stubs `matchMedia` so the OS-level reduced-motion query answers `matches`. */
+function stubSystemReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)" ? matches : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
+
+function MotionProbe() {
+  return <span data-testid="effective-motion">{useMotionReducedPreference() ? "on" : "off"}</span>;
+}
 
 function Consumer() {
   const { motionReduced, density, setMotionReduced, setDensity } = useUiPreferences();
@@ -91,5 +113,57 @@ describe("UiPreferencesProvider", () => {
       "useUiPreferences must be used within a UiPreferencesProvider",
     );
     spy.mockRestore();
+  });
+});
+
+/**
+ * The account preference alone is not enough. Public pages are read by
+ * signed-out visitors whose stored preference is the `false` default, so a
+ * visitor who asked their OS for reduced motion has to be honoured through the
+ * same hook every animated component already reads (WCAG 2.2.2).
+ */
+describe("useMotionReducedPreference", () => {
+  it("reports reduced motion when the OS asks for it, whatever the account says", () => {
+    stubSystemReducedMotion(true);
+
+    render(
+      <UiPreferencesProvider initialMotionReduced={false} initialDensity="comfortable">
+        <MotionProbe />
+      </UiPreferencesProvider>,
+    );
+
+    expect(screen.getByTestId("effective-motion")).toHaveTextContent("on");
+  });
+
+  it("reports reduced motion from the account preference when the OS does not ask", () => {
+    stubSystemReducedMotion(false);
+
+    render(
+      <UiPreferencesProvider initialMotionReduced={true} initialDensity="comfortable">
+        <MotionProbe />
+      </UiPreferencesProvider>,
+    );
+
+    expect(screen.getByTestId("effective-motion")).toHaveTextContent("on");
+  });
+
+  it("reports full motion when neither signal asks to stop", () => {
+    stubSystemReducedMotion(false);
+
+    render(
+      <UiPreferencesProvider initialMotionReduced={false} initialDensity="comfortable">
+        <MotionProbe />
+      </UiPreferencesProvider>,
+    );
+
+    expect(screen.getByTestId("effective-motion")).toHaveTextContent("off");
+  });
+
+  it("still reads the OS signal with no provider mounted", () => {
+    stubSystemReducedMotion(true);
+
+    render(<MotionProbe />);
+
+    expect(screen.getByTestId("effective-motion")).toHaveTextContent("on");
   });
 });

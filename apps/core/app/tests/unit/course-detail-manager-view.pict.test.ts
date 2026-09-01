@@ -2,7 +2,8 @@
 //
 // PICT adapter (#1189, census docs/PICT_CENSUS.md § S10): course-detail-manager-view
 // One oracle against client predicate mirrors and backend permission gates.
-// Known manage-rag unit drift uses it.fails (do not relax the oracle; #1406).
+// The adapter compares the client and backend capability gates against one
+// shared oracle.
 
 import { describe, expect, it } from "vitest";
 import { accessLevelFor, canManageCourseRagSettings } from "~/lib/auth/course-access.server";
@@ -102,7 +103,11 @@ function backendVerdict(row: ManagerViewRow): ManagerViewVerdict {
       return { allowed, visible: allowed };
     }
     case "manage-students": {
-      const allowed = canManageStudents(access);
+      const gate = manageEnrollmentsPolicyKey(access);
+      const allowed =
+        canManageStudents(access) &&
+        (gate === "always" ||
+          (gate !== "never" && Boolean(policies[gate as keyof typeof policies])));
       return { allowed, visible: allowed };
     }
     case "staff-tab": {

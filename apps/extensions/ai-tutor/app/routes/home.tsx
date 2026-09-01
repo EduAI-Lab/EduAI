@@ -1,6 +1,6 @@
 import type { Route } from "./+types/home";
 import { useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useLocalUser } from "../hooks/useLocalUser";
 import { Button } from "@eduai/ui";
 import { IconAlertTriangle, IconBrain } from "@tabler/icons-react";
@@ -13,12 +13,17 @@ export function meta(_: Route.MetaArgs) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isInitializing, authError } = useLocalUser();
 
   useEffect(() => {
     if (!user) return;
-    navigate(routeForRole(user.role), { replace: true });
-  }, [navigate, user]);
+    const coreCourseId = searchParams.get("coreCourseId")?.trim();
+    const destination = coreCourseId
+      ? `${user.role === "STUDENT" ? "/student" : "/instructor"}?coreCourseId=${encodeURIComponent(coreCourseId)}`
+      : routeForRole(user.role);
+    navigate(destination, { replace: true });
+  }, [navigate, searchParams, user]);
 
   useEffect(() => {
     if (isInitializing || user || authError) return;

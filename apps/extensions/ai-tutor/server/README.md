@@ -28,8 +28,10 @@ server/
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
       auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
+      csrf.js              # requireSameOriginMutation: rejects cross-origin cookie-authenticated mutations unless a verified service-key Bearer is present
+      serviceAuth.js       # requireServiceKey: gates the /api/internal/* routes
     routes/
-      authentication.js   # GET /me
+      authentication.js   # GET /me, POST /logout
       courses.js          # Course CRUD, EduAI import, publish/unpublish
       modules.js          # Module CRUD, publish/unpublish
       lessons.js          # Lesson CRUD, publish/unpublish
@@ -38,8 +40,10 @@ server/
       prompts.js          # Prompt template management
       suggested-prompts.js# Read-only suggested prompts
       ai-models.js        # AI model listing, API key validation
+      ai-status.js         # GET /ai-status, proxies Core's model-fleet status
       admin.js            # User/course/enrollment/settings management
       bug-reports.js      # Bug report creation and admin triage
+      internal.js          # Service-to-service routes (course deletion mirror), requireServiceKey only
     services/
       aiGuidance.js       # Core AI chat: dual-loop tutor-supervisor pattern
       aiModelPolicy.js    # Model policy: allowed models, defaults, cost tiers
@@ -53,6 +57,10 @@ server/
       enrollmentSync.js   # Sync enrollments from EduAI (creates users/accounts)
       systemSettings.js   # Key-value settings store (DB-backed)
       bugReports.js       # Bug report business logic
+      liveCoursePrincipal.js # authorizeLiveCoursePrincipal: re-resolves a staff caller's role against Core on every gated action instead of trusting the local mirror
+      # ~15 more single-purpose services not listed here (cloning/analytics/pagination
+      # helpers, URL-consistency checks, policy caching, etc.) — see src/services/ for
+      # the full, current list
     schemas/
       eduai.js            # Zod schemas for EduAI API responses
     utils/
@@ -80,10 +88,12 @@ The middleware chain in `app.js` processes requests in this order:
 4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
    `POST /api/sessions/validate` and populates `req.user` from the response; enforced for all
    `/api/*` except `/api/health` and `POST /api/logout`.
-5. **Admin isolation** — Users with `role === 'ADMIN'` can only access `/api/me`,
-   `/api/admin/*`, and `/api/ai-models/*`; `UNIT_ADMIN` is additionally blocked from
-   `/api/admin/settings/*` and `/api/admin/users*`.
-6. **Route modules** — All 11 route files mounted at `/api`.
+5. **Admin isolation** — see [Admin Isolation](#admin-isolation) below for the full allowed-path
+   list; `UNIT_ADMIN` is additionally blocked from `/api/admin/settings/*` and `/api/admin/users*`.
+6. **CSRF** — `requireSameOriginMutation` (`middleware/csrf.js`) rejects a cross-origin,
+   cookie-authenticated mutation unless the request carries a verified service-key Bearer token.
+7. **Route modules** — All 13 route files mounted at `/api`; `internal.js` sits outside the
+   `requireAuth` gate and is protected only by `requireServiceKey` (`middleware/serviceAuth.js`).
 
 ## Authentication
 
@@ -113,18 +123,30 @@ The middleware chain in `app.js` processes requests in this order:
 | `requireRole(role)`             | Returns 403 if `req.user.role !== role`                                                                   |
 | `requireRoles([...])`           | Returns 403 if `req.user.role` not in array                                                               |
 | `requireInstructorPolicy(flag)` | Returns 403 for an `INSTRUCTOR` when the named Core policy flag is disabled (ADMIN/UNIT_ADMIN unaffected) |
+| `requireSameOriginMutation` (`middleware/csrf.js`) | Rejects a cross-origin, cookie-authenticated mutation unless the request also carries a verified service-key Bearer token |
+| `requireServiceKey` (`middleware/serviceAuth.js`)  | Gates `/api/internal/*`; the only routes exempt from the normal `requireAuth` cookie flow |
+| `authorizeLiveCoursePrincipal` (`services/liveCoursePrincipal.js`) | The actual staff-authorization engine behind most write endpoints — re-resolves the caller's role against Core on every gated action rather than trusting the local `CourseInstructor`/`CourseEnrollment` mirror |
 
 Configurable permissions are owned by Core. `services/policyService.js` fetches `GET {EDUAI_BASE_URL}/policies` with the service key and caches the result on a short TTL (falling back to the last known-good value on a Core outage). `requireInstructorPolicy('instructors.canCreateCourses')` gates `POST /courses` so an admin can enable/disable instructor course creation centrally.
 
 ### Admin Isolation
 
-After authentication, an explicit isolation rule blocks admins from non-admin endpoints. If `req.user.role === 'ADMIN'`, the only allowed paths are:
+After authentication, an explicit isolation rule blocks admins from most non-admin endpoints — but not
+all of them. If `req.user.role === 'ADMIN'`, `isAllowedAdminPath()` in `app.js` permits:
 
 - `/api/me`
 - `/api/admin/*`
-- `/api/ai-models/*`
+- `/api/ai-status`, `/api/ai-models`, `/api/ai-models/*`
+- `/api/bug-reports`
+- `/api/prompts`, `/api/prompts/*`
+- The shared course/module/lesson/activity/topic tree: `/api/courses`, `/api/courses/*`,
+  `/api/modules/*`, `/api/lessons/*`, `/api/activities/*`, `/api/topics`, `/api/topics/*` — admins
+  share the same Courses dashboard instructors use, rather than being fenced out of course content
+  entirely.
 
-All other `/api/*` requests return `403 Admins can only access admin endpoints`.
+All other `/api/*` requests return `403 Admins can only access admin endpoints`. `UNIT_ADMIN` gets a
+narrower additional block on top of the ordinary role checks: `/api/admin/settings/*` and
+`/api/admin/users*` stay `ADMIN`-only.
 
 ## API Surface
 
@@ -132,20 +154,24 @@ All routes are mounted under `/api`. See [docs/api-reference.md](../docs/api-ref
 
 ### Quick Reference
 
-| Module            | Endpoints     | Auth                                            |
-| ----------------- | ------------- | ----------------------------------------------- |
-| System            | `GET /health` | None                                            |
-| Auth              | `GET /me`     | Any authenticated                               |
-| Courses           | 9 endpoints   | INSTRUCTOR (write), course member (read)        |
-| Modules           | 5 endpoints   | INSTRUCTOR (write), course member (read)        |
-| Lessons           | 5 endpoints   | INSTRUCTOR (write), course member (read)        |
-| Activities        | 9 endpoints   | INSTRUCTOR (write), course member (read/submit) |
-| Topics            | 4 endpoints   | INSTRUCTOR (write), course member (read)        |
-| Prompts           | 2 endpoints   | INSTRUCTOR                                      |
-| Suggested Prompts | 1 endpoint    | Any authenticated                               |
-| AI Models         | 2 endpoints   | Any authenticated                               |
-| Admin             | 12 endpoints  | ADMIN                                           |
-| Bug Reports       | 3 endpoints   | STUDENT/INSTRUCTOR (create), ADMIN (manage)     |
+| Module            | Endpoints     | Auth                                                                             |
+| ----------------- | ------------- | --------------------------------------------------------------------------------- |
+| System            | `GET /health` | None                                                                             |
+| Auth              | 2 endpoints   | Any authenticated (`POST /logout` bypasses the auth gate entirely)              |
+| Courses           | 16 endpoints  | INSTRUCTOR/UNIT_ADMIN/ADMIN (write), course member (read)                       |
+| Modules           | 10 endpoints  | INSTRUCTOR/UNIT_ADMIN/ADMIN (write), course member (read)                       |
+| Lessons           | 11 endpoints  | INSTRUCTOR/UNIT_ADMIN/ADMIN (write), course member (read)                       |
+| Activities        | 21 endpoints  | INSTRUCTOR/UNIT_ADMIN/ADMIN (write), STUDENT-in-course (submit/AI chat), course staff (grading) |
+| Topics            | 4 endpoints   | INSTRUCTOR/UNIT_ADMIN/ADMIN (write), course member (read)                       |
+| Prompts           | 2 endpoints   | INSTRUCTOR/UNIT_ADMIN/ADMIN                                                     |
+| Suggested Prompts | 1 endpoint    | Any authenticated                                                                |
+| AI Models         | 2 endpoints   | Any authenticated                                                                |
+| AI Status         | 1 endpoint    | Any authenticated                                                                |
+| Admin             | 14 endpoints  | ADMIN (enrollment endpoints also allow course-authorized UNIT_ADMIN/INSTRUCTOR) |
+| Bug Reports       | 4 endpoints   | Any authenticated (create), ADMIN (manage)                                      |
+| Internal          | 1 endpoint    | Service key only — not reachable by browser clients                             |
+
+See [`../docs/rbac-endpoints-ai-tutor.md`](../docs/rbac-endpoints-ai-tutor.md) for the complete per-endpoint auth-gate table.
 
 ## AI Tutoring System
 
@@ -194,6 +220,11 @@ Source of truth: `server/.env.example`.
 | `CORS_ORIGINS`                  | No          | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin         |
 | `POLICY_CACHE_TTL_MS`           | No          | `30000`                                                                                                         | TTL for the cached Core RBAC policy flags (`policyService`)                                                                                                              |
 | `EDUAI_ENFORCE_URL_CONSISTENCY` | No          | -                                                                                                               | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
+| `ENCRYPTION_KEY`                | Recommended | -                                                                                                               | AES-256-GCM key that encrypts the admin `EDUAI_API_KEY` override at rest in `SystemSetting`; without it the admin key-write endpoint fails closed (503) instead of persisting the secret in plaintext |
+| `CORE_PUBLIC_ORIGIN`            | No          | Falls back to `CORE_URL`                                                                                       | Overrides the origin used to build the Core sign-out redirect target in `POST /logout`, for setups where the browser-facing Core origin differs from `CORE_URL` |
+| `CORE_MIRROR_THROTTLE_MS`       | No          | `60000`                                                                                                         | Minimum interval between background Core auto-import mirror runs for the same user (`importTaughtCoursesService.js`); a freshly-imported course only appears on the caller's *next* request |
+| `AI_KEY_VALIDATION_TIMEOUT_MS`  | No          | `5000` (Google/OpenAI); `45000` for the OpenCode probe                                                         | Deadline for a `POST /ai-models/validate-key` provider round-trip |
+| `AI_KEY_VALIDATION_MAX_TRACKED_USERS` | No    | `10000`                                                                                                         | Hard cap on distinct user identities tracked by the in-process key-validation rate limiter |
 
 When `EDUAI_BASE_URL` is unset, `services/eduaiClient.js` still falls back to `http://localhost:5174/api` (legacy); use `.env.example` or set it explicitly for local dev.
 

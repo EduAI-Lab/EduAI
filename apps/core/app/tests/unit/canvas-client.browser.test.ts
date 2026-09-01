@@ -114,13 +114,16 @@ describe("syncCanvasCourses", () => {
 });
 
 describe("discoverCanvasMaterials", () => {
-  it("requests with recheck=true and returns the files", async () => {
+  it("rechecks through POST and returns the files", async () => {
     mockFetch({ success: true, data: { files: [{ id: "f1" }] } });
     const result = await discoverCanvasMaterials("course-1");
     expect(result).toEqual([{ id: "f1" }]);
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/courses/course-1/canvas-materials?recheck=true",
-      expect.objectContaining({ method: "GET" }),
+      "/api/courses/course-1/canvas-materials",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ intent: "discover" }),
+      }),
     );
   });
 

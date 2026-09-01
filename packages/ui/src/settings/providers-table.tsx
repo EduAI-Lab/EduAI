@@ -101,6 +101,7 @@ export function ProvidersTable({
               <TableCell>
                 <div className="flex items-center space-x-2">
                   <Switch
+                    aria-label={`${provider.isActive ? "Disable" : "Enable"} ${provider.displayName}`}
                     checked={provider.isActive}
                     onCheckedChange={() => onToggleActive(provider)}
                   />
@@ -109,12 +110,21 @@ export function ProvidersTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => onEdit(provider)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Edit ${provider.displayName}`}
+                    onClick={() => onEdit(provider)}
+                  >
                     <IconEdit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Delete ${provider.displayName}`}
+                      >
                         <IconTrash className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>

@@ -67,7 +67,7 @@ const DEFAULT_CHOICES: MCQChoice[] = [
   { letter: "D", text: "" },
 ];
 
-import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from "../utils/aiModels";
+import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../utils/aiModels";
 import { toast } from "sonner";
 
 const DEFAULT_MODEL = FALLBACK_GENERATION_MODEL;
@@ -142,7 +142,7 @@ export function QuestionComposerPage() {
     mode === "edit" ? Number(questionIdParam) : variantOfParam ? Number(variantOfParam) : null;
 
   // ── Permissions guard ────────────────────────────────────────────────────
-  const { canCreateQuestion, hasCourseAccess, accessLoading } =
+  const { canApproveVariant, canCreateQuestion, hasCourseAccess, accessLoading } =
     useQmPermissionsForCourse(validCourseId);
   const canWrite = hasCourseAccess && !accessLoading && canCreateQuestion;
 
@@ -253,8 +253,11 @@ export function QuestionComposerPage() {
         setAvailableModels(models);
         setAvailableEduCourses(eduCourses);
         setForm((prev) => {
-          if (models.length === 0 || models.some((m) => m.id === prev.generationModel)) return prev;
-          return { ...prev, generationModel: pickPreferredGenerationModel(models) };
+          if (models.length === 0) return prev;
+          return {
+            ...prev,
+            generationModel: pickConfiguredGenerationModel(models, prev.generationModel),
+          };
         });
       } catch {
         if (!cancelled) {
@@ -708,6 +711,11 @@ export function QuestionComposerPage() {
       const selectAllThatApply = form.questionType === "MCQ" ? form.selectAllThatApply : false;
       const correctAnswers =
         form.questionType === "MCQ" && form.selectAllThatApply ? form.correctAnswers : null;
+      // Route components can be reused while the course parameter changes.
+      // Never let a stale checked instructor control approve or share a write
+      // after the current course resolves to TA-only permissions.
+      const approveOnSave = canApproveVariant && markAsReviewed;
+      const shareOnSave = approveOnSave && shareWithExtensions;
 
       if (mode === "edit") {
         if (sourceQuestionId == null || !sourceVariant)
@@ -722,7 +730,7 @@ export function QuestionComposerPage() {
         // reversing this order would 409 on type/primaryTopic while the variant is still
         // reviewed.
         const wasApproved = sourceVariant.isDraft === false;
-        const nextIsDraft = wasApproved ? true : markAsReviewed ? false : undefined;
+        const nextIsDraft = wasApproved ? true : approveOnSave ? false : undefined;
         // Revert (if approved) + save the variant content …
         await questionService.updateVariant(sourceVariant.id, {
           questionText: form.questionText.trim(),
@@ -739,7 +747,7 @@ export function QuestionComposerPage() {
           // not apply and the author re-decides when they mark it reviewed
           // again; omitting it there keeps the edit branch from silently
           // dropping a checked box on the approval path (#1652 review).
-          ...(nextIsDraft === false && { shareWithExtensions }),
+          ...(nextIsDraft === false && { shareWithExtensions: shareOnSave }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
         // Only send type/primaryTopicId when they actually changed: a question can have
@@ -781,8 +789,8 @@ export function QuestionComposerPage() {
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           referenceId: referenceId != null ? Number(referenceId) : undefined,
           isAiGenerated,
-          isDraft: !markAsReviewed,
-          shareWithExtensions,
+          isDraft: !approveOnSave,
+          shareWithExtensions: shareOnSave,
         });
         toast("Variant added", { description: "The new variant has been saved." });
         navigateBackToQuestions();
@@ -808,8 +816,8 @@ export function QuestionComposerPage() {
         correctAnswers,
         secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
         isAiGenerated,
-        isDraft: !markAsReviewed,
-        shareWithExtensions,
+        isDraft: !approveOnSave,
+        shareWithExtensions: shareOnSave,
       });
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
@@ -1128,7 +1136,7 @@ export function QuestionComposerPage() {
               // being reviewed stops being shared with it (#1555).
               if (!reviewed) setShareWithExtensions(false);
             }}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canApproveVariant}
             className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
           />
           <Label
@@ -1146,7 +1154,7 @@ export function QuestionComposerPage() {
             data-testid="share-with-extensions"
             checked={shareWithExtensions}
             onChange={(e) => setShareWithExtensions(e.target.checked)}
-            disabled={isSubmitting || !markAsReviewed}
+            disabled={isSubmitting || !canApproveVariant || !markAsReviewed}
             className="size-4 cursor-pointer rounded border-border [accent-color:var(--secondary)]"
           />
           <Label

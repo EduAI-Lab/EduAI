@@ -38,7 +38,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return new Response(null, { status: 400 });
   }
 
-  cancelActiveChat(parsed.data.requestId);
+  cancelActiveChat(session.user.id, parsed.data.requestId);
   // Both a completed/unknown id and a cancelled one are successful from the
   // UI's perspective: Stop is idempotent and must not expose stream state.
   return new Response(null, { status: 204 });
